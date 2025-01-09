@@ -7,6 +7,7 @@
 
 # pyre-unsafe
 
+from inspect import isclass
 from typing import Optional
 
 import torch
@@ -133,3 +134,60 @@ def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
         fake_tensor, FakeTensor
     ), f'Found {fake_tensor} in meta["val"] of {node}, expected to find FakeTensor.'
     return fake_tensor
+
+
+def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
+    """
+    Help-function for getting a value from node.args/ kwargs, three cases:
+    1. By position in node.args - Returns arg at given position or default_value if index is one out of bounds
+    2. By key in node.kwargs - Returns kwarg with given key or default_value if it deos not exist
+    3. By type in node.args - Returns first arg of args of given type. Useful for cases where arg postions may differ but types are unique.
+    """
+    if isinstance(key, int):
+        if 0 <= key < len(args):
+            return args[key]
+        elif key == len(args):
+            if default_value is not None:
+                return default_value
+            else:
+                raise RuntimeError(f"No defult value given for index {key}")
+        else:
+            raise RuntimeError(
+                f"Out of bounds index {key} for getting value in args (of size {len(args)})"
+            )
+    elif isinstance(key, str):
+        return args.get(key, default_value)  # pyre-ignore[16]
+    elif isclass(key):
+        for arg in args:
+            if isinstance(arg, key):
+                return arg
+        if default_value is not None:
+            return default_value
+        else:
+            raise RuntimeError(f"No arg of type {key}")
+    else:
+        raise RuntimeError("Invalid type")
+
+
+def set_node_arg(node: torch.fx.Node, i: int | str, value):
+    """
+    Help-function for setting a value in node.args/ kwargs. If the index is one larger than the list size, the value is instead appended to the list.
+    """
+    if isinstance(i, int):
+        if 0 <= i < len(node.args):
+            args = list(node.args)
+            args[i] = value
+            node.args = tuple(args)
+            return
+        elif i == len(node.args):
+            node.args = node.args + (value,)
+        else:
+            raise RuntimeError(
+                f"Out of bounds index {i} for setting value in {node} args (of size {len(node.args)})"
+            )
+    elif isinstance(i, str):
+        kwargs = dict(node.kwargs)
+        kwargs[i] = value
+        node.kwargs = kwargs
+    else:
+        raise RuntimeError("Invalid type")

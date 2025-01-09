@@ -14,7 +14,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_INSERTED_PERMUTE,
     QCOM_LAYOUT_CHANGE,
     QCOM_QUANT_ATTRS,
-    QCOM_REQUANTIZE,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -64,6 +63,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.prelu.default,
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
+        exir_ops.edge.aten.sigmoid.default,
         exir_ops.edge.aten.sqrt.default,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,
@@ -132,8 +132,6 @@ class LayoutTransform(ExportPass):
             # if dimemsion is not kept, we'll have no clue how to do layout transform
             if len(node.args) < 3 or not node.args[2]:
                 return False
-        if node.target in self.qdq_opset:
-            return QCOM_REQUANTIZE in node.meta
         return node.target in self.layout_agnostic_ops
 
     def is_edge_condition(self, node):

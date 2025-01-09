@@ -6,7 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+
 from typing import Tuple
+
+import pytest
 
 import torch
 
@@ -15,7 +18,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
 )
 
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -57,7 +60,7 @@ class TestPermute(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=permute_memory_to_nhwc
+                    "TOSA-0.80+MI", permute_memory_to_nhwc=permute_memory_to_nhwc
                 ),
             )
             .export()
@@ -79,7 +82,7 @@ class TestPermute(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -100,7 +103,7 @@ class TestPermute(unittest.TestCase):
         test_data: Tuple[torch.Tensor],
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -117,6 +120,8 @@ class TestPermute(unittest.TestCase):
             .to_executorch()
             .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(test_data_suite)
     def test_permute_tosa_MI(
@@ -135,6 +140,7 @@ class TestPermute(unittest.TestCase):
 
     # Expected to fail as TOSA.Transpose is not supported by Ethos-U55.
     @parameterized.expand(test_data_suite[0:1])
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
     def test_permute_u55_BI(
         self, test_name: str, test_data: torch.Tensor, dims: list[int]
@@ -143,8 +149,20 @@ class TestPermute(unittest.TestCase):
             self.Permute(dims=dims), common.get_u55_compile_spec(), (test_data,)
         )
 
-    @parameterized.expand(test_data_suite)
+    @parameterized.expand(test_data_suite[:-2])
+    @pytest.mark.corstone_fvp
     def test_permute_u85_BI(
+        self, test_name: str, test_data: torch.Tensor, dims: list[int]
+    ):
+        self._test_permute_ethos_BI_pipeline(
+            self.Permute(dims=dims), common.get_u85_compile_spec(), (test_data,)
+        )
+
+    # Fails since on FVP since N > 1 is not supported. MLETORCH-517
+    @parameterized.expand(test_data_suite[-2:])
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    def test_permute_u85_BI_xfails(
         self, test_name: str, test_data: torch.Tensor, dims: list[int]
     ):
         self._test_permute_ethos_BI_pipeline(

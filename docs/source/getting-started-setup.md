@@ -98,7 +98,19 @@ Alternatively, if you would like to experiment with ExecuTorch quickly and easil
    Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29) to install with pybindings and dependencies for other backends.
    ```bash
    ./install_requirements.sh --pybind <coreml | mps | xnnpack>
+
+   # Example: pybindings with CoreML *only*
+   ./install_requirements.sh --pybind coreml
+
+   # Example: pybinds with CoreML *and* XNNPACK
+   ./install_requirements.sh --pybind coreml xnnpack
    ```
+
+   By default, `./install_requirements.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
+   ```bash
+   ./install_requirements.sh --pybind off
+   ```
+
 After setting up your environment, you are ready to convert your PyTorch programs
 to ExecuTorch.
 
@@ -113,7 +125,7 @@ to ExecuTorch.
 >
 > ```bash
 > # From the root of the executorch repo:
-> rm -rf cmake-out pip-out
+> ./install_requirements.sh --clean
 > git submodule sync
 > git submodule update --init
 > ```
@@ -196,7 +208,8 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
   ```bash
   # Clean and configure the CMake build system. Compiled programs will
   # appear in the executorch/cmake-out directory we create here.
-  (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+  ./install_requirements.sh --clean
+  (mkdir cmake-out && cd cmake-out && cmake ..)
 
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9
@@ -213,7 +226,7 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
 >
 > ```bash
 > # From the root of the executorch repo:
-> rm -rf cmake-out pip-out
+> ./install_requirements.sh --clean
 > git submodule sync
 > git submodule update --init
 > ```

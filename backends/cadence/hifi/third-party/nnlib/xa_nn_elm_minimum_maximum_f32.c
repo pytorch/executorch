@@ -844,4 +844,6 @@ WORD32 xa_nn_elm_minimum_broadcast_4D_f32xf32_f32(FLOAT32 * __restrict__ p_out,
   }
   return 0;
 }
+
 #endif
+

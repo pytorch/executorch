@@ -867,6 +867,7 @@ ATEN_OPS = (
     op_target(
         name = "op_native_batch_norm",
         deps = [
+            ":vec_ops",
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
         ],
     ),
@@ -999,6 +1000,9 @@ ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:repeat_util",
         ],
+    ),
+    op_target(
+        name = "op_repeat_interleave",
     ),
     op_target(
         name = "op_replication_pad1d",
@@ -1226,6 +1230,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_upsample_bilinear2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:upsample_util",
+        ],
+    ),
+    op_target(
         name = "op_var",
         deps = [
             ":scalar_utils",
@@ -1250,6 +1260,12 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_zeros",
+    ),
+    op_target(
+        name = "op__empty_dim_order",
+        deps = [
+            ":scalar_utils",
+        ],
     ),
     op_target(
         name = "op__to_dim_order_copy",

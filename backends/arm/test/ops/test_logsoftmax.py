@@ -17,14 +17,29 @@ from parameterized import parameterized
 
 test_data_suite = [
     # (test_name, test_data, dim)
-    ("zeros", torch.zeros(10, 10, 10, 10), 0),
-    ("zeros_neg_dim", torch.zeros(10, 10, 10, 10), -4),
+    ("zeros", torch.zeros(10, 8, 5, 2), 0),
+    ("zeros_neg_dim", torch.zeros(10, 7, 8, 9), -4),
     ("ones", torch.ones(10, 10), 1),
-    ("rand_neg_dim", torch.rand(10, 10, 10), -1),
-    ("rand", torch.rand(10, 10, 10, 10), 2),
-    ("rand_neg_dim", torch.rand(10, 10, 2, 3), -2),
-    ("randn", torch.randn(10, 10, 5, 10), 3),
-    ("randn_neg_dim", torch.randn(1, 10, 10, 10), -3),
+    ("ones_neg_dim", torch.ones(10, 3, 4), -1),
+    ("rand", torch.rand(1, 2, 5, 8), 2),
+    ("rand_neg_dim", torch.rand(2, 10, 8, 10), -2),
+    ("randn", torch.randn(10, 10, 10, 10), 3),
+    ("randn_neg_dim", torch.randn(10, 5, 8, 7), -3),
+]
+test_data_suite_u55 = [
+    # (test_name, test_data, dim)
+    ("ones", torch.ones(10, 10), 1),
+    ("ones_neg_dim", torch.ones(10, 3, 4), -1),
+    ("randn_neg_dim", torch.randn(10, 5, 8, 7), -3),
+]
+
+test_data_suite_u55_xfails = [
+    # (test_name, test_data, dim)
+    ("zeros", torch.zeros(10, 8, 5, 2), 0),
+    ("zeros_neg_dim", torch.zeros(10, 7, 8, 9), -4),
+    ("rand", torch.rand(1, 2, 5, 8), 2),
+    ("rand_neg_dim", torch.rand(2, 10, 8, 10), -2),
+    ("randn", torch.randn(10, 10, 10, 10), 3),
 ]
 
 
@@ -46,7 +61,7 @@ class TestLogSoftmax(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check(["torch.ops.aten.log_softmax.int"])
@@ -66,7 +81,7 @@ class TestLogSoftmax(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -135,8 +150,21 @@ class TestLogSoftmax(unittest.TestCase):
     ):
         self._test_logsoftmax_tosa_BI_pipeline(self.LogSoftmax(dim=dim), (test_data,))
 
-    @parameterized.expand(test_data_suite)
+    @parameterized.expand(test_data_suite_u55)
     def test_logsoftmax_tosa_u55_BI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        dim: int,
+    ):
+        self._test_logsoftmax_tosa_u55_BI_pipeline(
+            self.LogSoftmax(dim=dim), (test_data,)
+        )
+
+    # Expected to fail as this is not supported on u55.
+    @parameterized.expand(test_data_suite_u55_xfails)
+    @unittest.expectedFailure
+    def test_logsoftmax_tosa_u55_BI_xfails(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -153,6 +181,6 @@ class TestLogSoftmax(unittest.TestCase):
         test_data: torch.Tensor,
         dim: int,
     ):
-        self._test_logsoftmax_tosa_u55_BI_pipeline(
+        self._test_logsoftmax_tosa_u85_BI_pipeline(
             self.LogSoftmax(dim=dim), (test_data,)
         )

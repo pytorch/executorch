@@ -9,60 +9,99 @@
 #pragma once
 
 #include <cstdint>
-#include <future>
-#include <limits>
-#include <memory>
-#include <queue>
-#include <thread>
 #include <vector>
 
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/executor/method_meta.h>
 
-#define QNN_LLAMA3_2_LOGITS 128256
-#define QNN_LLAMA3_2_SEQLEN 512 // adjustable based on llama export
-#define QNN_LLAMA3_2_NUM_HEADS 8
-
-#if defined(LLAMA3_2_3B_RUNNER)
-#define QNN_LLAMA3_2_HEAD_DIM 128
-#define QNN_LLAMA3_2_NUM_LAYERS 28
-#else
-#define QNN_LLAMA3_2_HEAD_DIM 64
-#define QNN_LLAMA3_2_NUM_LAYERS 16
-#endif
-
 namespace example {
 
+enum EvalMode {
+  kPrefill = 0,
+  kKVCached,
+  kHybrid,
+  kUnsupported,
+};
 class Memory {
  public:
   Memory(std::vector<std::shared_ptr<executorch::extension::Module>>& modules);
   virtual ~Memory();
-  virtual void prepare_io(
+  virtual void init_io() = 0;
+  virtual void prepare_prefill_io(
       const std::vector<
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&
           methods_meta) = 0;
-  virtual void update_io(
+  virtual void prepare_kv_io(
+      const std::vector<
+          executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+          methods_meta) = 0;
+  virtual void update_prefill_to_kv_io(
+      int64_t cur_token,
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
+  virtual void update_kv_io(
+      int64_t cur_token,
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
+  virtual void update_prefill_io(
       int64_t cur_token,
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) = 0;
   void* get_mutable_ptr();
-  std::vector<executorch::aten::Tensor> get_input_tensors(int shard_index);
-  std::vector<executorch::aten::Tensor> get_output_tensors(int shard_index);
+  std::vector<executorch::aten::Tensor> get_input_tensors(
+      int shard_index,
+      const std::string& method_name);
+  std::vector<executorch::aten::Tensor> get_output_tensors(
+      int shard_index,
+      const std::string& method_name);
 
  protected:
   std::unique_ptr<void, void (*)(void*)> data_ptr_;
-  std::vector<std::vector<executorch::aten::TensorImpl*>> input_tensors_;
-  std::vector<std::vector<executorch::aten::TensorImpl*>> output_tensors_;
+  std::unordered_map<
+      std::string,
+      std::vector<std::vector<executorch::aten::TensorImpl*>>>
+      input_tensors_;
+  std::unordered_map<
+      std::string,
+      std::vector<std::vector<executorch::aten::TensorImpl*>>>
+      output_tensors_;
   std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
 };
 
-class KVCachedMemory : public Memory {
+class HybridMemory : public Memory {
  public:
-  KVCachedMemory(
-      std::vector<std::shared_ptr<executorch::extension::Module>>& modules);
-  void prepare_io(const std::vector<executorch::runtime::Result<
-                      executorch::runtime::MethodMeta>>& methods_meta) override;
-  void update_io(
+  HybridMemory(
+      std::vector<std::shared_ptr<executorch::extension::Module>>& modules,
+      int32_t prefill_cache_len,
+      int32_t kv_cache_len,
+      int32_t vocab_size,
+      int32_t num_layers,
+      int32_t head_dim,
+      int32_t num_heads,
+      EvalMode eval_mode,
+      const std::string& prefill_forward_name,
+      const std::string& kv_forward_name);
+
+  void init_io() override;
+  void prepare_prefill_io(
+      const std::vector<
+          executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+          methods_meta) override;
+  void prepare_kv_io(
+      const std::vector<
+          executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+          methods_meta) override;
+  void update_prefill_to_kv_io(
+      int64_t cur_token,
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
+      override;
+  void update_kv_io(
+      int64_t cur_token,
+      int64_t pos,
+      std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
+      override;
+  void update_prefill_io(
       int64_t cur_token,
       int64_t pos,
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
@@ -70,20 +109,14 @@ class KVCachedMemory : public Memory {
   struct IO {
     int32_t input_tok;
     int32_t input_pos;
-    float attention_mask[QNN_LLAMA3_2_SEQLEN];
-    uint8_t k_cache[QNN_LLAMA3_2_NUM_LAYERS][QNN_LLAMA3_2_NUM_HEADS]
-                   [(QNN_LLAMA3_2_HEAD_DIM + 1) * (QNN_LLAMA3_2_SEQLEN - 1)];
-    uint8_t v_cache[QNN_LLAMA3_2_NUM_LAYERS]
-                   [(QNN_LLAMA3_2_NUM_HEADS + 1) * (QNN_LLAMA3_2_SEQLEN - 1) *
-                    (QNN_LLAMA3_2_HEAD_DIM)];
-    uint8_t k_cache_out[QNN_LLAMA3_2_NUM_LAYERS][QNN_LLAMA3_2_NUM_HEADS]
-                       [QNN_LLAMA3_2_HEAD_DIM];
-    float logits[QNN_LLAMA3_2_LOGITS];
-  };
-  struct LoopRange {
-    int32_t start;
-    int32_t end;
-    int32_t step;
+    std::vector<std::vector<std::vector<uint8_t>>> k_cache;
+    std::vector<std::vector<uint8_t>> v_cache;
+    std::vector<std::vector<uint8_t>> k_cache_out;
+    std::vector<uint16_t> kv_attention_mask;
+    std::vector<uint16_t> kv_logits;
+    std::vector<int32_t> prefill_input_toks;
+    std::vector<uint16_t> prefill_atten_mask;
+    std::vector<uint16_t> prefill_logits;
   };
 
  private:
@@ -91,13 +124,36 @@ class KVCachedMemory : public Memory {
   std::unique_ptr<executorch::aten::TensorImpl> input_pos_;
   std::unique_ptr<executorch::aten::TensorImpl> hidden_state_;
   std::unique_ptr<executorch::aten::TensorImpl> attention_mask_;
-  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_in_;
-  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_in_;
-  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> k_cache_out_;
-  std::vector<std::unique_ptr<executorch::aten::TensorImpl>> v_cache_out_;
-  std::unique_ptr<executorch::aten::TensorImpl> logits_;
+  std::unique_ptr<executorch::aten::TensorImpl> prefill_input_toks_;
+  std::unique_ptr<executorch::aten::TensorImpl> prefill_attn_mask_;
+  std::unique_ptr<executorch::aten::TensorImpl> prefill_logits_;
+  std::unordered_map<
+      std::string,
+      std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
+      k_cache_in_;
+  std::unordered_map<
+      std::string,
+      std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
+      v_cache_in_;
+  std::unordered_map<
+      std::string,
+      std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
+      k_cache_out_;
+  std::unordered_map<
+      std::string,
+      std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>
+      v_cache_out_;
+  std::unique_ptr<executorch::aten::TensorImpl> kv_logits_;
   std::vector<int> shard_layers_;
-  int num_heads_;
+  int32_t kv_cache_len_{0};
+  int32_t prefill_cache_len_{0};
+  int32_t vocab_size_;
+  int32_t num_layers_;
+  int32_t head_dim_;
+  int32_t num_heads_;
+  EvalMode eval_mode_;
+  std::string prefill_forward_name_;
+  std::string kv_forward_name_;
 };
 
 } // namespace example

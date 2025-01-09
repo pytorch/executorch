@@ -38,7 +38,11 @@ def _replace_linear_with_linear_8da4w_for_pre_quantization(
 
     def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
         new_linear = Int8DynActInt4WeightLinear(
+            # pyre-fixme[6]: For 1st argument expected `int` but got `Union[Module,
+            #  Tensor]`.
             child.in_features,
+            # pyre-fixme[6]: For 2nd argument expected `int` but got `Union[Module,
+            #  Tensor]`.
             child.out_features,
             bias=False,
             device=child.weight.device,
@@ -99,7 +103,11 @@ def _replace_output_linear_with_linear_int8_for_pre_quantization(
     def replacement_fn(child: torch.nn.Module) -> torch.nn.Module:
         new_linear = Int8DynActInt8WeightLinear(
             device=child.weight.device,
+            # pyre-fixme[6]: For 2nd argument expected `int` but got `Union[Module,
+            #  Tensor]`.
             in_features=child.in_features,
+            # pyre-fixme[6]: For 3rd argument expected `int` but got `Union[Module,
+            #  Tensor]`.
             out_features=child.out_features,
             precision=dtype,
             bias=False,

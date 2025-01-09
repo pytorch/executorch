@@ -79,7 +79,14 @@ pkg_name = __name__
 verbosity_setting = None
 
 
-EXECUTORCH_DEFINED_MODELS = ["stories110m", "llama2", "llama3", "llama3_1", "llama3_2"]
+EXECUTORCH_DEFINED_MODELS = [
+    "stories110m",
+    "llama2",
+    "llama3",
+    "llama3_1",
+    "llama3_2",
+    "static_llama",
+]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
 
@@ -353,8 +360,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--coreml-quantize",
         default=None,
-        choices=["b4w"],
-        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight)",
+        choices=["b4w", "c4w"],
+        help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight), c4w (for channelwise 4 bit weight)",
     )
     parser.add_argument(
         "--coreml-ios",
@@ -362,6 +369,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=15,
         choices=(15, 16, 17, 18),
         help="This option is only for coreml: The minimum iOS version to deploy",
+    )
+    parser.add_argument(
+        "--coreml-compute-units",
+        type=str,
+        default="cpu_only",
+        choices=("cpu_only", "cpu_and_gpu", "cpu_and_ne", "all"),
+        help="This option is only for coreml: the compute units to use when running the model",
     )
     parser.add_argument(
         "--qnn",
@@ -446,6 +460,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default="8,0",
         type=str,
         help="type of embedding quantization for pre-quantized checkpoint, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+    )
+
+    parser.add_argument(
+        "--use_attention_sink",
+        default=None,
+        type=str,
+        help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>,<batch_eviction_size>', e.g., '4,2044,1024'.",
     )
 
     parser.add_argument(
@@ -593,7 +614,7 @@ def get_quantizer_and_quant_params(args):
 
 def _qmode_type(value):
     choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
-    patterns = [r"torchao:8da(\d+)w"]
+    patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
 
     if value in choices:
         return value
@@ -696,6 +717,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             args.embedding_quantize,
             args.pt2e_quantize,
             args.coreml_quantize,
+            args.coreml_compute_units,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
@@ -960,8 +982,14 @@ def _load_llama_model(
             use_kv_cache,
             use_sdpa_with_kv_cache,
             enable_dynamic_shape,
+            # pyre-fixme[6]: For 5th argument expected `ModelArgs` but got
+            #  `Union[Tensor, Module]`.
             model.max_seq_len,
+            # pyre-fixme[6]: For 6th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
             model.n_layers,
+            # pyre-fixme[6]: For 7th argument expected `int` but got `Union[Tensor,
+            #  Module]`.
             model.vocab_size,
             metadata_str,
         ),
@@ -1045,6 +1073,7 @@ def _get_source_transforms(  # noqa
                 transforms.append(replace_attention_to_attention_sha)
                 transforms.append(replace_causal_mask)
                 transforms.append(replace_rms_norm_with_native_rms_norm)
+                # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
             else:
                 transforms.append(replace_kv_cache_with_simple_kv_cache)
@@ -1056,6 +1085,7 @@ def _get_source_transforms(  # noqa
                     transforms.append(
                         get_model_with_r1_r2(args.optimized_rotation_path)
                     )
+                # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
 
         elif args.mps:

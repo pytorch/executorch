@@ -9,6 +9,8 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/dtype_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -121,7 +123,7 @@ Tensor& add_out(
   float alpha_val;
   torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
 
-  constexpr auto name = "add.out";
+  static constexpr const char op_name[] = "add.out";
   constexpr int kNnlibMaxDim = 4; /*fallback if broadcast and dim > 4 */
 
   int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
@@ -178,23 +180,25 @@ Tensor& add_out(
     return out;
   }
 
-  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_IN = typename torch::executor::
-          promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
-      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-      CTYPE_IN alpha_val;
-      torch::executor::native::utils::extract_scalar(alpha, &alpha_val);
+  // Compute Dtype
+  ScalarType compute_type =
+      torch::executor::native::utils::get_compute_type(common_type);
 
-      ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-        AddInner<
-            can_cast<CTYPE_IN, CTYPE_OUT>::value,
-            CTYPE_A,
-            CTYPE_B,
-            CTYPE_IN,
-            CTYPE_OUT>::run(a, b, alpha_val, out);
-      });
-    });
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_alpha =
+        torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(alpha);
+    torch::executor::native::utils::
+        apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [val_alpha](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+              return val_a + val_alpha * val_b;
+            },
+            ctx,
+            a,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;

@@ -1052,6 +1052,7 @@ def main(argv: List[str]) -> int:
     parser.add_argument("--replace-u16vecn", action="store_true", default=False)
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
+    parser.add_argument("--spv_debug", action="store_true", default=False)
     parser.add_argument(
         "--env", metavar="KEY=VALUE", nargs="*", help="Set a number of key-value pairs"
     )
@@ -1070,17 +1071,22 @@ def main(argv: List[str]) -> int:
     if not os.path.exists(options.tmp_dir_path):
         os.makedirs(options.tmp_dir_path)
 
-    glslc_flags = ""
+    glslc_flags = []
     if options.optimize_size:
-        glslc_flags += "-Os"
+        glslc_flags.append("-Os")
     elif options.optimize:
-        glslc_flags += "-O"
+        glslc_flags.append("-O")
+
+    if options.spv_debug:
+        glslc_flags.append("-g")
+
+    glslc_flags_str = " ".join(glslc_flags)
 
     shader_generator = SPVGenerator(
         options.glsl_paths,
         env,
         options.glslc_path,
-        glslc_flags=glslc_flags,
+        glslc_flags=glslc_flags_str,
         replace_u16vecn=options.replace_u16vecn,
     )
     output_spv_files = shader_generator.generateSPV(options.tmp_dir_path)

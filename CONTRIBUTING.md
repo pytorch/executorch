@@ -80,8 +80,8 @@ We use [`lintrunner`](https://pypi.org/project/lintrunner/) to help make sure th
 code follows our standards. Set it up with:
 
 ```
-pip install lintrunner==0.11.0
-pip install lintrunner-adapters==0.11.0
+pip install lintrunner==0.12.7
+pip install lintrunner-adapters==0.12.4
 lintrunner init
 ```
 
@@ -283,10 +283,15 @@ for basics.
    - If the reviewers have requests or questions, follow up with them.
    - The goal of the reviewer is to ensure that the code in the `main` branch of
      the repo is consistent, maintainable, and of high quality.
-1. Once approved, your reviewer will import the PR into Meta's internal system
-   and merge it from there.
-   - If the PR is approved and not merged within a few business days, please
-     comment on the PR to ask about its status.
+1. Once the PR has been approved,
+   - If you have the "write permission" in this repo, you can merge it yourself
+     by clicking the "Squash and merge" button once it is green and all CI
+     signals are passing.
+   - If you don't have "write permission" in this repo, the reviewer will take
+     care of the PR. The reviewer may import the PR into Meta's internal system
+     to validate it against internal CI.
+   - If the PR is approved but not merged within 5 business days, please comment
+     on the PR to ask about its status.
    - Note that if the `main` [CI](#continuous-integration) jobs are broken, we
      will only merge PRs that fix the broken jobs until all critical jobs are
      fixed.

@@ -44,7 +44,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         model = TestModel1()
         model.eval()
         example_inputs = model.get_example_inputs()
-        ep = torch.export.export(model, example_inputs)
+        ep = torch.export.export(model, example_inputs, strict=True)
         etpm = to_edge(ep).to_executorch(
             config=ExecutorchBackendConfig(
                 remove_view_copy=False,
@@ -59,7 +59,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         model = TestModel1()
         model.eval()
         example_inputs = model.get_example_inputs()
-        ep = torch.export.export(model, example_inputs)
+        ep = torch.export.export(model, example_inputs, strict=True)
 
         epm_remove = to_edge(ep)
         epm_no_remove = copy.deepcopy(
@@ -96,7 +96,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         model = TestModel1()
         model.eval()
         example_inputs = model.get_example_inputs()
-        ep = torch.export.export(model, example_inputs)
+        ep = torch.export.export(model, example_inputs, strict=True)
 
         etpm = to_edge(ep).to_executorch(
             config=ExecutorchBackendConfig(
@@ -196,24 +196,14 @@ class TestRemoveViewCopy(unittest.TestCase):
         instructions = plan.chains[0].instructions
         self.assertEqual(len(instructions), 7)
 
+        self.assertEqual(instructions[0].instr_args.op_index, 0)  # view @ idx2
+        self.assertEqual(instructions[1].instr_args.op_index, 0)  # view @ idx3
+        self.assertEqual(instructions[2].instr_args.op_index, 1)  # aten:mul @ idx6
+        self.assertEqual(instructions[3].instr_args.op_index, 0)  # view @ idx7
+        self.assertEqual(instructions[4].instr_args.op_index, 1)  # aten:mul @ idx9
         self.assertEqual(
-            instructions[0].instr_args.op_index, 0  # pyre-ignore
-        )  # view @ idx2
-        self.assertEqual(
-            instructions[1].instr_args.op_index, 0  # pyre-ignore
-        )  # view @ idx3
-        self.assertEqual(
-            instructions[2].instr_args.op_index, 1  # pyre-ignore
-        )  # aten:mul @ idx6
-        self.assertEqual(
-            instructions[3].instr_args.op_index, 0  # pyre-ignore
-        )  # view @ idx7
-        self.assertEqual(
-            instructions[4].instr_args.op_index, 1  # pyre-ignore
-        )  # aten:mul @ idx9
-        self.assertEqual(
-            instructions[5].instr_args.op_index, 2  # pyre-ignore
+            instructions[5].instr_args.op_index, 2
         )  # aten:view_copy @ idx11
         self.assertEqual(
-            instructions[6].instr_args.op_index, 2  # pyre-ignore
+            instructions[6].instr_args.op_index, 2
         )  # aten:view_copy @ idx11

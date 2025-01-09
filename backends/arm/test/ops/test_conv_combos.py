@@ -12,7 +12,7 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -193,7 +193,7 @@ class TestConvCombos(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
                 ),
             )
             .export()
@@ -217,7 +217,7 @@ class TestConvCombos(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
                 ),
             )
             .quantize()
@@ -238,7 +238,7 @@ class TestConvCombos(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.Tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -251,7 +251,10 @@ class TestConvCombos(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(list(module.edge_op_list))
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     ####################
     ## Conv + meandim ##
@@ -264,6 +267,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConv2dMeandim()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
+    @pytest.mark.corstone_fvp
     def test_conv_meandim_u55_BI(self):
         model = ComboConv2dMeandim()
         self._test_conv_combo_ethos_BI_pipeline(
@@ -272,6 +276,7 @@ class TestConvCombos(unittest.TestCase):
             model.get_inputs(),
         )
 
+    @pytest.mark.corstone_fvp
     def test_conv_meandim_u85_BI(self):
         model = ComboConv2dMeandim()
         self._test_conv_combo_ethos_BI_pipeline(
@@ -291,12 +296,14 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConvBatchnormRelu6()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
+    @pytest.mark.corstone_fvp
     def test_conv_batchnorm_relu6_u55_BI(self):
         model = ComboConvBatchnormRelu6()
         self._test_conv_combo_ethos_BI_pipeline(
             model, common.get_u55_compile_spec(), model.get_inputs()
         )
 
+    @pytest.mark.corstone_fvp
     def test_conv_batchnorm_relu_u85_BI(self):
         model = ComboConvBatchnormRelu6()
         self._test_conv_combo_ethos_BI_pipeline(
@@ -321,6 +328,7 @@ class TestConvCombos(unittest.TestCase):
         self._test_conv_combo_tosa_BI_pipeline(model, test_data)
 
     @parameterized.expand(ComboConvRelu6.test_data)
+    @pytest.mark.corstone_fvp
     def test_conv_relu6_u55_BI(self, test_data: torch.Tensor):
         model = ComboConvRelu6()
         test_data = (test_data,)
@@ -329,6 +337,7 @@ class TestConvCombos(unittest.TestCase):
         )
 
     @parameterized.expand(ComboConvRelu6.test_data)
+    @pytest.mark.corstone_fvp
     def test_conv_relu6_u85_BI(self, test_data: torch.Tensor):
         model = ComboConvRelu6()
         test_data = (test_data,)
@@ -344,11 +353,12 @@ class TestConvCombos(unittest.TestCase):
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
     # TODO: Investigate flakyness (MLTORCH-307)
-    @pytest.mark.flaky(reruns=3)
+    @unittest.skip(reason="Skiped due to flakyness (MLTORCH-307)")
     def test_block_bottleneck_residual_tosa_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
+    @pytest.mark.corstone_fvp
     def test_block_bottleneck_residual_u55_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_ethos_BI_pipeline(
@@ -357,6 +367,7 @@ class TestConvCombos(unittest.TestCase):
             model.get_inputs(),
         )
 
+    @pytest.mark.corstone_fvp
     def test_block_bottleneck_residual_u85_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_ethos_BI_pipeline(
@@ -381,6 +392,7 @@ class TestConvCombos(unittest.TestCase):
         self._test_conv_combo_tosa_BI_pipeline(model, test_data)
 
     @parameterized.expand(ComboConvAvgPool2d.test_data)
+    @pytest.mark.corstone_fvp
     def test_conv_avgpool2d_u55_BI(self, test_data: torch.Tensor):
         model = ComboConvAvgPool2d()
         test_data = (test_data,)
@@ -391,6 +403,7 @@ class TestConvCombos(unittest.TestCase):
         )
 
     @parameterized.expand(ComboConvAvgPool2d.test_data)
+    @pytest.mark.corstone_fvp
     def test_conv_avgpool2d_u85_BI(self, test_data: torch.Tensor):
         model = ComboConvAvgPool2d()
         test_data = (test_data,)

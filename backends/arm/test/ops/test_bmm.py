@@ -8,8 +8,10 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
@@ -22,8 +24,8 @@ class TestBMM(unittest.TestCase):
 
     class BMM(torch.nn.Module):
         test_parameters = [
-            (torch.rand(5, 3, 5), torch.rand(5, 5, 2)),
             (torch.rand(2, 1, 1), torch.rand(2, 1, 1)),
+            (torch.rand(5, 3, 5), torch.rand(5, 5, 2)),
             (torch.ones(1, 55, 3), torch.ones(1, 3, 44)),
             (10000 * torch.randn(10, 1, 10), torch.randn(10, 10, 5)),
             (-10 * torch.randn(2, 32, 64), 5 + 5 * torch.randn(2, 64, 32)),
@@ -33,7 +35,10 @@ class TestBMM(unittest.TestCase):
             return torch.bmm(x, y)
 
     class MatMul(torch.nn.Module):
-        test_parameters = [(torch.rand(2, 3, 5), torch.rand(2, 5, 2))]
+        test_parameters = [
+            (torch.rand(2, 3, 5), torch.rand(2, 5, 2)),
+            (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
+        ]
 
         def forward(self, x, y):
             return torch.matmul(x, y)
@@ -41,7 +46,7 @@ class TestBMM(unittest.TestCase):
     class BMMSingleInput(torch.nn.Module):
         test_parameters = [
             (torch.rand(20, 3, 3),),
-            (torch.ones(2, 128, 128),),
+            (torch.rand(2, 128, 128),),
             (10000 * torch.randn(4, 25, 25),),
             (5 + 5 * torch.randn(3, 64, 64),),
         ]
@@ -56,7 +61,7 @@ class TestBMM(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_not(["torch.ops.quantized_decomposed"])
@@ -76,7 +81,7 @@ class TestBMM(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -87,7 +92,7 @@ class TestBMM(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_bmm_ethosu_BI_pipeline(
@@ -96,7 +101,7 @@ class TestBMM(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.Tensor, ...],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -110,7 +115,10 @@ class TestBMM(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
     @parameterized.expand(BMM.test_parameters)
     def test_bmm_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
@@ -143,20 +151,43 @@ class TestBMM(unittest.TestCase):
         self._test_bmm_tosa_BI_pipeline(self.BMMSingleInput(), test_data)
 
     @parameterized.expand(BMM.test_parameters)
-    def test_bmm_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+    @pytest.mark.corstone_fvp
+    @unittest.expectedFailure
+    def test_bmm_u55_BI_xfails(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
-        self._test_bmm_tosa_BI_pipeline(self.BMM(), test_data)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMM(), common.get_u55_compile_spec(), test_data
+        )
+
+    @parameterized.expand(BMM.test_parameters[:1])
+    @pytest.mark.corstone_fvp
+    def test_bmm_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMM(), common.get_u85_compile_spec(), test_data
+        )
+
+    @parameterized.expand(BMM.test_parameters[1:])
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    def test_bmm_u85_BI_xfails(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
+        self._test_bmm_ethosu_BI_pipeline(
+            self.BMM(), common.get_u85_compile_spec(), test_data
+        )
 
     # Expected to fail with error: Warning, unsupported fusing of TOSA Rescale previous operator is of type: Memcpy
     @parameterized.expand(BMMSingleInput.test_parameters)
+    @pytest.mark.corstone_fvp
     @unittest.expectedFailure
-    def test_bmm_single_input_u55_BI(self, operand1: torch.Tensor):
+    def test_bmm_single_input_u55_BI_xfails(self, operand1: torch.Tensor):
         test_data = (operand1,)
         self._test_bmm_ethosu_BI_pipeline(
             self.BMMSingleInput(), common.get_u55_compile_spec(), test_data
         )
 
     @parameterized.expand(BMMSingleInput.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_bmm_single_input_u85_BI(self, operand1: torch.Tensor):
         test_data = (operand1,)
         self._test_bmm_ethosu_BI_pipeline(

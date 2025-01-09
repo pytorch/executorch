@@ -11,7 +11,7 @@ import logging
 import operator
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 
@@ -21,6 +21,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPac
 from tabulate import tabulate
 
 from torch.ao.quantization.quantize_pt2e import _QUANT_OPS as quant_ops
+from torch.utils._pytree import tree_flatten
 
 
 # Check if the model is quantized, by looking at the graph and finding quant/dequant ops
@@ -123,6 +124,49 @@ def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
     return freq
 
 
+# Return the output node of the graph
+def get_output_node(graph: torch.fx.Graph) -> torch.fx.Node:
+    assert graph is not None, "Cannot get output of an empty graph"
+    output_node = next(iter(reversed(graph.nodes)))
+    assert (
+        output_node and output_node.op == "output" and len(output_node.args) == 1
+    ), "Failed to find output node"
+    return output_node
+
+
+# Return true if the node is part of the flattened output
+def is_node_in_flattened_output(graph: torch.fx.Graph, node: torch.fx.Node) -> bool:
+    output_node = get_output_node(graph)
+    return node in tree_flatten(output_node.args[0])[0]
+
+
+# Return the shape of the incoming node.
+def get_shape(
+    graph_module: torch.fx.GraphModule, node: torch.fx.Node
+) -> Union[torch.Size, None]:
+    """
+    Return the shape of the tensor correspnding to node. If the node has a
+    tensor spec, return the shape from the metadata. If the node is a param,
+    return it shape. Otherwise return None.
+    """
+    try:
+        # Case 1. node is a scalar
+        if isinstance(node, (float, int, bool)):
+            return torch.Size([1])
+        # Case 2. node has TensorSpec metadata
+        fake_tensor = node.meta.get("val")
+        if fake_tensor is not None:
+            return fake_tensor.shape
+        # Case 3. node holds a param
+        if node.op == "get_attr":
+            attr_node = getattr(graph_module, node.target)
+            return attr_node.shape
+        # Default: return None
+        return None
+    except RuntimeError:
+        return None
+
+
 # Print the ops and how many times they occur multiple graph modules:
 # from export, from to_edge, and from final. Print the available
 # implementations for each op, and error out if the op is not supported.
@@ -162,7 +206,8 @@ def print_ops_info(
 
     # Print the final ops and their counts in a tabular format
     logging.info(
-        tabulate(
+        "\n"
+        + tabulate(
             sorted_ops_count,
             headers=[
                 "Final Operators                                    ",  # one character longer than the longest op name
@@ -188,14 +233,6 @@ def print_ops_info(
                 tablefmt="outline",
             )
         )
-
-
-def model_gm_has_SDPA(model_gm: torch.fx.GraphModule) -> bool:
-    for node in model_gm.graph.nodes:
-        if node.op == "call_function":
-            if node.target == torch.ops.aten.scaled_dot_product_attention.default:
-                return True
-    return False
 
 
 def save_pte_program(

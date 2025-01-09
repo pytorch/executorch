@@ -5,9 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
+import re
+import time
 import warnings
 from collections import OrderedDict
-from typing import Callable, Dict, FrozenSet, List, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
@@ -166,7 +168,6 @@ def qnn_capture_config():
 def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False,
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
 
@@ -338,7 +339,7 @@ def capture_program(
     inputs: Tuple[torch.Tensor],
     custom_pass_config: FrozenSet[str] = frozenset(),
 ) -> exir.ExirExportedProgram:
-    ep = torch.export.export(module, inputs)
+    ep = torch.export.export(module, inputs, strict=True)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
     # We choose call_operator by target in ConvertBinaryOpsWithScalar
     # because it is the same source_fn_stack for MultiheadAttention
@@ -552,7 +553,7 @@ def skip_annotation(
 
     fp_node_id_set = fp_node_id_set if fp_node_id_set is not None else set()
     fp_node_op_set = fp_node_op_set if fp_node_op_set is not None else set()
-    graph_module = torch.export.export(nn_module, sample_input).module()
+    graph_module = torch.export.export(nn_module, sample_input, strict=True).module()
     # define node support type
     capability_partitioner = CapabilityBasedPartitioner(
         graph_module,
@@ -648,7 +649,13 @@ def from_context_binary(  # noqa: C901
                 for v in outputs.values()
             )
 
-    def build_graph(inputs, outputs):
+    def build_graph(
+        inputs,
+        outputs,
+        qnn_in_order: Optional[List[int]] = None,
+        executorch_in_order: Optional[List[int]] = None,
+        executorch_out_order: Optional[List[int]] = None,
+    ):
         # custom op declaration
         inputs_str = "Tensor[] inputs"
         func_proto = f"{op_name}({inputs_str}) -> Any"
@@ -659,13 +666,39 @@ def from_context_binary(  # noqa: C901
 
         # model architecture mimicking context binary
         class Model(torch.nn.Module):
-            def forward(self, *inputs):
-                return getattr(
+            """
+            The args of forward() can be thought of as what executorch is accepting as input.
+            The getattr inside the forward() can be thought of as qnn context binary.
+            When we first pass in the input, we need to use the executorch's(nn.module) input order.
+            After we get into forward(), we then need to convert input order to qnn's input order.
+            Same as return, when qnn returns the value, we need to reorder them back to executorh's output order.
+            """
+
+            def __init__(self, qnn_in_order, executorch_out_order):
+                super().__init__()
+                self.qnn_in_order = qnn_in_order
+                self.executorch_out_order = executorch_out_order
+
+            def forward(self, *inputs):  # executorch
+                if self.qnn_in_order:
+                    inputs = tuple(inputs[i] for i in self.qnn_in_order)
+                ret = getattr(
                     getattr(torch.ops, OpContextLoader.namespace), op_name
                 ).default(inputs)
+                return (
+                    [ret[idx] for idx in self.executorch_out_order]
+                    if self.executorch_out_order
+                    else ret
+                )
 
-        model = Model()
-        prog = torch.export.export(model, tuple(inputs.values()))
+        inputs = (
+            tuple(tuple(inputs.values())[i] for i in executorch_in_order)
+            if executorch_in_order
+            else tuple(inputs.values())
+        )
+
+        model = Model(qnn_in_order, executorch_out_order)
+        prog = torch.export.export(model, inputs, strict=True)
         # bookkeeping for variables' life cycle
         return {
             "custom_op": custom_op,
@@ -708,6 +741,7 @@ def from_context_binary(  # noqa: C901
         for k, v in type_map.items():
             dtype_map.setdefault(v, k)
 
+    qnn_in_order, executorch_in_order, executorch_out_order = None, None, None
     if custom_info is not None:
         # since some context binaries might fail to open on host
         # if they are compiled with special flags:
@@ -715,6 +749,9 @@ def from_context_binary(  # noqa: C901
         # use custom information here instead
         inputs = build_tensor(custom_info["graph_inputs"], dtype_map)
         outputs = build_tensor(custom_info["graph_outputs"], dtype_map)
+        qnn_in_order = custom_info.get("qnn_in_order", None)
+        executorch_in_order = custom_info.get("executorch_in_order", None)
+        executorch_out_order = custom_info.get("executorch_out_order", None)
         graph_name = custom_info["graph_name"]
     else:
         # get context-binary io tensor info through qnn manager
@@ -729,15 +766,21 @@ def from_context_binary(  # noqa: C901
         inputs = build_tensor(qnn_mgr.GetGraphInputs(graph_name), dtype_map)
         outputs = build_tensor(qnn_mgr.GetGraphOutputs(graph_name), dtype_map)
         qnn_mgr.Destroy()
-
     # generate graph specific for loading context
-    bundle_prog = build_graph(inputs, outputs)
+    bundle_prog = build_graph(
+        inputs, outputs, qnn_in_order, executorch_in_order, executorch_out_order
+    )
     bundle_prog.update({"inputs": inputs, "outputs": outputs})
+
+    # TODO: to_edge() decorator alters the function call behavior, which
+    # requires "self" when calling. To work around this issue,
+    # temporarily remove the first parameter name.
     edge_prog_mgr = to_edge(
-        programs={graph_name: bundle_prog["exported_program"]},
+        {graph_name: bundle_prog["exported_program"]},
         # do not alter name for custom op
         compile_config=EdgeCompileConfig(_use_edge_ops=False),
     )
+
     # update meta with context binary
     for n in edge_prog_mgr._edge_programs[graph_name].graph.nodes:
         if n.op == "call_function" and OpContextLoader.namespace in str(n.target):
@@ -759,10 +802,20 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
 def generate_multi_graph_program(
     compiler_specs: List[CompileSpec],
     processed_bytes: List[bytes],
+    input_nodes_dict: List[torch.fx.Node] = None,
+    output_nodes_dict: List[torch.fx.Node] = None,
     backend_config: ExecutorchBackendConfig = None,
+    constant_methods: Optional[Dict[str, Any]] = None,
 ) -> ExecutorchProgramManager:
+
     # compile multiple graphs in qcir into single context binary
-    graph_inputs, graph_outputs = {}, {}
+    (
+        graph_inputs,
+        graph_outputs,
+        qnn_in_order,
+        executorch_in_order,
+        executorch_out_order,
+    ) = ({}, {}, {}, {}, {})
     qnn_mgr = PyQnnManagerAdaptor.QnnManager(
         generate_qnn_executorch_option(compiler_specs), processed_bytes
     )
@@ -773,6 +826,39 @@ def generate_multi_graph_program(
     for graph_name in graph_names:
         graph_inputs[graph_name] = qnn_mgr.GetGraphInputs(graph_name)
         graph_outputs[graph_name] = qnn_mgr.GetGraphOutputs(graph_name)
+
+    # We need to obtain the order of the IOs to correctly map QNN with nn.module
+    for graph_name in graph_names:
+        if input_nodes_dict:
+            # input
+            input_names = [node.name for node in input_nodes_dict[graph_name]]
+            qnn_input_names = [
+                wrapper.GetName() for wrapper in graph_inputs[graph_name]
+            ]
+            # The input of intermideate module including call_function node
+            # could not be reorder by node name
+            if len(input_names) == len(qnn_input_names):
+                input_order_list = []
+                for input_name in input_names:
+                    # e.g., input_0_tokens_0
+                    pattern = rf"^input_(\d+)_({input_name})_(\d+)$"
+                    for j in range(len(qnn_input_names)):
+                        if re.match(pattern, qnn_input_names[j]):
+                            input_order_list.append(j)
+                            break
+                assert len(input_order_list) == len(
+                    input_names
+                ), "Order list length is different from names"
+                executorch_in_order[graph_name] = input_order_list
+                qnn_in_order[graph_name] = sorted(
+                    range(len(input_order_list)), key=lambda k: input_order_list[k]
+                )
+        if output_nodes_dict:
+            # output
+            get_item_list = output_nodes_dict[graph_name][0].args[0]
+            output_order_list = [item.args[1] for item in get_item_list]
+            executorch_out_order[graph_name] = output_order_list
+
     qnn_mgr.Destroy()
 
     # build custom ops with different graph signatures
@@ -780,22 +866,26 @@ def generate_multi_graph_program(
     bundle_progs = [
         from_context_binary(
             ctx_path=binary_info,
-            op_name=f"loader_{graph_name}",
+            op_name=f"loader_{graph_name}_{int(time.time())}",
             soc_model=compiler_options.soc_info.soc_model,
             custom_info={
                 "graph_inputs": graph_inputs[graph_name],
                 "graph_outputs": graph_outputs[graph_name],
                 "graph_name": graph_name,
+                "qnn_in_order": qnn_in_order.get(graph_name, None),
+                "executorch_in_order": executorch_in_order.get(graph_name, None),
+                "executorch_out_order": executorch_out_order.get(graph_name, None),
             },
         )
         for graph_name in graph_names
     ]
     # leverage ExecutorchProgramManager for generating pte with multi-methods
     edge_prog_mgr = to_edge(
-        programs={
+        {
             graph_name: bundle_prog["exported_program"]
             for graph_name, bundle_prog in zip(graph_names, bundle_progs)
         },
+        constant_methods=constant_methods,
         # do not alter name for custom op
         compile_config=EdgeCompileConfig(_use_edge_ops=False),
     )
@@ -806,9 +896,102 @@ def generate_multi_graph_program(
                 n.meta[OpContextLoader.meta_ctx_bin] = binary_info
                 break
 
-    return edge_prog_mgr.to_backend(QnnPartitioner(compiler_specs)).to_executorch(
+    edge_prog_mgr = edge_prog_mgr.to_backend(QnnPartitioner(compiler_specs))
+    exec_prog = edge_prog_mgr.to_executorch(
         config=backend_config or ExecutorchBackendConfig()
     )
+    return exec_prog, bundle_progs
+
+
+def generate_composite_llama_program(
+    graph_names: List[str],
+    sample_inputs_list: List[Tuple[Any]],
+    lower_module_dict: Dict[str, List[LoweredBackendModule]],
+    call_delegate_node_name_dict: Dict[str, List[str]],
+    call_delegate_inputs_dict: Dict[str, List[Tuple[str, int | None]]],
+    outputs_dict: Dict[str, List[Tuple[str, int]]],
+    backend_config: ExecutorchBackendConfig = None,
+    constant_methods: Optional[Dict[str, Any]] = None,
+) -> ExecutorchProgramManager:
+    class CompositeLlamaModule(torch.nn.Module):
+        def __init__(
+            self,
+            lower_module_list,
+            call_delegate_node_name_list,
+            call_delegate_inputs_list,
+            outputs_list,
+        ) -> None:
+            super().__init__()
+            self.lower_module_list = lower_module_list
+            self.call_delegate_node_name_list = call_delegate_node_name_list
+            self.call_delegate_inputs_list = call_delegate_inputs_list
+            self.outputs_list = outputs_list
+
+        def reorder(
+            self,
+            call_delegate_inputs: List[Tuple[str, int | None]],
+            module_inputs: dict[str, torch.Tensor],
+            all_ret: dict[str, torch.Tensor],
+        ) -> Tuple[torch.Tensor]:
+            ret = []
+            for name, index in call_delegate_inputs:
+                if index is not None:
+                    # Get tensor from previous results
+                    ret.append(all_ret[name][index])
+                else:
+                    # Get tensor from the inputs of module
+                    ret.append(module_inputs[name])
+            return tuple(ret)
+
+        def forward(
+            self,
+            tokens: torch.Tensor,
+            atten_mask: torch.Tensor,
+            input_pos: Optional[torch.Tensor] = None,
+            *args,
+        ) -> Tuple[torch.Tensor]:
+            all_ret = {}
+            module_input_dict = {
+                "tokens": tokens,
+                "atten_mask": atten_mask,
+                "input_pos": input_pos,
+            }
+            for num, arg in enumerate(args):
+                module_input_dict[f"args_{num}"] = arg
+            for lower_module, call_delegate_node_name, call_delegate_inputs in zip(
+                self.lower_module_list,
+                self.call_delegate_node_name_list,
+                self.call_delegate_inputs_list,
+            ):
+                inp = self.reorder(call_delegate_inputs, module_input_dict, all_ret)
+                ret = lower_module(*inp)
+                all_ret[call_delegate_node_name] = ret
+            llama_outputs = []
+            for output_src_name, index in self.outputs_list:
+                llama_outputs.append(all_ret[output_src_name][index])
+            return tuple(llama_outputs)
+
+    progs_dict = {}
+    for graph_name, sample_inputs in zip(graph_names, sample_inputs_list):
+        composite_llama_module = CompositeLlamaModule(
+            lower_module_dict[graph_name],
+            call_delegate_node_name_dict[graph_name],
+            call_delegate_inputs_dict[graph_name],
+            outputs_dict[graph_name],
+        )
+        prog = torch.export.export(composite_llama_module, sample_inputs)
+        progs_dict[graph_name] = prog
+    # leverage ExecutorchProgramManager for generating pte with multi-methods
+    edge_prog_mgr = to_edge(
+        progs_dict,
+        constant_methods=constant_methods,
+        # do not alter name for custom op
+        compile_config=EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=False),
+    )
+    exec_prog = edge_prog_mgr.to_executorch(
+        config=backend_config or ExecutorchBackendConfig()
+    )
+    return exec_prog
 
 
 def generate_htp_compiler_spec(
@@ -967,6 +1150,7 @@ def get_soc_to_arch_map():
         "SM8550": HtpArch.V73,
         "SM8475": HtpArch.V69,
         "SM8450": HtpArch.V69,
+        "SA8295": HtpArch.V68,
     }
 
 
@@ -977,6 +1161,7 @@ def get_soc_to_chipset_map():
         "SM8550": QcomChipset.SM8550,
         "SM8475": QcomChipset.SM8475,
         "SM8450": QcomChipset.SM8450,
+        "SA8295": QcomChipset.SA8295,
     }
 
 

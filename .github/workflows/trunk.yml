@@ -131,7 +131,7 @@ jobs:
 
   test-arm-backend-delegation:
     name: test-arm-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -146,18 +146,19 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch
 
-        install_arm
+        .ci/scripts/setup-arm-baremetal-tools.sh
 
         # Increase number of files user can monitor to bypass buck failures.
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
         # Test ethos-u delegate examples with run.sh
-        PYTHON_EXECUTABLE=python bash examples/arm/run.sh examples/arm/ethos-u-scratch/
+        backends/arm/test/test_arm_baremetal.sh test_run_ethosu_fvp
+
 
   test-arm-reference-delegation:
     name: test-arm-reference-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -172,10 +173,10 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch
 
-        install_arm
+        .ci/scripts/setup-arm-baremetal-tools.sh
 
-        # Run arm unit tests
-        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test
+        # Run arm unit tests using the simulator
+        backends/arm/test/test_arm_baremetal.sh test_pytest_ethosu_fvp
 
   test-coreml-delegate:
     name: test-coreml-delegate
@@ -225,7 +226,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        mode: [portable, xnnpack+kv+custom, mps, coreml]
+        mode: [portable, xnnpack+kv+custom, mps, coreml, xnnpack+custom+quantize_kv]
         include:
           - dtype: bf16
             mode: portable
@@ -290,7 +291,7 @@ jobs:
   #       ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
 
   #       # run e2e (export, tokenizer and runner)
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh Release
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh
 
   test-qnn-model:
     name: test-qnn-model
@@ -351,16 +352,18 @@ jobs:
         done
 
   test-huggingface-transformers:
+    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     secrets: inherit
     strategy:
       matrix:
-        hf_model_repo: [google/gemma-2b]
+        hf_model_repo: [google/gemma-2-2b]
       fail-fast: false
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.12xlarge
+      runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -418,19 +421,10 @@ jobs:
         TOKENIZER_FILE=tokenizer.model
         TOKENIZER_BIN_FILE=tokenizer.bin
         ET_MODEL_NAME=et_model
-        # Fetch the file using a Python one-liner
-        DOWNLOADED_TOKENIZER_FILE_PATH=$(python -c "
-        from huggingface_hub import hf_hub_download
-        # Download the file from the Hugging Face Hub
-        downloaded_path = hf_hub_download(
-            repo_id='${{ matrix.hf_model_repo }}',
-            filename='${TOKENIZER_FILE}'
-        )
-        print(downloaded_path)
-        ")
-        if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH" ]; then
+        DOWNLOADED_TOKENIZER_FILE_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${{ matrix.hf_model_repo }}" --files "${TOKENIZER_FILE}")
+        if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH/$TOKENIZER_FILE" ]; then
             echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
-            python -m extension.llm.tokenizer.tokenizer -t $DOWNLOADED_TOKENIZER_FILE_PATH -o ./${TOKENIZER_BIN_FILE}
+            python -m extension.llm.tokenizer.tokenizer -t "$DOWNLOADED_TOKENIZER_FILE_PATH/$TOKENIZER_FILE" -o ./${TOKENIZER_BIN_FILE}
             ls ./tokenizer.bin
         else
             echo "Failed to download ${TOKENIZER_FILE} from ${{ matrix.hf_model_repo }}."
@@ -441,3 +435,39 @@ jobs:
 
         cmake-out/examples/models/llama/llama_main --model_path=${ET_MODEL_NAME}.pte --tokenizer_path=${TOKENIZER_BIN_FILE} --prompt="My name is"
         echo "::endgroup::"
+
+
+  test-llama-runner-qnn-linux:
+    name: test-llama-runner-qnn-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        dtype: [fp32]
+        pt2e_quantize: [qnn_16a16w, qnn_8a8w]
+        mode: [qnn]
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL="cmake"
+        DTYPE=${{ matrix.dtype }}
+        MODE=${{ matrix.mode }}
+        PT2E_QUANTIZE=${{ matrix.pt2e_quantize }}
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+
+        # Setup executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Install requirements for export_llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+        # Test llama2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"

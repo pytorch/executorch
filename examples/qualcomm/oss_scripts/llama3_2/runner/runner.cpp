@@ -13,13 +13,11 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
-#include <chrono>
 #include <ctime>
-#include <iostream>
-#include <memory>
 #include <sstream>
 
 using executorch::aten::Tensor;
@@ -42,30 +40,24 @@ std::string statsToJsonString(const Runner::Stats& stats);
 Runner::Runner(
     const std::vector<std::string>& models_path,
     const std::string& tokenizer_path,
-    const float temperature)
+    const float logits_scale,
+    const int32_t logits_offset,
+    const float temperature,
+    const int eval_mode)
     : n_bos_(1),
       n_eos_(1),
-      vocab_size_(QNN_LLAMA3_2_LOGITS),
-      max_seq_len_(QNN_LLAMA3_2_SEQLEN),
       tokenizer_path_(tokenizer_path),
+      logits_scale_(logits_scale),
+      logits_offset_(logits_offset),
       temperature_(temperature),
-      stats_({}) {
+      eval_mode_(static_cast<EvalMode>(eval_mode)) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
         models_path[i], Module::LoadMode::MmapUseMlockIgnoreErrors));
     ET_LOG(Info, "creating module: model_path=%s", models_path[i].c_str());
   }
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
-
-  tokenizer_ = example::get_tiktoken_for_llama();
-  Error err = tokenizer_->load(tokenizer_path_);
-  ET_CHECK_MSG(
-      err == Error::Ok, "failed to load tokenizer %s", tokenizer_path_.c_str());
-  eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
-  bos_id_ = tokenizer_->bos_tok();
-  eos_id_.insert(tokenizer_->eos_tok());
-  io_mem_ = std::make_unique<KVCachedMemory>(modules_);
-  ET_LOG(Info, "creating io_memory");
+  ET_LOG(Info, "eval mode=%d", eval_mode);
 }
 
 bool Runner::is_loaded() const {
@@ -80,9 +72,111 @@ Error Runner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
-  for (std::shared_ptr<Module>& module : modules_) {
-    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method("forward"));
+
+  switch (eval_mode_) {
+    case EvalMode::kPrefill:
+      prefill_forward_name_ = "forward";
+      method_names_.emplace_back(prefill_forward_name_);
+      break;
+    case EvalMode::kKVCached:
+      kv_forward_name_ = "forward";
+      method_names_.emplace_back(kv_forward_name_);
+      break;
+    case EvalMode::kHybrid:
+      prefill_forward_name_ = "prefill_forward";
+      kv_forward_name_ = "kv_forward";
+      method_names_.emplace_back(prefill_forward_name_);
+      method_names_.emplace_back(kv_forward_name_);
+      break;
+    case EvalMode::kUnsupported:
+      ET_CHECK_MSG(false, "Unsupported llama version");
+      break;
   }
+
+  for (std::shared_ptr<Module>& module : modules_) {
+    if (!prefill_forward_name_.empty()) {
+      ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(prefill_forward_name_));
+    }
+    if (!kv_forward_name_.empty()) {
+      ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kv_forward_name_));
+    }
+  }
+
+  if (!prefill_forward_name_.empty()) {
+    // Use input tokens length to retrieve prefill cache len
+    // Cache len equals to prefill model seq_len - 1
+    prefill_cache_len_ = get_methods_meta(prefill_forward_name_)[0]
+                             ->input_tensor_meta(0)
+                             ->sizes()[1];
+  }
+  if (!kv_forward_name_.empty()) {
+    // Use k cache length to retirieve kv cache len
+    // Cache len equals to kv model seq_len - 1
+    kv_cache_len_ =
+        get_methods_meta(kv_forward_name_)[0]->input_tensor_meta(3)->sizes()[2];
+  }
+
+  // retrieve any method meta, can be either prefill or kv
+  // Try avoid getMetadataHelper as it is time consuming.
+  auto method_meta = get_methods_meta(method_names_[0])[0].get();
+  int64_t num_layers = getMetadataHelper<int64_t>("get_n_layers", -1);
+  int64_t head_dim = method_meta.output_tensor_meta(1)->sizes()[1]; // k_cache
+  int64_t num_heads = (method_meta.num_outputs() - 1) / (num_layers * 2);
+  vocab_size_ = method_meta.output_tensor_meta(0)->sizes()[2]; // logit_tensor
+  ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
+
+  io_mem_ = std::make_unique<HybridMemory>(
+      modules_,
+      prefill_cache_len_,
+      kv_cache_len_,
+      vocab_size_,
+      num_layers,
+      head_dim,
+      num_heads,
+      eval_mode_,
+      prefill_forward_name_,
+      kv_forward_name_);
+  ET_LOG(Info, "creating io_memory");
+
+  // prepare io
+  io_mem_->init_io();
+  switch (eval_mode_) {
+    case EvalMode::kPrefill:
+      io_mem_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
+      break;
+    case EvalMode::kKVCached:
+      io_mem_->prepare_kv_io(get_methods_meta(kv_forward_name_));
+      break;
+    case EvalMode::kHybrid:
+      io_mem_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
+      io_mem_->prepare_kv_io(get_methods_meta(kv_forward_name_));
+      break;
+    case EvalMode::kUnsupported:
+      ET_CHECK_MSG(false, "unsupported mode");
+      break;
+  }
+
+  // llama3 tokenizer
+  tokenizer_ = example::get_tiktoken_for_llama();
+  Error err = tokenizer_->load(tokenizer_path_);
+  if (err == Error::InvalidArgument) {
+    ET_LOG(
+        Info,
+        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
+        tokenizer_path_.c_str());
+    tokenizer_.reset();
+    // llama2 tokenizer
+    tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
+    err = tokenizer_->load(tokenizer_path_);
+    ET_CHECK_MSG(
+        err == Error::Ok,
+        "failed to load tokenizer %s",
+        tokenizer_path_.c_str());
+  } else {
+    eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  }
+  bos_id_ = tokenizer_->bos_tok();
+  eos_id_.insert(tokenizer_->eos_tok());
 
   // create sampler
   sampler_ = std::make_unique<Sampler>(
@@ -91,130 +185,237 @@ Error Runner::load() {
       kTopp,
       static_cast<unsigned long long>(std::time(nullptr)));
 
-  // prepare io
-  auto methods_meta = get_methods_meta();
-  io_mem_->prepare_io(methods_meta);
   return Error::Ok;
 }
 
 template <typename T>
-int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
-  T* logits = logits_tensor.mutable_data_ptr<T>();
-
-  // Since the logits are for all tokens, get the last token probabilities
-  T* logits_last = logits;
-  return sampler_->sample(logits_last);
+T Runner::getMetadataHelper(std::string method_name, T default_val) {
+  T res = default_val;
+  if (modules_[0]->method_names()->count(method_name)) {
+    Result<std::vector<EValue>> outputs = modules_[0]->execute(method_name);
+    if (outputs.ok()) {
+      std::vector<EValue> outs = outputs.get();
+      if (outs.size() > 0) {
+        res = outs[0].to<T>();
+      }
+    }
+  } else {
+    ET_LOG(
+        Info,
+        "The model does not contain %s method, using default value %lld",
+        method_name.c_str(),
+        (long long)default_val);
+  }
+  return res;
 }
 
-void Runner::run_model_step(std::vector<std::vector<EValue>>& inputs) {
+int32_t Runner::logitsToToken(const Tensor& logits_tensor, int64_t pos) {
+  static std::vector<float> logits_f(vocab_size_);
+  const uint16_t* logits = logits_tensor.data_ptr<uint16_t>();
+  // Since the logits are for all tokens, get the last token probabilities
+  auto* logits_last = logits;
+
+  // offset to the meaningful logit we want.
+  if (logits_tensor.sizes().data()[1] > 1) {
+    auto vocab_size = logits_tensor.size(2);
+    logits_last += pos * vocab_size;
+  }
+
+  // dequantize
+  for (int i = 0; i < vocab_size_; i++) {
+    logits_f[i] = (logits_last[i] - logits_offset_) * logits_scale_;
+  }
+  return sampler_->sample(logits_f.data());
+}
+
+void Runner::run_model_step(
+    const std::string& method_name,
+    std::vector<std::vector<EValue>>& inputs) {
   for (size_t i = 0, num_modules = modules_.size(); i < num_modules; ++i) {
-    Result<std::vector<EValue>> outputs_res = modules_[i]->forward(inputs[i]);
+    Result<std::vector<EValue>> outputs_res =
+        modules_[i]->execute(method_name, inputs[i]);
     ET_CHECK_MSG(
         outputs_res.error() == Error::Ok, "shard %zu inference failed", i);
   }
 }
 
 Error Runner::generate(
+    int32_t seq_len,
     const std::string& prompt,
     const std::string& system_prompt,
-    int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-  ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
-
-  std::vector<std::vector<Tensor>> input_tensors, output_tensors;
-  std::vector<std::vector<EValue>> inputs;
+  std::unordered_map<std::string, std::vector<std::vector<Tensor>>>
+      input_tensors, output_tensors;
+  std::unordered_map<std::string, std::vector<std::vector<EValue>>> inputs;
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
-    for (int i = 0; i < modules_.size(); ++i) {
-      input_tensors.emplace_back(io_mem_->get_input_tensors(i));
-      output_tensors.emplace_back(io_mem_->get_output_tensors(i));
-      for (size_t j = 0; j < output_tensors[i].size(); ++j) {
-        ET_CHECK_MSG(
-            modules_[i]->set_output(output_tensors[i][j], j) == Error::Ok,
-            "failed to set output tensor for module %d's %zu'th output",
-            i,
-            j);
+    for (auto method_name : method_names_) {
+      for (int i = 0; i < modules_.size(); ++i) {
+        input_tensors[method_name].emplace_back(
+            io_mem_->get_input_tensors(i, method_name));
+        output_tensors[method_name].emplace_back(
+            io_mem_->get_output_tensors(i, method_name));
+        for (size_t j = 0; j < output_tensors[method_name][i].size(); ++j) {
+          ET_CHECK_MSG(
+              modules_[i]->set_output(
+                  method_name, output_tensors[method_name][i][j], j) ==
+                  Error::Ok,
+              "failed to set output tensor for module %d's %zu'th output",
+              i,
+              j);
+        }
+        inputs[method_name].emplace_back(std::vector<EValue>(
+            begin(input_tensors[method_name][i]),
+            end(input_tensors[method_name][i])));
       }
-      inputs.emplace_back(
-          std::vector<EValue>(begin(input_tensors[i]), end(input_tensors[i])));
     }
-    stats_.model_load_end_ms = time_in_ms();
   }
-
+  stats_.model_load_end_ms = time_in_ms();
   stats_.inference_start_ms = time_in_ms();
-  seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
 
-  std::string post_process_prompt;
+  ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
 
   if (!system_prompt.empty()) {
-    post_process_prompt.append(
-        "<|start_header_id|>system<|end_header_id|>\n\n");
-    post_process_prompt.append(system_prompt);
-    post_process_prompt.append("<|eot_id|>\n");
+    prompt_.append("<|start_header_id|>system<|end_header_id|>\n\n");
+    prompt_.append(system_prompt);
+    prompt_.append("<|eot_id|>");
   }
-  post_process_prompt.append("<|start_header_id|>user<|end_header_id|>\n\n");
-  post_process_prompt.append(prompt);
-  post_process_prompt.append(
-      "<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
-  // tokenizer_->encode will add <|begin_of_text|> token for us.
-  // For now, do token call back so the output format looks the same as
-  // llama3 model card.
-  token_callback("<|begin_of_text|>");
+  prompt_.append("<|start_header_id|>user<|end_header_id|>\n\n");
+  prompt_.append(prompt);
+  prompt_.append("<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n");
 
+  if (token_callback) {
+    token_callback("<|begin_of_text|>");
+  }
+
+  int max_seq_len = std::max(prefill_cache_len_, kv_cache_len_) + 1;
+  seq_len = (seq_len > 0 && seq_len <= max_seq_len) ? seq_len : max_seq_len;
   Result<std::vector<uint64_t>> encode_res =
-      tokenizer_->encode(post_process_prompt, n_bos_, 0);
+      tokenizer_->encode(prompt_, n_bos_, 0);
   ET_CHECK_OK_OR_RETURN_ERROR(
-      encode_res.error(),
-      "failed to encode prompt %s",
-      post_process_prompt.c_str());
+      encode_res.error(), "failed to encode prompt %s", prompt_.c_str());
 
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
-  ET_CHECK_MSG(num_prompt_tokens < max_seq_len_, "max seq length exceeded");
+  ET_CHECK_MSG(num_prompt_tokens < max_seq_len, "max seq length exceeded");
   ET_CHECK_MSG(
       num_prompt_tokens < seq_len,
       "sequence length exceeded - please increase the seq_len value");
+  if (eval_mode_ == EvalMode::kHybrid) {
+    int prefill_seq_len = get_methods_meta(prefill_forward_name_)[0]
+                              ->input_tensor_meta(0)
+                              ->sizes()[1] +
+        1;
+    ET_CHECK_MSG(
+        num_prompt_tokens < prefill_seq_len,
+        "For hybrid mode, please ensure prompt length(%d) is less than prefill's seq_len(%d)",
+        num_prompt_tokens,
+        prefill_seq_len);
+  }
 
   int64_t pos = 0, prev_token, cur_token = prompt_tokens[0];
-  KVCachedMemory::IO* ptr =
-      static_cast<KVCachedMemory::IO*>(io_mem_->get_mutable_ptr());
-  ptr->input_tok = static_cast<int32_t>(cur_token);
-  ptr->attention_mask[max_seq_len_ - 1] = 0;
+  HybridMemory::IO* ptr =
+      static_cast<HybridMemory::IO*>(io_mem_->get_mutable_ptr());
 
-  std::vector<long long> postTime;
-  while (pos < seq_len - 1) {
-    // inference
-    run_model_step(inputs);
-    Tensor& logits_tensor = output_tensors.back()[0];
-
-    if (pos == num_prompt_tokens) {
-      stats_.first_token_ms = time_in_ms();
-    } else if (pos == num_prompt_tokens - 1) {
-      stats_.prompt_eval_end_ms = time_in_ms();
+  auto prefill_execute = [&](const std::string& method_name) {
+    for (int i = 0; i < num_prompt_tokens; i++) {
+      ptr->prefill_input_toks[i] = static_cast<int32_t>(prompt_tokens[i]);
     }
-
-    long sample_start_time_ms = time_in_ms();
-    prev_token = cur_token;
-    cur_token = logitsToToken<float>(logits_tensor);
-    stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
-
-    if (pos < num_prompt_tokens - 1) {
-      cur_token = prompt_tokens[pos + 1];
-    }
-    io_mem_->update_io(cur_token, ++pos, output_tensors);
-    auto piece_res = tokenizer_->decode(prev_token, cur_token);
-    ET_CHECK(piece_res.ok());
-
     if (token_callback) {
-      token_callback(piece_res.get().c_str());
+      token_callback(prompt_);
     }
 
-    if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
-      ET_LOG(Info, "\nReached to the end of generation");
-      break;
+    pos = num_prompt_tokens - 1;
+    cur_token = prompt_tokens[pos];
+    while (pos < seq_len - 1) {
+      // inference
+      run_model_step(method_name, inputs[method_name]);
+      Tensor& logits_tensor = output_tensors[method_name].back()[0];
+      prev_token = cur_token;
+      long sample_start_time_ms = time_in_ms();
+      cur_token = logitsToToken(logits_tensor, pos);
+      stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
+
+      io_mem_->update_prefill_io(cur_token, ++pos, output_tensors[method_name]);
+      auto piece_res = tokenizer_->decode(prev_token, cur_token);
+      ET_CHECK(piece_res.ok());
+      if (token_callback) {
+        token_callback(piece_res.get().c_str());
+      }
+
+      if (pos == num_prompt_tokens) {
+        stats_.first_token_ms = time_in_ms();
+        stats_.prompt_eval_end_ms = time_in_ms();
+      }
+
+      if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
+        ET_LOG(Info, "\nReached to the end of generation");
+        break;
+      }
+      // prefill model inferences once for prompt in the hybrid mode
+      if (eval_mode_ == EvalMode::kHybrid) {
+        break;
+      }
     }
+  };
+
+  auto kv_execute = [&](const std::string& method_name) {
+    ptr->input_tok = static_cast<int32_t>(cur_token);
+    ptr->kv_attention_mask[kv_cache_len_] = 65535;
+    while (pos < seq_len - 1) {
+      // inference
+      run_model_step(method_name, inputs[method_name]);
+      Tensor& logits_tensor = output_tensors[method_name].back()[0];
+
+      // hybrid mode will check these stats_ at prefill(prefill)
+      if (eval_mode_ == EvalMode::kKVCached) {
+        if (pos == num_prompt_tokens) {
+          stats_.first_token_ms = time_in_ms();
+        } else if (pos == num_prompt_tokens - 1) {
+          stats_.prompt_eval_end_ms = time_in_ms();
+        }
+      }
+      prev_token = cur_token;
+      long sample_start_time_ms = time_in_ms();
+      cur_token = logitsToToken(logits_tensor, pos);
+      stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
+
+      if (pos < num_prompt_tokens - 1) {
+        cur_token = prompt_tokens[pos + 1];
+      }
+      io_mem_->update_kv_io(cur_token, ++pos, output_tensors[method_name]);
+      auto piece_res = tokenizer_->decode(prev_token, cur_token);
+      ET_CHECK(piece_res.ok());
+
+      if (token_callback) {
+        token_callback(piece_res.get().c_str());
+      }
+
+      if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
+        ET_LOG(Info, "\nReached to the end of generation");
+        break;
+      }
+    }
+  };
+
+  switch (eval_mode_) {
+    case EvalMode::kPrefill:
+      prefill_execute(prefill_forward_name_);
+      break;
+    case EvalMode::kKVCached:
+      kv_execute(kv_forward_name_);
+      break;
+    case EvalMode::kHybrid:
+      prefill_execute(prefill_forward_name_);
+      io_mem_->update_prefill_to_kv_io(
+          cur_token, pos, output_tensors[kv_forward_name_]);
+      kv_execute(kv_forward_name_);
+      break;
+    default:
+      ET_CHECK_MSG(false, "Unsupported eval mode");
+      break;
   }
   stats_.inference_end_ms = time_in_ms();
   if (pos == seq_len) {
@@ -287,7 +488,7 @@ void printReport(const Runner::Stats& stats) {
   ET_LOG(
       Info,
       "\tSampling time over %" PRIu64 " tokens:\t%f (seconds)",
-      stats.num_prompt_tokens + stats.num_generated_tokens,
+      stats.num_generated_tokens,
       (double)stats.aggregate_sampling_time_ms /
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
 }
@@ -309,11 +510,12 @@ std::string statsToJsonString(const Runner::Stats& stats) {
 }
 } // namespace
 
-std::vector<Result<MethodMeta>> Runner::get_methods_meta() {
+std::vector<Result<MethodMeta>> Runner::get_methods_meta(
+    std::string& method_name) {
   std::vector<Result<MethodMeta>> methods_meta;
   methods_meta.reserve(modules_.size());
   for (std::shared_ptr<Module>& module : modules_) {
-    methods_meta.emplace_back(module->method_meta("forward"));
+    methods_meta.emplace_back(module->method_meta(method_name));
   }
   return methods_meta;
 }

@@ -35,6 +35,18 @@ class TestSum(unittest.TestCase):
             ((torch.rand(1, 2, 8, 8), [2, 3, 0], True),),
         ]
 
+        test_parameters_u55: list[Tuple[exampledata_t]] = [
+            ((torch.rand(10), 0, True),),
+            ((torch.rand(10, 10), 1, False),),
+            ((torch.rand(1, 2, 3, 4), 3, True),),
+        ]
+
+        test_parameters_u55_xfails: list[Tuple[exampledata_t]] = [
+            ((torch.rand(10, 10, 10), [-3, 1], True),),
+            ((torch.rand(2, 1, 5, 8), 1, False),),
+            ((torch.rand(1, 2, 8, 8), [2, 3, 0], True),),
+        ]
+
         def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
             return x.sum(dim=dim, keepdim=keepdim)
 
@@ -49,7 +61,7 @@ class TestSum(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.sum.dim_IntList": 1})
@@ -68,7 +80,7 @@ class TestSum(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -112,8 +124,18 @@ class TestSum(unittest.TestCase):
     def test_sum_tosa_BI(self, test_data: tuple[exampledata_t]):
         self._test_sum_tosa_BI_pipeline(self.Sum(), test_data)
 
-    @parameterized.expand(Sum.test_parameters)
+    @parameterized.expand(Sum.test_parameters_u55)
     def test_sum_u55_BI(self, test_data: tuple[exampledata_t]):
+        self._test_sum_ethosu_BI_pipeline(
+            self.Sum(),
+            test_data,
+            common.get_u55_compile_spec(permute_memory_to_nhwc=False),
+        )
+
+    # Expected to fail as this is not supported on u55.
+    @parameterized.expand(Sum.test_parameters_u55_xfails)
+    @unittest.expectedFailure
+    def test_sum_u55_BI_xfails(self, test_data: tuple[exampledata_t]):
         self._test_sum_ethosu_BI_pipeline(
             self.Sum(),
             test_data,

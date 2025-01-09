@@ -7,19 +7,18 @@
  */
 
 #pragma once
-
+#include <executorch/runtime/kernel/kernel_includes.h>
 #include <inttypes.h>
 #include <stddef.h>
 #include <xa_type_def.h>
 /* For NNLIB APIs */
 #include "xa_nnlib_kernels_api.h"
 
-#include <executorch/runtime/kernel/kernel_includes.h>
-
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::Result;
 
 /* Potential NNLIB function/APIs */
+
 extern "C" WORD32 xa_nn_broadcast_32_32(
     WORD32* __restrict__ p_out,
     const int* const out_shape,
@@ -126,9 +125,9 @@ extern "C" WORD32 xa_nn_elm_mul_broadcast_4D_f32xf32_f32(
     const WORD32* const p_inp2_shape);
 
 extern "C" void xa_nn_elm_pow_f32(
-    FLOAT32* restrict z,
-    const FLOAT32* restrict x,
-    const FLOAT32* restrict y,
+    FLOAT32* __restrict__ z,
+    const FLOAT32* __restrict__ x,
+    const FLOAT32* __restrict__ y,
     WORD32 N);
 
 extern "C" WORD32 xa_nn_elm_remainder_f32xf32_f32(

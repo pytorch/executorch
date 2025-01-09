@@ -11,10 +11,15 @@ import numpy as np
 import serializer.tosa_serializer as ts
 import torch
 import torch.fx
+
+# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+)
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
-    get_quant_arg_upstream,
+    dq_op,
     get_quantized_node_output_dtype,
     is_node_quantized,
 )
@@ -39,9 +44,9 @@ def process_call_function(
     # Convert output (this node itself)
     output = TosaArg(node)
 
-    is_quant_node = is_node_quantized(node)
-    if is_quant_node:
-        output_dtype = map_dtype(get_quantized_node_output_dtype(node))
+    is_dq_node = node.target == dq_op
+    if is_dq_node:
+        output_dtype = ts.DType.INT8
     else:
         output_dtype = output.dtype
     tosa_graph.currRegion.currBasicBlock.addTensor(
@@ -59,7 +64,6 @@ def process_call_function(
             tosa_graph,
             inputs,
             output,
-            is_quant_node,
         )
     else:
         raise RuntimeError(f"Unknown operator {node.target} for TOSA : {tosa_spec}")
@@ -110,8 +114,12 @@ def process_quantized_bias(
         _,
     ) = consumer_node.all_input_nodes
 
-    input_node_scale = get_quant_arg_upstream(input_node).scale
-    weight_node_scale = get_quant_arg_upstream(weight_node).scale
+    input_qargs = get_input_qparams(  # pyre-ignore[16]: Module `executorch.backends.arm` has no attribute `_passes`.
+        consumer_node
+    )
+
+    input_node_scale = input_qargs[0].scale
+    weight_node_scale = input_qargs[1].scale
     bias_values_quantized = (
         (parameter_values / (input_node_scale * weight_node_scale))
         .round()

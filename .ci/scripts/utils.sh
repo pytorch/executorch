@@ -16,6 +16,10 @@ retry () {
     "$@" || (sleep 30 && reset_buck && "$@") || (sleep 60 && reset_buck && "$@")
 }
 
+clean_executorch_install_folders() {
+  ./install_requirements.sh --clean
+}
+
 install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
@@ -55,17 +59,6 @@ install_flatc_from_source() {
   popd || return
 }
 
-install_arm() {
-  # NB: This function could be used to install Arm dependencies
-  # Setup arm example environment (including TOSA tools)
-  git config --global user.email "github_executorch@arm.com"
-  git config --global user.name "Github Executorch"
-  bash examples/arm/setup.sh --i-agree-to-the-contained-eula
-
-  # Test tosa_reference flow
-  source examples/arm/ethos-u-scratch/setup_path.sh
-}
-
 build_executorch_runner_buck2() {
   # Build executorch runtime with retry as this step is flaky on macos CI
   retry buck2 build //examples/portable/executor_runner:executor_runner
@@ -74,7 +67,8 @@ build_executorch_runner_buck2() {
 build_executorch_runner_cmake() {
   CMAKE_OUTPUT_DIR=cmake-out
   # Build executorch runtime using cmake
-  rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
+  clean_executorch_install_folders
+  mkdir "${CMAKE_OUTPUT_DIR}"
 
   pushd "${CMAKE_OUTPUT_DIR}" || return
   # This command uses buck2 to gather source files and buck2 could crash flakily
@@ -103,7 +97,7 @@ build_executorch_runner() {
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a and libportable_kernels.a"
-  rm -rf cmake-out
+  clean_executorch_install_folders
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \

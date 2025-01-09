@@ -296,6 +296,12 @@ utils::uvec3 create_conv2d_global_wg_size(
         utils::div_up(image_extents[0u], 2u),
         utils::div_up(image_extents[1u], 2u),
         image_extents[2u]};
+  } else if (method == Conv2dMethod::Depthwise) {
+    const utils::uvec3 image_extents = graph.logical_limits_of(out);
+    return {
+        utils::div_up(image_extents[0u], 1u),
+        utils::div_up(image_extents[1u], 2u),
+        image_extents[2u]};
   } else {
     return graph.create_global_wg_size(out);
   }
@@ -370,11 +376,17 @@ void add_conv2d_node(
       weight_data,
       clamp_out);
 
+  utils::uvec3 wg_size = create_conv2d_global_wg_size(graph, method, out);
+
+  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
+    wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
+  }
+
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
-      create_conv2d_global_wg_size(graph, method, out),
-      graph.create_local_wg_size(out),
+      wg_size,
+      graph.create_local_wg_size(wg_size),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
        {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
@@ -407,7 +419,7 @@ void add_conv1d_node(
     const ValueRef out,
     const bool clamp_out) {
   ValueRef arg_weight = prepack_standard(
-      graph, weight, graph.storage_type_of(out), utils::kWidthPacked);
+      graph, weight, graph.storage_type_of(out), utils::kChannelsPacked);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,

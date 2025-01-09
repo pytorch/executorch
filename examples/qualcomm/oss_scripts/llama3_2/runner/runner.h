@@ -29,7 +29,10 @@ class Runner {
   explicit Runner(
       const std::vector<std::string>& models_path,
       const std::string& tokenizer_path,
-      const float temperature);
+      const float logits_scale,
+      const int32_t logits_offset,
+      const float temperature,
+      const int eval_mode);
 
   struct Stats {
     // Scaling factor for timestamps - in this case, we use ms.
@@ -60,34 +63,47 @@ class Runner {
   bool is_loaded() const;
   executorch::runtime::Error load();
   executorch::runtime::Error generate(
+      int32_t seq_len,
       const std::string& prompt,
       const std::string& system_prompt,
-      int32_t seq_len,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
   std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
-  get_methods_meta();
+  get_methods_meta(std::string& method_name);
 
  private:
   template <typename T>
-  int32_t logitsToToken(const executorch::aten::Tensor& logits_tensor);
+  T getMetadataHelper(std::string method_name, T default_val);
+  int32_t logitsToToken(
+      const executorch::aten::Tensor& logits_tensor,
+      int64_t pos);
   void run_model_step(
+      const std::string& method_name,
       std::vector<std::vector<executorch::runtime::EValue>>& inputs);
+  std::string prompt_;
+
   // metadata
+  int32_t prefill_cache_len_{0};
+  int32_t kv_cache_len_{0};
+  int32_t vocab_size_;
   int32_t bos_id_;
   std::unordered_set<uint64_t> eos_id_;
   const int32_t n_bos_;
   const int32_t n_eos_;
-  const int32_t vocab_size_;
-  const int32_t max_seq_len_;
   std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
   std::string tokenizer_path_;
+  float logits_scale_;
+  int32_t logits_offset_;
   float temperature_;
   std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
   Stats stats_;
   std::unique_ptr<Memory> io_mem_;
+  EvalMode eval_mode_;
+  std::string prefill_forward_name_;
+  std::string kv_forward_name_;
+  std::vector<std::string> method_names_;
 };
 
 } // namespace example

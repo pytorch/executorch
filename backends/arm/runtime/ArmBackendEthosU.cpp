@@ -15,6 +15,39 @@
 
 #include <ethosu_driver.h>
 
+#if defined(ET_EVENT_TRACER_ENABLED)
+#include <executorch/runtime/core/event_tracer.h>
+#include <executorch/runtime/core/event_tracer_hooks.h>
+using executorch::runtime::EventTracer;
+using executorch::runtime::EventTracerEntry;
+
+class EventTraceScope {
+ public:
+  EventTraceScope(EventTracer* event_tracer_, const char* name) {
+    event_tracer = event_tracer_;
+    event_tracer_entry_scope = event_tracer->start_profiling(name);
+  }
+  ~EventTraceScope() {
+    event_tracer->end_profiling(event_tracer_entry_scope);
+  }
+
+ private:
+  EventTracer* event_tracer;
+  EventTracerEntry event_tracer_entry_scope;
+};
+#define EXECUTORCH_PROF_SCOPE(EVENTTRACER, NAME) \
+  EventTraceScope event_tracer_scope = EventTraceScope(EVENTTRACER, NAME)
+#define EXECUTORCH_PROF_START(EVENTTRACER, SCOPE, NAME) \
+  SCOPE = EVENTTRACER->start_profiling(NAME)
+#define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE) \
+  EVENTTRACER->end_profiling(SCOPE)
+
+#else
+#define EXECUTORCH_PROF_SCOPE(EVENTTRACER, NAME)
+#define EXECUTORCH_PROF_START(EVENTTRACER, SCOPE, NAME)
+#define EXECUTORCH_PROF_END(EVENTTRACER, SCOPE)
+#endif
+
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -109,20 +142,38 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
       EValue** args) const override {
+#if defined(ET_EVENT_TRACER_ENABLED)
+    EventTracer* event_tracer = context.event_tracer();
+    EventTracerEntry event_tracer_local_scope;
+#endif
+
+    EXECUTORCH_PROF_SCOPE(event_tracer, "ArmBackend::execute()");
+    ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
+
     ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
     VelaHandles handles;
 
-    ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
     // Command stream - we know at this point it's aligned
+    EXECUTORCH_PROF_START(
+        event_tracer,
+        event_tracer_local_scope,
+        "+ArmBackend::execute()processed_data");
     char* data = (char*)execution_handle->processed->data();
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
+
     ET_LOG(Debug, "ArmBackend::execute %p", data);
 
+    EXECUTORCH_PROF_START(
+        event_tracer,
+        event_tracer_local_scope,
+        "+ArmBackend::execute()vela_bin_read()");
     // Read key sections from the vela_bin_stream
     if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
         false) {
       ET_LOG(Error, "ArmBackend::vela_read: error, invalid binary layout");
       return Error::InvalidProgram;
     }
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
     ET_LOG(
         Debug,
@@ -138,6 +189,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
     //                     or DRAM output for compatible data layouts.
     for (int i = 0; i < handles.inputs->count; i++) {
+      auto tensor_count = 1, io_count = 1;
       auto tensor_in = args[i]->toTensor();
       char* scratch_addr = handles.scratch_data + handles.inputs->io[i].offset;
 
@@ -185,6 +237,9 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
 
       // Select a compatible copy routine
       if (both_char and permuted_input_shape) {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer,
+            "+ArmBackend::execute()handles.input.permute_CHW_to_HWC()");
         // permuted byte copy CHW to HWC
         permute_CHW_to_HWC(
             tensor_in.mutable_data_ptr<char>(),
@@ -193,6 +248,8 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             tensor_in.size(2),
             tensor_in.size(3));
       } else if (both_char or both_int) {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer, "+ArmBackend::execute()handles.input.memcpy()");
         // Sizes match and elt size matches so memcpy
         memcpy(
             scratch_addr,
@@ -201,6 +258,19 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       } else {
         ET_LOG(Error, "No matching input copy routine");
         return Error::InvalidProgram;
+      }
+      if (!permuted_input_shape) {
+        calculate_dimensions(
+            tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
+        if (tensor_count != io_count) {
+          ET_LOG(Error, "Input tensor sizes do not match");
+          ET_LOG(
+              Error,
+              "Program expects %d elements but got %d",
+              io_count,
+              tensor_count);
+          return Error::InvalidProgram;
+        }
       }
     }
 
@@ -220,7 +290,10 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         (uint64_t)handles.weight_data, (uint64_t)handles.scratch_data};
     size_t bases_size[2] = {
         handles.weight_data_size, handles.scratch_data_size};
-    int result = ethosu_invoke_v3(
+    int result = 0;
+    EXECUTORCH_PROF_START(
+        event_tracer, event_tracer_local_scope, "+ArmBackend::execute()NPU");
+    result = ethosu_invoke_v3(
         driver.get(),
         (void*)handles.cmd_data,
         handles.cmd_data_size,
@@ -228,6 +301,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         bases_size,
         2, /* fixed array of pointers to binary interface*/
         nullptr);
+    EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
     if (result != 0) {
       ET_LOG(
@@ -236,14 +310,24 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
           result);
       return Error::InvalidProgram;
     }
-
+    int tensor_dim = 0, io_dim = 0;
     // Write outputs from scratch into EValue pointers
     for (int i = 0; i < handles.outputs->count; i++) {
+      int tensor_count = 1, io_count = 1;
       const char* output_addr =
           handles.scratch_data + handles.outputs->io[i].offset;
       // Process input EValue into scratch
       // Outputs are in the index immediately after inputs
       auto tensor_out = args[handles.inputs->count + i]->toTensor();
+
+      calculate_dimensions(
+          tensor_out, &handles.outputs->io[i], &tensor_count, &io_count);
+
+      // At times the topological order of the outputs may change.
+      // Lets instead ensure that the sum of dimensions match.
+      tensor_dim = tensor_dim + tensor_count;
+      io_dim = io_dim + io_count;
+
       bool permuted_output_shape;
       ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
           i,
@@ -253,6 +337,10 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
           &permuted_output_shape));
       if (tensor_out.scalar_type() == ScalarType::Char and
           permuted_output_shape) {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer,
+            "+ArmBackend::execute()handles.output.permute_HWC_to_CHW()");
+
         char* output_address = (char*)output_addr;
         permute_HWC_to_CHW(
             output_address,
@@ -261,6 +349,8 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             tensor_out.size(2),
             tensor_out.size(3));
       } else {
+        EXECUTORCH_PROF_SCOPE(
+            event_tracer, "+ArmBackend::execute()handles.output.move()");
         for (int j = 0; j < tensor_out.numel(); j++) {
           if (tensor_out.scalar_type() == ScalarType::Char) {
             char* output_address = (char*)output_addr;
@@ -272,6 +362,12 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         }
       }
     }
+    if (tensor_dim != io_dim) {
+      ET_LOG(Error, "Total output tensor sizes do not match");
+      ET_LOG(
+          Error, "Program expects size of %d but got %d", tensor_dim, io_dim);
+      return Error::InvalidProgram;
+    }
     return Error::Ok;
   }
 
@@ -280,6 +376,21 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
   }
 
  private:
+  void calculate_dimensions(
+      const executorch::aten::Tensor tensor,
+      VelaIO* io,
+      int* tensor_count,
+      int* io_count) const {
+    for (int i = 0; i < tensor.dim(); i++) {
+      *tensor_count = *tensor_count * tensor.size(i);
+    }
+
+    // The VelaIO type has a shape of fixed size 4
+    for (int i = 0; i < 4; i++) {
+      *io_count = *io_count * io->shape[i];
+    }
+  }
+
   Error check_requires_permute(
       int index,
       const executorch::aten::Tensor tensor,
@@ -287,6 +398,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       bool permuted_io_flag,
       bool* is_permuted) const {
     bool permuted_shape = false;
+
     if (tensor.dim() == 4) {
       // special case for NHWC workaround in AOT; as the compilation has
       // permuted to channel last in an undetectable way, we assume here
@@ -301,30 +413,6 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(
             Error,
             "Permute compile flag and permuted input/output don't agree");
-        return Error::InvalidProgram;
-      }
-    }
-    if (!permuted_shape) {
-      // Check the number of elements in each tensor match
-      int tensor_count = 1;
-      int io_count = 1;
-
-      for (int i = 0; i < tensor.dim(); i++) {
-        tensor_count = tensor_count * tensor.size(i);
-      }
-
-      // The VelaIO type has a shape of fixed size 4
-      for (int i = 0; i < 4; i++) {
-        io_count = io_count * io->shape[i];
-      }
-
-      if (tensor_count != io_count) {
-        ET_LOG(Error, "Input tensor sizes do not match");
-        ET_LOG(
-            Error,
-            "Program expects %d elements but got %d",
-            io_count,
-            tensor_count);
         return Error::InvalidProgram;
       }
     }

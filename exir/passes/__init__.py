@@ -302,7 +302,6 @@ def make_alloc_node(
                     "Memory allocator node needs FakeTensor val or TensorMetadata to proceed"
                 )
 
-    # pyre-fixme[6]
     alloc = graph_module.graph.call_function(memory.alloc, (alloc_spec,))
     alloc.meta["val"] = val
     alloc.meta["tensor_meta"] = tensor_meta
@@ -372,6 +371,8 @@ class ToOutVarPass(PassBase):
                 else:
                     out_var_target, out_args_names = to_out_variant(target)
             except RuntimeError as e:
+                # pyre-fixme[16]: `GraphModule` has no attribute
+                #  `encounter_to_out_var_failure`.
                 graph_module.encounter_to_out_var_failure = True
                 logging.info(
                     f"Failed converting '{target}' to its out variant with error: '{e}'"
