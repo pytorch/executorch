@@ -404,10 +404,10 @@ Error Runner::generate(
         token_callback(piece_res.get().c_str());
       }
 
-      if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
-        ET_LOG(Info, "\nReached to the end of generation");
-        break;
-      }
+      // if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
+      //   ET_LOG(Info, "\nReached to the end of generation");
+      //   break;
+      // }
     }
   };
 

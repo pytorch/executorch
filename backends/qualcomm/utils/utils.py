@@ -823,6 +823,7 @@ def generate_multi_graph_program(
     )
     assert qnn_mgr.Init().value == 0, "failed to load processed bytes"
     binary_info = bytes(qnn_mgr.Compile())
+    print("Checking the size of QNN binary info: ", len(binary_info))
     assert len(binary_info) != 0, "failed to generate QNN context binary"
     graph_names = qnn_mgr.GetGraphNames()
     for graph_name in graph_names:

@@ -1682,10 +1682,7 @@ class TestEmit(unittest.TestCase):
         ]
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
-<<<<<<< HEAD
 
-=======
->>>>>>> c766f0dc0 (Apply calibration patch and deduplicate delegate cache patch)
     def test_delegate_deduplicate(self) -> None:
         class SharedModule(torch.nn.Module):
             def __init__(self):
@@ -1695,10 +1692,6 @@ class TestEmit(unittest.TestCase):
             def forward(self, x):
                 return self.linear(x)
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c766f0dc0 (Apply calibration patch and deduplicate delegate cache patch)
         class Module1(torch.nn.Module):
             def __init__(self, shared_module):
                 super().__init__()
@@ -1707,10 +1700,6 @@ class TestEmit(unittest.TestCase):
             def forward(self, x):
                 return self.shared_module(x)
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c766f0dc0 (Apply calibration patch and deduplicate delegate cache patch)
         class Module2(torch.nn.Module):
             def __init__(self, shared_module):
                 super().__init__()
