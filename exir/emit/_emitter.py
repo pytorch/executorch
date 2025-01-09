@@ -1657,8 +1657,7 @@ class _TopLevelEmitter(_Emitter):
                 spec.storage = real_tensor.untyped_storage()
 
             # User inputs and mutable buffers are not constants, other buffers or parameters are.
-            if initialize_buffer:
-                assert is_mutable_buffer
+            if initialize_buffer and is_mutable_buffer:
                 spec.const = True
             else:
                 spec.const = not (is_user_input or is_mutable_buffer)
