@@ -53,7 +53,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
-      upload-artifact: ios-apps
+      upload-artifact: ios-demo-app
       script: |
         set -eux
 
@@ -86,7 +86,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           # The name here needs to match the name of the upload-artifact parameter
-          name: ios-apps
+          name: ios-demo-app
           path: ${{ runner.temp }}/artifacts/
 
       - name: Verify the artifacts
@@ -291,7 +291,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      upload-artifact: ios-apps
+      upload-artifact: ios-benchmark-app
       secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
       timeout: 90
       script: |
