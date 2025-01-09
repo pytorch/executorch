@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -36,7 +36,6 @@ class AnnotateDecomposedMatmulPass(ExportPass):
             itertools.chain.from_iterable(matmul_partitions.values())
         )
         matmul_targets = {
-            exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.bmm.default,
         }
         for partition in matmul_partitions:
