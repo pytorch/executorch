@@ -46,7 +46,7 @@ class Llama3_2Decoder(EagerModelBase):
             "max_seq_len", 8192
         )  # Trained to be a lot larger, but this value is kept small because of static kv cache at the moment.
         self.encoder_max_seq_len = kwargs.get(
-            "encoder_max_seq_len", int(4 * (448 / 14) ** 2 + 1)
+            "encoder_max_seq_len", 8192
         )  # Same as above.
         self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
@@ -54,7 +54,7 @@ class Llama3_2Decoder(EagerModelBase):
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.verbose = kwargs.get("verbose", False)
         self.args = kwargs.get("args", None)
-        self.dtype = kwargs.get("dtype", torch.float16)
+        self.dtype = kwargs.get("dtype", torch.float32)
         self.use_checkpoint = False
 
         ckpt_dir = get_default_model_resource_dir(__file__)
@@ -87,7 +87,7 @@ class Llama3_2Decoder(EagerModelBase):
             )
             checkpoint = llama3_vision_meta_to_tune(checkpoint)
             checkpoint = to_decoder_checkpoint(checkpoint)
-            self.dtype = get_checkpoint_dtype(checkpoint)
+            # self.dtype = get_checkpoint_dtype(checkpoint) # Removing since we override the dtype in export_llama_lib anyways.
 
         with open(params_path, "r") as f:
             params = json.loads(f.read())
@@ -184,8 +184,14 @@ class Llama3_2Decoder(EagerModelBase):
             return {
                 "input_pos": contiguous_input_pos,
                 "mask": contiguous_mask,
+                # "encoder_input": torch.randn(
+                #     1, 6404, self.model_.dim, dtype=self.dtype
+                # ),
+                # "encoder_mask": torch.ones(
+                #     [1, self.n_tokens, 6404], dtype=torch.bool
+                # ),
                 "encoder_input": torch.randn(
-                    1, self.encoder_max_seq_len, self.model_.dim, dtype=self.dtype
+                    1, 6404, self.model_.dim, dtype=self.dtype
                 ),
                 "encoder_mask": torch.ones(
                     [1, self.n_tokens, self.encoder_max_seq_len], dtype=torch.bool
@@ -197,10 +203,13 @@ class Llama3_2Decoder(EagerModelBase):
     def get_dynamic_shapes(self):
         batch_size = 1
         dim_seq_len = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
+        # dim_encoder_seq_len = torch.export.Dim("encoder_seq_len", min=1, max=self.encoder_max_seq_len)
         # Hardcoding # of tiles to be 2. image tokens per tile is 1601.
         if self.use_kv_cache:
             dynamic_shapes = {
                 "tokens": {0: batch_size, 1: dim_seq_len},
+                # "encoder_input": {0: batch_size, 1: dim_encoder_seq_len, 2: None},
+                # "encoder_mask": {0: batch_size, 1: dim_seq_len, 2: dim_encoder_seq_len},
                 "encoder_input": None,
                 "encoder_mask": {0: 1, 1: dim_seq_len, 2: None},
                 "mask": {0: batch_size, 1: dim_seq_len, 2: None},
