@@ -80,7 +80,14 @@ pkg_name = __name__
 verbosity_setting = None
 
 
-EXECUTORCH_DEFINED_MODELS = ["stories110m", "llama2", "llama3", "llama3_1", "llama3_2"]
+EXECUTORCH_DEFINED_MODELS = [
+    "stories110m",
+    "llama2",
+    "llama3",
+    "llama3_1",
+    "llama3_2",
+    "static_llama",
+]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
 

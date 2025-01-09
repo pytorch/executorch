@@ -40,14 +40,14 @@ class QnnExecuTorchBackend final
 
  private:
   void add_cached_delegate(
-      const std::string& signature,
+      const std::int64_t& signature,
       executorch::runtime::DelegateHandle* handle) const;
   void erase_cached_delegate(executorch::runtime::DelegateHandle* handle) const;
 
   mutable std::mutex mutex_;
-  mutable std::unordered_map<std::string, executorch::runtime::DelegateHandle*>
+  mutable std::unordered_map<int64_t, executorch::runtime::DelegateHandle*>
       delegate_map_;
-  mutable std::unordered_map<executorch::runtime::DelegateHandle*, std::string>
+  mutable std::unordered_map<executorch::runtime::DelegateHandle*, std::int64_t>
       delegate_map_rev_;
 };
 
