@@ -269,15 +269,17 @@ def update_spill_fill_size(
             options.backend_options.htp_options.max_sf_buf_size = max_sf_buf_size
             set_spec(module, options)
 
+    max_sf_size, modules_map = 0, {}
     if isinstance(exported_program, list):
-        max_sf_size, modules_map = 0, {}
         for prog in exported_program:
             max_sf_buf_size, module_map = get_program_info(prog)
             max_sf_size = max(max_sf_size, max_sf_buf_size)
             modules_map.update(module_map)
-        update_program(max_sf_size, modules_map)
     else:
-        update_program(*get_program_info(exported_program))
+        max_sf_size, module_map = get_program_info(exported_program)
+    update_program(max_sf_size, module_map)
+
+    return max_sf_size
 
 
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
