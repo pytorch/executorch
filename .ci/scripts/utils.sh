@@ -40,6 +40,41 @@ install_pip_dependencies() {
   popd || return
 }
 
+install_domains() {
+  echo "Install torchvision and torchaudio"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+}
+
+install_pytorch_and_domains() {
+  pushd .ci/docker || return
+  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+  popd || return
+
+  git clone https://github.com/pytorch/pytorch.git
+
+  # Fetch the target commit
+  pushd pytorch || return
+  git checkout "${TORCH_VERSION}"
+  git submodule update --init --recursive
+
+  # Then build and install PyTorch
+  python setup.py bdist_wheel
+  pip install "$(echo dist/*.whl)"
+
+  # Grab the pinned audio and vision commits from PyTorch
+  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  export TORCHAUDIO_VERSION
+  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  export TORCHVISION_VERSION
+
+  install_domains
+
+  popd || return
+  # Print sccache stats for debugging
+  sccache --show-stats || true
+}
+
 install_flatc_from_source() {
   # NB: This function could be used to install flatbuffer from source
   pushd third-party/flatbuffers || return
