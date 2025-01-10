@@ -628,6 +628,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
       const auto& delegate = *delegates->Get(i);
       BackendInitContext backend_init_context(
           method_allocator,
+          /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str());
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
