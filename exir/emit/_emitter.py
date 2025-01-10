@@ -1575,8 +1575,8 @@ class _TopLevelEmitter(_Emitter):
                     warnings.warn(
                         "Mutation on a buffer in the model is detected. ExecuTorch assumes "
                         "buffers that are mutated in the graph have a meaningless initial state, "
-                        "only the shape and dtype will be serialized, unless a pass which marks "
-                        "spec.const=True such as InitializedMutableBufferPass is run.",
+                        "only the shape and dtype will be serialized, unless a pass which sets "
+                        'meta["et_init_buffer"] to True such as InitializedMutableBufferPass is run.',
                         UserWarning,
                         stacklevel=1,
                     )

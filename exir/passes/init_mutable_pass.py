@@ -12,11 +12,12 @@ from executorch.exir.pass_base import ExportPass
 
 class InitializedMutableBufferPass(ExportPass):
     """
-    If the buffer has the name "cache_pos", such as in an kv_cache
-    module with `self.register_buffer("cache_pos", torch.arange(10))`,
-    mark it with a custom tag which later is used by the emitter to
-    flag spec.const to True, which provides the mutable buffer with
-    an initialized state.
+    If a buffer has a name that within a specified list, set meta["et_init_buffer"]
+    to True, which provides the mutable buffer with an initialized state.
+
+    As an example, a module with `self.register_buffer("cache_pos", torch.arange(10))`
+    when patterns = ["cache_pos"] would have its initial state set instead of being
+    left uninitialized by default.
     """
 
     def __init__(self, patterns: List[str]) -> None:
