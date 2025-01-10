@@ -6,14 +6,13 @@ using namespace ::executorch::extension;
 
 int main(int argc, char** argv) {
   // Create a Module.
-  Module module(
-      "/data/users/lfq/executorch/extension/module/test/resources/add.pte");
+  Module module("/data/users/lfq/executorch/mobilenet_v3_small.pte");
 
   // Wrap the input data with a Tensor.
-  float input[1] = {4.f};
-  auto tensor = from_blob(input, {1});
+  float input[1 * 3 * 224 * 224] = {4.f};
+  auto tensor = from_blob(input, {1, 3, 224, 224});
 
-  auto err = module.set_inputs({tensor, tensor});
+  auto err = module.set_inputs({tensor});
 
   // Perform an inference.
   const auto result = module.forward();
