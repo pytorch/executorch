@@ -116,6 +116,14 @@ Result<Tag> MethodMeta::input_tag(size_t index) const {
       index,
       num_inputs);
   auto input_index = s_plan_->inputs()->Get(index);
+  size_t num_values = s_plan_->values()->size();
+  ET_CHECK_OR_RETURN_ERROR(
+      input_index >= 0 && input_index < num_values,
+      InvalidProgram,
+      "internal value index %d out of range [0,%zu) for input %zu",
+      input_index,
+      num_values,
+      index);
   auto serialization_value = s_plan_->values()->Get(input_index);
   return get_tag(serialization_value, index);
 }
@@ -132,6 +140,7 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
       (size_t)tag.get(),
       index);
   auto input_index = s_plan_->inputs()->Get(index);
+  // input_index was already validated by input_tag().
   auto tensor_value = s_plan_->values()->Get(input_index)->val_as_Tensor();
   return TensorInfo(
       Span<const int32_t>(
@@ -156,8 +165,16 @@ Result<Tag> MethodMeta::output_tag(size_t index) const {
       "index %zu out of range. num_outputs: %zu",
       index,
       num_outputs);
-  auto input_index = s_plan_->outputs()->Get(index);
-  auto serialization_value = s_plan_->values()->Get(input_index);
+  auto output_index = s_plan_->outputs()->Get(index);
+  size_t num_values = s_plan_->values()->size();
+  ET_CHECK_OR_RETURN_ERROR(
+      output_index >= 0 && output_index < num_values,
+      InvalidProgram,
+      "internal value index %d out of range [0,%zu) for output %zu",
+      output_index,
+      num_values,
+      index);
+  auto serialization_value = s_plan_->values()->Get(output_index);
   return get_tag(serialization_value, index);
 }
 
@@ -173,6 +190,7 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
       (size_t)tag.get(),
       index);
   auto output_index = s_plan_->outputs()->Get(index);
+  // output_index was already validated by output_tag().
   auto tensor_value = s_plan_->values()->Get(output_index)->val_as_Tensor();
 
   return TensorInfo(
