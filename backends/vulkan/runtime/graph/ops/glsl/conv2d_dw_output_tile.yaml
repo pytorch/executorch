@@ -10,7 +10,7 @@ conv2d_dw_output_tile:
     NDIM: 3
     DTYPE: float
     TILE_SIZE: 3
-    BATCH_SIZE_X: 4
+    BATCH_SIZE_X: 8
     BATCH_SIZE_Y: 2
   generate_variant_forall:
     DTYPE:
@@ -22,6 +22,10 @@ conv2d_dw_output_tile:
       OPERATOR: clamp(X, A, B)
     - NAME: conv2d_dw_output_tile_5x5
       TILE_SIZE: 5
+      BATCH_SIZE_X: 4
+      BATCH_SIZE_Y: 2
     - NAME: conv2d_dw_output_tile_5x5_clamp
       OPERATOR: clamp(X, A, B)
       TILE_SIZE: 5
+      BATCH_SIZE_X: 4
+      BATCH_SIZE_Y: 2
