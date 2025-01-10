@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -824,7 +824,11 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    list(APPEND _executor_runner_libs etdump ${FLATCCRT_LIB})
+    if(EXECUTORCH_BUILD_DEVTOOLS)
+      list(APPEND _executor_runner_libs etdump ${FLATCCRT_LIB})
+    else()
+      message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
+    endif()
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})

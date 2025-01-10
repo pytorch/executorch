@@ -1,6 +1,6 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
- * Copyright 2024 Arm Limited and/or its affiliates.
+ * Copyright 2024-2025 Arm Limited and/or its affiliates.
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -43,10 +43,7 @@ DEFINE_string(
     "Model serialized in flatbuffer format.");
 DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 #ifdef ET_EVENT_TRACER_ENABLED
-DEFINE_string(
-    etdump_path,
-    "model.etdump",
-    "If ETDump generation is enabled an ETDump will be written out to this path.");
+DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
 #endif // ET_EVENT_TRACER_ENABLED
 
 using executorch::extension::FileDataLoader;
@@ -61,6 +58,50 @@ using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+
+/// Helper to manage resources for ETDump generation
+class EventTraceManager {
+ public:
+  EventTraceManager() : event_tracer_ptr_(nullptr) {
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_ptr_ = std::make_shared<torch::executor::ETDumpGen>();
+#endif // ET_EVENT_TRACER_ENABLED
+  }
+
+  EventTracer* get_event_tracer() const {
+    return event_tracer_ptr_.get();
+  };
+
+  Error write_etdump_to_file(const char* filename) const {
+    torch::executor::ETDumpGen* const etdump_ptr =
+        static_cast<torch::executor::ETDumpGen*>(get_event_tracer());
+    if (!etdump_ptr) {
+      return Error::NotSupported;
+    }
+
+    std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
+        fopen(filename, "w+"), fclose);
+    if (!etdump_file) {
+      ET_LOG(Error, "Failed to open ETDump file at %s.", filename);
+      return Error::AccessFailed;
+    }
+
+    torch::executor::etdump_result result = etdump_ptr->get_etdump_data();
+    if (result.buf != nullptr && result.size > 0) {
+      fwrite((uint8_t*)result.buf, 1, result.size, etdump_file.get());
+      free(result.buf);
+      ET_LOG(Info, "ETDump written to file '%s'.", filename);
+    } else {
+      ET_LOG(Error, "No ETDump data available!");
+      return Error::NotFound;
+    }
+
+    return Error::Ok;
+  }
+
+ private:
+  std::shared_ptr<EventTracer> event_tracer_ptr_;
+};
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
@@ -164,20 +205,9 @@ int main(int argc, char** argv) {
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
-  EventTracer* event_tracer_ptr = nullptr;
-#ifdef ET_EVENT_TRACER_ENABLED
-  std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
-      fopen(FLAGS_etdump_path.c_str(), "w+"), fclose);
-  ET_CHECK_MSG(
-      etdump_file,
-      "Failed to open ETDump file at %s.",
-      FLAGS_etdump_path.c_str());
-
-  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
-  event_tracer_ptr = &etdump_gen;
-#endif // ET_EVENT_TRACER_ENABLED
-  Result<Method> method =
-      program->load_method(method_name, &memory_manager, event_tracer_ptr);
+  EventTraceManager tracer;
+  Result<Method> method = program->load_method(
+      method_name, &memory_manager, tracer.get_event_tracer());
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -204,7 +234,10 @@ int main(int argc, char** argv) {
         method_name,
         (uint32_t)status);
   }
-  ET_LOG(Info, "Model executed successfully %i time(s).", FLAGS_num_executions);
+  ET_LOG(
+      Info,
+      "Model executed successfully %" PRIu32 " time(s).",
+      FLAGS_num_executions);
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());
@@ -217,18 +250,14 @@ int main(int argc, char** argv) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
 
-#ifdef ET_EVENT_TRACER_ENABLED
-  // Dump the ETDump data containing profiling/debugging data to the specified
-  // file.
-  torch::executor::etdump_result result = etdump_gen.get_etdump_data();
-  if (result.buf != nullptr && result.size > 0) {
-    fwrite((uint8_t*)result.buf, 1, result.size, etdump_file.get());
-    free(result.buf);
-    ET_LOG(Info, "ETDump written to file '%s'.", FLAGS_etdump_path.c_str());
-  } else {
-    ET_LOG(Error, "No ETDump data available!");
+  if (tracer.get_event_tracer()) {
+    // Dump ETDump data containing profiling/debugging data to specified file.
+    Error status = tracer.write_etdump_to_file(FLAGS_etdump_path.c_str());
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Failed to save ETDump file at %s.",
+        FLAGS_etdump_path.c_str());
   }
-#endif // ET_EVENT_TRACER_ENABLED
 
   return 0;
 }
