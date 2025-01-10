@@ -633,6 +633,30 @@ for (int i=0; i<out.size(); i++) {{
 
         return graph_exec
 
+    def gen_conditional_skips(self, skip_str: str = "GTEST_SKIP();") -> str:
+        fp16_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_float16_buffers_support()) {{\n"
+        fp16_skip += f"  {skip_str}\n"
+        fp16_skip += "}"
+        fp16_skip = re.sub(r"^", "  ", fp16_skip, flags=re.M) + "\n"
+
+        int8_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_int8_buffers_support()) {{\n"
+        int8_skip += f"  {skip_str};\n"
+        int8_skip += "}\n"
+
+        skips = ""
+
+        skips += "if (test_dtype == at::kHalf) {\n"
+        skips += fp16_skip
+        skips += "}\n"
+
+        for _, dtype in self.suite_def.arg_dtype.items():
+            if dtype == "at::kChar" or dtype == "at::kQInt8":
+                skips += int8_skip
+                continue
+
+        skips += "\n"
+        return skips
+
     def gen_op_check_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
         if self.suite_def.test_name_suffix is not None:
