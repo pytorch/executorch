@@ -45,7 +45,8 @@ class EdgeCompileConfig:
     )
     _skip_type_promotion: bool = False
     # TODO(gasoonjia): remove this
-    _skip_dim_order: bool = False
+    # TODO(T192537614): reenanle dim order as default
+    _skip_dim_order: bool = True
 
 
 @compatibility(is_backward_compatible=False)
