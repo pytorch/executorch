@@ -25,8 +25,8 @@ from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
 )
 
 
-def _convert_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
-    """Converts a FlatTensor to a flatbuffer and returns the serialized data."""
+def _serialize_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
+    """Serializes a FlatTensor to a flatbuffer and returns the serialized data."""
     flat_tensor_json = json.dumps(flat_tensor, cls=_DataclassEncoder)
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "flat_tensor.fbs")
@@ -49,8 +49,8 @@ def _convert_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
             return Cord(output_file.read())
 
 
-def _convert_to_flat_tensor(flatbuffer: bytes) -> FlatTensor:
-    """Converts a flatbuffer to a FlatTensor and returns the dataclass."""
+def _deserialize_to_flat_tensor(flatbuffer: bytes) -> FlatTensor:
+    """Deserializes a flatbuffer to a FlatTensor and returns the dataclass."""
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "flat_tensor.fbs")
         with open(schema_path, "wb") as schema_file:
@@ -262,7 +262,7 @@ class FlatTensorSerializer(DataSerializer):
             segments=[DataSegment(offset=0, size=len(flat_tensor_data))],
         )
 
-        flatbuffer_payload = _convert_to_flatbuffer(flat_tensor)
+        flatbuffer_payload = _serialize_to_flatbuffer(flat_tensor)
         padded_flatbuffer_length: int = aligned_size(
             input_size=len(flatbuffer_payload),
             alignment=self.config.tensor_alignment,
