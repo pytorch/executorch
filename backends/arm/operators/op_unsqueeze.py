@@ -31,7 +31,6 @@ class UnsqueezeVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: list[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
 
         dim = inputs[1].number
