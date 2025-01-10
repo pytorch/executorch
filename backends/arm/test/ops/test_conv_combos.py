@@ -137,10 +137,11 @@ class ComboConvRelu6(torch.nn.Module):
     ]
 
     test_data = [
-        (20 * torch.randn(1, 3, 256, 256),),
-        (5 * torch.randn(1, 3, 256, 256),),
+        (2 * torch.randn(1, 3, 256, 256),),
+        (0.5 * torch.randn(1, 3, 256, 256),),
         (torch.randn(1, 3, 256, 256),),
-        (-5 * torch.randn(1, 3, 256, 256),),
+        (-0.5 * torch.randn(1, 3, 256, 256),),
+        (-2 * torch.randn(1, 3, 256, 256),),
     ]
 
     def __init__(self):

@@ -185,6 +185,8 @@ class Context final {
     }
   }
 
+  void check_device_capabilities(const vkapi::ShaderInfo& shader);
+
   vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo&,
       const utils::uvec3&,
