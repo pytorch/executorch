@@ -130,7 +130,11 @@ void main() {
 
 #else
 void main() {
-  const ivec3 pos = idx_to_ipos_x_wise(gl_GlobalInvocationID.x, out_limits.x, out_limits.y);
+  const uint div_by_x = gl_GlobalInvocationID.x / out_limits.x;
+  const ivec3 pos = ivec3(
+    gl_GlobalInvocationID.x % out_limits.x,
+    div_by_x % out_limits.y,
+    div_by_x / out_limits.y);
 
   if (any(greaterThanEqual(pos, out_limits))) {
     return;
