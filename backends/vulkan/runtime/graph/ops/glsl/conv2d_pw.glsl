@@ -44,7 +44,11 @@ void main() {
   const ivec2 out_limits_scaled = (out_limits.xy + TILE_SIZE - 1) / TILE_SIZE;
   const uint shared_mem_stride = gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z;
 
-  const ivec3 gpos = idx_to_ipos_x_wise(gl_GlobalInvocationID.x, out_limits_scaled.x, out_limits_scaled.y);
+  const uint div_by_x = gl_GlobalInvocationID.x / out_limits_scaled.x;
+  const ivec3 gpos = ivec3(
+    gl_GlobalInvocationID.x % out_limits_scaled.x,
+    div_by_x % out_limits_scaled.y,
+    div_by_x / out_limits_scaled.y);
 
   // Output position for TILE_SIZE = 2
   // +--------+--------+
