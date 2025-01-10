@@ -145,7 +145,7 @@ def main(argv: List[Any]) -> None:
 
     # Optionally check if the operators in the model file list are overlapping.
     if options.check_ops_not_overlapping:
-        ops = {}
+        ops = {}  # type: ignore[var-annotated]
         for model_dict in model_dicts:
             for op_name in model_dict["operators"]:
                 if op_name in ops:

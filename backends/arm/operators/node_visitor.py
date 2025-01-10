@@ -39,7 +39,6 @@ class NodeVisitor:
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         raise NotImplementedError("NodeVisitor must be extended.")
 

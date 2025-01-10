@@ -1061,7 +1061,7 @@ Error Method::execute_instruction() {
         // We know that instr_args_as_KernelCall is non-null because it was
         // checked at init time.
         auto op_index = instruction->instr_args_as_KernelCall()->op_index();
-        auto op = serialization_plan_->operators()->Get(op_index);
+        ET_UNUSED auto op = serialization_plan_->operators()->Get(op_index);
         ET_LOG(
             Error,
             "KernelCall failed at instruction %zu:%zu in operator %s.%s: 0x%x",
