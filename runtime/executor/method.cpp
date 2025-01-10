@@ -313,6 +313,8 @@ Error Method::parse_values() {
         "Null value at index %zu",
         i);
 
+    const auto val = serialization_value->val();
+
     switch (serialization_value->val_type()) {
       case executorch_flatbuffer::KernelTypes::Null: {
         // Placement new as the list elements are not initialized, so calling
@@ -321,18 +323,21 @@ Error Method::parse_values() {
         new (&values_[i]) EValue();
       } break;
       case executorch_flatbuffer::KernelTypes::Int: {
-        new (&values_[i]) EValue(serialization_value->val_as_Int()->int_val());
+        new (&values_[i]) EValue(
+            static_cast<const executorch_flatbuffer::Int*>(val)->int_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Double: {
         new (&values_[i])
-            EValue(serialization_value->val_as_Double()->double_val());
+            EValue(static_cast<const executorch_flatbuffer::Double*>(val)
+                       ->double_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Bool: {
-        new (&values_[i])
-            EValue(serialization_value->val_as_Bool()->bool_val());
+        new (&values_[i]) EValue(
+            static_cast<const executorch_flatbuffer::Bool*>(val)->bool_val());
       } break;
       case executorch_flatbuffer::KernelTypes::IntList: {
-        const auto items = serialization_value->val_as_IntList()->items();
+        const auto items =
+            static_cast<const executorch_flatbuffer::IntList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
             items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // Allocate space for boxed and unboxed list representations using
@@ -352,7 +357,8 @@ Error Method::parse_values() {
             BoxedEvalueList<int64_t>(evalp_list, int_list, items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::BoolList: {
-        const auto items = serialization_value->val_as_BoolList()->items();
+        const auto items =
+            static_cast<const executorch_flatbuffer::BoolList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
             items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // NOTE: This is technically not portable. A platform could technically
@@ -366,14 +372,17 @@ Error Method::parse_values() {
             (const bool*)items->data(), items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::DoubleList: {
-        const auto items = serialization_value->val_as_DoubleList()->items();
+        const auto items =
+            static_cast<const executorch_flatbuffer::DoubleList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
             items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         new (&values_[i])
             EValue(exec_aten::ArrayRef<double>(items->data(), items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::String: {
-        const auto fb_str = serialization_value->val_as_String()->string_val();
+        const auto fb_str =
+            static_cast<const executorch_flatbuffer::String*>(val)
+                ->string_val();
         ET_CHECK_OR_RETURN_ERROR(
             fb_str != nullptr,
             InvalidProgram,
@@ -383,7 +392,9 @@ Error Method::parse_values() {
       } break;
       case executorch_flatbuffer::KernelTypes::Tensor: {
         auto t = deserialization::parseTensor(
-            program_, memory_manager_, serialization_value->val_as_Tensor());
+            program_,
+            memory_manager_,
+            static_cast<const executorch_flatbuffer::Tensor*>(val));
         if (!t.ok()) {
           ET_LOG(
               Error,
@@ -398,7 +409,7 @@ Error Method::parse_values() {
         // get list of serialization tensors and allocate storage for executor
         // tensors
         auto tensors = deserialization::parseTensorList(
-            serialization_value->val_as_TensorList()->items(),
+            static_cast<const executorch_flatbuffer::TensorList*>(val)->items(),
             values_,
             memory_manager_);
         if (!tensors.ok()) {
@@ -415,7 +426,9 @@ Error Method::parse_values() {
         // Same as TensorList but optional<Tensor> instead of Tensor
         auto tensors =
             deserialization::parseListOptionalType<exec_aten::Tensor>(
-                serialization_value->val_as_OptionalTensorList()->items(),
+                static_cast<const executorch_flatbuffer::OptionalTensorList*>(
+                    val)
+                    ->items(),
                 values_,
                 memory_manager_);
         if (!tensors.ok()) {
