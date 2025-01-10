@@ -12,9 +12,9 @@
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::getLeadingDims;
 using executorch::runtime::getTrailingDims;
 using executorch::runtime::resize_tensor;
@@ -33,6 +33,36 @@ Tensor& cat_out(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
+  if (dim < 0) {
+    dim += out.dim();
+  }
+
+  ET_KERNEL_CHECK(ctx, check_cat_args(tensors, dim, out), Internal, out);
+
+  Tensor::SizesType
+      expected_out_size[executorch::runtime::kTensorDimensionLimit];
+  size_t expected_out_dim = 0;
+  get_cat_out_target_size(tensors, dim, expected_out_size, &expected_out_dim);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
+      InvalidArgument,
+      out);
+
+  // Special handling when all inputs are 1D-empty tensors for aten consistency
+  // In that case, just return an 1D-empty tensor without checking dim
+  bool all_1d_empty = true;
+  for (size_t i = 0; i < tensors.size(); ++i) {
+    if (tensors[i].numel() != 0 || tensors[i].dim() != 1) {
+      all_1d_empty = false;
+      break;
+    }
+  }
+  if (all_1d_empty) {
+    return out;
+  }
+
   constexpr auto name = "cat.out";
   constexpr int kNnlibMaxDim = 16;
 
@@ -89,36 +119,6 @@ Tensor& cat_out(
 
     ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
 
-    return out;
-  }
-
-  if (dim < 0) {
-    dim += out.dim();
-  }
-
-  ET_KERNEL_CHECK(ctx, check_cat_args(tensors, dim, out), Internal, out);
-
-  Tensor::SizesType
-      expected_out_size[executorch::runtime::kTensorDimensionLimit];
-  size_t expected_out_dim = 0;
-  get_cat_out_target_size(tensors, dim, expected_out_size, &expected_out_dim);
-
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
-      InvalidArgument,
-      out);
-
-  // Special handling when all inputs are 1D-empty tensors for aten consistency
-  // In that case, just return an 1D-empty tensor without checking dim
-  bool all_1d_empty = true;
-  for (size_t i = 0; i < tensors.size(); ++i) {
-    if (tensors[i].numel() != 0 || tensors[i].dim() != 1) {
-      all_1d_empty = false;
-      break;
-    }
-  }
-  if (all_1d_empty) {
     return out;
   }
 

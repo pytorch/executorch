@@ -14,8 +14,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include "kernels.h"
 
-using Tensor = exec_aten::Tensor;
-using exec_aten::ScalarType;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 using torch::executor::Error;
 
