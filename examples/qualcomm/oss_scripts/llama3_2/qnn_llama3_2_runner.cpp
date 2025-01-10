@@ -18,6 +18,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <gflags/gflags.h>
 #include <fstream>
+#include <vector>
 
 DEFINE_string(
     model_path,
@@ -46,7 +47,9 @@ DEFINE_int32(
 DEFINE_int32(
     eval_mode,
     0,
-    "0: PromptProcessor(batch_prefill) / 1: TokenGenerator(kv) / 2: HybridMode (TBD)");
+    "0: PromptProcessor(prefill) / 1: TokenGenerator(kv) / 2: HybridMode (prefill+kv)");
+DEFINE_double(logits_scale, 0.0, "Logits scale");
+DEFINE_int32(logits_offset, 0, "Logits offset");
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -55,16 +58,25 @@ int main(int argc, char** argv) {
   example::Runner runner(
       {FLAGS_model_path},
       FLAGS_tokenizer_path.c_str(),
+      FLAGS_logits_scale,
+      FLAGS_logits_offset,
       FLAGS_temperature,
       FLAGS_eval_mode);
-
-  // generate tokens & store inference output
+  std::vector<char> buf;
+  buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
   std::ofstream fout(FLAGS_output_path.c_str());
+  auto callback = [&](const std::string& piece) {
+    for (const char c : piece) {
+      buf.push_back(c);
+    }
+  };
+  // generate tokens & store inference output
   runner.generate(
-      FLAGS_prompt,
-      FLAGS_system_prompt,
       FLAGS_seq_len,
-      [&](const std::string& piece) { fout << piece; });
+      FLAGS_prompt.c_str(),
+      FLAGS_system_prompt.c_str(),
+      callback);
+  fout.write(buf.data(), buf.size());
   fout.close();
   return 0;
 }

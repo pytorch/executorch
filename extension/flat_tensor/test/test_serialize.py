@@ -19,7 +19,7 @@ from executorch.exir.schema import ScalarType
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import TensorMetadata
 
 from executorch.extension.flat_tensor.serialize.serialize import (
-    _convert_to_flat_tensor,
+    _deserialize_to_flat_tensor,
     FlatTensorConfig,
     FlatTensorHeader,
     FlatTensorSerializer,
@@ -72,10 +72,10 @@ class TestSerialize(unittest.TestCase):
         config = FlatTensorConfig()
         serializer: DataSerializer = FlatTensorSerializer(config)
 
-        data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
+        serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
 
         # Check header.
-        header = FlatTensorHeader.from_bytes(data[0 : FlatTensorHeader.EXPECTED_LENGTH])
+        header = FlatTensorHeader.from_bytes(serialized_data[0 : FlatTensorHeader.EXPECTED_LENGTH])
         self.assertTrue(header.is_valid())
 
         # Header is aligned to config.segment_alignment, which is where the flatbuffer starts.
@@ -101,15 +101,15 @@ class TestSerialize(unittest.TestCase):
 
         # Confirm the flatbuffer magic is present.
         self.assertEqual(
-            data[header.flatbuffer_offset + 4 : header.flatbuffer_offset + 8], b"FT01"
+            serialized_data[header.flatbuffer_offset + 4 : header.flatbuffer_offset + 8], b"FT01"
         )
 
         # Check flat tensor data.
-        flat_tensor_bytes = data[
+        flat_tensor_bytes = serialized_data[
             header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
         ]
 
-        flat_tensor = _convert_to_flat_tensor(flat_tensor_bytes)
+        flat_tensor = _deserialize_to_flat_tensor(flat_tensor_bytes)
 
         self.assertEqual(flat_tensor.version, 0)
         self.assertEqual(flat_tensor.tensor_alignment, config.tensor_alignment)
@@ -136,31 +136,39 @@ class TestSerialize(unittest.TestCase):
         self.assertEqual(segments[0].offset, 0)
         self.assertEqual(segments[0].size, config.tensor_alignment * 3)
 
-        # Check segment data.
+        # Length of serialized_data matches segment_base_offset + segment_data_size.
         self.assertEqual(
-            header.segment_base_offset + header.segment_data_size, len(data)
+            header.segment_base_offset + header.segment_data_size, len(serialized_data)
         )
         self.assertTrue(segments[0].size <= header.segment_data_size)
 
-        segment_data = data[
+        # Check the contents of the segment. Expecting two tensors from
+        # TEST_TENSOR_BUFFER = [b"\x11" * 4, b"\x22" * 32]
+        segment_data = serialized_data[
             header.segment_base_offset : header.segment_base_offset + segments[0].size
         ]
 
+        # Tensor: b"\x11" * 4
         t0_start = 0
         t0_len = len(TEST_TENSOR_BUFFER[0])
-        t0_end = config.tensor_alignment
+        t0_end = t0_start + aligned_size(t0_len, config.tensor_alignment)
         self.assertEqual(
             segment_data[t0_start : t0_start + t0_len], TEST_TENSOR_BUFFER[0]
         )
         padding = b"\x00" * (t0_end - t0_len)
         self.assertEqual(segment_data[t0_start + t0_len : t0_end], padding)
 
-        t1_start = config.tensor_alignment
+        # Tensor: b"\x22" * 32
+        t1_start = t0_end
         t1_len = len(TEST_TENSOR_BUFFER[1])
-        t1_end = config.tensor_alignment * 3
+        t1_end = t1_start + aligned_size(t1_len, config.tensor_alignment)
         self.assertEqual(
             segment_data[t1_start : t1_start + t1_len],
             TEST_TENSOR_BUFFER[1],
         )
         padding = b"\x00" * (t1_end - (t1_len + t1_start))
-        self.assertEqual(segment_data[t1_start + t1_len : t1_end], padding)
+        self.assertEqual(segment_data[t1_start + t1_len : t1_start + t1_end], padding)
+
+        # Check length of the segment is expected.
+        self.assertEqual(segments[0].size, aligned_size(t1_end, config.segment_alignment))
+        self.assertEqual(segments[0].size, header.segment_data_size)
