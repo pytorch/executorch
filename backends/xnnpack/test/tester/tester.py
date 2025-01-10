@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -679,6 +680,9 @@ class Tester:
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
+            assert (
+                ref.shape == model.shape
+            ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
             assert torch.allclose(
                 model,
                 ref,
