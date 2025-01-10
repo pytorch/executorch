@@ -20,7 +20,7 @@ from executorch.backends.cadence.aot.compiler import (
     fuse_pt2,
 )
 
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
 from executorch.backends.cadence.runtime import runtime
 from executorch.backends.cadence.runtime.executor import BundledProgramManager
 from executorch.exir import ExecutorchProgramManager
@@ -74,7 +74,7 @@ def export_model(
     )
 
     # Instantiate the quantizer
-    quantizer = CadenceQuantizer(qconfig)
+    quantizer = CadenceDefaultQuantizer(qconfig)
 
     # Convert the model
     converted_model = convert_pt2(model, example_inputs, quantizer)

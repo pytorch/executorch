@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Unio
 import torch
 import torch._export
 from executorch.exir._serialize._cord import Cord
-from executorch.exir._serialize._serialize import serialize
+from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import to_backend
@@ -500,7 +500,7 @@ class ExecutorchProgram:
             )
         self.exported_program = exir_exported_program.exported_program
         self._pte_data: Optional[Cord] = None
-        self._data_files: Optional[Dict[str, Cord]] = None
+        self._tensor_data: Optional[Dict[str, Cord]] = None
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -519,7 +519,7 @@ class ExecutorchProgram:
 
     def _get_pte_data(self) -> Cord:
         if self._pte_data is None:
-            self._pte_data, self._data_files = serialize(
+            self._pte_data, self._tensor_data = serialize_for_executorch(
                 self._get_emitter_output(),
                 ExecutorchBackendConfig(),
                 self._data_serializer,
@@ -578,12 +578,12 @@ class ExecutorchProgram:
         """
         self._get_pte_data().write_to_file(open_file)
 
-    def write_data_to_file(self, outdir) -> None:
+    def write_tensor_data_to_file(self, outdir) -> None:
         """
         Writes the serialized ExecuTorch data files to the directory at `outdir`.
         """
-        assert self._data_files is not None
-        for filename, cord in self._data_files.items():
+        assert self._tensor_data is not None
+        for filename, cord in self._tensor_data.items():
             with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
                 logging.info(f"Writing data file to {filename}.ptd")
                 cord.write_to_file(f)
@@ -1471,7 +1471,7 @@ class ExecutorchProgramManager:
 
         # Serialize emitter output, ready to be written to a file.
         self._data_serializer = FlatTensorSerializer()
-        self._pte_data, self._data_files = serialize(
+        self._pte_data, self._tensor_data = serialize_for_executorch(
             self._emitter_output, ExecutorchBackendConfig(), self._data_serializer
         )
         self._buffer: Optional[bytes] = None
@@ -1555,12 +1555,12 @@ class ExecutorchProgramManager:
         """
         self._pte_data.write_to_file(open_file)
 
-    def write_data_to_file(self, outdir) -> None:
+    def write_tensor_data_to_file(self, outdir) -> None:
         """
         Writes the serialized ExecuTorch data files to the directory at `outdir`.
         """
-        assert self._data_files is not None
-        for filename, cord in self._data_files.items():
+        assert self._tensor_data is not None
+        for filename, cord in self._tensor_data.items():
             with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
                 logging.info(f"Writing data file to {filename}")
                 cord.write_to_file(f)

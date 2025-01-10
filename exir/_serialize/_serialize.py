@@ -24,7 +24,7 @@ from executorch.exir.emit import EmitterOutput
 from executorch.exir.schema import Tensor, TensorDataLocation
 
 
-def serialize(
+def serialize_for_executorch(
     emitter_output: EmitterOutput,
     config: ExecutorchBackendConfig,
     data_serializer: DataSerializer,
@@ -60,9 +60,13 @@ def serialize(
                     ] = TensorLayout(tensor.scalar_type, tensor.sizes, tensor.dim_order)
 
     if len(fqn_to_tensor_layout) > 0:
+        # emitter_output.external_constant_map contains the mapping from
+        # {file: {fqn: index into external_constant_buffer}}
+        # Contains the locations of the tensor buffers, and must be non-empty
+        # if there are external tensors to serialize.
         assert emitter_output.external_constant_map is not None
         for (
-            file,
+            filename,
             fqn_to_index,
         ) in (
             # pyre-ignore Undefined attribute [16]: Optional type has no attribute `items`.
@@ -77,7 +81,7 @@ def serialize(
                     layout=fqn_to_tensor_layout[fqn],
                 )
 
-            ptd_files[file] = data_serializer.serialize(
+            ptd_files[filename] = data_serializer.serialize(
                 DataPayload(
                     buffers=emitter_output.external_constant_buffer,
                     fqn_to_tensor=fqn_to_tensor_entry,

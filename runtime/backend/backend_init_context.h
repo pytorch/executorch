@@ -20,6 +20,7 @@ class BackendInitContext final {
  public:
   explicit BackendInitContext(
       MemoryAllocator* runtime_allocator,
+      EventTracer* event_tracer = nullptr,
       const char* method_name = nullptr)
       : runtime_allocator_(runtime_allocator), method_name_(method_name) {}
 
@@ -29,6 +30,15 @@ class BackendInitContext final {
    */
   MemoryAllocator* get_runtime_allocator() {
     return runtime_allocator_;
+  }
+
+  /**
+   * Returns a pointer (null if not installed) to an instance of EventTracer to
+   * do profiling/debugging logging inside the delegate backend. Users will need
+   * access to this pointer to use any of the event tracer APIs.
+   */
+  EventTracer* event_tracer() {
+    return event_tracer_;
   }
 
   /** Get the loaded method name from ExecuTorch runtime. Usually it's
@@ -44,6 +54,7 @@ class BackendInitContext final {
 
  private:
   MemoryAllocator* runtime_allocator_ = nullptr;
+  EventTracer* event_tracer_ = nullptr;
   const char* method_name_ = nullptr;
 };
 

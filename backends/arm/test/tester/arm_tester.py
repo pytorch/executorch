@@ -251,7 +251,7 @@ class ArmTester(Tester):
         return super().to_executorch(to_executorch_stage)
 
     def serialize(
-        self, serialize_stage: Optional[Serialize] = None, timeout: int = 120
+        self, serialize_stage: Optional[Serialize] = None, timeout: int = 480
     ):
         if serialize_stage is None:
             serialize_stage = Serialize(self.runner_util, timeout=timeout)

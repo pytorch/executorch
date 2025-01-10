@@ -285,3 +285,51 @@ command = [
     '--',
     '@{{PATHSFILE}}',
 ]
+
+[[linter]]
+code = 'MYPY'
+include_patterns = [
+    # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
+    # 'backends/**/*.py',
+    'build/**/*.py',
+    'codegen/**/*.py',
+    # 'devtools/**/*.py',
+    'docs/**/*.py',
+    # 'examples/**/*.py',
+    # 'exir/**/*.py',
+    # 'extension/**/*.py',
+    'kernels/**/*.py',
+    'profiler/**/*.py',
+    'runtime/**/*.py',
+    'scripts/**/*.py',
+    'test/**/*.py',
+    'util/**/*.py',
+    '*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    'scripts/check_binary_dependencies.py',
+    'profiler/test/test_profiler_e2e.py',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'mypy_linter',
+    '--config=.mypy.ini',
+    '--show-disable',
+    '--',
+    '--explicit-package-bases',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
