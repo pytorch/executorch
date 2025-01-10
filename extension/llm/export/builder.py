@@ -21,7 +21,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
-from executorch.exir import EdgeProgramManager
+from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
 
 from executorch.exir.backend.utils import format_delegated_graph
@@ -216,6 +216,7 @@ class LLMEdgeManager:
                 )
             # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
             #  `Module`.
+            self.pre_autograd_exported_program = exported_module
             self.pre_autograd_graph_module = exported_module.module()
             if hasattr(self.args, "export_only") and self.args.export_only:
                 torch.export.save(exported_module, self.args.output_name)
@@ -305,51 +306,51 @@ class LLMEdgeManager:
         ), "export_to_edge is already called, please call pt2e_quantize before export_to_edge"
         logging.info(f"Using pt2e {quantizers} to quantizing the model...")
 
+        if not quantizers:
+            logging.info("No quantizer provided, passing...")
+            return self
+            
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
-        if quantizers:
-            with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-                if self.verbose:
-                    logging.info(f"Applied quantizers: {quantizers}")
-                composed_quantizer = ComposableQuantizer(quantizers)
-                assert (
-                    self.pre_autograd_graph_module is not None
-                ), "Please run export() first"
-                m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
+        with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+            if self.verbose:
+                logging.info(f"Applied quantizers: {quantizers}")
+            composed_quantizer = ComposableQuantizer(quantizers)
+            assert (
+                self.pre_autograd_graph_module is not None
+            ), "Please run export() first"
+            m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
+            logging.info(
+                f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
+            )
+            # Calibrate
+            if (
+                self.calibration_tasks is not None
+                and self.calibration_limit is not None
+                and self.calibration_seq_length is not None
+                and self.calibration_data is not None
+                and self.tokenizer_path is not None
+            ):
                 logging.info(
                     f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
                 )
-                # Calibrate
-                if (
-                    self.calibration_tasks is not None
-                    and self.calibration_limit is not None
-                    and self.calibration_seq_length is not None
-                    and self.calibration_data is not None
-                    and self.tokenizer_path is not None
-                ):
-                    logging.info(
-                        f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
-                    )
-                    self.pt2e_calibrate(
-                        prepared_module=m,
-                        calibration_tasks=self.calibration_tasks,
-                        calibration_limit=self.calibration_limit,
-                        calibration_seq_length=self.calibration_seq_length,
-                        calibration_data=self.calibration_data,
-                        tokenizer_path=self.tokenizer_path,
-                    )
-                else:
-                    logging.info(
-                        "No calibration provided, using dummy input to calibrate..."
-                    )
-                    m(*self.example_inputs)
-                m = convert_pt2e(m)
-                DuplicateDynamicQuantChainPass()(m)
-                self.pre_autograd_graph_module = m
-            return self
-        else:
-            logging.info("No quantizer provided, passing...")
-            return self
+                self.pt2e_calibrate(
+                    prepared_module=m,
+                    calibration_tasks=self.calibration_tasks,
+                    calibration_limit=self.calibration_limit,
+                    calibration_seq_length=self.calibration_seq_length,
+                    calibration_data=self.calibration_data,
+                    tokenizer_path=self.tokenizer_path,
+                )
+            else:
+                logging.info(
+                    "No calibration provided, using dummy input to calibrate..."
+                )
+                m(*self.example_inputs, **self.example_kwarg_inputs)
+            m = convert_pt2e(m)
+            DuplicateDynamicQuantChainPass()(m)
+            self.pre_autograd_graph_module = m
+        return self
 
     def export_to_edge(self) -> "LLMEdgeManager":
         """
@@ -413,6 +414,18 @@ class LLMEdgeManager:
                     logging.info("No partitioner provided, passing...")
                     continue
 
+        return self
+
+    def to_edge_transform_and_lower(self, partitioners: Optional[List[Partitioner]]) -> "LLMEdgeManager":
+        if partitioners is None:
+            logging.info("No partitioner provided, skipping backend lowering...")
+        breakpoint()
+        edge_config = self._get_edge_config()
+        self.edge_manager = to_edge_transform_and_lower(
+            self.pre_autograd_exported_program,
+            partitioner=partitioners,
+            compile_config=edge_config,
+        )
         return self
 
     def to_executorch(self) -> "LLMEdgeManager":
