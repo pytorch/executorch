@@ -18,7 +18,7 @@
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::aten::Scalar;
+using ::executorch::aten::ArrayRef;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
@@ -58,7 +58,7 @@ Tensor& _softmax_out(
 #endif
 
   int inp_shapes[in.dim()];
-  const ::executorch::aten::ArrayRef<Tensor::SizesType> in_size = in.sizes();
+  const ArrayRef<Tensor::SizesType> in_size = in.sizes();
   for (int i = 0; i < in.dim(); i++) {
     inp_shapes[i] = in_size[i];
   }

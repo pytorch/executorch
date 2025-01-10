@@ -94,7 +94,7 @@ namespace native {
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& exp_out(
-    torch::executor::RuntimeContext& ctx,
+    ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,
     ::executorch::aten::Tensor& out);
 

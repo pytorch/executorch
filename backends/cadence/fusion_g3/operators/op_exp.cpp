@@ -16,18 +16,17 @@
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
-using torch::executor::RuntimeContext;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
 
-Tensor& exp_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& exp_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 #ifdef OP_ARG_CHECK
   ET_KERNEL_CHECK(
       ctx,

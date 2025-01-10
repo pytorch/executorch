@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+#include <executorch/backends/cadence/fusion_g3/operators/xt_utils.h>
 
 #include <xa_nnlib_kernels_api.h>
 
@@ -14,23 +15,19 @@
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::runtime::KernelRuntimeContext;
-using SizesType = ::executorch::aten::SizesType;
-using Tensor = ::executorch::aten::Tensor;
-using IntArrayRef = ::executorch::aten::ArrayRef<int64_t>;
-using ::executorch::aten::Scalar;
+using ::executorch::aten::ArrayRef;
+using ::executorch::aten::IntArrayRef;
 using ::executorch::aten::ScalarType;
+using ::executorch::aten::SizesType;
+using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
-enum datatype {
-  Ushort = 20,
-  Uint = 23,
-};
 
 namespace cadence {
 namespace impl {
@@ -93,8 +90,8 @@ Tensor& permute_copy_out(
       out);
 #endif
 
-  const ::executorch::aten::ArrayRef<Tensor::SizesType> in_size = in.sizes();
-  const ::executorch::aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
+  const ArrayRef<Tensor::SizesType> in_size = in.sizes();
+  const ArrayRef<Tensor::SizesType> out_size = out.sizes();
 
   int inp_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
@@ -115,7 +112,13 @@ Tensor& permute_copy_out(
   signed char* out_data = out.mutable_data_ptr<signed char>();
   const signed char* const inp_data = in.const_data_ptr<signed char>();
 
-  if ((out.scalar_type() == ScalarType::Int) && (in.dim() <= 5)) {
+  if (((out.scalar_type() == ScalarType::Int) ||
+       (out.scalar_type() == ScalarType::Short) ||
+       (out.scalar_type() == ScalarType::Char) ||
+       (out.scalar_type() == ScalarType::UInt32) ||
+       (out.scalar_type() == ScalarType::UInt16) ||
+       (out.scalar_type() == ScalarType::Byte)) &&
+      (in.dim() <= 5)) {
     XT_KERNEL_CHECK(
         ctx,
         out,
@@ -126,68 +129,7 @@ Tensor& permute_copy_out(
         inp_shape,
         permute_vec,
         in.dim(),
-        sizeof(int));
-  } else if ((out.scalar_type() == ScalarType::Short) && (in.dim() <= 5)) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_permute,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        permute_vec,
-        in.dim(),
-        sizeof(short));
-  } else if ((out.scalar_type() == ScalarType::Char) && (in.dim() <= 5)) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_permute,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        permute_vec,
-        in.dim(),
-        sizeof(char));
-
-  } else if ((out.scalar_type() == (ScalarType)Uint) && (in.dim() <= 5)) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_permute,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        permute_vec,
-        in.dim(),
-        sizeof(int));
-  } else if ((out.scalar_type() == (ScalarType)Ushort) && (in.dim() <= 5)) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_permute,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        permute_vec,
-        in.dim(),
-        sizeof(short));
-  } else if ((out.scalar_type() == ScalarType::Byte) && (in.dim() <= 5)) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_permute,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        permute_vec,
-        in.dim(),
-        sizeof(char));
+        get_element_size(out.scalar_type()));
   } else {
     const auto in_type = out.scalar_type();
     size_t in_coord[5] = {0};

@@ -18,9 +18,10 @@
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using Tensor = ::executorch::aten::Tensor;
-using ScalarType = ::executorch::aten::ScalarType;
-using IntArrayRef = ::executorch::aten::ArrayRef<int64_t>;
+using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::optional;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
@@ -35,8 +36,8 @@ template <typename CTYPE>
 void layer_norm(
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const ::executorch::aten::optional<Tensor>& weight,
-    const ::executorch::aten::optional<Tensor>& bias,
+    const optional<Tensor>& weight,
+    const optional<Tensor>& bias,
     CTYPE eps,
     Tensor& out,
     Tensor& mean,
@@ -112,8 +113,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const ::executorch::aten::optional<Tensor>& weight,
-    const ::executorch::aten::optional<Tensor>& bias,
+    const optional<Tensor>& weight,
+    const optional<Tensor>& bias,
     double eps,
     Tensor& out,
     Tensor& mean_out,

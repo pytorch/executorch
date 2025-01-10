@@ -18,7 +18,6 @@
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
@@ -29,7 +28,7 @@ using ::executorch::runtime::KernelRuntimeContext;
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
-enum datatype { Ushort = 20, Bits4u = 21, Bits4 = 22 };
+enum datatype { Bits4u = 21, Bits4 = 22 };
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
@@ -74,15 +73,12 @@ void check_quantize_per_tensor_args(
         static_cast<int32_t>(std::numeric_limits<int8_t>::min());
     quant_max_upper_bound =
         static_cast<int32_t>(std::numeric_limits<int8_t>::max());
-  } else if (dtype == ScalarType::Bits16) {
+  } else if (dtype == ScalarType::UInt16) {
     quant_min_lower_bound = std::numeric_limits<uint16_t>::min();
     quant_max_upper_bound = std::numeric_limits<uint16_t>::max();
   } else if (dtype == ScalarType::Short) {
     quant_min_lower_bound = std::numeric_limits<int16_t>::min();
     quant_max_upper_bound = std::numeric_limits<int16_t>::max();
-  } else if (dtype == (ScalarType)Ushort) {
-    quant_min_lower_bound = std::numeric_limits<uint16_t>::min();
-    quant_max_upper_bound = std::numeric_limits<uint16_t>::max();
   } else if (dtype == (ScalarType)Bits4u) {
     quant_min_lower_bound = std::numeric_limits<uint8_t>::min();
     quant_max_upper_bound = std::numeric_limits<uint8_t>::max();
@@ -212,7 +208,7 @@ Tensor& quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Ushort) {
+    } else if (out.scalar_type() == ScalarType::UInt16) {
       uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -297,7 +293,7 @@ Tensor& quantize_impl(
   case ScalarType::in_dtype:                                         \
     switch (out.scalar_type()) {                                     \
       ET_FORALL_INT_TYPES_WITH(IN_CTYPE, ASYM_QUANTIZE_IMPL_TENSOR); \
-      ASYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, Bits16)          \
+      ASYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, UInt16)          \
       default:                                                       \
         ET_CHECK_MSG(                                                \
             false,                                                   \
@@ -370,7 +366,7 @@ Tensor& quantize_impl(
   case ScalarType::in_dtype:                                          \
     switch (out.scalar_type()) {                                      \
       ET_FORALL_INT_TYPES_WITH(CTYPE_IN, ASYM_QUANTIZE_IMPL_CHANNEL); \
-      ASYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, Bits16)          \
+      ASYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, UInt16)          \
       default:                                                        \
         ET_CHECK_MSG(                                                 \
             false,                                                    \
@@ -423,7 +419,7 @@ Tensor& quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Ushort) {
+    } else if (out.scalar_type() == ScalarType::UInt16) {
       uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -503,7 +499,7 @@ Tensor& quantize_impl(
   case ScalarType::in_dtype:                                        \
     switch (out.scalar_type()) {                                    \
       ET_FORALL_INT_TYPES_WITH(IN_CTYPE, SYM_QUANTIZE_IMPL_TENSOR); \
-      SYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, Bits16)          \
+      SYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, UInt16)          \
       default:                                                      \
         ET_CHECK_MSG(                                               \
             false,                                                  \
@@ -575,7 +571,7 @@ Tensor& quantize_impl(
   case ScalarType::in_dtype:                                         \
     switch (out.scalar_type()) {                                     \
       ET_FORALL_INT_TYPES_WITH(CTYPE_IN, SYM_QUANTIZE_IMPL_CHANNEL); \
-      SYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, Bits16)          \
+      SYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, UInt16)          \
       default:                                                       \
         ET_CHECK_MSG(                                                \
             false,                                                   \

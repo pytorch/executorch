@@ -16,7 +16,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
-using ::executorch::aten::Scalar;
+using ::executorch::aten::ArrayRef;
+using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
@@ -30,8 +31,7 @@ namespace native {
 int prepare_data(
     const Tensor& in,
     Tensor& out,
-    ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-        dim_list,
+    optional<ArrayRef<int64_t>> dim_list,
     int* inp_shape,
     int* out_shape,
     int* p_axis,
@@ -62,10 +62,9 @@ int prepare_data(
 Tensor& mean_dim_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-        dim_list,
+    optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
-    ::executorch::aten::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   (void)ctx;
 
@@ -141,10 +140,14 @@ Tensor& mean_dim_out(
       out_shape[0] = 1;
     }
 
-    int scratch_size = 1;
-    for (int i = 0; i < num_inp_dims; i++) {
-      scratch_size *= inp_shape[i];
+    int inp_shape_max = inp_shape[p_axis[0]];
+    for (int i = 1; i < num_axis_dims; i++) {
+      if (inp_shape[p_axis[i]] > inp_shape_max) {
+        inp_shape_max = inp_shape[p_axis[i]];
+      }
     }
+
+    int scratch_size = in.numel() / inp_shape_max;
 
     executorch::runtime::Result<void*> temp_mem =
         ctx.allocate_temp(scratch_size * sizeof(float));

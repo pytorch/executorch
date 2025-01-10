@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+#include <executorch/backends/cadence/fusion_g3/operators/xt_utils.h>
 
 #include <cstring>
 
@@ -16,7 +17,6 @@
 #include <executorch/kernels/portable/cpu/util/slice_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
@@ -27,10 +27,6 @@ using ::executorch::runtime::KernelRuntimeContext;
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
-enum datatype {
-  Ushort = 20,
-  Uint = 23,
-};
 
 namespace cadence {
 namespace impl {
@@ -105,7 +101,12 @@ Tensor& slice_copy_Tensor_out(
   signed char* out_data = out.mutable_data_ptr<signed char>();
   const signed char* const inp_data = in.const_data_ptr<signed char>();
 
-  if (out.scalar_type() == ScalarType::Int) {
+  if ((out.scalar_type() == ScalarType::Int) ||
+      (out.scalar_type() == ScalarType::Short) ||
+      (out.scalar_type() == ScalarType::Char) ||
+      (out.scalar_type() == ScalarType::UInt32) ||
+      (out.scalar_type() == ScalarType::UInt16) ||
+      (out.scalar_type() == ScalarType::Byte)) {
     XT_KERNEL_CHECK(
         ctx,
         out,
@@ -119,83 +120,7 @@ Tensor& slice_copy_Tensor_out(
         (int)(end - 1),
         (int)step,
         (int)dim,
-        sizeof(int));
-  } else if (out.scalar_type() == ScalarType::Short) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_slice,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        in.dim(),
-        (int)start,
-        (int)(end - 1),
-        (int)step,
-        (int)dim,
-        sizeof(short));
-  } else if (out.scalar_type() == ScalarType::Char) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_slice,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        in.dim(),
-        (int)start,
-        (int)(end - 1),
-        (int)step,
-        (int)dim,
-        sizeof(char));
-
-  } else if (out.scalar_type() == (ScalarType)Uint) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_slice,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        in.dim(),
-        (int)start,
-        (int)(end - 1),
-        (int)step,
-        (int)dim,
-        sizeof(int));
-  } else if (out.scalar_type() == (ScalarType)Ushort) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_slice,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        in.dim(),
-        (int)start,
-        (int)(end - 1),
-        (int)step,
-        (int)dim,
-        sizeof(short));
-  } else if (out.scalar_type() == ScalarType::Byte) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_slice,
-        out_data,
-        out_shape,
-        inp_data,
-        inp_shape,
-        in.dim(),
-        (int)start,
-        (int)(end - 1),
-        (int)step,
-        (int)dim,
-        sizeof(char));
+        get_element_size(out.scalar_type()));
   } else {
     torch::executor::compute_slice(in, dim, start, length, step, out);
   }

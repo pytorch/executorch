@@ -18,7 +18,6 @@
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
@@ -32,7 +31,7 @@ using optional = ::executorch::aten::optional<T>;
  * operator need to be updated accordingly
  */
 
-enum datatype { Ushort = 20, Bits4u = 21, Bits4 = 22 };
+enum datatype { Bits4u = 21, Bits4 = 22 };
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
@@ -57,9 +56,8 @@ void check_dequantize_per_tensor_args(
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
           input.scalar_type() == ScalarType::Char ||
-          input.scalar_type() == ScalarType::Bits16 ||
+          input.scalar_type() == ScalarType::UInt16 ||
           input.scalar_type() == ScalarType::Short ||
-          input.scalar_type() == (ScalarType)Ushort ||
           input.scalar_type() == (ScalarType)Bits4 ||
           input.scalar_type() == (ScalarType)Bits4u ||
           input.scalar_type() == ScalarType::Int,
@@ -154,7 +152,7 @@ Tensor& dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Ushort) {
+    } else if (input.scalar_type() == ScalarType::UInt16) {
       const uint16_t* input_data = input.const_data_ptr<uint16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -236,7 +234,7 @@ Tensor& dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_TENSOR);
-          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, Bits16);
+          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -328,7 +326,7 @@ Tensor& dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_CHANNEL);
-          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, Bits16);
+          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -364,7 +362,7 @@ Tensor& dequantize_impl(
           input.dim(),
           axis,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Ushort) {
+    } else if (input.scalar_type() == ScalarType::UInt16) {
       const uint16_t* input_data = input.const_data_ptr<uint16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -442,7 +440,7 @@ Tensor& dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_TENSOR);
-          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, Bits16);
+          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -534,7 +532,7 @@ Tensor& dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_CHANNEL);
-          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, Bits16);
+          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,

@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+#include <executorch/backends/cadence/fusion_g3/operators/xt_utils.h>
 
 #include <cstring>
 
@@ -16,7 +17,7 @@
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::aten::Scalar;
+using ::executorch::aten::ArrayRef;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
@@ -27,7 +28,6 @@ using ::executorch::runtime::KernelRuntimeContext;
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
-enum datatype { Ushort = 20, Uint = 23 };
 
 namespace cadence {
 namespace impl {
@@ -36,7 +36,7 @@ namespace native {
 
 Tensor& cat_out(
     KernelRuntimeContext& ctx,
-    ::executorch::aten::ArrayRef<Tensor> tensors,
+    ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   if (dim < 0) {
@@ -84,7 +84,7 @@ Tensor& cat_out(
   int inp_shapes_size[tensors.size()];
 
   int temp_sizes[tensors.size()][kTensorDimensionLimit];
-  ::executorch::aten::ArrayRef<Tensor::SizesType> temp_size;
+  ArrayRef<Tensor::SizesType> temp_size;
 
   for (int i = 0; i < tensors.size(); i++) {
     inp_tensors[i] = tensors[i].const_data_ptr<signed char>();
@@ -99,14 +99,19 @@ Tensor& cat_out(
 
   signed char* out_data = out.mutable_data_ptr<signed char>();
 
-  const ::executorch::aten::ArrayRef<Tensor::SizesType> out_size = out.sizes();
+  const ArrayRef<Tensor::SizesType> out_size = out.sizes();
   int out_shapes[kTensorDimensionLimit];
   for (int i = 0; i < out_size.size(); i++) // output shapes
   {
     out_shapes[i] = out_size[i];
   }
 
-  if (out.scalar_type() == ScalarType::Int) {
+  if ((out.scalar_type() == ScalarType::Int) ||
+      (out.scalar_type() == ScalarType::Short) ||
+      (out.scalar_type() == ScalarType::Char) ||
+      (out.scalar_type() == ScalarType::UInt32) ||
+      (out.scalar_type() == ScalarType::UInt16) ||
+      (out.scalar_type() == ScalarType::Byte)) {
     XT_KERNEL_CHECK(
         ctx,
         out,
@@ -118,73 +123,7 @@ Tensor& cat_out(
         inp_shapes_size[0],
         tensors.size(),
         (int)dim,
-        sizeof(int));
-  } else if (out.scalar_type() == ScalarType::Short) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_cat,
-        out_data,
-        out_shapes,
-        inp_tensors,
-        inp_tensors_shapes,
-        inp_shapes_size[0],
-        tensors.size(),
-        (int)dim,
-        sizeof(short));
-  } else if (out.scalar_type() == ScalarType::Char) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_cat,
-        out_data,
-        out_shapes,
-        inp_tensors,
-        inp_tensors_shapes,
-        inp_shapes_size[0],
-        tensors.size(),
-        (int)dim,
-        sizeof(char));
-  } else if (out.scalar_type() == (ScalarType)Uint) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_cat,
-        out_data,
-        out_shapes,
-        inp_tensors,
-        inp_tensors_shapes,
-        inp_shapes_size[0],
-        tensors.size(),
-        (int)dim,
-        sizeof(int));
-  } else if (out.scalar_type() == (ScalarType)Ushort) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_cat,
-        out_data,
-        out_shapes,
-        inp_tensors,
-        inp_tensors_shapes,
-        inp_shapes_size[0],
-        tensors.size(),
-        (int)dim,
-        sizeof(short));
-  } else if (out.scalar_type() == ScalarType::Byte) {
-    XT_KERNEL_CHECK(
-        ctx,
-        out,
-        xa_nn_cat,
-        out_data,
-        out_shapes,
-        inp_tensors,
-        inp_tensors_shapes,
-        inp_shapes_size[0],
-        tensors.size(),
-        (int)dim,
-        sizeof(char));
-
+        get_element_size(out.scalar_type()));
   } else {
     const size_t outer = executorch::runtime::getLeadingDims(out, dim);
     const size_t dim_stride = executorch::runtime::getTrailingDims(out, dim);

@@ -19,8 +19,10 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+using ::executorch::aten::optional;
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
+using ::executorch::aten::string_view;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::canCast;
 using ::executorch::runtime::Error;
@@ -230,7 +232,7 @@ Tensor& div_out_mode(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    ::executorch::aten::optional<::executorch::aten::string_view> mode,
+    optional<string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
     return div_out(ctx, a, b, out);
@@ -546,7 +548,7 @@ Tensor& div_scalar_mode_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
-    ::executorch::aten::optional<::executorch::aten::string_view> mode,
+    optional<string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
     return div_scalar_out(ctx, a, b, out);
