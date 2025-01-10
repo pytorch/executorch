@@ -121,7 +121,7 @@ VkImageLayout vk_layout(const PipelineStageFlags, const MemoryAccessFlags);
 
 class PipelineLayout final {
  public:
-  explicit PipelineLayout(VkDevice, VkDescriptorSetLayout);
+  explicit PipelineLayout(VkDevice, VkDescriptorSetLayout, const uint32_t);
 
   PipelineLayout(const PipelineLayout&) = delete;
   PipelineLayout& operator=(const PipelineLayout&) = delete;
@@ -193,13 +193,17 @@ class PipelineLayoutCache final {
   PipelineLayoutCache& operator=(PipelineLayoutCache&&) = delete;
 
   ~PipelineLayoutCache();
-
-  using Key = VkDescriptorSetLayout;
+  using Key = std::pair<VkDescriptorSetLayout, uint32_t>;
   using Value = PipelineLayout;
 
   struct Hasher {
-    inline size_t operator()(VkDescriptorSetLayout descriptor_layout) const {
-      return std::hash<VkDescriptorSetLayout>()(descriptor_layout);
+    inline size_t operator()(
+        std::pair<VkDescriptorSetLayout, uint32_t> key) const {
+      size_t seed = 0;
+      seed = utils::hash_combine(
+          seed, std::hash<VkDescriptorSetLayout>()(key.first));
+      seed = utils::hash_combine(seed, std::hash<uint32_t>()(key.second));
+      return seed;
     }
   };
 
@@ -212,7 +216,7 @@ class PipelineLayoutCache final {
   std::unordered_map<Key, Value, Hasher> cache_;
 
  public:
-  VkPipelineLayout retrieve(const Key&);
+  VkPipelineLayout retrieve(const VkDescriptorSetLayout, const uint32_t);
   void purge();
 };
 

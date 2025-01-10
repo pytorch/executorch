@@ -9,9 +9,6 @@
 # Install sentencepiece for llama tokenizer
 pip install snakeviz sentencepiece
 
-# Install torchao.
-pip install "$(dirname "$0")/../../../third-party/ao"
-
 # Install lm-eval for Model Evaluation with lm-evalution-harness
 # Install tiktoken for tokenizer
 pip install lm_eval==0.4.5
