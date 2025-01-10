@@ -26,10 +26,7 @@ from torch.export import export
 
 # Config for Capturing the weights, will be moved in the future
 
-# TODO(T182928844): Delegate dim order op to backend.
-_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
-    _check_ir_validity=False, _skip_dim_order=True
-)
+_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(_check_ir_validity=False)
 
 
 class ansi_colors:
@@ -219,7 +216,6 @@ class TestMPS(unittest.TestCase):
             dynamic_shapes=dynamic_shapes,
             edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
-                _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
             ),
         )
 
@@ -250,7 +246,6 @@ class TestMPS(unittest.TestCase):
                 export(delegated_program, sample_inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(
                     _check_ir_validity=False,
-                    _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
                 ),
             ).to_executorch(
                 config=ExecutorchBackendConfig(extract_delegate_segments=False)
