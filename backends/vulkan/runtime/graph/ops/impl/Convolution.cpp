@@ -293,7 +293,7 @@ Conv2dMethod get_conv2d_method(
 utils::uvec2 get_conv2d_dw_dispatch_divisor(
     const std::vector<int64_t>& weight_sizes) {
   if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
-    return {4u, 2u};
+    return {8u, 2u};
   }
   if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
     return {4u, 2u};
