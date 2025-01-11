@@ -80,8 +80,8 @@ We use [`lintrunner`](https://pypi.org/project/lintrunner/) to help make sure th
 code follows our standards. Set it up with:
 
 ```
-pip install lintrunner==0.11.0
-pip install lintrunner-adapters==0.11.0
+pip install lintrunner==0.12.7
+pip install lintrunner-adapters==0.12.4
 lintrunner init
 ```
 
@@ -197,7 +197,7 @@ If it's not clear how to add a test for your PR, take a look at the blame for
 the code you're modifying and find an author who has more context. Ask them
 for their help in the PR comments.
 
-TODO: Explain how to run tests locally without needing to push and wait for CI.
+The `test/run_oss_cpp_tests.sh` script will build and run C++ tests locally.
 
 ### Continuous Integration
 See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of

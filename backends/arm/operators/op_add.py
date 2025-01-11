@@ -26,7 +26,7 @@ class AddVisitor_080_BI(NodeVisitor):
     target = "aten.add.Tensor"
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+BI"),
+        TosaSpecification.create_from_string("TOSA-0.80+BI"),
     ]
 
     def __init__(self, *args):
@@ -38,9 +38,8 @@ class AddVisitor_080_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
-        # Specification (0.80.0) states that input and output types
+        # Specification (0.80) states that input and output types
         # should all be the same
         assert inputs[0].dtype == inputs[1].dtype == output.dtype
         # Handle int8 (quantized) and int32
@@ -84,7 +83,7 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
     # inheriting 'target' from BI class
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     def __init__(self, *args):
@@ -96,15 +95,14 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
-        # Specification (0.80.0) states that input and output types
+        # Specification (0.80) states that input and output types
         # should all be the same
         assert inputs[0].dtype == inputs[1].dtype == output.dtype
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
-            super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Add lowering
             assert inputs[0].dtype == ts.DType.FP32

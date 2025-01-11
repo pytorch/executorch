@@ -23,7 +23,7 @@ class BatchNormVisitor(NodeVisitor):
     target = "aten._native_batch_norm_legit_no_training.default"
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     def __init__(self, *args):
@@ -42,7 +42,6 @@ class BatchNormVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         # Decompose batch norm into sequence
         (activations, weights, bias, running_mean, running_var, momentum, epsilon) = (

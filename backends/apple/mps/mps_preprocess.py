@@ -32,6 +32,9 @@ from executorch.exir.backend.backend_details import (
     CompileSpec,
     PreprocessResult,
 )
+
+from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
+from executorch.exir.program._program import _transform
 from torch.export.exported_program import ExportedProgram
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -82,6 +85,9 @@ class MPSBackend(BackendDetails):
         # 3. After all the inputs, nodes and constants are added to the
         #    FlatBuffer graph, process the `output` nodes and add their id to
         #    the `output_ids` array in the schema.
+
+        # TODO: Remove this once we have a better support for the dim-order ops.
+        edge_program = _transform(edge_program, DimOrderOpsRevertPass())
 
         mps_graph = MPSGraph(
             version="0",

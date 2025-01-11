@@ -29,7 +29,6 @@ class RepeatVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: list[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
 
         multiples = inputs[1].special

@@ -126,6 +126,7 @@ def get_coreml_partitioner(
         # On iPhone 15 Pro, CPU decode model is over 8x faster than GPU for stories110M,
         # so default to CPU_ONLY
         coreml_compute_units = "cpu_only"
+    # pyre-ignore
     coreml_compute_units = {
         "cpu_only": ct.ComputeUnit.CPU_ONLY,
         "cpu_and_ne": ct.ComputeUnit.CPU_AND_NE,
@@ -157,7 +158,11 @@ def get_coreml_partitioner(
         op_linear_quantizer_config=op_linear_quantizer_config,
     )
 
-    take_over_mutable_buffer = minimum_deployment_target >= ct.target.iOS18
+    # ExecuTorch does not build CoreML delegate runtime to handle state
+    # when using OSS scripts, so we define take_over_mutable_buffer = False,
+    # even when target is iOS18
+    # take_over_mutable_buffer = minimum_deployment_target >= ct.target.iOS18
+    take_over_mutable_buffer = False
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
         take_over_mutable_buffer=take_over_mutable_buffer,

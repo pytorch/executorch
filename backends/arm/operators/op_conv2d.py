@@ -8,6 +8,8 @@ from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
+
+# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
@@ -53,7 +55,6 @@ class Conv2dVisitor(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         input, weight, bias, stride, pad, dilation, _, _, group = inputs
 
@@ -82,7 +83,7 @@ class Conv2dVisitor(NodeVisitor):
         input_zp = 0
         if inputs[0].dtype == ts.DType.INT8:
             # int8 input requires quantization information
-            input_qparams = get_input_qparams(node)
+            input_qparams = get_input_qparams(node)  # pyre-ignore[16]
             input_zp = input_qparams[0].zp
 
         attr.ConvAttribute(
@@ -164,9 +165,9 @@ class Conv2dVisitor(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if inputs[0].dtype == ts.DType.INT8:
             # Get scale_factor from input, weight, and output.
-            input_scale = input_qparams[0].scale
-            weight_scale = input_qparams[1].scale
-            output_qargs = get_output_qparams(node)
+            input_scale = input_qparams[0].scale  # pyre-ignore [61]
+            weight_scale = input_qparams[1].scale  # pyre-ignore [61]
+            output_qargs = get_output_qparams(node)  # pyre-ignore [16]
             build_rescale_conv_output(
                 tosa_graph,
                 # pyre-fixme[61]: Uninitialized local [61]: Local variable `conv2d_res` is undefined, or not always defined.

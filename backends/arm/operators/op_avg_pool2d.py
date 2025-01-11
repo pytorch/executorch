@@ -8,6 +8,8 @@ from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
+
+# pyre-fixme[21]: ' Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
@@ -25,7 +27,7 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
     target = "aten.avg_pool2d.default"
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+BI"),
+        TosaSpecification.create_from_string("TOSA-0.80+BI"),
     ]
 
     def __init__(self, *args):
@@ -73,17 +75,16 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         input_tensor = inputs[0]
         assert input_tensor.dtype == ts.DType.INT8
 
         accumulator_type = ts.DType.INT32
 
-        input_qargs = get_input_qparams(node)
+        input_qargs = get_input_qparams(node)  # pyre-ignore[16]
         input_zp = input_qargs[0].zp
 
-        output_qargs = get_output_qparams(node)
+        output_qargs = get_output_qparams(node)  # pyre-ignore[16]
         output_zp = output_qargs[0].zp
 
         self._build_generic_avgpool2d(
@@ -96,7 +97,7 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
     # inheriting 'target' from BI class
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80.0+MI"),
+        TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
     def define_node(
@@ -105,14 +106,13 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         assert (
             inputs[0].dtype == ts.DType.INT8 or inputs[0].dtype == ts.DType.FP32
         ), "Only FP32 and INT8 supported"
 
         if inputs[0].dtype == ts.DType.INT8:
-            super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            super().define_node(node, tosa_graph, inputs, output)
 
         if inputs[0].dtype == ts.DType.FP32:
             accumulator_type = ts.DType.FP32

@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import codecs
 import getpass
 import json
@@ -105,7 +108,6 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
     def annotate_single_in_single_out(
         node: Node, quantization_config: QuantizationConfig
     ) -> None:
-
         input_qspec_map = {}
         input_act = node.args[0]
         input_qspec_map[input_act] = quantization_config.input_activation
@@ -338,7 +340,7 @@ class SingleLlama:
                     ] * (self.llama_meta["get_max_seq_len"] - 1):
                         a.meta[QCOM_QUANTIZED_IO] = kv_type
 
-    def quantize(self, quant_dtype, custom_annotations=()):
+    def quantize(self, quant_dtype, args, custom_annotations=()):
         self.quant_dtype = quant_dtype
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
@@ -353,7 +355,7 @@ class SingleLlama:
 
         with torch.no_grad():
             fx_graph_module = torch.export.export(
-                self.llama_model, self.inputs
+                self.llama_model, self.inputs, strict=True
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         print("Quantizing the model...")
@@ -470,6 +472,7 @@ def compile(args):
     start_quantize_ts = time.time()
     single_llama.quantize(
         quant_dtype,
+        args=args,
         custom_annotations=(
             annotate_matmul_16a8w,
             annotate_linear_16a8w_in_affine_layer,

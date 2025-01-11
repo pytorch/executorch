@@ -4,13 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
 from executorch.examples.models.llama.llama_transformer import (
-    FeedForward,
     ModelArgs,
     precompute_freqs_cis,
 )
@@ -55,37 +57,44 @@ class LlamaAttention(nn.Module):
     def prepare_sha(self):
         self.wq_sha = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
                 for _ in range(self.n_heads)
             ]
         )
         self.wk_sha = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
                 for _ in range(self.n_kv_heads)
             ]
         )
         self.wv_sha = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
                 for _ in range(self.n_kv_heads)
             ]
         )
+        self.wo_sha = nn.Conv2d(self.n_heads * self.head_dim, self.dim, 1, bias=False)
 
         self.forward_mha = self.forward
         self.forward = self.forward_sha
-
         for i in range(self.n_heads):
             self.wq_sha[i].weight.data.copy_(
-                self.wq.weight[i * self.head_dim : (i + 1) * self.head_dim]
+                self.wq.weight[
+                    i * self.head_dim : (i + 1) * self.head_dim, :, None, None
+                ]
             )
         for i in range(self.n_kv_heads):
             self.wk_sha[i].weight.data.copy_(
-                self.wk.weight[i * self.head_dim : (i + 1) * self.head_dim]
+                self.wk.weight[
+                    i * self.head_dim : (i + 1) * self.head_dim, :, None, None
+                ]
             )
             self.wv_sha[i].weight.data.copy_(
-                self.wv.weight[i * self.head_dim : (i + 1) * self.head_dim]
+                self.wv.weight[
+                    i * self.head_dim : (i + 1) * self.head_dim, :, None, None
+                ]
             )
+        self.wo_sha.weight.data.copy_(self.wo.weight[:, :, None, None])
 
     def forward_sha(
         self,
@@ -96,9 +105,22 @@ class LlamaAttention(nn.Module):
         k_caches: Optional[List[torch.Tensor]] = None,
         v_caches: Optional[List[torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        q = [wq_sha(hidden_states) for wq_sha in self.wq_sha]
-        k = [wk_sha(hidden_states) for wk_sha in self.wk_sha]
-        v = [wv_sha(hidden_states) for wv_sha in self.wv_sha]
+        bsz, seq_len, _ = hidden_states.shape
+        hidden_states = torch.reshape(
+            hidden_states, (bsz, seq_len, 1, self.dim)
+        ).transpose(1, 3)
+        q = [
+            wq_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            for wq_sha in self.wq_sha
+        ]
+        k = [
+            wk_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            for wk_sha in self.wk_sha
+        ]
+        v = [
+            wv_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            for wv_sha in self.wv_sha
+        ]
         for i in range(len(q)):
             q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
         for i in range(len(k)):
@@ -126,7 +148,11 @@ class LlamaAttention(nn.Module):
             output_y.append(y)
 
         y = torch.concat(output_y, dim=-1)
-        y = self.wo(y)
+        y = y.reshape(bsz, seq_len, 1, -1)
+        y = y.transpose(1, 3)
+        y = self.wo_sha(y)
+        y = y.transpose(1, 3)
+        y = y.reshape(bsz, seq_len, -1)
 
         if self.output_new_cache_only:
             if k_caches and v_caches:
@@ -145,12 +171,12 @@ class LlamaAttention(nn.Module):
         k_caches: List[torch.Tensor],
         v_caches: List[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        bsz, seqlen, _ = hidden_states.shape
+        bsz, seq_len, _ = hidden_states.shape
 
         q, k, v = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
-        q = q.view(bsz, seqlen, self.n_heads, self.head_dim)
-        k = k.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
-        v = v.view(bsz, seqlen, self.n_kv_heads, self.head_dim)
+        q = q.view(bsz, seq_len, self.n_heads, self.head_dim)
+        k = k.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
+        v = v.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
 
         q = apply_rotary_emb_single(q, freqs_cos, freqs_sin)
         k = apply_rotary_emb_single(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
@@ -198,6 +224,45 @@ class LlamaAttention(nn.Module):
         y = self.wo(y)
 
         return y, output_kh, output_vh
+
+
+class FeedForward(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        assert args.hidden_dim is not None
+        self.hidden_dim: int = args.hidden_dim
+        self.dim: int = args.dim
+        self.w1 = nn.Linear(self.dim, self.hidden_dim, bias=False)
+        self.w2 = nn.Linear(self.hidden_dim, self.dim, bias=False)
+        self.w3 = nn.Linear(self.dim, self.hidden_dim, bias=False)
+
+    def prepare_feedfoward_conv(self):
+        self.w1_conv = nn.Conv2d(self.dim, self.hidden_dim, 1, bias=False)
+        self.w2_conv = nn.Conv2d(self.hidden_dim, self.dim, 1, bias=False)
+        self.w3_conv = nn.Conv2d(self.dim, self.hidden_dim, 1, bias=False)
+
+        self.forward_no_conv = self.forward
+        self.forward = self.forward_feedfoward_conv
+
+        self.w1_conv.weight.data.copy_(self.w1.weight[:, :, None, None])
+        self.w2_conv.weight.data.copy_(self.w2.weight[:, :, None, None])
+        self.w3_conv.weight.data.copy_(self.w3.weight[:, :, None, None])
+
+        del self.w1
+        del self.w2
+        del self.w3
+
+    def forward_feedfoward_conv(self, x):
+        bsz, _, _ = x.size()
+        x = torch.reshape(x, (bsz, -1, self.dim, 1))
+        x = x.transpose(1, 2)  # Transpose right before and after Conv
+        x = self.w2_conv(F.silu(self.w1_conv(x)) * self.w3_conv(x))
+        x = x.transpose(1, 2)
+        x = torch.reshape(x, (bsz, -1, self.dim))
+        return x
+
+    def forward(self, x):
+        return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
 class LlamaDecoderLayer(nn.Module):
@@ -264,6 +329,22 @@ class LlamaModel(nn.Module):
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
+
+    def prepare_output_conv(self):
+        def forward_output_conv(x):
+            bsz, _, _ = x.size()
+            x = torch.reshape(x, (bsz, -1, 1, self.dim))
+            x = x.transpose(1, 3)  # Transpose right before and after Conv
+            x = self.output_conv(x)
+            x = x.transpose(1, 3)
+            x = torch.reshape(x, (bsz, -1, self.vocab_size))
+            return x
+
+        self.output_conv = nn.Conv2d(self.dim, self.vocab_size, 1, bias=False)
+        self.output_conv.weight.data.copy_(self.output.weight[:, :, None, None])
+
+        del self.output
+        self.output = forward_output_conv
 
     def forward(
         self,
