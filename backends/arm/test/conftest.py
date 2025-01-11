@@ -36,6 +36,7 @@ def pytest_configure(config):
             )
         pytest._test_options["corstone_fvp"] = True  # type: ignore[attr-defined]
     pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
+    pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
@@ -47,6 +48,11 @@ def pytest_addoption(parser):
     parser.addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
     parser.addoption("--arm_run_corstoneFVP", action="store_true")
     parser.addoption("--fast_fvp", action="store_true")
+    parser.addoption(
+        "--llama_inputs",
+        nargs="+",
+        help="List of two files. Firstly .pt file. Secondly .json",
+    )
 
 
 def pytest_sessionstart(session):
