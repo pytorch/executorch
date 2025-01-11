@@ -131,11 +131,8 @@ SUPPORTED_QUANT_MODULES = [
     torch.nn.functional.conv1d,
     torch.ao.nn.quantized.reference.modules.conv.Conv1d,
     torch.nn.Conv2d,
-    torch.nn.ConvTranspose2d,
     torch.nn.functional.conv2d,
-    torch.nn.functional.conv_transpose2d,
     torch.ao.nn.quantized.reference.modules.conv.Conv2d,
-    torch.ao.nn.quantized.reference.modules.conv.ConvTranspose2d,
     torch.nn.BatchNorm1d,
     torch.nn.BatchNorm2d,
 ]

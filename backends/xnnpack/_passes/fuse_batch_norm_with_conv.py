@@ -140,6 +140,8 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
         Determine whether a batch norm node can be fused with a preceding conv node.
         """
 
+        # Only fuse transposed convolutions if the kernel size matches the stride,
+        # Weights are not distributed equally across the spatial dimensions otherwise
         is_transpose = conv.args[6]
         kernel_node = get_input_node(conv, 1)
         kernel_shape = get_shape(kernel_node)

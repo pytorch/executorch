@@ -40,9 +40,6 @@ try:
 except:
     torchao_installed = False
 
-# Set higher recompile limit to avoid exception on over-recompilation in tests
-torch._dynamo.config.recompile_limit = 160
-
 
 # Pytorch Modules Used for Testing
 class BaseLinear(torch.nn.Module):

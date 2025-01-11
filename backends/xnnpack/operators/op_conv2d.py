@@ -84,16 +84,26 @@ class Conv2d(NodeVisitor):
         )
         fp32_static_weights = kernel_node.meta["val"].dtype == torch.float16
 
+        if weight_quant_params is not None and weight_quant_params.per_channel:
+            if is_transpose:
+                check_or_raise(
+                    weight_quant_params.axis == 1 and groups == 1,
+                    "XNNPACK currently only supports per output channel quantization with groups == 1 for transpose convolutions",
+                )
+            elif is_depthwise_conv:
+                check_or_raise(
+                    weight_quant_params.axis == 0,
+                    "XNNPACK currently only supports per input channel quantization for depthwise convolutions",
+                )
         self.define_tensor(
             kernel_node,
             xnn_graph,
             vals_to_ids,
             convert_to_nhwc=True,
-            swap_nc_for_depthwise_weights=is_depthwise_conv,
+            swap_in_out_for_weights=is_depthwise_conv or is_transpose,
             quant_params=weight_quant_params,
             fp32_static_weights=fp32_static_weights,
-            swap_in_out_for_transpose_weights=is_transpose,
-            groups=groups,
+            groups=groups if is_transpose else 1,
         )
         kwargs["filter_id"] = vals_to_ids[get_input_node(node, 1)]
 

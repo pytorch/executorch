@@ -343,10 +343,9 @@ class NodeVisitor:
         xnn_graph: XNNGraph,
         vals_to_ids: Dict[torch.fx.Node, int],
         convert_to_nhwc: bool = False,
-        swap_nc_for_depthwise_weights: bool = False,
+        swap_in_out_for_weights: bool = False,
         quant_params: Optional[QuantParams] = None,
         fp32_static_weights: bool = False,
-        swap_in_out_for_transpose_weights: bool = False,
         groups: int = 1,
     ) -> None:
         """
@@ -359,18 +358,20 @@ class NodeVisitor:
                         their corresponding ids in XNNGraph
             convert_to_nhwc: bool to indicate whether tensor shape should be permuted to
                         reflect the nhwc memory format.
-            swap_nc_for_depthwise_weights: bool to indicate whether tensor shape
-                        should be permuted such that the N and C dimensions are
-                        swapped, which should be used for depthwise convolution
+            swap_in_out_for_weights: bool to indicate whether tensor shape should be
+                        permuted and reshape from (inc, oc/groups, height, width) to (oc, inc/groups, height, width)
+                        , which should be used for depthwise/transpose convolution
                         weights. This is only valid for tensors which hold
                         constant data. If used along with convert_to_nhwc, this
                         swap will happen before converting to nhwc.
             quant_params: Quantization meta data for this tensor, None if it is not quantized
             fp32_static_weights: XNN_FLAG_FP32_STATIC_WEIGHTS for fp16 conv
-            swap_in_out_for_transpose_weights: bool to indicate whether tensor shape should be
-                permuted and reshape from (inc, oc/groups, height, width) to  (oc, inc/groups, height, width)
-            groups: number of groups for swap_in_out_for_transpose_weights
+            groups: number of groups for swap_in_out_for_weights
         """
+
+        assert (
+            swap_in_out_for_weights or groups == 1
+        ), "groups is option for swap_in_out_for_weights"
 
         if tensor in vals_to_ids:
             return
@@ -399,18 +400,15 @@ class NodeVisitor:
             xnn_graph,
             vals_to_ids,
             convert_to_nhwc,
-            swap_nc_for_depthwise_weights,
+            swap_in_out_for_weights,
             quant_params,
             fp32_static_weights,
-            swap_in_out_for_transpose_weights,
             groups,
         )
 
         # convert tensor shape must reflect memory format, default is contiguous, so
         # only permute shape if we are converting the tensor to nhwc format
-        if swap_nc_for_depthwise_weights:
-            dims = [dims[1], dims[0]] + dims[2:]
-        if swap_in_out_for_transpose_weights:
+        if swap_in_out_for_weights:
             dims = [dims[1] * groups, dims[0] // groups] + dims[2:]
         if convert_to_nhwc:
             check_or_raise(len(dims) == 4, "Converting to nhwc requires 4d tensor")
@@ -431,24 +429,16 @@ class NodeVisitor:
         )
 
         # Override the quant params axis since we have
-        # updated the weights for depthwise, with that the out_channels dim
+        # updated the weights for depthwise/ transposed_conv2d, with that the out_channels dim
         # will be dims[3] instead of dims[0]. Let's update the per_channel
         # quant axis to match the new weight tensor before serializing
-        if swap_nc_for_depthwise_weights and (
-            quant_params and quant_params.per_channel
-        ):
+        if swap_in_out_for_weights and (quant_params and quant_params.per_channel):
             if quant_params.axis == 0:
                 quant_params.axis = len(dims) - 1
+            elif quant_params.axis == 1:
+                quant_params.axis = 0
             else:
-                assert f"Unsupported weight per channel quantization axis for depthwise conv2d: {quant_params.axis}, expecting 0."
-
-        if swap_in_out_for_transpose_weights and (
-            quant_params and quant_params.per_channel
-        ):
-            if quant_params.axis == 0:
-                quant_params.axis = len(dims) - 1
-            else:
-                assert f"Unsupported weight per channel quantization axis for conv_transpose2d: {quant_params.axis}, expecting 0."
+                assert f"Unsupported weight per channel quantization axis for depthwise conv2d / conv_transpose2d : {quant_params.axis}, expecting 0 / 1."
 
         # Serialize tensor value
         ser_val = (
@@ -509,10 +499,9 @@ class NodeVisitor:
         xnn_graph: XNNGraph,
         vals_to_ids: Dict[torch.fx.Node, int],
         convert_to_nhwc: bool,
-        swap_nc_for_depthwise_weights: bool,
+        swap_in_out_for_weights: bool,
         quant_params: Optional[QuantParams],
         fp32_static_weights: bool = False,
-        swap_in_out_for_transpose_weights: bool = False,
         groups: int = 1,
     ) -> int:
         """
@@ -526,24 +515,30 @@ class NodeVisitor:
                         their corresponding ids in XNNGraph
             convert_to_nhwc: bool to indicate whether tensor shape should be permuted to
                         reflect the nhwc memory format.
-            swap_nc_for_depthwise_weights: bool to indicate whether tensor shape
-                        should be permuted such that the N and C dimensions are
-                        swapped, which should be used for depthwise convolution
+            swap_in_out_for_weights: bool to indicate whether tensor shape should be
+                        permuted and reshape from (inc, oc/groups, height, width) to (oc, inc/groups, height, width)
+                        , which should be used for depthwise/transpose convolution
                         weights. This is only valid for tensors which hold
                         constant data. If used along with convert_to_nhwc, this
                         swap will happen before converting to nhwc.
             quant_params: Quantization meta data for this tensor, None if it is not quantize
             fp32_static_weights: bool to indicate whether tensor is fp32 static weights
+            groups: groups for swap_in_out_for_weights
 
         Returns:
             buffer_idx: idx of the serialized data. 0 If not associated constant
                         data
         """
+
+        assert (
+            swap_in_out_for_weights or groups == 1
+        ), "groups is option for swap_in_out_for_weights"
+
         # The get_attr node is the input to quant_params.
         get_attr_node = tensor if quant_params is None else quant_params.q_input
         if not is_param_node(self.exported_program, get_attr_node):
             check_or_raise(
-                not swap_nc_for_depthwise_weights,
+                not swap_in_out_for_weights,
                 "Swapping N and C dimensions is only valid for constant data tensors",
             )
             return 0
@@ -560,12 +555,9 @@ class NodeVisitor:
             # ensure that the const is fp32
             const_val = const_val.to(dtype=torch.float32).contiguous()
 
-        if swap_nc_for_depthwise_weights:
-            const_val = const_val.permute(
-                dims=((1, 0) + tuple(range(2, const_val.dim())))
-            ).contiguous()
-
-        if swap_in_out_for_transpose_weights:
+        if swap_in_out_for_weights:
+            # Permute and reshape the tensor from (inc, oc/groups, height, width) to (oc, inc/groups, height, width)
+            # which should be used for depthwise/transpose convolution weights for XNNPACK
             shape = const_val.shape
             const_val = const_val.reshape(
                 (groups, const_val.shape[0] // groups) + const_val.shape[1:]

@@ -318,7 +318,7 @@ class ConvolutionConfig(GEMMConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Currently we have no support for convolution 3d and transposed convolution
+        Currently we have no support for convolution 3d
         """
         if not super().check_constraints(node, ep):
             return False
@@ -333,11 +333,12 @@ class ConvolutionConfig(GEMMConfig):
 
         is_transpose = node.args[6]
         groups = cast(int, node.args[8])
+
         if (
             is_transpose
             and weight_quant_params is not None
             and weight_quant_params.per_channel
-            and groups > 1
+            and (groups > 1 or weight_quant_params.axis != 1)
         ):
             why(
                 node,
