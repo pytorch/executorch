@@ -28,10 +28,9 @@ class TestBatchNormFusion(unittest.TestCase):
         ):
             super().__init__()
             op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
-            # if kernel_size != stride, we cant fuse the batch norm into ConvTranspose2d
-            stride = kernel_size if transpose else (1, 1)
-            self.conv2d = op(in_features, out_features, kernel_size, stride=stride)
+            self.conv2d = op(in_features, out_features, kernel_size)
             self.bn = torch.nn.BatchNorm2d(out_features)
+            self.forward(torch.randn(2, 2, 4, 4) * 2 + 2)  # update the BN stats
 
         def forward(self, x):
             y = self.conv2d(x)
