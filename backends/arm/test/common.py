@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -56,19 +56,15 @@ def maybe_get_tosa_collate_path() -> str | None:
     return None
 
 
-def get_tosa_compile_spec(
-    tosa_version: str, permute_memory_to_nhwc=True, custom_path=None
-) -> list[CompileSpec]:
+def get_tosa_compile_spec(tosa_version: str, custom_path=None) -> list[CompileSpec]:
     """
     Default compile spec for TOSA tests.
     """
-    return get_tosa_compile_spec_unbuilt(
-        tosa_version, permute_memory_to_nhwc, custom_path
-    ).build()
+    return get_tosa_compile_spec_unbuilt(tosa_version, custom_path).build()
 
 
 def get_tosa_compile_spec_unbuilt(
-    tosa_version: str, permute_memory_to_nhwc=False, custom_path=None
+    tosa_version: str, custom_path=None
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the default TOSA tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -81,7 +77,6 @@ def get_tosa_compile_spec_unbuilt(
     compile_spec_builder = (
         ArmCompileSpecBuilder()
         .tosa_compile_spec(tosa_version)
-        .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(custom_path)
     )
 
@@ -89,7 +84,6 @@ def get_tosa_compile_spec_unbuilt(
 
 
 def get_u55_compile_spec(
-    permute_memory_to_nhwc=True,
     quantize_io=False,
     custom_path=None,
     reorder_inputs=None,
@@ -98,7 +92,6 @@ def get_u55_compile_spec(
     Default compile spec for Ethos-U55 tests.
     """
     return get_u55_compile_spec_unbuilt(
-        permute_memory_to_nhwc,
         quantize_io=quantize_io,
         custom_path=custom_path,
         reorder_inputs=reorder_inputs,
@@ -106,7 +99,6 @@ def get_u55_compile_spec(
 
 
 def get_u85_compile_spec(
-    permute_memory_to_nhwc=True,
     quantize_io=False,
     custom_path=None,
     reorder_inputs=None,
@@ -115,7 +107,6 @@ def get_u85_compile_spec(
     Default compile spec for Ethos-U85 tests.
     """
     return get_u85_compile_spec_unbuilt(
-        permute_memory_to_nhwc,
         quantize_io=quantize_io,
         custom_path=custom_path,
         reorder_inputs=reorder_inputs,
@@ -123,7 +114,6 @@ def get_u85_compile_spec(
 
 
 def get_u55_compile_spec_unbuilt(
-    permute_memory_to_nhwc=True,
     quantize_io=False,
     custom_path=None,
     reorder_inputs=None,
@@ -143,7 +133,6 @@ def get_u55_compile_spec_unbuilt(
             extra_flags="--debug-force-regor --output-format=raw",
         )
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
-        .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
         .set_input_order(reorder_inputs)
     )
@@ -151,7 +140,6 @@ def get_u55_compile_spec_unbuilt(
 
 
 def get_u85_compile_spec_unbuilt(
-    permute_memory_to_nhwc=True,
     quantize_io=False,
     custom_path=None,
     reorder_inputs=None,
@@ -169,7 +157,6 @@ def get_u85_compile_spec_unbuilt(
             extra_flags="--output-format=raw",
         )
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
-        .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
         .set_input_order(reorder_inputs)
     )

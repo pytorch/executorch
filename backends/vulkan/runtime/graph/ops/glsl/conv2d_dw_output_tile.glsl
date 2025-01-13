@@ -14,6 +14,8 @@
 
 #define TILE_SIZE ${TILE_SIZE}
 
+#define STRIDE_EQ_DILATION ${STRIDE_EQ_DILATION}
+
 #define BATCH_SIZE_X ${BATCH_SIZE_X}
 
 #define BATCH_SIZE_Y ${BATCH_SIZE_Y}
@@ -122,3 +124,42 @@ void main() {
     }
   }
 }
+
+#else
+void main() {
+  const uint div_by_x = gl_GlobalInvocationID.x / out_limits.x;
+  const ivec3 pos = ivec3(
+    gl_GlobalInvocationID.x % out_limits.x,
+    div_by_x % out_limits.y,
+    div_by_x / out_limits.y);
+
+  if (any(greaterThanEqual(pos, out_limits))) {
+    return;
+  }
+
+  // Compute the index of the top-left element of the overlay region. Negative
+  // indices indicate that the top-left element is in a region added by padding.
+  const ivec2 ipos = pos.xy * stride - padding;
+
+  // Compute the start and end of the input indices to load. Padding is assumed
+  // to be constant 0 padding, so any reads from the padding region is skipped.
+  const ivec2 start = ipos;
+  const ivec2 end = ipos + overlay_region.xy;
+
+  VEC4_T sum = texelFetch(t_bias, ivec2(pos.z, 0), 0);
+  int kx = 0;
+  for (int y = start.y, i = 0; i < TILE_SIZE; y += dilation.y, i++) {
+    for (int x = start.x, j = 0; j < TILE_SIZE; x += dilation.x, j++) {
+      // The weight kernel was rearranged such that every NxN filter is
+      // flattened to fit in one row. Each filter was then stacked on top of
+      // each other vertically.
+      const vec4 in_texel = texelFetch(t_in, ivec3(x, y, pos.z), 0);
+      sum = fma(in_texel, texelFetch(t_kernel, ivec2(kx, pos.z), 0), sum);
+      kx++;
+    }
+  }
+
+  imageStore(t_out, pos, op(sum, out_min, out_max));
+}
+
+#endif
