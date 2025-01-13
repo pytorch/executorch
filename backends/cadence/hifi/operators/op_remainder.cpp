@@ -10,33 +10,41 @@
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 #include "kernels.h"
 
-namespace cadence {
-namespace impl {
-namespace HiFi {
-namespace native {
-
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::can_cast;
 using executorch::runtime::canCast;
 using executorch::runtime::CppTypeToScalarType;
+using executorch::runtime::is_integral_type;
 using executorch::runtime::promoteTypes;
+using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::apply_binary_elementwise_fn;
 using torch::executor::apply_unary_map_fn;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
+using torch::executor::native::utils::apply_bitensor_elementwise_fn;
+using torch::executor::native::utils::apply_unitensor_elementwise_fn;
 using torch::executor::native::utils::extract_scalar;
+using torch::executor::native::utils::get_compute_type;
 using torch::executor::native::utils::get_scalar_dtype;
 using torch::executor::native::utils::promote_type_with_scalar;
 using torch::executor::native::utils::remainder_override;
+using torch::executor::native::utils::scalar_to;
+using torch::executor::native::utils::SupportedTensorDtypes;
+
+namespace cadence {
+namespace impl {
+namespace HiFi {
+namespace native {
 
 namespace {
 template <
@@ -91,6 +99,30 @@ Tensor& remainder_Tensor_out(
     Tensor& out) {
   (void)ctx;
 
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
+
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx,
+      (canCast(common_type, out.scalar_type()) &&
+       common_type != ScalarType::Bool),
+      InvalidArgument,
+      out);
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
+  // Resize
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
+
+  // Compute Dtype
+  ScalarType compute_type = get_compute_type(common_type);
   constexpr int kNnlibMaxDim =
       4; /*fallback to not optimised if broadcast and dim > 4 */
 
@@ -152,96 +184,96 @@ Tensor& remainder_Tensor_out(
     }
     return out;
   }
-  // Determine output size and resize for dynamic shapes
-  ET_KERNEL_CHECK(
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "remainder.Tensor_out";
+
+  bool div_by_zero_error = false;
+
+  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [&div_by_zero_error](
+            const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          CTYPE_COMPUTE value = 0;
+          if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
+            if (val_b == 0) {
+              div_by_zero_error = true;
+              return value;
+            }
+          }
+          value = remainder_override(val_a, val_b);
+          return value;
+        },
+        ctx,
+        a,
+        SupportedTensorDtypes::REALHBBF16,
+        b,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::REALHBF16);
+  });
+
+  ET_KERNEL_CHECK_MSG(
       ctx,
-      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      !div_by_zero_error,
       InvalidArgument,
-      out);
-
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType common_type = promoteTypes(a_type, b_type);
-  ScalarType out_type = out.scalar_type();
-
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
-
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, a_type, ctx, "remainder.Tensor_out", CTYPE_A, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, b_type, ctx, "remainder.Tensor_out", CTYPE_B, [&]() {
-              using CTYPE_IN = typename torch::executor::
-                  promote_types<CTYPE_A, CTYPE_B>::type;
-              ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-              ET_SWITCH_REAL_TYPES(
-                  out_type, ctx, "remainder.Tensor_out", CTYPE_OUT, [&]() {
-                    RemainderInner<
-                        can_cast<CTYPE_IN, CTYPE_OUT>::value,
-                        CTYPE_A,
-                        CTYPE_B,
-                        CTYPE_IN,
-                        CTYPE_OUT>::run(a, b, out);
-                  });
-            });
-      });
+      out,
+      "Remainder operation encountered integer division by zero");
 
   return out;
 }
 
 Tensor& remainder_Scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
-  (void)ctx;
+  // Common Dtype
+  ScalarType common_type = promote_type_with_scalar(a.scalar_type(), b);
 
-  // Resize for dynamic shape
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx,
+      (canCast(common_type, out.scalar_type()) &&
+       common_type != ScalarType::Bool),
+      InvalidArgument,
+      out);
+
+  // Check for intergral division by zero
   ET_KERNEL_CHECK_MSG(
       ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
+      !(executorch::runtime::isIntegralType(common_type, true) &&
+        scalar_to<double>(b) == 0),
       InvalidArgument,
       out,
-      "Failed to resize output tensor.");
+      "Remainder operation encountered integer division by zero");
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = get_scalar_dtype(b);
-  ScalarType common_type = promote_type_with_scalar(a_type, b);
-  ScalarType out_type = out.scalar_type();
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+  // Resize
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, a_type, ctx, "remainder.Scalar_out", CTYPE_A, [&]() {
-        ET_SWITCH_SCALAR_OBJ_TYPES(
-            b_type, ctx, "remainder.Scalar_out", CTYPE_B, [&]() {
-              CTYPE_B val_b = 0;
-              extract_scalar(b, &val_b);
-              ET_SWITCH_REAL_TYPES(
-                  common_type, ctx, "remainder.Scalar_out", CTYPE_IN, [&]() {
-                    ET_SWITCH_REAL_TYPES(
-                        out_type,
-                        ctx,
-                        "remainder.Scalar_out",
-                        CTYPE_OUT,
-                        [&]() {
-                          apply_unary_map_fn(
-                              [val_b](const CTYPE_A val_a) {
-                                CTYPE_IN a_casted =
-                                    static_cast<CTYPE_IN>(val_a);
-                                CTYPE_IN b_casted =
-                                    static_cast<CTYPE_IN>(val_b);
-                                CTYPE_IN value =
-                                    remainder_override(a_casted, b_casted);
+  // Compute Dtype
+  ScalarType compute_type = get_compute_type(common_type);
 
-                                return static_cast<CTYPE_OUT>(value);
-                              },
-                              a.const_data_ptr<CTYPE_A>(),
-                              out.mutable_data_ptr<CTYPE_OUT>(),
-                              out.numel());
-                        });
-                  });
-            });
-      });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "remainder.Scalar_out";
+
+  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_b = scalar_to<CTYPE_COMPUTE>(b);
+    apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_b](const CTYPE_COMPUTE val_a) {
+          return remainder_override(val_a, val_b);
+        },
+        ctx,
+        a,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::REALHBF16);
+  });
 
   return out;
 }

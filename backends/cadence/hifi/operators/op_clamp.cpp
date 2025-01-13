@@ -15,26 +15,33 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
-using Tensor = exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::canCast;
 using executorch::runtime::isFloatingType;
 using executorch::runtime::isIntegralType;
 using executorch::runtime::promoteTypes;
+using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::apply_ternary_elementwise_fn;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
+using torch::executor::native::utils::apply_tritensor_elementwise_fn;
+using torch::executor::native::utils::apply_unitensor_elementwise_fn;
 using torch::executor::native::utils::extract_scalar;
+using torch::executor::native::utils::get_compute_type;
 using torch::executor::native::utils::get_scalar_dtype;
 using torch::executor::native::utils::max_override;
 using torch::executor::native::utils::min_override;
 using torch::executor::native::utils::promote_type_with_scalar;
+using torch::executor::native::utils::scalar_to;
+using torch::executor::native::utils::SupportedTensorDtypes;
 
 namespace cadence {
 namespace impl {
@@ -51,7 +58,7 @@ bool is_out_of_bounds(CTYPE_VAL val) {
       val_cast > std::numeric_limits<CTYPE_OUT>::max();
 }
 
-__ET_NODISCARD bool check_bounds(
+ET_NODISCARD bool check_bounds(
     const Scalar& val_scalar,
     const ScalarType& val_type,
     const ScalarType& out_type,
@@ -85,46 +92,13 @@ __ET_NODISCARD bool check_bounds(
 } // namespace
 
 Tensor& clamp_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const exec_aten::optional<Scalar>& min_opt,
     const exec_aten::optional<Scalar>& max_opt,
     Tensor& out) {
-  (void)ctx;
-
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      resize_tensor(out, in.sizes()) == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
-
-  ScalarType in_type = in.scalar_type();
-  ScalarType min_type = in_type;
-  ScalarType max_type = in_type;
-  ScalarType common_type = in_type;
-  ScalarType out_type = out.scalar_type();
-
   bool has_min = min_opt.has_value();
-  if (has_min) {
-    min_type = get_scalar_dtype(min_opt.value());
-    common_type = promote_type_with_scalar(common_type, min_opt.value());
-    ET_KERNEL_CHECK(
-        ctx,
-        check_bounds(min_opt.value(), min_type, out_type, "minimum"),
-        InvalidArgument,
-        out);
-  }
   bool has_max = max_opt.has_value();
-  if (has_max) {
-    max_type = get_scalar_dtype(max_opt.value());
-    common_type = promote_type_with_scalar(common_type, max_opt.value());
-    ET_KERNEL_CHECK(
-        ctx,
-        check_bounds(max_opt.value(), max_type, out_type, "maximum"),
-        InvalidArgument,
-        out);
-  }
 
   ET_KERNEL_CHECK_MSG(
       ctx,
@@ -133,45 +107,73 @@ Tensor& clamp_out(
       out,
       "At least one of 'min' or 'max' must not be None");
 
+  // Input Dtypes
+  ScalarType in_type = in.scalar_type();
+  ScalarType min_type = has_min ? get_scalar_dtype(min_opt.value()) : in_type;
+  ScalarType max_type = has_max ? get_scalar_dtype(max_opt.value()) : in_type;
+  ScalarType out_type = out.scalar_type();
+
+  // Common Dtype
+  ScalarType common_type = in_type;
+  if (has_min) {
+    common_type = promote_type_with_scalar(common_type, min_opt.value());
+  }
+  if (has_max) {
+    common_type = promote_type_with_scalar(common_type, max_opt.value());
+  }
+
+  // Check Common Dtype
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
-  ET_SWITCH_REALH_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
-    // Extract optional min value
-    CTYPE_OUT min = 0;
-    if (has_min) {
-      ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "clamp", CTYPE_MIN, [&]() {
-        CTYPE_MIN min_val = 0;
-        extract_scalar(min_opt.value(), &min_val);
-        min = static_cast<CTYPE_OUT>(min_val);
-      });
-    }
+  // Check Scalar Bounds
+  if (has_min) {
+    ET_KERNEL_CHECK(
+        ctx,
+        check_bounds(min_opt.value(), min_type, out_type, "minimum"),
+        InvalidArgument,
+        out);
+  }
+  if (has_max) {
+    ET_KERNEL_CHECK(
+        ctx,
+        check_bounds(max_opt.value(), max_type, out_type, "maximum"),
+        InvalidArgument,
+        out);
+  }
 
-    // Extract optional max value
-    CTYPE_OUT max = 0;
-    if (has_max) {
-      ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "clamp", CTYPE_MAX, [&]() {
-        CTYPE_MAX max_val = 0;
-        extract_scalar(max_opt.value(), &max_val);
-        max = static_cast<CTYPE_OUT>(max_val);
-      });
-    }
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-    ET_SWITCH_REALHB_TYPES(in_type, ctx, "clamp", CTYPE_IN, [&]() {
-      torch::executor::apply_unary_map_fn(
-          [has_min, min, has_max, max](const CTYPE_IN val_in) {
-            CTYPE_OUT val_out = static_cast<CTYPE_OUT>(val_in);
-            if (has_min) {
-              val_out = max_override(val_out, min);
-            }
-            if (has_max) {
-              val_out = min_override(val_out, max);
-            }
-            return val_out;
-          },
-          in.const_data_ptr<CTYPE_IN>(),
-          out.mutable_data_ptr<CTYPE_OUT>(),
-          in.numel());
-    });
+  // Resize
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+
+  // Compute Dtype
+  ScalarType compute_type = get_compute_type(common_type);
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "clamp.out";
+
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [has_min, min_opt, has_max, max_opt](const CTYPE_COMPUTE val_in) {
+          CTYPE_COMPUTE val_out = val_in;
+          if (has_min) {
+            val_out = max_override(
+                val_out, scalar_to<CTYPE_COMPUTE>(min_opt.value()));
+          }
+          if (has_max) {
+            val_out = min_override(
+                val_out, scalar_to<CTYPE_COMPUTE>(max_opt.value()));
+          }
+          return val_out;
+        },
+        ctx,
+        in,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;
@@ -198,11 +200,35 @@ Tensor& clamp_tensor_out(
   const Tensor& min = has_min ? min_opt.value() : in;
   const Tensor& max = has_max ? max_opt.value() : in;
 
+  // Common Dtype
+  ScalarType common_type = in.scalar_type();
+  if (has_min) {
+    common_type = promoteTypes(common_type, min.scalar_type());
+  }
+  if (has_max) {
+    common_type = promoteTypes(common_type, max.scalar_type());
+  }
+
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx, canCast(common_type, out.scalar_type()), InvalidArgument, out);
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, min, max, out),
+      InvalidArgument,
+      out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(in, min, max, out) == Error::Ok,
       InvalidArgument,
       out);
+
+  // Compute Dtype
+  ScalarType compute_type = get_compute_type(common_type);
 
   constexpr int kNnlibMaxDim =
       4; /*fallback to not optimised if broadcast and dim > 4 */
@@ -210,17 +236,6 @@ Tensor& clamp_tensor_out(
   ScalarType in_type = in.scalar_type();
   ScalarType min_type = min.scalar_type();
   ScalarType max_type = max.scalar_type();
-  ScalarType common_type = in_type;
-  ScalarType out_type = out.scalar_type();
-
-  if (has_min) {
-    common_type = promoteTypes(common_type, min_type, /*half_to_float*/ true);
-  }
-  if (has_max) {
-    common_type = promoteTypes(common_type, max_type, /*half_to_float*/ true);
-  }
-
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
   bool in_is_broadcasted = !out.sizes().equals(in.sizes());
   bool min_is_broadcasted = !out.sizes().equals(min.sizes());
@@ -406,40 +421,35 @@ Tensor& clamp_tensor_out(
     return out;
   }
 
-  constexpr auto name = "clamp.Tensor_out";
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "clamp.Tensor_out";
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&]() {
-    ET_SWITCH_REALHB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
-      ET_SWITCH_REALHB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
-        ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          apply_ternary_elementwise_fn<
-              CTYPE_IN,
-              CTYPE_MIN,
-              CTYPE_MAX,
-              CTYPE_OUT>(
-              [has_min, has_max](
-                  const CTYPE_IN val_in,
-                  const CTYPE_MIN val_min,
-                  const CTYPE_MAX val_max) {
-                CTYPE_OUT val_out = static_cast<CTYPE_OUT>(val_in);
-                if (has_min) {
-                  val_out =
-                      max_override(val_out, static_cast<CTYPE_OUT>(val_min));
-                }
-                if (has_max) {
-                  val_out =
-                      min_override(val_out, static_cast<CTYPE_OUT>(val_max));
-                }
-                return val_out;
-              },
-              in,
-              min,
-              max,
-              out);
-        });
-      });
-    });
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [has_min, has_max](
+            const CTYPE_COMPUTE val_in,
+            const CTYPE_COMPUTE val_min,
+            const CTYPE_COMPUTE val_max) {
+          CTYPE_COMPUTE val_out = val_in;
+          if (has_min) {
+            val_out = max_override(val_out, val_min);
+          }
+          if (has_max) {
+            val_out = min_override(val_out, val_max);
+          }
+          return val_out;
+        },
+        ctx,
+        in,
+        SupportedTensorDtypes::REALHBBF16,
+        min,
+        SupportedTensorDtypes::REALHBBF16,
+        max,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::REALHBBF16);
   });
+
   return out;
 }
 } // namespace native

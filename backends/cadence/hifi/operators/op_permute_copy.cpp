@@ -10,9 +10,9 @@
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using exec_aten::ScalarType;
-using exec_aten::SizesType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
 using executorch::runtime::IntArrayRef;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::kTensorDimensionLimit;

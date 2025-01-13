@@ -8,26 +8,54 @@
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::isFloatingType;
 using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::promoteTypes;
 using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
+using torch::executor::native::utils::apply_bitensor_elementwise_fn;
+using torch::executor::native::utils::get_compute_type;
+using torch::executor::native::utils::SupportedTensorDtypes;
 
 namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
+namespace {
+
+ScalarType get_common_type(ScalarType a_type, ScalarType b_type) {
+  if (isFloatingType(a_type) && isFloatingType(b_type)) {
+    return promoteTypes(a_type, b_type);
+  } else if (isFloatingType(a_type)) {
+    return a_type;
+  } else if (isFloatingType(b_type)) {
+    return b_type;
+  }
+  return ScalarType::Float;
+}
+
+} // namespace
+
 Tensor& atan2_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
+  // Common Dtype
+  ScalarType common_type = get_common_type(a.scalar_type(), b.scalar_type());
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
   // Determine output size and resize for dynamic shapes
   ET_KERNEL_CHECK(
       ctx,
@@ -35,14 +63,11 @@ Tensor& atan2_out(
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
-
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  constexpr auto name = "atan2.out";
+  ScalarType compute_type = get_compute_type(common_type);
+
+  static constexpr const char op_name[] = "atan2.out";
   constexpr int kNnlibMaxDim = 16;
   int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
   bool optimized = true;
@@ -180,21 +205,18 @@ Tensor& atan2_out(
     return out;
   }
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      ET_SWITCH_FLOATH_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-        torch::executor::
-            apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                  CTYPE_OUT casted_a = static_cast<CTYPE_OUT>(val_a);
-                  CTYPE_OUT casted_b = static_cast<CTYPE_OUT>(val_b);
-                  return static_cast<CTYPE_OUT>(std::atan2(casted_a, casted_b));
-                },
-                a,
-                b,
-                out);
-      });
-    });
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          return std::atan2(val_a, val_b);
+        },
+        ctx,
+        a,
+        SupportedTensorDtypes::REALHBBF16,
+        b,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::FLOATHBF16);
   });
 
   return out;

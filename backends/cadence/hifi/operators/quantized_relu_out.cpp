@@ -9,9 +9,9 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using Tensor = exec_aten::Tensor;
-using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
-using ScalarType = exec_aten::ScalarType;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using torch::executor::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
