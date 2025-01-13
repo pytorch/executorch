@@ -28,6 +28,7 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
         exported_deps = [
             ":operators_header",
             ":xt_macros",
+            ":xt_utils",
         ],
     )
 
@@ -39,6 +40,12 @@ OPERATORS = [
     "native_layer_norm",
     "quantize",
     "softmax",
+    "sub",
+    "div",
+    "exp",
+    "mean",
+    "slice_copy",
+    "permute_copy"
 ]
 
 def define_common_targets():
@@ -65,6 +72,18 @@ def define_common_targets():
     runtime.cxx_library(
         name = "xt_macros",
         exported_headers = ["xt_macros.h"],
+        visibility = [
+            "//executorch/backends/cadence/...",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "xt_utils",
+        exported_headers = ["xt_utils.h"],
         visibility = [
             "//executorch/backends/cadence/...",
         ],
