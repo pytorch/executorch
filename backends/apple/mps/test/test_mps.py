@@ -1829,6 +1829,21 @@ class TestMPSUnitOpTesting(TestMPS):
             Clone(), model_inputs, func_name=inspect.stack()[0].function[5:]
         )
 
+    def test_mps_backend_to_copy(self):
+        class Copy(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    torch.ops.aten._to_copy.default(
+                        x + 2, memory_format=torch.contiguous_format
+                    )
+                    + x
+                )
+
+        model_inputs = (torch.randn(1, 3, 3),)
+        self.lower_and_test_with_partitioner(
+            Copy(), model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
     def test_mps_backend_floor(self):
         class Floor(torch.nn.Module):
             def forward(self, x):
