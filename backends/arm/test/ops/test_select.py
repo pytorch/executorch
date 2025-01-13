@@ -117,8 +117,6 @@ class TestSelect(unittest.TestCase):
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
-            .dump_artifact()
-            .dump_operator_distribution()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )

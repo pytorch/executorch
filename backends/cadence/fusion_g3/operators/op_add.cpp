@@ -39,6 +39,7 @@ Tensor& add_out(
   ScalarType common_type =
       executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
 
+#ifdef OP_ARG_CHECK
   // Check Common Dtype
   ET_KERNEL_CHECK(
       ctx,
@@ -62,12 +63,12 @@ Tensor& add_out(
       torch::executor::resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
+#endif
 
   // Compute Dtype
   ScalarType compute_type =
       torch::executor::native::utils::get_compute_type(common_type);
 
-  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "add.out";
 
   int kTensorDimensionLimit = 5;
@@ -253,6 +254,7 @@ Tensor& add_scalar_out(
       torch::executor::native::utils::promote_type_with_scalar(
           a.scalar_type(), b);
 
+#ifdef OP_ARG_CHECK
   // Check Common Dtype
   ET_KERNEL_CHECK(
       ctx,
@@ -276,7 +278,7 @@ Tensor& add_scalar_out(
       executorch::runtime::resize_tensor(out, a.sizes()) == Error::Ok,
       InvalidArgument,
       out);
-
+#endif
   // Compute Dtype
   ScalarType compute_type =
       torch::executor::native::utils::get_compute_type(common_type);
