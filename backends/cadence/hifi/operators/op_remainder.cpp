@@ -17,11 +17,6 @@
 
 #include "kernels.h"
 
-namespace cadence {
-namespace impl {
-namespace HiFi {
-namespace native {
-
 using executorch::aten::RuntimeContext;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
@@ -45,6 +40,11 @@ using torch::executor::native::utils::promote_type_with_scalar;
 using torch::executor::native::utils::remainder_override;
 using torch::executor::native::utils::scalar_to;
 using torch::executor::native::utils::SupportedTensorDtypes;
+
+namespace cadence {
+namespace impl {
+namespace HiFi {
+namespace native {
 
 namespace {
 template <

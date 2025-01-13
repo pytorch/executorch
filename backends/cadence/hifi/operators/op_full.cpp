@@ -11,11 +11,6 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <stdio.h>
 
-namespace cadence {
-namespace impl {
-namespace HiFi {
-namespace native {
-
 using executorch::aten::IntArrayRef;
 using executorch::aten::RuntimeContext;
 using executorch::aten::Scalar;
@@ -24,6 +19,11 @@ using executorch::aten::Tensor;
 using torch::executor::Error;
 using torch::executor::native::utils::extract_scalar;
 using torch::executor::native::utils::get_scalar_dtype;
+
+namespace cadence {
+namespace impl {
+namespace HiFi {
+namespace native {
 
 Tensor& full_out(
     RuntimeContext& ctx,
