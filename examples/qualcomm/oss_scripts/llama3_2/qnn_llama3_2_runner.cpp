@@ -48,6 +48,8 @@ DEFINE_int32(
     eval_mode,
     0,
     "0: PromptProcessor(prefill) / 1: TokenGenerator(kv) / 2: HybridMode (prefill+kv)");
+DEFINE_double(logits_scale, 0.0, "Logits scale");
+DEFINE_int32(logits_offset, 0, "Logits offset");
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -56,6 +58,8 @@ int main(int argc, char** argv) {
   example::Runner runner(
       {FLAGS_model_path},
       FLAGS_tokenizer_path.c_str(),
+      FLAGS_logits_scale,
+      FLAGS_logits_offset,
       FLAGS_temperature,
       FLAGS_eval_mode);
   std::vector<char> buf;
