@@ -87,6 +87,27 @@ void Context::report_shader_dispatch_end() {
   }
 }
 
+void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
+  if (shader.requires_shader_int16) {
+    if (!adapter_p_->supports_int16_shader_types()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::SHADER_INT16);
+    }
+  }
+  if (shader.requires_16bit_storage) {
+    if (!adapter_p_->supports_16bit_storage_buffers()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::INT16_STORAGE);
+    }
+  }
+  if (shader.requires_8bit_storage) {
+    if (!adapter_p_->supports_8bit_storage_buffers()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::INT8_STORAGE);
+    }
+  }
+}
+
 vkapi::DescriptorSet Context::get_descriptor_set(
     const vkapi::ShaderInfo& shader_descriptor,
     const utils::uvec3& local_workgroup_size,
