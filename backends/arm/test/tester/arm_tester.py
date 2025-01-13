@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,7 +15,7 @@ import serializer.tosa_serializer as ts
 
 import torch.fx
 
-from executorch.backends.arm.arm_backend import get_intermediate_path, is_permute_memory
+from executorch.backends.arm.arm_backend import get_intermediate_path
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
@@ -329,7 +329,6 @@ class ArmTester(Tester):
         logger.info(
             f"Comparing Stage '{self.stage_name(test_stage)}' with Stage '{self.stage_name(reference_stage)}'"
         )
-        is_nhwc = is_permute_memory(self.compile_spec)
 
         # Loop inputs and compare reference stage with the compared stage.
         for run_iteration in range(num_runs):
@@ -344,10 +343,7 @@ class ArmTester(Tester):
                 if isinstance(arg, tuple) and isinstance(arg[0], torch.Tensor):
                     test_input.extend([tensor.clone() for tensor in arg])
 
-            if (
-                is_nhwc
-                and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
-            ):
+            if test_stage == self.stages[self.stage_name(tester.ToExecutorch)]:
                 test_input = self.transpose_data_format(test_input, "NHWC")
 
             input_shapes = [
@@ -359,10 +355,7 @@ class ArmTester(Tester):
 
             reference_output = reference_stage.run_artifact(reference_input)
             test_output = test_stage.run_artifact(test_input)
-            if (
-                is_nhwc
-                and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
-            ):
+            if test_stage == self.stages[self.stage_name(tester.ToExecutorch)]:
                 test_output = self.transpose_data_format(test_output, "NCHW")
 
             self._compare_outputs(
