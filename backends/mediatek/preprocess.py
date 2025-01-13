@@ -48,7 +48,7 @@ class NeuropilotBackend(BackendDetails):
     ) -> PreprocessResult:
 
         # Make sure all inputs are contiguous_format or NCHW or default dim order
-        print('here')
+        print("here")
         assert_default_dim_order(edge_program.graph_module)
 
         name_to_node_mappings = {node.name: node for node in edge_program.graph.nodes}

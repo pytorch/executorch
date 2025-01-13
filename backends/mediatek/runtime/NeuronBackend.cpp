@@ -114,7 +114,8 @@ Error NeuronExecuTorchDelegate::execute(
   for (int i = 0; i < inputCount; i++) {
     auto tensor_in = args[i]->toTensor();
     ET_CHECK_OR_RETURN_ERROR(
-        runtime::is_contiguous_dim_order(tensor_in.dim_order().data(), tensor_in.dim()),
+        runtime::is_contiguous_dim_order(
+            tensor_in.dim_order().data(), tensor_in.dim()),
         Internal,
         "Expecting default dim_order but got a non default dim_order tensor for external input %u",
         i);

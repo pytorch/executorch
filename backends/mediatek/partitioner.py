@@ -46,7 +46,7 @@ class NeuropilotOperatorsSupport(OperatorSupportBase):
         op_type = node.target.__name__
 
         # Skip until we can handle the dimension order representation
-        if op_type == 'aten._to_copy.default':
+        if op_type == "aten._to_copy.default":
             return False
 
         if op_type in self._op_types_to_skip or node.name in self._op_names_to_skip:
