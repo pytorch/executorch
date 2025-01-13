@@ -31,10 +31,10 @@ class Index(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         if len(node.args[1]) > 1:
@@ -47,10 +47,10 @@ class Index(NodeVisitor):
 
         indices_tensor_wrapper = self.define_tensor(
             indices_node,
+            node,
             indices_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         gather_input_tensors = [input_tensor_wrapper, indices_tensor_wrapper]
@@ -58,10 +58,10 @@ class Index(NodeVisitor):
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         gather_output_tensors = [output_tensor_wrapper]
 
