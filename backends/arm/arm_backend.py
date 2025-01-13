@@ -131,16 +131,6 @@ class ArmCompileSpecBuilder:
         self.quantize_io = quantize_io
         return self
 
-    def set_input_order(
-        self, input_order: Optional[str] = None
-    ) -> "ArmCompileSpecBuilder":
-        """
-        Reorder the inputs coming in. This may be required when inputs > 1.
-        And while using the U55/U85 CompileSpec.
-        """
-        self.input_order = input_order
-        return self
-
     def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder

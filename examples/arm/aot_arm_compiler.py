@@ -259,7 +259,6 @@ def get_calibration_data(
 def get_compile_spec(
     target: str,
     intermediates: Optional[str] = None,
-    reorder_inputs: Optional[str] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
 ) -> list[CompileSpec]:
@@ -276,7 +275,6 @@ def get_compile_spec(
                 extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_quantize_io(True)
-            .set_input_order(reorder_inputs)
         )
     elif "ethos-u85" in target:
         spec_builder = (
@@ -288,7 +286,6 @@ def get_compile_spec(
                 extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
             .set_quantize_io(True)
-            .set_input_order(reorder_inputs)
         )
 
     if intermediates is not None:
@@ -432,14 +429,6 @@ def get_args():
         help="Location for outputs, if not the default of cwd.",
     )
     parser.add_argument(
-        "-r",
-        "--reorder_inputs",
-        type=str,
-        required=False,
-        default=None,
-        help="Provide the order of the inputs. This can be required when inputs > 1.",
-    )
-    parser.add_argument(
         "--system_config",
         required=False,
         default=None,
@@ -521,7 +510,6 @@ if __name__ == "__main__":
         compile_spec = get_compile_spec(
             args.target,
             args.intermediates,
-            args.reorder_inputs,
             args.system_config,
             args.memory_mode,
         )
