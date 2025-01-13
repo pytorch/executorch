@@ -159,7 +159,7 @@ jobs:
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
         # Test ethos-u delegate examples with run.sh
-        backends/arm/test/test_arm_baremetal.sh test_run_ethosu_fvp
+        backends/arm/test/test_arm_baremetal.sh test_full_ethosu_fvp
 
 
   test-arm-reference-delegation:
