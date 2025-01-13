@@ -16,7 +16,8 @@
 ${define_active_storage_type(STORAGE)}
 
 ${define_required_extensions(DTYPE)}
-${define_required_extensions("int8")}
+$if STORAGE == "buffer":
+  ${define_required_extensions("int8")}
 
 
 $if BATCH_MODE:
