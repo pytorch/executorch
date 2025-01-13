@@ -29,7 +29,6 @@ class SDPATest(unittest.TestCase):
             max_seq_length=max_seq_length,
             n_heads=n_heads,
             head_dim=head_dim,
-            transpose_cache=True,
             enable_dynamic_shape=False,
         )
         sdpa = SDPA(

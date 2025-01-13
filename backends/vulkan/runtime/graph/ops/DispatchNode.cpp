@@ -58,6 +58,8 @@ void DispatchNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();
   vkapi::PipelineBarrier pipeline_barrier{};
 
+  context->check_device_capabilities(shader_);
+
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
   std::array<uint8_t, kMaxPushConstantSize> push_constants_data;
