@@ -50,10 +50,13 @@ prepare_artifacts_upload() {
 
 build_cmake_executor_runner() {
   echo "Building executor_runner"
+  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
   rm -rf ${CMAKE_OUTPUT_DIR}
   cmake -DCMAKE_BUILD_TYPE=Debug \
       -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -B${CMAKE_OUTPUT_DIR} .
 
   cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug

@@ -27,8 +27,11 @@ build_executorch() {
   if [ -x "$(command -v glslc)" ]; then
     BUILD_VULKAN="ON"
   fi
+  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \

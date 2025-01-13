@@ -38,6 +38,8 @@ install_executorch_and_backend_lib() {
 build_llama_runner() {
     echo "Building llama runner for Android..."
     ANDROID_ABI=arm64-v8a
+    SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+    CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
     cmake -DBUCK2="${BUCK2}" \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK"/build/cmake/android.toolchain.cmake  \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -47,6 +49,7 @@ build_llama_runner() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -Bcmake-android-out/examples/models/llama examples/models/llama
 
     cmake --build cmake-android-out/examples/models/llama -j4 --config Release
