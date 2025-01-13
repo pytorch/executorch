@@ -33,3 +33,22 @@ class CloneVisitor(NodeVisitor):
                 )
         input_id = self.define_tensor(get_input_node(node, 0), mps_graph)
         self.tensor_to_id[node] = input_id
+
+
+@register_node_visitor
+class ToDimOrderCopyVisitor(NodeVisitor):
+    target = ["dim_order_ops._to_dim_order_copy.default"]
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+
+    def define_node(
+        self,
+        node: torch.fx.Node,
+        mps_graph: MPSGraph,
+    ) -> None:
+        # We should never get here, because DimOrderOpsRevertPass replaces this with an aten._to_copy op
+        # But if we do, we can't handle it ATM, so raise an exception
+        raise NotImplementedError(
+            "dim_order_ops._to_dim_order_copy.default is not supported yet"
+        )
