@@ -76,7 +76,7 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
 
 
-def stride_from_dim_order(sizes: List[int], dim_order: List[bytes]) -> List[int]:
+def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
     """
     Converts dim order to stride using sizes
     e.g. if sizes = (2, 3, 4) and dim_order = (0, 1, 2) then strides = (12, 4, 1)
