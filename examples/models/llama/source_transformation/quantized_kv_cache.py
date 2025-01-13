@@ -37,6 +37,7 @@ class QuantizedKVCache(nn.Module):
         n_heads,
         head_dim,
         cache_type: QuantizedCacheType = QuantizedCacheType.AffineSymmetric,
+        use_custom_update_cache_op: bool = False,
     ):
         super().__init__()
         if cache_type not in (
@@ -48,6 +49,7 @@ class QuantizedKVCache(nn.Module):
             )
 
         # For now supporting int8 only
+        self.use_custom_update_cache_op = True
         self.quantized_cache_dtype = torch.int8
         self.cache_fp_type = torch.float32
         cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
@@ -103,24 +105,25 @@ class QuantizedKVCache(nn.Module):
 
         quantized_v_val, v_scales, v_zero_points = self._quantize(v_val)
 
-        # Right now using custom ops on this path.
-        # In future we can update custom op to handle transposed cache
-        # as well.
-        # Note that we may have to revert this change if other ET
-        # backends such as QNN want to use quantized cache, with dynamic shape,
-        # instead of quantizing on their own.
-        # But until this opting for code simplicity
-        start_pos = input_pos[0].item()
-        _ = torch.ops.llama.update_cache(quantized_k_val, self.k_cache, start_pos)
-        _ = torch.ops.llama.update_cache(k_scales, self.k_cache_scales, start_pos)
-        _ = torch.ops.llama.update_cache(
-            k_zero_points, self.k_cache_zero_points, start_pos
-        )
-        _ = torch.ops.llama.update_cache(quantized_v_val, self.v_cache, start_pos)
-        _ = torch.ops.llama.update_cache(v_scales, self.v_cache_scales, start_pos)
-        _ = torch.ops.llama.update_cache(
-            v_zero_points, self.v_cache_zero_points, start_pos
-        )
+        if self.use_custom_update_cache_op:
+            start_pos = input_pos[0].item()
+            _ = torch.ops.llama.update_cache(quantized_k_val, self.k_cache, start_pos)
+            _ = torch.ops.llama.update_cache(k_scales, self.k_cache_scales, start_pos)
+            _ = torch.ops.llama.update_cache(
+                k_zero_points, self.k_cache_zero_points, start_pos
+            )
+            _ = torch.ops.llama.update_cache(quantized_v_val, self.v_cache, start_pos)
+            _ = torch.ops.llama.update_cache(v_scales, self.v_cache_scales, start_pos)
+            _ = torch.ops.llama.update_cache(
+                v_zero_points, self.v_cache_zero_points, start_pos
+            )
+        else:
+            self.k_cache[:, :, input_pos] = quantized_k_val
+            self.k_cache_scales[:, :, input_pos] = k_scales
+            self.k_cache_zero_points[:, :, input_pos] = k_zero_points
+            self.v_cache[:, :, input_pos] = quantized_v_val
+            self.v_cache_scales[:, :, input_pos] = v_scales
+            self.v_cache_zero_points[:, :, input_pos] = v_zero_points
 
         k_out = torch.ops.quantized_decomposed.dequantize_per_token(
             self.k_cache,
@@ -148,7 +151,12 @@ class QuantizedKVCache(nn.Module):
         return k_out.transpose(1, 2), v_out.transpose(1, 2)
 
     @classmethod
-    def from_float(cls, kv_cache, cache_type: QuantizedCacheType):
+    def from_float(
+        cls,
+        kv_cache,
+        cache_type: QuantizedCacheType,
+        use_custom_update_cache_op: bool = False,
+    ):
         max_batch_size, n_heads, max_seq_length, head_dim = kv_cache.k_cache.shape
         if isinstance(kv_cache, CustomKVCache):
             # If replacing custom kv cache, then the shape is [B, S, H, D]
@@ -159,6 +167,7 @@ class QuantizedKVCache(nn.Module):
             n_heads,
             head_dim,
             cache_type,
+            use_custom_update_cache_op,
         )
 
 
@@ -199,6 +208,7 @@ def replace_kv_cache_with_quantized_kv_cache(module):
                 module,
                 name,
                 QuantizedKVCache.from_float(child, QuantizedCacheType.AffineAsymmetric),
+                use_custom_update_cache_op=True,
             )
         else:
             replace_kv_cache_with_quantized_kv_cache(child)
