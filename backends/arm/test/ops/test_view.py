@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -129,13 +129,8 @@ class TestView(unittest.TestCase):
     def test_view_tosa_BI(self, test_tensor: torch.Tensor, new_shape):
         self._test_view_tosa_BI_pipeline(self.View(), (test_tensor, new_shape))
 
-    @parameterized.expand(View.no_transpose_tests)
+    @parameterized.expand(View.needs_transpose_tests + View.no_transpose_tests)
     def test_view_u55_BI(self, test_tensor: torch.Tensor, new_shape):
-        self._test_view_u55_BI_pipeline(self.View(), (test_tensor, new_shape))
-
-    @parameterized.expand(View.needs_transpose_tests)
-    @unittest.expectedFailure
-    def test_view_transpose_u55_BI(self, test_tensor: torch.Tensor, new_shape):
         self._test_view_u55_BI_pipeline(self.View(), (test_tensor, new_shape))
 
     @parameterized.expand(View.needs_transpose_tests + View.no_transpose_tests)
