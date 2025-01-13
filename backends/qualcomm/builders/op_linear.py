@@ -38,10 +38,10 @@ class LinearVisitor(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         linear_input_tensors.append(input_tensor_wrapper)
 
@@ -59,10 +59,10 @@ class LinearVisitor(NodeVisitor):
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
+            node,
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         linear_input_tensors.append(weight_tensor_wrapper)
 
@@ -78,20 +78,20 @@ class LinearVisitor(NodeVisitor):
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
+                node,
                 bias_tensor,
                 PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
                 nodes_to_wrappers,
-                is_input_tensor=False,
             )
             linear_input_tensors.append(bias_tensor_wrapper)
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         linear_op = PyQnnWrapper.PyQnnOpWrapper(

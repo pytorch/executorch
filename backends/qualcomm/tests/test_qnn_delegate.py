@@ -1581,6 +1581,24 @@ class TestQNNFloatingPointUtils(TestQNN):
             skip_node_op_set={"aten.add.Tensor"},
         )
 
+    def test_qnn_backend_spill_fill_buffer_size(self):
+        module = LargeTensorLinear()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 512),)
+        edge_prog = capture_program(module, sample_input)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        partitioner = QnnPartitioner(compiler_specs)
+        edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
+        max_sf_size = update_spill_fill_size(edge_prog.exported_program)
+        self.assertNotEqual(0, max_sf_size)
+
     def test_qnn_backend_multi_contexts(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -1655,8 +1673,12 @@ class TestQNNFloatingPointUtils(TestQNN):
             to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
             for i, edge_prog in enumerate(edge_progs)
         ]
-        prog_mgr = generate_multi_graph_program(
-            compiler_specs=compiler_specs[0], exported_programs=exported_programs
+        prog_mgr, _ = generate_multi_graph_program(
+            compiler_specs=compiler_specs[0],
+            processed_bytes=[
+                prog.graph_module.lowered_module_0.processed_bytes
+                for prog in exported_programs
+            ],
         )
         for index, module in enumerate(modules):
             self.verify_output(
@@ -2007,6 +2029,25 @@ class TestQNNQuantizedUtils(TestQNN):
         ).to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
+    def test_qnn_backend_spill_fill_buffer_size(self):
+        module = LargeTensorLinear()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 512),)
+        module = self.get_qdq_module(module, sample_input)
+        edge_prog = capture_program(module, sample_input)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        partitioner = QnnPartitioner(compiler_specs)
+        edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
+        max_sf_size = update_spill_fill_size(edge_prog.exported_program)
+        self.assertNotEqual(0, max_sf_size)
+
     def test_qnn_backend_graph_level_mixed_precision(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -2120,9 +2161,12 @@ class TestQNNQuantizedUtils(TestQNN):
             to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
             for i, edge_prog in enumerate(edge_progs)
         ]
-        prog_mgr = generate_multi_graph_program(
+        prog_mgr, _ = generate_multi_graph_program(
             compiler_specs=compiler_specs[0],
-            exported_programs=exported_programs,
+            processed_bytes=[
+                prog.graph_module.lowered_module_0.processed_bytes
+                for prog in exported_programs
+            ],
         )
         for index, module in enumerate(modules):
             self.verify_output(
