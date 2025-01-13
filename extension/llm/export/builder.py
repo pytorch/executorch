@@ -157,6 +157,10 @@ class LLMEdgeManager:
         return self
 
     def _get_dynamic_shape(self) -> Any:
+        print("OVERRIDING DYNAMIC SHAPE TO NONE!!!!!")
+        self.dynamic_shapes = None
+        return None
+
         if self.dynamic_shapes:
             return self.dynamic_shapes
 

@@ -45,6 +45,24 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             node_target_name = getattr(node.target, "__name__", "").lower()
             if node_target_name in (self.skip_ops_for_coreml_delegation or []):
                 return False
+
+            # Skip ops with SymInts/SymBools
+            node_has_sym_arg = False
+            node_is_sym = False
+            if isinstance(node.meta.get("val", None), torch.SymInt) or isinstance(
+                node.meta.get("val", None), torch.SymBool
+            ):
+                node_is_sym = True
+            for a in node.args:
+                if isinstance(a, torch.fx.node.Node) and (
+                    isinstance(a.meta.get("val", None), torch.SymInt)
+                    or isinstance(a.meta.get("val", None), torch.SymBool)
+                ):
+                    node_has_sym_arg = True
+
+            if node_is_sym or node_has_sym_arg:
+                return False
+
             # query coremltools to see if node is supported
             return ct.converters.mil.frontend.torch.is_torch_fx_node_supported(node)
         # cowardly refuse to support all other types of node:

@@ -263,6 +263,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Enable dynamic shape along seq dim. Used for faster prefill",
     )
     parser.add_argument(
+        "--static_seq_length",
+        type=int,
+        default=1,
+    )
+    parser.add_argument(
         "-p",
         "--params",
         default=f"{ckpt_dir}/params/demo_config.json",
@@ -634,7 +639,7 @@ def _validate_args(args):
     """
     TODO: Combine all the backends under --backend args
     """
-    if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
+    if args.enable_dynamic_shape and (args.mps or args.qnn):
         raise ValueError(
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
             " Please use --disable_dynamic_shape."
@@ -936,6 +941,7 @@ def _load_llama_model(
             enable_dynamic_shape=enable_dynamic_shape,
             input_prune_map_path=input_prune_map_path,
             output_prune_map_path=output_prune_map_path,
+            static_seq_length=args.static_seq_length,
             args=args,
         )
     )
@@ -987,7 +993,7 @@ def _load_llama_model(
             weight_type,
             use_kv_cache,
             use_sdpa_with_kv_cache,
-            enable_dynamic_shape,
+            False,  # enable_dynamic_shape,
             # pyre-fixme[6]: For 5th argument expected `ModelArgs` but got
             #  `Union[Tensor, Module]`.
             model.max_seq_len,
@@ -1101,12 +1107,13 @@ def _get_source_transforms(  # noqa
             transforms.append(replace_causal_mask)
 
         elif args.coreml:
-            # iOS 18 introduced fused sdpa op
-            if args.coreml_ios >= 18:
-                transforms.append(replace_sdpa_with_coreml_sdpa)
-            else:
-                transforms.append(replace_sdpa_with_simple_sdpa)
-            transforms.append(replace_kv_cache_with_coreml_kv_cache)
+            pass
+            # # iOS 18 introduced fused sdpa op
+            # if args.coreml_ios >= 18:
+            #     transforms.append(replace_sdpa_with_coreml_sdpa)
+            # else:
+            #     transforms.append(replace_sdpa_with_simple_sdpa)
+            # transforms.append(replace_kv_cache_with_coreml_kv_cache)
 
     if args.vulkan:
         transforms.append(replace_with_vulkan_rotary_emb)
