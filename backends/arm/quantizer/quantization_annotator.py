@@ -89,6 +89,41 @@ def _annotate_output(node: Node, quant_property: _QuantProperty):
     _annotate_output_qspec(node, quant_property.qspec)
 
 
+def _match_pattern(
+    node: Node, pattern: List[List], filter_fn: Optional[Callable[[Node], bool]] = None
+) -> bool:
+    """
+    Check if there's a chain of node.ancestors? -> node -> node.descendant? that matches the
+    chain provided in 'pattern'. If 'filter_fn' is provided, check that all the nodes in the
+    chain pass the filtering.
+
+    Each 'pattern' element is composed of a list of disjunctive nodes types.
+    """
+    assert len(pattern) == 2, "Only two-nodes patterns supported currently"
+
+    if node.target in pattern[0]:
+        assert len(node.users) != 0
+        parent = node
+        child = next(iter(node.users))
+    elif node.target in pattern[1]:
+        assert len(node.args) != 0
+        parent = node.args[0]
+        child = node
+    else:
+        return False
+
+    if len(parent.users) != 1:
+        return False
+
+    if parent.target not in pattern[0] or child.target not in pattern[1]:
+        return False
+
+    if filter_fn is not None:
+        return filter_fn(parent) and filter_fn(child)
+
+    return True
+
+
 _one_to_one = [
     torch.ops.aten.exp.default,
     torch.ops.aten.log.default,
@@ -164,7 +199,36 @@ def get_quant_properties(  # noqa: C901
     bias_qspec = quantization_config.get_bias_qspec()
 
     quant_properties = _OpQuantProperties()
-    if node.target in (
+
+    def any_or_hardtanh_min_zero(n: Node):
+        # Check that if the node is a hardtanh, its min_val is zero
+        return n.target != torch.ops.aten.hardtanh.default or n.args[1] == 0
+
+    if _match_pattern(
+        node,
+        [
+            [
+                torch.ops.aten.conv1d.default,
+                torch.ops.aten.conv2d.default,
+                torch.ops.aten.linear.default,
+            ],
+            [torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default],
+        ],
+        any_or_hardtanh_min_zero,
+    ):
+        if node.target in (
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.linear.default,
+        ):
+            quant_properties.quant_inputs = [
+                _QuantProperty(0, input_act_qspec),
+                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
+            ]
+        else:
+            quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+    elif node.target in (
         torch.ops.aten.conv1d.default,
         torch.ops.aten.conv2d.default,
         torch.ops.aten.linear.default,
