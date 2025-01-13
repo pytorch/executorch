@@ -596,6 +596,18 @@ class IndexPut(torch.nn.Module):
         return k_out
 
 
+class LargeTensorLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        hidden_dim = 4096
+        self.linear1 = torch.nn.Linear(512, hidden_dim)
+        self.linear2 = torch.nn.Linear(hidden_dim, 512)
+
+    def forward(self, x):
+        x1 = self.linear1(x) + self.linear1(x)
+        return self.linear2(x1)
+
+
 class LayerNorm(torch.nn.Module):
     def __init__(self):
         super().__init__()

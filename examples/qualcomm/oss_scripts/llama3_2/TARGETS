@@ -30,6 +30,8 @@ runtime.command_alias(
     name = "llama_qnn",
     env = {
         "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_verision()),
+        # Place holder to pass the QNN_SDK_ROOT check in executorch/examples/qualcomm/utils.py
+        "QNN_SDK_ROOT": "",
     },
     exe = ":llama",
 )

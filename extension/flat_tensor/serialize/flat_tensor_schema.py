@@ -17,7 +17,7 @@ from executorch.exir.scalar_type import ScalarType
 class TensorMetadata:
     fully_qualified_name: str
     scalar_type: ScalarType
-    dim_sizes: List[int]
+    sizes: List[int]
     dim_order: List[bytes]
 
     segment_index: int

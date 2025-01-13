@@ -42,7 +42,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
 
   generate_bindings_for_kernels(
     LIB_NAME "optimized_native_cpu_ops_lib" FUNCTIONS_YAML
-    ${CMAKE_CURRENT_BINARY_DIR}/merged.yaml
+    ${CMAKE_CURRENT_BINARY_DIR}/merged.yaml ADD_EXCEPTION_BOUNDARY
   )
   message("Generated files ${gen_command_sources}")
 
@@ -56,6 +56,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     DEPS
     executorch
   )
+  target_compile_options(optimized_native_cpu_ops_lib PRIVATE "-fexceptions")
 
   install(TARGETS optimized_native_cpu_ops_lib DESTINATION lib)
 endif()

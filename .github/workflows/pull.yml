@@ -199,9 +199,6 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
-        # install pybind
-        bash install_requirements.sh --pybind xnnpack
-
         # install Llava requirements
         bash examples/models/llama/install_requirements.sh
         bash examples/models/llava/install_requirements.sh
@@ -354,13 +351,11 @@ jobs:
         EXECUTORCH_BUILD_ARM_BAREMETAL=ON \
         .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
-        source .ci/scripts/utils.sh
         # Install Arm dependencies
-        install_arm
+        .ci/scripts/setup-arm-baremetal-tools.sh
 
-        # Run pytest with coverage
-        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test
-
+        # Run pytest without simulator
+        backends/arm/test/test_arm_baremetal.sh test_pytest
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
@@ -415,9 +410,6 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
-        # install pybind
-        bash install_requirements.sh --pybind xnnpack
-
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
 
@@ -441,9 +433,6 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
-
-        # install pybind
-        bash install_requirements.sh --pybind xnnpack
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
@@ -469,10 +458,6 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
-        # install pybind
-        bash install_requirements.sh --pybind xnnpack
-
-        # install llama requirements
         bash examples/models/llama/install_requirements.sh
 
         # run eval_llama mmlu task
@@ -495,9 +480,6 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
-
-        # install pybind
-        bash install_requirements.sh --pybind xnnpack
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
