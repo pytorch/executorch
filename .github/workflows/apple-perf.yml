@@ -410,7 +410,7 @@ jobs:
     runs-on: linux.2xlarge
     steps:
       - name: Download the apps from GitHub
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           # The name here needs to match the name of the upload-artifact parameter
           name: ios-apps
