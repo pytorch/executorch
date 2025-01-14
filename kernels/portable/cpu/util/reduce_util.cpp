@@ -386,6 +386,7 @@ bool check_mean_dim_args(
       check_reduction_args(in, dim_list, keepdim, dtype, out));
 
   if (dtype) {
+    ET_LOG(Info, "dtype is %hhd", static_cast<int8_t>(dtype.value()));
     ET_LOG_AND_RETURN_IF_FALSE(torch::executor::isFloatingType(dtype.value()));
     ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == dtype.value());
   } else {
