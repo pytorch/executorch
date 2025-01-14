@@ -7,6 +7,13 @@
 
 set -ex
 
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+which "${PYTHON_EXECUTABLE}"
+SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+
 build_jar() {
   pushd extension/android
   ./gradlew build
@@ -36,6 +43,7 @@ build_android_native_library() {
   fi
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-26 \
@@ -69,6 +77,7 @@ build_android_native_library() {
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-26 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \

@@ -14,6 +14,8 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
 fi
 which "${PYTHON_EXECUTABLE}"
+SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
 install_executorch_and_backend_lib() {
   echo "Installing executorch and xnnpack backend"
@@ -27,6 +29,7 @@ install_executorch_and_backend_lib() {
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -43,8 +46,6 @@ install_executorch_and_backend_lib() {
 build_llama_runner() {
     echo "Building llama runner for Android..."
     ANDROID_ABI=arm64-v8a
-    SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-    CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
     cmake -DBUCK2="${BUCK2}" \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK"/build/cmake/android.toolchain.cmake  \
     -DANDROID_ABI="${ANDROID_ABI}" \
