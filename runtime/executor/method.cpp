@@ -351,7 +351,15 @@ Error Method::parse_values() {
 
         // initialize boxed list
         for (size_t j = 0; j < items->size(); j++) {
-          evalp_list[j] = &values_[static_cast<size_t>(items->Get(j))];
+          auto value_index = items->Get(j);
+          ET_CHECK_OR_RETURN_ERROR(
+              value_index >= 0 && value_index < n_value,
+              InvalidProgram,
+              "Invalid value index %" PRId64 " for IntList %zu index %zu",
+              value_index,
+              i,
+              j);
+          evalp_list[j] = &values_[static_cast<size_t>(value_index)];
         }
         new (&values_[i]) EValue(
             BoxedEvalueList<int64_t>(evalp_list, int_list, items->size()));
@@ -411,6 +419,7 @@ Error Method::parse_values() {
         auto tensors = deserialization::parseTensorList(
             static_cast<const executorch_flatbuffer::TensorList*>(val)->items(),
             values_,
+            n_value, // The size of the full array.
             memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
@@ -430,6 +439,7 @@ Error Method::parse_values() {
                     val)
                     ->items(),
                 values_,
+                n_value, // The size of the full array.
                 memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
