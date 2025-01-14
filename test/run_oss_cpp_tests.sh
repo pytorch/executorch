@@ -22,6 +22,11 @@ elif [[ $(uname) == "Linux" ]]; then
   export LLVM_COV="${LLVM_COV:-llvm-cov}"
 fi
 
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+which "${PYTHON_EXECUTABLE}"
+
 build_executorch() {
   BUILD_VULKAN="OFF"
   if [ -x "$(command -v glslc)" ]; then

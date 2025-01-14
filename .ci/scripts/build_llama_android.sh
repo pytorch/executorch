@@ -10,6 +10,11 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+which "${PYTHON_EXECUTABLE}"
+
 install_executorch_and_backend_lib() {
   echo "Installing executorch and xnnpack backend"
   clean_executorch_install_folders
