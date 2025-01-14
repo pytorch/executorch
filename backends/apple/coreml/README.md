@@ -99,8 +99,8 @@ quantization_config = LinearQuantizerConfig.from_dict(
     {
         "global_config": {
             "quantization_scheme": QuantizationScheme.symmetric,
-            "activation_dtype": torch.uint8,
-            "weight_dtype": torch.int8,
+            "activation_dtype": torch.quint8,
+            "weight_dtype": torch.qint8,
             "weight_per_channel": True,
         }
     }
