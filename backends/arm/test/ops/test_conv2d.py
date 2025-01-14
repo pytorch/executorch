@@ -358,7 +358,7 @@ class TestConv2D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
@@ -380,7 +380,7 @@ class TestConv2D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
@@ -433,7 +433,7 @@ class TestConv2D(unittest.TestCase):
     @pytest.mark.corstone_fvp
     def test_conv2d_u55_BI(self, test_name, model):
         self._test_conv2d_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             model,
             model.get_inputs(),
         )
@@ -442,7 +442,7 @@ class TestConv2D(unittest.TestCase):
     @pytest.mark.corstone_fvp
     def test_conv2d_u85_BI(self, test_name, model):
         self._test_conv2d_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             model,
             model.get_inputs(),
         )

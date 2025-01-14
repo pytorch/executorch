@@ -273,7 +273,7 @@ class TestConv1D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
@@ -295,7 +295,7 @@ class TestConv1D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
@@ -336,17 +336,12 @@ class TestConv1D(unittest.TestCase):
     def test_conv1d_tosa_BI(self, test_name, model):
         self._test_conv1d_tosa_BI_pipeline(model, model.get_inputs())
 
-    # Expeted to fail as Conv1D requires transpoes which isn't supported on u55
     @parameterized.expand(testsuite)
     @pytest.mark.corstone_fvp
-    @unittest.expectedFailure
     def test_conv1d_u55_BI(self, test_name, model):
         self._test_conv1d_ethosu_BI_pipeline(
             model, common.get_u55_compile_spec(), model.get_inputs()
         )
-
-    # This specific test case has numerical errors on FVP, MLETORCH-520.
-    testsuite.remove(("5_3x2x128_st1", conv1d_5_3x2x128_st1))
 
     @parameterized.expand(testsuite)
     @pytest.mark.corstone_fvp

@@ -55,8 +55,11 @@ class KVCache(TuneKVCache):
         self.register_buffer(
             "v_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False
         )
+        # We use "kv_cache_pos" here instead of "cache_pos" since the latter is too generic, and we have
+        # a InitMutableBuferPass that needs to single out this buffer to initialize (and not others)
+        # since it takes up space in the pte file.
         self.register_buffer(
-            "cache_pos", torch.arange(0, self.max_seq_len), persistent=False
+            "kv_cache_pos", torch.arange(0, self.max_seq_len), persistent=False
         )
         self.batch_size = batch_size
 
@@ -105,17 +108,17 @@ class KVCache(TuneKVCache):
                 f", but found new key tensors with batch size {k_val.shape[0]}!"
             )
 
-        assert (self.cache_pos[0] + seq_len) <= self.max_seq_len
+        assert (self.kv_cache_pos[0] + seq_len) <= self.max_seq_len
 
         k_out = self.k_cache
         v_out = self.v_cache
 
         if self.transpose_cache:
-            k_out[:, :, self.cache_pos[:seq_len]] = k_val
-            v_out[:, :, self.cache_pos[:seq_len]] = v_val
+            k_out[:, :, self.kv_cache_pos[:seq_len]] = k_val
+            v_out[:, :, self.kv_cache_pos[:seq_len]] = v_val
         else:
-            k_out[:, self.cache_pos[:seq_len]] = k_val
-            v_out[:, self.cache_pos[:seq_len]] = v_val
+            k_out[:, self.kv_cache_pos[:seq_len]] = k_val
+            v_out[:, self.kv_cache_pos[:seq_len]] = v_val
 
         # forward cache_pos seq_len positions along
         # cache_pos starts at (0, 1, 2, 3, 4, 5, ...)
@@ -124,7 +127,7 @@ class KVCache(TuneKVCache):
         # this allows us to track the current position in the cache
         # after the last update in a compile-friendly way without any dynamism
         # e.g. relying on an int size tracker, or re-creating cache_pos every time
-        self.cache_pos.add_(seq_len)
+        self.kv_cache_pos.add_(seq_len)
 
         return k_out, v_out
 
@@ -144,5 +147,5 @@ class KVCache(TuneKVCache):
         )
         clone.k_cache.copy_(self.k_cache)
         clone.v_cache.copy_(self.v_cache)
-        clone.cache_pos.copy_(self.cache_pos)
+        clone.kv_cache_pos.copy_(self.kv_cache_pos)
         return clone

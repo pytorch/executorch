@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -158,10 +158,8 @@ class TestVar(unittest.TestCase):
     def test_var_tosa_BI(self, test_tensor: torch.Tensor, keepdim, correction):
         self._test_var_tosa_BI_pipeline(self.Var(), (test_tensor, keepdim, correction))
 
-    # Expected to fail as this is not supported on u55.
     @parameterized.expand(Var.test_parameters)
-    @unittest.expectedFailure
-    def test_var_u55_BI_xfails(self, test_tensor: torch.Tensor, keepdim, correction):
+    def test_var_u55_BI(self, test_tensor: torch.Tensor, keepdim, correction):
         self._test_var_ethosu_BI_pipeline(
             self.Var(),
             common.get_u55_compile_spec(),
@@ -196,18 +194,6 @@ class TestVar(unittest.TestCase):
             (test_tensor, dim, keepdim, correction),
         )
 
-    # Expected to fail as this is not supported on u55.
-    @parameterized.expand(VarDim.test_parameters_u55_xfails)
-    @unittest.expectedFailure
-    def test_var_dim_u55_BI_xfails(
-        self, test_tensor: torch.Tensor, dim, keepdim, correction
-    ):
-        self._test_var_ethosu_BI_pipeline(
-            self.VarDim(),
-            common.get_u55_compile_spec(),
-            (test_tensor, dim, keepdim, correction),
-        )
-
     @parameterized.expand(VarDim.test_parameters)
     def test_var_dim_u85_BI(self, test_tensor: torch.Tensor, dim, keepdim, correction):
         self._test_var_ethosu_BI_pipeline(
@@ -232,10 +218,8 @@ class TestVar(unittest.TestCase):
             self.VarCorrection(), (test_tensor, dim, keepdim, correction)
         )
 
-    # Expected to fail as this is not supported on u55.
     @parameterized.expand(VarCorrection.test_parameters)
-    @unittest.expectedFailure
-    def test_var_correction_u55_BI_xfails(
+    def test_var_correction_u55_BI(
         self, test_tensor: torch.Tensor, dim, keepdim, correction
     ):
         self._test_var_ethosu_BI_pipeline(

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -263,11 +263,7 @@ def get_compile_spec(
 ) -> ArmCompileSpecBuilder:
     spec_builder = None
     if target == "TOSA":
-        spec_builder = (
-            ArmCompileSpecBuilder()
-            .tosa_compile_spec("TOSA-0.80+BI")
-            .set_permute_memory_format(True)
-        )
+        spec_builder = ArmCompileSpecBuilder().tosa_compile_spec("TOSA-0.80+BI")
     elif "ethos-u55" in target:
         spec_builder = (
             ArmCompileSpecBuilder()
@@ -277,7 +273,6 @@ def get_compile_spec(
                 memory_mode=memory_mode,
                 extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
-            .set_permute_memory_format(True)
             .set_quantize_io(True)
             .set_input_order(reorder_inputs)
         )
@@ -290,7 +285,6 @@ def get_compile_spec(
                 memory_mode=memory_mode,
                 extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
             )
-            .set_permute_memory_format(True)
             .set_quantize_io(True)
             .set_input_order(reorder_inputs)
         )
