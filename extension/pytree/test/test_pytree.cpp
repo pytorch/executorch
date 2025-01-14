@@ -183,3 +183,22 @@ TEST(pytree, FlattenNestedDict) {
     ASSERT_EQ(*leaves[i], items[i]);
   }
 }
+
+TEST(pytree, EmptySpec) {
+  Leaf items[1] = {9};
+  EXPECT_THROW(unflatten("", items), std::out_of_range);
+}
+
+TEST(pytree, BoundsCheckListLayout) {
+  // Malformed: layout one child, have two
+  std::string spec = "L1#1($,$)";
+  Leaf items[2] = {11, 12};
+  EXPECT_THROW(unflatten(spec, items), std::out_of_range);
+}
+
+TEST(pytree, BoundsCheckDictLayout) {
+  // Malformed: layout one child, have two.
+  std::string spec = "D1#1('key0':$,'key1':$)";
+  Leaf items[2] = {11, 12};
+  EXPECT_THROW(unflatten(spec, items), std::out_of_range);
+}
