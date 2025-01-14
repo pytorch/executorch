@@ -27,7 +27,7 @@ from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.backend.utils import format_delegated_graph
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 
-from executorch.exir.pass_manager import PassType
+from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
@@ -417,12 +417,11 @@ class LLMEdgeManager:
         return self
 
     def to_executorch(
-        self, passes: Optional[List[PassType]] = None
+        self, passes: Optional[List[ExportPass]] = None
     ) -> "LLMEdgeManager":
         """
         Lower the model to executorch and get an ExecutorchProgram.
         """
-        assert self.edge_manager, "Need to run export_to_edge() first"
         to_executorch_passes = [
             # If there are Linear operations left in the graph, let's execute
             # them with the optimized op_linear rather than materializing a
@@ -431,11 +430,19 @@ class LLMEdgeManager:
             QuantFusionPass(),
         ]
         if passes:
+            # pyre-fixme[6]: In call `list.extend`, for 1st positional argument,
+            # expected `Iterable[Union[ConvertToLinearPass, QuantFusionPass]]` but
+            # got `List[ExportPass]
             to_executorch_passes.extend(passes)
 
+        assert self.edge_manager, "Need to run export_to_edge() first"
         self.export_program = self.edge_manager.to_executorch(
             ExecutorchBackendConfig(
                 extract_delegate_segments=True,
+                # pyre-fixme[6]: In call `ExecutorchBackendConfig.__init__`, for
+                # argument `passes`, expected `List[typing.Callable[[GraphModule],
+                # Optional[PassResult]]]` but got `List[Union[ConvertToLinearPass,
+                # QuantFusionPass]]`.
                 passes=to_executorch_passes,
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
