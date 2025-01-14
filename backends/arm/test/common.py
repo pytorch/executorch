@@ -176,12 +176,12 @@ def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
     return None
 
 
-u55_fvp_mark = pytest.mark.skipif(
+SkipIfNoCorstone300 = pytest.mark.skipif(
     not corstone300_installed(), reason="Did not find Corstone-300 FVP on path"
 )
 """ Marks a test as running on Ethos-U55 FVP, e.g. Corstone 300. Skips the test if this is not installed."""
 
-u85_fvp_mark = pytest.mark.skipif(
+SkipIfNoCorstone320 = pytest.mark.skipif(
     not corstone320_installed(), reason="Did not find Corstone-320 FVP on path"
 )
 """ Marks a test as running on Ethos-U85 FVP, e.g. Corstone 320. Skips the test if this is not installed."""

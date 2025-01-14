@@ -17,14 +17,33 @@ T = TypeVar("T")
 """ Generic type used for test data in the pipeline. Depends on which type the operator expects."""
 
 
-class BasePipeline(Generic[T]):
+class BasePipelineMaker(Generic[T]):
     """
-    This pipeline defines a list of stages to be run on a given module with input of data type T. This list can be modified in any way before running the pipeline to support various usecases.
+    The BasePiplineMaker defines a list of stages to be applied to a torch.nn.module for lowering it in the Arm backend. To be inherited and adjusted for particular targets.
+    Importantly, the pipeline list can be modified before running the pipeline to support various pipeline extensions and debugging usecases.
+
+    Attributes:
+        module: The module which the pipeline is applied to.
+        test_data: Data used for quantizing and testing the module.
+        aten_ops: Aten dialect ops expected to be found in the graph after export.
+        exir_ops: Exir dialect ops expected to be found in the graph after to_edge, re
+        compile_spec: The compile spec used in the lowering process
+        use_edge_to_transform_and_lower: Selects betweeen two possible routes for lowering the module:
+                tester.to_edge_transform_and_lower()
+            or
+                tester.to_edge().check(exir_ops).partition()
     """
 
     class PipelineStage:
         """
         Helper class to store a pipeline stage as a function call + args for calling later on.
+
+        Attributes:
+            id: name of the function to be called, used for refering to stages in the pipeline
+            func: handle to the function to be called
+            args: args used when called
+            kwargs: kwargs used when called
+            is_called: keeps track of if the function has been called
         """
 
         def __init__(self, func, *args, **kwargs):
@@ -85,18 +104,30 @@ class BasePipeline(Generic[T]):
         self.add_stage(-1, self.tester.to_executorch)
 
     def add_stage(self, pos: int, func: Callable, *args, **kwargs):
+        """Adds a stage defined by a function with arguments to the pipeline at index pos. Pos wraps around the list for negative values."""
         pipeline_stage = self.PipelineStage(func, *args, **kwargs)
-        if pos == -1:
-            self._stages.append(pipeline_stage)
-        else:
-            self._stages.insert(pos, pipeline_stage)
+        pipeline_length = len(self._stages)
+
+        if pos < 0:
+            pos = pipeline_length + (pos + 1)
+
+        if not -pipeline_length <= pos <= pipeline_length:
+            raise ValueError(
+                f"Pos must be between [-{pipeline_length}, {pipeline_length}]"
+            )
+
+        self._stages.insert(pos, pipeline_stage)
+
+        logger.debug(f"Added stage {func.__name__} to {type(self).__name__}")
 
         return self
 
     def pop_stage(self, pos: int):
+        """Removes and returns the stage at postion pos"""
         return self._stages.pop(pos)
 
     def find_pos(self, stage_id: str):
+        """Returns the position of the stage id. Note that this only finds the first stage with the given id, i.e. it should only be used with unique stages."""
         for i, stage in enumerate(self._stages):
             if stage.id == stage_id:
                 return i
@@ -104,31 +135,32 @@ class BasePipeline(Generic[T]):
         raise Exception(f"Stage id {stage_id} not found in pipeline")
 
     def add_stage_after(self, stage_id: str, func: Callable, *args, **kwargs):
+        """Adds a stage after the given stage id. Note that this only finds the first stage with the given id, i.e. it should only be used with unique stages."""
         pos = self.find_pos(stage_id)
         self.add_stage(pos + 1, func, *args, **kwargs)
         return self
 
     def dump_artifact(self, stage_id: str):
+        """Adds a dump_artifact stage after the given stage id. Note that this only finds the first stage with the given id, i.e. it should only be used with unique stages."""
         self.add_stage_after(stage_id, self.tester.dump_artifact)
         return self
 
-    def plot(self, stage_id: str):
-        self.add_stage_after(stage_id, self.tester.plot)
-        return self
-
     def dump_operator_distribution(self, stage_id: str):
+        """Adds a dump_operator_distribution stage after the given stage id. Note that this only finds the first stage with the given id, i.e. it should only be used with unique stages."""
         self.add_stage_after(stage_id, self.tester.dump_operator_distribution)
         return self
 
     def change_args(self, stage_id: str, *args, **kwargs):
+        """Updates the args to the given stage id. Note that this only finds the first stage with the given id, i.e. it should only be used with unique stages."""
         pos = self.find_pos(stage_id)
         pipeline_stage = self._stages[pos]
         pipeline_stage.update(*args, **kwargs)
         return self
 
     def run(self):
+        """Calls each stage in order."""
         stage_list = [stage.id for stage in self._stages]
-        logger.info(f"Running pipeline with stages {stage_list}.")
+        logger.info(f"Running pipeline with stages:\n {stage_list}.")
 
         for stage in self._stages:
             try:
@@ -138,7 +170,9 @@ class BasePipeline(Generic[T]):
                 raise e
 
 
-class TosaPipelineBI(BasePipeline, Generic[T]):
+class TosaPipelineBI(BasePipelineMaker, Generic[T]):
+    """Lowers a graph to BI TOSA spec (with quantization) and tests it with the TOSA reference model."""
+
     def __init__(
         self,
         module: torch.nn.Module,
@@ -149,7 +183,7 @@ class TosaPipelineBI(BasePipeline, Generic[T]):
         use_to_edge_transform_and_lower: bool = False,
     ):
         compile_spec = common.get_tosa_compile_spec(
-            tosa_version, permute_memory_to_nhwc=True
+            tosa_version,
         )
         super().__init__(
             module,
@@ -163,16 +197,34 @@ class TosaPipelineBI(BasePipeline, Generic[T]):
         self.add_stage_after(
             "quantize",
             self.tester.check,
-            ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+            [
+                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+            ],
+        )
+
+        remove_quant_nodes_stage = (
+            "to_edge_transform_and_lower"
+            if use_to_edge_transform_and_lower
+            else "partition"
         )
         self.add_stage_after(
-            "quantize",
-            self.tester.check,
-            ["torch.ops.quantized_decomposed.quantize_per_tensor.default"],
+            remove_quant_nodes_stage,
+            self.tester.check_not,
+            [
+                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+            ],
+        )
+
+        self.add_stage(
+            -1, self.tester.run_method_and_compare_outputs, inputs=self.test_data
         )
 
 
-class TosaPipelineMI(BasePipeline, Generic[T]):
+class TosaPipelineMI(BasePipelineMaker, Generic[T]):
+    """Lowers a graph to MI TOSA spec and tests it with the TOSA reference model"""
+
     def __init__(
         self,
         module: torch.nn.Module,
@@ -183,7 +235,7 @@ class TosaPipelineMI(BasePipeline, Generic[T]):
         use_to_edge_transform_and_lower: bool = False,
     ):
         compile_spec = common.get_tosa_compile_spec(
-            tosa_version, permute_memory_to_nhwc=True
+            tosa_version,
         )
         super().__init__(
             module,
@@ -196,12 +248,10 @@ class TosaPipelineMI(BasePipeline, Generic[T]):
         self.add_stage_after(
             "export",
             self.tester.check_not,
-            ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
-        )
-        self.add_stage_after(
-            "export",
-            self.tester.check_not,
-            ["torch.ops.quantized_decomposed.quantize_per_tensor.default"],
+            [
+                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+            ],
         )
 
         self.add_stage(
@@ -209,7 +259,9 @@ class TosaPipelineMI(BasePipeline, Generic[T]):
         )
 
 
-class EthosU55PipelineBI(BasePipeline, Generic[T]):
+class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
+    """Lowers a graph to u55 BI TOSA spec and tests it on the Corstone300 FVP, if run_on_fvp is true."""
+
     def __init__(
         self,
         module: torch.nn.Module,
@@ -219,7 +271,7 @@ class EthosU55PipelineBI(BasePipeline, Generic[T]):
         run_on_fvp: bool = False,
         use_to_edge_transform_and_lower: bool = False,
     ):
-        compile_spec = common.get_u55_compile_spec(permute_memory_to_nhwc=True)
+        compile_spec = common.get_u55_compile_spec()
         super().__init__(
             module,
             test_data,
@@ -232,13 +284,26 @@ class EthosU55PipelineBI(BasePipeline, Generic[T]):
         self.add_stage_after(
             "quantize",
             self.tester.check,
-            ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+            [
+                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+            ],
+        )
+
+        remove_quant_nodes_stage = (
+            "to_edge_transform_and_lower"
+            if use_to_edge_transform_and_lower
+            else "partition"
         )
         self.add_stage_after(
-            "quantize",
-            self.tester.check,
-            ["torch.ops.quantized_decomposed.quantize_per_tensor.default"],
+            remove_quant_nodes_stage,
+            self.tester.check_not,
+            [
+                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+            ],
         )
+
         if run_on_fvp:
             self.add_stage(-1, self.tester.serialize)
             self.add_stage(
@@ -249,7 +314,9 @@ class EthosU55PipelineBI(BasePipeline, Generic[T]):
             )
 
 
-class EthosU55PipelineMI(BasePipeline, Generic[T]):
+class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
+    """Lowers a graph to u85 BI TOSA spec and tests it on the Corstone320 FVP, if run_on_fvp is true."""
+
     def __init__(
         self,
         module: torch.nn.Module,
@@ -259,43 +326,7 @@ class EthosU55PipelineMI(BasePipeline, Generic[T]):
         run_on_fvp: bool = False,
         use_to_edge_transform_and_lower: bool = False,
     ):
-        compile_spec = common.get_u55_compile_spec(permute_memory_to_nhwc=True)
-        super().__init__(
-            module,
-            test_data,
-            aten_ops,
-            exir_ops,
-            compile_spec,
-            use_to_edge_transform_and_lower,
-        )
-        self.add_stage_after(
-            "export",
-            self.tester.check_not,
-            ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
-        )
-        self.add_stage_after(
-            "export",
-            self.tester.check_not,
-            ["torch.ops.quantized_decomposed.quantize_per_tensor.default"],
-        )
-        if run_on_fvp:
-            self.add_stage(-1, self.tester.serialize)
-            self.add_stage(
-                -1, self.tester.run_method_and_compare_outputs, inputs=self.test_data
-            )
-
-
-class EthosU85PipelineBI(BasePipeline, Generic[T]):
-    def __init__(
-        self,
-        module: torch.nn.Module,
-        test_data: T,
-        aten_ops: str | List[str],
-        exir_ops: str | List[str],
-        run_on_fvp: bool = False,
-        use_to_edge_transform_and_lower: bool = False,
-    ):
-        compile_spec = common.get_u85_compile_spec(permute_memory_to_nhwc=True)
+        compile_spec = common.get_u85_compile_spec()
         super().__init__(
             module,
             test_data,
@@ -308,13 +339,26 @@ class EthosU85PipelineBI(BasePipeline, Generic[T]):
         self.add_stage_after(
             "quantize",
             self.tester.check,
-            ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+            [
+                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+            ],
+        )
+
+        remove_quant_nodes_stage = (
+            "to_edge_transform_and_lower"
+            if use_to_edge_transform_and_lower
+            else "partition"
         )
         self.add_stage_after(
-            "quantize",
-            self.tester.check,
-            ["torch.ops.quantized_decomposed.quantize_per_tensor.default"],
+            remove_quant_nodes_stage,
+            self.tester.check_not,
+            [
+                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+            ],
         )
+
         if run_on_fvp:
             self.add_stage(-1, self.tester.serialize)
             self.add_stage(
@@ -322,40 +366,4 @@ class EthosU85PipelineBI(BasePipeline, Generic[T]):
                 self.tester.run_method_and_compare_outputs,
                 qtol=1,
                 inputs=self.test_data,
-            )
-
-
-class EthosU85PipelineMI(BasePipeline, Generic[T]):
-    def __init__(
-        self,
-        module: torch.nn.Module,
-        test_data: T,
-        aten_ops: str | List[str],
-        exir_ops: str | List[str],
-        run_on_fvp: bool = False,
-        use_to_edge_transform_and_lower: bool = False,
-    ):
-        compile_spec = common.get_u85_compile_spec(permute_memory_to_nhwc=True)
-        super().__init__(
-            module,
-            test_data,
-            aten_ops,
-            exir_ops,
-            compile_spec,
-            use_to_edge_transform_and_lower,
-        )
-        self.add_stage_after(
-            "export",
-            self.tester.check_not,
-            ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
-        )
-        self.add_stage_after(
-            "export",
-            self.tester.check_not,
-            ["torch.ops.quantized_decomposed.quantize_per_tensor.default"],
-        )
-        if run_on_fvp:
-            self.add_stage(-1, self.tester.serialize)
-            self.add_stage(
-                -1, self.tester.run_method_and_compare_outputs, inputs=self.test_data
             )
