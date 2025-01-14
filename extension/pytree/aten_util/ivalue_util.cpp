@@ -131,8 +131,8 @@ std::pair<std::vector<at::Tensor>, std::unique_ptr<TreeSpec<Empty>>> flatten(
   auto p = flatten(c);
 
   std::vector<at::Tensor> tensors;
-  for (int i = 0; i < p.first.size(); ++i) {
-    tensors.emplace_back(p.first[i]->toTensor());
+  for (const auto& item : p.first) {
+    tensors.emplace_back(item->toTensor());
   }
 
   return {tensors, std::move(p.second)};
