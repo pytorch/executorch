@@ -179,9 +179,9 @@ class FlatTensorSerializer(DataSerializer):
         eg. alignment.
         """
         if config is None:
-            self.config = FlatTensorConfig()
+            self.config: FlatTensorConfig = FlatTensorConfig()
         else:
-            self.config = config
+            self.config: FlatTensorConfig = config
 
     def serialize(
         self,
