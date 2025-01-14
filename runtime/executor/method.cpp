@@ -830,14 +830,14 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
   if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
+
     ET_CHECK_OR_RETURN_ERROR(
         t_dst.scalar_type() == t_src.scalar_type(),
         InvalidArgument,
-        "The %zu-th input tensor's scalartype does not meet requirement: found %" PRId8
-        " but expected %" PRId8,
+        "Input %zu has unexpected scalar type: expected %s but was %s.",
         input_idx,
-        static_cast<int8_t>(t_src.scalar_type()),
-        static_cast<int8_t>(t_dst.scalar_type()));
+        executorch::runtime::toString(t_dst.scalar_type()),
+        executorch::runtime::toString(t_src.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     Error err = resize_tensor(t_dst, t_src.sizes());
