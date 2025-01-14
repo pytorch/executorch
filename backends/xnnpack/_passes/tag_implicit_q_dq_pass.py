@@ -90,7 +90,7 @@ class TagImplicitQDqPass(XNNPACKPass):
 
         # Weight and Input should both be quantized
         if op_name == exir_ops.edge.aten.convolution.default.name():
-            return is_dequant(node.args[1])
+            return is_dequant(cast(torch.fx.Node, node.args[1]))
 
         return op_name in SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET
 
