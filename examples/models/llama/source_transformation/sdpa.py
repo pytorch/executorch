@@ -9,14 +9,11 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import math
-from typing import Tuple, Union
+from typing import Tuple
 
 import torch
 
 from executorch.examples.models.llama.llama_transformer import KVCache, SDPA
-from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
-    QuantizedKVCache,
-)
 
 
 class SDPACustom(torch.nn.Module):

@@ -207,8 +207,11 @@ def replace_kv_cache_with_quantized_kv_cache(module):
             setattr(
                 module,
                 name,
-                QuantizedKVCache.from_float(child, QuantizedCacheType.AffineAsymmetric),
-                use_custom_update_cache_op=True,
+                QuantizedKVCache.from_float(
+                    child,
+                    QuantizedCacheType.AffineAsymmetric,
+                    use_custom_update_cache_op=True,
+                ),
             )
         else:
             replace_kv_cache_with_quantized_kv_cache(child)
