@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,8 +10,10 @@ import os
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
-from executorch.backends.arm._passes.tag_io_quant_pass import TagIOQuantPass
+from executorch.backends.arm.arm_backend import (
+    ArmBackend,
+    is_quantize_io,
+)  # usort: skip
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     TOSASupportedOperators,
 )
@@ -23,7 +25,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data
-from executorch.exir.passes import PassManager
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
@@ -35,6 +37,22 @@ if TOSA_DBG_VERBOSE:
     logger.setLevel(logging.INFO)
 
 
+def is_quant_node(node: torch.fx.node.Node) -> bool:
+    return node.target in {
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    }
+
+
+def is_dequant_node(node: torch.fx.node.Node) -> bool:
+    return node.target in {
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    }
+
+
 @final
 class ArmPartitioner(Partitioner):
     def __init__(self, compile_spec: List[CompileSpec]) -> None:
@@ -43,6 +61,7 @@ class ArmPartitioner(Partitioner):
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
+
         logger.info("ArmPartitioner::partition")
         partition_tags = {}
 
@@ -52,16 +71,6 @@ class ArmPartitioner(Partitioner):
 
         logger.info(f"Partitioning for {tosa_spec}")
 
-        for spec in self.delegation_spec.compile_specs:
-            if spec.key == "quantize_io" and spec.value.decode() == "True":
-                # Exclude IO quantization from the partition
-                passes = PassManager(
-                    passes=[
-                        TagIOQuantPass(),
-                    ]
-                )
-                passes(exported_program.graph_module)
-
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             TOSASupportedOperators(tosa_spec),
@@ -69,10 +78,34 @@ class ArmPartitioner(Partitioner):
         )
         partition_list = capability_partitioner.propose_partitions()
         for partition in partition_list:
+            tag = f"tag{partition.id}"
+
+            def is_partitioned(node: torch.fx.Node, tag=tag) -> bool:
+                return (
+                    "delegation_tag" in node.meta and node.meta["delegation_tag"] == tag
+                )
+
             for node in partition.nodes:
-                tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
+
+            if not is_quantize_io(self.delegation_spec.compile_specs):
+                continue
+
+            # De-tag outmost q-nodes upwards and dq-nodes downwards.
+            # De-tag if at least one input/ output is not part of partition.
+            for node in partition.nodes:
+                if is_quant_node(node):
+                    for input in node.all_input_nodes:
+                        if not is_partitioned(input):
+                            del node.meta["delegation_tag"]
+                            break
+
+                if is_dequant_node(node):
+                    for user in node.users:
+                        if not is_partitioned(user):
+                            del node.meta["delegation_tag"]
+                            break
 
         tag_constant_data(exported_program)
 

@@ -30,7 +30,6 @@ from . import (  # noqa
     op_repeat,
     op_rshift,
     op_rsqrt,
-    op_select,
     op_sigmoid,
     op_slice,
     op_squeeze,

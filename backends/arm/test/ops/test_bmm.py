@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -159,18 +159,9 @@ class TestBMM(unittest.TestCase):
             self.BMM(), common.get_u55_compile_spec(), test_data
         )
 
-    @parameterized.expand(BMM.test_parameters[:1])
+    @parameterized.expand(BMM.test_parameters)
     @pytest.mark.corstone_fvp
     def test_bmm_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
-        self._test_bmm_ethosu_BI_pipeline(
-            self.BMM(), common.get_u85_compile_spec(), test_data
-        )
-
-    @parameterized.expand(BMM.test_parameters[1:])
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_bmm_u85_BI_xfails(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_bmm_ethosu_BI_pipeline(
             self.BMM(), common.get_u85_compile_spec(), test_data

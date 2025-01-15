@@ -14,13 +14,15 @@
 
 #define TILE_SIZE ${TILE_SIZE}
 
+#define STRIDE_EQ_DILATION ${STRIDE_EQ_DILATION}
+
 #define BATCH_SIZE_X ${BATCH_SIZE_X}
 
 #define BATCH_SIZE_Y ${BATCH_SIZE_Y}
 
 #define op(X, A, B) ${OPERATOR}
 
-#include "indexing_utils_u16.h"
+#include "indexing_utils.h"
 
 layout(std430) buffer;
 
@@ -36,18 +38,21 @@ ${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
-
 /*
  * Computes a depthwise convolution. Each shader invocation calculates the
  * output at a single output location.
  */
+
 void main() {
   // x and y are divided by batch size to determine 3d position
   // since work size is calculated by x * ((y + B_Y - 1) / B_Y) * z
   const ivec2 out_limits_xy_scaled = (out_limits.xy + ivec2(BATCH_SIZE_X, BATCH_SIZE_Y) - 1) / ivec2(BATCH_SIZE_X, BATCH_SIZE_Y);
 
-  ivec3 pos = idx_to_ipos_x_wise(gl_GlobalInvocationID.x, out_limits_xy_scaled.x, out_limits_xy_scaled.y);
+  const uint div_by_x = gl_GlobalInvocationID.x / out_limits_xy_scaled.x;
+  ivec3 pos = ivec3(
+    gl_GlobalInvocationID.x % out_limits_xy_scaled.x,
+    div_by_x % out_limits_xy_scaled.y,
+    div_by_x / out_limits_xy_scaled.y);
 
   // scale pos.xy by batch sizes, because that's the top pixel to be processed
   pos.x *= BATCH_SIZE_X;
