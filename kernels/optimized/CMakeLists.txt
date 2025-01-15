@@ -61,6 +61,7 @@ generate_bindings_for_kernels(
 )
 message("Generated files ${gen_command_sources}")
 
+message("DEBUG: cmake_prefix_path is ${CMAKE_PREFIX_PATH}")
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
 find_package(Torch CONFIG REQUIRED)
