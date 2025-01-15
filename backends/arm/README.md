@@ -119,7 +119,7 @@ backends/arm/test/setup_testing.sh
 The you can run the tests with
 
 ```
-pytest -c /dev/null -v -n auto backends/arm/test --arm_quantize_io --arm_run_corstoneFVP
+pytest -c /dev/null -v -n auto backends/arm/test --arm_run_corstoneFVP
 ```
 
 ### Code coverage

@@ -2,7 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -256,40 +256,6 @@ function build_executorch() {
     find . -name "*.a" -exec ls -al {} \;
 }
 
-# Build .so library to register quant ops with AoT flow
-function build_quantization_aot_lib()
-{
-    SITE_PACKAGES="$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-    CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
-
-    cd $et_root_dir
-    mkdir -p cmake-out-aot-lib
-
-    echo "--------------------------------------------------------------------------------"
-    echo "Build .so library to register quant ops with AoT flow ${build_type} into '${et_root_dir}' - 'cmake-out-aot-lib'"
-    echo "--------------------------------------------------------------------------------"
-
-    build_with_etdump_flags=""
-    if [ "$build_with_etdump" = true ] ; then
-        build_with_etdump_flags="-DEXECUTORCH_BUILD_DEVTOOLS=ON        \
-                                 -DEXECUTORCH_ENABLE_EVENT_TRACER=ON "
-    fi
-
-    cmake \
-        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"    \
-        -DCMAKE_BUILD_TYPE=${build_type}            \
-        -DEXECUTORCH_BUILD_XNNPACK=OFF              \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON     \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-        ${build_with_etdump_flags}                  \
-        -DPYTHON_EXECUTABLE=$(which python3)        \
-        ${extra_build_flags}                        \
-        -Bcmake-out-aot-lib                         \
-        "${et_root_dir}"
-
-    cmake --build cmake-out-aot-lib --parallel -- quantized_ops_aot_lib
-}
-
 # build Arm Baremetal executor_runner
 function build_executorch_runner() {
     echo "[${FUNCNAME[0]}] Generating ExecuTorch libraries"
@@ -397,7 +363,7 @@ hash arm-none-eabi-gcc \
 
 # build executorch libraries
 build_executorch
-build_quantization_aot_lib
+cd $et_root_dir && backends/arm/scripts/build_quantized_ops_aot_lib.sh $build_type
 
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
