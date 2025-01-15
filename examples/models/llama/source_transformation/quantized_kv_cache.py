@@ -49,7 +49,7 @@ class QuantizedKVCache(nn.Module):
             )
 
         # For now supporting int8 only
-        self.use_custom_update_cache_op = True
+        self.use_custom_update_cache_op = use_custom_update_cache_op
         self.quantized_cache_dtype = torch.int8
         self.cache_fp_type = torch.float32
         cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)

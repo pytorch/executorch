@@ -309,8 +309,6 @@ class SDPA(nn.Module):
         seqlen,
         mask: torch.Tensor,
     ) -> torch.Tensor:
-        # TODO(kimishpatel): Move this slicing logic to Attention block so that
-        # SDPA does not have to take input_pos as arg
         if self.enable_dynamic_shape:
             start_pos = input_pos[-1].item()
             torch._check_is_size(start_pos)

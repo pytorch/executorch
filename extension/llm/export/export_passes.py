@@ -19,7 +19,7 @@ def _normalize_dims(tensor: FakeTensor, dim_0: int, dim_1: int):
     return dim_0, dim_1
 
 
-class RemoveRedundantTransposes(ExportPass):
+class RemoveRedundantPermutes(ExportPass):
     """
     This pass removes redundant transpose nodes in the graph.
     It checks if the next node is also a transpose node and if the two transpose nodes undo each other.
