@@ -351,7 +351,15 @@ Error Method::parse_values() {
 
         // initialize boxed list
         for (size_t j = 0; j < items->size(); j++) {
-          evalp_list[j] = &values_[static_cast<size_t>(items->Get(j))];
+          auto value_index = items->Get(j);
+          ET_CHECK_OR_RETURN_ERROR(
+              value_index >= 0 && value_index < n_value,
+              InvalidProgram,
+              "Invalid value index %" PRId64 " for IntList %zu index %zu",
+              value_index,
+              i,
+              j);
+          evalp_list[j] = &values_[static_cast<size_t>(value_index)];
         }
         new (&values_[i]) EValue(
             BoxedEvalueList<int64_t>(evalp_list, int_list, items->size()));
@@ -411,6 +419,7 @@ Error Method::parse_values() {
         auto tensors = deserialization::parseTensorList(
             static_cast<const executorch_flatbuffer::TensorList*>(val)->items(),
             values_,
+            n_value, // The size of the full array.
             memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
@@ -430,6 +439,7 @@ Error Method::parse_values() {
                     val)
                     ->items(),
                 values_,
+                n_value, // The size of the full array.
                 memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
@@ -830,14 +840,14 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
   if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
+
     ET_CHECK_OR_RETURN_ERROR(
         t_dst.scalar_type() == t_src.scalar_type(),
         InvalidArgument,
-        "The %zu-th input tensor's scalartype does not meet requirement: found %" PRId8
-        " but expected %" PRId8,
+        "Input %zu has unexpected scalar type: expected %s but was %s.",
         input_idx,
-        static_cast<int8_t>(t_src.scalar_type()),
-        static_cast<int8_t>(t_dst.scalar_type()));
+        executorch::runtime::toString(t_dst.scalar_type()),
+        executorch::runtime::toString(t_src.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     Error err = resize_tensor(t_dst, t_src.sizes());
