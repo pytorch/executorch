@@ -72,12 +72,17 @@ class EventTraceManager {
     return event_tracer_ptr_.get();
   };
 
-  Error write_etdump_to_file(const char* filename) const {
+  Error write_etdump_to_file() const {
     torch::executor::ETDumpGen* const etdump_ptr =
         static_cast<torch::executor::ETDumpGen*>(get_event_tracer());
     if (!etdump_ptr) {
       return Error::NotSupported;
     }
+
+    const char* filename = nullptr;
+#ifdef ET_EVENT_TRACER_ENABLED
+    filename = FLAGS_etdump_path.c_str();
+#endif // ET_EVENT_TRACER_ENABLED
 
     std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
         fopen(filename, "w+"), fclose);
@@ -251,12 +256,10 @@ int main(int argc, char** argv) {
   }
 
   if (tracer.get_event_tracer()) {
-    // Dump ETDump data containing profiling/debugging data to specified file.
-    Error status = tracer.write_etdump_to_file(FLAGS_etdump_path.c_str());
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "Failed to save ETDump file at %s.",
-        FLAGS_etdump_path.c_str());
+    // Dump ETDump data containing profiling/debugging data to file specified in
+    // command line flag.
+    Error status = tracer.write_etdump_to_file();
+    ET_CHECK_MSG(status == Error::Ok, "Failed to save ETDump file.");
   }
 
   return 0;
