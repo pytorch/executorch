@@ -68,8 +68,8 @@ target_compile_options(
 install(TARGETS custom_ops DESTINATION lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
-  # Use NO_CMAKE_FIND_ROOT_PATH to make sure this works even if
-  # cross-compiling. See note in kernels/optimized/CMakeLists.txt.
+  # Use NO_CMAKE_FIND_ROOT_PATH to make sure this works even if cross-compiling.
+  # See note in kernels/optimized/CMakeLists.txt.
   find_package(Torch CONFIG REQUIRED NO_CMAKE_FIND_ROOT_PATH)
   add_library(
     custom_ops_aot_lib SHARED
@@ -84,6 +84,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   )
   target_include_directories(
     custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+                               ${TORCH_INCLUDE_DIRS}
   )
   # TODO: This only works if we install portable_lib.so to
   # <site-packages>/executorch/extension/pybindings/.
