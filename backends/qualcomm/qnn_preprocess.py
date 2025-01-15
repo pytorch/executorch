@@ -20,6 +20,10 @@ from executorch.backends.qualcomm._passes.layout_transform import LayoutTransfor
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+    option_to_flatbuffer,
+)
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,

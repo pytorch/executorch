@@ -1179,6 +1179,10 @@ Error Method::execute_instruction() {
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::DelegateCall: {
+      ET_LOG(Info, "CHECK n_delegate_: %zu", n_delegate_);
+      ET_LOG(Info, "CHECK n_chains_: %zu", n_chains_);
+      ET_LOG(Info, "CHECK num instructions of cur_chain: %zu", instructions->size());
+
       EXECUTORCH_SCOPE_PROF("DELEGATE_CALL");
       internal::EventTracerProfileOpScope event_tracer_op_scope =
           internal::EventTracerProfileOpScope(event_tracer_, "DELEGATE_CALL");

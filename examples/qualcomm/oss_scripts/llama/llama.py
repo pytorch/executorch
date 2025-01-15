@@ -14,6 +14,7 @@ import logging
 import os
 import sys
 import time
+from collections import defaultdict
 from functools import partial
 from multiprocessing.connection import Client
 
@@ -626,7 +627,7 @@ def compile(args, pte_filename, tokenizer):
         call_delegate_inputs_dict = {name: [] for name in graph_names}
         call_delegate_node_name_dict = {name: [] for name in graph_names}
         outputs_dict = {name: [] for name in graph_names}
-        input_nodes_dict = {name: [] for name in graph_names}
+        input_nodes_dict = defaultdict(list)
         for prog, graph_name in zip(exported_programs, graph_names):
             for node in prog.graph_module.graph.nodes:
                 if (
@@ -654,8 +655,11 @@ def compile(args, pte_filename, tokenizer):
 
         if args.num_sharding > 0:
             bundle_progs_list = []
+            processed_bytes = []
+            call_delegate_node = []
+
             for num in range(args.num_sharding - 1, -1, -1):
-                processed_bytes = []
+                cur_inputs = []
                 for prog, graph_name in zip(exported_programs, graph_names):
                     processed_bytes.append(
                         getattr(
@@ -669,28 +673,28 @@ def compile(args, pte_filename, tokenizer):
                         if node.op == "get_attr"
                         and node.name == f"lowered_module_{num}"
                     ]
-                    input_nodes_dict[graph_name] = [
-                        node
-                        for node in call_delegate_node[0].args
-                        if node.op == "placeholder"
+                    cur_inputs =[
+                        node for node in call_delegate_node[0].args if node.op == "placeholder"
                     ]
+                    input_nodes_dict[graph_name].append(cur_inputs)
+            prog_mgr, bundle_progs, partitioned_graph_names = generate_multi_graph_program(
+                compiler_specs=compiler_specs[0],
+                processed_bytes=processed_bytes,
+                input_nodes_dict=input_nodes_dict,
+                backend_config=executorch_config,
+                constant_methods=llama_instance_list[
+                    1
+                ].llama_meta,  # kv method meta
+            )
 
-                prog_mgr, bundle_progs = generate_multi_graph_program(
-                    compiler_specs=compiler_specs[0],
-                    processed_bytes=processed_bytes,
-                    input_nodes_dict=input_nodes_dict,
-                    backend_config=executorch_config,
-                    constant_methods=llama_instance_list[
-                        1
-                    ].llama_meta,  # kv method meta
-                )
-                bundle_progs_list.append(bundle_progs)
-                for graph_name in graph_names:
-                    lower_module_dict[graph_name].append(
-                        prog_mgr.exported_program(graph_name).graph_module._modules.get(
-                            "lowered_module_0"
-                        )
+            bundle_progs_list.append(bundle_progs)
+            for graph_name in partitioned_graph_names:
+                ori_graph_name, cur_idx = "_".join(graph_name.split("_")[:-1]), int(graph_name.split("_")[-1])
+                lower_module_dict[ori_graph_name].append(
+                    prog_mgr.exported_program(f"{graph_name}").graph_module._modules.get(
+                        "lowered_module_0"
                     )
+                )
 
             exec_prog = generate_composite_llama_program(
                 graph_names=graph_names,
@@ -723,7 +727,7 @@ def compile(args, pte_filename, tokenizer):
                     if node.op == "output"
                 ]
 
-            prog_mgr, _ = generate_multi_graph_program(
+            prog_mgr, _, _ = generate_multi_graph_program(
                 compiler_specs=compiler_specs[0],
                 processed_bytes=processed_bytes,
                 input_nodes_dict=input_nodes_dict,

@@ -63,6 +63,7 @@ class PyQnnManager {
     std::vector<uint8_t> tensor_data;
     std::vector<uint8_t*> tensor_ptr;
     std::vector<uint64_t> tensor_size;
+    std::unordered_map<std::string, int> partition_num;
     uint64_t total_tensor_size = 0;
     for (size_t i = 0; i < qcirs.size(); ++i) {
       py::buffer_info info(py::buffer(qcirs[i].cast<py::bytes>()).request());
@@ -147,7 +148,8 @@ class PyQnnManager {
               &params));
         }
         graphs.emplace_back(qcir::CreateGraphDirect(
-            builder_, graph->name()->str().c_str(), &nodes, &tensors));
+            builder_, (graph->name()->str() + "_" + std::to_string(partition_num[graph->name()->str()])).c_str(), &nodes, &tensors));
+        partition_num[graph->name()->str()] = partition_num[graph->name()->str()] + 1;
       }
     }
 

@@ -13,9 +13,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.llama_transformer import (
-    ModelArgs,
-    precompute_freqs_cis,
+    ModelArgs
 )
+from executorch.examples.models.llama.rope import precompute_freqs_cis
 
 
 def apply_rotary_emb_single(

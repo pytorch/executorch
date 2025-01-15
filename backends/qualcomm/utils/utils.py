@@ -818,6 +818,7 @@ def generate_multi_graph_program(
         executorch_in_order,
         executorch_out_order,
     ) = ({}, {}, {}, {}, {})
+    # graph name will be suffixed with _{num}
     qnn_mgr = PyQnnManagerAdaptor.QnnManager(
         generate_qnn_executorch_option(compiler_specs), processed_bytes
     )
@@ -831,15 +832,16 @@ def generate_multi_graph_program(
 
     # We need to obtain the order of the IOs to correctly map QNN with nn.module
     for graph_name in graph_names:
+        ori_graph_name, cur_idx = "_".join(graph_name.split("_")[:-1]), int(graph_name.split("_")[-1])
         if input_nodes_dict:
             # input
-            input_names = [node.name for node in input_nodes_dict[graph_name]]
+            input_names = [node.name for node in input_nodes_dict[ori_graph_name][cur_idx]]
             qnn_input_names = [
                 wrapper.GetName() for wrapper in graph_inputs[graph_name]
             ]
             # The input of intermideate module including call_function node
             # could not be reorder by node name
-            if len(input_names) == len(qnn_input_names):
+            if len(input_names) == len(qnn_input_names) and cur_idx == 0:
                 input_order_list = []
                 for input_name in input_names:
                     # e.g., input_0_tokens_0
@@ -868,7 +870,7 @@ def generate_multi_graph_program(
     bundle_progs = [
         from_context_binary(
             ctx_path=binary_info,
-            op_name=f"loader_{graph_name}_{int(time.time())}",
+            op_name=graph_name,
             soc_model=compiler_options.soc_info.soc_model,
             custom_info={
                 "graph_inputs": graph_inputs[graph_name],
@@ -877,10 +879,10 @@ def generate_multi_graph_program(
                 "qnn_in_order": qnn_in_order.get(graph_name, None),
                 "executorch_in_order": executorch_in_order.get(graph_name, None),
                 "executorch_out_order": executorch_out_order.get(graph_name, None),
-            },
-        )
+                },
+            )
         for graph_name in graph_names
-    ]
+        ]
     # leverage ExecutorchProgramManager for generating pte with multi-methods
     edge_prog_mgr = to_edge(
         {
@@ -898,11 +900,15 @@ def generate_multi_graph_program(
                 n.meta[OpContextLoader.meta_ctx_bin] = binary_info
                 break
 
+    opt = flatbuffer_to_option(compiler_specs[0].value)
+    opt.graph_name = "multi_graph"
+    new_opt = option_to_flatbuffer(opt)
+    compiler_specs[0].value = new_opt
     edge_prog_mgr = edge_prog_mgr.to_backend(QnnPartitioner(compiler_specs))
     exec_prog = edge_prog_mgr.to_executorch(
         config=backend_config or ExecutorchBackendConfig()
     )
-    return exec_prog, bundle_progs
+    return exec_prog, bundle_progs, graph_names
 
 
 def generate_composite_llama_program(
