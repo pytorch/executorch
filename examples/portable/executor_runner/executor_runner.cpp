@@ -73,16 +73,16 @@ class EventTraceManager {
   };
 
   Error write_etdump_to_file() const {
-    torch::executor::ETDumpGen* const etdump_ptr =
-        static_cast<torch::executor::ETDumpGen*>(get_event_tracer());
-    if (!etdump_ptr) {
+    EventTracer* const event_tracer_ptr = get_event_tracer();
+    if (!event_tracer_ptr) {
       return Error::NotSupported;
     }
 
-    const char* filename = nullptr;
 #ifdef ET_EVENT_TRACER_ENABLED
-    filename = FLAGS_etdump_path.c_str();
-#endif // ET_EVENT_TRACER_ENABLED
+    torch::executor::ETDumpGen* const etdump_ptr =
+        static_cast<torch::executor::ETDumpGen*>(event_tracer_ptr);
+
+    const char* filename = FLAGS_etdump_path.c_str();
 
     std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
         fopen(filename, "w+"), fclose);
@@ -100,6 +100,7 @@ class EventTraceManager {
       ET_LOG(Error, "No ETDump data available!");
       return Error::NotFound;
     }
+#endif // ET_EVENT_TRACER_ENABLED
 
     return Error::Ok;
   }
