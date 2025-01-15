@@ -2,7 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -91,8 +91,8 @@ tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
 tosa_reference_model_rev="v0.80.1"
 
 # vela
-vela_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u-vela"
-vela_rev="5427dc7e9c1a4c7d554163290faeea75f168772d"
+vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
+vela_rev="fc970e3da72e5f6930b840b357684126602b3126"
 
 ########
 ### Mandatory user args
