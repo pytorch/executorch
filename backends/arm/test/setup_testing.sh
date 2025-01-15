@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -51,6 +51,8 @@ function build_semihosting_executorch_runner() {
     echo "[${FUNCNAME[0]}] Generated baremetal elf file: with semihosting enabled"
     find ${build_test_dir} -name "arm_executor_runner"
 }
+
+cd $et_root_dir && backends/arm/scripts/build_quantized_ops_aot_lib.sh
 
 # Use most optimal system_configs for testing
 build_semihosting_executorch_runner corstone-300 Ethos_U55_High_End_Embedded
