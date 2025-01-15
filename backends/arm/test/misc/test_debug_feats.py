@@ -88,6 +88,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
             return  # Implicit pass test
         self.fail("File does not contain TOSA dump!")
 
+    @unittest.skip("Causing flatc failure with numpy2.0 when converting to json")
     def test_BI_artifact(self):
         model = Linear(20, 30)
         tmp_file = common.get_time_formatted_path(
@@ -130,6 +131,7 @@ class TestNumericalDiffPrints(unittest.TestCase):
             self.fail()
 
 
+@unittest.skip("Causing flatc failure with numpy2.0 when converting to json")
 def test_dump_ops_and_dtypes():
     model = Linear(20, 30)
     (
@@ -207,6 +209,7 @@ class TestCollateTosaTests(unittest.TestCase):
         shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)
 
 
+@unittest.skip("Causing flatc failure with numpy2.0 when converting to json")
 def test_dump_tosa_ops(caplog):
     caplog.set_level(logging.INFO)
     model = Linear(20, 30)
