@@ -54,10 +54,11 @@ else()
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
-
+find_package_torch_headers()
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
   custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+                     ${TORCH_INCLUDE_DIRS}
 )
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
@@ -68,7 +69,6 @@ target_compile_options(
 install(TARGETS custom_ops DESTINATION lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
-  find_package_torch_headers()
   add_library(
     custom_ops_aot_lib SHARED
     ${_custom_ops__srcs}
