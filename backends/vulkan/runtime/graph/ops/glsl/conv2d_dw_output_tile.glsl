@@ -14,6 +14,8 @@
 
 #define TILE_SIZE ${TILE_SIZE}
 
+#define STRIDE_EQ_DILATION ${STRIDE_EQ_DILATION}
+
 #define BATCH_SIZE_X ${BATCH_SIZE_X}
 
 #define BATCH_SIZE_Y ${BATCH_SIZE_Y}
@@ -40,6 +42,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * Computes a depthwise convolution. Each shader invocation calculates the
  * output at a single output location.
  */
+
 void main() {
   // x and y are divided by batch size to determine 3d position
   // since work size is calculated by x * ((y + B_Y - 1) / B_Y) * z

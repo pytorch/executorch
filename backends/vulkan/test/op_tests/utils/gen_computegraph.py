@@ -667,7 +667,6 @@ for (int i=0; i<out.size(); i++) {{
             op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {\n"
 
         op_check_fn_body = ""
-        op_check_fn_body += self.gen_conditional_skips()
         op_check_fn_body += self.gen_graph_build_code()
         op_check_fn_body += self.gen_graph_exec_code()
 
