@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,7 +22,6 @@ from . import (  # noqa
     op_max,
     op_max_pool2d,
     op_min,
-    op_mm,
     op_mul,
     op_permute,
     op_quant,
@@ -31,12 +30,12 @@ from . import (  # noqa
     op_repeat,
     op_rshift,
     op_rsqrt,
-    op_select,
     op_sigmoid,
     op_slice,
     op_squeeze,
     op_sub,
     op_sum,
+    op_table,
     op_tanh,
     op_to_copy,
     op_transpose,

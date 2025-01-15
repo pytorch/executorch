@@ -42,6 +42,7 @@ class XNNCat:
     input4_id: int
     output_id: int
     flags: int
+    input5_id: int
 
 
 # Generic node data class for convolution type nodes
@@ -99,6 +100,11 @@ class XNNMaxPooling2d(XNNPooling2D):
 
 @dataclass
 class XNNConv2d(XNNNodeConv):
+    pass
+
+
+@dataclass
+class XNNConvTranspose2d(XNNNodeConv):
     pass
 
 
@@ -174,6 +180,11 @@ class XNNConcatenate3(XNNCat):
 
 @dataclass
 class XNNConcatenate4(XNNCat):
+    pass
+
+
+@dataclass
+class XNNConcatenate5(XNNCat):
     pass
 
 
@@ -330,6 +341,7 @@ XNodeUnion = Union[
     XNNStaticTranspose,
     XNNClamp,
     XNNConv2d,
+    XNNConvTranspose2d,
     XNNDiv,
     XNNStaticResizeBilinear2D,
     XNNStaticConstantPad,
@@ -357,6 +369,7 @@ XNodeUnion = Union[
     XNNConcatenate2,
     XNNConcatenate3,
     XNNConcatenate4,
+    XNNConcatenate5,
     XNNStaticSlice,
     XNNScaledDotProductAttention,
     XNNBatchMatrixMultiply,

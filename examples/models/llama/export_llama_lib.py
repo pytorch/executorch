@@ -23,6 +23,7 @@ import pkg_resources
 import torch
 
 from executorch.devtools.etrecord import generate_etrecord
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
@@ -79,7 +80,14 @@ pkg_name = __name__
 verbosity_setting = None
 
 
-EXECUTORCH_DEFINED_MODELS = ["stories110m", "llama2", "llama3", "llama3_1", "llama3_2"]
+EXECUTORCH_DEFINED_MODELS = [
+    "stories110m",
+    "llama2",
+    "llama3",
+    "llama3_1",
+    "llama3_2",
+    "static_llama",
+]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
 
@@ -768,6 +776,9 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
+    additional_passes = []
+    if args.model in TORCHTUNE_DEFINED_MODELS:
+        additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -782,7 +793,9 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
             canonicalize_program(builder.edge_manager.exported_program())
 
-        builder = builder.to_executorch()
+        builder = builder.to_executorch(
+            passes=additional_passes,
+        )
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -800,7 +813,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
             canonicalize_program(builder.edge_manager.exported_program())
 
-        builder = builder.to_executorch()
+        builder = builder.to_executorch(passes=additional_passes)
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")

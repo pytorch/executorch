@@ -9,6 +9,7 @@
 import typing
 import unittest
 from contextlib import contextmanager
+from copy import deepcopy
 from typing import List, Optional, Tuple
 
 import executorch.exir as exir
@@ -26,11 +27,15 @@ from executorch.exir import (
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import (
+    ExecutorBackendPartitioner,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -56,11 +61,12 @@ from executorch.exir.tests.models import Mul
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
+from executorch.runtime import Runtime
 
 from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import Dim, export
+from torch.export import Dim, export, export_for_training
 
 
 class WrapperModule(torch.nn.Module):
@@ -243,6 +249,56 @@ class TestEmit(unittest.TestCase):
         )
         self.assertIsInstance(program.execution_plan[0].values[outputs[6]].val, Null)
 
+    def test_initialized_mutable_buffer(self):
+        """Test that mutable buffers can hold meaningful initialized state."""
+
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Mutable buffer with non-empty initial state.
+                self.register_buffer("cache_pos", torch.arange(0, 10))
+
+            def forward(self, x):
+                self.cache_pos.add_(1)
+                return self.cache_pos
+
+        m = TestModule()
+        example_inputs = (torch.ones(10),)
+        ep = torch.export.export(m, example_inputs)
+        edge = to_edge(
+            ep,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+            ),
+        )
+
+        # Save a copy of the edge program since to_executorch is
+        # stateful to some degree.
+        edge_copy = deepcopy(edge)
+        et_config = ExecutorchBackendConfig(
+            passes=[InitializedMutableBufferPass(["cache_pos"])],
+        )
+        et_program_init_pass = edge.to_executorch(config=et_config)
+        et_program_regular = edge_copy.to_executorch()
+
+        runtime = Runtime.get()
+        program_init_pass = runtime.load_program(et_program_init_pass.buffer)
+        method_init_pass = program_init_pass.load_method("forward")
+
+        program_regular = runtime.load_program(et_program_regular.buffer)
+        method_regular = program_regular.load_method("forward")
+
+        # Test that the mutable buffer is initialized.
+        torch.allclose(
+            method_init_pass.execute((example_inputs))[0], torch.arange(1, 11)
+        )
+        # Test that the mutable buffer is uninitialized and starts with default zeros,
+        # we test equality with torch.ones because of the mutation += 1 in the model forward.
+        torch.allclose(
+            method_regular.execute((example_inputs))[0],
+            torch.ones(10, dtype=torch.int64),
+        )
+
     def test_int_list_input(self):
         class M(torch.nn.Module):
             def forward(self, x, y, z):
@@ -335,7 +391,8 @@ class TestEmit(unittest.TestCase):
 
         program = (
             to_edge(export(f, (torch.randn(2, 3, 5),), strict=True))
-            .to_executorch().executorch_program
+            .to_executorch()
+            .executorch_program
         )
         exir.print_program.pretty_print(program)
 
@@ -522,8 +579,7 @@ class TestEmit(unittest.TestCase):
         program = (
             to_edge(export(f, (x, x), strict=True))
             # .to_edge(self.compile_config)  # TODO(larryliu): fix cat
-            .to_executorch()
-            .executorch_program
+            .to_executorch().executorch_program
         )
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
@@ -1626,3 +1682,54 @@ class TestEmit(unittest.TestCase):
         ]
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
+
+    def test_delegate_deduplicate(self) -> None:
+        class SharedModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        class Module1(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        class Module2(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        shared_module = SharedModule()
+        module_1 = Module1(shared_module)
+        module_2 = Module2(shared_module)
+        example_inputs = (torch.randn(2, 2),)
+        module_1(*example_inputs)
+        module_2(*example_inputs)
+
+        ep1 = export_for_training(module_1, example_inputs)
+        ep2 = export_for_training(module_2, example_inputs)
+
+        edge_program_manager = exir.to_edge(
+            {"forward1": ep1, "forward2": ep2},
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
+
+        edge_program_manager = edge_program_manager.to_backend(
+            ExecutorBackendPartitioner()
+        ).to_executorch()
+
+        # Check that there is only one delegate because two methods are exactly the same
+        self.assertEqual(
+            len(edge_program_manager.executorch_program.backend_delegate_data), 1
+        )

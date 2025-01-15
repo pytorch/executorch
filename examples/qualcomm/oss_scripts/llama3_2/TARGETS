@@ -9,6 +9,9 @@ python_binary(
     name = "llama",
     srcs = ["llama.py"],
     main_function = "executorch.examples.qualcomm.oss_scripts.llama3_2.llama.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+    ],
     deps = [
         "//executorch/examples/qualcomm/oss_scripts/llama2:static_llama",
         "//caffe2:torch",
@@ -27,6 +30,8 @@ runtime.command_alias(
     name = "llama_qnn",
     env = {
         "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_verision()),
+        # Place holder to pass the QNN_SDK_ROOT check in executorch/examples/qualcomm/utils.py
+        "QNN_SDK_ROOT": "",
     },
     exe = ":llama",
 )

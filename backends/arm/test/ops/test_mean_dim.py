@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -269,10 +269,8 @@ class TestMeanDim(unittest.TestCase):
     ):
         self._test_meandim_tosa_BI_pipeline(self.MeanDim(dim, keepdim), (test_data,))
 
-    # Expected to fail as this is not supported on u55.
     @parameterized.expand(MeanDim.test_data_suite)
-    @unittest.expectedFailure
-    def test_meandim_tosa_u55_BI_xfails(
+    def test_meandim_tosa_u55_BI(
         self,
         test_name: str,
         test_data: torch.Tensor,

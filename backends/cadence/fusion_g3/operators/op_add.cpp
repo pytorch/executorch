@@ -10,6 +10,7 @@
 
 #include <xa_nnlib_kernels_api.h>
 
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
@@ -28,15 +29,6 @@ namespace impl {
 namespace G3 {
 namespace native {
 
-#define XT_KERNEL_CHECK(ctx, out, kernel, ...) \
-  const auto ret = kernel(__VA_ARGS__);        \
-  ET_KERNEL_CHECK_MSG(                         \
-      ctx,                                     \
-      ret == 0,                                \
-      InvalidArgument,                         \
-      out,                                     \
-      "Failed to run kernel: " #kernel "(" #__VA_ARGS__ ")");
-
 Tensor& add_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
@@ -47,6 +39,7 @@ Tensor& add_out(
   ScalarType common_type =
       executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
 
+#ifdef OP_ARG_CHECK
   // Check Common Dtype
   ET_KERNEL_CHECK(
       ctx,
@@ -70,12 +63,12 @@ Tensor& add_out(
       torch::executor::resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
+#endif
 
   // Compute Dtype
   ScalarType compute_type =
       torch::executor::native::utils::get_compute_type(common_type);
 
-  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "add.out";
 
   int kTensorDimensionLimit = 5;
@@ -261,6 +254,7 @@ Tensor& add_scalar_out(
       torch::executor::native::utils::promote_type_with_scalar(
           a.scalar_type(), b);
 
+#ifdef OP_ARG_CHECK
   // Check Common Dtype
   ET_KERNEL_CHECK(
       ctx,
@@ -284,7 +278,7 @@ Tensor& add_scalar_out(
       executorch::runtime::resize_tensor(out, a.sizes()) == Error::Ok,
       InvalidArgument,
       out);
-
+#endif
   // Compute Dtype
   ScalarType compute_type =
       torch::executor::native::utils::get_compute_type(common_type);

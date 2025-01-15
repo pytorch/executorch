@@ -207,6 +207,10 @@ class Adapter final {
     return supports_8bit_storage_buffers() && supports_int8_shader_types();
   }
 
+  inline size_t min_ubo_alignment() const {
+    return physical_device_.min_ubo_alignment;
+  }
+
   // Command Buffer Submission
 
   void

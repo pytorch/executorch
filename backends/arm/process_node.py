@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,23 +11,15 @@ import numpy as np
 import serializer.tosa_serializer as ts
 import torch
 import torch.fx
-
-# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    get_input_qparams,
-)
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
+    dq_op,
     get_quantized_node_output_dtype,
     is_node_quantized,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.arm.tosa_utils import (
-    getNodeArgs,
-    is_bias_node_for_quantized_conv,
-    tosa_shape,
-)
+from executorch.backends.arm.tosa_utils import getNodeArgs, tosa_shape
 from torch.export.exported_program import ExportedProgram
 
 
@@ -43,9 +35,9 @@ def process_call_function(
     # Convert output (this node itself)
     output = TosaArg(node)
 
-    is_quant_node = is_node_quantized(node)
-    if is_quant_node:
-        output_dtype = map_dtype(get_quantized_node_output_dtype(node))
+    is_dq_node = node.target == dq_op
+    if is_dq_node:
+        output_dtype = ts.DType.INT8
     else:
         output_dtype = output.dtype
     tosa_graph.currRegion.currBasicBlock.addTensor(
@@ -63,7 +55,6 @@ def process_call_function(
             tosa_graph,
             inputs,
             output,
-            is_quant_node,
         )
     else:
         raise RuntimeError(f"Unknown operator {node.target} for TOSA : {tosa_spec}")
@@ -99,41 +90,6 @@ def process_inputs(
     tosa_graph.addInputTensor(tensor)
 
 
-def process_quantized_bias(
-    node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
-    parameter_values,
-):
-    """
-    Serialize bias node that needs to be quantized.
-    """
-    consumer_node = list(node.users)[0]
-    (
-        input_node,
-        weight_node,
-        _,
-    ) = consumer_node.all_input_nodes
-
-    input_qargs = get_input_qparams(  # pyre-ignore[16]: Module `executorch.backends.arm` has no attribute `_passes`.
-        consumer_node
-    )
-
-    input_node_scale = input_qargs[0].scale
-    weight_node_scale = input_qargs[1].scale
-    bias_values_quantized = (
-        (parameter_values / (input_node_scale * weight_node_scale))
-        .round()
-        .astype(np.int32)
-    )
-
-    tosa_graph.addConst(
-        bias_values_quantized.shape,
-        ts.DType.INT32,
-        bias_values_quantized,
-        name=node.name,
-    )
-
-
 def process_inputs_to_parameters(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
@@ -148,20 +104,14 @@ def process_inputs_to_parameters(
     assert isinstance(parameter_data, torch.Tensor), "Expect Attr to be tensor"
     parameter_values = parameter_data.detach().numpy()
 
-    if is_bias_node_for_quantized_conv(node):
-        # BI bias
-        assert tosa_spec.support_integer(), f"{tosa_spec} doesnt't support integer"
-        process_quantized_bias(node, tosa_graph, parameter_values)
-    else:
-        # MI weights or bias
-        if inputs[0].dtype == torch.float32:
-            assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
+    if inputs[0].dtype == torch.float32:
+        assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
 
-        parameter_values = np.transpose(parameter_values, inputs[0].dim_order)
+    parameter_values = np.transpose(parameter_values, inputs[0].dim_order)
 
-        tosa_graph.addConst(
-            parameter_values.shape, inputs[0].dtype, parameter_values, name=node.name
-        )
+    tosa_graph.addConst(
+        parameter_values.shape, inputs[0].dtype, parameter_values, name=node.name
+    )
 
 
 def process_inputs_to_buffers(

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -53,15 +53,12 @@ class TestPermute(unittest.TestCase):
         self,
         module: torch.nn.Module,
         test_data: Tuple[torch.tensor],
-        permute_memory_to_nhwc: bool,
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=permute_memory_to_nhwc
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check(["torch.ops.aten.permute.default"])
@@ -127,10 +124,8 @@ class TestPermute(unittest.TestCase):
     def test_permute_tosa_MI(
         self, test_name: str, test_data: torch.Tensor, dims: list[int]
     ):
-        self._test_permute_tosa_MI_pipeline(self.Permute(dims=dims), (test_data,), True)
-        self._test_permute_tosa_MI_pipeline(
-            self.Permute(dims=dims), (test_data,), False
-        )
+        self._test_permute_tosa_MI_pipeline(self.Permute(dims=dims), (test_data,))
+        self._test_permute_tosa_MI_pipeline(self.Permute(dims=dims), (test_data,))
 
     @parameterized.expand(test_data_suite)
     def test_permute_tosa_BI(
@@ -141,7 +136,6 @@ class TestPermute(unittest.TestCase):
     # Expected to fail as TOSA.Transpose is not supported by Ethos-U55.
     @parameterized.expand(test_data_suite[0:1])
     @pytest.mark.corstone_fvp
-    @unittest.expectedFailure
     def test_permute_u55_BI(
         self, test_name: str, test_data: torch.Tensor, dims: list[int]
     ):

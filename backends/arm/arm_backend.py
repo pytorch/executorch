@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -49,8 +49,6 @@ class ArmCompileSpecBuilder:
         self.compiler_flags = []
         self.output_format = None
         self.path_for_intermediates = None
-        # TODO MLETORCH-265 Remove permute_nhwc flag
-        self.permute_nhwc = False
         self.quantize_io = False
         self.tosa_version = None
         self.input_order = None
@@ -118,16 +116,6 @@ class ArmCompileSpecBuilder:
         self.path_for_intermediates = output_path
         return self
 
-    def set_permute_memory_format(
-        self, set_nhwc_permutation: bool = True
-    ) -> "ArmCompileSpecBuilder":
-        """
-        Permute to channel last in compiler and runtime. Compilation and
-        runtime will convert rank 4 inputs to channel last for each sub-graph.
-        """
-        self.permute_nhwc = set_nhwc_permutation
-        return self
-
     def set_quantize_io(self, quantize_io: bool = False) -> "ArmCompileSpecBuilder":
         """
         Quantization of inputs and dequantization of outputs for cases where
@@ -170,11 +158,6 @@ class ArmCompileSpecBuilder:
                 CompileSpec("debug_artifact_path", self.path_for_intermediates.encode())
             )
 
-        if self.permute_nhwc:
-            self.compile_spec.append(
-                CompileSpec("permute_memory_format", "nhwc".encode())
-            )
-
         if self.input_order:
             self.compile_spec.append(
                 CompileSpec(
@@ -188,18 +171,25 @@ class ArmCompileSpecBuilder:
         return self.compile_spec
 
 
-def is_permute_memory(compile_spec: List[CompileSpec]) -> bool:
-    for spec in compile_spec:
-        if spec.key == "permute_memory_format":
-            return spec.value.decode() == "nhwc"
-    return False
-
-
 def is_tosa(compile_spec: List[CompileSpec]) -> bool:
     for spec in compile_spec:
         if spec.key == "output_format":
             return spec.value.decode() == "tosa"
     return False
+
+
+def is_quantize_io(compile_specs: List[CompileSpec]) -> bool:
+    for spec in compile_specs:
+        if spec.key == "quantize_io" and spec.value.decode() == "True":
+            return True
+    return False
+
+
+def get_tosa_version(compile_spec: List[CompileSpec]) -> TosaSpecification:
+    for spec in compile_spec:
+        if spec.key == "tosa_version":
+            return TosaSpecification.create_from_string(spec.value.decode())
+    raise RuntimeError("Could not find TOSA version in CompileSpec")
 
 
 def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
@@ -264,7 +254,7 @@ class ArmBackend(BackendDetails):
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(artifact_path)
         graph_module = ArmPassManager().transform_to_backend_pipeline(
-            exported_program=edge_program, compile_spec=compile_spec
+            exported_program=edge_program
         )
 
         node_visitors = get_node_visitors(edge_program, tosa_spec)

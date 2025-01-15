@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -35,7 +35,10 @@ class TestBMM(unittest.TestCase):
             return torch.bmm(x, y)
 
     class MatMul(torch.nn.Module):
-        test_parameters = [(torch.rand(2, 3, 5), torch.rand(2, 5, 2))]
+        test_parameters = [
+            (torch.rand(2, 3, 5), torch.rand(2, 5, 2)),
+            (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
+        ]
 
         def forward(self, x, y):
             return torch.matmul(x, y)
@@ -89,7 +92,7 @@ class TestBMM(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_bmm_ethosu_BI_pipeline(
@@ -156,18 +159,9 @@ class TestBMM(unittest.TestCase):
             self.BMM(), common.get_u55_compile_spec(), test_data
         )
 
-    @parameterized.expand(BMM.test_parameters[:1])
+    @parameterized.expand(BMM.test_parameters)
     @pytest.mark.corstone_fvp
     def test_bmm_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
-        self._test_bmm_ethosu_BI_pipeline(
-            self.BMM(), common.get_u85_compile_spec(), test_data
-        )
-
-    @parameterized.expand(BMM.test_parameters[1:])
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_bmm_u85_BI_xfails(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_bmm_ethosu_BI_pipeline(
             self.BMM(), common.get_u85_compile_spec(), test_data
