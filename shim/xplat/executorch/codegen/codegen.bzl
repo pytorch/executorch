@@ -397,11 +397,11 @@ def build_portable_lib(name, oplist_header_name, feature = None, expose_operator
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"]
-    if expose_operator_symbols:
+    compiler_flags = ["-Wno-missing-prototypes"]
+    if not expose_operator_symbols:
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
-        compiler_flags = ["-Wno-missing-prototypes"]
+        compiler_flags += ["-fvisibility=hidden"]
 
     # Build portable lib.
     runtime.cxx_library(
