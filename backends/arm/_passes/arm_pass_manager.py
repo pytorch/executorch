@@ -28,6 +28,7 @@ from executorch.backends.arm._passes.decompose_layernorm_pass import (
 )
 from executorch.backends.arm._passes.decompose_linear_pass import DecomposeLinearPass
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
+from executorch.backends.arm._passes.decompose_select import DecomposeSelectPass
 from executorch.backends.arm._passes.decompose_softmaxes_pass import (
     DecomposeSoftmaxesPass,
 )
@@ -62,7 +63,6 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
 )
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_manager import PassManager
 
@@ -72,9 +72,7 @@ class ArmPassManager(PassManager):
     def _transform(self, graph_module: torch.fx.GraphModule):
         return self(graph_module).graph_module
 
-    def transform_to_backend_pipeline(
-        self, exported_program: ExportedProgram, compile_spec: list[CompileSpec]
-    ):
+    def transform_to_backend_pipeline(self, exported_program: ExportedProgram):
         """Apply passes before transforming program to backend"""
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(DecomposeLinearPass())
@@ -137,11 +135,8 @@ class ArmPassManager(PassManager):
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSoftmaxesPass())
-        for spec in compile_spec:
-            if spec.key == "permute_memory_format":
-                memory_format = spec.value.decode()
-                if memory_format == "nhwc":
-                    self.add_pass(AnnotateChannelsLastDimOrder())
+        self.add_pass(DecomposeSelectPass())
+        self.add_pass(AnnotateChannelsLastDimOrder())
 
         return self._transform(exported_program.graph_module)
 

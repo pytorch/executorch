@@ -12,16 +12,22 @@ import subprocess
 import tempfile
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
 import tosa_reference_model
+from executorch.backends.arm.arm_backend import get_tosa_version, is_tosa
 
 from executorch.backends.arm.test.conftest import is_option_enabled
+from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 
+from packaging.version import Version
 from torch.export import ExportedProgram
 from torch.fx.node import Node
+
+from torch.overrides import TorchFunctionMode
 from tosa import TosaGraph
 
 logger = logging.getLogger(__name__)
@@ -154,6 +160,34 @@ def _get_output_quantization_params(
             )
             break  # break early, there's only one output node
     return quant_params
+
+
+class TosaReferenceModelDispatch(TorchFunctionMode):
+    """A context manager for executing call_delegate nodes using the reference model"""
+
+    def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
+        tosa_buffer = lowered_backend_module.processed_bytes
+        compile_specs = lowered_backend_module.compile_specs
+        if not is_tosa(compile_specs):
+            raise RuntimeError(
+                "Model needs to be compiled to tosa to run reference model."
+            )
+        tosa_version = get_tosa_version(compile_specs)
+
+        return run_tosa_graph_static(tosa_buffer, tosa_version, inputs)
+
+    def __torch_function__(self, func, types, args=..., kwargs=None):
+        if isinstance(func, torch._higher_order_ops.executorch_call_delegate.ExecutorchCallDelegate):  # type: ignore
+            lowered_backend_module = cast(LoweredBackendModule, args[0])
+            if lowered_backend_module.backend_id == "ArmBackend":
+                return self._tosa_dispatch(lowered_backend_module, args[1:])
+            else:
+                logger.warning(
+                    f"Ran model with TosaReferenceModelDispatch but call_delegate with {lowered_backend_module.backend_id=} != 'ArmBackend'."
+                )
+
+        kwargs = kwargs or {}
+        return func(*args, **kwargs)
 
 
 """
@@ -682,3 +716,48 @@ def corstone320_installed() -> bool:
     except:
         return False
     return True
+
+
+def run_tosa_graph_static(
+    graph: TosaGraph,
+    tosa_version: TosaSpecification,
+    inputs: list[torch.Tensor],
+) -> list[torch.Tensor]:
+    """Runs the TOSA reference model with inputs and returns the result."""
+    inputs_np = [input.numpy() for input in inputs]
+    transpose_data_format(inputs_np, to="NHWC")
+
+    tosa_release = tosa_version.version
+
+    if tosa_release > Version("0.80"):
+        logger.warning("The reference model is only tested for TOSA v0.80")
+
+    # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
+    tosa_profile = 1 if tosa_version.support_float() else 0
+    debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+    outputs_np, status = tosa_reference_model.run(
+        graph,
+        inputs_np,
+        verbosity=_tosa_refmodel_loglevel(logger.level),
+        tosa_profile=tosa_profile,
+        initialize_variable_tensor_from_numpy=1,  # True
+        debug_mode=debug_mode,
+    )
+
+    assert (
+        status == tosa_reference_model.GraphStatus.TOSA_VALID
+    ), "Non-valid TOSA given to reference model."
+
+    transpose_data_format(outputs_np, to="NCHW")
+    return [torch.from_numpy(output) for output in outputs_np]
+
+
+def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
+    if to == "NCHW":
+        dim_order = (0, 3, 1, 2)
+    if to == "NHWC":
+        dim_order = (0, 2, 3, 1)
+    for i in range(len(data)):
+        if hasattr(data[i], "shape") and len(data[i].shape) == 4:
+            # Copy is needed to force actual data conversion, not setting stride.
+            data[i] = np.transpose(data[i], dim_order).copy()

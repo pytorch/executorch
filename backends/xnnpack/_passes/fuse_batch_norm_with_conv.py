@@ -82,6 +82,7 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
             # as an arg)
             eps = bn.args[-1]
 
+            is_transpose = conv.args[6]
             # Compute the updated weight and bias after fusing conv op
             # with batchnorm op.
             fused_weight, fused_bias = fuse_conv_bn_weights(
@@ -92,6 +93,7 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
                 eps,
                 bn_weight,
                 bn_bias,
+                is_transpose,
             )
 
             # Modify the graph by updating the weight and bias of conv op
