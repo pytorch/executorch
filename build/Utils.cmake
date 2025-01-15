@@ -321,3 +321,16 @@ function(resolve_python_executable)
     )
   endif()
 endfunction()
+
+# find_package(Torch CONFIG REQUIRED) replacement for targets that
+# have a header-only Torch dependency. Because find_package sets
+# variables in the parent scope, we use a macro to preserve this
+# rather than maintaining our own list of those variables.
+macro(find_package_torch_headers)
+  # We cannot simply use CMAKE_FIND_ROOT_PATH_BOTH, because that does
+  # not propagate into TorchConfig.cmake.
+  set(OLD_CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ${CMAKE_FIND_ROOT_PATH_MODE_PACKAGE})
+  set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+  find_package(Torch CONFIG REQUIRED)
+  set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ${OLD_CMAKE_FIND_ROOT_PATH_MODE_PACKAGE})
+endmacro()
