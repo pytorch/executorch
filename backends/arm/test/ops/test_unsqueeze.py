@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -95,7 +95,7 @@ class TestSimpleUnsqueeze(unittest.TestCase):
     def test_unsqueeze_tosa_BI(self, test_tensor: torch.Tensor):
         self._test_unsqueeze_tosa_BI_pipeline(self.Unsqueeze(), (test_tensor, 0))
 
-    @parameterized.expand(Unsqueeze.test_parameters[:-1])
+    @parameterized.expand(Unsqueeze.test_parameters)
     def test_unsqueeze_u55_BI(self, test_tensor: torch.Tensor):
         self._test_unsqueeze_ethosu_BI_pipeline(
             common.get_u55_compile_spec(),

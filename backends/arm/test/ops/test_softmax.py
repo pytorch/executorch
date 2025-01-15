@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -33,10 +33,6 @@ test_data_suite_u55 = [
     ("ones", torch.ones(10, 10), 1),
     ("ones_neg_dim", torch.ones(10, 3, 4), -1),
     ("randn_neg_dim", torch.randn(10, 5, 8, 7), -3),
-]
-
-test_data_suite_u55_xfails = [
-    # (test_name, test_data, dim)
     ("zeros", torch.zeros(10, 8, 5, 2), 0),
     ("zeros_neg_dim", torch.zeros(10, 7, 8, 9), -4),
     ("rand", torch.rand(1, 2, 5, 8), 2),
@@ -154,17 +150,6 @@ class TestSoftmax(unittest.TestCase):
 
     @parameterized.expand(test_data_suite_u55)
     def test_softmax_tosa_u55_BI(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        dim: int,
-    ):
-        self._test_softmax_tosa_u55_BI_pipeline(self.Softmax(dim=dim), (test_data,))
-
-    # Expected to fail as this is not supported on u55.
-    @parameterized.expand(test_data_suite_u55_xfails)
-    @unittest.expectedFailure
-    def test_softmax_tosa_u55_BI_xfails(
         self,
         test_name: str,
         test_data: torch.Tensor,
