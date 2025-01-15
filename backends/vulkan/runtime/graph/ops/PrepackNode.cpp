@@ -68,6 +68,8 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
 void PrepackNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();
 
+  context->check_device_capabilities(shader_);
+
   vTensorPtr packed = graph->get_tensor(packed_);
   api::StagingBuffer staging = create_staging_buffer(graph);
 
