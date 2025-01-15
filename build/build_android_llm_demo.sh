@@ -41,6 +41,10 @@ build_android_native_library() {
     EXECUTORCH_BUILD_NEURON=OFF
   fi
 
+  echo "BEGIN DEBUG COMMANDS"
+  ls "${CMAKE_PREFIX_PATH}"
+  find "${CMAKE_PREFIX_PATH}" -name "*.cmake" || true
+  echo "END DEBUG COMMANDS"
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
