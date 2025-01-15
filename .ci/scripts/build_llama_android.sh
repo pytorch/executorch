@@ -14,8 +14,7 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
 fi
 which "${PYTHON_EXECUTABLE}"
-SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
 
 install_executorch_and_backend_lib() {
   echo "Installing executorch and xnnpack backend"

@@ -22,8 +22,7 @@ NPROC=8
 if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 
 cmake_install_executorch_libraries() {
-  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+  CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
   cmake -DPYTHON_EXECUTABLE=python \
       -DCMAKE_INSTALL_PREFIX=${BUILD_DIR} \
       -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
@@ -42,8 +41,7 @@ cmake_install_executorch_libraries() {
 }
 
 cmake_build_phi_3_mini() {
-  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+  CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
   cmake -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
       -DCMAKE_INSTALL_PREFIX=${BUILD_DIR} \
       -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
