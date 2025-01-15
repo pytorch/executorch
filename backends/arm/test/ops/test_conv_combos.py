@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -194,7 +194,7 @@ class TestConvCombos(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
@@ -218,7 +218,7 @@ class TestConvCombos(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
@@ -273,7 +273,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConv2dMeandim()
         self._test_conv_combo_ethos_BI_pipeline(
             model,
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             model.get_inputs(),
         )
 
@@ -282,7 +282,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConv2dMeandim()
         self._test_conv_combo_ethos_BI_pipeline(
             model,
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             model.get_inputs(),
         )
 
@@ -334,7 +334,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConvRelu6()
         test_data = (test_data,)
         self._test_conv_combo_ethos_BI_pipeline(
-            model, common.get_u55_compile_spec(permute_memory_to_nhwc=True), test_data
+            model, common.get_u55_compile_spec(), test_data
         )
 
     @parameterized.expand(ComboConvRelu6.test_data)
@@ -343,7 +343,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConvRelu6()
         test_data = (test_data,)
         self._test_conv_combo_ethos_BI_pipeline(
-            model, common.get_u85_compile_spec(permute_memory_to_nhwc=True), test_data
+            model, common.get_u85_compile_spec(), test_data
         )
 
     ###############################
@@ -364,7 +364,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_ethos_BI_pipeline(
             model,
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             model.get_inputs(),
         )
 
@@ -373,7 +373,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_ethos_BI_pipeline(
             model,
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             model.get_inputs(),
         )
 

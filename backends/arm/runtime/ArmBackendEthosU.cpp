@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 Arm Limited and/or its affiliates.
+ * Copyright 2023-2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -76,7 +76,6 @@ namespace arm {
 
 typedef struct {
   FreeableBuffer* processed;
-  bool permuted_io_flag;
 } ExecutionHandle;
 
 extern "C" {
@@ -124,14 +123,6 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     ExecutionHandle* handle =
         ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
     handle->processed = processed;
-
-    handle->permuted_io_flag = false;
-    for (auto& compile_spec : compile_specs) {
-      if (0 == std::strcmp(compile_spec.key, "permute_memory_format") &&
-          0 == std::memcmp(compile_spec.value.buffer, "nhwc", 4)) {
-        handle->permuted_io_flag = true;
-      }
-    }
 
     // Return the same buffer we were passed - this data will be
     // executed directly
@@ -225,11 +216,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       // which require permutation.
       bool permuted_input_shape;
       ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
-          i,
-          tensor_in,
-          &handles.inputs->io[i],
-          execution_handle->permuted_io_flag,
-          &permuted_input_shape));
+          i, tensor_in, &handles.inputs->io[i], &permuted_input_shape));
       bool both_char = tensor_in.scalar_type() == ScalarType::Char and
           handles.inputs->io[i].elem_size == 1;
       bool both_int = tensor_in.scalar_type() == ScalarType::Int and
@@ -330,11 +317,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
 
       bool permuted_output_shape;
       ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
-          i,
-          tensor_out,
-          &handles.outputs->io[i],
-          execution_handle->permuted_io_flag,
-          &permuted_output_shape));
+          i, tensor_out, &handles.outputs->io[i], &permuted_output_shape));
       if (tensor_out.scalar_type() == ScalarType::Char and
           permuted_output_shape) {
         EXECUTORCH_PROF_SCOPE(
@@ -395,7 +378,6 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       int index,
       const executorch::aten::Tensor tensor,
       VelaIO* io,
-      bool permuted_io_flag,
       bool* is_permuted) const {
     bool permuted_shape = false;
 
@@ -408,12 +390,6 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
           tensor.size(3) == io->shape[2];
       if (permuted_shape) {
         ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
-      }
-      if (permuted_io_flag != permuted_shape) {
-        ET_LOG(
-            Error,
-            "Permute compile flag and permuted input/output don't agree");
-        return Error::InvalidProgram;
       }
     }
     *is_permuted = permuted_shape;

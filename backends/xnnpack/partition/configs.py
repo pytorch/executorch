@@ -73,6 +73,7 @@ SUPPORTED_MODULES = [
     torch.nn.BatchNorm2d,
     torch.nn.BatchNorm1d,
     torch.nn.Conv2d,
+    torch.nn.ConvTranspose2d,
     torch.nn.Linear,
     torch.nn.functional.linear,
     torch.nn.PReLU,  # Without this, the PReLU weight becomes not a get_attr

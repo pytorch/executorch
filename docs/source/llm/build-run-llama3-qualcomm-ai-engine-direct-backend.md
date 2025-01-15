@@ -9,7 +9,7 @@ This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Eng
 - Follow [the README for executorch llama](https://github.com/pytorch/executorch/tree/main/examples/models/llama) to know how to run a llama model on mobile via ExecuTorch.
 - A Qualcomm device with 16GB RAM
   - We are continuing to optimize our memory usage to ensure compatibility with lower memory devices.
-- The version of [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk) is 2.26.0 or above.
+- The version of [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk) is 2.28.0 or above.
 
 ## Instructions
 
