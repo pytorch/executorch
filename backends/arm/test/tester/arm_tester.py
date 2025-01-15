@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@ import logging
 
 from collections import Counter
 from pprint import pformat
-from typing import Any, Iterable, List, Literal, Optional, Tuple, Union
+from typing import Iterable, List, Optional, Tuple, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
@@ -15,15 +15,19 @@ import serializer.tosa_serializer as ts
 
 import torch.fx
 
-from executorch.backends.arm.arm_backend import get_intermediate_path, is_permute_memory
+from executorch.backends.arm.arm_backend import get_intermediate_path
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
 from executorch.backends.arm.test.common import get_target_board
+from executorch.backends.arm.test.runner_utils import (
+    dbg_tosa_fb_to_json,
+    RunnerUtil,
+    TosaReferenceModelDispatch,
+)
 
-from executorch.backends.arm.test.runner_utils import dbg_tosa_fb_to_json, RunnerUtil
 from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
@@ -32,11 +36,7 @@ from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import (
-    EdgeCompileConfig,
-    EdgeProgramManager,
-    ExecutorchProgramManager,
-)
+from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -44,6 +44,7 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from tabulate import tabulate
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
+
 
 logger = logging.getLogger(__name__)
 
@@ -121,24 +122,9 @@ class Serialize(tester.Serialize):
 
 
 class ToExecutorch(tester.ToExecutorch):
-    def __init__(
-        self,
-        tosa_test_util: RunnerUtil,
-        dynamic_shapes: Optional[Tuple[Any]] = None,
-    ):
-        super().__init__(dynamic_shapes)
-        self.tosa_test_util = tosa_test_util
-
-    def run(self, artifact: EdgeProgramManager, inputs=None):
-        self.executorch_program = artifact.to_executorch(self.config)
-        if module := getattr(
-            artifact.exported_program().graph_module, "lowered_module_0", None
-        ):
-            self.buffer = module.processed_bytes
-
     def run_artifact(self, inputs):
-        tosa_output = self.tosa_test_util.run_tosa_graph(self.buffer, inputs)
-        return tosa_output
+        with TosaReferenceModelDispatch():
+            return super().run_artifact(inputs)
 
 
 class InitialModel(tester.Stage):
@@ -247,7 +233,7 @@ class ArmTester(Tester):
 
     def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
         if to_executorch_stage is None:
-            to_executorch_stage = ToExecutorch(self.runner_util)
+            to_executorch_stage = ToExecutorch()
         return super().to_executorch(to_executorch_stage)
 
     def serialize(
@@ -264,6 +250,9 @@ class ArmTester(Tester):
             .serialize(serialize_stage)
             .dump_artifact(get_intermediate_path(self.compile_spec) + "/program.pte")
         )
+
+    def is_quantized(self) -> bool:
+        return self.stages[self.stage_name(tester.Quantize)] is not None
 
     def run_method_and_compare_outputs(
         self,
@@ -302,7 +291,7 @@ class ArmTester(Tester):
 
         stage = stage or self.cur
         test_stage = self.stages[stage]
-        is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
+        is_quantized = self.is_quantized()
 
         if target_board is None:
             target_board = get_target_board(self.compile_spec)
@@ -329,26 +318,10 @@ class ArmTester(Tester):
         logger.info(
             f"Comparing Stage '{self.stage_name(test_stage)}' with Stage '{self.stage_name(reference_stage)}'"
         )
-        is_nhwc = is_permute_memory(self.compile_spec)
 
         # Loop inputs and compare reference stage with the compared stage.
         for run_iteration in range(num_runs):
             reference_input = inputs if inputs else next(self.generate_random_inputs())
-
-            # Test parameters can include constants that are used in eager mode but are already set as attributes
-            # in TOSA. Therefore, only accept torch.Tensor inputs.
-            test_input: list[torch.Tensor] = []
-            for arg in reference_input:
-                if isinstance(arg, torch.Tensor):
-                    test_input.append(arg.clone())
-                if isinstance(arg, tuple) and isinstance(arg[0], torch.Tensor):
-                    test_input.extend([tensor.clone() for tensor in arg])
-
-            if (
-                is_nhwc
-                and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
-            ):
-                test_input = self.transpose_data_format(test_input, "NHWC")
 
             input_shapes = [
                 generated_input.shape if hasattr(generated_input, "shape") else (1,)
@@ -358,12 +331,9 @@ class ArmTester(Tester):
             logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
 
             reference_output = reference_stage.run_artifact(reference_input)
-            test_output = test_stage.run_artifact(test_input)
-            if (
-                is_nhwc
-                and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
-            ):
-                test_output = self.transpose_data_format(test_output, "NCHW")
+            if not isinstance(reference_output, tuple):
+                reference_output = (reference_output,)
+            test_output = test_stage.run_artifact(reference_input)
 
             self._compare_outputs(
                 reference_output,
@@ -499,19 +469,6 @@ class ArmTester(Tester):
         """
 
         return module.forward(*inputs)
-
-    def transpose_data_format(
-        self, data: Tuple[torch.Tensor], to: Literal["NHWC", "NCHW"]
-    ):
-        if to == "NCHW":
-            dim_order = (0, 3, 1, 2)
-        if to == "NHWC":
-            dim_order = (0, 2, 3, 1)
-        inputs_transposed = list(data)
-        for i in range(len(data)):
-            if hasattr(data[i], "shape") and len(data[i].shape) == 4:
-                inputs_transposed[i] = torch.permute(data[i], dim_order)
-        return tuple(inputs_transposed)
 
     def _compare_outputs(
         self,
