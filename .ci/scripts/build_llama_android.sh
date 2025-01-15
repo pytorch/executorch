@@ -15,7 +15,6 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
 fi
 which "${PYTHON_EXECUTABLE}"
 CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
-SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
 
 install_executorch_and_backend_lib() {
   echo "Installing executorch and xnnpack backend"
@@ -29,7 +28,6 @@ install_executorch_and_backend_lib() {
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_FIND_ROOT_PATH="${SITE_PACKAGES}" \
     -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \

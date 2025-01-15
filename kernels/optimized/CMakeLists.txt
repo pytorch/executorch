@@ -63,7 +63,14 @@ message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
-find_package(Torch CONFIG REQUIRED)
+# We require Torch headers, which setup.py puts in CMAKE_PREFIX_PATH
+# for us. Toolchains that we might be using for cross-compiling could
+# set CMAKE_FIND_ROOT_PATH, which prevents find_package from finding
+# headers not rooted under CMAKE_FIND_ROOT_PATH. This is reasonable
+# for binary dependencies because they probably aren't built for the
+# target platform, but for our header-only use case, we should just
+# ignore CMAKE_FIND_ROOT_PATH.
+find_package(Torch CONFIG REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 target_include_directories(optimized_kernels PRIVATE ${TORCH_INCLUDE_DIRS})
 target_link_libraries(
   optimized_kernels PRIVATE executorch_core cpublas extension_threadpool
