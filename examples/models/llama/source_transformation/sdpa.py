@@ -19,9 +19,11 @@ from executorch.examples.models.llama.llama_transformer import KVCache, SDPA
 class SDPACustom(torch.nn.Module):
     def __init__(
         self,
+        kv_cache: KVCache,
         dim: int,
     ):
         super().__init__()
+        self.kv_cache = kv_cache
         self.dim = dim
 
     def forward(
@@ -63,7 +65,7 @@ def _replace_sdpa_with_custom_op(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPACustom(child.dim),
+                SDPACustom(child.kv_cache, child.dim),
             )
         else:
             _replace_sdpa_with_custom_op(child)
@@ -79,11 +81,13 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
 class SDPASimple(torch.nn.Module):
     def __init__(
         self,
+        kv_cache: KVCache,
         dim: int,
         head_dim: int,
         n_rep: int,
     ):
         super().__init__()
+        self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
@@ -131,10 +135,12 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 class SDPAFlex(torch.nn.Module):
     def __init__(
         self,
+        kv_cache: KVCache,
         dim: int,
         n_rep: int,
     ):
         super().__init__()
+        self.kv_cache = kv_cache
         self.dim = dim
         self.n_rep = n_rep
 
@@ -171,7 +177,7 @@ def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPASimple(child.dim, child.head_dim, child.n_rep),
+                SDPASimple(child.kv_cache, child.dim, child.head_dim, child.n_rep),
             )
         else:
             replace_sdpa_with_simple_sdpa(child)
@@ -184,7 +190,7 @@ def replace_sdpa_with_flex_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPAFlex(child.dim, child.n_rep),
+                SDPAFlex(child.kv_cache, child.dim, child.n_rep),
             )
         else:
             replace_sdpa_with_flex_sdpa(child)
@@ -216,11 +222,13 @@ class SDPACoreML(torch.nn.Module):
 
     def __init__(
         self,
+        kv_cache: KVCache,
         dim: int,
         head_dim: int,
         n_rep: int,
     ):
         super().__init__()
+        self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
@@ -252,7 +260,7 @@ def replace_sdpa_with_coreml_sdpa(module: torch.nn.Module):
             setattr(
                 module,
                 name,
-                SDPACoreML(child.dim, child.head_dim, child.n_rep),
+                SDPACoreML(child.kv_cache, child.dim, child.head_dim, child.n_rep),
             )
         else:
             replace_sdpa_with_coreml_sdpa(child)
