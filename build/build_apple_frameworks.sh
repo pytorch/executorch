@@ -187,7 +187,6 @@ echo "Exporting headers"
 
 mkdir -p "$HEADERS_PATH"
 
-# Set BUCK2 to the path of the buck2 executable in $OUTPUT/*/buck2-bin/buck2-*
 BUCK2=$(find $SOURCE_ROOT_DIR -type f -path '*/buck2-bin/buck2-*' | head -n 1)
 if [[ -z "$BUCK2" ]]; then
   echo "Could not find buck2 executable in any buck2-bin directory under $OUTPUT"
@@ -208,11 +207,11 @@ check_command "$BUCK2"
 # So, just patch our generated framework to do that.
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
-' $SOURCE_ROOT_DIR/runtime/core/portable_type/c10/macros/Macros.h
+' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/macros/Macros.h
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
-' $SOURCE_ROOT_DIR/runtime/core/portable_type/c10/macros/Export.h
-cp -r $SOURCE_ROOT_DIR/runtime/core/portable_type/c10 "$HEADERS_PATH/"
+' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/macros/Export.h
+ln -s $HEADERS_PATH/executorch/runtime/core/portable_type/c10 "$HEADERS_PATH/"
 
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"
