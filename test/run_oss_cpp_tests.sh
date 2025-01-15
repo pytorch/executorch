@@ -22,13 +22,20 @@ elif [[ $(uname) == "Linux" ]]; then
   export LLVM_COV="${LLVM_COV:-llvm-cov}"
 fi
 
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+which "${PYTHON_EXECUTABLE}"
+
 build_executorch() {
   BUILD_VULKAN="OFF"
   if [ -x "$(command -v glslc)" ]; then
     BUILD_VULKAN="ON"
   fi
+  CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
