@@ -47,11 +47,7 @@ cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel
 
 echo "${green}ExecuTorch: Installing coremltools."
 pip install "$COREMLTOOLS_DIR_PATH"
-# CoreMLTools have started supporting numpy 2.0,
-# but ExecuTorch example model test env is still using older transformers,
-# so for now we will need to downgrade numpy to 1.x
-# TODO: Remove this numpy downgrade once later transformers starts to be used
-pip install numpy==1.26.4
+
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to install coremltools."
