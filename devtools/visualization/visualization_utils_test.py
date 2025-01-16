@@ -17,7 +17,14 @@ from executorch.devtools.visualization import (
     visualize,
 )
 from executorch.exir import ExportedProgram
-from model_explorer.config import ModelExplorerConfig  # type: ignore
+
+try:
+    from model_explorer.config import ModelExplorerConfig  # type: ignore
+except ImportError:
+    print(
+        "Error: 'model_explorer' is not installed. Install using devtools/install_requirement.sh"
+    )
+    raise
 
 
 @pytest.fixture

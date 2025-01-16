@@ -85,33 +85,28 @@ def get_tosa_compile_spec_unbuilt(
 
 def get_u55_compile_spec(
     custom_path=None,
-    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U55 tests.
     """
     return get_u55_compile_spec_unbuilt(
         custom_path=custom_path,
-        reorder_inputs=reorder_inputs,
     ).build()
 
 
 def get_u85_compile_spec(
     custom_path=None,
-    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U85 tests.
     """
     return get_u85_compile_spec_unbuilt(
         custom_path=custom_path,
-        reorder_inputs=reorder_inputs,
     ).build()
 
 
 def get_u55_compile_spec_unbuilt(
     custom_path=None,
-    reorder_inputs=None,
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -128,14 +123,12 @@ def get_u55_compile_spec_unbuilt(
             extra_flags="--debug-force-regor --output-format=raw",
         )
         .dump_intermediate_artifacts_to(artifact_path)
-        .set_input_order(reorder_inputs)
     )
     return compile_spec
 
 
 def get_u85_compile_spec_unbuilt(
     custom_path=None,
-    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -150,7 +143,6 @@ def get_u85_compile_spec_unbuilt(
             extra_flags="--output-format=raw",
         )
         .dump_intermediate_artifacts_to(artifact_path)
-        .set_input_order(reorder_inputs)
     )
     return compile_spec
 
