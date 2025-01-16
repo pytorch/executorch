@@ -76,6 +76,9 @@ def clean():
     print("Done cleaning build artifacts.")
 
 
+VALID_PYBINDS = ["coreml", "mps", "xnnpack"]
+
+
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 
@@ -204,8 +207,10 @@ def main(args):
             EXECUTORCH_BUILD_PYBIND = "OFF"
         else:
             for pybind_arg in args.pybind:
-                if pybind_arg not in ["coreml", "mps", "xnnpack"]:
-                    continue
+                if pybind_arg not in VALID_PYBINDS:
+                    raise Exception(
+                        f"Unrecognized pybind argument {pybind_arg}; valid options are: {", ".join(VALID_PYBINDS)}"
+                    )
                 EXECUTORCH_BUILD_PYBIND = "ON"
                 CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
 
