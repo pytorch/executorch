@@ -193,7 +193,7 @@ def main(args):
             for pybind_arg in args.pybind:
                 if pybind_arg not in VALID_PYBINDS:
                     raise Exception(
-                        f"Unrecognized pybind argument {pybind_arg}; valid options are: {", ".join(VALID_PYBINDS)}"
+                        f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
                     )
                 EXECUTORCH_BUILD_PYBIND = "ON"
                 CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
