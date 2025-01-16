@@ -96,13 +96,13 @@ Tensor& _to_dim_order_copy_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALHB_TYPES(
+  ET_SWITCH_REALHBBF16_TYPES(
       self.scalar_type(),
       ctx,
       "dim_order_ops::_to_dim_order_copy.out",
       CTYPE_IN,
       [&] {
-        ET_SWITCH_REALHB_TYPES(
+        ET_SWITCH_REALHBBF16_TYPES(
             out.scalar_type(),
             ctx,
             "dim_order_ops::_to_dim_order_copy.out",
