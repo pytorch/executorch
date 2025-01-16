@@ -38,9 +38,7 @@ class TestMaximum(unittest.TestCase):
         def forward(self, x, y):
             return torch.maximum(x, y)
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
+    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig()
 
     def _test_maximum_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]

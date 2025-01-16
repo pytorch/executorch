@@ -108,9 +108,7 @@ test_data_suite_rank4 = [
 class TestLinear(unittest.TestCase):
     """tests the linear operation y = Ax + b"""
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
+    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig()
 
     class Linear(torch.nn.Module):
         def __init__(

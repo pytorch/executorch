@@ -47,9 +47,7 @@ class TestMobileNetV2(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
     }
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
+    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig()
 
     def test_mv2_tosa_MI(self):
         (

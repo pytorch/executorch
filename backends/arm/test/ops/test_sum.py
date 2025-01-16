@@ -47,9 +47,7 @@ class TestSum(unittest.TestCase):
         def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
             return x.sum(dim=dim, keepdim=keepdim)
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
+    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig()
 
     def _test_sum_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: tuple[exampledata_t]
