@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -24,6 +24,7 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import mark_node_as_a
 from executorch.backends.arm.quantizer.quantization_annotator import annotate_graph
 
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from torch.ao.quantization.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
@@ -205,8 +206,10 @@ def _get_not_module_type_or_name_filter(
 
 
 class ArmQuantizer(Quantizer):
-    def __init__(self) -> None:
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
         super().__init__()
+        self.tosa_spec = tosa_spec
         self.global_config: Optional[QuantizationConfig] = None
         self.io_config: Optional[QuantizationConfig] = None
         self.module_type_config: Dict[Callable, Optional[QuantizationConfig]] = {}
@@ -250,7 +253,9 @@ class ArmQuantizer(Quantizer):
         Currently transforms scalar values to tensor attributes.
         """
 
-        return ArmPassManager().transform_for_annotation_pipeline(graph_module=model)
+        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(
+            graph_module=model
+        )
 
     def annotate(self, model: GraphModule) -> GraphModule:
         """Performs the quantization annotation on the graph.
