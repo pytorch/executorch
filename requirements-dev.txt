@@ -1,0 +1,2 @@
+# For visualizing ExportedPrograms
+ai-edge-model-explorer >= 0.1.16
