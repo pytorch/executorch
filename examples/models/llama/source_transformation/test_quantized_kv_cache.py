@@ -24,16 +24,12 @@ class QuantizedKVCacheTest(unittest.TestCase):
             self.max_seq_len,
             self.n_kv_heads,
             self.head_dim,
-            self.transpose_kv_cache,
             self.enable_dynamic_shape,
             dtype=self.dtype,
         )
 
     def _init_kv(self):
-        if self.transpose_kv_cache:
-            shape = (1, self.n_kv_heads, self.seq_len, self.head_dim)
-        else:
-            shape = (1, self.seq_len, self.n_kv_heads, self.head_dim)
+        shape = (1, self.n_kv_heads, self.seq_len, self.head_dim)
         k = torch.rand(shape, dtype=self.dtype)
         v = torch.rand(shape, dtype=self.dtype)
         return k, v
@@ -45,11 +41,11 @@ class QuantizedKVCacheTest(unittest.TestCase):
         self.n_kv_heads = 8
         self.head_dim = 17
         self.enable_dynamic_shape = False
-        self.transpose_kv_cache = False
         self.dtype = torch.float32
 
-    def _test_simple_update_fetch(self, is_transposed=False, is_dynamic_shape=False):
-        self.transpose_kv_cache = is_transposed
+    def _test_simple_update_fetch(
+        self, is_dynamic_shape=False, use_custom_update_cache_op=False
+    ):
         self.enable_dynamic_shape = is_dynamic_shape
         input_pos = torch.tensor([0, 1, 2])
         self.seq_len = input_pos.size(0)
@@ -64,10 +60,7 @@ class QuantizedKVCacheTest(unittest.TestCase):
         )
 
         def index(t, input_pos):
-            if self.transpose_kv_cache:
-                return t[:, :, input_pos, :]
-            else:
-                return t[:, input_pos, :, :]
+            return t[:, :, input_pos, :]
 
         sliced_k_cache = index(updated_k_cache, input_pos)
         sliced_v_cache = index(updated_v_cache, input_pos)
@@ -115,14 +108,16 @@ class QuantizedKVCacheTest(unittest.TestCase):
             atol=1e-02,
         )
 
-    def test_simple_update_fetch_not_transposed(self):
+    def test_simple_update_fetch(self):
         self._test_simple_update_fetch()
 
-    def test_simple_update_fetch_not_transposed_dynamic_shape(self):
+    def test_simple_update_fetch_use_custom_op(self):
+        self._test_simple_update_fetch(use_custom_update_cache_op=True)
+
+    def test_simple_update_fetch_dynamic_shape(self):
         self._test_simple_update_fetch(is_dynamic_shape=True)
 
-    def test_simple_update_fetch_transposed(self):
-        self._test_simple_update_fetch(is_transposed=True)
-
-    def test_simple_update_fetch_transposed_dynamic_shape(self):
-        self._test_simple_update_fetch(is_transposed=True, is_dynamic_shape=True)
+    def test_simple_update_fetch_dynamic_shape_use_custom_op(self):
+        self._test_simple_update_fetch(
+            is_dynamic_shape=True, use_custom_update_cache_op=True
+        )

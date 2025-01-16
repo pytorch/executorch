@@ -118,12 +118,12 @@ class QuantizedKVCache(nn.Module):
                 v_zero_points, self.v_cache_zero_points, start_pos
             )
         else:
-            self.k_cache[:, :, input_pos] = quantized_k_val
-            self.k_cache_scales[:, :, input_pos] = k_scales
-            self.k_cache_zero_points[:, :, input_pos] = k_zero_points
-            self.v_cache[:, :, input_pos] = quantized_v_val
-            self.v_cache_scales[:, :, input_pos] = v_scales
-            self.v_cache_zero_points[:, :, input_pos] = v_zero_points
+            self.k_cache[:, input_pos] = quantized_k_val
+            self.k_cache_scales[:, input_pos] = k_scales
+            self.k_cache_zero_points[:, input_pos] = k_zero_points
+            self.v_cache[:, input_pos] = quantized_v_val
+            self.v_cache_scales[:, input_pos] = v_scales
+            self.v_cache_zero_points[:, input_pos] = v_zero_points
 
         k_out = torch.ops.quantized_decomposed.dequantize_per_token(
             self.k_cache,
@@ -149,8 +149,8 @@ class QuantizedKVCache(nn.Module):
             _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
             _ = torch.ops.llama.update_cache(v_val, v_out, start_pos)
         else:
-            k_out[:, :, input_pos] = k_val
-            v_out[:, :, input_pos] = v_val
+            k_out[:, input_pos] = k_val
+            v_out[:, input_pos] = v_val
 
         return k_out.transpose(1, 2), v_out.transpose(1, 2)
 
