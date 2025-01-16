@@ -11,6 +11,7 @@ import torch
 from executorch.examples.models.llama.llama_transformer import KVCache
 
 from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+    CustomKVCache,
     QuantizedCacheType,
     QuantizedKVCache,
 )
@@ -19,7 +20,6 @@ from executorch.examples.models.llama.source_transformation.sdpa import SDPACust
 
 
 class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
-
     def _init_cache(self):
         self.kv_cache = KVCache(
             self.max_batch_size,
@@ -32,6 +32,19 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
         )
         self.quantized_kv_cache = QuantizedKVCache.from_float(
             self.kv_cache, QuantizedCacheType.AffineAsymmetric
+        )
+        # Need this because first test actually has seq_len > 1
+        # and vanilla kvcache cannot handle seq_len > 1, due to
+        # how input_pos encoding works in the current stack.
+        # This needs fixing by making sure rest of the stack including
+        # custom ops or other backends can work with input_pos
+        # as a sequence of token positions
+        self.custom_kv_cache = CustomKVCache(
+            self.max_batch_size,
+            self.max_seq_len,
+            self.n_kv_heads,
+            self.head_dim,
+            dtype=self.dtype,
         )
 
     def _init_kv(self):
@@ -59,7 +72,7 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
         self.seq_len = 3
         self._init_cache()
         q, k, v = self._init_kv()
-        self.float_sdpa = SDPACustom(self.kv_cache, self.dim)
+        self.float_sdpa = SDPACustom(self.custom_kv_cache, self.dim)
         self.quantized_sdpa = SDPACustom(self.quantized_kv_cache, self.dim)
         float_out = self.float_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
         quantized_out = self.quantized_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
