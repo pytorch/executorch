@@ -49,8 +49,7 @@ class ArmCompileSpecBuilder:
         self.compiler_flags = []
         self.output_format = None
         self.path_for_intermediates = None
-        self.quantize_io = False
-        self.tosa_spec = None
+        self.tosa_version = None
         self.input_order = None
 
     def ethosu_compile_spec(
@@ -123,14 +122,6 @@ class ArmCompileSpecBuilder:
         self.path_for_intermediates = output_path
         return self
 
-    def set_quantize_io(self, quantize_io: bool = False) -> "ArmCompileSpecBuilder":
-        """
-        Quantization of inputs and dequantization of outputs for cases where
-        whole graph is quantized and method signature is not of quantized type.
-        """
-        self.quantize_io = quantize_io
-        return self
-
     def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
@@ -160,9 +151,6 @@ class ArmCompileSpecBuilder:
                 )
             )
 
-        if self.quantize_io:
-            self.compile_spec.append(CompileSpec("quantize_io", "True".encode()))
-
         return self.compile_spec
 
 
@@ -170,13 +158,6 @@ def is_tosa(compile_spec: List[CompileSpec]) -> bool:
     for spec in compile_spec:
         if spec.key == "output_format":
             return spec.value.decode() == "tosa"
-    return False
-
-
-def is_quantize_io(compile_specs: List[CompileSpec]) -> bool:
-    for spec in compile_specs:
-        if spec.key == "quantize_io" and spec.value.decode() == "True":
-            return True
     return False
 
 

@@ -266,26 +266,18 @@ def get_compile_spec(
     if target == "TOSA":
         spec_builder = ArmCompileSpecBuilder().tosa_compile_spec("TOSA-0.80+BI")
     elif "ethos-u55" in target:
-        spec_builder = (
-            ArmCompileSpecBuilder()
-            .ethosu_compile_spec(
-                target,
-                system_config=system_config,
-                memory_mode=memory_mode,
-                extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
-            )
-            .set_quantize_io(True)
+        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
+            target,
+            system_config=system_config,
+            memory_mode=memory_mode,
+            extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
         )
     elif "ethos-u85" in target:
-        spec_builder = (
-            ArmCompileSpecBuilder()
-            .ethosu_compile_spec(
-                target,
-                system_config=system_config,
-                memory_mode=memory_mode,
-                extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
-            )
-            .set_quantize_io(True)
+        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
+            target,
+            system_config=system_config,
+            memory_mode=memory_mode,
+            extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
         )
 
     if intermediates is not None:
