@@ -7,4 +7,4 @@
 
 # Before doing anything, cd to the directory containing this script.
 cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null || /bin/true
-./run_python_script.sh ./install_executorch.py "$@"
+./run_python_script.sh ./install_requirements.py "$@"
