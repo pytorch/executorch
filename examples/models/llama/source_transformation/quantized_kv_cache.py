@@ -145,8 +145,12 @@ class QuantizedKVCache(nn.Module):
         )
 
         start_pos = input_pos[0].item()
-        _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
-        _ = torch.ops.llama.update_cache(v_val, v_out, start_pos)
+        if self.use_custom_update_cache_op:
+            _ = torch.ops.llama.update_cache(k_val, k_out, start_pos)
+            _ = torch.ops.llama.update_cache(v_val, v_out, start_pos)
+        else:
+            k_out[:, :, input_pos] = k_val
+            v_out[:, :, input_pos] = v_val
 
         return k_out.transpose(1, 2), v_out.transpose(1, 2)
 

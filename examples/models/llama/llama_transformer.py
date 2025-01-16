@@ -286,7 +286,6 @@ class KVCache(nn.Module):
 class SDPA(nn.Module):
     def __init__(
         self,
-        kv_cache: KVCache,
         dim: int,
         head_dim: int,
         n_rep: int,
@@ -294,7 +293,6 @@ class SDPA(nn.Module):
         enable_dynamic_shape: bool,
     ):
         super().__init__()
-        self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
@@ -373,7 +371,6 @@ class Attention(nn.Module):
                 args.enable_dynamic_shape,
             )
             self.SDPA = SDPA(
-                kv_cache=self.kv_cache,
                 dim=self.n_local_heads * self.head_dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
@@ -406,7 +403,7 @@ class Attention(nn.Module):
 
         if self.use_kv_cache:
             assert input_pos is not None
-            k, v = self.SDPA.kv_cache.update(input_pos, k, v)
+            k, v = self.kv_cache.update(input_pos, k, v)
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
             return self.wo(output)
 
