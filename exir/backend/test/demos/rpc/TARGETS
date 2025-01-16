@@ -28,6 +28,7 @@ runtime.python_library(
     ],
     visibility = [
         "//executorch/exir/backend/test/...",
+        "//executorch/exir/emit/test/...",
     ],
     deps = [
         ":executor_backend_preprocess",

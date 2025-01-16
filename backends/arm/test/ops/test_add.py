@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -137,7 +137,7 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (test_data,)
         self._test_add_ethos_BI_pipeline(
             self.Add(),
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             test_data,
         )
 
@@ -147,7 +147,7 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (test_data,)
         self._test_add_ethos_BI_pipeline(
             self.Add(),
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             test_data,
         )
 

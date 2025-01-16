@@ -16,6 +16,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNConv2d,
+    XNNConvTranspose2d,
     XNNDepthwiseConv2d,
     XNNGraph,
     XNode,
@@ -52,35 +53,57 @@ class Conv2d(NodeVisitor):
         )  # NHWC input
         kwargs["input1_id"] = vals_to_ids[get_input_node(node, 0)]
 
-        # filter shape for pytorch convolution is (oc, inc/groups, height, width)
-        # shape for xnnpack convolution is (oc, height, width, inc/groups), to convert
-        # to the proper shape, this is essentially a NCHW to NHWC conversion
+        # filter shape for pytorch convolution is (oc, inc/groups, height, width),
+        # filter shape for pytorch transpose convolution is (inc, oc/groups, height, width),
+        # shape for xnnpack convolution is (oc, height, width, inc/groups),
+        # shape for xnnpack transpose convolution is (oc, height, width, inc/groups),
+        # to convert to the proper shape, this is essentially a NCHW to NHWC conversion
         kernel_node = get_input_node(node, 1)
         kernel_shape = get_shape(kernel_node)
         groups = cast(int, node.args[8])
-        group_input_channels = kernel_shape[1]
-        group_output_channels = int(kernel_shape[0] / groups)
+        is_transpose = node.args[6]
+
+        if is_transpose:
+            group_input_channels = int(kernel_shape[0] / groups)
+            group_output_channels = kernel_shape[1]
+        else:
+            group_input_channels = kernel_shape[1]
+            group_output_channels = int(kernel_shape[0] / groups)
 
         # XNNPACK expects the kernel's N and C dimensions to be swapped for
         # Depthwise Convolution, which occurs under the following conditions:
         # 1) groups = input_channels (i.e. group_input_channels = 1)
         # 2) output_channels is a positive integer multiple of input channels
-        is_depthwise_conv = (group_input_channels == 1) and (
-            group_output_channels % group_input_channels == 0
+        is_depthwise_conv = (
+            (group_input_channels == 1)
+            and (group_output_channels % group_input_channels == 0)
+            and not is_transpose
         )
         weight_quant_params = QuantParams.from_weights(
             kernel_node, self._exported_program
         )
         fp32_static_weights = kernel_node.meta["val"].dtype == torch.float16
 
+        if weight_quant_params is not None and weight_quant_params.per_channel:
+            if is_transpose:
+                check_or_raise(
+                    weight_quant_params.axis == 1 and groups == 1,
+                    "XNNPACK currently only supports per output channel quantization with groups == 1 for transpose convolutions",
+                )
+            elif is_depthwise_conv:
+                check_or_raise(
+                    weight_quant_params.axis == 0,
+                    "XNNPACK currently only supports per input channel quantization for depthwise convolutions",
+                )
         self.define_tensor(
             kernel_node,
             xnn_graph,
             vals_to_ids,
             convert_to_nhwc=True,
-            swap_nc_for_depthwise_weights=is_depthwise_conv,
+            swap_in_out_for_weights=is_depthwise_conv or is_transpose,
             quant_params=weight_quant_params,
             fp32_static_weights=fp32_static_weights,
+            groups=groups if is_transpose else 1,
         )
         kwargs["filter_id"] = vals_to_ids[get_input_node(node, 1)]
 
@@ -120,10 +143,6 @@ class Conv2d(NodeVisitor):
         if len(padding) == 1:
             padding = padding + padding
 
-        # args[6] = transposed
-        check_or_raise(
-            not cast(bool, node.args[6]), "No support for transposed convolution"
-        )
         # args[7] = output padding
         check_or_raise(
             all(out_pad == 0 for out_pad in cast(List[int], node.args[7])),
@@ -152,6 +171,8 @@ class Conv2d(NodeVisitor):
 
         if is_depthwise_conv:
             conv_node_type = XNNDepthwiseConv2d
+        elif is_transpose:
+            conv_node_type = XNNConvTranspose2d
         else:
             conv_node_type = XNNConv2d
 

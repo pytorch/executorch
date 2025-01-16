@@ -64,7 +64,7 @@ class Tensor:
     scalar_type: ScalarType
     storage_offset: int
     sizes: List[int]
-    dim_order: List[bytes]
+    dim_order: List[int]
     requires_grad: bool
     layout: int
     data_buffer_idx: int
