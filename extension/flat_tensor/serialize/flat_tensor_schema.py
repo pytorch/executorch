@@ -18,7 +18,7 @@ class TensorMetadata:
     fully_qualified_name: str
     scalar_type: ScalarType
     sizes: List[int]
-    dim_order: List[bytes]
+    dim_order: List[int]
 
     segment_index: int
     offset: int
