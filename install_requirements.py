@@ -90,7 +90,7 @@ def main(args):
     CMAKE_BUILD_ARGS = os.getenv("CMAKE_BUILD_ARGS", "")
     USE_PYTORCH_NIGHTLY = True
 
-    parser = argparse.ArgumentParser(prog="install_requirements")
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--pybind",
         action="append",
