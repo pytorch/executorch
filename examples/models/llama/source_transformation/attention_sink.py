@@ -274,7 +274,6 @@ def _replace_attention(
                 dtype=kv_cache.k_cache.dtype,
             )
             child_module.kv_cache = kv_cache_with_attention_sink
-            child_module.SDPA.kv_cache = kv_cache_with_attention_sink
             child_module.forward = types.MethodType(  # pyre-ignore
                 attention_sink_forward, child_module
             )
