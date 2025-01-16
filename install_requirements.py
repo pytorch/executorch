@@ -170,7 +170,6 @@ DEVEL_REQUIREMENTS = [
     "tomli",  # Imported by extract_sources.py when using python < 3.11.
     "wheel",  # For building the pip package archive.
     "zstd",  # Imported by resolve_buck.py.
-    "ai-edge-model-explorer>=0.1.16",  # For visualizing ExportedPrograms
 ]
 
 # Assemble the list of requirements to actually install.
