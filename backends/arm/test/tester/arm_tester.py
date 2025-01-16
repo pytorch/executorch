@@ -33,6 +33,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     print_error_diffs,
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
@@ -184,8 +185,11 @@ class ArmTester(Tester):
 
     def quantize(self, quantize_stage: Optional[tester.Quantize] = None):
         if quantize_stage is None:
+            tosa_spec: TosaSpecification = TosaSpecification.create_from_compilespecs(
+                compile_specs=self.compile_spec
+            )
             quantize_stage = tester.Quantize(
-                ArmQuantizer(),
+                ArmQuantizer(tosa_spec),
                 get_symmetric_quantization_config(is_per_channel=False),
             )
         return super().quantize(quantize_stage)

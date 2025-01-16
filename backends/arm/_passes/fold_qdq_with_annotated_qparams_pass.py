@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -6,7 +6,7 @@
 
 import copy
 
-from typing import cast, Dict, Iterable, Set, Tuple
+from typing import cast, Dict, Set, Tuple
 
 from executorch.backends.arm.tosa_quant_utils import QuantArgs
 
@@ -55,7 +55,7 @@ def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
 class FoldAndAnnotateQParamsPass(ExportPass):
     """
     A pass that walks the graph and removes any DQ and Q nodes before and after the target
-     node in the supplied list of operators.
+     node.
      The quantization parameters from the DQ/Q nodes are stored as meta values to be
      accessible for later lowering and serialization passes.
      The assumption is that the quantization annotatation adds DQ nodes for all tensor
@@ -82,9 +82,8 @@ class FoldAndAnnotateQParamsPass(ExportPass):
 
     """
 
-    def __init__(self, targeted_ops: Iterable[EdgeOpOverload]) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.targeted_ops = targeted_ops
 
     def fold_and_annotate_arg(
         self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
@@ -131,7 +130,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
-            if n.op != "call_function" or n.target not in self.targeted_ops:
+            if n.op != "call_function":
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
@@ -180,7 +179,7 @@ class QuantizeFullArgument(ExportPass):
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
-        # Loop over the graph nodes and find any node in the 'targeted_ops' list.
+        # Loop over the graph nodes and find full.default nodes.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
             if n.target != exir_ops.edge.aten.full.default:
