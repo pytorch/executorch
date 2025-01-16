@@ -109,9 +109,7 @@ def install_requirements(use_pytorch_nightly):
 
     # Assemble the list of requirements to actually install.
     # TODO: Add options for reducing the number of requirements.
-    REQUIREMENTS_TO_INSTALL = (
-        EXIR_REQUIREMENTS + EXAMPLES_REQUIREMENTS
-    )
+    REQUIREMENTS_TO_INSTALL = EXIR_REQUIREMENTS + EXAMPLES_REQUIREMENTS
 
     # Install the requirements. `--extra-index-url` tells pip to look for package
     # versions on the provided URL if they aren't available on the default URL.
