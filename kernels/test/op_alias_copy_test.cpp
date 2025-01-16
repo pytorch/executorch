@@ -16,6 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using torch::executor::testing::TensorFactory;
 
 class OpAliasCopyTest : public OperatorTest {
  protected:
@@ -25,3 +28,13 @@ class OpAliasCopyTest : public OperatorTest {
     return torch::executor::aten::alias_copy_outf(context_, self, out);
   }
 };
+
+TEST_F(OpAliasCopyTest, SmokeTest) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor a = tf.make({2, 2}, {2, 3, 2, 5});
+  Tensor out = tf.zeros({2, 2});
+
+  op_alias_copy_out(a, out);
+  EXPECT_TENSOR_EQ(a, out);
+}

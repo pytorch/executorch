@@ -224,6 +224,7 @@ def _extract_delegate_segments(
     """
     remaining_inline: List[BackendDelegateInlineData] = []
     inline_indices_seen: set[int] = set()
+    segment_index_map: dict[bytes, int] = {}
     for plan in program.execution_plan:
         for delegate in plan.delegates:
             if delegate.processed.location != DataLocation.INLINE:
@@ -249,8 +250,11 @@ def _extract_delegate_segments(
             inline_indices_seen.add(delegate.processed.index)
             if inline.data:
                 # Move the delegate data out of the program.
-                segment_index = len(segments)
-                segments.append(Cord(inline.data))
+                segment_index = segment_index_map.get(inline.data)
+                if segment_index is None:
+                    segment_index = len(segments)
+                    segments.append(Cord(inline.data))
+                    segment_index_map[inline.data] = segment_index
                 delegate.processed = BackendDelegateDataReference(
                     location=DataLocation.SEGMENT,
                     index=segment_index,

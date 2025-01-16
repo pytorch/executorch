@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -39,9 +39,6 @@ class TestSum(unittest.TestCase):
             ((torch.rand(10), 0, True),),
             ((torch.rand(10, 10), 1, False),),
             ((torch.rand(1, 2, 3, 4), 3, True),),
-        ]
-
-        test_parameters_u55_xfails: list[Tuple[exampledata_t]] = [
             ((torch.rand(10, 10, 10), [-3, 1], True),),
             ((torch.rand(2, 1, 5, 8), 1, False),),
             ((torch.rand(1, 2, 8, 8), [2, 3, 0], True),),
@@ -129,17 +126,7 @@ class TestSum(unittest.TestCase):
         self._test_sum_ethosu_BI_pipeline(
             self.Sum(),
             test_data,
-            common.get_u55_compile_spec(permute_memory_to_nhwc=False),
-        )
-
-    # Expected to fail as this is not supported on u55.
-    @parameterized.expand(Sum.test_parameters_u55_xfails)
-    @unittest.expectedFailure
-    def test_sum_u55_BI_xfails(self, test_data: tuple[exampledata_t]):
-        self._test_sum_ethosu_BI_pipeline(
-            self.Sum(),
-            test_data,
-            common.get_u55_compile_spec(permute_memory_to_nhwc=False),
+            common.get_u55_compile_spec(),
         )
 
     @parameterized.expand(Sum.test_parameters)
@@ -147,5 +134,5 @@ class TestSum(unittest.TestCase):
         self._test_sum_ethosu_BI_pipeline(
             self.Sum(),
             test_data,
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
         )
