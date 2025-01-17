@@ -133,7 +133,7 @@ EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
     "torchaudio==2.6.0" if USE_PYTORCH_NIGHTLY else "torchaudio",
     "torchsr==1.0.4",
-    "transformers==4.46.1",
+    "transformers==4.47.1",
 ]
 
 # pip packages needed for development.
@@ -162,6 +162,23 @@ subprocess.run(
         *REQUIREMENTS_TO_INSTALL,
         "--extra-index-url",
         TORCH_URL,
+    ],
+    check=True,
+)
+
+LOCAL_REQUIREMENTS = [
+    "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
+]
+
+# Install packages directly from local copy instead of pypi.
+# This is usually not recommended.
+subprocess.run(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        *LOCAL_REQUIREMENTS,
     ],
     check=True,
 )
