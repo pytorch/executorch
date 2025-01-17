@@ -119,7 +119,7 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
                     if (((_h + d0 * _wh - p0) >= 0) &&
                         ((_h + d0 * _wh - p0) < h) &&
                         ((_w + d1 * _ww - p1) >= 0) &&
-                        ((_w + d1 * _ww - p1 < w))) {
+                        ((_w + d1 * _ww - p1) < w)) {
                       int ioff =
                           (_h + d0 * _wh - p0) * w + (_w + d1 * _ww - p1);
                       int woff = _wh * ww + _ww;

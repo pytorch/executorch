@@ -33,7 +33,7 @@ git submodule update --init
 Install dependencies
 
 ```
-./install_requirements.sh
+./install_executorch.sh
 ```
 
 ## Prepare Models
