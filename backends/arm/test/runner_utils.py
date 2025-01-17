@@ -115,50 +115,53 @@ def _get_input_quantization_params(
     return quant_params
 
 
-def _get_output_node(program: ExportedProgram) -> Node:
+def _get_output_nodes(program: ExportedProgram) -> list[Node]:
     """
     Get output node to this model.
 
     Args:
-        program (ExportedProgram): The program to get output node from.
+        program (ExportedProgram): The program to get the output nodes from.
     Returns:
-        The node that is the output of 'program'.
+        The nodes that are the outputs of the 'program'.
     """
-
+    output_nodes = []
     for node in program.graph.nodes:
         if node.op == "output":
-            return node
-    raise RuntimeError("No output node found.")
+            for output in node.args[0]:
+                output_nodes.append(output)
+    if len(output_nodes) == 0:
+        raise RuntimeError("No output nodes found.")
+    else:
+        return output_nodes
 
 
 def _get_output_quantization_params(
-    program: ExportedProgram, output_node: Node
-) -> Optional[QuantizationParams]:
+    output_nodes: list[Node],
+) -> List[QuantizationParams]:
     """
     Get output QuantizationParams from a program.
     Args:
-        program (ExportedProgram): The program to get output quantization parameters from.
+        output_nodes (list(Node)): A list of output nodes to get output quantization parameters from.
     Returns:
         QuantizationParams: The found quantization parameters.
     Raises:
         RuntimeError if no output quantization parameters are found.
     """
-
-    quant_params = None
-    for node in program.graph.nodes:
-        if (
-            node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default
-            and node == output_node.args[0][0]
-        ):
-            quant_params = QuantizationParams(
-                node_name=node.args[0].name,
-                scale=node.args[1],
-                zp=node.args[2],
-                qmin=node.args[3],
-                qmax=node.args[4],
-                dtype=node.args[5],
+    quant_params = []
+    for node in output_nodes:
+        if node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
+            quant_params.append(
+                QuantizationParams(
+                    node_name=node.args[0].name,
+                    scale=node.args[1],
+                    zp=node.args[2],
+                    qmin=node.args[3],
+                    qmax=node.args[4],
+                    dtype=node.args[5],
+                )
             )
-            break  # break early, there's only one output node
+    if len(quant_params) == 0:
+        raise RuntimeError("No Quantization parameters not found in exported model.")
     return quant_params
 
 
@@ -211,7 +214,7 @@ class RunnerUtil:
         self.input_names: list[str] = None
         self.output_name: str = None
         self.qp_input: list[QuantizationParams] = None
-        self.qp_output: QuantizationParams = None
+        self.qp_output: list[QuantizationParams] = None
         self.timeout = 480
         self.target_board: str = None
 
@@ -226,19 +229,17 @@ class RunnerUtil:
     ):
 
         self.input_names = _get_input_names(edge_program)
-        self.output_node = _get_output_node(exported_program)
-        self.output_name = self.output_node.name
+        self.output_nodes = _get_output_nodes(exported_program)
+
         self.is_quantized = is_quantized
         self.target_board = target_board
 
         if is_quantized:
             self.qp_input = _get_input_quantization_params(exported_program)
-            self.qp_output = _get_output_quantization_params(
-                exported_program, self.output_node
-            )
+            self.qp_output = _get_output_quantization_params(self.output_nodes)
         else:
             self.qp_input = [None] * len(self.input_names)
-            self.qp_output = None
+            self.qp_output = [None] * len(self.output_nodes)
 
         self._has_init_run = True
 
@@ -265,7 +266,7 @@ class RunnerUtil:
             save_bytes(self.intermediate_path, data, False, input_name, quant_param)
 
         out_path = os.path.join(self.intermediate_path, "out")
-        out_path_with_suffix = out_path + "-0.bin"
+
         input_paths = []
         for name in self.input_names:
             input_paths.append(
@@ -281,6 +282,7 @@ class RunnerUtil:
         ), f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
 
         cmd_line = f"executor_runner -m {pte_path} -o {out_path}"
+
         for input_path in input_paths:
             cmd_line += f" -i {input_path}"
 
@@ -362,11 +364,14 @@ class RunnerUtil:
             raise RuntimeError(
                 f"Corstone simulation failed:\ncmd: {command_args[self.target_board]}\n, log: \n {result_stdout}\n{result.stderr.decode()}"
             )
-
-        tosa_ref_output = np.fromfile(out_path_with_suffix, dtype=np.float32)
-        output_shape = self.output_node.args[0][0].meta["val"].shape
-        tosa_ref_output = torch.from_numpy(tosa_ref_output).reshape(output_shape)
-        return tosa_ref_output
+        output_np = []
+        for i, node in enumerate(self.output_nodes):
+            tosa_ref_output = np.fromfile(
+                os.path.join(self.intermediate_path, f"out-{i}.bin"), dtype=np.float32
+            )
+            output_shape = node.meta["val"].shape
+            output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
+        return tuple(output_np)
 
     def run_tosa_graph(
         self, graph: TosaGraph, inputs: list[np.ndarray] | list[torch.Tensor]

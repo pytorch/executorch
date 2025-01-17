@@ -96,12 +96,12 @@ test_run_ethosu_fvp() { # End to End model tests
     # Ethos-U55
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
     examples/arm/run.sh --target=ethos-u55-128 --model_name=mv2
-    examples/arm/run.sh --target=ethos-u55-128 --model_name=lstm --reorder_inputs=1,0,2
+    examples/arm/run.sh --target=ethos-u55-128 --model_name=lstm
 
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
     examples/arm/run.sh --target=ethos-u85-128 --model_name=mv2
-    examples/arm/run.sh --target=ethos-u85-128 --model_name=lstm --reorder_inputs=1,0,2
+    examples/arm/run.sh --target=ethos-u85-128 --model_name=lstm
     }
 
 ${TEST_SUITE}
