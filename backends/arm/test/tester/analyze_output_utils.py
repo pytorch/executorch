@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +9,7 @@ import tempfile
 import torch
 from executorch.backends.arm.test.runner_utils import (
     _get_input_quantization_params,
-    _get_output_node,
+    _get_output_nodes,
     _get_output_quantization_params,
 )
 
@@ -228,9 +228,9 @@ def dump_error_output(
     export_stage = tester.stages.get(tester.stage_name(Export), None)
     quantize_stage = tester.stages.get(tester.stage_name(Quantize), None)
     if export_stage is not None and quantize_stage is not None:
-        output_node = _get_output_node(export_stage.artifact)
+        output_nodes = _get_output_nodes(export_stage.artifact)
         qp_input = _get_input_quantization_params(export_stage.artifact)
-        qp_output = _get_output_quantization_params(export_stage.artifact, output_node)
+        qp_output = _get_output_quantization_params(output_nodes)
         logger.error(f"Input QuantArgs: {qp_input}")
         logger.error(f"Output QuantArgs: {qp_output}")
 
