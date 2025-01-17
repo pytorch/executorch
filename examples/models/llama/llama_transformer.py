@@ -115,6 +115,8 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     use_kv_cache: bool = False  # Use key/value cache
+    decode_kv_cache_as_io: bool = False  # Decode uses KV caches as IO
+    use_additive_kv_cache_update: bool = False  # Additive KV cache update
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
@@ -354,6 +356,9 @@ class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
+        self.decode_kv_cache_as_io = args.decode_kv_cache_as_io
+        self.use_additive_kv_cache_update = args.use_additive_kv_cache_update
+        self.return_kv_values = args.decode_kv_cache_as_io
         self.n_heads = args.n_heads
         self.n_kv_heads = self.n_heads if args.n_kv_heads is None else args.n_kv_heads
         assert self.n_heads % self.n_kv_heads == 0
@@ -386,7 +391,7 @@ class Attention(nn.Module):
         self.register_buffer("mask", causal_mask, persistent=False)
         """
 
-        if self.use_kv_cache:
+        if self.use_kv_cache and not self.decode_kv_cache_as_io:
             self.kv_cache = KVCache(
                 args.max_batch_size,
                 args.max_seq_len,
@@ -409,7 +414,20 @@ class Attention(nn.Module):
         freqs_sin: torch.Tensor,
         input_pos: Optional[int],
         attn_mask: Optional[torch.Tensor],
+        k_cache: Optional[torch.Tensor] = None,
+        v_cache: Optional[torch.Tensor] = None,
+        cache_pos_mask: Optional[torch.Tensor] = None,
     ):
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            assert k_cache is not None
+            assert v_cache is not None
+            assert self.return_kv_values
+
+        if self.use_additive_kv_cache_update:
+            assert self.decode_kv_cache_as_io
+            assert cache_pos_mask is not None
+
         bsz, seqlen, _ = x.shape
 
         # QKV
@@ -426,29 +444,78 @@ class Attention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        if self.use_kv_cache:
+        if self.use_kv_cache and not self.decode_kv_cache_as_io:
             assert input_pos is not None
             k, v = self.kv_cache.update(input_pos, k, v)
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
             return self.wo(output)
 
+        if self.return_kv_values:
+            k_ret = k
+            v_ret = v
+
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            mask = self.mask[None, None, input_pos]
+            if self.use_additive_kv_cache_update:
+                assert cache_pos_mask is not None
+                assert seqlen == 1
+                k_update = cache_pos_mask * k
+                v_update = cache_pos_mask * v
+                k = k_cache + k_update
+                v = v_cache + v_update
+                assert k.shape == k_cache.shape
+                assert v.shape == v_cache.shape
+
+                # # Attempt 1 to use torch.cat:
+                # # This fails to lower to ET during to_executorch due to a dynamo error related to the
+                # # delegate call.  We can talk to compiler about this, but the bigger issue is although
+                # # the CoreML mlpackage lowers, it fails at runtime on CPU/ANE with "input data broken / unsupported
+                # # model (model code -7)".  It does run on GPU.
+                # # I suspect it is related to the data-dependent / dynamic shape of k, v, and mask
+
+                # buffer = 2 # needed to make dynamo happy
+                # input_pos_item = input_pos[0].item()
+                # torch._check_is_size(input_pos_item)
+                # torch._check(input_pos_item + seqlen <= self.max_seq_len - buffer)
+                # mask = torch.narrow(mask, dim=3, start=0, length=input_pos_item + seqlen)
+
+                # k = torch.cat([torch.narrow(k_cache, dim=2, start=0, length=input_pos_item), k], axis=2)
+                # v = torch.cat([torch.narrow(v_cache, dim=2, start=0, length=input_pos_item), v], axis=2)
+
+                # # Attempt 2 to use torch.cat
+                # # Dynamo fails with "expand: attempting to expand a dimension of length u0 + 1024!"
+                # # I'm not confident this variant will work in CoreML if we can export it, though.
+                # buffer = 2
+                # input_pos_item = input_pos[0].item()
+                # torch._check_is_size(input_pos_item)
+                # torch._check(input_pos_item + seqlen <= self.max_seq_len - buffer)
+
+                # k = torch.cat([torch.narrow(k_cache, dim=2, start=0, length=input_pos_item), k], axis=2)
+                # k = k.expand(k_cache.size())
+                # v = torch.cat([torch.narrow(v_cache, dim=2, start=0, length=input_pos_item), v], axis=2)
+                # v = v.expand(v_cache.size())
+            else:
+                k = torch.ops.aten.index_put(k_cache, [None, None, input_pos, None], k)
+                v = torch.ops.aten.index_put(v_cache, [None, None, input_pos, None], v)
+        else:
+            assert not self.use_kv_cache
+            # assert hasattr(self, "mask")
+
+            # mask = self.mask[:seqlen, :seqlen]
+
         # grouped multiquery attention: expand out keys and values
-        k = k.repeat_interleave(self.n_rep, dim=1)
-        v = v.repeat_interleave(self.n_rep, dim=1)
-
-        assert hasattr(self, "mask")
-
-        # mask = self.mask[:seqlen, :seqlen]
-
-        # output = F.scaled_dot_product_attention(
-        #     q, k, v, attn_mask=attn_mask, dropout_p=0.0
-        # )
+        if self.n_rep > 1:
+            k = k.repeat_interleave(self.n_rep, dim=1)
+            v = v.repeat_interleave(self.n_rep, dim=1)
         output = torch.ops.coreml.sdpa(q, k, v, attn_mask)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
         output = self.wo(output)
 
+        if self.return_kv_values:
+            return output, k_ret, v_ret
         return output
 
 
@@ -515,6 +582,8 @@ class TransformerBlock(nn.Module):
     def __init__(self, layer_id: int, args: ModelArgs, rope: Rope):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
+        self.decode_kv_cache_as_io = args.decode_kv_cache_as_io
+        self.return_kv_values = args.decode_kv_cache_as_io
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.head_dim = args.head_dim
@@ -526,20 +595,53 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin, input_pos, attn_mask):  # x: 1xN
-        h = self.attention.forward(
-            self.attention_norm(x),
-            freqs_cos,
-            freqs_sin,
-            input_pos,
-            attn_mask,
-        )
+    def forward(
+        self,
+        x,
+        freqs_cos,
+        freqs_sin,
+        input_pos,
+        attn_mask,
+        k_cache=None,
+        v_cache=None,
+        cache_pos_mask=None,
+    ):  # x: 1xN
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            assert k_cache is not None
+            assert v_cache is not None
+
+        if not self.return_kv_values:
+            h = self.attention.forward(
+                self.attention_norm(x),
+                freqs_cos,
+                freqs_sin,
+                input_pos,
+                attn_mask,
+                k_cache,
+                v_cache,
+                cache_pos_mask,
+            )
+        else:
+            h, k, v = self.attention.forward(
+                self.attention_norm(x),
+                freqs_cos,
+                freqs_sin,
+                input_pos,
+                attn_mask,
+                k_cache,
+                v_cache,
+                cache_pos_mask,
+            )
 
         h = x + h
         if hasattr(self, "block_sparse_moe"):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:
             out = h + self.feed_forward(self.ffn_norm(h))
+
+        if self.return_kv_values:
+            return out, k, v
         return out
 
 
@@ -568,9 +670,13 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
+        self.decode_kv_cache_as_io = params.decode_kv_cache_as_io
         self.generate_full_logits = params.generate_full_logits
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
+
+        # Whether model returns newly computed KV values
+        self.return_kv_values = params.decode_kv_cache_as_io
 
     def forward(
         self,
@@ -578,14 +684,16 @@ class Transformer(nn.Module):
         input_pos: Optional[
             torch.LongTensor
         ] = None,  # Scalar tensor indicating size of window of the caches
-        h: Optional[torch.FloatTensor] = None,  # embeddings
+        k_cache: Optional[torch.FloatTensor] = None,
+        v_cache: Optional[torch.FloatTensor] = None,
+        cache_pos_mask: Optional[torch.FloatTensor] = None,
     ) -> torch.Tensor:
-        if (tokens is None) ^ (h is not None):
-            raise ValueError(
-                "You cannot specify both tokens and h at the same time, and must specify either one"
-            )
-        if tokens is not None and h is None:
-            h = self.tok_embeddings(tokens)
+        h = self.tok_embeddings(tokens)
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            assert k_cache is not None
+            assert v_cache is not None
+
         seqlen = h.shape[1]
         input_pos_item = input_pos[-1].item()
         torch._check_is_size(input_pos_item)
@@ -594,8 +702,51 @@ class Transformer(nn.Module):
         freqs_cos, freqs_sin = self.rope.get_freqs(input_pos_item, seqlen)
         attn_mask = self.mask.narrow(0, input_pos_item, seqlen)
 
-        for layer in self.layers:
-            h = layer(h, freqs_cos, freqs_sin, input_pos_item, attn_mask)
+        # for layer in self.layers:
+        #     h = layer(h, freqs_cos, freqs_sin, input_pos_item, attn_mask)
+
+        if not self.return_kv_values:
+            for layer in self.layers:
+                h = layer(
+                    h,
+                    freqs_cos,
+                    freqs_sin,
+                    input_pos_item,
+                    attn_mask,
+                    k_cache,
+                    v_cache,
+                    cache_pos_mask,
+                )
+        else:
+            k_caches = []
+            v_caches = []
+            for i, layer in enumerate(self.layers):
+                if not self.decode_kv_cache_as_io:
+                    h, k, v = layer(
+                        h,
+                        freqs_cos,
+                        freqs_sin,
+                        input_pos_item,
+                        attn_mask,
+                        k_cache,
+                        v_cache,
+                        cache_pos_mask,
+                    )
+                else:
+                    h, k, v = layer(
+                        h,
+                        freqs_cos,
+                        freqs_sin,
+                        input_pos_item,
+                        attn_mask,
+                        k_cache[i, :, :, :, :],
+                        v_cache[i, :, :, :, :],
+                        cache_pos_mask,
+                    )
+                k_caches.append(k)
+                v_caches.append(v)
+            k_ret = torch.stack(k_caches, dim=0)
+            v_ret = torch.stack(v_caches, dim=0)
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
@@ -627,4 +778,6 @@ class Transformer(nn.Module):
                 expanded_logits[:, list(self.output_prune_map.values())] = logits
             logits = expanded_logits
 
+        if self.return_kv_values:
+            return logits, k_ret, v_ret
         return logits
