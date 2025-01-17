@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -111,7 +111,6 @@ class TestNumericalDiffPrints(unittest.TestCase):
                 example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(
                     "TOSA-0.80+MI",
-                    permute_memory_to_nhwc=True,
                     custom_path=tempfile.mkdtemp("diff_print_test"),
                 ),
             )
@@ -198,10 +197,10 @@ class TestCollateTosaTests(unittest.TestCase):
             "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
         )
         assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag5.tosa"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag6.tosa"
         )
         assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag5.json"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag6.json"
         )
 
         os.environ.pop("TOSA_TESTCASES_BASE_PATH")

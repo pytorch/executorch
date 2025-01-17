@@ -56,6 +56,7 @@ from .source_transformation.quantize import (
     get_quant_weight_transform,
 )
 from .source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
 )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
@@ -778,7 +779,7 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
 
     additional_passes = []
     if args.model in TORCHTUNE_DEFINED_MODELS:
-        additional_passes = [InitializedMutableBufferPass(["cache_pos"])]
+        additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -1058,6 +1059,7 @@ def _get_source_transforms(  # noqa
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
     if args.use_sdpa_with_kv_cache:
+        transforms.append(replace_kv_cache_with_custom_kv_cache)
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.quantize_kv_cache:
