@@ -26,7 +26,7 @@
   inherits: aten::_to_copy
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Byte]
     T3: [Char]
     T4: [Double]
@@ -35,6 +35,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T1
     dtype: T0
@@ -63,6 +64,9 @@
   - self: T1
     dtype: T9
     __ret_0: T9
+  - self: T1
+    dtype: T10
+    __ret_0: T10
 
 - func: aten::abs
   namespace: edge
@@ -77,7 +81,7 @@
   namespace: edge
   inherits: aten::acos
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -90,7 +94,7 @@
   namespace: edge
   inherits: aten::acosh
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -104,7 +108,7 @@
   inherits: aten::add.Scalar
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Float, Int, Long, Short]
+    T1: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T2: [Bool, Float, Int]
     T3: [Bool, Int]
     T4: [Bool, Long]
@@ -117,6 +121,7 @@
     T11: [Int]
     T12: [Long]
     T13: [Short]
+    T14: [UInt16]
   type_constraint:
   - self: T0
     other: T0
@@ -238,6 +243,10 @@
     other: T8
     alpha: T9
     __ret_0: T8
+  - self: T14
+    other: T8
+    alpha: T9
+    __ret_0: T8
 
 - func: aten::add.Tensor
   namespace: edge
@@ -245,9 +254,9 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte]
-    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T4: [Bool, Byte, Char, Half, Int, Long, Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T4: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T5: [Bool, Byte, Char, Int, Long, Short]
     T6: [Bool, Byte, Char, Int, Short]
     T7: [Bool, Byte, Char, Short]
@@ -264,6 +273,7 @@
     T18: [Int]
     T19: [Long]
     T20: [Short]
+    T21: [UInt16]
   type_constraint:
   - self: T0
     other: T0
@@ -417,6 +427,10 @@
     other: T20
     alpha: T16
     __ret_0: T14
+  - self: T14
+    other: T21
+    alpha: T16
+    __ret_0: T14
   - self: T15
     other: T0
     alpha: T16
@@ -461,6 +475,10 @@
     other: T20
     alpha: T16
     __ret_0: T15
+  - self: T15
+    other: T21
+    alpha: T16
+    __ret_0: T15
   - self: T17
     other: T0
     alpha: T16
@@ -503,6 +521,10 @@
     __ret_0: T17
   - self: T17
     other: T20
+    alpha: T16
+    __ret_0: T17
+  - self: T17
+    other: T21
     alpha: T16
     __ret_0: T17
   - self: T18
@@ -550,6 +572,18 @@
     alpha: T16
     __ret_0: T15
   - self: T20
+    other: T17
+    alpha: T16
+    __ret_0: T17
+  - self: T21
+    other: T14
+    alpha: T16
+    __ret_0: T14
+  - self: T21
+    other: T15
+    alpha: T16
+    __ret_0: T15
+  - self: T21
     other: T17
     alpha: T16
     __ret_0: T17
@@ -862,7 +896,7 @@
   namespace: edge
   inherits: aten::alias_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -890,7 +924,7 @@
   inherits: aten::any
   type_alias:
     T0: [Bool]
-    T1: [Bool, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Byte]
   type_constraint:
   - self: T1
@@ -2057,7 +2091,7 @@
   namespace: edge
   inherits: aten::as_strided_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -2066,7 +2100,7 @@
   namespace: edge
   inherits: aten::asin
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -2079,7 +2113,7 @@
   namespace: edge
   inherits: aten::asinh
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -2092,7 +2126,7 @@
   namespace: edge
   inherits: aten::atan
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -2105,7 +2139,7 @@
   namespace: edge
   inherits: aten::atanh
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -2135,6 +2169,7 @@
     T5: [Int]
     T6: [Long]
     T7: [Short]
+    T8: [UInt16]
   type_constraint:
   - self: T0
     other: T0
@@ -2157,17 +2192,20 @@
   - self: T7
     other: T1
     __ret_0: T7
+  - self: T8
+    other: T1
+    __ret_0: T8
 
 - func: aten::bitwise_and.Tensor
   namespace: edge
   inherits: aten::bitwise_and.Tensor
   type_alias:
-    T0: [Bool]
-    T1: [Bool, Byte]
-    T2: [Bool, Byte, Char, Int, Long, Short]
-    T3: [Bool, Byte, Char, Int, Short]
-    T4: [Bool, Byte, Char, Short]
-    T5: [Bool, Char]
+    T0: [Bool, Byte]
+    T1: [Bool, Byte, Char, Int, Long, Short]
+    T2: [Bool, Byte, Char, Int, Short]
+    T3: [Bool, Byte, Char, Short]
+    T4: [Bool, Char]
+    T5: [Bool, UInt16]
     T6: [Byte]
     T7: [Byte, Short]
     T8: [Char]
@@ -2177,25 +2215,25 @@
     T12: [Short]
   type_constraint:
   - self: T0
-    other: T0
-    __ret_0: T0
-  - self: T1
     other: T6
     __ret_0: T6
-  - self: T2
+  - self: T1
     other: T11
     __ret_0: T11
-  - self: T3
+  - self: T2
     other: T10
     __ret_0: T10
-  - self: T4
+  - self: T3
     other: T12
     __ret_0: T12
-  - self: T5
+  - self: T4
     other: T8
     __ret_0: T8
+  - self: T5
+    other: T5
+    __ret_0: T5
   - self: T6
-    other: T1
+    other: T0
     __ret_0: T6
   - self: T6
     other: T9
@@ -2204,7 +2242,7 @@
     other: T8
     __ret_0: T12
   - self: T8
-    other: T5
+    other: T4
     __ret_0: T8
   - self: T8
     other: T7
@@ -2213,13 +2251,13 @@
     other: T6
     __ret_0: T12
   - self: T10
-    other: T3
+    other: T2
     __ret_0: T10
   - self: T11
-    other: T2
+    other: T1
     __ret_0: T11
   - self: T12
-    other: T4
+    other: T3
     __ret_0: T12
 
 - func: aten::bitwise_not
@@ -2243,6 +2281,7 @@
     T5: [Int]
     T6: [Long]
     T7: [Short]
+    T8: [UInt16]
   type_constraint:
   - self: T0
     other: T0
@@ -2265,17 +2304,20 @@
   - self: T7
     other: T1
     __ret_0: T7
+  - self: T8
+    other: T1
+    __ret_0: T8
 
 - func: aten::bitwise_or.Tensor
   namespace: edge
   inherits: aten::bitwise_or.Tensor
   type_alias:
-    T0: [Bool]
-    T1: [Bool, Byte]
-    T2: [Bool, Byte, Char, Int, Long, Short]
-    T3: [Bool, Byte, Char, Int, Short]
-    T4: [Bool, Byte, Char, Short]
-    T5: [Bool, Char]
+    T0: [Bool, Byte]
+    T1: [Bool, Byte, Char, Int, Long, Short]
+    T2: [Bool, Byte, Char, Int, Short]
+    T3: [Bool, Byte, Char, Short]
+    T4: [Bool, Char]
+    T5: [Bool, UInt16]
     T6: [Byte]
     T7: [Byte, Short]
     T8: [Char]
@@ -2285,25 +2327,25 @@
     T12: [Short]
   type_constraint:
   - self: T0
-    other: T0
-    __ret_0: T0
-  - self: T1
     other: T6
     __ret_0: T6
-  - self: T2
+  - self: T1
     other: T11
     __ret_0: T11
-  - self: T3
+  - self: T2
     other: T10
     __ret_0: T10
-  - self: T4
+  - self: T3
     other: T12
     __ret_0: T12
-  - self: T5
+  - self: T4
     other: T8
     __ret_0: T8
+  - self: T5
+    other: T5
+    __ret_0: T5
   - self: T6
-    other: T1
+    other: T0
     __ret_0: T6
   - self: T6
     other: T9
@@ -2312,7 +2354,7 @@
     other: T8
     __ret_0: T12
   - self: T8
-    other: T5
+    other: T4
     __ret_0: T8
   - self: T8
     other: T7
@@ -2321,13 +2363,13 @@
     other: T6
     __ret_0: T12
   - self: T10
-    other: T3
+    other: T2
     __ret_0: T10
   - self: T11
-    other: T2
+    other: T1
     __ret_0: T11
   - self: T12
-    other: T4
+    other: T3
     __ret_0: T12
 
 - func: aten::bitwise_xor.Scalar
@@ -2342,6 +2384,7 @@
     T5: [Int]
     T6: [Long]
     T7: [Short]
+    T8: [UInt16]
   type_constraint:
   - self: T0
     other: T0
@@ -2364,17 +2407,20 @@
   - self: T7
     other: T1
     __ret_0: T7
+  - self: T8
+    other: T1
+    __ret_0: T8
 
 - func: aten::bitwise_xor.Tensor
   namespace: edge
   inherits: aten::bitwise_xor.Tensor
   type_alias:
-    T0: [Bool]
-    T1: [Bool, Byte]
-    T2: [Bool, Byte, Char, Int, Long, Short]
-    T3: [Bool, Byte, Char, Int, Short]
-    T4: [Bool, Byte, Char, Short]
-    T5: [Bool, Char]
+    T0: [Bool, Byte]
+    T1: [Bool, Byte, Char, Int, Long, Short]
+    T2: [Bool, Byte, Char, Int, Short]
+    T3: [Bool, Byte, Char, Short]
+    T4: [Bool, Char]
+    T5: [Bool, UInt16]
     T6: [Byte]
     T7: [Byte, Short]
     T8: [Char]
@@ -2384,25 +2430,25 @@
     T12: [Short]
   type_constraint:
   - self: T0
-    other: T0
-    __ret_0: T0
-  - self: T1
     other: T6
     __ret_0: T6
-  - self: T2
+  - self: T1
     other: T11
     __ret_0: T11
-  - self: T3
+  - self: T2
     other: T10
     __ret_0: T10
-  - self: T4
+  - self: T3
     other: T12
     __ret_0: T12
-  - self: T5
+  - self: T4
     other: T8
     __ret_0: T8
+  - self: T5
+    other: T5
+    __ret_0: T5
   - self: T6
-    other: T1
+    other: T0
     __ret_0: T6
   - self: T6
     other: T9
@@ -2411,7 +2457,7 @@
     other: T8
     __ret_0: T12
   - self: T8
-    other: T5
+    other: T4
     __ret_0: T8
   - self: T8
     other: T7
@@ -2420,13 +2466,13 @@
     other: T6
     __ret_0: T12
   - self: T10
-    other: T3
+    other: T2
     __ret_0: T10
   - self: T11
-    other: T2
+    other: T1
     __ret_0: T11
   - self: T12
-    other: T4
+    other: T3
     __ret_0: T12
 
 - func: aten::bmm
@@ -2443,7 +2489,7 @@
   namespace: edge
   inherits: aten::cat
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - tensors: T0
     __ret_0: T0
@@ -2452,7 +2498,7 @@
   namespace: edge
   inherits: aten::ceil
   type_alias:
-    T0: [Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -2462,7 +2508,7 @@
   inherits: aten::clamp
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Float, Int, Long, Short]
+    T1: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T2: [Bool, Float, Int]
     T3: [Bool, Int]
     T4: [Bool, Long]
@@ -2474,6 +2520,7 @@
     T10: [Int]
     T11: [Long]
     T12: [Short]
+    T13: [UInt16]
   type_constraint:
   - self: T0
     min: T2
@@ -2715,12 +2762,20 @@
     min: T10
     max: T3
     __ret_0: T12
+  - self: T13
+    min: T2
+    max: T8
+    __ret_0: T8
+  - self: T13
+    min: T8
+    max: T2
+    __ret_0: T8
 
 - func: aten::clone
   namespace: edge
   inherits: aten::clone
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -2739,6 +2794,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     value: T1
@@ -2767,12 +2823,15 @@
   - self: T9
     value: T1
     __ret_0: T9
+  - self: T10
+    value: T1
+    __ret_0: T10
 
 - func: aten::convolution
   namespace: edge
   inherits: aten::convolution
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T1: [Byte]
     T2: [Char]
     T3: [Double]
@@ -2820,7 +2879,7 @@
   inherits: aten::copy
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Byte]
     T3: [Char]
     T4: [Double]
@@ -2829,6 +2888,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     src: T1
@@ -2857,12 +2917,15 @@
   - self: T9
     src: T1
     __ret_0: T9
+  - self: T10
+    src: T1
+    __ret_0: T10
 
 - func: aten::cos
   namespace: edge
   inherits: aten::cos
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -2875,7 +2938,7 @@
   namespace: edge
   inherits: aten::cosh
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -2888,7 +2951,7 @@
   namespace: edge
   inherits: aten::cumsum
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T1: [Byte]
     T2: [Char]
     T3: [Double]
@@ -2927,7 +2990,7 @@
   namespace: edge
   inherits: aten::detach_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -2937,7 +3000,7 @@
   inherits: aten::div.Scalar
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Float, Int, Long, Short]
+    T1: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T2: [Bool, Float, Int]
     T3: [Byte]
     T4: [Char]
@@ -2947,6 +3010,7 @@
     T8: [Int]
     T9: [Long]
     T10: [Short]
+    T11: [UInt16]
   type_constraint:
   - self: T0
     other: T2
@@ -2984,24 +3048,29 @@
   - self: T10
     other: T2
     __ret_0: T6
+  - self: T11
+    other: T2
+    __ret_0: T6
 
 - func: aten::div.Tensor
   namespace: edge
   inherits: aten::div.Tensor
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
     T3: [Bool, Byte, Char, Float, Int, Long, Short]
-    T4: [Bool, Byte, Char, Half, Int, Long, Short]
+    T4: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T5: [Byte]
     T6: [Char]
     T7: [Double]
     T8: [Float]
-    T9: [Half]
-    T10: [Int]
-    T11: [Long]
-    T12: [Short]
+    T9: [Float, UInt16]
+    T10: [Half]
+    T11: [Int]
+    T12: [Long]
+    T13: [Short]
+    T14: [UInt16]
   type_constraint:
   - self: T0
     other: T3
@@ -3022,17 +3091,17 @@
     other: T6
     __ret_0: T8
   - self: T3
-    other: T10
-    __ret_0: T8
-  - self: T3
     other: T11
     __ret_0: T8
   - self: T3
     other: T12
     __ret_0: T8
+  - self: T3
+    other: T13
+    __ret_0: T8
   - self: T4
-    other: T9
-    __ret_0: T9
+    other: T10
+    __ret_0: T10
   - self: T5
     other: T3
     __ret_0: T8
@@ -3046,16 +3115,22 @@
     other: T2
     __ret_0: T8
   - self: T9
-    other: T4
-    __ret_0: T9
-  - self: T10
-    other: T3
+    other: T14
     __ret_0: T8
+  - self: T10
+    other: T4
+    __ret_0: T10
   - self: T11
     other: T3
     __ret_0: T8
   - self: T12
     other: T3
+    __ret_0: T8
+  - self: T13
+    other: T3
+    __ret_0: T8
+  - self: T14
+    other: T9
     __ret_0: T8
 
 - func: aten::div.Tensor_mode
@@ -3063,9 +3138,9 @@
   inherits: aten::div.Tensor_mode
   type_alias:
     T0: [Bool, Byte]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T4: [Bool, Byte, Char, Int, Long, Short]
     T5: [Bool, Byte, Char, Int, Short]
     T6: [Bool, Byte, Char, Short]
@@ -3156,6 +3231,7 @@
     T7: [Int, Long]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - weight: T0
     indices: T7
@@ -3184,12 +3260,15 @@
   - weight: T9
     indices: T7
     __ret_0: T9
+  - weight: T10
+    indices: T7
+    __ret_0: T10
 
 - func: aten::empty.memory_format
   namespace: edge
   inherits: aten::empty.memory_format
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - dtype: T0
     __ret_0: T0
@@ -3199,7 +3278,7 @@
   inherits: aten::eq.Scalar
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Bool, Float, Int]
     T3: [Byte]
     T4: [Char]
@@ -3209,6 +3288,7 @@
     T8: [Int]
     T9: [Long]
     T10: [Short]
+    T11: [UInt16]
   type_constraint:
   - self: T0
     other: T2
@@ -3246,12 +3326,15 @@
   - self: T10
     other: T2
     __ret_0: T0
+  - self: T11
+    other: T2
+    __ret_0: T0
 
 - func: aten::erf
   namespace: edge
   inherits: aten::erf
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -3264,7 +3347,7 @@
   namespace: edge
   inherits: aten::exp
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -3277,7 +3360,7 @@
   namespace: edge
   inherits: aten::expand_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -3296,6 +3379,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     value: T1
@@ -3324,13 +3408,16 @@
   - self: T9
     value: T1
     __ret_0: T9
+  - self: T10
+    value: T1
+    __ret_0: T10
 
 - func: aten::fill.Tensor
   namespace: edge
   inherits: aten::fill.Tensor
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Byte]
     T3: [Char]
     T4: [Double]
@@ -3339,6 +3426,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     value: T1
@@ -3367,12 +3455,15 @@
   - self: T9
     value: T1
     __ret_0: T9
+  - self: T10
+    value: T1
+    __ret_0: T10
 
 - func: aten::floor
   namespace: edge
   inherits: aten::floor
   type_alias:
-    T0: [Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -3382,9 +3473,9 @@
   inherits: aten::floor_divide
   type_alias:
     T0: [Bool, Byte]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T4: [Bool, Byte, Char, Int, Long, Short]
     T5: [Bool, Byte, Char, Int, Short]
     T6: [Bool, Byte, Char, Short]
@@ -3465,7 +3556,7 @@
   namespace: edge
   inherits: aten::fmod.Scalar
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Bool, Float, Int]
     T2: [Bool, Int]
     T3: [Bool, Long]
@@ -3514,9 +3605,9 @@
   inherits: aten::fmod.Tensor
   type_alias:
     T0: [Bool, Byte]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T4: [Bool, Byte, Char, Int, Long, Short]
     T5: [Bool, Byte, Char, Int, Short]
     T6: [Bool, Byte, Char, Short]
@@ -3607,6 +3698,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - fill_value: T1
     dtype: T0
@@ -3635,13 +3727,16 @@
   - fill_value: T1
     dtype: T9
     __ret_0: T9
+  - fill_value: T1
+    dtype: T10
+    __ret_0: T10
 
 - func: aten::full_like
   namespace: edge
   inherits: aten::full_like
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Bool, Float, Int]
     T3: [Byte]
     T4: [Char]
@@ -3651,6 +3746,7 @@
     T8: [Int]
     T9: [Long]
     T10: [Short]
+    T11: [UInt16]
   type_constraint:
   - self: T0
     fill_value: T2
@@ -3688,6 +3784,10 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T0
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
   - self: T1
     fill_value: T0
     dtype: T0
@@ -3725,6 +3825,10 @@
     dtype: T10
     __ret_0: T10
   - self: T1
+    fill_value: T0
+    dtype: T11
+    __ret_0: T11
+  - self: T1
     fill_value: T6
     dtype: T0
     __ret_0: T0
@@ -3760,6 +3864,10 @@
     fill_value: T6
     dtype: T10
     __ret_0: T10
+  - self: T1
+    fill_value: T6
+    dtype: T11
+    __ret_0: T11
   - self: T1
     fill_value: T8
     dtype: T0
@@ -3796,6 +3904,10 @@
     fill_value: T8
     dtype: T10
     __ret_0: T10
+  - self: T1
+    fill_value: T8
+    dtype: T11
+    __ret_0: T11
   - self: T3
     fill_value: T2
     dtype: T0
@@ -3832,6 +3944,10 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T3
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
   - self: T4
     fill_value: T2
     dtype: T0
@@ -3868,6 +3984,10 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T4
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
   - self: T5
     fill_value: T2
     dtype: T0
@@ -3904,6 +4024,10 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T5
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
   - self: T6
     fill_value: T2
     dtype: T0
@@ -3940,6 +4064,10 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T6
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
   - self: T7
     fill_value: T2
     dtype: T0
@@ -3976,6 +4104,10 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T7
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
   - self: T8
     fill_value: T2
     dtype: T0
@@ -4012,6 +4144,10 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T8
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
   - self: T9
     fill_value: T2
     dtype: T0
@@ -4048,6 +4184,10 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T9
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
   - self: T10
     fill_value: T2
     dtype: T0
@@ -4084,6 +4224,50 @@
     fill_value: T2
     dtype: T10
     __ret_0: T10
+  - self: T10
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
+  - self: T11
+    fill_value: T2
+    dtype: T0
+    __ret_0: T0
+  - self: T11
+    fill_value: T2
+    dtype: T3
+    __ret_0: T3
+  - self: T11
+    fill_value: T2
+    dtype: T4
+    __ret_0: T4
+  - self: T11
+    fill_value: T2
+    dtype: T5
+    __ret_0: T5
+  - self: T11
+    fill_value: T2
+    dtype: T6
+    __ret_0: T6
+  - self: T11
+    fill_value: T2
+    dtype: T7
+    __ret_0: T7
+  - self: T11
+    fill_value: T2
+    dtype: T8
+    __ret_0: T8
+  - self: T11
+    fill_value: T2
+    dtype: T9
+    __ret_0: T9
+  - self: T11
+    fill_value: T2
+    dtype: T10
+    __ret_0: T10
+  - self: T11
+    fill_value: T2
+    dtype: T11
+    __ret_0: T11
 
 - func: aten::ge.Scalar
   namespace: edge
@@ -4091,51 +4275,52 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Float, Int]
-    T3: [Byte]
-    T4: [Char]
-    T5: [Double]
-    T6: [Float]
-    T7: [Half]
-    T8: [Int]
-    T9: [Long]
-    T10: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Float, Int]
+    T4: [Byte]
+    T5: [Char]
+    T6: [Double]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
   type_constraint:
   - self: T0
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T1
     other: T0
     __ret_0: T0
   - self: T1
-    other: T6
+    other: T9
     __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T3
-    other: T2
+  - self: T2
+    other: T7
     __ret_0: T0
   - self: T4
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T5
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T6
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T7
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T8
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T9
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T10
-    other: T2
+    other: T3
+    __ret_0: T0
+  - self: T11
+    other: T3
     __ret_0: T0
 
 - func: aten::ge.Tensor
@@ -4144,14 +4329,17 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte]
-    T3: [Char]
-    T4: [Double]
-    T5: [Float]
-    T6: [Half]
-    T7: [Int]
-    T8: [Long]
-    T9: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte]
+    T4: [Char]
+    T5: [Double]
+    T6: [Double, Float, Half]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
+    T12: [UInt16]
   type_constraint:
   - self: T0
     other: T1
@@ -4160,31 +4348,28 @@
     other: T0
     __ret_0: T0
   - self: T1
-    other: T2
-    __ret_0: T0
-  - self: T1
     other: T3
     __ret_0: T0
   - self: T1
     other: T4
     __ret_0: T0
   - self: T1
-    other: T5
-    __ret_0: T0
-  - self: T1
-    other: T6
-    __ret_0: T0
-  - self: T1
-    other: T7
-    __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T0
+  - self: T1
+    other: T10
+    __ret_0: T0
+  - self: T1
+    other: T11
+    __ret_0: T0
   - self: T2
-    other: T1
+    other: T5
+    __ret_0: T0
+  - self: T2
+    other: T7
+    __ret_0: T0
+  - self: T2
+    other: T8
     __ret_0: T0
   - self: T3
     other: T1
@@ -4193,19 +4378,28 @@
     other: T1
     __ret_0: T0
   - self: T5
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T6
-    other: T1
+    other: T12
     __ret_0: T0
   - self: T7
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T8
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T9
     other: T1
+    __ret_0: T0
+  - self: T10
+    other: T1
+    __ret_0: T0
+  - self: T11
+    other: T1
+    __ret_0: T0
+  - self: T12
+    other: T6
     __ret_0: T0
 
 - func: aten::gelu
@@ -4232,51 +4426,52 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Float, Int]
-    T3: [Byte]
-    T4: [Char]
-    T5: [Double]
-    T6: [Float]
-    T7: [Half]
-    T8: [Int]
-    T9: [Long]
-    T10: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Float, Int]
+    T4: [Byte]
+    T5: [Char]
+    T6: [Double]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
   type_constraint:
   - self: T0
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T1
     other: T0
     __ret_0: T0
   - self: T1
-    other: T6
+    other: T9
     __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T3
-    other: T2
+  - self: T2
+    other: T7
     __ret_0: T0
   - self: T4
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T5
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T6
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T7
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T8
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T9
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T10
-    other: T2
+    other: T3
+    __ret_0: T0
+  - self: T11
+    other: T3
     __ret_0: T0
 
 - func: aten::gt.Tensor
@@ -4285,14 +4480,17 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte]
-    T3: [Char]
-    T4: [Double]
-    T5: [Float]
-    T6: [Half]
-    T7: [Int]
-    T8: [Long]
-    T9: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte]
+    T4: [Char]
+    T5: [Double]
+    T6: [Double, Float, Half]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
+    T12: [UInt16]
   type_constraint:
   - self: T0
     other: T1
@@ -4301,31 +4499,28 @@
     other: T0
     __ret_0: T0
   - self: T1
-    other: T2
-    __ret_0: T0
-  - self: T1
     other: T3
     __ret_0: T0
   - self: T1
     other: T4
     __ret_0: T0
   - self: T1
-    other: T5
-    __ret_0: T0
-  - self: T1
-    other: T6
-    __ret_0: T0
-  - self: T1
-    other: T7
-    __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T0
+  - self: T1
+    other: T10
+    __ret_0: T0
+  - self: T1
+    other: T11
+    __ret_0: T0
   - self: T2
-    other: T1
+    other: T5
+    __ret_0: T0
+  - self: T2
+    other: T7
+    __ret_0: T0
+  - self: T2
+    other: T8
     __ret_0: T0
   - self: T3
     other: T1
@@ -4334,19 +4529,28 @@
     other: T1
     __ret_0: T0
   - self: T5
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T6
-    other: T1
+    other: T12
     __ret_0: T0
   - self: T7
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T8
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T9
     other: T1
+    __ret_0: T0
+  - self: T10
+    other: T1
+    __ret_0: T0
+  - self: T11
+    other: T1
+    __ret_0: T0
+  - self: T12
+    other: T6
     __ret_0: T0
 
 - func: aten::hardtanh
@@ -4666,6 +4870,7 @@
     T7: [Int, Long]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     index: T7
@@ -4694,13 +4899,16 @@
   - self: T9
     index: T7
     __ret_0: T9
+  - self: T10
+    index: T7
+    __ret_0: T10
 
 - func: aten::isinf
   namespace: edge
   inherits: aten::isinf
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T1
     __ret_0: T0
@@ -4710,7 +4918,7 @@
   inherits: aten::isnan
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T1
     __ret_0: T0
@@ -4721,51 +4929,52 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Float, Int]
-    T3: [Byte]
-    T4: [Char]
-    T5: [Double]
-    T6: [Float]
-    T7: [Half]
-    T8: [Int]
-    T9: [Long]
-    T10: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Float, Int]
+    T4: [Byte]
+    T5: [Char]
+    T6: [Double]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
   type_constraint:
   - self: T0
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T1
     other: T0
     __ret_0: T0
   - self: T1
-    other: T6
+    other: T9
     __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T3
-    other: T2
+  - self: T2
+    other: T7
     __ret_0: T0
   - self: T4
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T5
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T6
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T7
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T8
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T9
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T10
-    other: T2
+    other: T3
+    __ret_0: T0
+  - self: T11
+    other: T3
     __ret_0: T0
 
 - func: aten::le.Tensor
@@ -4774,14 +4983,17 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte]
-    T3: [Char]
-    T4: [Double]
-    T5: [Float]
-    T6: [Half]
-    T7: [Int]
-    T8: [Long]
-    T9: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte]
+    T4: [Char]
+    T5: [Double]
+    T6: [Double, Float, Half]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
+    T12: [UInt16]
   type_constraint:
   - self: T0
     other: T1
@@ -4790,31 +5002,28 @@
     other: T0
     __ret_0: T0
   - self: T1
-    other: T2
-    __ret_0: T0
-  - self: T1
     other: T3
     __ret_0: T0
   - self: T1
     other: T4
     __ret_0: T0
   - self: T1
-    other: T5
-    __ret_0: T0
-  - self: T1
-    other: T6
-    __ret_0: T0
-  - self: T1
-    other: T7
-    __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T0
+  - self: T1
+    other: T10
+    __ret_0: T0
+  - self: T1
+    other: T11
+    __ret_0: T0
   - self: T2
-    other: T1
+    other: T5
+    __ret_0: T0
+  - self: T2
+    other: T7
+    __ret_0: T0
+  - self: T2
+    other: T8
     __ret_0: T0
   - self: T3
     other: T1
@@ -4823,19 +5032,28 @@
     other: T1
     __ret_0: T0
   - self: T5
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T6
-    other: T1
+    other: T12
     __ret_0: T0
   - self: T7
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T8
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T9
     other: T1
+    __ret_0: T0
+  - self: T10
+    other: T1
+    __ret_0: T0
+  - self: T11
+    other: T1
+    __ret_0: T0
+  - self: T12
+    other: T6
     __ret_0: T0
 
 - func: aten::leaky_relu
@@ -4861,7 +5079,7 @@
   namespace: edge
   inherits: aten::lift_fresh_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -4870,7 +5088,7 @@
   namespace: edge
   inherits: aten::log
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -4885,14 +5103,17 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte]
-    T3: [Char]
-    T4: [Double]
-    T5: [Float]
-    T6: [Half]
-    T7: [Int]
-    T8: [Long]
-    T9: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte]
+    T4: [Char]
+    T5: [Double]
+    T6: [Double, Float, Half]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
+    T12: [UInt16]
   type_constraint:
   - self: T0
     other: T1
@@ -4901,31 +5122,28 @@
     other: T0
     __ret_0: T0
   - self: T1
-    other: T2
-    __ret_0: T0
-  - self: T1
     other: T3
     __ret_0: T0
   - self: T1
     other: T4
     __ret_0: T0
   - self: T1
-    other: T5
-    __ret_0: T0
-  - self: T1
-    other: T6
-    __ret_0: T0
-  - self: T1
-    other: T7
-    __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T0
+  - self: T1
+    other: T10
+    __ret_0: T0
+  - self: T1
+    other: T11
+    __ret_0: T0
   - self: T2
-    other: T1
+    other: T5
+    __ret_0: T0
+  - self: T2
+    other: T7
+    __ret_0: T0
+  - self: T2
+    other: T8
     __ret_0: T0
   - self: T3
     other: T1
@@ -4934,19 +5152,28 @@
     other: T1
     __ret_0: T0
   - self: T5
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T6
-    other: T1
+    other: T12
     __ret_0: T0
   - self: T7
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T8
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T9
     other: T1
+    __ret_0: T0
+  - self: T10
+    other: T1
+    __ret_0: T0
+  - self: T11
+    other: T1
+    __ret_0: T0
+  - self: T12
+    other: T6
     __ret_0: T0
 
 - func: aten::logical_not
@@ -4965,14 +5192,17 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte]
-    T3: [Char]
-    T4: [Double]
-    T5: [Float]
-    T6: [Half]
-    T7: [Int]
-    T8: [Long]
-    T9: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte]
+    T4: [Char]
+    T5: [Double]
+    T6: [Double, Float, Half]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
+    T12: [UInt16]
   type_constraint:
   - self: T0
     other: T1
@@ -4981,31 +5211,28 @@
     other: T0
     __ret_0: T0
   - self: T1
-    other: T2
-    __ret_0: T0
-  - self: T1
     other: T3
     __ret_0: T0
   - self: T1
     other: T4
     __ret_0: T0
   - self: T1
-    other: T5
-    __ret_0: T0
-  - self: T1
-    other: T6
-    __ret_0: T0
-  - self: T1
-    other: T7
-    __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T0
+  - self: T1
+    other: T10
+    __ret_0: T0
+  - self: T1
+    other: T11
+    __ret_0: T0
   - self: T2
-    other: T1
+    other: T5
+    __ret_0: T0
+  - self: T2
+    other: T7
+    __ret_0: T0
+  - self: T2
+    other: T8
     __ret_0: T0
   - self: T3
     other: T1
@@ -5014,19 +5241,28 @@
     other: T1
     __ret_0: T0
   - self: T5
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T6
-    other: T1
+    other: T12
     __ret_0: T0
   - self: T7
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T8
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T9
     other: T1
+    __ret_0: T0
+  - self: T10
+    other: T1
+    __ret_0: T0
+  - self: T11
+    other: T1
+    __ret_0: T0
+  - self: T12
+    other: T6
     __ret_0: T0
 
 - func: aten::logical_xor
@@ -5035,14 +5271,17 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte]
-    T3: [Char]
-    T4: [Double]
-    T5: [Float]
-    T6: [Half]
-    T7: [Int]
-    T8: [Long]
-    T9: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte]
+    T4: [Char]
+    T5: [Double]
+    T6: [Double, Float, Half]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
+    T12: [UInt16]
   type_constraint:
   - self: T0
     other: T1
@@ -5051,31 +5290,28 @@
     other: T0
     __ret_0: T0
   - self: T1
-    other: T2
-    __ret_0: T0
-  - self: T1
     other: T3
     __ret_0: T0
   - self: T1
     other: T4
     __ret_0: T0
   - self: T1
-    other: T5
-    __ret_0: T0
-  - self: T1
-    other: T6
-    __ret_0: T0
-  - self: T1
-    other: T7
-    __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T0
+  - self: T1
+    other: T10
+    __ret_0: T0
+  - self: T1
+    other: T11
+    __ret_0: T0
   - self: T2
-    other: T1
+    other: T5
+    __ret_0: T0
+  - self: T2
+    other: T7
+    __ret_0: T0
+  - self: T2
+    other: T8
     __ret_0: T0
   - self: T3
     other: T1
@@ -5084,26 +5320,35 @@
     other: T1
     __ret_0: T0
   - self: T5
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T6
-    other: T1
+    other: T12
     __ret_0: T0
   - self: T7
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T8
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T9
     other: T1
+    __ret_0: T0
+  - self: T10
+    other: T1
+    __ret_0: T0
+  - self: T11
+    other: T1
+    __ret_0: T0
+  - self: T12
+    other: T6
     __ret_0: T0
 
 - func: aten::logit
   namespace: edge
   inherits: aten::logit
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -5118,51 +5363,52 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Float, Int]
-    T3: [Byte]
-    T4: [Char]
-    T5: [Double]
-    T6: [Float]
-    T7: [Half]
-    T8: [Int]
-    T9: [Long]
-    T10: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Float, Int]
+    T4: [Byte]
+    T5: [Char]
+    T6: [Double]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
   type_constraint:
   - self: T0
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T1
     other: T0
     __ret_0: T0
   - self: T1
-    other: T6
+    other: T9
     __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T3
-    other: T2
+  - self: T2
+    other: T7
     __ret_0: T0
   - self: T4
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T5
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T6
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T7
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T8
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T9
-    other: T2
+    other: T3
     __ret_0: T0
   - self: T10
-    other: T2
+    other: T3
+    __ret_0: T0
+  - self: T11
+    other: T3
     __ret_0: T0
 
 - func: aten::lt.Tensor
@@ -5171,14 +5417,17 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte]
-    T3: [Char]
-    T4: [Double]
-    T5: [Float]
-    T6: [Half]
-    T7: [Int]
-    T8: [Long]
-    T9: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte]
+    T4: [Char]
+    T5: [Double]
+    T6: [Double, Float, Half]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
+    T12: [UInt16]
   type_constraint:
   - self: T0
     other: T1
@@ -5187,31 +5436,28 @@
     other: T0
     __ret_0: T0
   - self: T1
-    other: T2
-    __ret_0: T0
-  - self: T1
     other: T3
     __ret_0: T0
   - self: T1
     other: T4
     __ret_0: T0
   - self: T1
-    other: T5
-    __ret_0: T0
-  - self: T1
-    other: T6
-    __ret_0: T0
-  - self: T1
-    other: T7
-    __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T0
+  - self: T1
+    other: T10
+    __ret_0: T0
+  - self: T1
+    other: T11
+    __ret_0: T0
   - self: T2
-    other: T1
+    other: T5
+    __ret_0: T0
+  - self: T2
+    other: T7
+    __ret_0: T0
+  - self: T2
+    other: T8
     __ret_0: T0
   - self: T3
     other: T1
@@ -5220,19 +5466,28 @@
     other: T1
     __ret_0: T0
   - self: T5
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T6
-    other: T1
+    other: T12
     __ret_0: T0
   - self: T7
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T8
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T9
     other: T1
+    __ret_0: T0
+  - self: T10
+    other: T1
+    __ret_0: T0
+  - self: T11
+    other: T1
+    __ret_0: T0
+  - self: T12
+    other: T6
     __ret_0: T0
 
 - func: aten::masked_fill.Scalar
@@ -5371,7 +5626,7 @@
   namespace: edge
   inherits: aten::mean.dim
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T1: [Double]
     T2: [Float]
     T3: [Half]
@@ -5434,9 +5689,9 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte]
-    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T4: [Bool, Byte, Char, Half, Int, Long, Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T4: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T5: [Bool, Byte, Char, Int, Long, Short]
     T6: [Bool, Byte, Char, Int, Short]
     T7: [Bool, Byte, Char, Short]
@@ -5531,7 +5786,7 @@
   inherits: aten::mul.Scalar
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Float, Int, Long, Short]
+    T1: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T2: [Bool, Float, Int]
     T3: [Bool, Int]
     T4: [Bool, Long]
@@ -5543,6 +5798,7 @@
     T10: [Int]
     T11: [Long]
     T12: [Short]
+    T13: [UInt16]
   type_constraint:
   - self: T0
     other: T0
@@ -5577,20 +5833,23 @@
   - self: T12
     other: T3
     __ret_0: T12
+  - self: T13
+    other: T3
+    __ret_0: T13
 
 - func: aten::mul.Tensor
   namespace: edge
   inherits: aten::mul.Tensor
   type_alias:
-    T0: [Bool]
-    T1: [Bool, Byte]
-    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T4: [Bool, Byte, Char, Half, Int, Long, Short]
-    T5: [Bool, Byte, Char, Int, Long, Short]
-    T6: [Bool, Byte, Char, Int, Short]
-    T7: [Bool, Byte, Char, Short]
-    T8: [Bool, Char]
+    T0: [Bool, Byte]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
+    T4: [Bool, Byte, Char, Int, Long, Short]
+    T5: [Bool, Byte, Char, Int, Short]
+    T6: [Bool, Byte, Char, Short]
+    T7: [Bool, Char]
+    T8: [Bool, UInt16]
     T9: [Byte]
     T10: [Byte, Short]
     T11: [Char]
@@ -5603,34 +5862,34 @@
     T18: [Short]
   type_constraint:
   - self: T0
-    other: T0
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T9
-  - self: T2
+  - self: T1
     other: T13
     __ret_0: T13
-  - self: T3
+  - self: T2
     other: T14
     __ret_0: T14
-  - self: T4
+  - self: T3
     other: T15
     __ret_0: T15
-  - self: T5
+  - self: T4
     other: T17
     __ret_0: T17
-  - self: T6
+  - self: T5
     other: T16
     __ret_0: T16
-  - self: T7
+  - self: T6
     other: T18
     __ret_0: T18
-  - self: T8
+  - self: T7
     other: T11
     __ret_0: T11
+  - self: T8
+    other: T8
+    __ret_0: T8
   - self: T9
-    other: T1
+    other: T0
     __ret_0: T9
   - self: T9
     other: T12
@@ -5639,7 +5898,7 @@
     other: T11
     __ret_0: T18
   - self: T11
-    other: T8
+    other: T7
     __ret_0: T11
   - self: T11
     other: T10
@@ -5648,22 +5907,22 @@
     other: T9
     __ret_0: T18
   - self: T13
-    other: T2
+    other: T1
     __ret_0: T13
   - self: T14
-    other: T3
+    other: T2
     __ret_0: T14
   - self: T15
-    other: T4
+    other: T3
     __ret_0: T15
   - self: T16
-    other: T6
+    other: T5
     __ret_0: T16
   - self: T17
-    other: T5
+    other: T4
     __ret_0: T17
   - self: T18
-    other: T7
+    other: T6
     __ret_0: T18
 
 - func: aten::native_layer_norm
@@ -5684,7 +5943,7 @@
   inherits: aten::ne.Scalar
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Bool, Float, Int]
     T3: [Byte]
     T4: [Char]
@@ -5694,6 +5953,7 @@
     T8: [Int]
     T9: [Long]
     T10: [Short]
+    T11: [UInt16]
   type_constraint:
   - self: T0
     other: T2
@@ -5731,6 +5991,9 @@
   - self: T10
     other: T2
     __ret_0: T0
+  - self: T11
+    other: T2
+    __ret_0: T0
 
 - func: aten::ne.Tensor
   namespace: edge
@@ -5738,14 +6001,17 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte]
-    T3: [Char]
-    T4: [Double]
-    T5: [Float]
-    T6: [Half]
-    T7: [Int]
-    T8: [Long]
-    T9: [Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte]
+    T4: [Char]
+    T5: [Double]
+    T6: [Double, Float, Half, UInt16]
+    T7: [Float]
+    T8: [Half]
+    T9: [Int]
+    T10: [Long]
+    T11: [Short]
+    T12: [UInt16]
   type_constraint:
   - self: T0
     other: T1
@@ -5754,31 +6020,28 @@
     other: T0
     __ret_0: T0
   - self: T1
-    other: T2
-    __ret_0: T0
-  - self: T1
     other: T3
     __ret_0: T0
   - self: T1
     other: T4
     __ret_0: T0
   - self: T1
-    other: T5
-    __ret_0: T0
-  - self: T1
-    other: T6
-    __ret_0: T0
-  - self: T1
-    other: T7
-    __ret_0: T0
-  - self: T1
-    other: T8
-    __ret_0: T0
-  - self: T1
     other: T9
     __ret_0: T0
+  - self: T1
+    other: T10
+    __ret_0: T0
+  - self: T1
+    other: T11
+    __ret_0: T0
   - self: T2
-    other: T1
+    other: T5
+    __ret_0: T0
+  - self: T2
+    other: T7
+    __ret_0: T0
+  - self: T2
+    other: T8
     __ret_0: T0
   - self: T3
     other: T1
@@ -5787,19 +6050,28 @@
     other: T1
     __ret_0: T0
   - self: T5
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T6
-    other: T1
+    other: T12
     __ret_0: T0
   - self: T7
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T8
-    other: T1
+    other: T2
     __ret_0: T0
   - self: T9
     other: T1
+    __ret_0: T0
+  - self: T10
+    other: T1
+    __ret_0: T0
+  - self: T11
+    other: T1
+    __ret_0: T0
+  - self: T12
+    other: T6
     __ret_0: T0
 
 - func: aten::neg
@@ -5825,7 +6097,7 @@
   namespace: edge
   inherits: aten::ones
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - dtype: T0
     __ret_0: T0
@@ -5834,7 +6106,7 @@
   namespace: edge
   inherits: aten::permute_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -5853,7 +6125,7 @@
   inherits: aten::pow.Tensor_Scalar
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Float, Int, Long, Short]
+    T1: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T2: [Bool, Float, Int]
     T3: [Bool, Int]
     T4: [Bool, Long]
@@ -5865,6 +6137,7 @@
     T10: [Int]
     T11: [Long]
     T12: [Short]
+    T13: [UInt16]
   type_constraint:
   - self: T0
     exponent: T0
@@ -5899,15 +6172,18 @@
   - self: T12
     exponent: T3
     __ret_0: T12
+  - self: T13
+    exponent: T0
+    __ret_0: T13
 
 - func: aten::pow.Tensor_Tensor
   namespace: edge
   inherits: aten::pow.Tensor_Tensor
   type_alias:
     T0: [Bool, Byte]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T4: [Bool, Byte, Char, Int, Long, Short]
     T5: [Bool, Byte, Char, Int, Short]
     T6: [Bool, Byte, Char, Short]
@@ -5988,7 +6264,7 @@
   namespace: edge
   inherits: aten::reciprocal
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -6010,7 +6286,7 @@
   namespace: edge
   inherits: aten::remainder.Scalar
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Bool, Float, Int]
     T2: [Bool, Int]
     T3: [Bool, Long]
@@ -6059,9 +6335,9 @@
   inherits: aten::remainder.Tensor
   type_alias:
     T0: [Bool, Byte]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T2: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T4: [Bool, Byte, Char, Int, Long, Short]
     T5: [Bool, Byte, Char, Int, Short]
     T6: [Bool, Byte, Char, Short]
@@ -6142,7 +6418,7 @@
   namespace: edge
   inherits: aten::repeat
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6151,7 +6427,7 @@
   namespace: edge
   inherits: aten::round
   type_alias:
-    T0: [Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6160,7 +6436,7 @@
   namespace: edge
   inherits: aten::rsqrt
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -6174,7 +6450,7 @@
   inherits: aten::rsub.Scalar
   type_alias:
     T0: [Byte]
-    T1: [Byte, Char, Float, Int, Long, Short]
+    T1: [Byte, Char, Float, Int, Long, Short, UInt16]
     T2: [Char]
     T3: [Double]
     T4: [Float]
@@ -6183,6 +6459,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     other: T4
@@ -6280,6 +6557,10 @@
     other: T7
     alpha: T7
     __ret_0: T9
+  - self: T10
+    other: T4
+    alpha: T5
+    __ret_0: T4
 
 - func: aten::scalar_tensor
   namespace: edge
@@ -6295,6 +6576,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - s: T1
     dtype: T0
@@ -6323,6 +6605,9 @@
   - s: T1
     dtype: T9
     __ret_0: T9
+  - s: T1
+    dtype: T10
+    __ret_0: T10
 
 - func: aten::scatter_add
   namespace: edge
@@ -6379,7 +6664,7 @@
   namespace: edge
   inherits: aten::select_copy.int
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6389,7 +6674,7 @@
   inherits: aten::select_scatter
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Byte]
     T3: [Char]
     T4: [Double]
@@ -6398,6 +6683,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     src: T1
@@ -6426,12 +6712,15 @@
   - self: T9
     src: T1
     __ret_0: T9
+  - self: T10
+    src: T1
+    __ret_0: T10
 
 - func: aten::sigmoid
   namespace: edge
   inherits: aten::sigmoid
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -6453,7 +6742,7 @@
   namespace: edge
   inherits: aten::sin
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -6466,7 +6755,7 @@
   namespace: edge
   inherits: aten::sinh
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -6479,7 +6768,7 @@
   namespace: edge
   inherits: aten::slice_copy.Tensor
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6489,7 +6778,7 @@
   inherits: aten::slice_scatter
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Byte]
     T3: [Char]
     T4: [Double]
@@ -6498,6 +6787,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     src: T1
@@ -6526,12 +6816,15 @@
   - self: T9
     src: T1
     __ret_0: T9
+  - self: T10
+    src: T1
+    __ret_0: T10
 
 - func: aten::split_copy.Tensor
   namespace: edge
   inherits: aten::split_copy.Tensor
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6540,7 +6833,7 @@
   namespace: edge
   inherits: aten::split_with_sizes_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6549,7 +6842,7 @@
   namespace: edge
   inherits: aten::sqrt
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -6562,7 +6855,7 @@
   namespace: edge
   inherits: aten::squeeze_copy.dim
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6571,7 +6864,7 @@
   namespace: edge
   inherits: aten::squeeze_copy.dims
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6580,7 +6873,7 @@
   namespace: edge
   inherits: aten::stack
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - tensors: T0
     __ret_0: T0
@@ -6590,7 +6883,7 @@
   inherits: aten::sub.Scalar
   type_alias:
     T0: [Byte]
-    T1: [Byte, Char, Float, Int, Long, Short]
+    T1: [Byte, Char, Float, Int, Long, Short, UInt16]
     T2: [Char]
     T3: [Double]
     T4: [Float]
@@ -6599,6 +6892,7 @@
     T7: [Int]
     T8: [Long]
     T9: [Short]
+    T10: [UInt16]
   type_constraint:
   - self: T0
     other: T4
@@ -6696,15 +6990,19 @@
     other: T7
     alpha: T7
     __ret_0: T9
+  - self: T10
+    other: T4
+    alpha: T5
+    __ret_0: T4
 
 - func: aten::sub.Tensor
   namespace: edge
   inherits: aten::sub.Tensor
   type_alias:
     T0: [Byte]
-    T1: [Byte, Char, Double, Float, Half, Int, Long, Short]
-    T2: [Byte, Char, Float, Half, Int, Long, Short]
-    T3: [Byte, Char, Half, Int, Long, Short]
+    T1: [Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T2: [Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T3: [Byte, Char, Half, Int, Long, Short, UInt16]
     T4: [Byte, Char, Int, Long, Short]
     T5: [Byte, Char, Int, Short]
     T6: [Byte, Char, Short]
@@ -6718,6 +7016,7 @@
     T14: [Int]
     T15: [Long]
     T16: [Short]
+    T17: [UInt16]
   type_constraint:
   - self: T0
     other: T0
@@ -6843,6 +7142,10 @@
     other: T16
     alpha: T12
     __ret_0: T10
+  - self: T10
+    other: T17
+    alpha: T12
+    __ret_0: T10
   - self: T11
     other: T0
     alpha: T12
@@ -6883,6 +7186,10 @@
     other: T16
     alpha: T12
     __ret_0: T11
+  - self: T11
+    other: T17
+    alpha: T12
+    __ret_0: T11
   - self: T13
     other: T0
     alpha: T12
@@ -6921,6 +7228,10 @@
     __ret_0: T13
   - self: T13
     other: T16
+    alpha: T12
+    __ret_0: T13
+  - self: T13
+    other: T17
     alpha: T12
     __ret_0: T13
   - self: T14
@@ -6971,13 +7282,25 @@
     other: T13
     alpha: T12
     __ret_0: T13
+  - self: T17
+    other: T10
+    alpha: T12
+    __ret_0: T10
+  - self: T17
+    other: T11
+    alpha: T12
+    __ret_0: T11
+  - self: T17
+    other: T13
+    alpha: T12
+    __ret_0: T13
 
 - func: aten::sum.dim_IntList
   namespace: edge
   inherits: aten::sum.dim_IntList
   type_alias:
     T0: [Bool]
-    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T1: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
     T2: [Byte]
     T3: [Char]
     T4: [Double]
@@ -7019,7 +7342,7 @@
   namespace: edge
   inherits: aten::t_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7028,7 +7351,7 @@
   namespace: edge
   inherits: aten::tan
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -7041,7 +7364,7 @@
   namespace: edge
   inherits: aten::tanh
   type_alias:
-    T0: [Bool, Byte, Char, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Float, Int, Long, Short, UInt16]
     T1: [Double, Half]
     T2: [Float]
   type_constraint:
@@ -7054,7 +7377,7 @@
   namespace: edge
   inherits: aten::transpose_copy.int
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7072,7 +7395,7 @@
   namespace: edge
   inherits: aten::unbind_copy.int
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7081,7 +7404,7 @@
   namespace: edge
   inherits: aten::unsqueeze_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7099,7 +7422,7 @@
   namespace: edge
   inherits: aten::view_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7110,9 +7433,9 @@
   type_alias:
     T0: [Bool]
     T1: [Bool, Byte]
-    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
-    T3: [Bool, Byte, Char, Float, Half, Int, Long, Short]
-    T4: [Bool, Byte, Char, Half, Int, Long, Short]
+    T2: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
+    T3: [Bool, Byte, Char, Float, Half, Int, Long, Short, UInt16]
+    T4: [Bool, Byte, Char, Half, Int, Long, Short, UInt16]
     T5: [Bool, Byte, Char, Int, Long, Short]
     T6: [Bool, Byte, Char, Int, Short]
     T7: [Bool, Byte, Char, Short]
@@ -7127,6 +7450,7 @@
     T16: [Int]
     T17: [Long]
     T18: [Short]
+    T19: [UInt16]
   type_constraint:
   - condition: T0
     self: T1
@@ -7353,6 +7677,10 @@
     other: T18
     __ret_0: T13
   - condition: T1
+    self: T13
+    other: T19
+    __ret_0: T13
+  - condition: T1
     self: T14
     other: T0
     __ret_0: T14
@@ -7389,6 +7717,10 @@
     other: T18
     __ret_0: T14
   - condition: T1
+    self: T14
+    other: T19
+    __ret_0: T14
+  - condition: T1
     self: T15
     other: T0
     __ret_0: T15
@@ -7423,6 +7755,10 @@
   - condition: T1
     self: T15
     other: T18
+    __ret_0: T15
+  - condition: T1
+    self: T15
+    other: T19
     __ret_0: T15
   - condition: T1
     self: T16
@@ -7532,6 +7868,18 @@
     self: T18
     other: T18
     __ret_0: T18
+  - condition: T1
+    self: T19
+    other: T13
+    __ret_0: T13
+  - condition: T1
+    self: T19
+    other: T14
+    __ret_0: T14
+  - condition: T1
+    self: T19
+    other: T15
+    __ret_0: T15
   - condition: T9
     self: T1
     other: T9
@@ -7617,7 +7965,7 @@
   namespace: edge
   inherits: aten::zeros
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Half, Int, Long, Short, UInt16]
   type_constraint:
   - dtype: T0
     __ret_0: T0

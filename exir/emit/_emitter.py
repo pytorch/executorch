@@ -122,6 +122,8 @@ class _ProgramState:
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
     # and should be copied to Program.backend_delegate_data.
     backend_delegate_data: List[BackendDelegateInlineData] = field(default_factory=list)
+    # Delegate cache that is used across all entry points. Key is the hash of the delegated payload.
+    backend_delegate_data_cache: Dict[str, int] = field(default_factory=dict)
 
     # Constants are optionally stored in external files.
     # Aggregate unique external constants into one buffer.
@@ -144,7 +146,8 @@ class _EmitterState:
     operators: List[Operator]
     delegates: List[BackendDelegate]
     operator_cache: Dict[Tuple[str, str], int]
-    delegate_cache: Dict[bytes, int]
+    # delegate_cache: the key is hash(delegated_payload) and the value is the index in delegates
+    delegate_cache: Dict[str, int]
     emit_stacktrace: bool
 
     spec2id_dict: Dict[TensorSpec, int] = field(default_factory=dict)
@@ -1073,8 +1076,8 @@ class _Emitter(torch.fx.Interpreter):
         """Emit the delegates inputs and outputs as specified by the schema, then emit the
         delegate's blob."""
         processed_bytes = lowered_module.processed_bytes
-
-        delegate_index = self.emitter_state.delegate_cache.get(processed_bytes)
+        hashed = hashlib.sha256(processed_bytes).hexdigest()
+        delegate_index = self.emitter_state.delegate_cache.get(hashed)
         delegate_ret = None
 
         if isinstance(self.node.meta["spec"], list):
@@ -1112,10 +1115,16 @@ class _Emitter(torch.fx.Interpreter):
         if delegate_index is None:
             # Allocate an entry for the data. TODO(T150113674): Reuse any duplicate entries if
             # present.
-            data_index: int = len(self.program_state.backend_delegate_data)
-            self.program_state.backend_delegate_data.append(
-                BackendDelegateInlineData(data=processed_bytes)
+            hashed = hashlib.sha256(processed_bytes).hexdigest()
+            data_index: Optional[int] = (
+                self.program_state.backend_delegate_data_cache.get(hashed)
             )
+            if data_index is None:
+                data_index = len(self.program_state.backend_delegate_data)
+                self.program_state.backend_delegate_data_cache[hashed] = data_index
+                self.program_state.backend_delegate_data.append(
+                    BackendDelegateInlineData(data=processed_bytes)
+                )
 
             backend_delegate = BackendDelegate(
                 id=lowered_module.backend_id,
@@ -1126,7 +1135,7 @@ class _Emitter(torch.fx.Interpreter):
             )
             delegate_index = len(self.emitter_state.delegate_cache)
             self.emitter_state.delegates.append(backend_delegate)
-            self.emitter_state.delegate_cache[processed_bytes] = delegate_index
+            self.emitter_state.delegate_cache[hashed] = delegate_index
 
         # TODO(angelayi) Will need to emit the kwargs too, in the correct order according to the
         # function's spec and with default arguments. This requires us to store the function's spec
