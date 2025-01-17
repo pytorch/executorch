@@ -36,7 +36,9 @@ typedef std::map<
           std::type_index,
           std::variant<
             std::vector<float>,
-            std::vector<double>>>
+            std::vector<double>,
+            std::vector<exec_aten::Half>,
+            std::vector<exec_aten::BFloat16>>>
         FloatingTypeToDataMap;
 
 typedef std::map<
@@ -381,9 +383,9 @@ TEST_F(OpToDimOrderCopyTest, NanInfSupported) {
       ScalarType::OUTPUT_DTYPE>(test_cases);
 
 #define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
-  ET_FORALL_FLOAT_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
+  ET_FORALL_FLOATHBF16_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 
 #undef TEST_ENTRY
 #undef TEST_KERNEL
@@ -413,6 +415,13 @@ TEST_F(OpToDimOrderCopyTest, HardcodeFloatConvertInt) {
       -0.30919688936285893988};
   // clang-format on
 
+  std::vector<exec_aten::Half> half_data;
+  std::vector<exec_aten::BFloat16> bf16_data;
+  for (auto d : double_data) {
+    half_data.emplace_back(d);
+    bf16_data.emplace_back(d);
+  }
+
   std::vector<int64_t> int64_data = {
       -1, -4, 2, -2, 3, 3, -3, -4, 3, 3, 0, 2, 0, -1, 0};
   std::vector<int32_t> int32_data = {
@@ -426,6 +435,8 @@ TEST_F(OpToDimOrderCopyTest, HardcodeFloatConvertInt) {
   FloatingTypeToDataMap floating_point_data;
   floating_point_data[typeid(float)] = float_data;
   floating_point_data[typeid(double)] = double_data;
+  floating_point_data[typeid(exec_aten::Half)] = half_data;
+  floating_point_data[typeid(exec_aten::BFloat16)] = bf16_data;
 
   // Gathering all int data together for better traversial
   IntTypeToDataMap int_data;
@@ -444,7 +455,7 @@ TEST_F(OpToDimOrderCopyTest, HardcodeFloatConvertInt) {
 #define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
   ET_FORALL_INT_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 }
 
 TEST_F(OpToDimOrderCopyTest, MismatchedSizesDie) {

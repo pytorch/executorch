@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -131,19 +131,6 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute(new_shape)
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
-
-
-def is_bias_node_for_quantized_conv(node):
-    consumer_node = list(node.users)[0]
-
-    if (
-        consumer_node.target == exir_ops.edge.aten.convolution.default
-        and consumer_node.args[2] == node
-        and consumer_node.meta["val"].dtype == torch.int8
-    ):
-        return True
-
-    return False
 
 
 def is_consumer_node_depthwise_conv2d(node):
