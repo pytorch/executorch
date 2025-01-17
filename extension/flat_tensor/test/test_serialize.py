@@ -8,6 +8,8 @@
 
 import unittest
 
+from typing import List
+
 from executorch.exir._serialize.data_serializer import (
     DataPayload,
     DataSerializer,
@@ -26,8 +28,6 @@ from executorch.extension.flat_tensor.serialize.serialize import (
     FlatTensorHeader,
     FlatTensorSerializer,
 )
-
-from typing import List
 
 # Test artifacts.
 TEST_TENSOR_BUFFER: List[bytes] = [b"\x11" * 4, b"\x22" * 32]
