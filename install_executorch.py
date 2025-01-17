@@ -43,7 +43,6 @@ def main(args):
 
     EXECUTORCH_BUILD_PYBIND = ""
     CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
-    CMAKE_BUILD_ARGS = os.getenv("CMAKE_BUILD_ARGS", "")
     use_pytorch_nightly = True
 
     parser = argparse.ArgumentParser()
@@ -116,7 +115,6 @@ def main(args):
     # Set environment variables
     os.environ["EXECUTORCH_BUILD_PYBIND"] = EXECUTORCH_BUILD_PYBIND
     os.environ["CMAKE_ARGS"] = CMAKE_ARGS
-    os.environ["CMAKE_BUILD_ARGS"] = CMAKE_BUILD_ARGS
 
     # Run the pip install command
     subprocess.run(
