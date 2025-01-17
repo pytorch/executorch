@@ -6,9 +6,11 @@
 
 import unittest
 
+import pytest
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 class TestMultipleOutputs(unittest.TestCase):
@@ -50,4 +52,47 @@ class TestMultipleOutputs(unittest.TestCase):
             .to_edge_transform_and_lower()
             .to_executorch()
             .run_method_and_compare_outputs(inputs=inputs, qtol=1.0)
+        )
+
+    def _test_ethosu_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        test_data: tuple[torch.Tensor],
+        compile_spec: CompileSpec,
+    ):
+        tester = (
+            ArmTester(
+                module,
+                example_inputs=test_data,
+                compile_spec=compile_spec,
+            )
+            .quantize()
+            .export()
+            .to_edge_transform_and_lower()
+            .to_executorch()
+            .serialize()
+        )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+
+    @pytest.mark.corstone_fvp
+    def test_u85_BI(self):
+        module = self.MultipleOutputsModule()
+        test_data = module.get_inputs()
+        self._test_ethosu_BI_pipeline(
+            module,
+            test_data,
+            common.get_u85_compile_spec(),
+        )
+
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    # TODO MLETORCH-598
+    def test_u55_BI(self):
+        module = self.MultipleOutputsModule()
+        test_data = module.get_inputs()
+        self._test_ethosu_BI_pipeline(
+            module,
+            test_data,
+            common.get_u55_compile_spec(),
         )

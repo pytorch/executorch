@@ -27,6 +27,9 @@ from executorch.exir import (
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import (
+    ExecutorBackendPartitioner,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
@@ -63,7 +66,7 @@ from executorch.runtime import Runtime
 from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import Dim, export
+from torch.export import Dim, export, export_for_training
 
 
 class WrapperModule(torch.nn.Module):
@@ -1679,3 +1682,54 @@ class TestEmit(unittest.TestCase):
         ]
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
+
+    def test_delegate_deduplicate(self) -> None:
+        class SharedModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        class Module1(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        class Module2(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        shared_module = SharedModule()
+        module_1 = Module1(shared_module)
+        module_2 = Module2(shared_module)
+        example_inputs = (torch.randn(2, 2),)
+        module_1(*example_inputs)
+        module_2(*example_inputs)
+
+        ep1 = export_for_training(module_1, example_inputs)
+        ep2 = export_for_training(module_2, example_inputs)
+
+        edge_program_manager = exir.to_edge(
+            {"forward1": ep1, "forward2": ep2},
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
+
+        edge_program_manager = edge_program_manager.to_backend(
+            ExecutorBackendPartitioner()
+        ).to_executorch()
+
+        # Check that there is only one delegate because two methods are exactly the same
+        self.assertEqual(
+            len(edge_program_manager.executorch_program.backend_delegate_data), 1
+        )
