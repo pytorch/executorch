@@ -24,6 +24,26 @@ from executorch.examples.models.llama.rope import (
 from torch import nn
 
 
+@torch.library.custom_op("coreml::sdpa", mutates_args=())
+def sdpa(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor
+) -> torch.Tensor:
+    """Same as F.scaled_dot_product_attention, but with custom op to avoid lowering during dialect conversion."""
+    return torch.ops.aten.scaled_dot_product_attention.default(
+        q, k, v, attn_mask=attn_mask
+    )
+
+
+@torch.library.register_fake("coreml::sdpa")
+def _(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor
+) -> torch.Tensor:
+    """Fake implementation with the right output shape, which is required for torch.compile/export/fx tracing."""
+    expected_shape = list(q.shape)
+    expected_shape[-1] = v.shape[-1]
+    return q.new_empty(expected_shape)
+
+
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         """
@@ -185,7 +205,7 @@ class Rope(torch.nn.Module):
     ):
         return self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
 
-    def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
+    def get_freqs(self, input_pos: Optional[int], seq_len: int):
         """
         Get the precomputed frequencies for the given input position and sequence length.
 
@@ -203,7 +223,7 @@ class Rope(torch.nn.Module):
 
             if self.params.enable_dynamic_shape:
                 # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-                input_pos_item = input_pos[-1].item()
+                input_pos_item = input_pos
                 torch._check_is_size(input_pos_item)
                 torch._check(input_pos_item < self.params.max_seq_len)
                 # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
@@ -251,11 +271,11 @@ class KVCache(nn.Module):
         )
 
     def update(
-        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+        self, input_pos: int, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D]
         if self.enable_dynamic_shape:
-            start_pos = input_pos[0].item()
+            start_pos = input_pos
             torch._check_is_size(start_pos)
             torch._check(start_pos < self.max_seq_length)
             dim_to_slice = 2
@@ -301,7 +321,7 @@ class SDPA(nn.Module):
 
     def forward(
         self,
-        input_pos: torch.Tensor,
+        input_pos: int,
         q: torch.Tensor,  # Already have rotary embeddings. (bs, n_local_heads, seqlen, head_dim)
         k: torch.Tensor,  # Already have rotary embeddings. (bs, n_local_kv_heads, seqlen, head_dim)
         v: torch.Tensor,  # (bs, n_local_kv_heads, seqlen, head_dim)
@@ -310,21 +330,23 @@ class SDPA(nn.Module):
         mask: torch.Tensor,
     ) -> torch.Tensor:
         if self.enable_dynamic_shape:
-            start_pos = input_pos[-1].item()
-            torch._check_is_size(start_pos)
-            torch._check(start_pos < self.max_seq_len)
-            seq_length = q.size(2)
-            # pyre-ignore: Incompatible parameter type [6]
-            attn_mask = mask.narrow(0, start_pos, seq_length)
+            # start_pos = input_pos
+            # torch._check_is_size(start_pos)
+            # torch._check(start_pos < self.max_seq_len)
+            # seq_length = q.size(2)
+            # # pyre-ignore: Incompatible parameter type [6]
+            # attn_mask = mask.narrow(0, start_pos, seq_length)
+            attn_mask = mask
         else:
             attn_mask = mask[None, None, input_pos]
 
-        # TODO(kimishpatel): This should not be necessary because scaled_dot_product_attention
-        # can natively support GQA now. But needs enable_gqa=True
-        k = k.repeat_interleave(self.n_rep, dim=1)
-        v = v.repeat_interleave(self.n_rep, dim=1)
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=0.0)
+        if self.n_rep > 1:
+            # TODO(kimishpatel): This should not be necessary because scaled_dot_product_attention
+            # can natively support GQA now. But needs enable_gqa=True
+            k = k.repeat_interleave(self.n_rep, dim=1)
+            v = v.repeat_interleave(self.n_rep, dim=1)
 
+        y = torch.ops.coreml.sdpa(q, k, v, attn_mask)
         return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
 
@@ -352,6 +374,7 @@ class Attention(nn.Module):
 
         self.rope = rope
 
+        """
         causal_mask = torch.tril(
             torch.ones(
                 self.max_seq_len,
@@ -361,6 +384,7 @@ class Attention(nn.Module):
             )
         )
         self.register_buffer("mask", causal_mask, persistent=False)
+        """
 
         if self.use_kv_cache:
             self.kv_cache = KVCache(
@@ -383,7 +407,8 @@ class Attention(nn.Module):
         x: torch.Tensor,
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
-        input_pos: Optional[torch.Tensor] = None,
+        input_pos: Optional[int],
+        attn_mask: Optional[torch.Tensor],
     ):
         bsz, seqlen, _ = x.shape
 
@@ -404,7 +429,7 @@ class Attention(nn.Module):
         if self.use_kv_cache:
             assert input_pos is not None
             k, v = self.kv_cache.update(input_pos, k, v)
-            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
+            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
             return self.wo(output)
 
         # grouped multiquery attention: expand out keys and values
@@ -413,9 +438,12 @@ class Attention(nn.Module):
 
         assert hasattr(self, "mask")
 
-        mask = self.mask[:seqlen, :seqlen]
+        # mask = self.mask[:seqlen, :seqlen]
 
-        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+        # output = F.scaled_dot_product_attention(
+        #     q, k, v, attn_mask=attn_mask, dropout_p=0.0
+        # )
+        output = torch.ops.coreml.sdpa(q, k, v, attn_mask)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
@@ -498,9 +526,13 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
+    def forward(self, x, freqs_cos, freqs_sin, input_pos, attn_mask):  # x: 1xN
         h = self.attention.forward(
-            self.attention_norm(x), freqs_cos, freqs_sin, input_pos
+            self.attention_norm(x),
+            freqs_cos,
+            freqs_sin,
+            input_pos,
+            attn_mask,
         )
 
         h = x + h
@@ -521,13 +553,22 @@ class Transformer(nn.Module):
         self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
         self.rope = Rope(params)
         self.layers = torch.nn.ModuleList()
+        self.max_seq_len = params.max_seq_len
+        causal_mask = torch.tril(
+            torch.ones(
+                self.max_seq_len,
+                self.max_seq_len,
+                dtype=torch.float16,
+                device="cpu",
+            )
+        )
+        self.register_buffer("mask", causal_mask, persistent=False)
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params, self.rope))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
         self.generate_full_logits = params.generate_full_logits
-        self.max_seq_len = params.max_seq_len
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
 
@@ -546,15 +587,15 @@ class Transformer(nn.Module):
         if tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
         seqlen = h.shape[1]
-        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
+        input_pos_item = input_pos[-1].item()
+        torch._check_is_size(input_pos_item)
+        torch._check(input_pos_item + seqlen <= self.max_seq_len)
+
+        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos_item, seqlen)
+        attn_mask = self.mask.narrow(0, input_pos_item, seqlen)
 
         for layer in self.layers:
-            h = layer(
-                h,
-                freqs_cos,
-                freqs_sin,
-                input_pos,
-            )
+            h = layer(h, freqs_cos, freqs_sin, input_pos_item, attn_mask)
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
