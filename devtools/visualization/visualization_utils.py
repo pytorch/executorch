@@ -8,8 +8,15 @@ import subprocess
 import time
 
 from executorch.exir import EdgeProgramManager, ExecutorchProgramManager
-from model_explorer import config, consts, visualize_from_config  # type: ignore
 from torch.export.exported_program import ExportedProgram
+
+try:
+    from model_explorer import config, consts, visualize_from_config  # type: ignore
+except ImportError:
+    print(
+        "Error: 'model_explorer' is not installed. Install using devtools/install_requirement.sh"
+    )
+    raise
 
 
 class SingletonModelExplorerServer:
