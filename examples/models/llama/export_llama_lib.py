@@ -238,6 +238,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
+        "--decode_kv_cache_as_io",
+        default=False,
+        action="store_true",
+        help="Whether decode models accepts KV cache as IO",
+    )
+    parser.add_argument(
+        "--use_additive_kv_cache_update",
+        default=False,
+        action="store_true",
+        help="Whether use additive KV cache updates",
+    )
+    parser.add_argument(
         "--quantize_kv_cache",
         default=False,
         action="store_true",
