@@ -13,6 +13,7 @@
 #include "api/NeuronAdapter.h"
 
 #include "executorch/runtime/core/error.h"
+#include "executorch/runtime/core/exec_aten/util/dim_order_util.h"
 
 #include <algorithm>
 #include <memory>
@@ -111,6 +112,14 @@ Error NeuronExecuTorchDelegate::execute(
   size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
 
   for (int i = 0; i < inputCount; i++) {
+    auto tensor_in = args[i]->toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        runtime::is_contiguous_dim_order(
+            tensor_in.dim_order().data(), tensor_in.dim()),
+        Internal,
+        "Expecting default dim_order but got a non default dim_order tensor for external input %u",
+        i);
+
     auto data_ptr = args[i]->toTensor().data_ptr();
     auto data_size = args[i]->toTensor().nbytes();
     if (IsCached</*isInput=*/true>(i, data_ptr)) {
