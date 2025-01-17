@@ -109,6 +109,7 @@ runtime.python_library(
         "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
+        "//executorch/exir/passes:init_mutable_pass",
         "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
         "//executorch/extension/llm/export:export_lib",
         # one definition has to be included in the user of the libarary

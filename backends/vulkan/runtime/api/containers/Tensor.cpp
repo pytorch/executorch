@@ -478,13 +478,6 @@ vTensor::vTensor(
   if (storage_type != utils::kBuffer) {
     set_logical_limits(storage_.image_extents_);
   }
-
-  if (dtype == vkapi::kHalf) {
-    VK_CHECK_COND(
-        api::context()->adapter_ptr()->supports_16bit_storage_buffers(),
-        "Half dtype is only available if the physical device supports float16 "
-        "storage buffers!");
-  }
 }
 
 // NOLINTNEXTLINE

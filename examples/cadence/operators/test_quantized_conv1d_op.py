@@ -8,6 +8,8 @@
 
 import logging
 
+from typing import cast, Sequence
+
 import torch
 
 from executorch.backends.cadence.aot.ops_registrations import *  # noqa
@@ -53,6 +55,6 @@ if __name__ == "__main__":
     model = QuantizedConv()
     model.eval()
 
-    example_inputs = (torch.randn(shape),)
+    example_inputs = (torch.randn(cast(Sequence[int], shape)),)
 
     export_model(model, example_inputs)

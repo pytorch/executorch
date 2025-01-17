@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,16 +12,22 @@ import subprocess
 import tempfile
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
 import tosa_reference_model
+from executorch.backends.arm.arm_backend import get_tosa_version, is_tosa
 
 from executorch.backends.arm.test.conftest import is_option_enabled
+from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 
+from packaging.version import Version
 from torch.export import ExportedProgram
 from torch.fx.node import Node
+
+from torch.overrides import TorchFunctionMode
 from tosa import TosaGraph
 
 logger = logging.getLogger(__name__)
@@ -109,51 +115,82 @@ def _get_input_quantization_params(
     return quant_params
 
 
-def _get_output_node(program: ExportedProgram) -> Node:
+def _get_output_nodes(program: ExportedProgram) -> list[Node]:
     """
     Get output node to this model.
 
     Args:
-        program (ExportedProgram): The program to get output node from.
+        program (ExportedProgram): The program to get the output nodes from.
     Returns:
-        The node that is the output of 'program'.
+        The nodes that are the outputs of the 'program'.
     """
-
+    output_nodes = []
     for node in program.graph.nodes:
         if node.op == "output":
-            return node
-    raise RuntimeError("No output node found.")
+            for output in node.args[0]:
+                output_nodes.append(output)
+    if len(output_nodes) == 0:
+        raise RuntimeError("No output nodes found.")
+    else:
+        return output_nodes
 
 
 def _get_output_quantization_params(
-    program: ExportedProgram, output_node: Node
-) -> Optional[QuantizationParams]:
+    output_nodes: list[Node],
+) -> List[QuantizationParams]:
     """
     Get output QuantizationParams from a program.
     Args:
-        program (ExportedProgram): The program to get output quantization parameters from.
+        output_nodes (list(Node)): A list of output nodes to get output quantization parameters from.
     Returns:
         QuantizationParams: The found quantization parameters.
     Raises:
         RuntimeError if no output quantization parameters are found.
     """
-
-    quant_params = None
-    for node in program.graph.nodes:
-        if (
-            node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default
-            and node == output_node.args[0][0]
-        ):
-            quant_params = QuantizationParams(
-                node_name=node.args[0].name,
-                scale=node.args[1],
-                zp=node.args[2],
-                qmin=node.args[3],
-                qmax=node.args[4],
-                dtype=node.args[5],
+    quant_params = []
+    for node in output_nodes:
+        if node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
+            quant_params.append(
+                QuantizationParams(
+                    node_name=node.args[0].name,
+                    scale=node.args[1],
+                    zp=node.args[2],
+                    qmin=node.args[3],
+                    qmax=node.args[4],
+                    dtype=node.args[5],
+                )
             )
-            break  # break early, there's only one output node
+    if len(quant_params) == 0:
+        raise RuntimeError("No Quantization parameters not found in exported model.")
     return quant_params
+
+
+class TosaReferenceModelDispatch(TorchFunctionMode):
+    """A context manager for executing call_delegate nodes using the reference model"""
+
+    def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
+        tosa_buffer = lowered_backend_module.processed_bytes
+        compile_specs = lowered_backend_module.compile_specs
+        if not is_tosa(compile_specs):
+            raise RuntimeError(
+                "Model needs to be compiled to tosa to run reference model."
+            )
+        tosa_version = get_tosa_version(compile_specs)
+
+        return run_tosa_graph_static(tosa_buffer, tosa_version, inputs)
+
+    def __torch_function__(self, func, types, args=..., kwargs=None):
+        if isinstance(func, torch._higher_order_ops.executorch_call_delegate.ExecutorchCallDelegate):  # type: ignore
+            lowered_backend_module = cast(LoweredBackendModule, args[0])
+            if lowered_backend_module.backend_id == "ArmBackend":
+                return self._tosa_dispatch(lowered_backend_module, args[1:])
+            else:
+                logger.warning(
+                    f"Ran model with TosaReferenceModelDispatch but call_delegate with {lowered_backend_module.backend_id=} != 'ArmBackend'."
+                )
+
+        kwargs = kwargs or {}
+        return func(*args, **kwargs)
 
 
 """
@@ -177,7 +214,7 @@ class RunnerUtil:
         self.input_names: list[str] = None
         self.output_name: str = None
         self.qp_input: list[QuantizationParams] = None
-        self.qp_output: QuantizationParams = None
+        self.qp_output: list[QuantizationParams] = None
         self.timeout = 480
         self.target_board: str = None
 
@@ -192,19 +229,17 @@ class RunnerUtil:
     ):
 
         self.input_names = _get_input_names(edge_program)
-        self.output_node = _get_output_node(exported_program)
-        self.output_name = self.output_node.name
+        self.output_nodes = _get_output_nodes(exported_program)
+
         self.is_quantized = is_quantized
         self.target_board = target_board
 
         if is_quantized:
             self.qp_input = _get_input_quantization_params(exported_program)
-            self.qp_output = _get_output_quantization_params(
-                exported_program, self.output_node
-            )
+            self.qp_output = _get_output_quantization_params(self.output_nodes)
         else:
             self.qp_input = [None] * len(self.input_names)
-            self.qp_output = None
+            self.qp_output = [None] * len(self.output_nodes)
 
         self._has_init_run = True
 
@@ -231,7 +266,7 @@ class RunnerUtil:
             save_bytes(self.intermediate_path, data, False, input_name, quant_param)
 
         out_path = os.path.join(self.intermediate_path, "out")
-        out_path_with_suffix = out_path + "-0.bin"
+
         input_paths = []
         for name in self.input_names:
             input_paths.append(
@@ -247,6 +282,7 @@ class RunnerUtil:
         ), f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
 
         cmd_line = f"executor_runner -m {pte_path} -o {out_path}"
+
         for input_path in input_paths:
             cmd_line += f" -i {input_path}"
 
@@ -328,11 +364,14 @@ class RunnerUtil:
             raise RuntimeError(
                 f"Corstone simulation failed:\ncmd: {command_args[self.target_board]}\n, log: \n {result_stdout}\n{result.stderr.decode()}"
             )
-
-        tosa_ref_output = np.fromfile(out_path_with_suffix, dtype=np.float32)
-        output_shape = self.output_node.args[0][0].meta["val"].shape
-        tosa_ref_output = torch.from_numpy(tosa_ref_output).reshape(output_shape)
-        return tosa_ref_output
+        output_np = []
+        for i, node in enumerate(self.output_nodes):
+            tosa_ref_output = np.fromfile(
+                os.path.join(self.intermediate_path, f"out-{i}.bin"), dtype=np.float32
+            )
+            output_shape = node.meta["val"].shape
+            output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
+        return tuple(output_np)
 
     def run_tosa_graph(
         self, graph: TosaGraph, inputs: list[np.ndarray] | list[torch.Tensor]
@@ -664,3 +703,48 @@ def _tosa_refmodel_loglevel(loglevel: int) -> str:
     }
     clamped_logging_level = max(min(loglevel // 10 * 10, 50), 0)
     return loglevel_map[clamped_logging_level]
+
+
+def run_tosa_graph_static(
+    graph: TosaGraph,
+    tosa_version: TosaSpecification,
+    inputs: list[torch.Tensor],
+) -> list[torch.Tensor]:
+    """Runs the TOSA reference model with inputs and returns the result."""
+    inputs_np = [input.numpy() for input in inputs]
+    transpose_data_format(inputs_np, to="NHWC")
+
+    tosa_release = tosa_version.version
+
+    if tosa_release > Version("0.80"):
+        logger.warning("The reference model is only tested for TOSA v0.80")
+
+    # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
+    tosa_profile = 1 if tosa_version.support_float() else 0
+    debug_mode = "ALL" if logger.level <= logging.DEBUG else None
+    outputs_np, status = tosa_reference_model.run(
+        graph,
+        inputs_np,
+        verbosity=_tosa_refmodel_loglevel(logger.level),
+        tosa_profile=tosa_profile,
+        initialize_variable_tensor_from_numpy=1,  # True
+        debug_mode=debug_mode,
+    )
+
+    assert (
+        status == tosa_reference_model.GraphStatus.TOSA_VALID
+    ), "Non-valid TOSA given to reference model."
+
+    transpose_data_format(outputs_np, to="NCHW")
+    return [torch.from_numpy(output) for output in outputs_np]
+
+
+def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
+    if to == "NCHW":
+        dim_order = (0, 3, 1, 2)
+    if to == "NHWC":
+        dim_order = (0, 2, 3, 1)
+    for i in range(len(data)):
+        if hasattr(data[i], "shape") and len(data[i].shape) == 4:
+            # Copy is needed to force actual data conversion, not setting stride.
+            data[i] = np.transpose(data[i], dim_order).copy()

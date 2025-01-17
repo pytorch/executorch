@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -201,6 +201,101 @@ conv2d_5x5_1x3x14x15_st3_pd1 = Conv2d(
     batches=1,
 )
 
+conv2d_7x7_1x3x16x16_st2_pd1_dl2 = Conv2d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=(7, 7),
+    stride=2,
+    padding=1,
+    dilation=2,
+    width=16,
+    height=16,
+    batches=1,
+)
+
+conv2d_7x7_1x3x15x15_st1_pd0_dl1 = Conv2d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=(7, 7),
+    stride=1,
+    padding=0,
+    dilation=1,
+    width=15,
+    height=15,
+    batches=1,
+)
+
+conv2d_5x5_1x3x14x14_st5_pd0_dl1 = Conv2d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=(5, 5),
+    stride=5,
+    padding=0,
+    dilation=1,
+    width=14,
+    height=14,
+    batches=1,
+)
+
+conv2d_5x5_1x3x9x9_st5_pd0_dl1 = Conv2d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=(5, 5),
+    stride=5,
+    padding=0,
+    dilation=1,
+    width=9,
+    height=9,
+    batches=1,
+)
+
+conv2d_3x3_1x3x8x9_st3_pd0_dl1 = Conv2d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=(3, 3),
+    stride=3,
+    padding=0,
+    dilation=1,
+    width=8,
+    height=9,
+    batches=1,
+)
+
+conv2d_3x3_1x3x9x8_st3_pd0_dl1 = Conv2d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=(3, 3),
+    stride=3,
+    padding=0,
+    dilation=1,
+    width=8,
+    height=9,
+    batches=1,
+)
+
+conv2d_3x4_1x3x7x7_st3_pd0_dl1 = Conv2d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=(3, 4),
+    stride=3,
+    padding=0,
+    dilation=1,
+    width=7,
+    height=7,
+    batches=1,
+)
+
+conv2d_4x3_1x3x7x7_st3_pd0_dl1 = Conv2d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=(4, 3),
+    stride=3,
+    padding=0,
+    dilation=1,
+    width=7,
+    height=7,
+    batches=1,
+)
 
 two_conv2d_nobias = Conv2d(
     nbr_conv=2,
@@ -236,7 +331,15 @@ testsuite = [
     ("3x3_1x3x12x12_st2_pd1", conv2d_3x3_1x3x12x12_st2_pd1),
     ("1x1_1x2x128x128_st1", conv2d_1x1_1x2x128x128_st1),
     ("2x2_1x1x14x13_st2_needs_adjust_pass", conv2d_2x2_1x1x14x13_st2),
-    ("conv2d_5x5_1x3x14x15_st3_pd1_needs_adjust_pass", conv2d_5x5_1x3x14x15_st3_pd1),
+    ("5x5_1x3x14x15_st3_pd1_needs_adjust_pass", conv2d_5x5_1x3x14x15_st3_pd1),
+    ("7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass", conv2d_7x7_1x3x16x16_st2_pd1_dl2),
+    ("7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass", conv2d_7x7_1x3x15x15_st1_pd0_dl1),
+    ("5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass", conv2d_5x5_1x3x14x14_st5_pd0_dl1),
+    ("5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass", conv2d_5x5_1x3x9x9_st5_pd0_dl1),
+    ("3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass", conv2d_3x3_1x3x9x8_st3_pd0_dl1),
+    ("3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass", conv2d_3x3_1x3x8x9_st3_pd0_dl1),
+    ("3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass", conv2d_3x4_1x3x7x7_st3_pd0_dl1),
+    ("4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass", conv2d_4x3_1x3x7x7_st3_pd0_dl1),
     ("5x5_3x2x128x128_st1", conv2d_5x5_3x2x128x128_st1),
     ("3x3_1x3x224x224_st2_pd1", conv2d_3x3_1x3x224x224_st2_pd1),
     ("two_conv2d_nobias", two_conv2d_nobias),
@@ -255,7 +358,7 @@ class TestConv2D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
@@ -277,7 +380,7 @@ class TestConv2D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
@@ -330,7 +433,7 @@ class TestConv2D(unittest.TestCase):
     @pytest.mark.corstone_fvp
     def test_conv2d_u55_BI(self, test_name, model):
         self._test_conv2d_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             model,
             model.get_inputs(),
         )
@@ -339,7 +442,7 @@ class TestConv2D(unittest.TestCase):
     @pytest.mark.corstone_fvp
     def test_conv2d_u85_BI(self, test_name, model):
         self._test_conv2d_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             model,
             model.get_inputs(),
         )

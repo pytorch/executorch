@@ -294,6 +294,7 @@ include_patterns = [
     'build/**/*.py',
     'codegen/**/*.py',
     # 'devtools/**/*.py',
+    'devtools/visualization/**/*.py',
     'docs/**/*.py',
     # 'examples/**/*.py',
     # 'exir/**/*.py',
