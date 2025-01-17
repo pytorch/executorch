@@ -99,14 +99,16 @@ class QueryPool final {
 
   std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
   get_shader_timestamp_data();
-  std::string generate_string_report();
-  void print_results();
+  void print_results(const bool tabbed = false);
   unsigned long get_total_shader_ns(std::string kernel_name);
   unsigned long get_mean_shader_ns(std::string kernel_name);
 
   operator bool() const {
     return querypool_ != VK_NULL_HANDLE;
   }
+ private:
+  std::string generate_string_report();
+  std::string generate_tabbed_string_report();
 };
 
 } // namespace vkapi
