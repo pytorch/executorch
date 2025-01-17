@@ -174,7 +174,7 @@ class KVCacheTest(unittest.TestCase):
             ),
         )
         et_config = ExecutorchBackendConfig(
-            passes=[InitializedMutableBufferPass(["cache_pos"])],
+            passes=[InitializedMutableBufferPass(["kv_cache_pos"])],
         )
         et_program = edge_program.to_executorch(config=et_config)
 
@@ -198,7 +198,7 @@ class KVCacheTest(unittest.TestCase):
             ),
         )
         et_config = ExecutorchBackendConfig(
-            passes=[InitializedMutableBufferPass(["cache_pos"])],
+            passes=[InitializedMutableBufferPass(["kv_cache_pos"])],
         )
         et_program = edge_program.to_executorch(config=et_config)
 
