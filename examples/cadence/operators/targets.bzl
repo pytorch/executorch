@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 TESTS_LIST = [
     "add_op",
@@ -15,6 +16,19 @@ TESTS_LIST = [
 def define_common_targets():
     for op in TESTS_LIST:
         _define_test_target(op)
+
+    python_library(
+        name = "facto_util",
+        srcs = [
+            "facto_util.py",
+        ],
+        typing = True,
+        deps = [
+            "fbcode//caffe2:torch",
+            "fbcode//pytorch/facto:inputgen",
+            "fbcode//pytorch/facto:specdb",
+        ],
+    )
 
 
 def _define_test_target(test_name):
