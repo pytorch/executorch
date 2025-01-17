@@ -47,10 +47,13 @@ add_executable(
 )
 target_link_libraries(
   operator_registry_max_kernel_num_test GTest::gtest GTest::gtest_main
-  GTest::gmock executorch
+  GTest::gmock
 )
 target_compile_definitions(
   operator_registry_max_kernel_num_test PRIVATE "-DMAX_KERNEL_NUM=1"
+)
+target_include_directories(
+  operator_registry_max_kernel_num_test PRIVATE ${EXECUTORCH_ROOT}/..
 )
 # TODO: This is currently not working!
 # add_test(operator_registry_max_kernel_num_test operator_registry_max_kernel_num_test)
