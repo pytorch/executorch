@@ -234,7 +234,7 @@ std::string QueryPool::generate_string_report() {
 }
 
 
-std::string QueryPool::generate_tabbed_string_report() {
+std::string QueryPool::generate_tsv_string_report() {
   std::lock_guard<std::mutex> lock(mutex_);
 
   std::stringstream ss;
@@ -265,10 +265,10 @@ std::string QueryPool::generate_tabbed_string_report() {
   return ss.str();
 }
 
-void QueryPool::print_results(const bool tabbed) {
+void QueryPool::print_results(const bool tsv_format) {
   EARLY_RETURN_IF_UNINITIALIZED();
-  if (tabbed) {
-    std::cout << generate_tabbed_string_report() << std::endl;
+  if (tsv_format) {
+    std::cout << generate_tsv_string_report() << std::endl;
   } else {
     std::cout << generate_string_report() << std::endl;
   }
