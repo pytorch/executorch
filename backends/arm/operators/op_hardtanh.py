@@ -1,4 +1,4 @@
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,6 +19,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
+from executorch.backends.arm.tosa_quant_utils import quantize_value
 from serializer.tosa_serializer import TosaOp
 
 
@@ -43,8 +44,8 @@ class HardTanhVisitor(NodeVisitor):
             input_qparams = get_input_qparams(node)  # pyre-ignore[16]
             qargs = input_qparams[0]
             # Convert to quantized representation
-            clamp_min_qs = qargs.quantize_value(inputs[1].number).item()
-            clamp_max_qs = qargs.quantize_value(inputs[2].number).item()
+            clamp_min_qs = quantize_value(inputs[1].number, qargs)
+            clamp_max_qs = quantize_value(inputs[2].number, qargs)
             # Set fp values to 0.0 since they are not used
             clamp_min_fp = 0.0
             clamp_max_fp = 0.0
