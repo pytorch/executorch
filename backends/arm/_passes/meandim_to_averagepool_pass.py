@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -16,7 +16,7 @@ from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 Argument = Any
 
 
-class ConvertMeanDimToAveragePool(ExportPass):
+class ConvertMeanDimToAveragePoolPass(ExportPass):
     """
     Replace a mean operation with dim = [-1, -2] and keep_dim = True with an average pool operation.
     """

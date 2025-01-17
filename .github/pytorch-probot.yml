@@ -1,4 +1,5 @@
 # The schema is from https://github.com/pytorch/pytorch/blob/main/.github/pytorch-probot.yml
+tracking_issue: 7679
 ciflow_push_tags:
 - ciflow/android
 - ciflow/apple
