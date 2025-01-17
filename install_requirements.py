@@ -104,34 +104,15 @@ def install_requirements(use_pytorch_nightly):
             if use_pytorch_nightly
             else "torchvision"
         ),  # For testing.
-        "typing-extensions",
     ]
 
-    # pip packages needed to run examples.
-    # TODO: Make each example publish its own requirements.txt
     EXAMPLES_REQUIREMENTS = [
-        "timm==1.0.7",
         f"torchaudio==2.6.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
-        "torchsr==1.0.4",
-        "transformers==4.47.1",
-    ]
-
-    # pip packages needed for development.
-    DEVEL_REQUIREMENTS = [
-        "cmake",  # For building binary targets.
-        "pip>=23",  # For building the pip package.
-        "pyyaml",  # Imported by the kernel codegen tools.
-        "setuptools>=63",  # For building the pip package.
-        "tomli",  # Imported by extract_sources.py when using python < 3.11.
-        "wheel",  # For building the pip package archive.
-        "zstd",  # Imported by resolve_buck.py.
     ]
 
     # Assemble the list of requirements to actually install.
     # TODO: Add options for reducing the number of requirements.
-    REQUIREMENTS_TO_INSTALL = (
-        EXIR_REQUIREMENTS + DEVEL_REQUIREMENTS + EXAMPLES_REQUIREMENTS
-    )
+    REQUIREMENTS_TO_INSTALL = EXIR_REQUIREMENTS + EXAMPLES_REQUIREMENTS
 
     # Install the requirements. `--extra-index-url` tells pip to look for package
     # versions on the provided URL if they aren't available on the default URL.
@@ -141,6 +122,8 @@ def install_requirements(use_pytorch_nightly):
             "-m",
             "pip",
             "install",
+            "-r",
+            "requirements-examples.txt",
             *REQUIREMENTS_TO_INSTALL,
             "--extra-index-url",
             TORCH_NIGHTLY_URL,
@@ -160,6 +143,8 @@ def install_requirements(use_pytorch_nightly):
             "-m",
             "pip",
             "install",
+            # Without --no-build-isolation, setup.py can't find the torch module.
+            "--no-build-isolation",
             *LOCAL_REQUIREMENTS,
         ],
         check=True,
