@@ -332,7 +332,10 @@ jobs:
       docker-image: executorch-ubuntu-22.04-clang12
 
   unittest-arm:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.6
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
