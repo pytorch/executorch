@@ -134,8 +134,8 @@ vkapi::ShaderInfo get_conv2d_shader(
     case Conv2dMethod::Depthwise:
       kernel_name = "conv2d_dw";
       if (!prepack_weights) {
-        if (stride_equals_dilation) {
-          kernel_name += "_sed";
+        if (!stride_equals_dilation) {
+          kernel_name += "_sned";
         }
         const auto& weight_sizes = graph.get_tref(weight)->sizes;
         if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {

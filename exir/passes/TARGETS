@@ -221,6 +221,16 @@ python_library(
 )
 
 python_library(
+    name = "init_mutable_pass",
+    srcs = [
+        "init_mutable_pass.py",
+    ],
+    deps = [
+        "//executorch/exir:delegate",
+    ],
+)
+
+python_library(
     name = "sym_shape_eval_pass",
     srcs = [
         "sym_shape_eval_pass.py",
