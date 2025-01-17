@@ -12,7 +12,6 @@ from typing import Callable, final, List, Optional, Tuple
 import torch
 from executorch.backends.arm.arm_backend import (
     ArmBackend,
-    is_quantize_io,
 )  # usort: skip
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     TOSASupportedOperators,
@@ -88,9 +87,6 @@ class ArmPartitioner(Partitioner):
             for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
-
-            if not is_quantize_io(self.delegation_spec.compile_specs):
-                continue
 
             # De-tag outmost q-nodes upwards and dq-nodes downwards.
             # De-tag if at least one input/ output is not part of partition.
