@@ -825,7 +825,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
     if(EXECUTORCH_BUILD_DEVTOOLS)
-      list(APPEND _executor_runner_libs etdump ${FLATCCRT_LIB})
+      list(APPEND _executor_runner_libs etdump flatccrt)
     else()
       message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
     endif()
