@@ -602,21 +602,21 @@ git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w
 <span class="c1"># Install ExecuTorch pip package and its dependencies, as well as</span>
 <span class="c1"># development tools like CMake.</span>
 <span class="c1"># If developing on a Mac, make sure to install the Xcode Command Line Tools first.</span>
-./install_requirements.sh
+./install_executorch.sh
 </pre></div>
 </div>
-<p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29"><code class="docutils literal notranslate"><span class="pre">--pybind</span></code> flag</a> to install with pybindings and dependencies for other backends.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>&lt;coreml<span class="w"> </span><span class="p">|</span><span class="w"> </span>mps<span class="w"> </span><span class="p">|</span><span class="w"> </span>xnnpack&gt;
+<p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29"><code class="docutils literal notranslate"><span class="pre">--pybind</span></code> flag</a> to install with pybindings and dependencies for other backends.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>&lt;coreml<span class="w"> </span><span class="p">|</span><span class="w"> </span>mps<span class="w"> </span><span class="p">|</span><span class="w"> </span>xnnpack&gt;
 
 <span class="c1"># Example: pybindings with CoreML *only*</span>
-./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml
+./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml
 
 <span class="c1"># Example: pybinds with CoreML *and* XNNPACK</span>
-./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml<span class="w"> </span>xnnpack
+./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>coreml<span class="w"> </span>xnnpack
 </pre></div>
 </div>
-<p>By default, <code class="docutils literal notranslate"><span class="pre">./install_requirements.sh</span></code> command installs pybindings for XNNPACK. To disable any pybindings altogether:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>off
+<p>By default, <code class="docutils literal notranslate"><span class="pre">./install_executorch.sh</span></code> command installs pybindings for XNNPACK. To disable any pybindings altogether:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>off
 </pre></div>
 </div>
 <p>After setting up your environment, you are ready to convert your PyTorch programs
@@ -628,7 +628,7 @@ does not currently adapt well to changes in build dependencies.</p>
 <p>You should also update and pull the submodules again, in case their versions
 have changed.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># From the root of the executorch repo:</span>
-./install_requirements.sh<span class="w"> </span>--clean
+./install_executorch.sh<span class="w"> </span>--clean
 git<span class="w"> </span>submodule<span class="w"> </span>sync
 git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
 </pre></div>
@@ -705,7 +705,7 @@ to ExecuTorch.</p>
 <p>The ExecuTorch repo uses CMake to build its C++ code. Here, we’ll configure it to build the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> tool to run it on our desktop OS.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clean and configure the CMake build system. Compiled programs will</span>
 <span class="c1"># appear in the executorch/cmake-out directory we create here.</span>
-./install_requirements.sh<span class="w"> </span>--clean
+./install_executorch.sh<span class="w"> </span>--clean
 <span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 
 <span class="c1"># Build the executor_runner target</span>
@@ -719,7 +719,7 @@ does not currently adapt well to changes in build dependencies.</p>
 <p>You should also update and pull the submodules again, in case their versions
 have changed.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># From the root of the executorch repo:</span>
-./install_requirements.sh<span class="w"> </span>--clean
+./install_executorch.sh<span class="w"> </span>--clean
 git<span class="w"> </span>submodule<span class="w"> </span>sync
 git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
 </pre></div>

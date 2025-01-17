@@ -574,7 +574,7 @@ cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>example
 <span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
 
 <span class="c1"># Run the following lines from the `executorch/` folder</span>
-./install_requirements.sh<span class="w"> </span>--clean
+./install_executorch.sh<span class="w"> </span>--clean
 mkdir<span class="w"> </span>cmake-android-out
 
 <span class="c1"># Build the core executorch library</span>
@@ -616,7 +616,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/ex
 <span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
 <span class="nb">export</span><span class="w"> </span><span class="nv">QNN_SDK_ROOT</span><span class="o">=</span>&lt;path-to-qnn-sdk&gt;
 
-./install_requirements.sh<span class="w"> </span>--clean
+./install_executorch.sh<span class="w"> </span>--clean
 mkdir<span class="w"> </span>cmake-android-out
 cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK</span><span class="si">}</span><span class="s2">/build/cmake/android.toolchain.cmake&quot;</span><span class="w"> </span><span class="se">\</span>

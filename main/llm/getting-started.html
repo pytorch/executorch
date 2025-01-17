@@ -557,7 +557,7 @@ conda</label><div class="sd-tab-content docutils">
 <span class="c1"># Create a conda environment and install requirements.</span>
 <span class="n">conda</span> <span class="n">create</span> <span class="o">-</span><span class="n">yn</span> <span class="n">executorch</span> <span class="n">python</span><span class="o">=</span><span class="mf">3.10.0</span>
 <span class="n">conda</span> <span class="n">activate</span> <span class="n">executorch</span>
-<span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
+<span class="o">./</span><span class="n">install_executorch</span><span class="o">.</span><span class="n">sh</span>
 
 <span class="n">cd</span> <span class="o">../..</span>
 </pre></div>
@@ -588,7 +588,7 @@ See the pyenv-virtualenv installation guide above on how to add this to your .ba
 <span class="n">git</span> <span class="n">submodule</span> <span class="n">update</span> <span class="o">--</span><span class="n">init</span>
 
 <span class="c1"># Install requirements.</span>
-<span class="n">PYTHON_EXECUTABLE</span><span class="o">=</span><span class="n">python</span> <span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
+<span class="n">PYTHON_EXECUTABLE</span><span class="o">=</span><span class="n">python</span> <span class="o">./</span><span class="n">install_executorch</span><span class="o">.</span><span class="n">sh</span>
 
 <span class="n">cd</span> <span class="o">../..</span>
 </pre></div>
@@ -875,7 +875,7 @@ target_link_libraries(
 <li><p>nanogpt.pte</p></li>
 </ul>
 <p>If all of these are present, you can now build and run:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--clean
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--clean
 <span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j10
 ./cmake-out/nanogpt_runner

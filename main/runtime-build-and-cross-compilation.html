@@ -552,7 +552,7 @@ dependencies may have changed.</p>
 
 <span class="c1"># Clean and configure the CMake build system. It&#39;s good practice to do this</span>
 <span class="c1"># whenever cloning or pulling the upstream repo.</span>
-./install_requirements.sh<span class="w"> </span>--clean
+./install_executorch.sh<span class="w"> </span>--clean
 <span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 </pre></div>
 </div>
@@ -624,7 +624,7 @@ by the output values.</p>
 </ul>
 <p>Assuming Android NDK is available, run:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Run the following lines from the `executorch/` folder</span>
-./install_requirements.sh<span class="w"> </span>--clean
+./install_executorch.sh<span class="w"> </span>--clean
 mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
 
 <span class="c1"># point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed</span>
