@@ -78,46 +78,35 @@ def get_tosa_compile_spec_unbuilt(
         ArmCompileSpecBuilder()
         .tosa_compile_spec(tosa_spec)
         .dump_intermediate_artifacts_to(custom_path)
-        .set_quantize_io(True)
     )
 
     return compile_spec_builder
 
 
 def get_u55_compile_spec(
-    quantize_io=True,
     custom_path=None,
-    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U55 tests.
     """
     return get_u55_compile_spec_unbuilt(
-        quantize_io=quantize_io,
         custom_path=custom_path,
-        reorder_inputs=reorder_inputs,
     ).build()
 
 
 def get_u85_compile_spec(
-    quantize_io=True,
     custom_path=None,
-    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for Ethos-U85 tests.
     """
     return get_u85_compile_spec_unbuilt(
-        quantize_io=quantize_io,
         custom_path=custom_path,
-        reorder_inputs=reorder_inputs,
     ).build()
 
 
 def get_u55_compile_spec_unbuilt(
-    quantize_io=True,
     custom_path=None,
-    reorder_inputs=None,
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -133,17 +122,13 @@ def get_u55_compile_spec_unbuilt(
             memory_mode="Shared_Sram",
             extra_flags="--debug-force-regor --output-format=raw",
         )
-        .set_quantize_io(quantize_io)
         .dump_intermediate_artifacts_to(artifact_path)
-        .set_input_order(reorder_inputs)
     )
     return compile_spec
 
 
 def get_u85_compile_spec_unbuilt(
-    quantize_io=True,
     custom_path=None,
-    reorder_inputs=None,
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -157,9 +142,7 @@ def get_u85_compile_spec_unbuilt(
             memory_mode="Shared_Sram",
             extra_flags="--output-format=raw",
         )
-        .set_quantize_io(quantize_io)
         .dump_intermediate_artifacts_to(artifact_path)
-        .set_input_order(reorder_inputs)
     )
     return compile_spec
 
