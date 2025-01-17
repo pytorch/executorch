@@ -1,0 +1,14 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "serialize",
+    srcs = [
+        "test_serialize.py",
+    ],
+    deps = [
+        "//executorch/extension/flat_tensor/serialize:serialize",
+        "//executorch/extension/flat_tensor/serialize:schema",
+    ],
+)
