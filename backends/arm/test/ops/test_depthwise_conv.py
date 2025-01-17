@@ -259,46 +259,38 @@ class TestDepthwiseConv(unittest.TestCase):
 
     @parameterized.expand(testsuite_conv2d[:4], skip_on_empty=True)
     @pytest.mark.corstone_fvp
-    def test_dw_conv2d_u55_BI(
-        self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
-    ):
+    def test_dw_conv2d_u55_BI(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv_ethos_BI_pipeline(
             model,
-            common.get_u55_compile_spec(quantize_io=set_quantize_io),
+            common.get_u55_compile_spec(),
             model.get_inputs(),
         )
 
     @parameterized.expand(testsuite_conv2d[4:], skip_on_empty=True)
     @pytest.mark.corstone_fvp
-    @unittest.expectedFailure  # TODO: MLETORCH-516
-    def test_dw_conv2d_u55_BI_xfails(
-        self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
-    ):
+    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-516
+    def test_dw_conv2d_u55_BI_xfails(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv_ethos_BI_pipeline(
             model,
-            common.get_u55_compile_spec(quantize_io=set_quantize_io),
+            common.get_u55_compile_spec(),
             model.get_inputs(),
         )
 
     @parameterized.expand(testsuite_conv1d, skip_on_empty=True)
     @pytest.mark.corstone_fvp
-    def test_dw_conv1d_u55_BI(
-        self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
-    ):
+    def test_dw_conv1d_u55_BI(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv_ethos_BI_pipeline(
             model,
-            common.get_u55_compile_spec(quantize_io=set_quantize_io),
+            common.get_u55_compile_spec(),
             model.get_inputs(),
         )
 
     @parameterized.expand(testsuite_conv1d + testsuite_conv2d_u85)
     @pytest.mark.corstone_fvp
-    def test_dw_conv_u85_BI(
-        self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
-    ):
+    def test_dw_conv_u85_BI(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv_ethos_BI_pipeline(
             model,
-            common.get_u85_compile_spec(quantize_io=set_quantize_io),
+            common.get_u85_compile_spec(),
             model.get_inputs(),
         )
 
@@ -306,11 +298,9 @@ class TestDepthwiseConv(unittest.TestCase):
     @parameterized.expand(testsuite_conv2d_u85_xfails)
     @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
-    def test_dw_conv_u85_BI_xfails(
-        self, test_name: str, model: torch.nn.Module, set_quantize_io: bool = False
-    ):
+    def test_dw_conv_u85_BI_xfails(self, test_name: str, model: torch.nn.Module):
         self._test_dw_conv_ethos_BI_pipeline(
             model,
-            common.get_u85_compile_spec(quantize_io=set_quantize_io),
+            common.get_u85_compile_spec(),
             model.get_inputs(),
         )

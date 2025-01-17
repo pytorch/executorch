@@ -49,7 +49,6 @@ class ArmCompileSpecBuilder:
         self.compiler_flags = []
         self.output_format = None
         self.path_for_intermediates = None
-        self.quantize_io = False
         self.tosa_version = None
         self.input_order = None
 
@@ -92,11 +91,13 @@ class ArmCompileSpecBuilder:
         if "u55" in config:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
-        self.tosa_version = TosaSpecification.create_from_string(base_tosa_version)
+        self.tosa_spec = TosaSpecification.create_from_string(base_tosa_version)
 
         return self
 
-    def tosa_compile_spec(self, tosa_version: str) -> "ArmCompileSpecBuilder":
+    def tosa_compile_spec(
+        self, tosa_spec: str | TosaSpecification
+    ) -> "ArmCompileSpecBuilder":
         """
         Generate compile spec for TOSA flatbuffer output
         """
@@ -104,7 +105,12 @@ class ArmCompileSpecBuilder:
             self.output_format is None
         ), f"Output format already set: {self.output_format}"
         self.output_format = "tosa"
-        self.tosa_version = TosaSpecification.create_from_string(tosa_version)
+        if isinstance(tosa_spec, TosaSpecification):
+            self.tosa_spec = tosa_spec
+        elif isinstance(tosa_spec, str):
+            self.tosa_spec = TosaSpecification.create_from_string(tosa_spec)
+        else:
+            raise RuntimeError(f"Invalid type for {tosa_spec}!")
         return self
 
     def dump_intermediate_artifacts_to(
@@ -116,34 +122,14 @@ class ArmCompileSpecBuilder:
         self.path_for_intermediates = output_path
         return self
 
-    def set_quantize_io(self, quantize_io: bool = False) -> "ArmCompileSpecBuilder":
-        """
-        Quantization of inputs and dequantization of outputs for cases where
-        whole graph is quantized and method signature is not of quantized type.
-        """
-        self.quantize_io = quantize_io
-        return self
-
-    def set_input_order(
-        self, input_order: Optional[str] = None
-    ) -> "ArmCompileSpecBuilder":
-        """
-        Reorder the inputs coming in. This may be required when inputs > 1.
-        And while using the U55/U85 CompileSpec.
-        """
-        self.input_order = input_order
-        return self
-
     def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
         """
-        assert self.tosa_version
+        assert self.tosa_spec
 
         # Always supply a TOSA version
-        self.compile_spec = [
-            CompileSpec("tosa_version", str(self.tosa_version).encode())
-        ]
+        self.compile_spec = [CompileSpec("tosa_version", str(self.tosa_spec).encode())]
 
         if self.output_format == "vela":
             self.compile_spec += [
@@ -165,9 +151,6 @@ class ArmCompileSpecBuilder:
                 )
             )
 
-        if self.quantize_io:
-            self.compile_spec.append(CompileSpec("quantize_io", "True".encode()))
-
         return self.compile_spec
 
 
@@ -176,6 +159,13 @@ def is_tosa(compile_spec: List[CompileSpec]) -> bool:
         if spec.key == "output_format":
             return spec.value.decode() == "tosa"
     return False
+
+
+def get_tosa_version(compile_spec: List[CompileSpec]) -> TosaSpecification:
+    for spec in compile_spec:
+        if spec.key == "tosa_version":
+            return TosaSpecification.create_from_string(spec.value.decode())
+    raise RuntimeError("Could not find TOSA version in CompileSpec")
 
 
 def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
@@ -239,7 +229,7 @@ class ArmBackend(BackendDetails):
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(artifact_path)
-        graph_module = ArmPassManager().transform_to_backend_pipeline(
+        graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(
             exported_program=edge_program
         )
 

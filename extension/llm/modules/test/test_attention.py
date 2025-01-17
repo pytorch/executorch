@@ -219,7 +219,7 @@ class AttentionTest(unittest.TestCase):
             ),
         ).to_executorch(
             config=ExecutorchBackendConfig(
-                passes=[InitializedMutableBufferPass(["cache_pos"])],
+                passes=[InitializedMutableBufferPass(["kv_cache_pos"])],
             )
         )
 
@@ -330,7 +330,7 @@ class AttentionTest(unittest.TestCase):
             ),
         ).to_executorch(
             config=ExecutorchBackendConfig(
-                passes=[InitializedMutableBufferPass(["cache_pos"])],
+                passes=[InitializedMutableBufferPass(["kv_cache_pos"])],
             )
         )
 

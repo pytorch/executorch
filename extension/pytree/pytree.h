@@ -24,7 +24,7 @@ namespace executorch {
 namespace extension {
 namespace pytree {
 
-void pytree_check(bool must_be_true) {
+inline void pytree_check(bool must_be_true) {
   if (!must_be_true) {
     throw std::runtime_error("pytree assertion failed");
   }
