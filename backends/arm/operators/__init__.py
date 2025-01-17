@@ -36,6 +36,7 @@ from . import (  # noqa
     op_table,
     op_tanh,
     op_to_copy,
+    op_to_dim_order_copy,
     op_transpose,
     op_unsqueeze,
     op_upsample_nearest2d,
