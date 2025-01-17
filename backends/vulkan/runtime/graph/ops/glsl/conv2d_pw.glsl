@@ -16,7 +16,7 @@
 
 #define op(X, A, B) ${OPERATOR}
 
-#include "indexing_utils_u16.h"
+#include "indexing_utils.h"
 
 layout(std430) buffer;
 
@@ -33,7 +33,9 @@ ${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 // shared memory to hold calculated positions, this would reduce register usage thus improving performance.
-shared ivec2 pos_shared[gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z * TILE_SIZE * TILE_SIZE];
+// 64 is the number of threads in the local wg
+$num_shared = 64 * TILE_SIZE * TILE_SIZE
+shared ivec2 pos_shared[${num_shared}];
 
 /*
  * Computes a 2D pointwise convolution of an NxN output tile. Calculating an

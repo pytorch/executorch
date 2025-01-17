@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -22,6 +22,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
@@ -64,13 +65,11 @@ class TestSimpleExpand(unittest.TestCase):
         )
 
     def _test_expand_tosa_BI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        compile_spec = common.get_tosa_compile_spec(tosa_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.expand.default": 1})
@@ -85,7 +84,8 @@ class TestSimpleExpand(unittest.TestCase):
     def _test_expand_ethosu_BI_pipeline(
         self, compile_spec: CompileSpec, module: torch.nn.Module, test_data: Tuple
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         tester = (
             ArmTester(
                 module,

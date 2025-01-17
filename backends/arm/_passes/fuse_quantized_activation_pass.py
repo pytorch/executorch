@@ -19,12 +19,13 @@ class FuseQuantizedActivationPass(ExportPass):
             is_fuseable = min_val == 0
 
         is_quantized = len(node.users) == 1 and next(iter(node.users)).target == q_op
-        if is_quantized:
+        if is_fuseable and is_quantized:
             quant_node = next(iter(node.users))
             zp = quant_node.args[2]
             qmin = quant_node.args[3]
-
-        return is_fuseable and is_quantized and zp == qmin
+            return zp == qmin
+        else:
+            return False
 
     def _is_fuseable_input(self, node: Node):
         return (
