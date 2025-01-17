@@ -67,8 +67,8 @@ void check_dequantize_per_tensor_args(
 
   ET_CHECK_MSG(
       input.scalar_type() == dtype,
-      "input.scalar_type() %" PRId8 " is not matching dtype argumenta:",
-      static_cast<int8_t>(input.scalar_type()));
+      "input.scalar_type() %s is not matching dtype arguments:",
+      ::executorch::runtime::toString(input.scalar_type()));
 
   if (out_dtype.has_value()) {
     ET_CHECK_MSG(
@@ -561,11 +561,12 @@ Tensor& dequantize_per_tensor_out(
     const Tensor& input,
     double scale,
     int64_t zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
+    __ET_UNUSED int64_t quant_min,
+    __ET_UNUSED int64_t quant_max,
     ScalarType dtype,
-    ::executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
+  constexpr ScalarType out_dtype = ScalarType::Float;
+
 #ifdef OP_ARG_CHECK
   torch::executor::Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
