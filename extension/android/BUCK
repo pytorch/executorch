@@ -23,18 +23,13 @@ fb_android_library(
 fb_android_library(
     name = "executorch_llama",
     srcs = [
-        "src/main/java/org/pytorch/executorch/DType.java",
-        "src/main/java/org/pytorch/executorch/EValue.java",
         "src/main/java/org/pytorch/executorch/LlamaCallback.java",
         "src/main/java/org/pytorch/executorch/LlamaModule.java",
-        "src/main/java/org/pytorch/executorch/Module.java",
-        "src/main/java/org/pytorch/executorch/NativePeer.java",
-        "src/main/java/org/pytorch/executorch/Tensor.java",
-        "src/main/java/org/pytorch/executorch/annotations/Experimental.java",
     ],
     autoglob = False,
     language = "JAVA",
     deps = [
+        ":executorch",
         "//fbandroid/java/com/facebook/jni:jni",
         "//fbandroid/libraries/soloader/java/com/facebook/soloader/nativeloader:nativeloader",
     ],

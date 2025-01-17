@@ -15,9 +15,10 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
 
@@ -112,13 +113,11 @@ class TestVar(unittest.TestCase):
         test_data: torch.Tensor,
         target_str: str = None,
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        compile_spec = common.get_tosa_compile_spec(tosa_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .to_edge()
@@ -135,7 +134,8 @@ class TestVar(unittest.TestCase):
         test_data: torch.Tensor,
         target_str: str = None,
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
