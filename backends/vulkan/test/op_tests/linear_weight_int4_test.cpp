@@ -50,7 +50,6 @@ at::Tensor unpack_weights_4x2(const at::Tensor& weights_4x2) {
 
   for (int n = 0; n < N; n++) {
     for (int k = 0; k < K; k += 2) {
-      // const int scale_idx = k_groups * n + group_idx;
       const uint8_t packed_val = weights_4x2[n][k / 2].item().to<uint8_t>();
       const uint8_t second_val = packed_val & 0x0F;
       const uint8_t first_val = (packed_val & 0xF0) >> 4;
