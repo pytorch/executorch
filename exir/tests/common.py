@@ -5,8 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-import typing
-from typing import List
 
 import torch
 
@@ -46,7 +44,7 @@ def get_test_program() -> Program:
                             scalar_type=ScalarType.FLOAT,
                             storage_offset=0,
                             sizes=[2, 2],
-                            dim_order=typing.cast(List[bytes], [0, 1]),
+                            dim_order=[0, 1],
                             requires_grad=False,
                             layout=0,
                             data_buffer_idx=0,
