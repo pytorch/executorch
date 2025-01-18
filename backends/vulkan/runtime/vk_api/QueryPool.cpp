@@ -233,7 +233,6 @@ std::string QueryPool::generate_string_report() {
   return ss.str();
 }
 
-
 std::string QueryPool::generate_tsv_string_report() {
   std::lock_guard<std::mutex> lock(mutex_);
 

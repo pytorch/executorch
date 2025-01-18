@@ -106,6 +106,7 @@ class QueryPool final {
   operator bool() const {
     return querypool_ != VK_NULL_HANDLE;
   }
+
  private:
   std::string generate_string_report();
   std::string generate_tsv_string_report();
