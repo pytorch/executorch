@@ -300,7 +300,7 @@ the checkpoint format to avoid generating faulty models.
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
         if self.enable_dynamic_shape:
-            return (
+            args = (
                 torch.tensor(
                     [[0 for _ in range(self.static_seq_length)]], dtype=torch.long
                 ),
@@ -315,18 +315,19 @@ the checkpoint format to avoid generating faulty models.
                     [0], dtype=torch.long
                 ),  # start_pos, what token of output are we on.
             )
-            if self.decode_kv_cache_as_io:
-                args = args + (
-                    # (n_layers, max_batch_size, n_heads, max_seq_length, head_dim)
-                    torch.zeros(self._cache_shape, dtype=torch.float16),  # k-cache
-                    torch.zeros(self._cache_shape, dtype=torch.float16),  # v-cache
-                )
+            
+        if self.decode_kv_cache_as_io:
+            args = args + (
+                # (n_layers, max_batch_size, n_heads, max_seq_length, head_dim)
+                torch.zeros(self._cache_shape, dtype=torch.float16),  # k-cache
+                torch.zeros(self._cache_shape, dtype=torch.float16),  # v-cache
+            )
 
-            if self.use_additive_kv_cache_update:
-                args = args + (
-                    torch.zeros(self._cache_pos_mask_shape, dtype=torch.float16),
-                )
-            return args
+        if self.use_additive_kv_cache_update:
+            args = args + (
+                torch.zeros(self._cache_pos_mask_shape, dtype=torch.float16),
+            )
+        return args
 
     def _transform_for_pre_quantization(self, checkpoint, model_args):
         assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
