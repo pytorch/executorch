@@ -250,6 +250,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether use additive KV cache updates",
     )
     parser.add_argument(
+        "--prefill_seq_length",
+        type=int,
+        default=32,
+        help="Sequence length for prefill model",
+    )
+    parser.add_argument(
         "--quantize_kv_cache",
         default=False,
         action="store_true",
