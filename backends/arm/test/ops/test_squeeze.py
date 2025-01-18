@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -136,7 +136,7 @@ class TestSqueeze(unittest.TestCase):
         test_tensor: torch.Tensor,
     ):
         self._test_squeeze_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(permute_memory_to_nhwc=False),
+            common.get_u55_compile_spec(),
             self.Squeeze(),
             (test_tensor,),
             "torch.ops.aten.squeeze.default",
@@ -148,7 +148,7 @@ class TestSqueeze(unittest.TestCase):
         test_tensor: torch.Tensor,
     ):
         self._test_squeeze_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             self.Squeeze(),
             (test_tensor,),
             "torch.ops.aten.squeeze.default",
@@ -169,7 +169,7 @@ class TestSqueeze(unittest.TestCase):
     @parameterized.expand(SqueezeDim.test_parameters)
     def test_squeeze_dim_u55_BI(self, test_tensor: torch.Tensor, dim: int):
         self._test_squeeze_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(permute_memory_to_nhwc=False),
+            common.get_u55_compile_spec(),
             self.SqueezeDim(),
             (test_tensor, dim),
             "torch.ops.aten.squeeze.dim",
@@ -178,7 +178,7 @@ class TestSqueeze(unittest.TestCase):
     @parameterized.expand(SqueezeDim.test_parameters)
     def test_squeeze_dim_u85_BI(self, test_tensor: torch.Tensor, dim: int):
         self._test_squeeze_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             self.SqueezeDim(),
             (test_tensor, dim),
             "torch.ops.aten.squeeze.dim",
@@ -199,7 +199,7 @@ class TestSqueeze(unittest.TestCase):
     @parameterized.expand(SqueezeDims.test_parameters)
     def test_squeeze_dims_u55_BI(self, test_tensor: torch.Tensor, dims: tuple[int]):
         self._test_squeeze_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(permute_memory_to_nhwc=False),
+            common.get_u55_compile_spec(),
             self.SqueezeDims(),
             (test_tensor, dims),
             "torch.ops.aten.squeeze.dims",

@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -52,16 +52,14 @@ class TestSimpleSlice(unittest.TestCase):
         )
 
     def _test_slice_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor], permute: bool
+        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
 
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=permute
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -114,11 +112,11 @@ class TestSimpleSlice(unittest.TestCase):
 
     @parameterized.expand(Slice.test_tensors[:2])
     def test_slice_nchw_tosa_BI(self, test_tensor: torch.Tensor):
-        self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,), False)
+        self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,))
 
     @parameterized.expand(Slice.test_tensors[2:])
     def test_slice_nhwc_tosa_BI(self, test_tensor: torch.Tensor):
-        self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,), True)
+        self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,))
 
     @parameterized.expand(Slice.test_tensors)
     def test_slice_u55_BI(self, test_tensor: torch.Tensor):

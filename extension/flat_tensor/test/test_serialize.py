@@ -4,7 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 import unittest
+
+from typing import List
 
 from executorch.exir._serialize.data_serializer import (
     DataPayload,
@@ -26,7 +30,7 @@ from executorch.extension.flat_tensor.serialize.serialize import (
 )
 
 # Test artifacts.
-TEST_TENSOR_BUFFER = [b"\x11" * 4, b"\x22" * 32]
+TEST_TENSOR_BUFFER: List[bytes] = [b"\x11" * 4, b"\x22" * 32]
 TEST_TENSOR_MAP = {
     "fqn1": TensorEntry(
         buffer_index=0,
@@ -75,7 +79,9 @@ class TestSerialize(unittest.TestCase):
         serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
 
         # Check header.
-        header = FlatTensorHeader.from_bytes(serialized_data[0 : FlatTensorHeader.EXPECTED_LENGTH])
+        header = FlatTensorHeader.from_bytes(
+            serialized_data[0 : FlatTensorHeader.EXPECTED_LENGTH]
+        )
         self.assertTrue(header.is_valid())
 
         # Header is aligned to config.segment_alignment, which is where the flatbuffer starts.
@@ -101,7 +107,10 @@ class TestSerialize(unittest.TestCase):
 
         # Confirm the flatbuffer magic is present.
         self.assertEqual(
-            serialized_data[header.flatbuffer_offset + 4 : header.flatbuffer_offset + 8], b"FT01"
+            serialized_data[
+                header.flatbuffer_offset + 4 : header.flatbuffer_offset + 8
+            ],
+            b"FT01",
         )
 
         # Check flat tensor data.
@@ -170,5 +179,7 @@ class TestSerialize(unittest.TestCase):
         self.assertEqual(segment_data[t1_start + t1_len : t1_start + t1_end], padding)
 
         # Check length of the segment is expected.
-        self.assertEqual(segments[0].size, aligned_size(t1_end, config.segment_alignment))
+        self.assertEqual(
+            segments[0].size, aligned_size(t1_end, config.segment_alignment)
+        )
         self.assertEqual(segments[0].size, header.segment_data_size)
