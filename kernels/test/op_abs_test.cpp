@@ -42,7 +42,8 @@ class OpAbsTest : public OperatorTest {
 
 TEST_F(OpAbsTest, SmokeTest) {
 #define RUN_SMOKE_TEST(ctype, dtype) run_smoke_test<ScalarType::dtype>();
-  // TODO: cover all REALHBF16 types with generalized unary function test harness.
+  // TODO: cover all REALHBF16 types with generalized unary function test
+  // harness.
   ET_FORALL_FLOATHBF16_TYPES(RUN_SMOKE_TEST);
 }
 
