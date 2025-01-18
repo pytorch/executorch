@@ -583,6 +583,7 @@ class ExecutorchProgram:
         Writes the serialized ExecuTorch data files to the directory at `outdir`.
         """
         assert self._tensor_data is not None
+        # pyre-ignore[16]: `Optional` has no attribute `items`.
         for filename, cord in self._tensor_data.items():
             with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
                 logging.info(f"Writing data file to {filename}.ptd")

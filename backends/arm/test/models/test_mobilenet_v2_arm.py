@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -56,9 +56,7 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
@@ -71,9 +69,7 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -92,7 +88,7 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
             .export()
@@ -112,7 +108,7 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 example_inputs=self.model_inputs,
-                compile_spec=common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_u85_compile_spec(),
             )
             .quantize()
             .export()

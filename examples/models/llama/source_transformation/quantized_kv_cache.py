@@ -6,6 +6,7 @@
 
 import logging
 from enum import Enum
+from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -44,7 +45,6 @@ class QuantizedKVCache(nn.Module):
             QuantizedCacheType.AffineSymmetric,
             QuantizedCacheType.AffineAsymmetric,
         ):
-
             raise ValueError(
                 f"Only affine symmetric and asymmetric cache types are supported: got {cache_type}"
             )
@@ -81,10 +81,11 @@ class QuantizedKVCache(nn.Module):
             )
 
     def _quantize(self, value):
-        scales, zero_points = (
-            torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
-                value, self.quantized_cache_dtype
-            )
+        (
+            scales,
+            zero_points,
+        ) = torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
+            value, self.quantized_cache_dtype
         )
         quantized_value = torch.ops.quantized_decomposed.quantize_per_token(
             value,
@@ -261,4 +262,72 @@ def replace_kv_cache_with_quantized_kv_cache(module):
             )
         else:
             replace_kv_cache_with_quantized_kv_cache(child)
+    return module
+
+
+class CustomKVCache(nn.Module):
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_seq_length: int,
+        n_heads: int,
+        head_dim: int,
+        dtype=torch.float32,
+    ):
+        super().__init__()
+        self.max_seq_length = max_seq_length
+        cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
+
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # input_pos: [S], k_val: [B, S, H, D]
+        start_pos = input_pos[0].item()
+        _ = torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
+        _ = torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
+        return self.k_cache, self.v_cache
+
+
+def replace_kv_cache_with_custom_kv_cache(module):
+    r"""
+    Replace KVCache with CustomKVCache. This modifies the model in place.
+    At the moment custom kv cache only supports cache with shape
+    [B, S, H, D] as opposed to [B, H, S, D]
+    This is because the custom op treats second dim as sequence dim.
+    Future work: support [B, H, S, D]
+    """
+    logging.warning(
+        "Replacing KVCache with CustomKVCache. This modifies the model in place."
+    )
+    for name, child in module.named_children():
+        if isinstance(child, KVCache):
+            cache_shape = child.k_cache.shape
+            cache_dtype = child.k_cache.dtype
+            assert (
+                child.is_transposed is False
+            ), "CustomKVCache does not support transposed cache"
+            max_batch_size, max_seq_length, n_heads, head_dim = cache_shape
+            setattr(
+                module,
+                name,
+                CustomKVCache(
+                    max_batch_size,
+                    max_seq_length,
+                    n_heads,
+                    head_dim,
+                    dtype=cache_dtype,
+                ),
+            )
+        else:
+            replace_kv_cache_with_custom_kv_cache(child)
     return module
