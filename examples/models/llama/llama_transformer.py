@@ -474,7 +474,7 @@ class Attention(nn.Module):
 
         if self.decode_kv_cache_as_io:
             assert self.use_kv_cache
-            mask = self.mask[None, None, input_pos]
+            # mask = self.mask[None, None, input_pos]
             if self.use_additive_kv_cache_update:
                 assert cache_pos_mask is not None
                 assert seqlen == 1
