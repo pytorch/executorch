@@ -3280,7 +3280,7 @@ class TestExampleScript(TestQNN):
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama2/llama.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -3307,6 +3307,8 @@ class TestExampleScript(TestQNN):
             "16a4w",
             "--temperature",
             "0",
+            "--llama_model",
+            "stories110m",
         ]
         if self.host:
             cmds.extend(["--host", self.host])

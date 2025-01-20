@@ -37,7 +37,7 @@ done
 main() {
   cd "${EXECUTORCH_ROOT}"
 
-  ./install_requirements.sh --clean
+  ./install_executorch.sh --clean
 
   if [[ "${BUILD_COREML}" == "ON" ]]; then
     cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
