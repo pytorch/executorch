@@ -5,7 +5,7 @@ To see how you can use the model exported for training in a fully involved finet
 
 ## Instructions
 ### Step 1: [Optional] Install ExecuTorch dependencies
-`./install_requirements.sh` in ExecuTorch root directory.
+`./install_executorch.sh` in ExecuTorch root directory.
 
 ### Step 2: Install Requirements
 - `./examples/models/phi-3-mini-lora/install_requirements.sh`
@@ -19,7 +19,7 @@ python export_model.py
 2. Run the inference model using an example runtime. For more detailed steps on this, check out [Build & Run](https://pytorch.org/executorch/stable/getting-started-setup.html#build-run).
 ```
 # Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.
-./install_requirements.sh --clean
+./install_executorch.sh --clean
 (mkdir cmake-out && cd cmake-out && cmake ..)
 
 # Build the executor_runner target
