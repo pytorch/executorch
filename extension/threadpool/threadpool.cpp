@@ -97,7 +97,13 @@ void ThreadPool::run(
 // Make this part threadsafe: TODO(kimishpatel)
 ThreadPool* get_threadpool() {
   ET_CHECK_MSG(cpuinfo_initialize(), "cpuinfo initialization failed");
+
+#ifdef ET_THREADPOOL_SIZE
+  int num_threads = ET_THREADPOOL_SIZE;
+#else
   int num_threads = cpuinfo_get_processors_count();
+#endif
+
   /*
    * For llvm-tsan, holding limit for the number of locks for a single thread
    * is 63 (because of comparison < 64 instead of <=). pthreadpool's worst

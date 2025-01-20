@@ -1,6 +1,16 @@
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def get_threadpool_size():
+    return native.read_config("executorch", "threadpool_size")
+
+def get_threadpool_flags():
+    flags = []
+    threadpool_size = get_threadpool_size()
+    if threadpool_size != None:
+        flags += ["-DET_THREADPOOL_SIZE=" + threadpool_size]
+    return flags
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -32,6 +42,7 @@ def define_common_targets():
         exported_preprocessor_flags = [
             "-DET_USE_THREADPOOL",
         ],
+        preprocessor_flags = get_threadpool_flags(),
         visibility = [
             "//executorch/...",
             "//executorch/backends/...",
