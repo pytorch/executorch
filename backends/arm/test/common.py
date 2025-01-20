@@ -17,7 +17,7 @@ import pytest
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from runner_utils import corstone300_installed, corstone320_installed
+from runner_utils import corstone300_installed, corstone320_installed, RunnerUtil
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:
@@ -163,14 +163,18 @@ def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
 
 
 SkipIfNoCorstone300 = pytest.mark.skipif(
-    not corstone300_installed(), reason="Did not find Corstone-300 FVP on path"
+    not corstone300_installed()
+    or not RunnerUtil.arm_executor_runner_exists("corstone-300"),
+    reason="Did not find Corstone-300 FVP or executor_runner on path",
 )
-""" Marks a test as running on Ethos-U55 FVP, e.g. Corstone 300. Skips the test if this is not installed."""
+"""Skips a test if Corsone300 FVP is not installed, or if the executor runner is not built"""
 
 SkipIfNoCorstone320 = pytest.mark.skipif(
-    not corstone320_installed(), reason="Did not find Corstone-320 FVP on path"
+    not corstone320_installed()
+    or not RunnerUtil.arm_executor_runner_exists("corstone-320"),
+    reason="Did not find Corstone-320 FVP or executor_runner on path",
 )
-""" Marks a test as running on Ethos-U85 FVP, e.g. Corstone 320. Skips the test if this is not installed."""
+"""Skips a test if Corsone320 FVP is not installed, or if the executor runner is not built."""
 
 
 def parametrize(
@@ -185,6 +189,7 @@ def parametrize(
         xfails = {}
 
     def decorator_func(func):
+        """Test data is transformed from a dict of (id, data) pairs to a list of pytest params to work with the native pytests parametrize function"""
         pytest_testsuite = []
         for id, test_parameters in test_data.items():
             if id in xfails:

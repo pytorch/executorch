@@ -26,7 +26,7 @@ class BasePipelineMaker(Generic[T]):
         module: The module which the pipeline is applied to.
         test_data: Data used for quantizing and testing the module.
         aten_ops: Aten dialect ops expected to be found in the graph after export.
-        exir_ops: Exir dialect ops expected to be found in the graph after to_edge, re
+        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
         compile_spec: The compile spec used in the lowering process
         use_edge_to_transform_and_lower: Selects betweeen two possible routes for lowering the module:
                 tester.to_edge_transform_and_lower()

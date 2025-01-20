@@ -246,6 +246,29 @@ class RunnerUtil:
     def set_timeout(self, timeout: int):
         self.timeout = timeout
 
+    @staticmethod
+    def get_elf_path(target_board):
+        elf_path = os.path.join(
+            "cmake-out",
+            f"arm_semihosting_executor_runner_{target_board}",
+            "arm_executor_runner",
+        )
+        if not os.path.exists(elf_path):
+            raise RuntimeError(
+                f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+            )
+        else:
+            return elf_path
+
+    @staticmethod
+    def arm_executor_runner_exists(target_board):
+        try:
+            RunnerUtil.get_elf_path(target_board)
+        except:
+            return False
+        else:
+            return True
+
     def run_corstone(
         self,
         inputs: Tuple[torch.Tensor],
@@ -272,14 +295,7 @@ class RunnerUtil:
             input_paths.append(
                 os.path.join(self.intermediate_path, f"{name}.bin"),
             )
-        elf_path = os.path.join(
-            "cmake-out",
-            f"arm_semihosting_executor_runner_{self.target_board}",
-            "arm_executor_runner",
-        )
-        assert os.path.exists(
-            elf_path
-        ), f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+        elf_path = self.get_elf_path(self.target_board)
 
         cmd_line = f"executor_runner -m {pte_path} -o {out_path}"
 
