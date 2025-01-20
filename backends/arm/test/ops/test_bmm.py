@@ -153,7 +153,7 @@ class TestBMM(unittest.TestCase):
 
     @parameterized.expand(BMM.test_data_generators)
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
+    @unittest.expectedFailure
     def test_bmm_u55_BI_xfails(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_ethosu_BI_pipeline(
