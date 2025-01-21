@@ -35,7 +35,10 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
-from executorch.exir.passes.external_constants_pass import external_constants_pass
+from executorch.exir.passes.external_constants_pass import (
+    external_constants_pass,
+    external_mutable_weights_pass,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -1395,6 +1398,14 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
+            # Extract constants if the config says too.
+            if config.external_constants:
+                new_gm_res = external_constants_pass(new_gm)
+                new_gm = new_gm_res.graph_module
+            elif config.external_mutable_weights:
+                new_gm_res = external_mutable_weights_pass(new_gm, program)
+                new_gm = new_gm_res.graph_module
+
             if isinstance(config.memory_planning_pass, dict):
                 memory_planning_pass = config.memory_planning_pass.get(
                     name, ExecutorchBackendConfig().memory_planning_pass
@@ -1409,8 +1420,8 @@ class EdgeProgramManager:
             else:
                 new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
 
-            if config.external_constants:
-                new_gm_res = external_constants_pass(new_gm_res)
+            # WARNING: DO NOT ADD ANY MORE PASSES AFTER MEMORY PLANNING PASS.
+            # THERE ARE A LOT OF ASSUMPTIONS IN THE STACK THAT MEMORY PLANNING IS THE LAST PASS BEFORE THE EMITTER.
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
