@@ -178,9 +178,12 @@ def main():
         edge_program_manager = exir.to_edge(exir_program_aten)
         edge_copy = copy.deepcopy(edge_program_manager)
         partitioner = CoreMLPartitioner(
-            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+            skip_ops_for_coreml_delegation=["linear.bias", "linear.weight"],
+            compile_specs=compile_specs,
         )
+        breakpoint()
         delegated_program_manager = edge_program_manager.to_backend(partitioner)
+        breakpoint()
         exec_program = delegated_program_manager.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_delegate_segments=True)
         )

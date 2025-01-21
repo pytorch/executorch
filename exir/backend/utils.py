@@ -383,7 +383,8 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
                     )
                 # tag the data node with the same tag as the last user
                 if len(user_tags) > 0:
-                    node.meta["delegation_tag"] = user_tags.pop()
+                    breakpoint()
+                    node.meta["delegation_tag"] = None  # user_tags.pop()
 
 
 def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
