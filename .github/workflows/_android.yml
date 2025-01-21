@@ -5,9 +5,53 @@ on:
   workflow_dispatch:
 
 jobs:
+  check_path:
+    name: Check whether the affected path needs to be validated by this CI
+    runs-on: ubuntu-22.04
+    outputs:
+      should_run: ${{ steps.check-path.outputs.should_run }}
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: '0'
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Check path
+      id: check-path
+      env:
+        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+        GITHUB_PR_BASE: ${{ github.base_ref }}
+        GITHUB_PR_HEAD: ${{ github.head_ref }}
+      run: |
+        if [ -z "$GITHUB_PR_NUMBER" ]; then
+          # It's not for a PR, but pushed to a branch in pull.yml, or dispatch. Always run.
+          echo "::set-output should_run=1"
+          return 0
+        fi
+        if [ -z "$GITHUB_PR_BASE" ] || [ -z "$GITHUB_PR_HEAD" ] ; then
+          # Seems like not a well-formed PR
+          echo "::set-output should_run=1"
+          return 0
+        fi
+        git diff --name-only "$GITHUB_PR_BASE" "$GITHUB_PR_HEAD" > modified_files
+        cat >> matcher<< EOF
+        .ci/docker/
+        .github/workflows/android.yml
+        build/.*android.*.sh
+        install_requirements.sh
+        examples/demo-apps/android
+        extension/android
+        extension/benchmark/android
+        extension/module
+        EOF
+        echo "::set-output should_run=$(python .github/scripts/check_path_match.py modified_files matcher)"
+
   build-llm-demo:
     name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    needs: check_path
+    if: ${{ needs.check_path.outputs.should_run }} == '1'
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
