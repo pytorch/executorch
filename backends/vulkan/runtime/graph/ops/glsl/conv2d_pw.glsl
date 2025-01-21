@@ -79,7 +79,7 @@ void main() {
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
-  if (any(greaterThanEqual(ivec3(pos[0], gpos.z), out_limits.xyz))) {
+  if (gpos.z >= out_limits.z) {
     return;
   }
 
