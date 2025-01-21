@@ -10,6 +10,22 @@ oncall("executorch")
 define_common_targets()
 
 runtime.python_library(
+    name = "rope",
+    srcs = [
+        "rope.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
     name = "llama_transformer",
     srcs = [
         "llama_transformer.py",
