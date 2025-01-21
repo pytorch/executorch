@@ -14,7 +14,7 @@ on:
 
 jobs:
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
       docker-image: ${{ inputs.docker-image }}

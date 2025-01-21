@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   lintrunner:
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-linter
@@ -62,7 +62,7 @@ jobs:
         exit $RC
 
   android-java-format:
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-linter
