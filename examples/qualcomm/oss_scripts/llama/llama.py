@@ -494,7 +494,8 @@ def compile(args, pte_filename, tokenizer):
                 annotate_linear_16a8w_in_affine_layer,
             )
         if args.ptq != None:
-            kv_quant_attrs = {}
+            import hashlib
+            kv_quant_attrs, parameter_hash = {}, []
             for i, llama_instance in enumerate(llama_instance_list):
                 llama_instance.quantize(
                     quant_dtype=quant_dtype,
@@ -517,6 +518,31 @@ def compile(args, pte_filename, tokenizer):
                             kv_quant_attrs=kv_quant_attrs,
                         ),
                     )
+                    
+                tensor_to_md5 = {}
+                for name, buffer in llama_instance.llama_model.named_buffers():
+                    md5_buffer = hashlib.md5(buffer.numpy().tobytes()).hexdigest()
+                    if md5_buffer in tensor_to_md5:
+                        tensor_to_md5[md5_buffer].append(name)
+                    else:
+                        tensor_to_md5[md5_buffer] = [name]
+                parameter_hash.append(tensor_to_md5)
+
+        # check tensors in prefill & decode are exactly the same
+        assert len(parameter_hash[0]) == len(parameter_hash[1])
+        num_keys = len(parameter_hash[0])
+        # Remove common keys from both dictionaries
+        for key in set(parameter_hash[0]).intersection(set(parameter_hash[1])):
+            del parameter_hash[0][key]
+            del parameter_hash[1][key]
+        print(f"{num_keys - len(parameter_hash[0])} / {num_keys}  tensors are matched")
+            
+        for buf, name in parameter_hash[0].items(): # kv
+            print(f"KV buffers: {name} cannot find a match")
+        for buf, name in parameter_hash[1].items(): # prefill
+            print(f"Prefill buffers: {name} cannot find a match")
+      
+
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
 
