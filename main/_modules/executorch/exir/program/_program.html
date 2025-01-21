@@ -506,12 +506,14 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">TextIO</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch._export</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._cord</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cord</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">serialize_for_executorch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize.data_serializer</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataSerializer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._warnings</span><span class="w"> </span><span class="kn">import</span> <span class="n">experimental</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_backend</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partitioner</span>
@@ -556,6 +558,7 @@
     <span class="n">EXIREdgeDialectVerifier</span><span class="p">,</span>
     <span class="n">get_aten_verifier</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.flat_tensor.serialize.serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">FlatTensorSerializer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch._export.passes</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportedProgram</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.export._remove_auto_functionalized_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -994,6 +997,7 @@
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">exir_exported_program</span><span class="o">.</span><span class="n">exported_program</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Cord</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Cord</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EmitterOutput</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">emit_stacktrace</span>
@@ -1001,16 +1005,23 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">segment_alignment</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor_alignment</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegate_alignment</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span><span class="p">:</span> <span class="n">DataSerializer</span> <span class="o">=</span> <span class="n">FlatTensorSerializer</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_emitter_output</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EmitterOutput</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span> <span class="o">=</span> <span class="n">emit_program</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emit_stacktrace</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_pte_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Cord</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
-                <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">program</span><span class="p">,</span>
-                <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_extract_delegate_segments</span><span class="p">,</span>
-                <span class="n">segment_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_segment_alignment</span><span class="p">,</span>
-                <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">,</span>
-                <span class="n">delegate_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="o">=</span> <span class="n">serialize_for_executorch</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_get_emitter_output</span><span class="p">(),</span>
+                <span class="n">ExecutorchBackendConfig</span><span class="p">(),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span>
 
     <span class="nd">@property</span>
@@ -1029,11 +1040,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span> <span class="o">=</span> <span class="n">emit_program</span><span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emit_stacktrace</span>
-            <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_emitter_output</span><span class="p">()</span><span class="o">.</span><span class="n">program</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">debug_handle_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]:</span>
@@ -1067,6 +1074,17 @@
 <span class="sd">        reducing the peak memory usage.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_get_pte_data</span><span class="p">()</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">open_file</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_tensor_data_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outdir</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Writes the serialized ExecuTorch data files to the directory at `outdir`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="c1"># pyre-ignore[16]: `Optional` has no attribute `items`.</span>
+        <span class="k">for</span> <span class="n">filename</span><span class="p">,</span> <span class="n">cord</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">outdir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.ptd&quot;</span><span class="p">),</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Writing data file to </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.ptd&quot;</span><span class="p">)</span>
+                <span class="n">cord</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">):</span>
@@ -1950,13 +1968,9 @@
         <span class="p">)</span>
 
         <span class="c1"># Serialize emitter output, ready to be written to a file.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">:</span> <span class="n">Cord</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
-            <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span><span class="p">,</span>
-            <span class="n">mutable_data</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">mutable_data</span><span class="p">,</span>
-            <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">extract_delegate_segments</span><span class="p">,</span>
-            <span class="n">segment_alignment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">segment_alignment</span><span class="p">,</span>
-            <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">constant_tensor_alignment</span><span class="p">,</span>
-            <span class="n">delegate_alignment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">delegate_alignment</span><span class="p">,</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span> <span class="o">=</span> <span class="n">FlatTensorSerializer</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="o">=</span> <span class="n">serialize_for_executorch</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
@@ -2038,6 +2052,16 @@
 <span class="sd">        reducing the peak memory usage.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">open_file</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_tensor_data_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outdir</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Writes the serialized ExecuTorch data files to the directory at `outdir`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">filename</span><span class="p">,</span> <span class="n">cord</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">outdir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.ptd&quot;</span><span class="p">),</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Writing data file to </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">cord</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
