@@ -14,6 +14,7 @@ import executorch.backends.xnnpack.test.tester.tester as tester
 import serializer.tosa_serializer as ts
 
 import torch.fx
+import torch.utils._pytree as pytree
 
 from executorch.backends.arm.arm_backend import get_intermediate_path
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
@@ -302,6 +303,7 @@ class ArmTester(Tester):
 
         exported_program = self.stages[self.stage_name(tester.Export)].artifact
         edge_program = edge_stage.artifact.exported_program()
+
         self.runner_util.init_run(
             exported_program,
             edge_program,
@@ -309,14 +311,14 @@ class ArmTester(Tester):
             target_board,
         )
 
-        quantization_scale = None
         if is_quantized:
             reference_stage = self.stages[self.stage_name(tester.Quantize)]
             # bool output is quantized with none quantized output so allow
             # self.runner_util.qp_output to be none
             if self.runner_util.qp_output is not None:
-                quantization_scale = self.runner_util.qp_output.scale
+                quantization_scales = [qp.scale for qp in self.runner_util.qp_output]
         else:
+            quantization_scales = [None] * len(self.runner_util.output_nodes)
             reference_stage = self.stages[self.stage_name(InitialModel)]
 
         logger.info(
@@ -334,20 +336,25 @@ class ArmTester(Tester):
             input_shape_str = ", ".join([str(list(i)) for i in input_shapes])
             logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
 
-            reference_output = reference_stage.run_artifact(reference_input)
-            if not isinstance(reference_output, tuple):
-                reference_output = (reference_output,)
-            test_output = test_stage.run_artifact(reference_input)
-
-            self._compare_outputs(
-                reference_output,
-                test_output,
-                quantization_scale,
-                atol,
-                rtol,
-                qtol,
-                error_callbacks,
+            reference_outputs, _ = pytree.tree_flatten(
+                reference_stage.run_artifact(reference_input)
             )
+            test_outputs, _ = pytree.tree_flatten(
+                test_stage.run_artifact(reference_input)
+            )
+
+            for reference_output, test_output, quantization_scale in zip(
+                reference_outputs, test_outputs, quantization_scales
+            ):
+                self._compare_outputs(
+                    reference_output,
+                    test_output,
+                    quantization_scale,
+                    atol,
+                    rtol,
+                    qtol,
+                    error_callbacks,
+                )
 
         return self
 

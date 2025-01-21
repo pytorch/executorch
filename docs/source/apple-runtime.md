@@ -109,7 +109,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 4. Install the required dependencies, including those needed for the backends like [Core ML](build-run-coreml.md) or [MPS](build-run-mps.md), if you plan to build them as well:
 
 ```bash
-./install_requirements.sh --pybind coreml mps xnnpack
+./install_executorch.sh --pybind coreml mps xnnpack
 
 # Optional dependencies for Core ML backend.
 ./backends/apple/coreml/scripts/install_requirements.sh
