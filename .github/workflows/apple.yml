@@ -9,7 +9,7 @@ on:
     paths:
       - .ci/scripts/setup-ios.sh
       - .github/workflows/apple.yml
-      - install_requirements.sh
+      - install_executorch.sh
       - backends/apple/**
       - build/build_apple_frameworks.sh
       - build/build_apple_llm_demo.sh
