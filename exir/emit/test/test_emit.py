@@ -642,7 +642,7 @@ class TestEmit(unittest.TestCase):
             def forward(self, x):
                 return torch.nn.functional.interpolate(x, scale_factor=2)
 
-        x = (torch.randn(1, 1, 2, 2),)
+        x = (torch.randn(1, 1, 2, 2, 2),)
         program = (
             to_edge(export(M(), x, strict=True)).to_executorch().executorch_program
         )
