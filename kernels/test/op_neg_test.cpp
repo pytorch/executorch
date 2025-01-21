@@ -24,7 +24,43 @@ class OpNegTest : public OperatorTest {
   Tensor& op_neg_out(const Tensor& self, Tensor& out) {
     return torch::executor::aten::neg_outf(context_, self, out);
   }
+
+  template <ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor in = tf.make({2, 3}, {-3, -2, -1, 0, 1, 2});
+    Tensor out = tf.zeros({2, 3});
+    Tensor expected = tf.make({2, 3}, {3, 2, 1, 0, -1, -2});
+
+    Tensor ret = op_neg_out(in, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+
+  template <>
+  void test_dtype<ScalarType::Byte>() {
+    TensorFactory<ScalarType::Byte> tf;
+
+    Tensor in = tf.make({2, 3}, {253, 254, 255, 0, 1, 2});
+    Tensor out = tf.zeros({2, 3});
+    Tensor expected = tf.make({2, 3}, {3, 2, 1, 0, 255, 254});
+
+    Tensor ret = op_neg_out(in, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
 };
+
+TEST_F(OpNegTest, AllRealHBF16Input) {
+#define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE) \
+  test_dtype<ScalarType::INPUT_DTYPE>();
+
+  ET_FORALL_REALHBF16_TYPES(TEST_KERNEL);
+#undef TEST_KERNEL
+}
 
 TEST_F(OpNegTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf;

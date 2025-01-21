@@ -66,6 +66,10 @@ class OpGeluTest : public OperatorTest {
   }
 };
 
+TEST_F(OpGeluTest, HalfTensors) {
+  test_gelu_execution<ScalarType::Half>();
+}
+
 TEST_F(OpGeluTest, FloatTensors) {
   test_gelu_execution<ScalarType::Float>();
 }
