@@ -54,7 +54,7 @@ target_compile_options(executorch INTERFACE ${_common_compile_options})
 gen_selected_ops(LIB_NAME "openvino_portable_ops_lib" INCLUDE_ALL_OPS "ON")
 generate_bindings_for_kernels(
   LIB_NAME "openvino_portable_ops_lib" FUNCTIONS_YAML
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+  ${EXECUTORCH_ROOT}/backends/openvino/openvino_functions.yaml
 )
 gen_operators_lib(
   LIB_NAME "openvino_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
