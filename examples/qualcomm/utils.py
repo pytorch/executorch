@@ -167,6 +167,8 @@ class SimpleADB:
             )
         else:
             qnn_executor_runner_cmds = custom_runner_cmd
+            
+        print("Execution command is: ", qnn_executor_runner_cmds)
 
         self._adb(["shell", f"{qnn_executor_runner_cmds}"])
 
