@@ -104,7 +104,7 @@ xcode-select --install
 2. Clone ExecuTorch:
 
 ```bash
-git clone https://github.com/pytorch/executorch.git --recursive --depth 1
+git clone https://github.com/pytorch/executorch.git --recursive --depth 1 -b release/0.4
 cd executorch
 ```
 
