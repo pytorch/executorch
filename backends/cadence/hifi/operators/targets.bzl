@@ -241,3 +241,122 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    runtime.cxx_library(
+        name = "op_add",
+        srcs = glob([
+            "op_add.cpp",
+        ]),
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+
+    runtime.cxx_library(
+        name = "op_mul",
+        srcs = glob([
+            "op_mul.cpp",
+        ]),
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_sub",
+        srcs = glob([
+            "op_sub.cpp",
+        ]),
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_div",
+        srcs = glob([
+            "op_div.cpp",
+        ]),
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_sigmoid",
+        srcs = glob([
+            "op_sigmoid.cpp",
+        ]),
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_tanh",
+        srcs = glob([
+            "op_tanh.cpp",
+        ]),
+        platforms = CXX,
+        deps = [
+            "//executorch/kernels/portable/cpu/util:all_deps",
+            "//executorch/kernels/portable/cpu/pattern:all_deps",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/hifi/kernels:kernels",
+            "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
