@@ -83,25 +83,35 @@ class OpenvinoBackend final : public ::executorch::runtime::BackendInterface {
 
     auto infer_request = execution_handle->infer_request;
 
-    // Assume first argument is the input tensor
-    auto input_tensor = args[0]->toTensor();
-    ov::Shape input_shape(input_tensor.sizes().begin(), input_tensor.sizes().end());
+    size_t num_inputs = infer_request->get_compiled_model().inputs().size();
+    size_t num_outputs = infer_request->get_compiled_model().outputs().size();
 
-    // Convert input tensor to OpenVINO tensor
-    ov::element::Type ov_type = convert_to_openvino_type(input_tensor.scalar_type());
-    ov::Tensor ov_input_tensor(ov_type, input_shape, input_tensor.mutable_data_ptr());
+    // Set inputs
+    for (size_t i = 0; i < num_inputs; i++) {
+      auto input_tensor = args[i]->toTensor();
+      ov::Shape input_shape(input_tensor.sizes().begin(), input_tensor.sizes().end());
 
-    //infer_request->set_tensor("input", ov_input_tensor);
-    infer_request->set_input_tensor(0, ov_input_tensor);
+      // Convert input tensor to OpenVINO tensor
+      ov::element::Type ov_type = convert_to_openvino_type(input_tensor.scalar_type());
+      ov::Tensor ov_input_tensor(ov_type, input_shape, input_tensor.mutable_data_ptr());
+
+      infer_request->set_input_tensor(i, ov_input_tensor);
+    }
+
+    // Set outputs
+    for (size_t i = 0; i < num_outputs; i++) {
+      auto output_tensor = args[num_inputs+i]->toTensor();
+      ov::Shape output_shape(output_tensor.sizes().begin(), output_tensor.sizes().end());
+
+      // Convert input tensor to OpenVINO tensor
+      ov::element::Type ov_type = convert_to_openvino_type(output_tensor.scalar_type());
+      ov::Tensor ov_output_tensor(ov_type, output_shape, output_tensor.mutable_data_ptr());
+
+      infer_request->set_output_tensor(i, ov_output_tensor);
+    }
 
     // Execute the inference
     infer_request->infer();
-
-    // Retrieve and copy output
-    auto output_tensor = args[1]->toTensor(); // Assume second argument is the output
-    ov::Tensor ov_output_tensor = infer_request->get_output_tensor(0); //get_tensor("output");
-
-    std::memcpy(output_tensor.mutable_data_ptr(), ov_output_tensor.data(), ov_output_tensor.get_byte_size());
 
     return Error::Ok;
   }
