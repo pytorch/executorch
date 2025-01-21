@@ -10,7 +10,7 @@
 // logic. The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
-#include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
@@ -57,7 +57,7 @@ Runner::Runner(
     ET_LOG(Info, "creating module: model_path=%s", models_path[i].c_str());
   }
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
-  ET_LOG(Info, "eval mode=%d", eval_mode);
+  ET_LOG(Info, "eval mode=%d", eval_mode_);
 }
 
 bool Runner::is_loaded() const {
@@ -168,12 +168,14 @@ Error Runner::load() {
     // llama2 tokenizer
     tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
     err = tokenizer_->load(tokenizer_path_);
+    llama_version_ = LlamaVersion::kLlama2;
     ET_CHECK_MSG(
         err == Error::Ok,
         "failed to load tokenizer %s",
         tokenizer_path_.c_str());
   } else {
     eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+    llama_version_ = LlamaVersion::kLlama3;
   }
   bos_id_ = tokenizer_->bos_tok();
   eos_id_.insert(tokenizer_->eos_tok());
@@ -217,8 +219,7 @@ int32_t Runner::logitsToToken(const Tensor& logits_tensor, int64_t pos) {
 
   // offset to the meaningful logit we want.
   if (logits_tensor.sizes().data()[1] > 1) {
-    auto vocab_size = logits_tensor.size(2);
-    logits_last += pos * vocab_size;
+    logits_last += pos * vocab_size_;
   }
 
   // dequantize
@@ -277,17 +278,27 @@ Error Runner::generate(
 
   ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
 
-  if (!system_prompt.empty()) {
-    prompt_.append("<|start_header_id|>system<|end_header_id|>\n\n");
-    prompt_.append(system_prompt);
-    prompt_.append("<|eot_id|>");
-  }
-  prompt_.append("<|start_header_id|>user<|end_header_id|>\n\n");
-  prompt_.append(prompt);
-  prompt_.append("<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n");
-
-  if (token_callback) {
-    token_callback("<|begin_of_text|>");
+  switch (llama_version_) {
+    case LlamaVersion::kLlama2:
+      prompt_.append(prompt);
+      break;
+    case LlamaVersion::kLlama3:
+      if (!system_prompt.empty()) {
+        prompt_.append("<|start_header_id|>system<|end_header_id|>\n\n");
+        prompt_.append(system_prompt);
+        prompt_.append("<|eot_id|>");
+      }
+      prompt_.append("<|start_header_id|>user<|end_header_id|>\n\n");
+      prompt_.append(prompt);
+      prompt_.append(
+          "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n");
+      if (token_callback) {
+        token_callback("<|begin_of_text|>");
+      }
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported llama version");
+      break;
   }
 
   int max_seq_len = std::max(prefill_cache_len_, kv_cache_len_) + 1;
@@ -318,13 +329,13 @@ Error Runner::generate(
   int64_t pos = 0, prev_token, cur_token = prompt_tokens[0];
   HybridMemory::IO* ptr =
       static_cast<HybridMemory::IO*>(io_mem_->get_mutable_ptr());
+  if (token_callback) {
+    token_callback(prompt_);
+  }
 
   auto prefill_execute = [&](const std::string& method_name) {
     for (int i = 0; i < num_prompt_tokens; i++) {
       ptr->prefill_input_toks[i] = static_cast<int32_t>(prompt_tokens[i]);
-    }
-    if (token_callback) {
-      token_callback(prompt_);
     }
 
     pos = num_prompt_tokens - 1;
@@ -389,7 +400,7 @@ Error Runner::generate(
       auto piece_res = tokenizer_->decode(prev_token, cur_token);
       ET_CHECK(piece_res.ok());
 
-      if (token_callback) {
+      if (token_callback && pos >= num_prompt_tokens) {
         token_callback(piece_res.get().c_str());
       }
 

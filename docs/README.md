@@ -65,7 +65,7 @@ To build the documentation locally:
 1. Run:
 
    ```bash
-   bash install_requirements.sh
+   bash install_executorch.sh
    ```
 
 1. Go to the `docs/` directory.

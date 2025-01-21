@@ -9,6 +9,7 @@ load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 TESTS_LIST = [
     "add_op",
+    "g3_ops",
     "quantized_conv1d_op",
     "quantized_linear_op",
 ]
@@ -46,5 +47,6 @@ def _define_test_target(test_name):
             "fbcode//executorch/backends/cadence/aot:ops_registrations",
             "fbcode//executorch/backends/cadence/aot:export_example",
             "fbcode//executorch/backends/cadence/aot:compiler",
+            "fbcode//executorch/examples/cadence/operators:facto_util",
         ],
     )
