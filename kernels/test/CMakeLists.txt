@@ -117,6 +117,7 @@ set(all_test_sources
     "op_clamp_test.cpp"
     "op_clone_test.cpp"
     "op_constant_pad_nd_test.cpp"
+    "op_convolution_backward_test.cpp"
     "op_convolution_test.cpp"
     "op_copy_test.cpp"
     "op_cos_test.cpp"
