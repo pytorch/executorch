@@ -10,8 +10,8 @@ import re
 import shutil
 import subprocess
 import tempfile
-
 from pathlib import Path
+
 from typing import cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
@@ -21,13 +21,14 @@ from executorch.backends.arm.arm_backend import get_tosa_version, is_tosa
 
 from executorch.backends.arm.test.conftest import is_option_enabled
 from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.exir import ExecutorchProgramManager, ExportedProgram
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
-
 from packaging.version import Version
-from torch.export import ExportedProgram
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
+from torch.testing._internal.common_utils import torch_to_numpy_dtype_dict
 from tosa import TosaGraph
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ class QuantizationParams:
         self.dtype = dtype
 
 
-def _get_input_names(program: ExportedProgram) -> list[str]:
+def get_input_names(program: ExportedProgram) -> list[str]:
     """
     Get a list[str] with the names of the inputs to this model.
 
@@ -76,7 +77,7 @@ def _get_input_names(program: ExportedProgram) -> list[str]:
     return input_names
 
 
-def _get_input_quantization_params(
+def get_input_quantization_params(
     program: ExportedProgram,
 ) -> list[QuantizationParams]:
     """
@@ -85,12 +86,10 @@ def _get_input_quantization_params(
         program (ExportedProgram): The program to get input quantization parameters from.
     Returns:
         list[QuantizationParams]: The found quantization parameters.
-    Raises:
-        RuntimeError if no quantization parameters are found.
     """
 
     quant_params = []
-    input_names = _get_input_names(program)
+    input_names = get_input_names(program)
     num_inputs = len(input_names)
     for node in program.graph.nodes:
         if (
@@ -115,7 +114,7 @@ def _get_input_quantization_params(
     return quant_params
 
 
-def _get_output_nodes(program: ExportedProgram) -> list[Node]:
+def get_output_nodes(program: ExportedProgram) -> list[Node]:
     """
     Get output node to this model.
 
@@ -135,33 +134,32 @@ def _get_output_nodes(program: ExportedProgram) -> list[Node]:
         return output_nodes
 
 
-def _get_output_quantization_params(
+def get_output_quantization_params(
     output_nodes: list[Node],
-) -> List[QuantizationParams]:
+) -> dict[Node, QuantizationParams | None]:
     """
     Get output QuantizationParams from a program.
     Args:
         output_nodes (list(Node)): A list of output nodes to get output quantization parameters from.
     Returns:
-        QuantizationParams: The found quantization parameters.
+        dictionary mapping the output nodes to the found quantization parameters.
+        If no quantization parameters were found, the entry is None.
     Raises:
         RuntimeError if no output quantization parameters are found.
     """
-    quant_params = []
+    quant_params = {}
     for node in output_nodes:
         if node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
-            quant_params.append(
-                QuantizationParams(
-                    node_name=node.args[0].name,
-                    scale=node.args[1],
-                    zp=node.args[2],
-                    qmin=node.args[3],
-                    qmax=node.args[4],
-                    dtype=node.args[5],
-                )
+            quant_params[node] = QuantizationParams(
+                node_name=node.args[0].name,
+                scale=node.args[1],
+                zp=node.args[2],
+                qmin=node.args[3],
+                qmax=node.args[4],
+                dtype=node.args[5],
             )
-    if len(quant_params) == 0:
-        raise RuntimeError("No Quantization parameters not found in exported model.")
+        else:
+            quant_params[node] = None
     return quant_params
 
 
@@ -177,7 +175,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
             )
         tosa_version = get_tosa_version(compile_specs)
 
-        return run_tosa_graph_static(tosa_buffer, tosa_version, inputs)
+        return run_tosa_graph(tosa_buffer, tosa_version, inputs)
 
     def __torch_function__(self, func, types, args=..., kwargs=None):
         if isinstance(func, torch._higher_order_ops.executorch_call_delegate.ExecutorchCallDelegate):  # type: ignore
@@ -193,121 +191,65 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
         return func(*args, **kwargs)
 
 
-"""
-A class to store parameters needed for running programs, either in tosa or .pte format.
-"""
+def run_corstone(
+    executorch_program_manager: ExecutorchProgramManager,
+    inputs: Tuple[torch.Tensor],
+    intermediate_path: str | Path,
+    target_board: Literal["corestone-300", "corestone-320"],
+    elf_path: str | Path,
+    timeout: int = 120,  # s
+) -> list[torch.Tensor]:
+    """Executes an inference of the exported_program on FVP.
+    Returns a list of tensors with the output.
+    Args:
+        `executorch_program_manager`: the executorch program to run.
+        The output of a EdgeProgramManager.to_executorch() call.
+        `inputs`: A list of tensors with the inputs of the inference.
+        `dump_path`: A directory where the .pte and inputs are saved to file.
+                     The output tensors are saved in `dump_path`/out.
+        `target_board`: Whether to run the corstone-300 FVP or the corstone-320 FVP
+        `elf_path`: The path to the runtime elf. Needs to have semihosting enabled
+        and match the target_board.
+        `timeout`: The timeout until the FVP terminates the elf, in seconds.
+    A runtime with semihosting needs
+    Limitations:
+        Relies on the output tensors from the exported program
+        to figure out the shape and dtype of the buffer that was
+        output from the FVP.
+    """
 
+    exported_program = executorch_program_manager.exported_program()
+    intermediate_path = Path(intermediate_path)
+    intermediate_path.mkdir(exist_ok=True)
+    elf_path = Path(elf_path)
+    if not elf_path.exists():
+        raise FileNotFoundError(f"Did not find elf file {elf_path}")
 
-class RunnerUtil:
-    def __init__(
-        self,
-        intermediate_path: str,
-        tosa_ref_model_path: Optional[str] = None,
-    ):
-        self.intermediate_path = intermediate_path
-        self.tosa_ref_model_path = tosa_ref_model_path or "tosa_reference_model"
-        assert self.intermediate_path is None or os.path.exists(
-            self.intermediate_path
-        ), f"TOSA artifact path don't exist! Path: {self.intermediate_path}"
+    # Save pte to file
+    pte_path = os.path.join(intermediate_path, "program.pte")
+    with open(pte_path, "wb") as f:
+        f.write(executorch_program_manager.buffer)
 
-        self.is_quantized: bool = False
-        self.input_names: list[str] = None
-        self.output_name: str = None
-        self.qp_input: list[QuantizationParams] = None
-        self.qp_output: list[QuantizationParams] = None
-        self.timeout = 480
-        self.target_board: str = None
+    # Save inputs to file
+    input_names = get_input_names(exported_program)
+    input_paths = []
+    for input_name, input_ in zip(input_names, inputs):
+        input_path = save_bytes(intermediate_path, input_, input_name)
+        input_paths.append(input_path)
 
-        self._has_init_run = False
+    out_path = os.path.join(intermediate_path, "out")
 
-    def init_run(
-        self,
-        exported_program: ExportedProgram,
-        edge_program: ExportedProgram,
-        is_quantized: bool,
-        target_board: str,
-    ):
+    cmd_line = f"executor_runner -m {pte_path} -o {out_path}"
+    for input_path in input_paths:
+        cmd_line += f" -i {input_path}"
 
-        self.input_names = _get_input_names(edge_program)
-        self.output_nodes = _get_output_nodes(exported_program)
+    ethos_u_extra_args = ""
+    if is_option_enabled("fast_fvp"):
+        ethos_u_extra_args = ethos_u_extra_args + "--fast"
 
-        self.is_quantized = is_quantized
-        self.target_board = target_board
-
-        if is_quantized:
-            self.qp_input = _get_input_quantization_params(exported_program)
-            self.qp_output = _get_output_quantization_params(self.output_nodes)
-        else:
-            self.qp_input = [None] * len(self.input_names)
-            self.qp_output = [None] * len(self.output_nodes)
-
-        self._has_init_run = True
-
-    def set_timeout(self, timeout: int):
-        self.timeout = timeout
-
-    @staticmethod
-    def get_elf_path(target_board):
-        elf_path = os.path.join(
-            "cmake-out",
-            f"arm_semihosting_executor_runner_{target_board}",
-            "arm_executor_runner",
-        )
-        if not os.path.exists(elf_path):
-            raise RuntimeError(
-                f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
-            )
-        else:
-            return elf_path
-
-    @staticmethod
-    def arm_executor_runner_exists(target_board):
-        try:
-            RunnerUtil.get_elf_path(target_board)
-        except:
-            return False
-        else:
-            return True
-
-    def run_corstone(
-        self,
-        inputs: Tuple[torch.Tensor],
-    ) -> list[torch.Tensor]:
-
-        assert (
-            self._has_init_run
-        ), "RunnerUtil needs to be initialized using init_run() before running Corstone FVP."
-        if self.target_board not in ["corstone-300", "corstone-320"]:
-            raise RuntimeError(f"Unknown target board: {self.target_board}")
-
-        pte_path = os.path.join(self.intermediate_path, "program.pte")
-        assert os.path.exists(pte_path), f"Pte path '{pte_path}' not found."
-
-        for input_name, quant_param, data in zip(
-            self.input_names, self.qp_input, inputs
-        ):
-            save_bytes(self.intermediate_path, data, False, input_name, quant_param)
-
-        out_path = os.path.join(self.intermediate_path, "out")
-
-        input_paths = []
-        for name in self.input_names:
-            input_paths.append(
-                os.path.join(self.intermediate_path, f"{name}.bin"),
-            )
-        elf_path = self.get_elf_path(self.target_board)
-
-        cmd_line = f"executor_runner -m {pte_path} -o {out_path}"
-
-        for input_path in input_paths:
-            cmd_line += f" -i {input_path}"
-
-        ethos_u_extra_args = ""
-        if is_option_enabled("fast_fvp"):
-            ethos_u_extra_args = ethos_u_extra_args + "--fast"
-
-        command_args = {
-            "corstone-300": [
+    match target_board:
+        case "corstone-300":
+            command_args = [
                 "FVP_Corstone_SSE-300_Ethos-U55",
                 "-C",
                 "ethosu.num_macs=128",
@@ -330,9 +272,10 @@ class RunnerUtil:
                 "-a",
                 elf_path,
                 "--timelimit",
-                f"{self.timeout}",
-            ],
-            "corstone-320": [
+                f"{timeout}",
+            ]
+        case "corstone-320":
+            command_args = [
                 "FVP_Corstone_SSE-320",
                 "-C",
                 "mps4_board.subsystem.ethosu.num_macs=128",
@@ -361,212 +304,44 @@ class RunnerUtil:
                 "-a",
                 elf_path,
                 "--timelimit",
-                f"{self.timeout}",
-            ],
-        }
+                f"{timeout}",
+            ]
+        case _:
+            raise ValueError(f"Unknown target board {target_board}")
 
-        result = _run_cmd(command_args[self.target_board], check=False)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Failed to run {command_args[self.target_board]}\nOutput:\n{result.stdout.decode()}\nError: {result.stderr.decode()}"
-            )
-        result_stdout = result.stdout.decode()
+    result = _run_cmd(command_args)
 
-        error_regex = r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)"
-
-        # Check for errors in the output
-        # regex to check for error or fault messages in stdout from FVP
-        if re.compile(error_regex, re.MULTILINE).search(result_stdout):
-            raise RuntimeError(
-                f"Corstone simulation failed:\ncmd: {command_args[self.target_board]}\n, log: \n {result_stdout}\n{result.stderr.decode()}"
-            )
-        output_np = []
-        for i, node in enumerate(self.output_nodes):
-            tosa_ref_output = np.fromfile(
-                os.path.join(self.intermediate_path, f"out-{i}.bin"), dtype=np.float32
-            )
-            output_shape = node.meta["val"].shape
-            output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
-        return tuple(output_np)
-
-    def run_tosa_graph(
-        self, graph: TosaGraph, inputs: list[np.ndarray] | list[torch.Tensor]
-    ) -> torch.Tensor:
-        """Runs the TOSA reference model with inputs and returns the result."""
-        data_np = [
-            prep_data_for_save(
-                input, self.is_quantized, self.input_names[i], self.qp_input[i]
-            )
-            for i, input in enumerate(inputs)
-        ]
-        # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
-        tosa_profile = 0 if self.is_quantized else 1
-        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
-        outputs, status = tosa_reference_model.run(
-            graph,
-            data_np,
-            verbosity=_tosa_refmodel_loglevel(logger.level),
-            tosa_profile=tosa_profile,
-            initialize_variable_tensor_from_numpy=1,  # True
-            debug_mode=debug_mode,
+    # Regex to check for error or fault messages in stdout from FVP
+    result_stdout = result.stdout.decode()
+    error_regex = r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)"
+    if re.compile(error_regex, re.MULTILINE).search(result_stdout):
+        raise RuntimeError(
+            f"Corstone simulation failed:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
         )
 
-        assert (
-            status == tosa_reference_model.GraphStatus.TOSA_VALID
-        ), "Non-valid TOSA given to reference model."
+    output_nodes = get_output_nodes(exported_program)
+    output_np = []
+    for i, node in enumerate(output_nodes):
+        output_shape = node.meta["val"].shape
+        output_dtype = node.meta["val"].dtype
+        tosa_ref_output = np.fromfile(
+            os.path.join(intermediate_path, f"out-{i}.bin"),
+            torch_to_numpy_dtype_dict[output_dtype],
+        )
 
-        outputs_torch = []
-        for output in outputs:
-            output = torch.from_numpy(output)
-            if self.is_quantized:
-                # Need to dequant back to FP32 for comparison with torch output
-                quant_param = self.qp_output
-                assert (
-                    quant_param is not None
-                ), "There are no quantization parameters, check output parameters"
-                output = (output.to(torch.float32) - quant_param.zp) * quant_param.scale
-            outputs_torch.append(output)
-        return tuple(outputs_torch)
-
-    def run_tosa_ref_model(
-        self,
-        inputs: Tuple[torch.Tensor],
-    ) -> list[torch.Tensor]:
-        """
-        Run TOSA reference model using the tosa_reference_model program.
-
-        In order to do that we need:
-        1. desc.json, which points to files needed by tosa_reference_model.
-        2. output.tosa, which is the TOSA buffer that describes the model we're
-           trying to run.
-
-        These two files are created by arm_backend.py as part of partition stage
-
-        All these files are saved on disk in self.intermediate_path.
-
-        Args:
-            inputs (Tuple[torch.Tensor]): The input data to run the TOSA
-
-        Returns:
-            torch.Tensor: The output of the TOSA reference model, as a torch
-                tensor.
-
-        Here's a sample desc.json file:
-        {
-            "tosa_file": "output.tosa",
-            "ifm_name": [
-                "arg0_1"
-            ],
-            "ifm_file": [
-                "arg0_1.npy"
-            ],
-            "ofm_name": [
-                "quantized_decomposed_dequantize_per_tensor_default_1"
-            ],
-            "ofm_file": [
-                "ref-quantized_decomposed_dequantize_per_tensor_default_1.npy"
-            ],
-            "expected_return_code": 0,
-            "expected_failure": false
-        }
-
-        Todo:
-            * It would be nice to not rely on files on disk. Should be possible
-              as a next step. See:
-              https://review.mlplatform.org/plugins/gitiles/tosa/reference_model/#executable-usage
-        """
-
-        assert (
-            self._has_init_run
-        ), "RunnerUtil needs to be initialized using init_run() before running tosa reference."
-
-        all_desc_file_paths = [
-            str(path) for path in Path(self.intermediate_path).glob("desc*.json")
-        ]
-        assert (
-            all_desc_file_paths
-        ), f"No TOSA description file found in '{self.intermediate_path}'."
-        if len(all_desc_file_paths) != 1:
-            raise NotImplementedError(
-                "Graphs with more than one partition are currently not supported."
-            )
-
-        desc_file_path = all_desc_file_paths[0]
-        assert os.path.exists(
-            desc_file_path
-        ), f"desc_file_path: {desc_file_path} does not exist"
-
-        # Save the input data to disk as a .npy file, since that's what the TOSA
-        # reference model expects. Name of the file must match the name in
-        # desc.json, which is the tensor name from the graph + .npy
-        for input_name, quant_param, data in zip(
-            self.input_names, self.qp_input, inputs, strict=True
-        ):
-            save_npy(
-                self.intermediate_path, data, self.is_quantized, input_name, quant_param
-            )
-
-        # Run the TOSA reference model via command line, this will produce a
-        # .npy file with the result (aka OFM).
-        assert (
-            shutil.which(self.tosa_ref_model_path) is not None
-        ), f"tosa_reference_model tool not found, did you run examples/arm/setup.sh? Path: {self.tosa_ref_model_path}"
-
-        cmd_ref_model = [
-            self.tosa_ref_model_path,
-            "--test_desc",
-            desc_file_path,
-            "-l",
-            _tosa_refmodel_loglevel(logger.level),
-        ]
-        _run_cmd(cmd_ref_model)
-
-        # Load desc.json, just to get the name of the output file above
-        with open(desc_file_path) as f:
-            desc_json = json.load(f)
-
-        tosa_ref_outputs = []
-        for ofm_file in desc_json["ofm_file"]:
-            ofm_file_npy = os.path.join(self.intermediate_path, ofm_file)
-
-            # Load the output file (OFM) and return it as a numpy array
-            tosa_ref_output = np.load(ofm_file_npy)
-
-            if self.is_quantized:
-                # Need to dequant back to FP32 for comparison with torch output
-                # Convert to int32 prior to dequantize the output
-                if tosa_ref_output.dtype == np.int8:
-                    tosa_ref_output = tosa_ref_output.astype(np.int32)
-                quant_param = self.qp_output
-                if quant_param is not None:
-                    # I.e. bool output is possible for quantized models
-                    tosa_ref_output = (
-                        tosa_ref_output - quant_param.zp
-                    ) * quant_param.scale
-
-            if tosa_ref_output.dtype == np.double:
-                tosa_ref_output = tosa_ref_output.astype("float32")
-            elif tosa_ref_output.dtype == bool:
-                # retain the bool output though for boolean related comparisons
-                tosa_ref_output = tosa_ref_output.astype("bool")
-
-            # tosa_output is a numpy array, convert to torch tensor for comparison
-            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output))
-
-        return tosa_ref_outputs
+        output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
+    return tuple(output_np)
 
 
 def prep_data_for_save(
     data: torch.Tensor,
-    is_quantized: bool,
     input_name: str,
-    quant_param: QuantizationParams,
+    quant_param: Optional[QuantizationParams] = None,
 ):
     data_np = np.array(data.detach(), order="C").astype(
-        f"{data.dtype}".replace("torch.", "")
+        torch_to_numpy_dtype_dict[data.dtype]
     )
-
-    if is_quantized:
+    if quant_param is not None:
         assert quant_param.node_name in input_name, (
             f"The quantization params name '{quant_param.node_name}' does not "
             f"match the input tensor name '{input_name}'."
@@ -585,22 +360,20 @@ def prep_data_for_save(
 def save_npy(
     path: str,
     data,
-    is_quantized: bool,
     input_name: str,
-    quant_param: QuantizationParams,
+    quant_param: Optional[QuantizationParams] = None,
 ) -> str:
     """Serializes and saves 'data' as a .npy file, possibly quantizing it before.
 
     Parameters:
         path: the directory where to save the data.
         data: the data to save.
-        is_quantized: whether to quantize the data before saving it.
         input_name: the name of the file, without file-ending.
         quant_param: the parameters to use for quantization.
     Returns:
         the full file path of the output.
     """
-    data_np = prep_data_for_save(data, is_quantized, input_name, quant_param)
+    data_np = prep_data_for_save(data, input_name, quant_param)
     file_path = os.path.join(path, input_name + ".npy")
     np.save(file_path, data_np, allow_pickle=False)
 
@@ -610,22 +383,20 @@ def save_npy(
 def save_bytes(
     path: str,
     data,
-    is_quantized: bool,
     input_name: str,
-    quant_param: QuantizationParams,
+    quant_param: Optional[QuantizationParams] = None,
 ) -> str:
     """Serializes and saves 'data' in byte format, possibly quantizing it before.
 
     Parameters:
         path: the directory where to save the data.
         data: the data to save.
-        is_quantized: whether to quantize the data before saving it.
         input_name: the name of the file, without file-ending.
         quant_param: the parameters to use for quantization.
     Returns:
         the full file path of the output.
     """
-    data_np = prep_data_for_save(data, is_quantized, input_name, quant_param)
+    data_np = prep_data_for_save(data, input_name, quant_param)
     file_path = os.path.join(path, input_name + ".bin")
     with open(file_path, "w+b") as f:
         data_np_bytes = data_np.tobytes()
@@ -739,7 +510,30 @@ def corstone320_installed() -> bool:
     return True
 
 
-def run_tosa_graph_static(
+def get_elf_path(target_board):
+    elf_path = os.path.join(
+        "cmake-out",
+        f"arm_semihosting_executor_runner_{target_board}",
+        "arm_executor_runner",
+    )
+    if not os.path.exists(elf_path):
+        raise RuntimeError(
+            f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+        )
+    else:
+        return elf_path
+
+
+def arm_executor_runner_exists(target_board):
+    try:
+        get_elf_path(target_board)
+    except:
+        return False
+    else:
+        return True
+
+
+def run_tosa_graph(
     graph: TosaGraph,
     tosa_version: TosaSpecification,
     inputs: list[torch.Tensor],
@@ -774,11 +568,25 @@ def run_tosa_graph_static(
 
 
 def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
-    if to == "NCHW":
-        dim_order = (0, 3, 1, 2)
-    if to == "NHWC":
-        dim_order = (0, 2, 3, 1)
+    match to:
+        case "NCHW":
+            dim_order = (0, 3, 1, 2)
+        case "NHWC":
+            dim_order = (0, 2, 3, 1)
+        case _:
+            raise NotImplementedError(f"Cant transpose to dim order {to}")
     for i in range(len(data)):
         if hasattr(data[i], "shape") and len(data[i].shape) == 4:
             # Copy is needed to force actual data conversion, not setting stride.
             data[i] = np.transpose(data[i], dim_order).copy()
+
+
+def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
+    for spec in compile_spec:
+        if spec.key == "compile_flags":
+            flags = spec.value.decode()
+            if "u55" in flags:
+                return "corstone-300"
+            elif "u85" in flags:
+                return "corstone-320"
+    return None

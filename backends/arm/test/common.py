@@ -17,7 +17,11 @@ import pytest
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from runner_utils import corstone300_installed, corstone320_installed, RunnerUtil
+from runner_utils import (
+    arm_executor_runner_exists,
+    corstone300_installed,
+    corstone320_installed,
+)
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:
@@ -151,27 +155,14 @@ def get_u85_compile_spec_unbuilt(
     return compile_spec
 
 
-def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
-    for spec in compile_spec:
-        if spec.key == "compile_flags":
-            flags = spec.value.decode()
-            if "u55" in flags:
-                return "corstone-300"
-            elif "u85" in flags:
-                return "corstone-320"
-    return None
-
-
 SkipIfNoCorstone300 = pytest.mark.skipif(
-    not corstone300_installed()
-    or not RunnerUtil.arm_executor_runner_exists("corstone-300"),
+    not corstone300_installed() or not arm_executor_runner_exists("corstone-300"),
     reason="Did not find Corstone-300 FVP or executor_runner on path",
 )
 """Skips a test if Corsone300 FVP is not installed, or if the executor runner is not built"""
 
 SkipIfNoCorstone320 = pytest.mark.skipif(
-    not corstone320_installed()
-    or not RunnerUtil.arm_executor_runner_exists("corstone-320"),
+    not corstone320_installed() or not arm_executor_runner_exists("corstone-320"),
     reason="Did not find Corstone-320 FVP or executor_runner on path",
 )
 """Skips a test if Corsone320 FVP is not installed, or if the executor runner is not built."""
