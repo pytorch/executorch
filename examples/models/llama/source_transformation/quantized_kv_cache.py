@@ -98,8 +98,8 @@ class QuantizedKVCache(nn.Module):
         However the storage is [B, S, H, D] so we incur transpose in, transpose out
         This shall be removed by subsequent post-export graph pass
         """
-        k_val = k_val.transpose(1, 2)
-        v_val = v_val.transpose(1, 2)
+        k_val = k_val.transpose(1, 2).contiguous()
+        v_val = v_val.transpose(1, 2).contiguous()
         # quantize current k_val and store it in the cache
         quantized_k_val, k_scales, k_zero_points = self._quantize(k_val)
 
@@ -152,7 +152,7 @@ class QuantizedKVCache(nn.Module):
             k_out[:, input_pos] = k_val
             v_out[:, input_pos] = v_val
 
-        return k_out.transpose(1, 2), v_out.transpose(1, 2)
+        return k_out.transpose(1, 2).contiguous(), v_out.transpose(1, 2).contiguous()
 
     @classmethod
     def from_float(
@@ -249,12 +249,15 @@ class CustomKVCache(nn.Module):
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D]
-        k_val = k_val.transpose(1, 2)
-        v_val = v_val.transpose(1, 2)
+        k_val = k_val.transpose(1, 2).contiguous()
+        v_val = v_val.transpose(1, 2).contiguous()
         start_pos = input_pos[0].item()
         _ = torch.ops.llama.update_cache(k_val, self.k_cache, start_pos)
         _ = torch.ops.llama.update_cache(v_val, self.v_cache, start_pos)
-        return self.k_cache.transpose(1, 2), self.v_cache.transpose(1, 2)
+        return (
+            self.k_cache.transpose(1, 2).contiguous(),
+            self.v_cache.transpose(1, 2).contiguous(),
+        )
 
 
 def replace_kv_cache_with_custom_kv_cache(module):
