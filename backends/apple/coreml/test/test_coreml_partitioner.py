@@ -16,8 +16,7 @@ from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
-    # TODO(T182928844): Delegate dim order op to backend.
-    edge_compile_config = executorch.exir.EdgeCompileConfig(_skip_dim_order=True)
+    edge_compile_config = executorch.exir.EdgeCompileConfig()
 
     def test_add_sub_skip_mm(self):
         class Model(torch.nn.Module):
