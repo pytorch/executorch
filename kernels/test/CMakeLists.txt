@@ -139,6 +139,7 @@ set(all_test_sources
     "op_fmod_test.cpp"
     "op_full_like_test.cpp"
     "op_full_test.cpp"
+    "op_gather_test.cpp"
     "op_ge_test.cpp"
     "op_gelu_test.cpp"
     "op_glu_test.cpp"
