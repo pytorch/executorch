@@ -179,7 +179,6 @@ int main(int argc, char** argv) {
 
   // Run the model.
   Error status = method->execute();
-
   ET_CHECK_MSG(
       status == Error::Ok,
       "Execution of method %s failed with status 0x%" PRIx32,
