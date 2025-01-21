@@ -1,21 +1,5 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-#
-# This yaml file contains operators that are also defined by the ATen library.
-# For lean mode:
-#   - Codegen'd target `executorch_generated_lib` will be reading all the information
-#     from this file, including operator schema and kernel metadata.
-#   - Selective build target `codegen:executorch_defined_ops` now is selecting all the
-#     operators in this file, by dumping all the op names into `selected_operators.yaml`.
-#
-# For ATen mode:
-#   - Codegen'd tagret `executorch_generated_lib` will read information from
-#     `native_functions.yaml` in ATen library, for both operator schema and kernel metadat.
-#   - Selective build will also look for operator names listed in this file and use them to
-#     filter the entries in `native_functions.yaml`. Kernel metadata defined in this yaml
-#     will be ignored.
-#
-# See the README.md file in this directory for a description of the syntax used
-# by this file.
+# This yaml file contains operators that are unsupported with openvino backend and 
+# will use portable kernels for fall back
 
 - op: _cdist_forward.out
   kernels:

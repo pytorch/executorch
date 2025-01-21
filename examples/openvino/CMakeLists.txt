@@ -1,9 +1,3 @@
-# Copyright (c) Qualcomm Innovation Center, Inc.
-# All rights reserved
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 set(CMAKE_CXX_STANDARD 17)
 
 cmake_minimum_required(VERSION 3.19)
