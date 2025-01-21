@@ -17,6 +17,7 @@ runtime.python_library(
         "//caffe2:torch",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/devtools/visualization:visualization",
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_api",
