@@ -17,7 +17,6 @@ from executorch.examples.models.llama.source_transformation.quantized_kv_cache i
 
 
 class QuantizedKVCacheTest(unittest.TestCase):
-
     def _init_cache(self):
         self.kv_cache = KVCache(
             self.max_batch_size,
@@ -52,12 +51,15 @@ class QuantizedKVCacheTest(unittest.TestCase):
         self._init_cache()
         k, v = self._init_kv()
         quantized_kv_cache = QuantizedKVCache.from_float(
-            self.kv_cache, QuantizedCacheType.AffineAsymmetric
+            self.kv_cache,
+            QuantizedCacheType.AffineAsymmetric,
+            use_custom_update_cache_op,
         )
         updated_k_cache, updated_v_cache = self.kv_cache.update(input_pos, k, v)
-        updated_dequantized_k_cache, updated_dequantized_v_cache = (
-            quantized_kv_cache.update(input_pos, k, v)
-        )
+        (
+            updated_dequantized_k_cache,
+            updated_dequantized_v_cache,
+        ) = quantized_kv_cache.update(input_pos, k, v)
 
         def index(t, input_pos):
             return t[:, :, input_pos, :]
@@ -86,9 +88,10 @@ class QuantizedKVCacheTest(unittest.TestCase):
         k, v = self._init_kv()
         pos_to_check = torch.tensor([0, 1, 2, 3])
         updated_k_cache, updated_v_cache = self.kv_cache.update(input_pos, k, v)
-        updated_dequantized_k_cache, updated_dequantized_v_cache = (
-            quantized_kv_cache.update(input_pos, k, v)
-        )
+        (
+            updated_dequantized_k_cache,
+            updated_dequantized_v_cache,
+        ) = quantized_kv_cache.update(input_pos, k, v)
         sliced_k_cache = index(updated_k_cache, pos_to_check)
         sliced_v_cache = index(updated_v_cache, pos_to_check)
 

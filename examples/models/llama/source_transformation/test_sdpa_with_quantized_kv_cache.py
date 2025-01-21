@@ -26,12 +26,11 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
             self.max_seq_len,
             self.n_kv_heads,
             self.head_dim,
-            False,
             self.enable_dynamic_shape,
             dtype=self.dtype,
         )
         self.quantized_kv_cache = QuantizedKVCache.from_float(
-            self.kv_cache, QuantizedCacheType.AffineAsymmetric
+            self.kv_cache, QuantizedCacheType.AffineAsymmetric, True
         )
         # Need this because first test actually has seq_len > 1
         # and vanilla kvcache cannot handle seq_len > 1, due to
@@ -71,10 +70,12 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
         input_pos = torch.tensor([0], dtype=torch.int64)
         self.seq_len = 3
         self._init_cache()
-        q, k, v = self._init_kv()
-        self.float_sdpa = SDPACustom(self.custom_kv_cache, self.dim)
-        self.quantized_sdpa = SDPACustom(self.quantized_kv_cache, self.dim)
+        q, k_val, v_val = self._init_kv()
+        self.float_sdpa = SDPACustom(self.dim)
+        self.quantized_sdpa = SDPACustom(self.dim)
+        k, v = self.custom_kv_cache.update(input_pos, k_val, v_val)
         float_out = self.float_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
+        k, v = self.quantized_kv_cache.update(input_pos, k_val, v_val)
         quantized_out = self.quantized_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
         torch.testing.assert_close(
             float_out,
@@ -83,8 +84,10 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
 
         input_pos = torch.tensor([3], dtype=torch.int64)
         self.seq_len = 1
-        q, k, v = self._init_kv()
+        q, k_val, v_val = self._init_kv()
+        k, v = self.custom_kv_cache.update(input_pos, k_val, v_val)
         float_out = self.float_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
+        k, v = self.quantized_kv_cache.update(input_pos, k_val, v_val)
         quantized_out = self.quantized_sdpa(input_pos, q, k, v, 1, self.seq_len, None)
         torch.testing.assert_close(
             float_out,
