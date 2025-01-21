@@ -532,7 +532,10 @@
     <span class="n">MemoryFormatOpsPass</span><span class="p">,</span>
     <span class="n">OpReplacePass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.external_constants_pass</span><span class="w"> </span><span class="kn">import</span> <span class="n">external_constants_pass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.external_constants_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">external_constants_pass</span><span class="p">,</span>
+    <span class="n">external_mutable_weights_pass</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.insert_write_back_for_buffers_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">insert_write_back_for_buffers_pass</span><span class="p">,</span>
 <span class="p">)</span>
@@ -1892,6 +1895,14 @@
                     <span class="c1"># TODO(who?)</span>
                     <span class="n">p</span><span class="o">.</span><span class="n">update_placeholder_tensor_specs</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
 
+            <span class="c1"># Extract constants if the config says too.</span>
+            <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">external_constants</span><span class="p">:</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">external_constants_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
+                <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+            <span class="k">elif</span> <span class="n">config</span><span class="o">.</span><span class="n">external_mutable_weights</span><span class="p">:</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">external_mutable_weights_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">,</span> <span class="n">program</span><span class="p">)</span>
+                <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                 <span class="n">memory_planning_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
                     <span class="n">name</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span><span class="o">.</span><span class="n">memory_planning_pass</span>
@@ -1906,8 +1917,8 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>  <span class="c1"># pyre-ignore[29]</span>
 
-            <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">external_constants</span><span class="p">:</span>
-                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">external_constants_pass</span><span class="p">(</span><span class="n">new_gm_res</span><span class="p">)</span>
+            <span class="c1"># WARNING: DO NOT ADD ANY MORE PASSES AFTER MEMORY PLANNING PASS.</span>
+            <span class="c1"># THERE ARE A LOT OF ASSUMPTIONS IN THE STACK THAT MEMORY PLANNING IS THE LAST PASS BEFORE THE EMITTER.</span>
             <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
 
