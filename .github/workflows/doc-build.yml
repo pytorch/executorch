@@ -16,6 +16,9 @@ on:
 jobs:
   build:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         include:
@@ -83,6 +86,9 @@ jobs:
     permissions:
       contents: write
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     with:
       repository: pytorch/executorch
       download-artifact: docs

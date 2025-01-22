@@ -108,6 +108,9 @@ jobs:
   test-demo-backend-delegation:
     name: test-demo-backend-delegation
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         include:
@@ -132,6 +135,9 @@ jobs:
   test-arm-backend-delegation:
     name: test-arm-backend-delegation
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     permissions:
       id-token: write
       contents: read
@@ -162,6 +168,9 @@ jobs:
   test-arm-reference-delegation:
     name: test-arm-reference-delegation
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     permissions:
       id-token: write
       contents: read
@@ -302,6 +311,9 @@ jobs:
   test-qnn-model:
     name: test-qnn-model
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         dtype: [fp32]
@@ -362,6 +374,9 @@ jobs:
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     secrets: inherit
     strategy:
       matrix:
@@ -446,6 +461,9 @@ jobs:
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         dtype: [fp32]
