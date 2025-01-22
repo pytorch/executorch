@@ -8,6 +8,7 @@
 
 #include <executorch/runtime/executor/method.h>
 
+#include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
 #include <cstdio>
@@ -712,10 +713,13 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             "Null instruction at index %zu",
             instr_idx);
 
+        const void* instr_args = instruction->instr_args();
         switch (instruction->instr_args_type()) {
           case executorch_flatbuffer::InstructionArguments::KernelCall: {
-            const auto arg_idxs =
-                instruction->instr_args_as_KernelCall()->args();
+            const auto* instr_args_as_KernelCall =
+                static_cast<const executorch_flatbuffer::KernelCall*>(
+                    instr_args);
+            const auto arg_idxs = instr_args_as_KernelCall->args();
             ET_CHECK_OR_RETURN_ERROR(
                 arg_idxs != nullptr, InvalidProgram, "KernelCall args missing");
             auto res = gen_instruction_arguments(
@@ -729,7 +733,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             }
             chain_instruction_arg_lists[instr_idx] = res.get();
             auto err = resolve_operator(
-                instruction->instr_args_as_KernelCall()->op_index(),
+                instr_args_as_KernelCall->op_index(),
                 chain_instruction_kernels,
                 instr_idx,
                 res.get(),
@@ -744,7 +748,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
           } break;
           case executorch_flatbuffer::InstructionArguments::DelegateCall: {
             const auto arg_idxs =
-                instruction->instr_args_as_DelegateCall()->args();
+                static_cast<const executorch_flatbuffer::DelegateCall*>(
+                    instr_args)
+                    ->args();
             ET_CHECK_OR_RETURN_ERROR(
                 arg_idxs != nullptr,
                 InvalidProgram,
@@ -764,7 +770,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             // Validate the index at load time so we can trust it during
             // execution.
             auto index =
-                instruction->instr_args_as_JumpFalseCall()->cond_value_index();
+                static_cast<const executorch_flatbuffer::JumpFalseCall*>(
+                    instr_args)
+                    ->cond_value_index();
             ET_CHECK_OR_RETURN_ERROR(
                 index >= 0 && index < n_value_,
                 InvalidProgram,
@@ -816,26 +824,43 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       input_idx < inputs_size(),
       InvalidArgument,
-      "Given input index must be less than the number of inputs in method, but got %zu and %zu",
+      "Input index (%zu) must be less than the number of inputs in method (%zu).",
       input_idx,
       inputs_size());
 
   const auto& e = get_value(get_input_index(input_idx));
-  ET_CHECK_OR_RETURN_ERROR(
-      e.isTensor() || e.isScalar(),
-      InvalidArgument,
-      "The %zu-th input in method is expected Tensor or prim, but received %" PRIu32,
-      input_idx,
-      static_cast<uint32_t>(e.tag));
 
-  ET_CHECK_OR_RETURN_ERROR(
-      e.tag == input_evalue.tag,
-      InvalidArgument,
-      "The %zu-th input of method should have the same type as the input_evalue, but get tag %" PRIu32
-      " and tag %" PRIu32,
-      input_idx,
-      static_cast<uint32_t>(e.tag),
-      static_cast<uint32_t>(input_evalue.tag));
+  if (!e.isTensor() && !e.isScalar()) {
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> tag_name;
+    tag_to_string(e.tag, tag_name.data(), tag_name.size());
+    ET_LOG(
+        Error,
+        "Input %zu was expected to be a Tensor or primitive but was %s.",
+        input_idx,
+        tag_name.data());
+#endif
+
+    return Error::InvalidArgument;
+  }
+
+  if (e.tag != input_evalue.tag) {
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> e_tag_name;
+    std::array<char, kTagNameBufferSize> input_tag_name;
+    tag_to_string(e.tag, e_tag_name.data(), e_tag_name.size());
+    tag_to_string(
+        input_evalue.tag, input_tag_name.data(), input_tag_name.size());
+    ET_LOG(
+        Error,
+        "Input %zu was expected to have type %s but was %s.",
+        input_idx,
+        e_tag_name.data(),
+        input_tag_name.data());
+#endif
+
+    return Error::InvalidArgument;
+  }
 
   if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
@@ -925,7 +950,12 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         e.toString().data(),
         input_evalue.toString().data());
   } else {
-    ET_LOG(Error, "Unsupported input type: %d", (int32_t)e.tag);
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> tag_name;
+    tag_to_string(e.tag, tag_name.data(), tag_name.size());
+    ET_LOG(Error, "Unsupported input type: %s", tag_name.data());
+#endif
+
     return Error::InvalidArgument;
   }
   return Error::Ok;
@@ -977,11 +1007,15 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       outputs_size());
 
   auto& output = mutable_value(get_output_index(output_idx));
-  ET_CHECK_OR_RETURN_ERROR(
-      output.isTensor(),
-      InvalidArgument,
-      "output type: %zu is not tensor",
-      (size_t)output.tag);
+  if (!output.isTensor()) {
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> tag_name;
+    tag_to_string(output.tag, tag_name.data(), tag_name.size());
+    ET_LOG(Error, "Output type: %s is not a tensor.", tag_name.data());
+#endif
+
+    return Error::InvalidArgument;
+  }
 
   auto tensor_meta = this->method_meta().output_tensor_meta(output_idx);
   if (tensor_meta->is_memory_planned()) {
@@ -994,11 +1028,16 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   }
 
   auto& t = output.toTensor();
-  ET_CHECK_OR_RETURN_ERROR(
-      output.isTensor(),
-      InvalidArgument,
-      "output type: %zu is not tensor",
-      (size_t)output.tag);
+  if (!output.isTensor()) {
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> tag_name;
+    tag_to_string(output.tag, tag_name.data(), tag_name.size());
+    ET_LOG(Error, "output type: %s is not a tensor.", tag_name.data());
+#endif
+
+    return Error::InvalidArgument;
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       t.nbytes() <= size,
       InvalidArgument,
