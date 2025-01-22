@@ -78,8 +78,9 @@ void group_norm(
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
     CTYPE sum = reduce_add(x, inner_size);
     CTYPE sq_sum = vec_powerf(x, inner_size);
-    CTYPE mean_value = sum / inner_size;
-    CTYPE variance = sq_sum / inner_size - mean_value * mean_value;
+    CTYPE mean_value = sum / static_cast<CTYPE>(inner_size);
+    CTYPE variance =
+        sq_sum / static_cast<CTYPE>(inner_size) - mean_value * mean_value;
     CTYPE std = std::sqrt(variance + eps);
     CTYPE rstd_value = 1.0 / std;
 
@@ -93,10 +94,10 @@ void group_norm(
       const size_t g = i % G;
       for (size_t j = 0; j < D; j++) {
         const size_t ch = g * D + j;
-        const CTYPE scale =
-            rstd_value * (weight_data == nullptr ? 1.0 : weight_data[ch]);
-        const CTYPE beta =
-            -scale * mean_value + (bias_data == nullptr ? 0.0 : bias_data[ch]);
+        const CTYPE scale = rstd_value *
+            (weight_data == nullptr ? CTYPE(1.0) : weight_data[ch]);
+        const CTYPE beta = -scale * mean_value +
+            (bias_data == nullptr ? CTYPE(0.0) : bias_data[ch]);
         x = input_data + (i * D + j) * HxW;
         CTYPE* y = out_data + (i * D + j) * HxW;
         for (size_t k = 0; k < HxW; k++) {
@@ -185,7 +186,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_group_norm_out(
 
   constexpr auto name = "native_group_norm.out";
 
-  ET_SWITCH_FLOAT_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     group_norm<CTYPE>(
         input, weight, bias, N, C, HxW, group, eps, out, mean_out, rstd_out);
   });
