@@ -25,6 +25,7 @@ def define_common_targets():
         # mean I cant just expose visibility to a single rule.
         visibility = [
             "//executorch/backends/...",
+            "//executorch/extension/fb/dynamic_shim/...",
             "//executorch/runtime/core/exec_aten/...",
             "//executorch/runtime/core/portable_type/test/...",
         ],
