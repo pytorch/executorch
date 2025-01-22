@@ -21,7 +21,7 @@ struct FlatTensorHeader {
    * To find the header, callers should provide at least this many bytes of the
    * head of the serialized FlatTensor data.
    */
-  static constexpr size_t kNumHeadBytes = 48;
+  static constexpr size_t kNumHeadBytes = 64;
 
   /**
    * The magic bytes that identify the header. This should be in sync with
