@@ -211,6 +211,7 @@ def export_to_edge(
                 torch.ops.aten.linalg_vector_norm.default,
                 torch.ops.aten.unfold.default,
                 torch.ops.aten.angle.default,
+                torch.ops.aten.empty_permuted.default,
             ],
         ),
     )
