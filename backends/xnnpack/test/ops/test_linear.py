@@ -171,26 +171,19 @@ class LinearSequential(torch.nn.Module):
     def get_inputs(self):
         return (torch.rand(self.in_size, self.input_size, dtype=torch.float),)
 
+
 class ParallelLinear(torch.nn.Module):
     def __init__(self, input_size, output_size):
         super().__init__()
-        self.linear1_weight = torch.nn.Parameter(
-            torch.rand(output_size, input_size)
-        )
+        self.linear1_weight = torch.nn.Parameter(torch.rand(output_size, input_size))
         self.linear1_bias = torch.nn.Parameter(torch.rand(output_size))
 
-        self.linear2_weight = torch.nn.Parameter(
-            torch.rand(output_size, input_size)
-        )
+        self.linear2_weight = torch.nn.Parameter(torch.rand(output_size, input_size))
         self.linear2_bias = torch.nn.Parameter(torch.rand(output_size))
 
     def forward(self, x, y):
-        a = torch.nn.functional.linear(
-            x, self.linear1_weight, self.linear1_bias
-        )
-        b = torch.nn.functional.linear(
-            y, self.linear2_weight, self.linear2_bias
-        )
+        a = torch.nn.functional.linear(x, self.linear1_weight, self.linear1_bias)
+        b = torch.nn.functional.linear(y, self.linear2_weight, self.linear2_bias)
         return a + b
 
 
@@ -225,7 +218,7 @@ class TestLinear(unittest.TestCase):
         num_batch_dims=1,
         quant_type=None,
         dtype: torch.dtype = torch.float,
-        atol=1e-03, # TODO(T212995726): Investigate right atol for rand[n] inputs
+        atol=1e-03,  # TODO(T212995726): Investigate right atol for rand[n] inputs
     ):
         """
         Helper function to test linear op with different configurations.
@@ -318,7 +311,7 @@ class TestLinear(unittest.TestCase):
         is_per_channel=False,
         uses_bias=False,
         qconfig: Optional[QuantizationConfig] = None,
-        atol=5e-02, # TODO(T212995726): Investigate right atol for rand[n] inputs
+        atol=5e-02,  # TODO(T212995726): Investigate right atol for rand[n] inputs
     ):
         """
         Helper function to test dynamic quantized linear op with different configurations.
@@ -370,8 +363,8 @@ class TestLinear(unittest.TestCase):
         use_bias: bool = False,
         group_size: int = 8,
         num_linears: int = 1,
-        atol: float = 5e-3, # TODO(T212995726): Investigate right atol for rand[n] inputs
-        rtol: float = 5e-3, # TODO(T212995726): Investigate right rtol for rand[n] inputs
+        atol: float = 5e-3,  # TODO(T212995726): Investigate right atol for rand[n] inputs
+        rtol: float = 5e-3,  # TODO(T212995726): Investigate right rtol for rand[n] inputs
     ):
         """
         Helper function to test groupwise dynamic quantized linear op with different configurations.
@@ -426,7 +419,7 @@ class TestLinear(unittest.TestCase):
         uses_bias: bool,
         quant_type: str,
         quant_node_checks: List[Dict[str, int]],
-        atol: float = 1e-03, # TODO(T212995726): Investigate right atol for rand[n] inputs
+        atol: float = 1e-03,  # TODO(T212995726): Investigate right atol for rand[n] inputs
     ):
         """
         This test is to test the overwrite precision of linear op.
@@ -546,9 +539,13 @@ class TestLinear(unittest.TestCase):
         qconfig = self._get_4b_dqconfig()
         input_channels = [2, 63]
         output_channels = [1, 127]
-        batches = [2,]
+        batches = [
+            2,
+        ]
         use_bias = [False, True]
-        dtypes = [dtype,]
+        dtypes = [
+            dtype,
+        ]
 
         for bs, bias, ipc, opc, dtype in product(
             batches,
@@ -573,10 +570,12 @@ class TestLinear(unittest.TestCase):
                 is_per_channel=True,
                 uses_bias=bias,
                 qconfig=qconfig,
-                atol=5e-2 # TODO(T212995726): Investigate right atol for rand[n] inputs
+                atol=5e-2,  # TODO(T212995726): Investigate right atol for rand[n] inputs
             )
 
-    def _test_qd8_per_token_weight_per_channel_group_int4(self, dtype: torch.dtype = torch.float):
+    def _test_qd8_per_token_weight_per_channel_group_int4(
+        self, dtype: torch.dtype = torch.float
+    ):
         M_sizes = [1, 2, 17, 31]
         K_sizes = [32, 32, 64, 128]
         bl_sizes = [32, 32, 32, 64]
@@ -599,8 +598,10 @@ class TestLinear(unittest.TestCase):
                 # Median: -0.05023193359375, -0.0516357421875
                 # Mean: 0.2373046875, 0.237060546875
                 # Max: 1.0078125, 1.0078125
-                # Min: -0.08465576171875, -0.08441162109375 
-                atol = 1e-2 if dtype == torch.half else 5e-3 # TODO(T212995726): Investigate right atol for rand[n] inputs
+                # Min: -0.08465576171875, -0.08441162109375
+                atol = (
+                    1e-2 if dtype == torch.half else 5e-3
+                )  # TODO(T212995726): Investigate right atol for rand[n] inputs
                 self._test_groupwise_dq_linear(
                     lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=atol
                 )
@@ -615,7 +616,7 @@ class TestLinear(unittest.TestCase):
                     num_batch_dims=num_batch_dims,
                     uses_bias=use_bias,
                     dtype=torch.float16,
-                    atol=5e-2, # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    atol=5e-2,  # TODO(T212995726): Investigate right atol for rand[n] inputs
                 )
 
     def test_fp32_linear(self):
@@ -706,7 +707,7 @@ class TestLinear(unittest.TestCase):
     # Tests for q[dp]8-f16-qb4w
     @unittest.skipIf(
         not torchao_installed, "Per Channel Group Quantization Required TorchAO"
-    ) 
+    )
     def test_linear_qd8_f16_per_token_weight_per_channel_group_int4(self):
         self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.half)
 
@@ -803,7 +804,7 @@ class TestLinear(unittest.TestCase):
             linear_count=2,
             is_per_channel=True,
             uses_bias=True,
-            atol=1e-1, # TODO(T212995726): Investigate right atol for rand[n] inputs
+            atol=1e-1,  # TODO(T212995726): Investigate right atol for rand[n] inputs
         )
 
     def test_qd8_per_channel_linear_parallel_and_sequential(self):
@@ -821,9 +822,8 @@ class TestLinear(unittest.TestCase):
             linear_count=3,
             is_per_channel=True,
             uses_bias=True,
-            atol=1e-1, # TODO(T212995726): Investigate right atol for rand[n] inputs
+            atol=1e-1,  # TODO(T212995726): Investigate right atol for rand[n] inputs
         )
-
 
     def test_linear_qs8_as_fp32(self):
         for use_bias in (True, False):
