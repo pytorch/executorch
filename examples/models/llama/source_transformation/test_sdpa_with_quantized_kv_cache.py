@@ -47,8 +47,8 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
         )
 
     def _init_kv(self):
-        kv_shape = (1, self.seq_len, self.n_kv_heads, self.head_dim)
-        q_shape = (1, self.seq_len, self.n_heads, self.head_dim)
+        kv_shape = (1, self.n_kv_heads, self.seq_len, self.head_dim)
+        q_shape = (1, self.n_heads, self.seq_len, self.head_dim)
         q = torch.rand(q_shape, dtype=self.dtype)
         k = torch.rand(kv_shape, dtype=self.dtype)
         v = torch.rand(kv_shape, dtype=self.dtype)
