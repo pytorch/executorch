@@ -117,28 +117,28 @@ class OpGluOutTest : public OperatorTest {
 TEST_F(OpGluOutTest, AllInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out<ScalarType::dtype, ScalarType::Float>();
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpGluOutTest, AllInputDoubleOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out<ScalarType::dtype, ScalarType::Double>();
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpGluOutTest, AllInputHalfOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out<ScalarType::dtype, ScalarType::Half>();
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpGluOutTest, AllInputBFloat16OutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out<ScalarType::dtype, ScalarType::BFloat16>();
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
