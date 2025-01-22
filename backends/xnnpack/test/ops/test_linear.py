@@ -584,6 +584,7 @@ class TestLinear(unittest.TestCase):
         for use_bias in [True, False]:
             for M, K, bl, N in zip(M_sizes, K_sizes, bl_sizes, N_sizes):
                 lin_mod = BaseLinear(
+                    in_size=M,
                     input_channels=K,
                     output_channels=N,
                     dtype=dtype,
