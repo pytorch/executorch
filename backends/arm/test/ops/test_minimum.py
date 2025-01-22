@@ -121,9 +121,7 @@ class TestMinimum(unittest.TestCase):
             self.Minimum(), common.get_u55_compile_spec(), test_data
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=test_data, target_board="corstone-300"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(Minimum.test_parameters)
     def test_minimum_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
@@ -133,5 +131,6 @@ class TestMinimum(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                qtol=1, inputs=test_data, target_board="corstone-320"
+                qtol=1,
+                inputs=test_data,
             )

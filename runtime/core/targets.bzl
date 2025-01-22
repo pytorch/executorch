@@ -32,10 +32,8 @@ def define_common_targets():
             "data_loader.h",
             "error.h",
             "freeable_buffer.h",
-            "named_data_map.h",
             "result.h",
             "span.h",
-            "tensor_layout.h",
         ],
         visibility = [
             "//executorch/...",
