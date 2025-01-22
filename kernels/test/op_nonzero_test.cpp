@@ -28,10 +28,8 @@ class OpNonzeroTest : public OperatorTest {
   void test_dtype() {
     TensorFactory<DTYPE> tf_input;
     TensorFactory<ScalarType::Long> tf_long;
-    // clang-format offs
     Tensor a = tf_input.make(
         /*sizes=*/{2, 2}, /*data=*/{CTYPE(2), CTYPE(0), CTYPE(2), CTYPE(4)});
-    // clang-format on
     Tensor out = tf_long.zeros({3, 2});
 
     op_nonzero_out(a, out);
