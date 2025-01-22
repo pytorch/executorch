@@ -67,6 +67,7 @@ from functorch.experimental import control_flow
 from torch import nn
 
 from torch.export import Dim, export, export_for_training
+from torch.export.experimental import _export_forward_backward
 
 
 class WrapperModule(torch.nn.Module):
@@ -642,7 +643,7 @@ class TestEmit(unittest.TestCase):
             def forward(self, x):
                 return torch.nn.functional.interpolate(x, scale_factor=2)
 
-        x = (torch.randn(1, 1, 2, 2),)
+        x = (torch.randn(1, 1, 2, 2, 2),)
         program = (
             to_edge(export(M(), x, strict=True)).to_executorch().executorch_program
         )
@@ -1733,3 +1734,53 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             len(edge_program_manager.executorch_program.backend_delegate_data), 1
         )
+
+    def test_constant_tagged_mutable_tensors(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        # On device training requires the loss to be embedded in the model (and be the first output).
+        # We wrap the original model here and add the loss calculation. This will be the model we export.
+        class TrainingNet(nn.Module):
+            def __init__(self, net):
+                super().__init__()
+                self.net = net
+                self.loss = nn.CrossEntropyLoss()
+
+            def forward(self, input, label):
+                pred = self.net(input)
+                return self.loss(pred, label), pred.detach().argmax(dim=1)
+
+        net = TrainingNet(Net())
+
+        # Captures the forward graph. The graph will look similar to the model definition now.
+        # Will move to export_for_training soon which is the api planned to be supported in the long term.
+        ep = export(
+            net, (torch.randn(1, 2), torch.ones(1, dtype=torch.int64)), strict=True
+        )
+        # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
+        ep = _export_forward_backward(ep)
+        # Lower the graph to edge dialect.
+        ep = to_edge(ep)
+        # Lower the graph to executorch.
+        ep = ep.to_executorch(
+            config=ExecutorchBackendConfig(external_mutable_weights=True)
+        )
+
+        emitter_output = ep._emitter_output
+        # Check that constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant weights are in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_mutable_weights=True, saves all constants with an associated gradient to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(external_map["net.linear.weight"], 0)
+        self.assertEqual(external_map["net.linear.bias"], 1)
