@@ -252,6 +252,10 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::executorch::aten::Half, Half)        \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::executorch::aten::BFloat16, BFloat16)
 
+#define ET_FORALL_REALHBBF16_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
+  ET_FORALL_REALHBF16_TYPES_WITH2(ANOTHER_INPUT2, ANOTHER_INPUT2, _)        \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, bool, Bool)
+
 // For macros that take `SCALARTYPEn` parameters, those parameters should be
 // an unquoted/unqualified enumerator name like `Int` or `Float`.
 #define ET_FORALL_REAL_TYPES_AND(SCALARTYPE, _)            \
