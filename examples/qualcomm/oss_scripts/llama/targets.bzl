@@ -36,9 +36,9 @@ def define_common_targets():
     )
 
     runtime.cxx_binary(
-        name = "qnn_llama3_2_runner",
+        name = "qnn_llama_runner",
         srcs = [
-            "qnn_llama3_2_runner.cpp",
+            "qnn_llama_runner.cpp",
         ],
         compiler_flags = [
             "-Wno-global-constructors",
