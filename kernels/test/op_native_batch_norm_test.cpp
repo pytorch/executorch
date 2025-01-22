@@ -140,7 +140,7 @@ class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
           2e-2,
           executorch::runtime::testing::internal::kDefaultAtol);
       EXPECT_TENSOR_CLOSE_WITH_TOL(
-          out1,
+          out2,
           out2_expected,
           2e-2,
           executorch::runtime::testing::internal::kDefaultAtol);
