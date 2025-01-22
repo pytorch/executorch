@@ -64,9 +64,13 @@ class SplitWithSizes(NodeVisitor):
             split_indices.append(sum)
 
         split_indices_shape = [len(split_indices)]
-        dim = cast(int, node.args[2])
-        if dim < 0:
-            dim = dim % len(input_tensor.shape)
+
+        if len(node.args) > 2:
+            dim = cast(int, node.args[2])
+            if dim < 0:
+                dim = dim % len(input_tensor.shape)
+        else:
+            dim = 0
 
         if QCOM_AXIS_ORDER in node.meta:
             dim = node.meta[QCOM_AXIS_ORDER].index(dim)
