@@ -9,12 +9,13 @@
 /**
  * @file
  *
- * This tool can run Llama3.2 1B/3B with Qualcomm AI Engine Direct.
+ * This tool can run Llama2 110M, Llama3.2 1B / 3B(WIP) with Qualcomm AI Engine
+ * Direct.
  *
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
-#include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/runtime/platform/log.h>
 #include <gflags/gflags.h>
 #include <fstream>
@@ -22,7 +23,7 @@
 
 DEFINE_string(
     model_path,
-    "qnn_llama2.pte",
+    "kv_llama_qnn.pte",
     "Model serialized in flatbuffer format.");
 
 DEFINE_string(
@@ -42,11 +43,11 @@ DEFINE_double(
 DEFINE_int32(
     seq_len,
     128,
-    "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
+    "Total number of tokens to generate (prompt + output).");
 
 DEFINE_int32(
     eval_mode,
-    0,
+    1,
     "0: PromptProcessor(prefill) / 1: TokenGenerator(kv) / 2: HybridMode (prefill+kv)");
 DEFINE_double(logits_scale, 0.0, "Logits scale");
 DEFINE_int32(logits_offset, 0, "Logits offset");

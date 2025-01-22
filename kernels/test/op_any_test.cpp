@@ -120,7 +120,7 @@ TEST_F(OpAnyOutTest, InvalidDtypeDies) {
 
 TEST_F(OpAnyOutTest, AllRealInputTypePasses) {
 #define TEST_ENTRY(ctype, dtype) test_any_all_out<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
