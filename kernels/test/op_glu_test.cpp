@@ -128,6 +128,20 @@ TEST_F(OpGluOutTest, AllInputDoubleOutputSupport) {
 #undef TEST_ENTRY
 }
 
+TEST_F(OpGluOutTest, AllInputHalfOutputSupport) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_glu_out<ScalarType::dtype, ScalarType::Half>();
+  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpGluOutTest, AllInputBFloat16OutputSupport) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_glu_out<ScalarType::dtype, ScalarType::BFloat16>();
+  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
 TEST_F(OpGluOutTest, InfinityAndNANTest) {
   TensorFactory<ScalarType::Float> tf;
   const std::vector<int32_t> sizes = {4, 2};
