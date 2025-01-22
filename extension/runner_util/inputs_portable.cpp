@@ -40,7 +40,7 @@ Error fill_ones(torch::executor::Tensor tensor) {
     break;
 
   switch (tensor.scalar_type()) {
-    ET_FORALL_REALHBF16_TYPES(FILL_CASE)
+    ET_FORALL_REALHBBF16_TYPES(FILL_CASE)
     default:
       ET_LOG(Error, "Unsupported scalar type %d", (int)tensor.scalar_type());
       return Error::InvalidArgument;
