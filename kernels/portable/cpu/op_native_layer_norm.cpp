@@ -66,15 +66,16 @@ void layer_norm(
     bias_data = nullptr;
   }
 
+  const CTYPE ct_normalized = static_cast<CTYPE>(normalized);
   for (int i = 0; i < leading; ++i) {
     const CTYPE* x = input_data + i * normalized;
     CTYPE* y = out_data + i * normalized;
 
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    CTYPE sum = reduce_add(x, normalized);
-    CTYPE sq_sum = vec_powerf(x, normalized);
-    CTYPE mean_value = sum / normalized;
-    CTYPE variance = sq_sum / normalized - mean_value * mean_value;
+    CTYPE sum = reduce_add(x, ct_normalized);
+    CTYPE sq_sum = vec_powerf(x, ct_normalized);
+    CTYPE mean_value = sum / ct_normalized;
+    CTYPE variance = sq_sum / ct_normalized - mean_value * mean_value;
     CTYPE std = std::sqrt(variance + eps);
 
     // Calculate the elements of output
@@ -167,7 +168,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
       InvalidArgument,
       ret_val);
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       input.scalar_type(), ctx, "native_layer_norm.out", CTYPE, [&]() {
         layer_norm<CTYPE>(
             input,
