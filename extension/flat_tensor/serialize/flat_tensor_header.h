@@ -24,7 +24,8 @@ struct FlatTensorHeader {
   static constexpr size_t kNumHeadBytes = 48;
 
   /**
-   * The magic bytes that identify the header.
+   * The magic bytes that identify the header. This should be in sync with
+   * the magic in executorch/extension/flat_tensor/serialize/serialize.py
    *
    * This is the canonical definition of the expected value. If the header
    * layout ever changes in a compatibility-breaking way, increment the digits
@@ -34,7 +35,7 @@ struct FlatTensorHeader {
    * end.
    */
   static constexpr size_t kMagicSize = 4;
-  static constexpr char kMagic[kMagicSize] = {'F', 'T', '0', '1'};
+  static constexpr char kMagic[kMagicSize] = {'F', 'H', '0', '1'};
 
   /**
    * Look for and parse a FlatTensorHeader in the provided data.

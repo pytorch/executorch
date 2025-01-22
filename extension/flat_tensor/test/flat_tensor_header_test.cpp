@@ -37,7 +37,7 @@ class FlatTensorHeaderTest : public ::testing::Test {
 // clang-format off
 constexpr char kExampleHeaderData[] = {
   // Magic bytes
-  'F', 'T', '0', '1',
+  'F', 'H', '0', '1',
   // uint32_t header size (little endian)
   0x40, 0x00, 0x00, 0x00,
   // uint64_t flatbuffer_offset
