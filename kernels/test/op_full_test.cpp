@@ -70,7 +70,7 @@ class OpFullOutTest : public OperatorTest {
     test_ones_out<ScalarType::DTYPE>({2, 3, 4}); \
   }
 
-ET_FORALL_REALH_TYPES(GENERATE_TEST)
+ET_FORALL_REALHBF16_TYPES(GENERATE_TEST)
 
 TEST_F(OpFullOutTest, ValueOverflow) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {

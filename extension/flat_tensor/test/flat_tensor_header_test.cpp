@@ -34,7 +34,7 @@ class FlatTensorHeaderTest : public ::testing::Test {
  * this test data must change too. The layout of the header is a contract, not
  * an implementation detail.
  */
-// clang-format off
+// @lint-ignore CLANGTIDY facebook-hte-CArray
 constexpr char kExampleHeaderData[] = {
   // Magic bytes
   'F', 'H', '0', '1',

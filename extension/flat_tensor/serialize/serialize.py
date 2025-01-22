@@ -93,7 +93,7 @@ class FlatTensorConfig:
 class FlatTensorHeader:
     # Class constants.
     # The magic bytes that should be at the beginning of the header.
-    # This should be in sync with the magic in 
+    # This should be in sync with the magic in
     # executorch/extension/flat_tensor/serialize/flat_tensor_header.h
     EXPECTED_MAGIC: ClassVar[bytes] = b"FH01"
     EXPECTED_LENGTH: ClassVar[int] = (

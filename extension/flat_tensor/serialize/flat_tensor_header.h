@@ -35,6 +35,7 @@ struct FlatTensorHeader {
    * end.
    */
   static constexpr size_t kMagicSize = 4;
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr char kMagic[kMagicSize] = {'F', 'H', '0', '1'};
 
   /**
