@@ -34,9 +34,9 @@ Tensor& sub_out(
     const Tensor& b,
     const Scalar& alpha,
     Tensor& out) {
+#ifdef OP_ARG_CHECK
   ScalarType alpha_type =
       torch::executor::native::utils::get_scalar_dtype(alpha);
-#ifdef OP_ARG_CHECK
   // Check alpha type
   ET_KERNEL_CHECK(ctx, alpha_type != ScalarType::Bool, InvalidArgument, out);
 
@@ -108,9 +108,10 @@ Tensor& sub_out(
   }
 
   if (((broadcast == 1) && (max_dim > kTensorDimensionLimit)) ||
-    (!(((a.scalar_type() == ScalarType::Int) || (a.scalar_type() == ScalarType::Float)) &&
-    (a.scalar_type() == b.scalar_type()) && (a.scalar_type() == out.scalar_type())
-     && (a.scalar_type() == alpha_type)))) {
+      (!(((a.scalar_type() == ScalarType::Int) ||
+          (a.scalar_type() == ScalarType::Float)) &&
+         (a.scalar_type() == b.scalar_type()) &&
+         (a.scalar_type() == out.scalar_type())))) {
     optimized = 0;
   }
 
@@ -201,10 +202,10 @@ Tensor& sub_out(
   } else {
     // Common Dtype
     ScalarType common_type =
-    executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
+        executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
     // Compute Dtype
     ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
+        torch::executor::native::utils::get_compute_type(common_type);
 
     ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       const CTYPE_COMPUTE val_alpha =
@@ -234,9 +235,9 @@ Tensor& sub_scalar_out(
     const Scalar& b,
     const Scalar& alpha,
     Tensor& out) {
+#ifdef OP_ARG_CHECK
   ScalarType alpha_type =
       torch::executor::native::utils::get_scalar_dtype(alpha);
-#ifdef OP_ARG_CHECK
   // Check alpha type
   ET_KERNEL_CHECK(ctx, alpha_type != ScalarType::Bool, InvalidArgument, out);
 
@@ -268,9 +269,10 @@ Tensor& sub_scalar_out(
   bool optimized = 1;
   ScalarType b_type = torch::executor::native::utils::get_scalar_dtype(b);
 
-  if (!(((a.scalar_type() == ScalarType::Int) || (a.scalar_type() == ScalarType::Float)) &&
-    (a.scalar_type() == b_type) && (a.scalar_type() == out.scalar_type())
-     && (a.scalar_type() == alpha_type))) {
+  if (!(((a.scalar_type() == ScalarType::Int) ||
+         (a.scalar_type() == ScalarType::Float)) &&
+        (a.scalar_type() == b_type) &&
+        (a.scalar_type() == out.scalar_type()))) {
     optimized = 0;
   }
 
@@ -315,11 +317,11 @@ Tensor& sub_scalar_out(
   } else {
     // Common Dtype
     ScalarType common_type =
-      torch::executor::native::utils::promote_type_with_scalar(
-          a.scalar_type(), b);
+        torch::executor::native::utils::promote_type_with_scalar(
+            a.scalar_type(), b);
     // Compute Dtype
     ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
+        torch::executor::native::utils::get_compute_type(common_type);
     ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       const CTYPE_COMPUTE val_b =
           torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(b);
