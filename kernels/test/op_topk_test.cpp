@@ -125,14 +125,15 @@ class OpTopkValuesTest : public ::testing::Test {
     TensorFactory<ScalarType::Long> tfLong;
 
     Tensor input =
-      tfDtype.make({3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+        tfDtype.make({3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
     int64_t k = 2;
     int64_t dim = 0;
     bool largest = true;
     bool sorted = true;
     Tensor values = tfDtype.zeros({2, 2, 2});
     Tensor indices = tfLong.zeros({2, 2, 2});
-    Tensor values_expected = tfDtype.make({2, 2, 2}, {9, 10, 11, 12, 5, 6, 7, 8});
+    Tensor values_expected =
+        tfDtype.make({2, 2, 2}, {9, 10, 11, 12, 5, 6, 7, 8});
     Tensor indices_expected = tfLong.make({2, 2, 2}, {2, 2, 2, 2, 1, 1, 1, 1});
     op_topk_values(input, k, dim, largest, sorted, values, indices);
     EXPECT_TENSOR_CLOSE(values, values_expected);
@@ -144,7 +145,6 @@ class OpTopkValuesTest : public ::testing::Test {
     op_topk_values(input, k, dim, largest, sorted, values, indices);
     EXPECT_TENSOR_CLOSE(values, values_expected);
     EXPECT_TENSOR_EQ(indices, indices_expected);
-
   }
 };
 
