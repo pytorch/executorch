@@ -55,7 +55,8 @@ class OpAllCloseTest : public OperatorTest {
         out);
 
     auto out_data = out.data_ptr<bool>();
-    EXPECT_EQ(out_data[0], should_match) << a_data[0] << " doesn't match " << b_data[0] << "; dtype " << DTYPE;
+    EXPECT_EQ(out_data[0], should_match)
+        << a_data[0] << " doesn't match " << b_data[0] << "; dtype " << DTYPE;
   }
 };
 
@@ -294,8 +295,9 @@ TEST_F(OpAllCloseTest, IncorrectOutputShapeDeath) {
 }
 
 TEST_F(OpAllCloseTest, TensorsVaryWithinRelativeTolerance) {
-#define TEST_ENTRY(ctype, dtype) \
-  test_tensors_vary_tolerance<ctype, ScalarType::dtype>(1e-01, 1e-02, 0, 0, true);
+#define TEST_ENTRY(ctype, dtype)                         \
+  test_tensors_vary_tolerance<ctype, ScalarType::dtype>( \
+      1e-01, 1e-02, 0, 0, true);
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
@@ -308,8 +310,9 @@ TEST_F(OpAllCloseTest, TensorsVaryOutsideRelativeTolerance) {
 }
 
 TEST_F(OpAllCloseTest, TensorsVaryWithinAbsoluteTolerance) {
-#define TEST_ENTRY(ctype, dtype) \
-  test_tensors_vary_tolerance<ctype, ScalarType::dtype>(0, 0, 1e-01, 1e-02, true);
+#define TEST_ENTRY(ctype, dtype)                         \
+  test_tensors_vary_tolerance<ctype, ScalarType::dtype>( \
+      0, 0, 1e-01, 1e-02, true);
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }

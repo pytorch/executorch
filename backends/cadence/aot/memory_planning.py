@@ -367,7 +367,8 @@ def print_memory_planning_info(
 
     # Print the memory usage per memory space as a table
     logging.info(
-        tabulate(
+        "\n"
+        + tabulate(
             memory_usage_table,
             headers=[
                 "Memory Space",
@@ -398,7 +399,8 @@ def print_memory_planning_info(
 
     # Print the total memory usage as a table
     logging.info(
-        tabulate(
+        "\n"
+        + tabulate(
             total_memory_usage_table,
             tablefmt="outline",
         )

@@ -9,7 +9,7 @@ pip install . --no-build-isolation
 Or when installing the rest of dependencies:
 
 ```bash
-install_requirements.sh --pybind
+install_executorch.sh --pybind
 ```
 
 # Link Backends
@@ -25,7 +25,7 @@ pip install . --no-build-isolation
 Similarly, when installing the rest of dependencies:
 
 ```bash
-install_requirements.sh --pybind coreml mps xnnpack
+install_executorch.sh --pybind coreml mps xnnpack
 ```
 
 ## Functions
