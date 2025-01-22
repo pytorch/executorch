@@ -25,6 +25,7 @@ class HtpArch(IntEnum):
     V69 = 69
     V73 = 73
     V75 = 75
+    V79 = 79
 
 
 @dataclass
@@ -40,8 +41,10 @@ class QcomChipset(IntEnum):
     SM8475 = 42  # v69
     SM8550 = 43  # v73
     SSG2115P = 46  # v73
+    SM8635 = 68  # v68
     SM8650 = 57  # v75
     SA8295 = 39  # v68
+    SM8750 = 69  # v79
 
 
 @dataclass
@@ -54,7 +57,9 @@ _soc_info_table = {
     QcomChipset.SM8450: SocInfo(QcomChipset.SM8450, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SM8475: SocInfo(QcomChipset.SM8475, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SM8550: SocInfo(QcomChipset.SM8550, HtpInfo(HtpArch.V73, 8)),
+    QcomChipset.SM8635: SocInfo(QcomChipset.SM8635, HtpInfo(HtpArch.V68, 4)),
     QcomChipset.SM8650: SocInfo(QcomChipset.SM8650, HtpInfo(HtpArch.V75, 8)),
+    QcomChipset.SM8750: SocInfo(QcomChipset.SM8750, HtpInfo(HtpArch.V79, 8)),
     QcomChipset.SSG2115P: SocInfo(QcomChipset.SSG2115P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SA8295: SocInfo(QcomChipset.SA8295, HtpInfo(HtpArch.V68, 8)),
 }
