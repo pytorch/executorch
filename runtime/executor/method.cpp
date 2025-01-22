@@ -712,10 +712,13 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             "Null instruction at index %zu",
             instr_idx);
 
+        const void* instr_args = instruction->instr_args();
         switch (instruction->instr_args_type()) {
           case executorch_flatbuffer::InstructionArguments::KernelCall: {
-            const auto arg_idxs =
-                instruction->instr_args_as_KernelCall()->args();
+            const auto* instr_args_as_KernelCall =
+                static_cast<const executorch_flatbuffer::KernelCall*>(
+                    instr_args);
+            const auto arg_idxs = instr_args_as_KernelCall->args();
             ET_CHECK_OR_RETURN_ERROR(
                 arg_idxs != nullptr, InvalidProgram, "KernelCall args missing");
             auto res = gen_instruction_arguments(
@@ -729,7 +732,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             }
             chain_instruction_arg_lists[instr_idx] = res.get();
             auto err = resolve_operator(
-                instruction->instr_args_as_KernelCall()->op_index(),
+                instr_args_as_KernelCall->op_index(),
                 chain_instruction_kernels,
                 instr_idx,
                 res.get(),
@@ -744,7 +747,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
           } break;
           case executorch_flatbuffer::InstructionArguments::DelegateCall: {
             const auto arg_idxs =
-                instruction->instr_args_as_DelegateCall()->args();
+                static_cast<const executorch_flatbuffer::DelegateCall*>(
+                    instr_args)
+                    ->args();
             ET_CHECK_OR_RETURN_ERROR(
                 arg_idxs != nullptr,
                 InvalidProgram,
@@ -764,7 +769,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             // Validate the index at load time so we can trust it during
             // execution.
             auto index =
-                instruction->instr_args_as_JumpFalseCall()->cond_value_index();
+                static_cast<const executorch_flatbuffer::JumpFalseCall*>(
+                    instr_args)
+                    ->cond_value_index();
             ET_CHECK_OR_RETURN_ERROR(
                 index >= 0 && index < n_value_,
                 InvalidProgram,
