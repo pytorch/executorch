@@ -42,7 +42,7 @@ Tensor& _pdist_forward_out(
   ScalarType in_type = in.scalar_type();
   constexpr auto name = "_pdist_forward.out";
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       in_type, ctx, name, CTYPE, [&] { pdist<CTYPE>(in, out, p); });
 
   return out;
