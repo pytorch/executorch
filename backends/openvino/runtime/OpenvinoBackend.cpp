@@ -10,6 +10,8 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
+#include "OpenvinoBackend.hpp"
+
 using namespace std;
 using executorch::aten::ScalarType;
 using executorch::runtime::ArrayRef;
@@ -28,30 +30,44 @@ namespace executorch {
 namespace backends {
 namespace openvino {
 
-typedef struct {
-    std::shared_ptr<ov::CompiledModel> compiled_model;
-    std::shared_ptr<ov::InferRequest> infer_request;
-} ExecutionHandle;
+OpenvinoBackend::OpenvinoBackend() {
+    if (!is_available()) {
+        //ET_LOG(Error, "OpenVINO runtime is not available. Initialization failed.");
+        throw std::runtime_error("OpenVINO runtime not available");
+    }
 
-class OpenvinoBackend final : public ::executorch::runtime::BackendInterface {
- public:
-  OpenvinoBackend() {std::cout << "In OV Backend constructor" << std::endl;}
+    //ET_LOG(Info, "OpenVINO runtime successfully verified and initialized.");
+}
 
-  ~OpenvinoBackend() = default;
+bool OpenvinoBackend::is_available() const {
+    try {
+        // Create an OpenVINO Core object to verify runtime availability
+        ov::Core core;
 
-  virtual bool is_available() const override {
-    // Check if OpenVINO runtime is available
-    return true;
-  }
+        // Check if at least one device is available
+        auto devices = core.get_available_devices();
+        if (!devices.empty()) {
+            return true;  // OpenVINO is available
+        }
+    } catch (const std::exception& e) {
+        // Log the exception if OpenVINO runtime is not available
+        ET_LOG(Error, "OpenVINO is not available: %s", e.what());
+    } catch (...) {
+        // Handle any unexpected errors
+        ET_LOG(Error, "OpenVINO availability check failed due to an unknown error.");
+    }
 
-  Result<DelegateHandle*> init(
-      BackendInitContext& context,
-      FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs) const override {
+    return false;  // OpenVINO is not available
+}
+
+Result<DelegateHandle*> OpenvinoBackend::init(
+    BackendInitContext& context,
+    FreeableBuffer* processed,
+    ArrayRef<CompileSpec> compile_specs) const {
+
     ET_LOG(Info, "OpenvinoBackend::init %p", processed->data());
 
     ov::Core core;
-
     const char* data_ptr = static_cast<const char*>(processed->data());
     size_t data_size = processed->size();
 
@@ -61,6 +77,7 @@ class OpenvinoBackend final : public ::executorch::runtime::BackendInterface {
     // Wrap the data in a stream
     std::istringstream compiled_stream(data_string);
 
+    // Import the model
     auto compiled_model = core.import_model(compiled_stream, "CPU");
 
     // Allocate an infer request
@@ -73,46 +90,74 @@ class OpenvinoBackend final : public ::executorch::runtime::BackendInterface {
     handle->infer_request = infer_request;
 
     return handle;
-  }
+}
 
-  Error execute(
-      BackendExecutionContext& context,
-      DelegateHandle* input_handle,
-      EValue** args) const override {
+Error OpenvinoBackend::execute(
+    BackendExecutionContext& context,
+    DelegateHandle* input_handle,
+    EValue** args) const {
+
     ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
 
     auto infer_request = execution_handle->infer_request;
 
-    // Assume first argument is the input tensor
-    auto input_tensor = args[0]->toTensor();
-    ov::Shape input_shape(input_tensor.sizes().begin(), input_tensor.sizes().end());
+    size_t num_inputs = infer_request->get_compiled_model().inputs().size();
+    size_t num_outputs = infer_request->get_compiled_model().outputs().size();
 
-    // Convert input tensor to OpenVINO tensor
-    ov::element::Type ov_type = convert_to_openvino_type(input_tensor.scalar_type());
-    ov::Tensor ov_input_tensor(ov_type, input_shape, input_tensor.mutable_data_ptr());
+    // Set inputs
+    for (size_t i = 0; i < num_inputs; i++) {
+      auto input_tensor = args[i]->toTensor();
+      ov::Shape input_shape(input_tensor.sizes().begin(), input_tensor.sizes().end());
 
-    //infer_request->set_tensor("input", ov_input_tensor);
-    infer_request->set_input_tensor(0, ov_input_tensor);
+      // Convert input tensor to OpenVINO tensor
+      ov::element::Type ov_type = convert_to_openvino_type(input_tensor.scalar_type());
+      ov::Tensor ov_input_tensor(ov_type, input_shape, input_tensor.mutable_data_ptr());
+
+      infer_request->set_input_tensor(i, ov_input_tensor);
+    }
+
+    // Set outputs
+    for (size_t i = 0; i < num_outputs; i++) {
+      auto output_tensor = args[num_inputs+i]->toTensor();
+      ov::Shape output_shape(output_tensor.sizes().begin(), output_tensor.sizes().end());
+
+      // Convert input tensor to OpenVINO tensor
+      ov::element::Type ov_type = convert_to_openvino_type(output_tensor.scalar_type());
+      ov::Tensor ov_output_tensor(ov_type, output_shape, output_tensor.mutable_data_ptr());
+
+      infer_request->set_output_tensor(i, ov_output_tensor);
+    }
 
     // Execute the inference
     infer_request->infer();
 
-    // Retrieve and copy output
-    auto output_tensor = args[1]->toTensor(); // Assume second argument is the output
-    ov::Tensor ov_output_tensor = infer_request->get_output_tensor(0); //get_tensor("output");
-
-    std::memcpy(output_tensor.mutable_data_ptr(), ov_output_tensor.data(), ov_output_tensor.get_byte_size());
-
     return Error::Ok;
-  }
+}
 
-  void destroy(DelegateHandle* handle) const override {
-    return;
-  }
+void OpenvinoBackend::destroy(DelegateHandle* handle) const {
+    if (!handle) {
+        ET_LOG(Info, "Attempted to destroy a null handle.");
+        return;
+    }
 
- private:
-  ov::element::Type convert_to_openvino_type(ScalarType scalar_type) const {
-    // Convert ExecuteTorch scalar types to OpenVINO element types
+    // Cast the handle to the appropriate type
+    ExecutionHandle* execution_handle = static_cast<ExecutionHandle*>(handle);
+
+    // Clean up resources
+    if (execution_handle->infer_request) {
+        execution_handle->infer_request.reset();  // Release the infer request
+        ET_LOG(Info, "Infer request successfully destroyed.");
+    }
+
+    if (execution_handle->compiled_model) {
+        execution_handle->compiled_model.reset();  // Release the compiled model
+        ET_LOG(Info, "Compiled model successfully destroyed.");
+    }
+
+    ET_LOG(Info, "Delegate handle destroyed successfully.");
+}
+
+ov::element::Type OpenvinoBackend::convert_to_openvino_type(ScalarType scalar_type) const {
     switch (scalar_type) {
       case ScalarType::Float:
         return ov::element::f32;
@@ -123,8 +168,7 @@ class OpenvinoBackend final : public ::executorch::runtime::BackendInterface {
       default:
         throw std::runtime_error("Unsupported scalar type");
     }
-  }
-};
+}
 
 } // namespace openvino
 } // namespace backends
@@ -133,7 +177,7 @@ class OpenvinoBackend final : public ::executorch::runtime::BackendInterface {
 namespace {
 auto backend = executorch::backends::openvino::OpenvinoBackend();
 executorch::runtime::Backend backend_id{"OpenvinoBackend", &backend};
-static auto registered = executorch::runtime::register_backend(backend_id);
+static auto registered = executorch::runtime::register_backend(backend_id); 
 } // namespace
 
 
