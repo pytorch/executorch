@@ -75,12 +75,19 @@ class LinearVisitor(NodeVisitor):
                     f"[QNN Delegate Op Builder]: Fallback linear bias, {bias_node}. per channel bias quantization is not support yet.",
                     stacklevel=1,
                 )
+
+            bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
             bias_tensor = get_parameter(bias_node, self.edge_program)
+            # if bias_node is getitem
+            if bias_tensor is None:
+                bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+                bias_tensor = bias_node.meta["val"]
+
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
                 node,
                 bias_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                bias_tensor_type,
                 nodes_to_wrappers,
             )
             linear_input_tensors.append(bias_tensor_wrapper)
