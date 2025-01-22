@@ -1599,6 +1599,34 @@ class TestPasses(unittest.TestCase):
             gm.code
         )
 
+    def test_constant_prop_pass_for_mutable_buffers(self) -> None:
+        def count_adds(gm: torch.fx.GraphModule) -> int:
+            return len(
+                gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.add.Tensor
+                )
+            )
+
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                x = x + self.state
+                # Add 1 (constant) to state.
+                self.state.add_(1)
+                return x
+
+        edge_manager = to_edge(
+            export(MutableStateModule(), (torch.zeros(1),), strict=True)
+        )
+        self.assertEqual(count_adds(edge_manager.exported_program().graph_module), 2)
+        edge_manager._edge_programs["forward"] = constant_prop_pass(
+            edge_manager._edge_programs["forward"]
+        )
+        self.assertEqual(count_adds(edge_manager.exported_program().graph_module), 2)
+
     def test_constant_prop_pass_for_no_grad(self) -> None:
         class LSTM(torch.nn.Module):
             def __init__(self, input_size, hidden_size, num_layers):
