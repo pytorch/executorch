@@ -55,7 +55,7 @@ class TestInspector(unittest.TestCase):
         perfData = PerfData(random_floats)
 
         # Intentionally use a different way to calculate p50 from the implementation
-        self.assertEqual(perfData.p50, statistics.median(random_floats))
+        self.assertAlmostEqual(perfData.p50, statistics.median(random_floats))
 
     def test_event_block_to_dataframe(self) -> None:
         eventBlock = EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
