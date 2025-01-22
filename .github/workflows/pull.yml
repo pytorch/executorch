@@ -369,9 +369,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    permissions:
-      id-token: write
-      contents: read
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
