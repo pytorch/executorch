@@ -220,6 +220,7 @@ set(all_test_sources
     "op_tan_test.cpp"
     "op_tanh_test.cpp"
     "op_to_copy_test.cpp"
+    "op_topk_test.cpp"
     "op_transpose_copy_test.cpp"
     "op_tril_test.cpp"
     "op_trunc_test.cpp"
