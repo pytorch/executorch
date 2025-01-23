@@ -558,10 +558,8 @@ class Tester:
         )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
-        # TODO(T182187531): Skip dim order for now. Support dim order and its op after alpha release.
         if not to_edge_stage:
             to_edge_stage = ToEdge()
-        to_edge_stage.edge_compile_conf._skip_dim_order = True
         res = self._run_stage(to_edge_stage)
         return res
 
