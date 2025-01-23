@@ -11,17 +11,19 @@ import unittest
 import torch
 
 from executorch.backends.arm.test import common, conftest
-
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-
-from executorch.exir import EdgeCompileConfig
 
 from torch.nn.quantizable.modules import rnn
 
 
 class TestLSTM(unittest.TestCase):
-    """Tests LSTM."""
+    """Tests quantizable LSTM module."""
 
+    """
+    Currently only the quantizable LSTM module has been verified with the arm backend.
+    There may be plans to update this to use torch.nn.LSTM.
+    TODO: MLETORCH-622
+    """
     lstm = rnn.LSTM(10, 20, 2)
     lstm = lstm.eval()
 
@@ -31,10 +33,6 @@ class TestLSTM(unittest.TestCase):
 
     model_inputs = (input_tensor, (h0, c0))
 
-    _edge_compile_config = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
-
     def test_lstm_tosa_MI(self):
         (
             ArmTester(
@@ -43,7 +41,8 @@ class TestLSTM(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=self.model_inputs)
         )
@@ -57,7 +56,8 @@ class TestLSTM(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(atol=3e-1, qtol=1, inputs=self.model_inputs)
         )
@@ -71,7 +71,8 @@ class TestLSTM(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
         )
@@ -89,7 +90,8 @@ class TestLSTM(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
         )
