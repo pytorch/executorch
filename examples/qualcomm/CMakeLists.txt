@@ -84,11 +84,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 # build qnn_executor_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)
 
-# build qnn_llama_runner for llama2
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama2)
-
-# build qnn_llama_runner for llama3.2
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama3_2)
+# build qnn_llama_runner for llama
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama)
 
 # build qaihub_llama2_7b_runner and qaihub_llama3_8b_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama)

@@ -12,7 +12,8 @@ unset XTENSA_CORE
 export XTENSA_CORE=FCV_FG3GP
 git submodule sync
 git submodule update --init
-./install_requirements.sh
+./backends/cadence/install_requirements.sh
+./install_executorch.sh
 
 rm -rf cmake-out
 
