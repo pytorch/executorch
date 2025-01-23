@@ -85,22 +85,22 @@ Tensor& permute_copy_out(
     optimized = false;
 
   if (optimized) {
+    WORD32 num_inp_dims = in.dim();
+    WORD32 num_out_dims = num_inp_dims;
+
+    WORD32 p_inp_shape[kNnlibMaxDim];
+    WORD32 p_out_shape[kNnlibMaxDim];
+    WORD32 p_permute_vec[kNnlibMaxDim];
+
+    for (int i = 0; i < num_inp_dims; i++) {
+       p_inp_shape[i] = in.size(i);
+       p_out_shape[i] = in.size(dims[i]);
+       p_permute_vec[i] = dims[i];
+    }
+
     if (in_type == ScalarType::Float) {
       WORD32* p_inp = (WORD32*)in.const_data_ptr<float>();
       WORD32* p_out = (WORD32*)out.mutable_data_ptr<float>();
-
-      WORD32 num_inp_dims = in.dim();
-      WORD32 num_out_dims = num_inp_dims;
-
-      WORD32 p_inp_shape[kNnlibMaxDim];
-      WORD32 p_out_shape[kNnlibMaxDim];
-      WORD32 p_permute_vec[kNnlibMaxDim];
-
-      for (int i = 0; i < num_inp_dims; i++) {
-        p_inp_shape[i] = in.size(i);
-        p_out_shape[i] = in.size(dims[i]);
-        p_permute_vec[i] = dims[i];
-      }
 
       WORD32 ret_val = xa_nn_transpose_32_32(
           p_out,
@@ -117,19 +117,6 @@ Tensor& permute_copy_out(
       WORD8* p_inp = (WORD8*)in.const_data_ptr<char>();
       WORD8* p_out = (WORD8*)out.mutable_data_ptr<char>();
 
-      WORD32 num_inp_dims = in.dim();
-      WORD32 num_out_dims = num_inp_dims;
-
-      WORD32 p_inp_shape[kNnlibMaxDim];
-      WORD32 p_out_shape[kNnlibMaxDim];
-      WORD32 p_permute_vec[kNnlibMaxDim];
-
-      for (int i = 0; i < num_inp_dims; i++) {
-        p_inp_shape[i] = in.size(i);
-        p_out_shape[i] = in.size(dims[i]);
-        p_permute_vec[i] = dims[i];
-      }
-
       WORD32 val = xa_nn_transpose_8_8(
           p_out,
           p_out_shape,
@@ -144,19 +131,6 @@ Tensor& permute_copy_out(
     } else if (in_type == ScalarType::Byte) {
       WORD8* p_inp = (WORD8*)in.const_data_ptr<uint8_t>();
       WORD8* p_out = (WORD8*)out.mutable_data_ptr<uint8_t>();
-
-      WORD32 num_inp_dims = in.dim();
-      WORD32 num_out_dims = num_inp_dims;
-
-      WORD32 p_inp_shape[kNnlibMaxDim];
-      WORD32 p_out_shape[kNnlibMaxDim];
-      WORD32 p_permute_vec[kNnlibMaxDim];
-
-      for (int i = 0; i < num_inp_dims; i++) {
-        p_inp_shape[i] = in.size(i);
-        p_out_shape[i] = in.size(dims[i]);
-        p_permute_vec[i] = dims[i];
-      }
 
       WORD32 val = xa_nn_transpose_8_8(
           p_out,
