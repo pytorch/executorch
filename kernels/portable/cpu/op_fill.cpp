@@ -91,8 +91,7 @@ Tensor& fill_tensor_out(
     CTYPE_A b_casted;
     ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, "fill.Tensor_out", CTYPE_B, [&] {
       CTYPE_B b_val;
-      ET_DCHECK_MSG(
-          extract_scalar_tensor(b, &b_val), "extract_scalar_tensor failed!");
+      ET_EXTRACT_SCALAR_TENSOR(b, b_val);
       b_casted = static_cast<CTYPE_A>(b_val);
     });
 
