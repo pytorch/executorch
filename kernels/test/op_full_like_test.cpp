@@ -85,9 +85,9 @@ void OpFullLikeTest::test_full_like_out<ScalarType::Bool>() {
   EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
 }
 
-TEST_F(OpFullLikeTest, AllRealOutputPasses) {
+TEST_F(OpFullLikeTest, AllDtypeOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_full_like_out<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
