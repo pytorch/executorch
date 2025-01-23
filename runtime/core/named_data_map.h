@@ -19,17 +19,17 @@ namespace executorch {
 namespace runtime {
 
 /**
- * Interface to access and retrieve data via name from a loaded data file.
+ * Interface to access and retrieve data via name.
  * See executorch/extension/flat_tensor/ for an example.
  */
-class NamedDataMap {
+class ET_EXPERIMENTAL NamedDataMap {
  public:
   virtual ~NamedDataMap() = default;
   /**
    * Get tensor metadata by fully qualified name (FQN).
    *
    * @param fqn Fully qualified name of the tensor.
-   * @return Result containing a pointer to the metadata.
+   * @return Result containing TensorLayout with tensor metadata.
    */
   ET_NODISCARD virtual Result<const executorch::runtime::TensorLayout>
   get_metadata(const char* fqn) const = 0;
@@ -37,10 +37,25 @@ class NamedDataMap {
    * Get tensor data by fully qualified name (FQN).
    *
    * @param fqn Fully qualified name of the tensor.
-   * @return Result containing a span of uint8_t representing the tensor data.
+   * @return Result containing a FreeableBuffer with the tensor data.
    */
-  ET_NODISCARD virtual Result<Span<const uint8_t>> get_data(
+  ET_NODISCARD virtual Result<FreeableBuffer> get_data(
       const char* fqn) const = 0;
+
+  /**
+   * Get the number of keys in the NamedDataMap.
+   *
+   * @return Result containing the number of keys.
+   */
+  ET_NODISCARD virtual Result<int> get_num_keys() const = 0;
+
+  /**
+   * Get the key at the given index.
+   *
+   * @param index The index of the key to retrieve.
+   * @return Result containing the key at the given index.
+   */
+  ET_NODISCARD virtual Result<const char*> get_key(int index) const = 0;
 };
 
 } // namespace runtime

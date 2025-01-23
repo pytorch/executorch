@@ -44,8 +44,7 @@ def define_common_targets():
                     "*.cpp",
                     "backends/*.cpp",
                     "backends/htpbackend/*.cpp",
-                    "backends/htpbackend/aarch64/*.cpp",
-                ],
+                ] + (["backends/htpbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htpbackend/aarch64/*.cpp"]),
                 exclude = ["Logging.cpp"],
             ),
             exported_headers = glob(
