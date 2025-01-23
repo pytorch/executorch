@@ -186,7 +186,7 @@ std::tuple<Tensor&, Tensor&> topk_values(
 
   bool temp_mem_allocated = false;
 
-  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     using elem_t = std::pair<CTYPE, int64_t>;
     size_t temp_mem_size = nonempty_size(in, dim) * sizeof(elem_t);
 

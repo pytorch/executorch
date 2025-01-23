@@ -121,9 +121,7 @@ class TestMaximum(unittest.TestCase):
             self.Maximum(), common.get_u55_compile_spec(), test_data
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=test_data, target_board="corstone-300"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(Maximum.test_parameters)
     def test_maximum_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
@@ -132,6 +130,4 @@ class TestMaximum(unittest.TestCase):
             self.Maximum(), common.get_u85_compile_spec(), test_data
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=test_data, target_board="corstone-320"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
