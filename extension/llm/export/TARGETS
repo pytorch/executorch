@@ -12,6 +12,7 @@ runtime.python_library(
     name = "export_lib",
     srcs = [
         "builder.py",
+        "export_passes.py",
         "partitioner_lib.py",
         "quantizer_lib.py",
     ],

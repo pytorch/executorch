@@ -374,7 +374,7 @@ def get_custom_quant_ios_dtype(
     """
     This function is specific for llama inputs and outputs
     """
-    if node.op == "placeholder" and "attention_sdpa_kv_cache_past_" in node.name:
+    if node.op == "placeholder" and "attention_kv_cache_past_" in node.name:
         return kv_dtype
 
     # Tag index put node before copy node, because copy is a skipped node in qnn

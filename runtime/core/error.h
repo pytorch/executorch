@@ -79,6 +79,9 @@ enum class Error : error_code_t {
   /// Error caused by the contents of a program.
   InvalidProgram = 0x23,
 
+  /// Error caused by the contents of external data.
+  InvalidExternalData = 0x24,
+
   /*
    * Delegate errors.
    */
