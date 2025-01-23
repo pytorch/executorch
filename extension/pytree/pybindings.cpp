@@ -145,8 +145,10 @@ class PyTree {
           } else if (py::isinstance<py::int_>(key)) {
             s.key(i) = py::cast<int32_t>(key);
           } else {
-            throw std::runtime_err(
-                "invalid key in pytree dict; must be int or string");
+            throw std::runtime_error(
+                std::string(
+                    "invalid key in pytree dict; must be int or string but got ") +
+                std::string(py::str(key.get_type())));
           }
 
           flatten_internal(dict[key], leaves, s[i]);
@@ -178,7 +180,9 @@ class PyTree {
       case Kind::None:
         [[fallthrough]];
       default:
-        throw std::runtime_error("invalid pytree kind in flatten_internal");
+        throw std::runtime_error(
+            std::string("invalid pytree kind  ") + std::to_string(int(kind)) +
+            " in flatten_internal");
     }
   }
 
@@ -226,7 +230,9 @@ class PyTree {
                 return py::cast(key.as_str()).release();
               default:
                 throw std::runtime_error(
-                    "invalid key in pytree dict; must be int or string");
+                    std::string("invalid key kind ") +
+                    std::to_string(int(key.kind())) +
+                    " in pytree dict; must be int or string");
             }
           }();
           dict[py_key] = unflatten_internal(spec[i], leaves_it);
@@ -243,7 +249,9 @@ class PyTree {
         return py::none();
       }
     }
-    throw std::runtime_error("invalid spec kind in unflatten_internal");
+    throw std::runtime_error(
+        std::string("invalid spec kind ") + std::to_string(int(spec.kind())) +
+        " in unflatten_internal");
   }
 
  public:
