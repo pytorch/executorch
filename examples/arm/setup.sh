@@ -179,23 +179,7 @@ function setup_toolchain() {
     echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
 }
 
-function setup_ethos_u() {
-    # This is the main dir which will pull more repos to do baremetal software dev for cs300
-    echo "[${FUNCNAME[0]}] Setting up the repo"
-    cd "${root_dir}"
-    [[ ! -d ethos-u ]] && \
-        git clone ${ethos_u_repo_url}
-    cd ethos-u
-    git reset --hard ${ethos_u_base_rev}
-    python3 ./fetch_externals.py -c ${ethos_u_base_rev}.json fetch
-
-    pip install pyelftools
-    echo "[${FUNCNAME[0]}] Done @ $(git describe --all --long 3> /dev/null) in ${root_dir}/ethos-u dir."
-}
-
-
 function setup_tosa_reference_model() {
-    
     # reference_model flatbuffers version clashes with Vela.
     # go with Vela's since it newer.
     # Vela's flatbuffer requirement is expected to loosen, then remove this. MLETORCH-565
@@ -235,15 +219,6 @@ source $et_dir/backends/arm/scripts/utils.sh
 
 # Setup toolchain
 setup_toolchain
-
-# Setup the ethos-u dev environment
-setup_ethos_u
-
-# Patch the ethos-u dev environment to include executorch application
-repo_dir="${root_dir}/ethos-u/core_platform"
-base_rev=b728c774158248ba2cad8e78a515809e1eb9b77f
-patch_dir=${script_dir}/ethos-u-setup/
-patch_repo $repo_dir $base_rev $patch_dir
 
 # Setup the tosa_reference_model
 setup_tosa_reference_model
