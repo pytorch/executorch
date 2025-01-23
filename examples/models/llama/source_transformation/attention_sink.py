@@ -111,7 +111,6 @@ class KVCacheWithAttentionSink(KVCache):
         self,
         n_heads: int,
         head_dim: int,
-        transpose_cache: bool,
         enable_dynamic_shape: bool,
         rope: RopeWithAttentionSink,
         window_size: int,
@@ -125,7 +124,6 @@ class KVCacheWithAttentionSink(KVCache):
             max_seq_length=window_size + sink_size,
             n_heads=n_heads,
             head_dim=head_dim,
-            transpose_cache=transpose_cache,
             enable_dynamic_shape=enable_dynamic_shape,
             dtype=dtype,
         )
@@ -161,28 +159,17 @@ class KVCacheWithAttentionSink(KVCache):
                 input_pos_item + self.position_shift - self.sink_size - num_to_evict
             )
             num_empty_space = self.window_size - num_to_keep
-            dim_to_slice = 2 if self.transpose_cache else 1
+            dim_to_slice = 2
             k_to_keep = self.k_cache.narrow(
                 dim_to_slice,
                 self.sink_size + num_to_evict,  # pyre-ignore [6]
                 num_to_keep,  # pyre-ignore [6]
             )
-            if self.transpose_cache:
-                k_to_keep = self.rope.rerotate_k(
-                    k=k_to_keep.transpose(1, 2),
-                    original_position=(  # pyre-ignore [6]
-                        self.sink_size + num_to_evict
-                    ),
-                    new_position=self.sink_size,
-                ).transpose(1, 2)
-            else:
-                k_to_keep = self.rope.rerotate_k(
-                    k=k_to_keep,
-                    original_position=(  # pyre-ignore [6]
-                        self.sink_size + num_to_evict
-                    ),
-                    new_position=self.sink_size,
-                )
+            k_to_keep = self.rope.rerotate_k(
+                k=k_to_keep.transpose(1, 2),
+                original_position=(self.sink_size + num_to_evict),  # pyre-ignore [6]
+                new_position=self.sink_size,
+            ).transpose(1, 2)
             self.k_cache = torch.cat(
                 [
                     self.k_cache.narrow(dim_to_slice, 0, self.sink_size),
@@ -278,7 +265,6 @@ def _replace_attention(
             kv_cache_with_attention_sink = KVCacheWithAttentionSink(
                 n_heads=kv_cache.n_heads,
                 head_dim=kv_cache.head_dim,
-                transpose_cache=kv_cache.transpose_cache,
                 enable_dynamic_shape=kv_cache.enable_dynamic_shape,
                 rope=rope_with_attention_sink,
                 max_batch_size=kv_cache.max_batch_size,
@@ -288,7 +274,6 @@ def _replace_attention(
                 dtype=kv_cache.k_cache.dtype,
             )
             child_module.kv_cache = kv_cache_with_attention_sink
-            child_module.SDPA.kv_cache = kv_cache_with_attention_sink
             child_module.forward = types.MethodType(  # pyre-ignore
                 attention_sink_forward, child_module
             )

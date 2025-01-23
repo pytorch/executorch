@@ -121,7 +121,7 @@ at::Tensor custom_sdpa_aten(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const std::optional<double> scale) {
-  auto output = at::empty_like(q);
+  auto output = at::empty(q.sizes());
   WRAP_TO_ATEN(custom_sdpa_out_no_context, 8)
   (q, k, v, start_pos, attn_mask, dropout_p, is_causal, scale, output);
   return output;
