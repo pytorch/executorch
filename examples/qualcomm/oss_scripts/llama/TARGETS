@@ -5,6 +5,16 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
+python_library(
+    name = "static_llama",
+    srcs = [
+        "model/static_llama.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
 python_binary(
     name = "llama",
     srcs = ["llama.py"],
