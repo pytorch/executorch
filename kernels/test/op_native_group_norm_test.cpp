@@ -132,8 +132,8 @@ class OpNativeGroupNormOutTest : public OperatorTest {
       EXPECT_TENSOR_CLOSE_WITH_TOL(
           out0,
           out0_expected,
-          2e-1,
-          executorch::runtime::testing::internal::kDefaultAtol);
+          5e-3,
+          5e-3);
       EXPECT_TENSOR_CLOSE_WITH_TOL(
           out1,
           out1_expected,
