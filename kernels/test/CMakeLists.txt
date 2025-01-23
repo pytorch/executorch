@@ -200,6 +200,7 @@ set(all_test_sources
     "op_rsqrt_test.cpp"
     "op_rsub_test.cpp"
     "op_scalar_tensor_test.cpp"
+    "op_scatter_test.cpp"
     "op_scatter_add_test.cpp"
     "op_select_scatter_test.cpp"
     "op_select_copy_test.cpp"
