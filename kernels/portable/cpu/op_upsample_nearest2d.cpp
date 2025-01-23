@@ -79,7 +79,7 @@ Tensor& upsample_nearest2d_vec_out(
   const auto kernel_scale_w = area_pixel_compute_scale<double>(
       in.sizes()[3], out.sizes()[3], false, scale_w);
 
-  ET_SWITCH_REAL_TYPES(
+  ET_SWITCH_REALHBF16_TYPES(
       in.scalar_type(), ctx, "upsample_nearest2d.out", CTYPE, [&]() {
         upsample_nearest2d_kernel_impl<CTYPE>(
             in, kernel_scale_h, kernel_scale_w, out);

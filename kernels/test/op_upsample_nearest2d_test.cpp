@@ -52,7 +52,6 @@ class OpUpsampleNearest2dTest : public OperatorTest {
     op_upsample_nearest2d_out(
         input,
         OptionalArrayRef<int64_t>({output_size.data(), output_size.size()}),
-        true,
         {},
         out);
 
@@ -254,9 +253,9 @@ TEST_F(OpUpsampleNearest2dTest, MultiBatchAndChannel) {
 }
 
 TEST_F(OpUpsampleNearest2dTest, DType) {
-#define TEST_ENTRY(ctype, dtype)                             \
-  test_upsample_nearest2d_dtype<ctype, ScalarType::dtype>(); \
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+#define TEST_ENTRY(ctype, dtype) \
+  test_upsample_nearest2d_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
