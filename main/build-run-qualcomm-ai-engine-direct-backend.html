@@ -543,8 +543,8 @@ is designed to provide unified, low-level APIs for AI development.</p>
 Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found <a class="reference external" href="https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html">here</a>.</p>
 <p>Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.</p>
 </div>
-<div class="section" id="prerequsites-hardware-and-software">
-<h2>Prerequsites (Hardware and Software)<a class="headerlink" href="#prerequsites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="prerequisites-hardware-and-software">
+<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="host-os">
 <h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this heading">¶</a></h3>
 <p>The Linux host operating system that QNN Backend is verified with is Ubuntu 22.04 LTS x64
@@ -832,7 +832,7 @@ python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.script
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">&lt;device_serial&gt;</span></code> can be found by <code class="docutils literal notranslate"><span class="pre">adb</span> <span class="pre">devices</span></code> command.</p>
 <p>After the above command, pre-processed inputs and outputs are put in <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/deeplab_v3</span></code> and <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/deeplab_v3/outputs</span></code> folder.</p>
-<p>The command-line arguents are written in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/utils.py#L127">utils.py</a>.
+<p>The command-line arguments are written in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/utils.py#L139">utils.py</a>.
 The model, inputs, and output location are passed to <code class="docutils literal notranslate"><span class="pre">qnn_executorch_runner</span></code> by <code class="docutils literal notranslate"><span class="pre">--model_path</span></code>, <code class="docutils literal notranslate"><span class="pre">--input_list_path</span></code>, and <code class="docutils literal notranslate"><span class="pre">--output_folder_path</span></code>.</p>
 </div>
 <div class="section" id="running-a-model-via-executorch-s-android-demo-app">
@@ -906,7 +906,7 @@ issue on ExecuTorch repo and tag use <code class="docutils literal notranslate">
               <ul>
 <li><a class="reference internal" href="#">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a><ul>
 <li><a class="reference internal" href="#what-s-qualcomm-ai-engine-direct">What’s Qualcomm AI Engine Direct?</a></li>
-<li><a class="reference internal" href="#prerequsites-hardware-and-software">Prerequsites (Hardware and Software)</a><ul>
+<li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
 <li><a class="reference internal" href="#host-os">Host OS</a></li>
 <li><a class="reference internal" href="#hardware">Hardware:</a></li>
 <li><a class="reference internal" href="#software">Software:</a></li>
