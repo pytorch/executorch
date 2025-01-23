@@ -8,16 +8,13 @@
 
 #pragma once
 
-#include <cstddef>
-
 #include <executorch/runtime/core/data_loader.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/core/tensor_layout.h>
 #include <executorch/runtime/platform/compiler.h>
 
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-
-#include <executorch/runtime/core/tensor_layout.h>
 #include <unordered_map>
 #include <utility>
 
@@ -54,10 +51,11 @@ class DataMap final : public executorch::runtime::NamedDataMap {
       executorch::runtime::FreeableBuffer&& flat_tensor_data,
       std::unordered_map<
           std::string,
-          std::tuple<int, int, executorch::runtime::TensorLayout>> tensor_map,
+          std::tuple<int, int, executorch::runtime::TensorLayout>>
+          name_to_tensor,
       executorch::runtime::FreeableBuffer&& data_ro)
       : _flat_tensor_data(std::move(flat_tensor_data)),
-        _tensor_map(std::move(tensor_map)),
+        _name_to_tensor(std::move(name_to_tensor)),
         _data_ro(std::move(data_ro)) {}
 
   // Not copyable or assignable.
@@ -66,14 +64,14 @@ class DataMap final : public executorch::runtime::NamedDataMap {
   DataMap& operator=(const DataMap& rhs) = delete;
 
   // FlatTensor flatbuffer data. Contains the data backing up
-  // TensorLayout information in the _tensor_map; must outlive it.
+  // TensorLayout information in the _name_to_tensor map; must outlive it.
   executorch::runtime::FreeableBuffer _flat_tensor_data;
 
-  // Map of fqn to {segment index, offset, TensorLayout}.
+  // Map of name to {segment index, offset, TensorLayout}.
   std::unordered_map<
       std::string,
       std::tuple<int, int, executorch::runtime::TensorLayout>>
-      _tensor_map;
+      _name_to_tensor;
 
   // Raw, read-only tensor data.
   executorch::runtime::FreeableBuffer _data_ro;

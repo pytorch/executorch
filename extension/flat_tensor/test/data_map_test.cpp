@@ -6,17 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/flat_tensor/named_data_map/data_map.h>
-
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/flat_tensor/named_data_map/data_map.h>
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
+#include <executorch/extension/flat_tensor/serialize/schema_generated.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
-
-#include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
-#include <executorch/extension/flat_tensor/serialize/schema_generated.h>
 
 #include <gtest/gtest.h>
 

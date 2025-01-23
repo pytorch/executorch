@@ -5,17 +5,16 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+
 #include <executorch/extension/flat_tensor/named_data_map/data_map.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/extension/flat_tensor/serialize/schema_generated.h>
-
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/compiler.h>
-
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include <tuple>
 #include <unordered_map>
@@ -48,16 +47,16 @@ bool IsAligned(const void* data) {
 
 ET_NODISCARD Result<const TensorLayout> DataMap::get_metadata(
     const char* fqn) const {
-  auto result = _tensor_map.find(fqn);
-  if (result == _tensor_map.end()) {
+  auto result = _name_to_tensor.find(fqn);
+  if (result == _name_to_tensor.end()) {
     return Error::NotFound;
   }
   return std::get<2>(result->second);
 }
 
 ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* fqn) const {
-  auto result = _tensor_map.find(fqn);
-  if (result == _tensor_map.end()) {
+  auto result = _name_to_tensor.find(fqn);
+  if (result == _name_to_tensor.end()) {
     return Error::NotFound;
   }
   int offset = std::get<1>(result->second);
@@ -68,15 +67,15 @@ ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* fqn) const {
 }
 
 ET_NODISCARD Result<int> DataMap::get_num_keys() const {
-  return _tensor_map.size();
+  return _name_to_tensor.size();
 }
 
 ET_NODISCARD Result<const char*> DataMap::get_key(int index) const {
-  if (index <= 0 || index >= _tensor_map.size()) {
+  if (index <= 0 || index >= _name_to_tensor.size()) {
     return Error::InvalidArgument;
   }
 
-  auto iter = _tensor_map.begin();
+  auto iter = _name_to_tensor.begin();
   for (int i = 0; i < index; ++i) {
     ++iter;
   }
