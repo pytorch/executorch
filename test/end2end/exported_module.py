@@ -69,6 +69,7 @@ class ExportedModule:
         capture_config=None,
         skip_type_promotion: bool = False,
         export_joint_graph: bool = False,
+        external_constants: bool = False,
     ) -> "ExportedModule":
         """
         Creates a new ExportedModule for the specified module class.
@@ -206,6 +207,7 @@ class ExportedModule:
                 dynamic_memory_planning_mode=dynamic_memory_planning_mode,
                 memory_planning_pass=memory_planning_pass,
                 to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
+                external_constants=external_constants,
             )
         )
 

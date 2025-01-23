@@ -52,7 +52,7 @@ class ET_EXPERIMENTAL NamedDataMap {
    * @return An error code on if the load was successful.
    */
   ET_NODISCARD virtual Error
-  load_data_into(const char* fqn, size_t size, void* buffer);
+  load_data_into(const char* fqn, size_t size, void* buffer) const = 0;
 
   /**
    * Get the number of keys in the NamedDataMap.
