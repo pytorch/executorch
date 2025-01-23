@@ -51,7 +51,7 @@ python3 -m venv .venv && source .venv/bin/activate
 
 pip install --upgrade cmake pip setuptools wheel
 
-./install_requirements.sh --pybind coreml mps xnnpack
+./install_executorch.sh --pybind coreml mps xnnpack
 ```
 
 ### 4. Backend Dependencies

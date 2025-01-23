@@ -66,7 +66,7 @@ TEST_F(OpPixelShuffleOutTest, AllRealDtypesSupported) {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_pixel_shuffle<ScalarType::dtype>();
 
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+  ET_FORALL_REALHBBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
 }

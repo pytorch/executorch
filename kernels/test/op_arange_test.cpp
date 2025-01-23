@@ -86,9 +86,9 @@ class OpArangeStartOutTest : public OperatorTest {
 };
 
 /// A generic smoke test that works for any dtype that supports  zeros().
-TEST_F(OpArangeOutTest, AllRealDtypesSupported) {
+TEST_F(OpArangeOutTest, AllRealHBF16DtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_arange_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -164,10 +164,10 @@ TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
 }
 
 /// A generic smoke test that works for any dtype that supports  zeros().
-TEST_F(OpArangeStartOutTest, AllRealDtypesSupported) {
+TEST_F(OpArangeStartOutTest, AllRealHBF16DtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) \
   test_arange_start_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

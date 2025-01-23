@@ -53,6 +53,26 @@ class OpCatOutTest : public OperatorTest {
 
     EXPECT_TENSOR_EQ(out, expected);
   }
+
+  template <ScalarType DTYPE>
+  void test_16bit_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor x = tf.make({2, 3}, {1.5, -2.0, 3.25, 4.0, -5.5, 6.5});
+    Tensor y = tf.make({2, 1}, {10.0, 20.0});
+
+    std::vector<Tensor> inputs = {x, y};
+
+    Tensor out = tf.zeros({2, 4});
+
+    // Concatenate along dim[1].
+    Tensor ret = op_cat_out(
+        ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+
+    Tensor expected =
+        tf.make({2, 4}, {1.5, -2.0, 3.25, 10.0, 4.0, -5.5, 6.5, 20.0});
+    EXPECT_TENSOR_EQ(out, expected);
+  }
 };
 
 TEST_F(OpCatOutTest, SmokeDim1) {
@@ -105,26 +125,12 @@ TEST_F(OpCatOutTest, SmokeDim1) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpCatOutTest, HalfSupport) {
+TEST_F(OpCatOutTest, SixteenBitFloatSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+    GTEST_SKIP() << "Test Half/BF16 support only for ExecuTorch mode";
   }
-  TensorFactory<ScalarType::Half> tf;
-
-  Tensor x = tf.make({2, 3}, {1.5, -2.0, 3.25, 4.0, -5.5, 6.5});
-  Tensor y = tf.make({2, 1}, {10.0, 20.0});
-
-  std::vector<Tensor> inputs = {x, y};
-
-  Tensor out = tf.zeros({2, 4});
-
-  // Concatenate along dim[1].
-  Tensor ret = op_cat_out(
-      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
-
-  Tensor expected =
-      tf.make({2, 4}, {1.5, -2.0, 3.25, 10.0, 4.0, -5.5, 6.5, 20.0});
-  EXPECT_TENSOR_EQ(out, expected);
+  test_16bit_dtype<ScalarType::Half>();
+  test_16bit_dtype<ScalarType::BFloat16>();
 }
 
 TEST_F(OpCatOutTest, NegativeDims) {
