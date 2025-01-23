@@ -274,7 +274,7 @@ def main() -> None:
             prog.write_to_file(fp)
             print(f"Exported {module_name} and wrote program data to {outfile}")
 
-        prog.write_data_to_file(args.outdir)
+        prog.write_tensor_data_to_file(args.outdir)
 
 
 if __name__ == "__main__":

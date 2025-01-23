@@ -107,6 +107,7 @@ uint64_t GetUInt64LE(const uint8_t* data) {
 }
 
 // Define storage for the static.
+// @lint-ignore CLANGTIDY facebook-hte-CArray
 constexpr char FlatTensorHeader::kMagic[kMagicSize];
 
 } // namespace extension

@@ -35,11 +35,12 @@ class FlatTensorHeaderTest : public ::testing::Test {
  * an implementation detail.
  */
 // clang-format off
+// @lint-ignore CLANGTIDY facebook-hte-CArray
 constexpr char kExampleHeaderData[] = {
   // Magic bytes
-  'F', 'T', '0', '1',
+  'F', 'H', '0', '1',
   // uint32_t header size (little endian)
-  0x40, 0x00, 0x00, 0x00,
+  0x28, 0x00, 0x00, 0x00,
   // uint64_t flatbuffer_offset
   0x71, 0x61, 0x51, 0x41, 0x31, 0x21, 0x11, 0x01,
   // uint64_t flatbuffer_size
