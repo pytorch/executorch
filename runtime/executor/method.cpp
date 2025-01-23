@@ -415,10 +415,14 @@ Error Method::parse_values() {
         new (&values_[i]) EValue(t.get());
       } break;
       case executorch_flatbuffer::KernelTypes::TensorList: {
+        const auto items =
+            static_cast<const executorch_flatbuffer::TensorList*>(val)->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // get list of serialization tensors and allocate storage for executor
         // tensors
         auto tensors = deserialization::parseTensorList(
-            static_cast<const executorch_flatbuffer::TensorList*>(val)->items(),
+            items,
             values_,
             n_value, // The size of the full array.
             memory_manager_);
@@ -433,12 +437,15 @@ Error Method::parse_values() {
         new (&values_[i]) EValue(tensors.get());
       } break;
       case executorch_flatbuffer::KernelTypes::OptionalTensorList: {
+        const auto items =
+            static_cast<const executorch_flatbuffer::OptionalTensorList*>(val)
+                ->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // Same as TensorList but optional<Tensor> instead of Tensor
         auto tensors =
             deserialization::parseListOptionalType<exec_aten::Tensor>(
-                static_cast<const executorch_flatbuffer::OptionalTensorList*>(
-                    val)
-                    ->items(),
+                items,
                 values_,
                 n_value, // The size of the full array.
                 memory_manager_);

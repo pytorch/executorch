@@ -43,6 +43,7 @@ def define_common_targets():
             "freeable_buffer.h",
             "result.h",
             "span.h",
+            "tensor_layout.h",
         ],
         visibility = [
             "//executorch/...",
