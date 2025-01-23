@@ -114,8 +114,11 @@ TEST_F(OpMaskedFillTest, IntTensorFloatAlphaDies) {
           tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
 }
 
-TEST_F(OpMaskedFillTest, FloatTensors) {
-  test_floating_point_masked_fill_scalar_out<ScalarType::Float>();
+TEST_F(OpMaskedFillTest, FloatingPointTensors) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_floating_point_masked_fill_scalar_out<ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
 TEST_F(OpMaskedFillTest, DoubleTensors) {
