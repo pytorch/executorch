@@ -89,15 +89,9 @@ class InsertRequantize(ExportPass):
         requantize_dict = n.meta.pop(QCOM_REQUANTIZE)
         # {quant_attr: user_node_name_list}
         group_quant_attr_dict = self._invert_dict(requantize_dict)
-        # TODO: If users of the node contain output node,
-        # we replace the node with to_copy op. However, it would
-        # be problem when the node has multiple to_copy ops
-        add_output = len(group_quant_attr_dict) == 1
 
         for hashable_quant_attr, user_nodes in group_quant_attr_dict.items():
             user_nodes_copy = user_nodes.copy()
-            if add_output:
-                user_nodes_copy.append("output")
             self._insert_to_copy(gm, n, dict(hashable_quant_attr), user_nodes_copy)
 
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:

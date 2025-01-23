@@ -429,14 +429,16 @@ struct arr {
 
   T& at(size_t idx) {
     if (idx >= size()) {
-      throw std::out_of_range("bounds check failed in pytree arr");
+      throw std::out_of_range(
+          "bounds check failed in pytree arr at index " + std::to_string(idx));
     }
     return data_[idx];
   }
 
   const T& at(size_t idx) const {
     if (idx >= size()) {
-      throw std::out_of_range("bounds check failed in pytree arr");
+      throw std::out_of_range(
+          "bounds check failed in pytree arr at index " + std::to_string(idx));
     }
     return data_[idx];
   }
@@ -538,7 +540,8 @@ TreeSpec<Aux> from_str_internal(
           read_idx++;
           if (child_idx >= size) {
             throw std::out_of_range(
-                "bounds check failed writing to pytree item");
+                "bounds check failed writing to pytree item at index " +
+                std::to_string(child_idx));
           }
           c->items[child_idx] =
               from_str_internal<Aux>(spec, read_idx, spec_data);
@@ -567,7 +570,9 @@ TreeSpec<Aux> from_str_internal(
           auto next_delim_idx = spec_data[read_idx];
           read_idx++;
           if (child_idx >= size) {
-            throw std::out_of_range("bounds check failed decoding pytree dict");
+            throw std::out_of_range(
+                "bounds check failed decoding pytree dict at index " +
+                std::to_string(child_idx));
           }
           if (spec.at(read_idx) == Config::kDictStrKeyQuote) {
             auto key_delim_idx = spec_data[read_idx];
@@ -658,7 +663,8 @@ inline arr<size_t> pre_parse(const StrTreeSpec& spec) {
         }
         if (i >= size) {
           throw std::out_of_range(
-              "bounds check failed while parsing dictionary key");
+              "bounds check failed while parsing dictionary key at index " +
+              std::to_string(i));
         }
         ret.at(idx) = i;
         ret.at(i) = idx;
