@@ -104,7 +104,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
 
   constexpr auto name = "native_batch_norm_legit_no_training.out";
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -261,7 +261,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
 
   constexpr auto name = "_native_batch_norm_legit.no_stats_out";
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     CTYPE* mean_data = mean_out.mutable_data_ptr<CTYPE>();
@@ -282,10 +282,12 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
     }
 
     // Compute mean and invstd for each channel
+    const CTYPE elements_per_channel_ct =
+        static_cast<CTYPE>(elements_per_channel);
     for (size_t c = 0; c < C; ++c) {
-      CTYPE mean = mean_data[c] / elements_per_channel;
+      CTYPE mean = mean_data[c] / elements_per_channel_ct;
       // Var[x] = E[x^2] - E[x]^2
-      CTYPE var = invstd_data[c] / elements_per_channel - mean * mean;
+      CTYPE var = invstd_data[c] / elements_per_channel_ct - mean * mean;
       CTYPE invstd = 1.0 / std::sqrt(var + eps);
       mean_data[c] = mean;
       invstd_data[c] = invstd;
