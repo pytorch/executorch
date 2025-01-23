@@ -37,7 +37,7 @@ application to test things out on device.
 Run the following command to generate `llava.pte`, `tokenizer.bin` and an image
 tensor (serialized in TorchScript) `image.pt`.
 
-Prerequisite: run `install_requirements.sh` to install ExecuTorch and run
+Prerequisite: run `install_executorch.sh` to install ExecuTorch and run
 `examples/models/llava/install_requirements.sh` to install dependencies.
 
 ```bash

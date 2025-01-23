@@ -169,6 +169,13 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=inception_v3
   elif [[ "${MODEL_NAME}" == "vit" ]]; then
     EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "edsr" ]]; then
+    EXPORT_SCRIPT=edsr
+    # Additional deps for edsr
+    pip install piq
+  else
+    echo "Unsupported model $MODEL_NAME"
+    exit 1
   fi
 
   # Use SM8450 for S22, SM8550 for S23, and SM8560 for S24
