@@ -39,16 +39,23 @@ class OpDiagonalCopyOutTest : public ::testing::Test {
     // first.
     torch::executor::runtime_init();
   }
+
+  template <ScalarType DTYPE>
+  void test_2d_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor input = tf.make({3, 4}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor out = tf.zeros({2});
+    Tensor out_expected = tf.make({2}, {5, 10});
+    op_diagonal_copy_out(input, 1, 1, 0, out);
+    EXPECT_TENSOR_CLOSE(out, out_expected);
+  }
 };
 
 TEST_F(OpDiagonalCopyOutTest, SmokeTest2D) {
-  TensorFactory<ScalarType::Float> tfFloat;
-
-  Tensor input = tfFloat.make({3, 4}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
-  Tensor out = tfFloat.zeros({2});
-  Tensor out_expected = tfFloat.make({2}, {5, 10});
-  op_diagonal_copy_out(input, 1, 1, 0, out);
-  EXPECT_TENSOR_CLOSE(out, out_expected);
+#define TEST_ENTRY(ctype, dtype) test_2d_dtype<ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
 TEST_F(OpDiagonalCopyOutTest, SmokeTest3D) {
