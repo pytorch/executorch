@@ -115,6 +115,10 @@ def getNodeArgs(node: Node) -> list[TosaArg]:
     return [TosaArg(arg) for arg in node.args]
 
 
+def get_input_tensor(node: Node) -> TosaArg:
+    return TosaArg(node.args[0])
+
+
 def get_output_node(node: Node) -> Node:
     return list(node.users)[0]
 
@@ -140,6 +144,30 @@ def is_consumer_node_depthwise_conv2d(node):
             return True
 
     return False
+
+
+def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
+    """Returns two input nodes to 'node' in order. If 'node' only has one input,
+    it is returned twice.
+
+    Fails if there are no input nodes.
+    Fails if there are >2 input nodes and 'check' is True,
+    """
+
+    num_inputs = len(node.all_input_nodes)
+    assert num_inputs > 0, f"Node '{node.name}' requires >0 input, got {num_inputs}."
+
+    input1 = node.all_input_nodes[0]
+    if num_inputs == 1:
+        input2 = node.all_input_nodes[0]
+    else:
+        input2 = node.all_input_nodes[1]
+    if check:
+        assert (
+            num_inputs <= 2
+        ), f"Node '{node.name}' requires <=2 inputs, got {num_inputs}."
+
+    return input1, input2
 
 
 def tosa_shape(shape, dim_order):
