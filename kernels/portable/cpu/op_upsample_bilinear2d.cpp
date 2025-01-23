@@ -123,7 +123,7 @@ Tensor& upsample_bilinear2d_vec_out(
   const auto kernel_scale_w = area_pixel_compute_scale<double>(
       in.sizes()[3], out.sizes()[3], align_corners, scale_w);
 
-  ET_SWITCH_REAL_TYPES(
+  ET_SWITCH_REALHBF16_TYPES(
       in.scalar_type(), ctx, "upsample_bilinear2d.out", CTYPE, [&]() {
         upsample_bilinear2d_kernel_impl<CTYPE>(
             in, align_corners, kernel_scale_h, kernel_scale_w, out);
