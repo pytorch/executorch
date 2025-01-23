@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Type
 import torch
 from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.program._program import ExecutorchProgramManager
 from torch import nn
 from torch.export import Dim
 
@@ -190,7 +191,8 @@ class ModuleSimpleTrain(torch.nn.Module):
 def export_module_to_program(
     module_class: Type[nn.Module],
     skip_type_promotion: bool,
-):
+    external_constants: bool = False,
+) -> ExecutorchProgramManager:
     """Exports the module and returns the serialized program data."""
     torch.manual_seed(0)
     # Look for an optional @staticmethod that defines custom trace params.
@@ -211,9 +213,10 @@ def export_module_to_program(
         methods,
         skip_type_promotion=skip_type_promotion,
         export_joint_graph=export_joint,
+        external_constants=external_constants,
         **export_kwargs,
     )
-    return module.executorch_program.buffer
+    return module.executorch_program
 
 
 def main() -> None:
@@ -235,7 +238,12 @@ def main() -> None:
         "--outdir",
         type=str,
         required=True,
-        help="Path to the directory to write <classname>.pte files to",
+        help="Path to the directory to write <classname>.pte files and .ptd files to",
+    )
+    parser.add_argument(
+        "--external-constants",
+        action="store_true",
+        help="Export the model with external constants",
     )
     args = parser.parse_args()
 
@@ -257,14 +265,16 @@ def main() -> None:
             # Type promotion will convert to fp32.
             skip_type_promotion = True
         outfile = os.path.join(args.outdir, f"{module_name}.pte")
+        prog = export_module_to_program(
+            module_class,
+            skip_type_promotion=skip_type_promotion,
+            external_constants=args.external_constants,
+        )
         with open(outfile, "wb") as fp:
-            fp.write(
-                export_module_to_program(
-                    module_class,
-                    skip_type_promotion=skip_type_promotion,
-                )
-            )
-        print(f"Exported {module_name} and wrote program data to {outfile}")
+            prog.write_to_file(fp)
+            print(f"Exported {module_name} and wrote program data to {outfile}")
+
+        prog.write_tensor_data_to_file(args.outdir)
 
 
 if __name__ == "__main__":
