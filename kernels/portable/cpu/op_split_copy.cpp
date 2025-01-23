@@ -58,10 +58,10 @@ void split_copy_Tensor_out(
   ScalarType in_type = input.scalar_type();
   ScalarType out_type = out[0].scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "split_copy.Tensor_out", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, out_type, ctx, "split_copy.Tensor_out", CTYPE_OUT, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(
+      in_type, ctx, "split_copy.Tensor_out", CTYPE_IN, [&]() {
+        ET_SWITCH_REALHBBF16_TYPES(
+            out_type, ctx, "split_copy.Tensor_out", CTYPE_OUT, [&]() {
               const CTYPE_IN* input_data = input.const_data_ptr<CTYPE_IN>();
               for (size_t i = 0, e = out.size(); i < e; ++i) {
                 size_t out_step = out[i].size(dim) * trailing_dims;
