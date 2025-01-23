@@ -269,22 +269,18 @@ at::Tensor make_index_tensor(std::vector<std::vector<std::vector<int64_t>>> indi
   return at::from_blob(acc.data(), sizes, dtype).detach().clone();
 }}
 
-using ShaderEntry = std::tuple<std::string, uint32_t, uint64_t, uint64_t>;
-using QueryPoolResults = std::vector<ShaderEntry>;
+using QueryPoolResults = std::vector<vkcompute::vkapi::ShaderResult>;
 using ShaderTimes = std::unordered_map<std::string, std::vector<uint64_t>>;
 
 void process_querypool_results(
     QueryPoolResults& results,
     ShaderTimes& shader_times) {{
-  for (const ShaderEntry& entry : results) {{
-    std::string kernel_name = std::get<0>(entry);
-    std::uint64_t start_ns = std::get<2>(entry);
-    std::uint64_t end_ns = std::get<3>(entry);
-    std::uint64_t duration_ns = end_ns - start_ns;
-    if (shader_times.find(kernel_name) == shader_times.end()) {{
-      shader_times[kernel_name] = std::vector<uint64_t>();
+  for (const vkcompute::vkapi::ShaderResult& r : results) {{
+    uint64_t duration_ns = r.end_time_ns - r.start_time_ns;
+    if (shader_times.find(r.kernel_name) == shader_times.end()) {{
+      shader_times[r.kernel_name] = std::vector<uint64_t>();
     }}
-    shader_times[kernel_name].emplace_back(duration_ns);
+    shader_times[r.kernel_name].emplace_back(duration_ns);
   }}
 }}
 
