@@ -66,6 +66,11 @@ ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* fqn) const {
   return FreeableBuffer(data, tensor.nbytes(), nullptr);
 }
 
+ET_NODISCARD Error
+DataMap::load_data_into(const char* fqn, size_t size, void* buffer) const {
+  return Error::NotImplemented;
+}
+
 ET_NODISCARD Result<int> DataMap::get_num_keys() const {
   return _name_to_tensor.size();
 }

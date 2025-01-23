@@ -39,7 +39,7 @@ Tensor& sign_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   if (in.scalar_type() == exec_aten::ScalarType::Bool) {
     memcpy(out.mutable_data_ptr(), in.const_data_ptr(), in.nbytes());
   } else {
-    ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "sign.out", CTYPE, [&] {
+    ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "sign.out", CTYPE, [&] {
       apply_unary_map_fn(
           [](const CTYPE val_in) {
             if (std::isnan(val_in)) {

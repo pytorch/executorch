@@ -38,6 +38,8 @@ class DataMap final : public executorch::runtime::NamedDataMap {
   ET_NODISCARD
   executorch::runtime::Result<executorch::runtime::FreeableBuffer> get_data(
       const char* fqn) const override;
+  ET_NODISCARD runtime::Error
+  load_data_into(const char* fqn, size_t size, void* buffer) const override;
 
   ET_NODISCARD executorch::runtime::Result<int> get_num_keys() const override;
   ET_NODISCARD executorch::runtime::Result<const char*> get_key(
