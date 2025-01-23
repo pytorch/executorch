@@ -102,6 +102,8 @@ def install_requirements(use_pytorch_nightly):
             "install",
             "-r",
             "requirements-examples.txt",
+            "-r",
+            "requirements-dev.txt",
             *REQUIREMENTS_TO_INSTALL,
             "--extra-index-url",
             TORCH_NIGHTLY_URL,
