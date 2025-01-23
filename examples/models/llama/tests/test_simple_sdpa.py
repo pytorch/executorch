@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
 import unittest
 
 import torch
@@ -29,11 +28,9 @@ class SDPATest(unittest.TestCase):
             max_seq_length=max_seq_length,
             n_heads=n_heads,
             head_dim=head_dim,
-            transpose_cache=True,
             enable_dynamic_shape=False,
         )
         sdpa = SDPA(
-            kv_cache=copy.deepcopy(kv_cache),
             dim=dim,
             head_dim=head_dim,
             n_rep=n_rep,
@@ -45,6 +42,11 @@ class SDPATest(unittest.TestCase):
         key = torch.randn(1, 1, n_local_heads, head_dim)
         value = torch.randn(1, 1, n_local_heads, head_dim)
         mask = torch.randn(max_seq_length, max_seq_length)
+        query = query.transpose(1, 2)
+        key = key.transpose(1, 2)
+        value = value.transpose(1, 2)
+        key, value = kv_cache.update(input_pos, key, value)
+
         sdpa_output = sdpa(
             input_pos,
             query,
@@ -55,9 +57,7 @@ class SDPATest(unittest.TestCase):
             mask=mask,
         )
 
-        simple_sdpa = SDPASimple(
-            kv_cache=copy.deepcopy(kv_cache), dim=dim, head_dim=head_dim, n_rep=n_rep
-        )
+        simple_sdpa = SDPASimple(dim=dim, head_dim=head_dim, n_rep=n_rep)
         simple_sdpa_output = simple_sdpa(
             input_pos, query, key, value, bsz=bsz, seqlen=seqlen, mask=mask
         )
