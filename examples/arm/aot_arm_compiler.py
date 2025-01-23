@@ -511,7 +511,6 @@ if __name__ == "__main__":
             partitioner=[ArmPartitioner(compile_spec)],
             compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
-                _skip_dim_order=True,
             ),
         )
     else:
@@ -519,7 +518,6 @@ if __name__ == "__main__":
             exported_program,
             compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
-                _skip_dim_order=True,
             ),
         )
 
