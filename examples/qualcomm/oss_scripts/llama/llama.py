@@ -843,13 +843,14 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
             outputs.append(f.read())
 
     adb.pull(output_path=args.artifact, callback=post_process)
-
     if args.ip and args.port != -1:
+        pte_size = os.path.getsize(pte_path)
         with Client((args.ip, args.port)) as conn:
             conn.send(
                 json.dumps(
                     {
                         "result": outputs,
+                        "pte_size": pte_size,
                     }
                 )
             )
@@ -1062,6 +1063,18 @@ def main(args) -> None:
             )
         else:
             logging.warning("Quant attributes of the logit is None.")
+
+        if args.ip and args.port != -1:
+            pte_path = f"{args.artifact}/{pte_filename}.pte"
+            pte_size = os.path.getsize(pte_path)
+            with Client((args.ip, args.port)) as conn:
+                conn.send(
+                    json.dumps(
+                        {
+                            "pte_size": pte_size,
+                        }
+                    )
+                )
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:

@@ -3764,8 +3764,6 @@ class TestExampleScript(TestQNN):
             self.artifact_dir,
             "--build_folder",
             self.build_folder,
-            "--device",
-            self.device,
             "--model",
             self.model,
             "--checkpoint",
@@ -3788,7 +3786,17 @@ class TestExampleScript(TestQNN):
             "0",
             "--llama_model",
             "stories110m",
+            "--model_mode",
+            "hybrid",
+            "--prefill_seq_len",
+            "32",
+            "--kv_seq_len",
+            "128",
         ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        else:
+            cmds.extend(["--device", self.device])
         if self.host:
             cmds.extend(["--host", self.host])
 
@@ -3801,8 +3809,11 @@ class TestExampleScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                model_out = msg["result"][0]
-                self.assertTrue(model_out.startswith(golden_start_with))
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    self.assertTrue(model_out.startswith(golden_start_with))
+                pte_size = msg["pte_size"]
+                self.assertLessEqual(pte_size, 130000000)
 
     @unittest.skip("dynamic shape inputs appear in recent torch.export.export")
     def test_mobilebert(self):
@@ -4031,6 +4042,8 @@ def setup_environment():
     TestQNN.shared_buffer = args.shared_buffer
     TestQNN.enable_x86_64 = args.enable_x86_64
     TestQNN.dump_intermediate_outputs = args.dump_intermediate_outputs
+    TestQNN.compile_only = args.compile_only
+
     return sys.argv[:1] + ns_args
 
 
