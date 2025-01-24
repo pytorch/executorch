@@ -84,7 +84,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             features = get_op_features(target)
 
         # Check for high dimensional tensors
-        if utils.tensor_node_is_high_dim(node):
+        if utils.is_tensor_node(node) and utils.tensor_node_is_high_dim(node):
             return False, "contains high dim tensor"
 
         valid_texture_layouts = utils.possible_node_memory_layouts(
@@ -99,7 +99,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 and i not in features.skip_limits_check
             ):
                 # Check for high dimensional tensors
-                if utils.tensor_node_is_high_dim(arg):
+                if utils.is_tensor_node(arg) and utils.tensor_node_is_high_dim(arg):
                     return False, "contains high dim tensor"
 
                 arg_texture_layouts = utils.possible_node_memory_layouts(
