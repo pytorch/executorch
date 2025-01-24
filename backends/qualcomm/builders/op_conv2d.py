@@ -238,7 +238,7 @@ class Conv2d(NodeVisitor):
             padding_shape,
             dilation,
             dilation_shape,
-            groups,
+            groups=groups,
         )
         op_wrapper_list.append(conv_op)
 

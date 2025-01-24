@@ -51,4 +51,4 @@ class OpOnesOutTest : public OperatorTest {
     test_ones_out<ScalarType::DTYPE>({2, 3, 4}); \
   }
 
-ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_TEST)
+ET_FORALL_REALHBBF16_TYPES(GENERATE_TEST)

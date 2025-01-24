@@ -270,7 +270,7 @@ def run_corstone(
                 "-C",
                 f"cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
-                elf_path,
+                str(elf_path),
                 "--timelimit",
                 f"{timeout}",
             ]
@@ -302,7 +302,7 @@ def run_corstone(
                 "-C",
                 f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
-                elf_path,
+                str(elf_path),
                 "--timelimit",
                 f"{timeout}",
             ]

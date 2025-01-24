@@ -14,6 +14,9 @@ import requests
 import torch
 from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
 
+from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+)
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
@@ -62,6 +65,7 @@ class Llava(torch.nn.Module):
         self.text_model = Transformer(self.text_model_args)
         # use custom op for SDPA.
         if use_sdpa_with_kv_cache_op:
+            self.text_model = replace_kv_cache_with_custom_kv_cache(self.text_model)
             self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
