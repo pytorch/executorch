@@ -335,6 +335,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="maximum length sequence to evaluate",
     )
 
+    parser.add_argument(
+        "--max_context_length",
+        type=int,
+        default=128,
+        help="maximum length of context for model to remember",
+    )
+
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument(
@@ -579,6 +586,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
             tokenizer_path=args.tokenizer_path,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
+            max_context_len=args.max_context_length,
             input_prune_map_path=args.input_prune_map,
             output_prune_map_path=args.output_prune_map,
             metadata_str=args.metadata,
@@ -760,13 +768,13 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
         atten = builder_exported_to_edge.model.layers[0].attention
         if args.use_qnn_sha:
             cache_shape = torch.Size(
-                (atten.max_batch_size, atten.max_seq_len, atten.head_dim)
+                (atten.max_batch_size, atten.max_context_len, atten.head_dim)
             )
         else:
             cache_shape = torch.Size(
                 (
                     atten.max_batch_size,
-                    atten.max_seq_len,
+                    atten.max_context_len,
                     atten.n_kv_heads,
                     atten.head_dim,
                 )
@@ -861,6 +869,7 @@ def _load_llama_model_metadata(
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
     max_seq_len: int,
+    max_context_len: int,
     n_layers: int,
     vocab_size: int,
     metadata_str: Optional[str] = None,
@@ -870,6 +879,7 @@ def _load_llama_model_metadata(
         "get_bos_id": 3 if is_fairseq2 else 1,
         "get_eos_ids": [3] if is_fairseq2 else [2],
         "get_max_seq_len": max_seq_len,
+        "get_max_context_len": max_context_len,
         "get_n_layers": n_layers,
         "get_vocab_size": vocab_size,
         "use_kv_cache": use_kv_cache,
@@ -904,6 +914,7 @@ def _load_llama_model(
     tokenizer_path: Optional[str] = None,
     verbose: bool = False,
     max_seq_len: int = 128,
+    max_context_len: int = 128,
     input_prune_map_path: Optional[str] = None,
     output_prune_map_path: Optional[str] = None,
     metadata_str: Optional[str] = None,
@@ -948,6 +959,7 @@ def _load_llama_model(
             generate_full_logits=generate_full_logits,
             fairseq2=weight_type == WeightType.FAIRSEQ2,
             max_seq_len=max_seq_len,
+            max_context_len=max_context_len,
             enable_dynamic_shape=enable_dynamic_shape,
             input_prune_map_path=input_prune_map_path,
             output_prune_map_path=output_prune_map_path,
@@ -1006,6 +1018,7 @@ def _load_llama_model(
             # pyre-fixme[6]: For 5th argument expected `ModelArgs` but got
             #  `Union[Tensor, Module]`.
             model.max_seq_len,
+            model.max_context_len,
             # pyre-fixme[6]: For 6th argument expected `int` but got `Union[Tensor,
             #  Module]`.
             model.n_layers,
