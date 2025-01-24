@@ -32,29 +32,41 @@ class DataMapTest : public ::testing::Test {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
     executorch::runtime::runtime_init();
+
+    // Load data map.
+    // The eager linear model is defined at:
+    // //executorch/test/models/linear_model.py
+    const char* path = std::getenv("ET_MODULE_LINEAR_DATA");
+    Result<FileDataLoader> loader = FileDataLoader::from(path);
+    ASSERT_EQ(loader.error(), Error::Ok);
+
+    Result<FreeableBuffer> header = loader->load(
+        /*offset=*/0,
+        FlatTensorHeader::kNumHeadBytes,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+
+    ASSERT_EQ(header.error(), Error::Ok);
+
+    data_map_loader_ =
+        std::make_unique<FileDataLoader>(std::move(loader.get()));
   }
+  std::unique_ptr<FileDataLoader> data_map_loader_;
 };
 
 TEST_F(DataMapTest, LoadDataMap) {
-  const char* path = std::getenv("ET_MODULE_LINEAR_DATA");
-  Result<FileDataLoader> loader = FileDataLoader::from(path);
-  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<DataMap> data_map = DataMap::load(data_map_loader_.get());
+  EXPECT_EQ(data_map.error(), Error::Ok);
+}
 
-  Result<FreeableBuffer> header = loader->load(
-      /*offset=*/0,
-      FlatTensorHeader::kNumHeadBytes,
-      /*segment_info=*/
-      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
-
-  ASSERT_EQ(header.error(), Error::Ok);
-
-  auto data_map_loader_ =
-      std::make_unique<FileDataLoader>(std::move(loader.get()));
-
+TEST_F(DataMapTest, DataMap_GetMetadata) {
   Result<DataMap> data_map = DataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
-  // Check tensor metadata.
+  // Check tensor layouts are correct.
+  // From //executorch/test/models/linear_model.py, we have the tensors
+  // self.a = 3 * torch.ones(2, 2, dtype=torch.float)
+  // self.b = 2 * torch.ones(2, 2, dtype=torch.float)
   Result<const TensorLayout> const_a_res = data_map->get_metadata("a");
   assert(const_a_res.ok());
 
@@ -83,16 +95,50 @@ TEST_F(DataMapTest, LoadDataMap) {
   EXPECT_EQ(dim_order_b[0], 0);
   EXPECT_EQ(dim_order_b[1], 1);
 
-  // Check tensor data.
+  // Check get_metadata fails when key is not found.
+  Result<const TensorLayout> const_c_res = data_map->get_metadata("c");
+  EXPECT_EQ(const_c_res.error(), Error::InvalidArgument);
+}
+
+TEST_F(DataMapTest, DataMap_GetData) {
+  Result<DataMap> data_map = DataMap::load(data_map_loader_.get());
+  EXPECT_EQ(data_map.error(), Error::Ok);
+
+  // Check tensor data sizes are correct.
   Result<FreeableBuffer> data_a_res = data_map->get_data("a");
   assert(data_a_res.ok());
-  // Check we have the correct tensor data.
   FreeableBuffer data_a = std::move(data_a_res.get());
   EXPECT_EQ(data_a.size(), 16);
 
   Result<FreeableBuffer> data_b_res = data_map->get_data("b");
   assert(data_b_res.ok());
-  // Check we have the correct tensor data.
   FreeableBuffer data_b = std::move(data_b_res.get());
   EXPECT_EQ(data_b.size(), 16);
+
+  // Check get_data fails when key is not found.
+  Result<FreeableBuffer> data_c_res = data_map->get_data("c");
+  EXPECT_EQ(data_c_res.error(), Error::InvalidArgument);
+}
+
+TEST_F(DataMapTest, DataMap_Keys) {
+  Result<DataMap> data_map = DataMap::load(data_map_loader_.get());
+  EXPECT_EQ(data_map.error(), Error::Ok);
+
+  // Check num tensors is 2.
+  Result<size_t> num_tensors_res = data_map->get_num_keys();
+  assert(num_tensors_res.ok());
+  EXPECT_EQ(num_tensors_res.get(), 2);
+
+  // Check get_key returns the correct keys.
+  Result<const char*> key0_res = data_map->get_key(0);
+  assert(key0_res.ok());
+  EXPECT_EQ(strcmp(key0_res.get(), "b"), 0);
+
+  Result<const char*> key1_res = data_map->get_key(1);
+  assert(key1_res.ok());
+  EXPECT_EQ(strcmp(key1_res.get(), "a"), 0);
+
+  // Check get_key fails when out of bounds.
+  Result<const char*> key2_res = data_map->get_key(2);
+  EXPECT_EQ(key2_res.error(), Error::InvalidArgument);
 }

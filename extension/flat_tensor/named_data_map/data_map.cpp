@@ -49,15 +49,16 @@ ET_NODISCARD Result<const TensorLayout> DataMap::get_metadata(
     const char* fqn) const {
   auto result = _name_to_tensor.find(fqn);
   if (result == _name_to_tensor.end()) {
-    return Error::NotFound;
+    return Error::InvalidArgument;
   }
+  // value is a tuple of (segment_index, offset, tensor_layout)
   return std::get<2>(result->second);
 }
 
 ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* fqn) const {
   auto result = _name_to_tensor.find(fqn);
   if (result == _name_to_tensor.end()) {
-    return Error::NotFound;
+    return Error::InvalidArgument;
   }
   int offset = std::get<1>(result->second);
   TensorLayout tensor = std::get<2>(result->second);
@@ -66,17 +67,17 @@ ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* fqn) const {
   return FreeableBuffer(data, tensor.nbytes(), nullptr);
 }
 
-ET_NODISCARD Error
+ET_NODISCARD Result<size_t>
 DataMap::load_data_into(const char* fqn, size_t size, void* buffer) const {
   return Error::NotImplemented;
 }
 
-ET_NODISCARD Result<int> DataMap::get_num_keys() const {
+ET_NODISCARD Result<size_t> DataMap::get_num_keys() const {
   return _name_to_tensor.size();
 }
 
-ET_NODISCARD Result<const char*> DataMap::get_key(int index) const {
-  if (index <= 0 || index >= _name_to_tensor.size()) {
+ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
+  if (index < 0 || index >= _name_to_tensor.size()) {
     return Error::InvalidArgument;
   }
 
@@ -158,7 +159,7 @@ ET_NODISCARD Result<const char*> DataMap::get_key(int index) const {
   assert(s_tensor_metadata != nullptr);
 
   std::unordered_map<std::string, std::tuple<int, int, TensorLayout>>
-      fqn_to_tensor_layout = {};
+      name_to_tensor = {};
   for (int i = 0; i < s_tensor_metadata->size(); i++) {
     // Create TensorLayouts.
     ScalarType scalar_type =
@@ -178,7 +179,7 @@ ET_NODISCARD Result<const char*> DataMap::get_key(int index) const {
     std::string fqn = s_tensor_metadata->Get(i)->fully_qualified_name()->str();
 
     auto val = std::make_tuple(segment_index, offset, tensor_layout);
-    fqn_to_tensor_layout.insert({fqn, std::move(val)});
+    name_to_tensor.insert({fqn, std::move(val)});
   }
 
   // Load constant data.
@@ -203,7 +204,7 @@ ET_NODISCARD Result<const char*> DataMap::get_key(int index) const {
 
   return DataMap(
       std::move(flat_tensor_data.get()),
-      std::move(fqn_to_tensor_layout),
+      std::move(name_to_tensor),
       std::move(_data_ro.get()));
 }
 
