@@ -74,6 +74,16 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "tag_test",
+        srcs = [
+            "tag_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:tag",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "tensor_shape_dynamism_test_aten",
         srcs = ["tensor_shape_dynamism_test_aten.cpp"],
         deps = [
