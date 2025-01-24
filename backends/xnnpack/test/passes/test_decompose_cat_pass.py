@@ -86,7 +86,7 @@ class TestDecomposeCatPass(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
-    def test_cat_gt_10(self):
+    def test_qs8_cat_gt_10(self):
         inputs = [
             torch.randn(1, 2, 3),
         ]
@@ -99,6 +99,7 @@ class TestDecomposeCatPass(unittest.TestCase):
             num_cats += math.ceil((len(inputs) - 5) / 4)
             (
                 Tester(self.Cat(), tuple(inputs))
+                .quantize()
                 .export()
                 .to_edge()
                 .check_count({self.cat_name: 1})
