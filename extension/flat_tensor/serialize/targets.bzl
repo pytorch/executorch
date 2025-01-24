@@ -34,3 +34,11 @@ def define_common_targets():
         },
         exported_external_deps = ["flatbuffers-api"],
     )
+
+    runtime.cxx_library(
+        name = "flat_tensor_header",
+        srcs = ["flat_tensor_header.cpp"],
+        exported_headers = ["flat_tensor_header.h"],
+        visibility = ["//executorch/..."],
+        exported_deps = ["//executorch/runtime/core:core"],
+    )
