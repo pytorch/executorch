@@ -172,10 +172,45 @@ def annotate_sub(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.eq.Scalar, torch.ops.aten.eq.Tensor])
+def annotate_eq(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.ge.Scalar, torch.ops.aten.ge.Tensor])
+def annotate_ge(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.gt.Scalar, torch.ops.aten.gt.Tensor])
+def annotate_gt(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.le.Scalar, torch.ops.aten.le.Tensor])
+def annotate_le(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.lt.Scalar, torch.ops.aten.lt.Tensor])
+def annotate_lt(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator(
     [torch.ops.aten.mul, torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar]
 )
 def annotate_mul(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.max.other, torch.ops.aten.maximum.default])
+def annotate_max(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.min.other, torch.ops.aten.minimum.default])
+def annotate_min(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
@@ -256,6 +291,32 @@ def annotate_sum(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.abs.default])
+def annotate_abs(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator(
+    [
+        torch.torch.ops.aten.arange.default,
+        torch.torch.ops.aten.arange.start,
+        torch.torch.ops.aten.arange.start_step,
+    ]
+)
+def annotate_arange(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+
+    if _is_float_tensor(node):
+        # workaround for node with kwargs could not be correctly annotated
+        node.kwargs = {}
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map={},
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+
 @register_annotator([torch.ops.aten.ceil.default])
 def annotate_ceil(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -268,6 +329,11 @@ def annotate_clamp(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.relu.default, torch.ops.aten.relu_.default])
 def annotate_relu(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.repeat.default])
+def annotate_repeat(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
@@ -284,6 +350,14 @@ def annotate_sin(node: Node, quantization_config: QuantizationConfig) -> None:
 @register_annotator([torch.ops.aten.tanh.default])
 def annotate_tanh(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.full_like.default])
+def annotate_full_like(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_float_tensor(node):
+        # workaround for node with kwargs could not be correctly annotated
+        node.kwargs = {}
+        annotate_single_in_single_out(node, quantization_config)
 
 
 @register_annotator(
@@ -400,6 +474,11 @@ def annotate_softmax(node: Node, quantization_config: QuantizationConfig) -> Non
 
 @register_annotator([torch.ops.aten.log_softmax.int])
 def annotate_log_softmax(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.log.default])
+def annotate_log(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
@@ -828,7 +907,7 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
     node.meta["source_fn_stack"] = [(node, torch.nn.Linear)]
 
 
-@register_annotator([torch.ops.aten._native_batch_norm_legit_no_training.default])
+@register_annotator([torch.ops.aten.batch_norm.default])
 def annotate_batch_norm(node: Node, quantization_config: QuantizationConfig) -> None:
     act, weight, bias = node.args[0:3]
     if _is_annotated([node]):

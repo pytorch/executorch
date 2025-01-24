@@ -43,11 +43,12 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-#define resolve_pos_index(offset) (offset + ((offset) >> 4))
+// macro to offset shared memory access index. Padding position index by 1 offset per 16 positions avoidd bank access conflict and thus improves performance.
+#define offset_pos_index(index) (index + ((index) >> 4))
 
 // shared memory to hold calculated positions, this would reduce register usage thus improving performance.
 // 64 is the number of threads in the local wg
-shared ivec3 pos_shared[resolve_pos_index(LOCAL_WG_SIZE * TILE_SIZE_X * TILE_SIZE_Y)];
+shared ivec3 pos_shared[offset_pos_index(LOCAL_WG_SIZE * TILE_SIZE_X * TILE_SIZE_Y)];
 
 /*
  * Computes a 2D pointwise convolution of an NxN output tile. Calculating an
@@ -74,7 +75,7 @@ void main() {
   for (int y = 0, i = 0; y < TILE_SIZE_Y; ++y) {
     for (int x = 0; x < TILE_SIZE_X; ++x) {
       pos[i] = ivec2(gpos.x * TILE_SIZE_X + x, gpos.y * TILE_SIZE_Y + y);
-      pos_shared[resolve_pos_index((shared_mem_stride * i) + gl_LocalInvocationIndex)] = ivec3(pos[i], gpos.z);
+      pos_shared[offset_pos_index((shared_mem_stride * i) + gl_LocalInvocationIndex)] = ivec3(pos[i], gpos.z);
       i++;
     }
   }
@@ -155,7 +156,7 @@ void main() {
 
   for (int i = 0; i < TILE_SIZE_X * TILE_SIZE_Y; ++i) {
     const uint index = (shared_mem_stride * i) + gl_LocalInvocationIndex;
-    const ivec3 pos = pos_shared[resolve_pos_index(index)];
+    const ivec3 pos = pos_shared[offset_pos_index(index)];
     if (all(lessThan(pos, out_limits.xyz))) {
       imageStore(t_out, pos, op(sum[i], out_min, out_max));
     }

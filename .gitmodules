@@ -55,18 +55,12 @@
 [submodule "third-party/ios-cmake"]
 	path = third-party/ios-cmake
 	url = https://github.com/leetal/ios-cmake
-[submodule "backends/cadence/hifi/third-party/nnlib/nnlib-hifi4"]
-	path = backends/cadence/hifi/third-party/nnlib/nnlib-hifi4
-	url = https://github.com/foss-xtensa/nnlib-hifi4.git
 [submodule "third-party/prelude"]
 	path = third-party/prelude
 	url = https://github.com/facebook/buck2-prelude.git
 [submodule "third-party/pybind11"]
 	path = third-party/pybind11
 	url = https://github.com/pybind/pybind11.git
-[submodule "backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3"]
-	path = backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3
-	url = https://github.com/foss-xtensa/nnlib-FusionG3.git
 [submodule "third-party/ao"]
 	path = third-party/ao
 	url = https://github.com/pytorch/ao.git

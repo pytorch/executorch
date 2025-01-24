@@ -88,10 +88,9 @@ Tensor& nonzero_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, check_nonzero_args(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
-        nonzero<CTYPE>(ctx, in, out);
-      });
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
+    nonzero<CTYPE>(ctx, in, out);
+  });
 
   return out;
 }
