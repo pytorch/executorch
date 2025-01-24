@@ -22,27 +22,13 @@ fi
 ARCH="$(uname -m)"
 OS="$(uname -s)"
 
-function verify_md5() {
-    [[ $# -ne 2 ]]  \
-        && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 2, but got $#"; exit 1; }
-    local ref_checksum="${1}"
-    local file="${2}"
 
-    if [[ "${OS}" == "Darwin" ]]; then
-        local file_checksum="$(md5 -q $file)"
-    else
-        local file_checksum="$(md5sum $file | awk '{print $1}')"
-    fi
-    if [[ ${ref_checksum} != ${file_checksum} ]]; then
-        echo "Mismatched MD5 checksum for file: ${file}. Expecting ${ref_checksum} but got ${file_checksum}. Exiting."
-        exit 1
-    fi
-}
 
 ########
 ### Hardcoded constants
 ########
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+et_dir=$(realpath $script_dir/../..)
 
 if [[ "${ARCH}" == "x86_64" ]]; then
     # FVPs
@@ -140,7 +126,7 @@ function setup_fvp() {
             curl --output "FVP_${fvp}.tgz" "${fvp_url}"
             md5_variable=${fvp}_md5_checksum
             fvp_md5_checksum=${!md5_variable}
-            verify_md5 ${fvp_md5_checksum} FVP_${fvp}.tgz
+            verify_md5 ${fvp_md5_checksum} FVP_${fvp}.tgz || exit 1
         fi
 
         echo "[${FUNCNAME[0]}] Installing FVP ${fvp}..."
@@ -181,7 +167,7 @@ function setup_toolchain() {
     if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
         echo "[${FUNCNAME[0]}] Downloading toolchain ..."
         curl --output "${toolchain_dir}.tar.xz" "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz"
+        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
     fi
 
     echo "[${FUNCNAME[0]}] Installing toolchain ..."
@@ -207,20 +193,6 @@ function setup_ethos_u() {
     echo "[${FUNCNAME[0]}] Done @ $(git describe --all --long 3> /dev/null) in ${root_dir}/ethos-u dir."
 }
 
-function patch_repo() {
-    # This is a temporary hack until it finds a better home in one for the ARM Ml repos
-    name="$(basename $repo_dir)"
-    echo -e "[${FUNCNAME[0]}] Preparing ${name}..."
-    cd $repo_dir
-    git fetch
-    git reset --hard ${base_rev}
-
-    patch_dir=${script_dir}/ethos-u-setup/${name}/patches/
-    [[ -e ${patch_dir} && $(ls -A ${patch_dir}) ]] && \
-        git am -3 ${patch_dir}/*.patch
-
-    echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir.\n"
-}
 
 function setup_tosa_reference_model() {
     
@@ -258,6 +230,9 @@ echo "[main] Using root dir ${root_dir}"
 setup_path_script="${root_dir}/setup_path.sh"
 echo "" > "${setup_path_script}"
 
+# Import utils
+source $et_dir/backends/arm/scripts/utils.sh
+
 # Setup toolchain
 setup_toolchain
 
@@ -267,7 +242,8 @@ setup_ethos_u
 # Patch the ethos-u dev environment to include executorch application
 repo_dir="${root_dir}/ethos-u/core_platform"
 base_rev=b728c774158248ba2cad8e78a515809e1eb9b77f
-patch_repo
+patch_dir=${script_dir}/ethos-u-setup/
+patch_repo $repo_dir $base_rev $patch_dir
 
 # Setup the tosa_reference_model
 setup_tosa_reference_model
