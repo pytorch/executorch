@@ -50,7 +50,7 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "tensor_util" + aten_suffix,
-            srcs = ["tensor_util_aten.cpp"] if aten_mode else ["tensor_util_portable.cpp"],
+            srcs = ["tensor_util.cpp"] + (["tensor_util_aten.cpp"] if aten_mode else ["tensor_util_portable.cpp"]),
             exported_headers = [
                 "tensor_util.h",
             ],

@@ -12,6 +12,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 using namespace ::testing;
@@ -604,4 +605,46 @@ TEST_F(TensorUtilTest, SameShapesDifferentDimOrder) {
   EXPECT_FALSE(tensors_have_same_dim_order(a, b, c));
   EXPECT_FALSE(tensors_have_same_dim_order(a, c, b));
   EXPECT_FALSE(tensors_have_same_dim_order(c, b, a));
+}
+
+TEST_F(TensorUtilTest, TensorShapeToCStringBasic) {
+  char str[executorch::runtime::kTensorShapeStringSizeLimit];
+  std::array<executorch::aten::SizesType, 3> sizes = {123, 456, 789};
+  executorch::runtime::tensor_shape_to_c_string(str, sizes);
+  EXPECT_STREQ(str, "(123, 456, 789)");
+
+  std::array<executorch::aten::SizesType, 1> one_size = {1234567890};
+  executorch::runtime::tensor_shape_to_c_string(str, one_size);
+  EXPECT_STREQ(str, "(1234567890)");
+}
+
+TEST_F(TensorUtilTest, TensorShapeToCStringMaximumLength) {
+  using executorch::runtime::kMaximumPrintableTensorShapeElement;
+  using executorch::runtime::kTensorDimensionLimit;
+  using executorch::runtime::kTensorShapeStringSizeLimit;
+  using executorch::runtime::tensor_shape_to_c_string;
+  char str[executorch::runtime::kTensorShapeStringSizeLimit + 1];
+  std::memset(str, '@', sizeof(str));
+
+  std::array<
+      executorch::aten::SizesType,
+      executorch::runtime::kTensorDimensionLimit>
+      sizes;
+  std::fill(
+      sizes.begin(),
+      sizes.end(),
+      executorch::runtime::kMaximumPrintableTensorShapeElement);
+
+  executorch::runtime::tensor_shape_to_c_string(str, sizes);
+
+  std::ostringstream expected;
+  expected << '(' << kMaximumPrintableTensorShapeElement;
+  for (int ii = 0; ii < kTensorDimensionLimit - 1; ++ii) {
+    expected << ", " << kMaximumPrintableTensorShapeElement;
+  }
+  expected << ')';
+  auto expected_str = expected.str();
+
+  EXPECT_EQ(str[executorch::runtime::kTensorShapeStringSizeLimit], '@');
+  EXPECT_EQ(expected_str, str);
 }
