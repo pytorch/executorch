@@ -387,38 +387,36 @@ class _Emitter(torch.fx.Interpreter):
         # Update buffer_idx to point to the end of the list where we are adding the new buffer.
         buffer = Buffer(storage=buffer_data)
 
-        # Tensor is mutable with initial state.
-        if allocation_info:
+        # Tensor is stored outside of the PTE file.
+        if (
+            spec.extra_tensor_info is not None
+            and spec.extra_tensor_info.fully_qualified_name is not None
+            and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
+        ):
+            assert (
+                constant_tag is not None
+            ), "Constant tag is not set for external tensor"
+            # TODO (#7633): Handle case where we have both mutable and non mutable weights that we want to put in the same external file.
+            # We will need to create 2 segments in that case, but it'll be a bit until we see this case. LLM finetuning will probably require this.
+
+            buffer_idx = len(self.program_state.external_constant_buffer)
+            self.program_state.external_constant_hash[hashed] = buffer_idx
+            self.program_state.external_constant_buffer.append(buffer_data)
+            if constant_tag not in self.program_state.external_constant_map:
+                self.program_state.external_constant_map[constant_tag] = {}
+            self.program_state.external_constant_map[constant_tag][
+                spec.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`.
+            ] = buffer_idx
+        # Tensor is mutable with initial state. Place into mutable segment
+        elif allocation_info:
             buffer_idx = len(self.program_state.mutable_buffer)
             self.program_state.cached_spec_mutable_hash_values[hashed] = buffer_idx
             self.program_state.mutable_buffer.append(buffer)
-
-        # Tensor is constant.
+        # Tensor is stored in the PTE file.
         else:
-            # Tensor is stored outside of the PTE file.
-            if (
-                spec.extra_tensor_info is not None
-                and spec.extra_tensor_info.fully_qualified_name is not None
-                and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
-            ):
-                assert (
-                    constant_tag is not None
-                ), "Constant tag is not set for external tensor"
-
-                buffer_idx = len(self.program_state.external_constant_buffer)
-                self.program_state.external_constant_hash[hashed] = buffer_idx
-                self.program_state.external_constant_buffer.append(buffer_data)
-                if constant_tag not in self.program_state.external_constant_map:
-                    self.program_state.external_constant_map[constant_tag] = {}
-                self.program_state.external_constant_map[constant_tag][
-                    spec.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`.
-                ] = buffer_idx
-
-            # Tensor is stored in the PTE file.
-            else:
-                buffer_idx = len(self.program_state.constant_buffer)
-                self.program_state.cached_spec_hash_values[hashed] = buffer_idx
-                self.program_state.constant_buffer.append(buffer)
+            buffer_idx = len(self.program_state.constant_buffer)
+            self.program_state.cached_spec_hash_values[hashed] = buffer_idx
+            self.program_state.constant_buffer.append(buffer)
 
         return buffer_idx
 
@@ -458,7 +456,7 @@ class _Emitter(torch.fx.Interpreter):
 
             hashed = hashlib.sha256(buffer_data).hexdigest()
 
-            if allocation_info:
+            if allocation_info and spec.extra_tensor_info is None:
                 buffer_idx = self.program_state.cached_spec_mutable_hash_values.get(
                     hashed, -1
                 )
