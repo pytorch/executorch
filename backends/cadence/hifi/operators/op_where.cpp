@@ -28,7 +28,7 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-Tensor& where_out(
+Tensor& where_self_out(
     RuntimeContext& ctx,
     const Tensor& cond,
     const Tensor& a,
