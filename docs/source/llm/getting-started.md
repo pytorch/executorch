@@ -52,7 +52,7 @@ git submodule update --init
 # Create a conda environment and install requirements.
 conda create -yn executorch python=3.10.0
 conda activate executorch
-./install_executorch.sh
+./install_requirements.sh
 
 cd ../..
 ```
@@ -83,7 +83,7 @@ cd third-party/executorch
 git submodule update --init
 
 # Install requirements.
-PYTHON_EXECUTABLE=python ./install_executorch.sh
+PYTHON_EXECUTABLE=python ./install_requirements.sh
 
 cd ../..
 ```
@@ -396,7 +396,7 @@ At this point, the working directory should contain the following files:
 
 If all of these are present, you can now build and run:
 ```bash
-./install_executorch.sh --clean
+./install_requirements.sh --clean
 (mkdir cmake-out && cd cmake-out && cmake ..)
 cmake --build cmake-out -j10
 ./cmake-out/nanogpt_runner

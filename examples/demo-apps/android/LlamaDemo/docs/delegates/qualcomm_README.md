@@ -34,7 +34,7 @@ git submodule update --init
 ```
 Install dependencies
 ```
-./install_executorch.sh
+./install_requirements.sh
 ```
 
 ## Setup QNN

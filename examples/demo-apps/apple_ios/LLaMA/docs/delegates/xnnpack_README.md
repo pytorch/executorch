@@ -32,11 +32,11 @@ git submodule update --init
 Install dependencies
 
 ```
-./install_executorch.sh
+./install_requirements.sh
 ```
 Optional: Use the --pybind flag to install with pybindings.
 ```
-./install_executorch.sh --pybind xnnpack
+./install_requirements.sh --pybind xnnpack
 ```
 ## Prepare Models
 In this demo app, we support text-only inference with up-to-date Llama models and image reasoning inference with LLaVA 1.5.

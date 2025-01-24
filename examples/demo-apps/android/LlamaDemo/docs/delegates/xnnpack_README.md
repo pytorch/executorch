@@ -36,12 +36,12 @@ git submodule update --init
 ```
 Install dependencies
 ```
-./install_executorch.sh
+./install_requirements.sh
 ```
 
 Optional: Use the --pybind flag to install with pybindings.
 ```
-./install_executorch.sh --pybind xnnpack
+./install_requirements.sh --pybind xnnpack
 ```
 
 

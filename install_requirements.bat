@@ -16,6 +16,6 @@ if "%PYTHON_EXECUTABLE%"=="" (
   )
 )
 
-"%PYTHON_EXECUTABLE%" install_executorch.py %*
+"%PYTHON_EXECUTABLE%" install_requirements.py %*
 
 exit /b %ERRORLEVEL%

@@ -17,7 +17,7 @@ retry () {
 }
 
 clean_executorch_install_folders() {
-  ./install_executorch.sh --clean
+  ./install_requirements.sh --clean
 }
 
 install_executorch() {
@@ -25,9 +25,9 @@ install_executorch() {
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
   if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
-    ./install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
+    ./install_requirements.sh --pybind xnnpack --use-pt-pinned-commit
   else
-    ./install_executorch.sh --pybind xnnpack
+    ./install_requirements.sh --pybind xnnpack
   fi
   # Just print out the list of packages for debugging
   pip list

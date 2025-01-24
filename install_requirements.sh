@@ -19,7 +19,7 @@ then
   fi
 fi
 
-$PYTHON_EXECUTABLE ./install_executorch.py "$@"
+$PYTHON_EXECUTABLE ./install_requirements.py "$@"
 
 # Exit with the same status as the python script.
 exit $?

@@ -92,23 +92,23 @@ Alternatively, if you would like to experiment with ExecuTorch quickly and easil
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
-   ./install_executorch.sh
+   ./install_requirements.sh
    ```
 
-   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends.
+   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29) to install with pybindings and dependencies for other backends.
    ```bash
-   ./install_executorch.sh --pybind <coreml | mps | xnnpack>
+   ./install_requirements.sh --pybind <coreml | mps | xnnpack>
 
    # Example: pybindings with CoreML *only*
-   ./install_executorch.sh --pybind coreml
+   ./install_requirements.sh --pybind coreml
 
    # Example: pybinds with CoreML *and* XNNPACK
-   ./install_executorch.sh --pybind coreml xnnpack
+   ./install_requirements.sh --pybind coreml xnnpack
    ```
 
-   By default, `./install_executorch.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
+   By default, `./install_requirements.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
    ```bash
-   ./install_executorch.sh --pybind off
+   ./install_requirements.sh --pybind off
    ```
 
 After setting up your environment, you are ready to convert your PyTorch programs
@@ -125,7 +125,7 @@ to ExecuTorch.
 >
 > ```bash
 > # From the root of the executorch repo:
-> ./install_executorch.sh --clean
+> ./install_requirements.sh --clean
 > git submodule sync
 > git submodule update --init
 > ```
@@ -208,7 +208,7 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
   ```bash
   # Clean and configure the CMake build system. Compiled programs will
   # appear in the executorch/cmake-out directory we create here.
-  ./install_executorch.sh --clean
+  ./install_requirements.sh --clean
   (mkdir cmake-out && cd cmake-out && cmake ..)
 
   # Build the executor_runner target
@@ -226,7 +226,7 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
 >
 > ```bash
 > # From the root of the executorch repo:
-> ./install_executorch.sh --clean
+> ./install_requirements.sh --clean
 > git submodule sync
 > git submodule update --init
 > ```
