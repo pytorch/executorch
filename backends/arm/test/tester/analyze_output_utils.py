@@ -7,10 +7,11 @@ import logging
 import tempfile
 
 import torch
+from executorch.backends.arm.arm_backend import get_intermediate_path
 from executorch.backends.arm.test.runner_utils import (
-    _get_input_quantization_params,
-    _get_output_nodes,
-    _get_output_quantization_params,
+    get_input_quantization_params,
+    get_output_nodes,
+    get_output_quantization_params,
 )
 
 from executorch.backends.xnnpack.test.tester.tester import Export, Quantize
@@ -220,7 +221,7 @@ def dump_error_output(
     # Capture assertion error and print more info
     banner = "=" * 40 + "TOSA debug info" + "=" * 40
     logger.error(banner)
-    path_to_tosa_files = tester.runner_util.intermediate_path
+    path_to_tosa_files = get_intermediate_path(tester.compile_spec)
 
     if path_to_tosa_files is None:
         path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
@@ -228,9 +229,9 @@ def dump_error_output(
     export_stage = tester.stages.get(tester.stage_name(Export), None)
     quantize_stage = tester.stages.get(tester.stage_name(Quantize), None)
     if export_stage is not None and quantize_stage is not None:
-        output_nodes = _get_output_nodes(export_stage.artifact)
-        qp_input = _get_input_quantization_params(export_stage.artifact)
-        qp_output = _get_output_quantization_params(output_nodes)
+        output_nodes = get_output_nodes(export_stage.artifact)
+        qp_input = get_input_quantization_params(export_stage.artifact)
+        qp_output = get_output_quantization_params(output_nodes)
         logger.error(f"Input QuantArgs: {qp_input}")
         logger.error(f"Output QuantArgs: {qp_output}")
 

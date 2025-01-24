@@ -173,9 +173,7 @@ class TestMaxPool2d(unittest.TestCase):
             (test_data,),
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=(test_data,), target_board="corstone-300"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
     @parameterized.expand(test_data_suite)
     @pytest.mark.corstone_fvp
@@ -191,9 +189,7 @@ class TestMaxPool2d(unittest.TestCase):
             (test_data,),
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=(test_data,), target_board="corstone-320"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
     @parameterized.expand(test_data_suite_mult_batches)
     def test_maxpool2d_tosa_MI_mult_batches(
@@ -232,9 +228,7 @@ class TestMaxPool2d(unittest.TestCase):
             (test_data,),
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=(test_data,), target_board="corstone-300"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
     @parameterized.expand(test_data_suite_mult_batches)
     @pytest.mark.corstone_fvp
@@ -251,6 +245,4 @@ class TestMaxPool2d(unittest.TestCase):
             (test_data,),
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=(test_data,), target_board="corstone-320"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
