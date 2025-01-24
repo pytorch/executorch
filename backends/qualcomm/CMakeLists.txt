@@ -1,4 +1,5 @@
 # Copyright (c) Qualcomm Innovation Center, Inc.
+# Copyright 2025 Arm Limited and/or its affiliates.
 # All rights reserved
 #
 # This source code is licensed under the BSD-style license found in the
@@ -198,11 +199,6 @@ target_link_libraries(
 # add linker option
 #
 target_link_options_shared_lib(qnn_executorch_backend)
-
-#
-# add compile option
-#
-target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
 
 #
 # add sources

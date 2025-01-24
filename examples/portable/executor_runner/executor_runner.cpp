@@ -64,7 +64,7 @@ class EventTraceManager {
  public:
   EventTraceManager() : event_tracer_ptr_(nullptr) {
 #ifdef ET_EVENT_TRACER_ENABLED
-    event_tracer_ptr_ = std::make_shared<torch::executor::ETDumpGen>();
+    event_tracer_ptr_ = std::make_shared<executorch::etdump::ETDumpGen>();
 #endif // ET_EVENT_TRACER_ENABLED
   }
 
@@ -79,8 +79,8 @@ class EventTraceManager {
     }
 
 #ifdef ET_EVENT_TRACER_ENABLED
-    torch::executor::ETDumpGen* const etdump_ptr =
-        static_cast<torch::executor::ETDumpGen*>(event_tracer_ptr);
+    executorch::etdump::ETDumpGen* const etdump_ptr =
+        static_cast<executorch::etdump::ETDumpGen*>(event_tracer_ptr);
 
     const char* filename = FLAGS_etdump_path.c_str();
 
@@ -91,7 +91,7 @@ class EventTraceManager {
       return Error::AccessFailed;
     }
 
-    torch::executor::etdump_result result = etdump_ptr->get_etdump_data();
+    executorch::etdump::ETDumpResult result = etdump_ptr->get_etdump_data();
     if (result.buf != nullptr && result.size > 0) {
       fwrite((uint8_t*)result.buf, 1, result.size, etdump_file.get());
       free(result.buf);
