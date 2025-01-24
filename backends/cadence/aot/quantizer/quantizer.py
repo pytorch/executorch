@@ -183,3 +183,15 @@ class CadenceDefaultQuantizer(CadenceQuantizer):
             qconfig = _default_qconfig
         quantizers = get_cadence_default_quantizer_list_with_config(qconfig)
         super().__init__(quantizers)
+
+
+# Nop quantizer, used to run fp32 cases
+# Calls an empty list of quantizers (no quantization). Note
+# that we do not strictly need that class since we could call
+# CadenceQuantizer([]), but this is more explicit and
+# does not require knowledge of the internals of the base class.
+class CadenceNopQuantizer(CadenceQuantizer):
+    def __init__(
+        self,
+    ) -> None:
+        super().__init__([])
