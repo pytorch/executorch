@@ -20,6 +20,8 @@
 
 #define BATCH_SIZE_Y ${BATCH_SIZE_Y}
 
+#define LOCAL_WG_SIZE 64
+
 #define op(X, A, B) ${OPERATOR}
 
 #include "indexing_utils.h"
@@ -47,12 +49,10 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-// macro to offset shared memory access index. Padding position index by 1 offset per 16 positions avoidd bank access conflict and thus improves performance.
+// For performance improvement, reduce register usage by caching positions in shared memory.
+// Offset index by 1 every 16 points to avoid bank access conflict.
 #define offset_pos_index(index) (index + ((index) >> 4))
-
-// shared memory to hold calculated positions, this would reduce register usage thus improving performance.
-// 64 is the number of threads in the local wg
-shared ivec3 pos_shared[offset_pos_index(64)];
+shared ivec3 pos_shared[offset_pos_index(LOCAL_WG_SIZE)];
 
 /*
  * Computes a depthwise convolution. Each shader invocation calculates the
