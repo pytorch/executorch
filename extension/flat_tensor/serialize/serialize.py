@@ -14,9 +14,9 @@ from typing import ClassVar, Dict, List, Literal, Optional
 
 import pkg_resources
 from executorch.exir._serialize._cord import Cord
-from executorch.exir._serialize._dataclass import _DataclassEncoder
+from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 
-from executorch.exir._serialize._flatbuffer import _flatc_compile
+from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 from executorch.exir._serialize.data_serializer import DataPayload, DataSerializer
 
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
@@ -33,8 +33,8 @@ from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
 )
 
 
-def _convert_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
-    """Converts a FlatTensor to a flatbuffer and returns the serialized data."""
+def _serialize_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
+    """Serializes a FlatTensor to a flatbuffer and returns the serialized data."""
     flat_tensor_json = json.dumps(flat_tensor, cls=_DataclassEncoder)
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "flat_tensor.fbs")
@@ -57,6 +57,32 @@ def _convert_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
             return Cord(output_file.read())
 
 
+def _deserialize_to_flat_tensor(flatbuffer: bytes) -> FlatTensor:
+    """Deserializes a flatbuffer to a FlatTensor and returns the dataclass."""
+    with tempfile.TemporaryDirectory() as d:
+        schema_path = os.path.join(d, "flat_tensor.fbs")
+        with open(schema_path, "wb") as schema_file:
+            schema_file.write(
+                pkg_resources.resource_string(__name__, "flat_tensor.fbs")
+            )
+
+        scalar_type_path = os.path.join(d, "scalar_type.fbs")
+        with open(scalar_type_path, "wb") as scalar_type_file:
+            scalar_type_file.write(
+                pkg_resources.resource_string(__name__, "scalar_type.fbs")
+            )
+
+        bin_path = os.path.join(d, "flat_tensor.bin")
+        with open(bin_path, "wb") as bin_file:
+            bin_file.write(flatbuffer)
+
+        _flatc_decompile(d, schema_path, bin_path, ["--raw-binary"])
+
+        json_path = os.path.join(d, "flat_tensor.json")
+        with open(json_path, "rb") as output_file:
+            return _json_to_dataclass(json.load(output_file), cls=FlatTensor)
+
+
 @dataclass
 class FlatTensorConfig:
     tensor_alignment: int = 16
@@ -67,6 +93,8 @@ class FlatTensorConfig:
 class FlatTensorHeader:
     # Class constants.
     # The magic bytes that should be at the beginning of the header.
+    # This should be in sync with the magic in
+    # executorch/extension/flat_tensor/serialize/flat_tensor_header.h
     EXPECTED_MAGIC: ClassVar[bytes] = b"FH01"
     EXPECTED_LENGTH: ClassVar[int] = (
         # Header magic
@@ -244,7 +272,7 @@ class FlatTensorSerializer(DataSerializer):
             segments=[DataSegment(offset=0, size=len(flat_tensor_data))],
         )
 
-        flatbuffer_payload = _convert_to_flatbuffer(flat_tensor)
+        flatbuffer_payload = _serialize_to_flatbuffer(flat_tensor)
         padded_flatbuffer_length: int = aligned_size(
             input_size=len(flatbuffer_payload),
             alignment=self.config.tensor_alignment,
