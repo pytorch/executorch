@@ -68,7 +68,8 @@ Tensor& cat_out(
 
   bool optimized = true;
 
-  if (out.scalar_type() != ScalarType::Float)
+  if ((out.scalar_type() != ScalarType::Float) &&
+      (out.scalar_type() != ScalarType::Int))
     optimized = false;
 
   if (optimized) {
