@@ -602,7 +602,9 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
           event_name.c_str(),
           /* delegate_debug_id = */ -1,
           r.start_time_ns,
-          r.end_time_ns);
+          r.end_time_ns,
+          (void*)(&r.metadata),
+          sizeof(r.metadata));
     }
 #endif // ET_EVENT_TRACER_ENABLED
 
