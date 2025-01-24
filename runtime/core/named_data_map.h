@@ -26,34 +26,35 @@ class ET_EXPERIMENTAL NamedDataMap {
  public:
   virtual ~NamedDataMap() = default;
   /**
-   * Get tensor metadata by fully qualified name (FQN).
+   * Get metadata by key.
    *
-   * @param fqn Fully qualified name of the tensor.
+   * @param key The name of the tensor.
    * @return Result containing TensorLayout with tensor metadata.
    */
   ET_NODISCARD virtual Result<const executorch::runtime::TensorLayout>
-  get_metadata(const char* fqn) const = 0;
+  get_metadata(const char* key) const = 0;
   /**
-   * Get tensor data by fully qualified name (FQN).
+   * Get data by key.
    *
-   * @param fqn Fully qualified name of the tensor.
+   * @param key Name of the data.
    * @return Result containing a FreeableBuffer with the tensor data.
    */
   ET_NODISCARD virtual Result<FreeableBuffer> get_data(
-      const char* fqn) const = 0;
+      const char* key) const = 0;
 
   /**
-   * Loads data corresponding to the fqn into the provided buffer.
+   * Loads data corresponding to the key into the provided buffer.
    *
-   * @param fqn Fully qualified name of the tensor.
+   * @param key The name of the data.
    * @param size The number of bytes to load. Use `get_metadata` to retrieve the
-   * size of the tensor for a given fqn.
+   * size of the data for a given key.
    * @param buffer The buffer to load the data into. Must point to at least
    * `size` bytes of memory.
-   * @return Result containing the number of bytes written on success.
+   * @return Result containing the number of bytes written on success. This will
+   * fail if the buffer is too small.
    */
   ET_NODISCARD virtual Result<size_t>
-  load_data_into(const char* fqn, size_t size, void* buffer) const = 0;
+  load_data_into(const char* key, void* buffer, size_t size) const = 0;
 
   /**
    * Get the number of keys in the NamedDataMap.
