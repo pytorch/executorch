@@ -50,6 +50,7 @@ class ArmCompileSpecBuilder:
         self.output_format = None
         self.path_for_intermediates = None
         self.tosa_version = None
+        self.tosa_spec = None
         self.input_order = None
 
     def ethosu_compile_spec(
