@@ -26,18 +26,18 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    OperatorConfig,
+    QuantizationAnnotation,
+    QuantizationConfig,
+    QuantizationSpec,
+)
 
 from torch import fx
 
 from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
-    OperatorConfig,
-    QuantizationAnnotation,
-    QuantizationConfig,
-    QuantizationSpec,
-)
 
 
 act_qspec = QuantizationSpec(

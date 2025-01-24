@@ -11,13 +11,13 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import torch
-
-from torch.ao.quantization.quantizer import Quantizer
-from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+
+from torch.ao.quantization.quantizer import Quantizer
+from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
