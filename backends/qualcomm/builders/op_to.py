@@ -16,7 +16,7 @@ from .qnn_constants import OpCast, OpConvert, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class To(NodeVisitor):
-    target = ["aten._to_copy.default"]
+    target = ["aten._to_copy.default", "dim_order_ops._to_dim_order_copy.default"]
     sufixed_8_offset_diff = 128
     sufixed_16_offset_diff = 32768
     epsilon = 1e-6

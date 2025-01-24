@@ -145,14 +145,3 @@ def get_u85_compile_spec_unbuilt(
         .dump_intermediate_artifacts_to(artifact_path)
     )
     return compile_spec
-
-
-def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
-    for spec in compile_spec:
-        if spec.key == "compile_flags":
-            flags = spec.value.decode()
-            if "u55" in flags:
-                return "corstone-300"
-            elif "u85" in flags:
-                return "corstone-320"
-    return None
