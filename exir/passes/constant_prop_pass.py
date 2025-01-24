@@ -16,7 +16,6 @@ from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
     get_param,
-    is_buffer,
     is_lifted_tensor_constant,
     is_param,
 )
@@ -78,6 +77,16 @@ def get_data(
     return None
 
 
+def is_constant_buffer(program: "ExportedProgram", node: torch.fx.Node) -> bool:
+    """Checks if the given node is a constant buffer."""
+
+    if node.target not in program.graph_signature.inputs_to_buffers:
+        return False
+    fqn = program.graph_signature.inputs_to_buffers[node.target]
+    # if the buffer is mutated then record that
+    return fqn not in program.graph_signature.buffers_to_mutate.values()
+
+
 def get_constant_placeholder_dict(
     exported_program: ExportedProgram,
 ) -> OrderedDict[torch.fx.Node, torch.Tensor]:
@@ -85,15 +94,12 @@ def get_constant_placeholder_dict(
     Returns a dictionary of placeholder node -> constant tensor.
     """
     const_node_to_tensor: OrderedDict[torch.fx.Node, torch.Tensor] = OrderedDict()
-    for node in exported_program.graph.nodes:
-        if node.op != "placeholder":
-            continue
-
+    for node in exported_program.graph.find_nodes(op="placeholder"):
         if is_param(exported_program, node):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_param(exported_program, node)
             )
-        elif is_buffer(exported_program, node):
+        elif is_constant_buffer(exported_program, node):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_buffer(exported_program, node)
             )
