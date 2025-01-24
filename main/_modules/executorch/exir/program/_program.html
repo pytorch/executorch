@@ -1021,7 +1021,12 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="o">=</span> <span class="n">serialize_for_executorch</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_get_emitter_output</span><span class="p">(),</span>
-                <span class="n">ExecutorchBackendConfig</span><span class="p">(),</span>
+                <span class="n">ExecutorchBackendConfig</span><span class="p">(</span>
+                    <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_extract_delegate_segments</span><span class="p">,</span>
+                    <span class="n">segment_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_segment_alignment</span><span class="p">,</span>
+                    <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">,</span>
+                    <span class="n">delegate_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">,</span>
+                <span class="p">),</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -1981,7 +1986,7 @@
         <span class="c1"># Serialize emitter output, ready to be written to a file.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span> <span class="o">=</span> <span class="n">FlatTensorSerializer</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="o">=</span> <span class="n">serialize_for_executorch</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">,</span> <span class="n">backend_config</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
