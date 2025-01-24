@@ -233,9 +233,44 @@ std::string QueryPool::generate_string_report() {
   return ss.str();
 }
 
-void QueryPool::print_results() {
+std::string QueryPool::generate_tsv_string_report() {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  std::stringstream ss;
+
+  ss << "Kernel Name\t";
+  ss << "Global Workgroup Size\t";
+  ss << "Local Workgroup Size\t";
+  ss << "Duration (ns)\t";
+  ss << std::endl;
+
+  ss << "===========\t";
+  ss << "=====================\t";
+  ss << "====================\t";
+  ss << "=============\t";
+  ss << std::endl;
+
+  for (ShaderDuration& entry : shader_durations_) {
+    std::chrono::duration<size_t, std::nano> exec_duration_ns(
+        entry.execution_duration_ns);
+
+    ss << entry.kernel_name << "\t";
+    ss << stringize(entry.global_workgroup_size) << "\t";
+    ss << stringize(entry.local_workgroup_size) << "\t";
+    ss << exec_duration_ns.count() << "\t";
+    ss << std::endl;
+  }
+
+  return ss.str();
+}
+
+void QueryPool::print_results(const bool tsv_format) {
   EARLY_RETURN_IF_UNINITIALIZED();
-  std::cout << generate_string_report() << std::endl;
+  if (tsv_format) {
+    std::cout << generate_tsv_string_report() << std::endl;
+  } else {
+    std::cout << generate_string_report() << std::endl;
+  }
 }
 
 unsigned long QueryPool::get_total_shader_ns(std::string kernel_name) {

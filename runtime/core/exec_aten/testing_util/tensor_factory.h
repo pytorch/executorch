@@ -279,7 +279,10 @@ class TensorFactory {
       t = empty_strided(sizes, strides);
     }
     if (t.nbytes() > 0) {
-      memcpy(t.template data<true_ctype>(), data.data(), t.nbytes());
+      std::transform(
+          data.begin(), data.end(), t.template data<true_ctype>(), [](auto x) {
+            return static_cast<true_ctype>(x);
+          });
     }
     return t;
   }
@@ -319,7 +322,10 @@ class TensorFactory {
       t = empty_strided(sizes, strides);
     }
     if (t.nbytes() > 0) {
-      memcpy(t.template data<true_ctype>(), data.data(), t.nbytes());
+      std::transform(
+          data.begin(), data.end(), t.template data<true_ctype>(), [](auto x) {
+            return static_cast<true_ctype>(x);
+          });
     }
     return t;
   }
@@ -721,6 +727,13 @@ class TensorFactory {
    */
   using ctype = typename internal::ScalarTypeToCppTypeWrapper<DTYPE>::ctype;
 
+  /**
+   * The official C type for the scalar type. Used when accessing elements
+   * of a constructed Tensor.
+   */
+  using true_ctype =
+      typename executorch::runtime::ScalarTypeToCppType<DTYPE>::type;
+
   TensorFactory() = default;
 
   /**
@@ -1019,7 +1032,14 @@ class TensorFactory {
               data_.data(),
               dim_order_.data(),
               strides_.data(),
-              dynamism) {}
+              dynamism) {
+      // The only valid values for bool are 0 and 1; coerce!
+      if constexpr (std::is_same_v<true_ctype, bool>) {
+        for (auto& x : data_) {
+          x = static_cast<true_ctype>(x);
+        }
+      }
+    }
 
     std::vector<int32_t> sizes_;
     std::vector<ctype> data_;
