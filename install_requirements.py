@@ -79,29 +79,97 @@ def clean():
 VALID_PYBINDS = ["coreml", "mps", "xnnpack"]
 
 
-# The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
+def main(args):
+    if not python_is_compatible():
+        sys.exit(1)
 
+    # Parse options.
 
-# Since ExecuTorch often uses main-branch features of pytorch, only the nightly
-# pip versions will have the required features.
-#
-# NOTE: If a newly-fetched version of the executorch repo changes the value of
-# NIGHTLY_VERSION, you should re-run this script to install the necessary
-# package versions.
-NIGHTLY_VERSION = "dev20250104"
+    EXECUTORCH_BUILD_PYBIND = ""
+    CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
+    CMAKE_BUILD_ARGS = os.getenv("CMAKE_BUILD_ARGS", "")
+    USE_PYTORCH_NIGHTLY = True
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--pybind",
+        action="append",
+        nargs="+",
+        help="one or more of coreml/mps/xnnpack, or off",
+    )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="clean build artifacts and pip-out instead of installing",
+    )
+    parser.add_argument(
+        "--use-pt-pinned-commit",
+        action="store_true",
+        help="build from the pinned PyTorch commit instead of nightly",
+    )
+    args = parser.parse_args(args)
 
-def install_requirements(use_pytorch_nightly):
+    if args.clean:
+        clean()
+        return
+
+    if args.pybind:
+        # Flatten list of lists.
+        args.pybind = list(itertools.chain(*args.pybind))
+        if "off" in args.pybind:
+            if len(args.pybind) != 1:
+                raise Exception(
+                    f"Cannot combine `off` with other pybinds: {args.pybind}"
+                )
+            EXECUTORCH_BUILD_PYBIND = "OFF"
+        else:
+            for pybind_arg in args.pybind:
+                if pybind_arg not in VALID_PYBINDS:
+                    raise Exception(
+                        f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
+                    )
+                EXECUTORCH_BUILD_PYBIND = "ON"
+                CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
+
+    if args.use_pt_pinned_commit:
+        # This option is used in CI to make sure that PyTorch build from the pinned commit
+        # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
+        # latest PT commit otherwise
+        USE_PYTORCH_NIGHTLY = False
+
+    # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
+    # or is not turned off explicitly (--pybind off)
+    # then install XNNPACK by default.
+    if EXECUTORCH_BUILD_PYBIND == "":
+        EXECUTORCH_BUILD_PYBIND = "ON"
+        CMAKE_ARGS += " -DEXECUTORCH_BUILD_XNNPACK=ON"
+
+    # Use ClangCL on Windows.
+    # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
+    # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
+    if os.name == "nt":
+        CMAKE_ARGS += " -T ClangCL"
+
+    # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
+    # pip versions will have the required features.
+    #
+    # NOTE: If a newly-fetched version of the executorch repo changes the value of
+    # NIGHTLY_VERSION, you should re-run this script to install the necessary
+    # package versions.
+    NIGHTLY_VERSION = "dev20250104"
+
+    # The pip repository that hosts nightly torch packages.
+    TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
+
     # pip packages needed by exir.
     EXIR_REQUIREMENTS = [
-        # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
+        # Setting USE_PYTORCH_NIGHTLY to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.6.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        f"torch==2.6.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torch",
         (
             f"torchvision==0.22.0.{NIGHTLY_VERSION}"
-            if use_pytorch_nightly
+            if USE_PYTORCH_NIGHTLY
             else "torchvision"
         ),  # For testing.
         "typing-extensions",
@@ -111,7 +179,7 @@ def install_requirements(use_pytorch_nightly):
     # TODO: Make each example publish its own requirements.txt
     EXAMPLES_REQUIREMENTS = [
         "timm==1.0.7",
-        f"torchaudio==2.6.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
+        f"torchaudio==2.6.0.{NIGHTLY_VERSION}" if USE_PYTORCH_NIGHTLY else "torchaudio",
         "torchsr==1.0.4",
         "transformers==4.47.1",
     ]
@@ -164,79 +232,6 @@ def install_requirements(use_pytorch_nightly):
         ],
         check=True,
     )
-
-
-def main(args):
-    if not python_is_compatible():
-        sys.exit(1)
-
-    # Parse options.
-
-    EXECUTORCH_BUILD_PYBIND = ""
-    CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
-    CMAKE_BUILD_ARGS = os.getenv("CMAKE_BUILD_ARGS", "")
-    use_pytorch_nightly = True
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--pybind",
-        action="append",
-        nargs="+",
-        help="one or more of coreml/mps/xnnpack, or off",
-    )
-    parser.add_argument(
-        "--clean",
-        action="store_true",
-        help="clean build artifacts and pip-out instead of installing",
-    )
-    parser.add_argument(
-        "--use-pt-pinned-commit",
-        action="store_true",
-        help="build from the pinned PyTorch commit instead of nightly",
-    )
-    args = parser.parse_args(args)
-    if args.pybind:
-        # Flatten list of lists.
-        args.pybind = list(itertools.chain(*args.pybind))
-        if "off" in args.pybind:
-            if len(args.pybind) != 1:
-                raise Exception(
-                    f"Cannot combine `off` with other pybinds: {args.pybind}"
-                )
-            EXECUTORCH_BUILD_PYBIND = "OFF"
-        else:
-            for pybind_arg in args.pybind:
-                if pybind_arg not in VALID_PYBINDS:
-                    raise Exception(
-                        f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
-                    )
-                EXECUTORCH_BUILD_PYBIND = "ON"
-                CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
-
-    if args.clean:
-        clean()
-        return
-
-    if args.use_pt_pinned_commit:
-        # This option is used in CI to make sure that PyTorch build from the pinned commit
-        # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
-        # latest PT commit otherwise
-        use_pytorch_nightly = False
-
-    install_requirements(use_pytorch_nightly)
-
-    # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
-    # or is not turned off explicitly (--pybind off)
-    # then install XNNPACK by default.
-    if EXECUTORCH_BUILD_PYBIND == "":
-        EXECUTORCH_BUILD_PYBIND = "ON"
-        CMAKE_ARGS += " -DEXECUTORCH_BUILD_XNNPACK=ON"
-
-    # Use ClangCL on Windows.
-    # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
-    # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
-    if os.name == "nt":
-        CMAKE_ARGS += " -T ClangCL"
 
     #
     # Install executorch pip package. This also makes `flatc` available on the path.
