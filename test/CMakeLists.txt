@@ -21,6 +21,8 @@ project(size_test)
 
 set(CMAKE_CXX_STANDARD 17)
 
+add_compile_options("-Wuninitialized")
+
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
