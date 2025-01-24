@@ -117,6 +117,17 @@ class Verifier:
 
         return has_overlap
 
+    @classmethod
+    def _debug_message_from_specs(
+        cls, lhs_spec: TensorSpec, rhs_spec: TensorSpec
+    ) -> str:
+        message = (
+            f"lhs life time: {lhs_spec.lifetime}, rhs lifetime: {rhs_spec.lifetime} "
+        )
+        message += f"lhs: mem_id {lhs_spec.mem_id} storage: {lhs_spec.mem_offset}, {lhs_spec.allocated_memory} "
+        message += f"rhs: mem_id {rhs_spec.mem_id} storage: {rhs_spec.mem_offset}, {rhs_spec.allocated_memory}"
+        return message
+
     def verify_storage_reuse(
         self, allow_lifetime_and_storage_overlap: bool = False
     ) -> int:
@@ -159,7 +170,7 @@ class Verifier:
                     lhs_spec, rhs_spec
                 ):
                     raise InternalError(
-                        f"Unexpected storage overlap: lhs {lhs_spec}, rhs {rhs_spec}"
+                        f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
                     )
 
                 # Check that each mem_obj_id is consistent with whether the tensors have
@@ -708,6 +719,13 @@ def greedy(
             total_sizes[mem_id] = materialize_buffer(
                 shared_objects[mem_id], input_total_size
             )
+            # padding allocation with 64 bytes.
+            # this requirement really for XNNPACK backend which can access tensors
+            # for reading beyond the end of the tensor. This is done for performance
+            # optimizations in XNNPACK.
+            # While account for backend specific requirement is not the right choice
+            # in backend agnostic memory planning, we do it here for now.
+            total_sizes[mem_id] += 64
             # Since we now know the number of shared objects we need and the size of
             # each shared object, we can assign offset in the memory buffer for each
             # shared object.
