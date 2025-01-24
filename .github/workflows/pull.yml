@@ -437,9 +437,12 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
-  test-static-llama-runner-qnn-linux:
-    name: test-static-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+  test-static-llama-qnn-linux:
+    name: test-static-llama-qnn-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -447,20 +450,25 @@ jobs:
       docker-image: executorch-ubuntu-22.04-qnn-sdk
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 900
+      timeout: 180
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        BUILD_TOOL="cmake"
+
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
-        # Retrieve 110M Stories Llama Artifacts
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-stories-llama.sh
+        # Setup executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+
+        # Setup install_requirements for llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         
-        # Test static llama stories110m
-        PYTHON_EXECUTABLE=python backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleScript.test_stories_single_llama --model SM8650 --build_folder build-android/ --executorch_root . --artifact_dir . --compile_only"
+        # Test static llama weight sharing and accuracy
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
 
   test-qnn-models-linux:
     name: test-qnn-models-linux

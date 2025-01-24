@@ -1956,6 +1956,7 @@ class TestQNNFloatingPointUtils(TestQNN):
                 soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
                 multiple_graphs=True,
+                weight_sharing=True,
                 graph_name=graph_name,
             )
             for graph_name in graph_names
@@ -2519,6 +2520,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 soc_model=self.chipset_table[TestQNN.model],
                 backend_options=backend_options,
                 multiple_graphs=True,
+                weight_sharing=True,
                 graph_name=graph_name,
             )
             for graph_name in graph_names
@@ -3795,10 +3797,12 @@ class TestExampleScript(TestQNN):
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
-        else:
+        elif self.device:
             cmds.extend(["--device", self.device])
         if self.host:
             cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
 
         golden_start_with = "Once upon a time,"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
@@ -3812,8 +3816,10 @@ class TestExampleScript(TestQNN):
                 if not self.compile_only:
                     model_out = msg["result"][0]
                     self.assertTrue(model_out.startswith(golden_start_with))
-                pte_size = msg["pte_size"]
-                self.assertLessEqual(pte_size, 130000000)
+                # x86 does not allow weight sharing, so we don't check pte size
+                if not self.enable_x86_64:
+                    pte_size = msg["pte_size"]
+                    self.assertLessEqual(pte_size, 130000000)
 
     @unittest.skip("dynamic shape inputs appear in recent torch.export.export")
     def test_mobilebert(self):
@@ -4017,12 +4023,6 @@ def setup_environment():
         "--oss_repo",
         help="Path to open source software model repository",
         type=str,
-    )
-    parser.add_argument(
-        "-x",
-        "--enable_x86_64",
-        help="Enable unittest to be executed on x86_64 platform",
-        action="store_true",
     )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
