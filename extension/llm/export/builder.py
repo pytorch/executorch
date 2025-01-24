@@ -33,6 +33,8 @@ from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+
+from executorch.extension.llm.export.export_passes import RemoveRedundantPermutes
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
@@ -111,6 +113,7 @@ class LLMEdgeManager:
         self.calibration_seq_length = calibration_seq_length
         self.calibration_data = calibration_data
         self.tokenizer_path = tokenizer_path
+        self.canonical_passes = [RemoveRedundantPermutes()]
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -222,6 +225,17 @@ class LLMEdgeManager:
                 torch.export.save(exported_module, self.args.output_name)
 
         return self
+
+    def run_canonical_optimizations(self):
+        """
+        Run canonical optimizations (at the moment removing redundant permutes) on the model.
+        """
+        assert self.pre_autograd_graph_module is not None, "Please run export() first"
+        for pass_instance in self.canonical_passes:
+            logging.info(f"Running canonical pass: {pass_instance.__class__.__name__}")
+            res = pass_instance(self.pre_autograd_graph_module)
+            assert res.graph_module is not None, "Pass returned None"
+            self.pre_autograd_graph_module = res.graph_module
 
     def pt2e_calibrate(
         self,
