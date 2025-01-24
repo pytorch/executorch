@@ -26,11 +26,17 @@
 namespace vkcompute {
 namespace vkapi {
 
+struct ShaderMetadata final {
+  const uint32_t global_workgroup_size[3];
+  const uint32_t local_workgroup_size[3];
+};
+
 struct ShaderResult final {
   const std::string kernel_name;
   const uint32_t dispatch_id;
   const uint64_t start_time_ns;
   const uint64_t end_time_ns;
+  const ShaderMetadata metadata;
 };
 
 struct QueryPoolConfig final {
