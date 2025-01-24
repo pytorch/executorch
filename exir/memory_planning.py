@@ -547,7 +547,9 @@ def _find_max_overlapping_allocations_offset(
 
 
 def pick_shared_obj(
-    shared_objects: List[SharedObject], spec: TensorSpec
+    shared_objects: List[SharedObject],
+    spec: TensorSpec,
+    allow_overlapping_allocations: bool = True,
 ) -> SharedObject:
     r"""
     Pick the available shared object to which to assign this spec,
@@ -611,7 +613,7 @@ def pick_shared_obj(
             picked.allocations.append(allocation_spec)
             break
 
-    if picked is None:
+    if picked is None and allow_overlapping_allocations:
         for sobj in shared_objects:
             max_offset = _find_max_overlapping_allocations_offset(sobj, spec)
             if max_offset > 0:
@@ -673,7 +675,16 @@ def greedy(
     graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
+    allow_overlapping_allocations: bool = True,
 ) -> List[int]:
+    r"""Greedy algorithm to allocate memory for tensors in the graph.
+    alloc_graph_input: If set to true, the algorithm will allocate memory for graph input.
+    alloc_graph_output: If set to true, the algorithm will allocate memory for graph output.
+    allow_overlapping_allocations: If set to true, allows for allocations that overlap
+    in their lifetime but are at different offsets in the storage. By default true.
+    This flag is added to allow for Vulkan to use MemoryPlanningPass with overlapping
+    allocations disabled
+    """
     spec2obj = {}
     shared_objects = defaultdict(list)
     # Don't do assertion in collect_specs_from_nodes if we have already encountered
@@ -699,7 +710,9 @@ def greedy(
         if spec.mem_id is None:
             spec.mem_id = 1
         spec.realign(alignment)
-        spec2obj[spec] = pick_shared_obj(shared_objects[spec.mem_id], spec)
+        spec2obj[spec] = pick_shared_obj(
+            shared_objects[spec.mem_id], spec, allow_overlapping_allocations
+        )
 
     if len(shared_objects) == 0:
         # Cannot find any tensor in the graph that needs to be allocated.
