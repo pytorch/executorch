@@ -1689,17 +1689,21 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">save_data_to_tsv</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">file</span><span class="p">:</span> <span class="n">IO</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Stores the underlying EventBlocks in tsv format to facilitate copy-paste into spreadsheets.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            file: Which IO stream to print to. Do not use stdout, as tab separator is not preserved.</span>
+<span class="sd">            include_units: Whether headers should include units (default true)</span>
+<span class="sd">            include_delegate_debug_data: Whether to include delegate debug metadata (default false)</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_dataframe</span><span class="p">()</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_dataframe</span><span class="p">(</span><span class="n">include_units</span><span class="p">,</span> <span class="n">include_delegate_debug_data</span><span class="p">)</span>
         <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\t</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="c1"># TODO: write unit test</span>
