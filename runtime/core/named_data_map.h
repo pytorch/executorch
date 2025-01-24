@@ -46,12 +46,13 @@ class ET_EXPERIMENTAL NamedDataMap {
    * Loads data corresponding to the fqn into the provided buffer.
    *
    * @param fqn Fully qualified name of the tensor.
-   * @param size The number of bytes to load.
+   * @param size The number of bytes to load. Use `get_metadata` to retrieve the
+   * size of the tensor for a given fqn.
    * @param buffer The buffer to load the data into. Must point to at least
    * `size` bytes of memory.
-   * @return An error code on if the load was successful.
+   * @return Result containing the number of bytes written on success.
    */
-  ET_NODISCARD virtual Error
+  ET_NODISCARD virtual Result<size_t>
   load_data_into(const char* fqn, size_t size, void* buffer) const = 0;
 
   /**
@@ -59,15 +60,16 @@ class ET_EXPERIMENTAL NamedDataMap {
    *
    * @return Result containing the number of keys.
    */
-  ET_NODISCARD virtual Result<int> get_num_keys() const = 0;
+  ET_NODISCARD virtual Result<size_t> get_num_keys() const = 0;
 
   /**
    * Get the key at the given index.
    *
    * @param index The index of the key to retrieve.
-   * @return Result containing the key at the given index.
+   * @return Result containing the key at the given index. Note: the returned
+   * pointer is only valid for the lifetime of the DataMap.
    */
-  ET_NODISCARD virtual Result<const char*> get_key(int index) const = 0;
+  ET_NODISCARD virtual Result<const char*> get_key(size_t index) const = 0;
 };
 
 } // namespace runtime
