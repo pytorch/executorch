@@ -592,7 +592,7 @@ Before you begin it is recommended you go through the following:</div>
 <span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">export_for_training</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span> <span class="c1"># 2-stage export for quantization path</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
     <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
 <span class="p">)</span>
