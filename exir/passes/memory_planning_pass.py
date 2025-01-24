@@ -127,4 +127,5 @@ class MemoryPlanningPass(PassBase):
                 f"The {getattr(self.memory_planning_algo, '__name__', repr(self.memory_planning_algo))} algorithm reuses storage for {num_reuse_pairs} pair of tensors"
             )
         verifier.verify_graph_input_output()
+        verifier.verify_storage_reuse()
         return PassResult(graph_module, True)
