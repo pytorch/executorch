@@ -86,7 +86,7 @@ Tensor& gather_out(
 
   constexpr auto name = "gather.out";
 
-  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     gather_helper<CTYPE>(in, index, out, dim);
   });
 
