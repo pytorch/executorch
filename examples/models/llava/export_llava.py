@@ -20,6 +20,9 @@ from executorch.examples.models.llama.source_transformation.quantize import (
     EmbeddingQuantHandler,
     get_quant_weight_transform,
 )
+from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+)
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
@@ -101,6 +104,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
     _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
+        source_transforms.append(replace_kv_cache_with_custom_kv_cache)
         source_transforms.append(replace_sdpa_with_custom_op)
     source_transforms.append(quant_transform)
     manager = (

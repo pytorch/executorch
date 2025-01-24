@@ -21,6 +21,9 @@ from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
 from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
+from executorch.backends.arm._passes.convert_squeezes_to_view import (
+    ConvertSqueezesToViewPass,
+)
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_layernorm_pass import (
     DecomposeLayerNormPass,
@@ -100,6 +103,7 @@ class ArmPassManager(PassManager):
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
+        self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(AnnotateChannelsLastDimOrder())
 
@@ -135,6 +139,7 @@ class ArmPassManager(PassManager):
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
+        self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(AnnotateChannelsLastDimOrder())
 
