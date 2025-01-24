@@ -10,6 +10,11 @@ import unittest
 
 import torch
 import torchvision
+
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
@@ -22,11 +27,6 @@ from torch.ao.quantization.quantize_pt2e import (
     _convert_to_reference_decomposed_fx,
     convert_pt2e,
     prepare_pt2e,
-)
-
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
 )
 from torch.export import export
 from torch.testing import FileCheck

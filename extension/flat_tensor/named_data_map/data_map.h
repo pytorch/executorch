@@ -20,7 +20,7 @@
 
 // Forward declare flatbuffer types. This is a public header and must not
 // include the generated flatbuffer header.
-namespace flat_tensor {
+namespace flat_tensor_flatbuffer {
 struct FlatTensor;
 } // namespace flat_tensor
 
@@ -34,12 +34,12 @@ class DataMap final : public executorch::runtime::NamedDataMap {
 
   ET_NODISCARD
   executorch::runtime::Result<const executorch::runtime::TensorLayout>
-  get_metadata(const char* fqn) const override;
+  get_metadata(const char* key) const override;
   ET_NODISCARD
   executorch::runtime::Result<executorch::runtime::FreeableBuffer> get_data(
-      const char* fqn) const override;
+      const char* key) const override;
   ET_NODISCARD executorch::runtime::Result<size_t>
-  load_data_into(const char* fqn, size_t size, void* buffer) const override;
+  load_data_into(const char* key, void* buffer, size_t size) const override;
 
   ET_NODISCARD executorch::runtime::Result<size_t> get_num_keys()
       const override;

@@ -46,8 +46,8 @@ bool IsAligned(const void* data) {
 } // namespace
 
 ET_NODISCARD Result<const TensorLayout> DataMap::get_metadata(
-    const char* fqn) const {
-  auto result = _name_to_tensor.find(fqn);
+    const char* key) const {
+  auto result = _name_to_tensor.find(key);
   if (result == _name_to_tensor.end()) {
     return Error::InvalidArgument;
   }
@@ -55,8 +55,8 @@ ET_NODISCARD Result<const TensorLayout> DataMap::get_metadata(
   return std::get<2>(result->second);
 }
 
-ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* fqn) const {
-  auto result = _name_to_tensor.find(fqn);
+ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* key) const {
+  auto result = _name_to_tensor.find(key);
   if (result == _name_to_tensor.end()) {
     return Error::InvalidArgument;
   }
@@ -68,7 +68,7 @@ ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* fqn) const {
 }
 
 ET_NODISCARD Result<size_t>
-DataMap::load_data_into(const char* fqn, size_t size, void* buffer) const {
+DataMap::load_data_into(const char* key, void* buffer, size_t size) const {
   return Error::NotImplemented;
 }
 
@@ -132,12 +132,13 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
   }
 
   // Make sure magic matches.
-  if (!flat_tensor::FlatTensorBufferHasIdentifier(flat_tensor_data->data())) {
+  if (!flat_tensor_flatbuffer::FlatTensorBufferHasIdentifier(
+          flat_tensor_data->data())) {
     ET_LOG(
         Error,
         "FlatTensor identifier '%.4s' != expected '%.4s'",
         flatbuffers::GetBufferIdentifier(flat_tensor_data->data()),
-        flat_tensor::FlatTensorIdentifier());
+        flat_tensor_flatbuffer::FlatTensorIdentifier());
     return Error::InvalidExternalData;
   }
 
@@ -151,8 +152,8 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
       kMinimumAlignment);
 
   // Get pointer to root of flatbuffer table.
-  const flat_tensor::FlatTensor* flat_tensor =
-      flat_tensor::GetFlatTensor(flat_tensor_data->data());
+  const flat_tensor_flatbuffer::FlatTensor* flat_tensor =
+      flat_tensor_flatbuffer::GetFlatTensor(flat_tensor_data->data());
 
   // Get pointer to tensor metadata.
   const auto* s_tensor_metadata = flat_tensor->tensors();
@@ -176,10 +177,10 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
 
     int segment_index = s_tensor_metadata->Get(i)->segment_index();
     int offset = s_tensor_metadata->Get(i)->offset();
-    std::string fqn = s_tensor_metadata->Get(i)->fully_qualified_name()->str();
+    std::string key = s_tensor_metadata->Get(i)->fully_qualified_name()->str();
 
     auto val = std::make_tuple(segment_index, offset, tensor_layout);
-    name_to_tensor.insert({fqn, std::move(val)});
+    name_to_tensor.insert({key, std::move(val)});
   }
 
   // Load constant data.
