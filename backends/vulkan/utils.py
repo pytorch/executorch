@@ -130,6 +130,24 @@ def within_buffer_limit(node: torch.fx.Node, buffer_limit: int) -> int:
         raise RuntimeError(f"Cannot get numel for val of type {type(node.meta['val'])}")
 
 
+def tensor_node_is_high_dim(node: torch.fx.Node) -> bool:
+    """
+    If the node does not contain a tensor or a collection of tensors, return False.
+    Otherwise, return True if the tensor is high dimensional (i.e. rank > 4).
+    """
+    if is_tensor_node(node):
+        if isinstance(node.meta["val"], FakeTensor):
+            return len(node.meta["val"].shape) > 4
+        if isinstance(node.meta["val"], list) or isinstance(node.meta["val"], tuple):
+            for fake_tensor in node.meta["val"]:
+                if isinstance(fake_tensor, FakeTensor):
+                    if len(fake_tensor.shape) > 4:
+                        return True
+        return False
+    else:
+        return False
+
+
 def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageExtents:
     """
     Calculate the image extents that will be used to represent a tensor with the given sizes
