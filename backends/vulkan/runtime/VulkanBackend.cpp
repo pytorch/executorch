@@ -593,16 +593,16 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 #ifdef ET_EVENT_TRACER_ENABLED
     runtime::EventTracer* event_tracer = context.event_tracer();
     compute_graph->context()->querypool().extract_results();
-    for (const auto& tup :
+    for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
       std::string event_name =
-          std::get<0>(tup) + "_" + std::to_string(std::get<1>(tup));
+          r.kernel_name + "_" + std::to_string(r.dispatch_id);
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),
-          -1,
-          std::get<2>(tup),
-          std::get<3>(tup));
+          /* delegate_debug_id = */ -1,
+          r.start_time_ns,
+          r.end_time_ns);
     }
 #endif // ET_EVENT_TRACER_ENABLED
 
