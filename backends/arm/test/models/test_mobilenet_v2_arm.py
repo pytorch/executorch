@@ -98,7 +98,7 @@ class TestMobileNetV2(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-300"
+                atol=1.0, qtol=1, inputs=self.model_inputs
             )
 
     @pytest.mark.slow
@@ -118,5 +118,5 @@ class TestMobileNetV2(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs, target_board="corstone-320"
+                atol=1.0, qtol=1, inputs=self.model_inputs
             )

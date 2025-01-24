@@ -43,7 +43,7 @@ Tensor& argmin_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "argmin.out", CTYPE, [&] {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "argmin.out", CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();
 
     for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
