@@ -11,6 +11,7 @@ python_library(
         ":const_prop_pass",
         ":debug_handle_generator_pass",
         ":external_constants_pass",
+        ":init_mutable_pass",
         ":insert_write_back_for_buffers_pass",
         ":memory_format_ops_pass",
         ":memory_planning_pass",
