@@ -269,6 +269,9 @@ TEST_F(OpUnbindCopyIntOutTest, UnbindWorksWithZeroSizedTensors) {
 }
 
 TEST_F(OpUnbindCopyIntOutTest, UnbindFailsWithWronglyAllocatedOutput) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
+  }
   TensorFactory<ScalarType::Int> tf;
   TensorListFactory<ScalarType::Int> tlf;
 

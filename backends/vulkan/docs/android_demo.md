@@ -81,7 +81,7 @@ First, build and install ExecuTorch libraries, then build the LLaMA runner
 binary using the Android NDK toolchain.
 
 ```shell
-./install_requirements.sh --clean
+./install_executorch.sh --clean
 (mkdir cmake-android-out && \
   cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
