@@ -6,8 +6,6 @@
 
 # pyre-strict
 
-from typing import List, Tuple
-
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -17,6 +15,7 @@ from torch.fx import GraphModule, Node
 # Which means that if we remove the empty tensor as input to this op,
 # The result of the operation will stay the same
 
+
 class PruneEmptyTensorsPass(ExportPass):
     """
     Removes Any empty tensors from the graph that can safely be removed
@@ -25,7 +24,9 @@ class PruneEmptyTensorsPass(ExportPass):
     - aten.cat.default
     """
 
-    def remove_empty_tensors_from_cat(self, graph_module: GraphModule, cat_node: Node) -> None:
+    def remove_empty_tensors_from_cat(
+        self, graph_module: GraphModule, cat_node: Node
+    ) -> None:
         """
         Removes empty tensors from the graph that are inputs to aten.cat.default
         """
@@ -35,7 +36,7 @@ class PruneEmptyTensorsPass(ExportPass):
             input_arg_tensor = input_arg.meta["val"]
             if input_arg_tensor.numel() != 0:
                 pruned_concat_list.append(input_arg)
-            
+
         cat_node.args = (pruned_concat_list,) + cat_node.args[1:]
         if len(pruned_concat_list) == 0:
             # if all the inputs to the cat are empty tensors, then we can replace
@@ -50,13 +51,12 @@ class PruneEmptyTensorsPass(ExportPass):
                 )
                 full_like.meta = cat_node.meta
                 cat_node.replace_all_uses_with(full_like)
-                    
 
     def call(self, graph_module: GraphModule) -> PassResult:
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            
+
             if node.target == torch.ops.aten.cat.default:
                 self.remove_empty_tensors_from_cat(graph_module, node)
 

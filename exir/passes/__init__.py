@@ -42,9 +42,9 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
+from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.remove_noop_pass import RemoveNoopPass, RemoveToCopyPass
-from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
 from executorch.exir.passes.replace_broken_ops_with_function_ops_pass import (
     ReplaceBrokenOpsWithFunctionalOpsPass,
