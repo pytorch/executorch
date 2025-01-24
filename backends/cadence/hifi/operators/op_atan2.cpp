@@ -6,12 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cmath>
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-
+#include <cmath>
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;

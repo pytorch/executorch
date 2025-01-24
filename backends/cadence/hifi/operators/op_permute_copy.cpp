@@ -93,9 +93,9 @@ Tensor& permute_copy_out(
     WORD32 p_permute_vec[kNnlibMaxDim];
 
     for (int i = 0; i < num_inp_dims; i++) {
-       p_inp_shape[i] = in.size(i);
-       p_out_shape[i] = in.size(dims[i]);
-       p_permute_vec[i] = dims[i];
+      p_inp_shape[i] = in.size(i);
+      p_out_shape[i] = in.size(dims[i]);
+      p_permute_vec[i] = dims[i];
     }
 
     if (in_type == ScalarType::Float) {
