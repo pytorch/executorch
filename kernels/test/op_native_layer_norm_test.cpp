@@ -95,7 +95,15 @@ class OpNativeLayerNormTest : public OperatorTest {
       EXPECT_TENSOR_CLOSE(out0, std::get<0>(result));
 
       Tensor expected = tf.make(test_case.sizes, test_case.expected_data);
-      EXPECT_TENSOR_CLOSE(out0, expected);
+      if constexpr (DTYPE == ScalarType::BFloat16) {
+        EXPECT_TENSOR_CLOSE_WITH_TOL(
+            out0,
+            expected,
+            1e-2,
+            executorch::runtime::testing::internal::kDefaultBFloat16Atol);
+      } else {
+        EXPECT_TENSOR_CLOSE(out0, expected);
+      }
     }
   }
 
@@ -393,6 +401,8 @@ std::vector<int64_t> vector_32_to_64(std::vector<int32_t> vector_32) {
 TEST_F(OpNativeLayerNormTest, FloatTensors) {
   run_floating_point_test_cases<ScalarType::Float>();
   run_floating_point_test_cases<ScalarType::Double>();
+  run_floating_point_test_cases<ScalarType::Half>();
+  run_floating_point_test_cases<ScalarType::BFloat16>();
 }
 
 TEST_F(OpNativeLayerNormTest, IntTensorsDies) {

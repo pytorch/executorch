@@ -76,6 +76,11 @@ class OpDequantize:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAbs:
+    op_name: str = "ElementWiseAbs"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseAdd:
     op_name: str = "ElementWiseAdd"
 
@@ -93,6 +98,46 @@ class OpElementWiseCos:
 @dataclass(init=False, frozen=True)
 class OpElementWiseDivide:
     op_name: str = "ElementWiseDivide"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseEqual:
+    op_name: str = "ElementWiseEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseGreater:
+    op_name: str = "ElementWiseGreater"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseGreaterEqual:
+    op_name: str = "ElementWiseGreaterEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLess:
+    op_name: str = "ElementWiseLess"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLessEqual:
+    op_name: str = "ElementWiseLessEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLog:
+    op_name: str = "ElementWiseLog"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseMaximum:
+    op_name: str = "ElementWiseMaximum"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseMinimum:
+    op_name: str = "ElementWiseMinimum"
 
 
 @dataclass(init=False, frozen=True)
