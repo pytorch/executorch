@@ -452,13 +452,13 @@ void add_conv2d_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      std::move(param_buffers),
+      param_buffers,
       // Specialization Constants
       {},
       // Resizing Logic
       resize_conv2d_node,
       {weight_data, stride, padding, dilation, transposed, output_padding},
-      std::move(push_constants)));
+      push_constants));
 }
 
 void add_conv1d_node(
