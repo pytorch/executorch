@@ -27,11 +27,14 @@ from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.backend.utils import format_delegated_graph
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 
+from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+
+from executorch.extension.llm.export.export_passes import RemoveRedundantPermutes
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
@@ -110,6 +113,7 @@ class LLMEdgeManager:
         self.calibration_seq_length = calibration_seq_length
         self.calibration_data = calibration_data
         self.tokenizer_path = tokenizer_path
+        self.canonical_passes = [RemoveRedundantPermutes()]
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -221,6 +225,17 @@ class LLMEdgeManager:
                 torch.export.save(exported_module, self.args.output_name)
 
         return self
+
+    def run_canonical_optimizations(self):
+        """
+        Run canonical optimizations (at the moment removing redundant permutes) on the model.
+        """
+        assert self.pre_autograd_graph_module is not None, "Please run export() first"
+        for pass_instance in self.canonical_passes:
+            logging.info(f"Running canonical pass: {pass_instance.__class__.__name__}")
+            res = pass_instance(self.pre_autograd_graph_module)
+            assert res.graph_module is not None, "Pass returned None"
+            self.pre_autograd_graph_module = res.graph_module
 
     def pt2e_calibrate(
         self,
@@ -415,21 +430,34 @@ class LLMEdgeManager:
 
         return self
 
-    def to_executorch(self) -> "LLMEdgeManager":
+    def to_executorch(
+        self, passes: Optional[List[ExportPass]] = None
+    ) -> "LLMEdgeManager":
         """
         Lower the model to executorch and get an ExecutorchProgram.
         """
+        to_executorch_passes = [
+            # If there are Linear operations left in the graph, let's execute
+            # them with the optimized op_linear rather than materializing a
+            # transpose followed by a regular op_mm.
+            ConvertToLinearPass(),
+            QuantFusionPass(),
+        ]
+        if passes:
+            # pyre-fixme[6]: In call `list.extend`, for 1st positional argument,
+            # expected `Iterable[Union[ConvertToLinearPass, QuantFusionPass]]` but
+            # got `List[ExportPass]
+            to_executorch_passes.extend(passes)
+
         assert self.edge_manager, "Need to run export_to_edge() first"
         self.export_program = self.edge_manager.to_executorch(
             ExecutorchBackendConfig(
                 extract_delegate_segments=True,
-                passes=[
-                    # If there are Linear operations left in the graph, let's execute
-                    # them with the optimized op_linear rather than materializing a
-                    # transpose followed by a regular op_mm.
-                    ConvertToLinearPass(),
-                    QuantFusionPass(),
-                ],
+                # pyre-fixme[6]: In call `ExecutorchBackendConfig.__init__`, for
+                # argument `passes`, expected `List[typing.Callable[[GraphModule],
+                # Optional[PassResult]]]` but got `List[Union[ConvertToLinearPass,
+                # QuantFusionPass]]`.
+                passes=to_executorch_passes,
                 memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )

@@ -149,7 +149,7 @@ endif()
 # they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
 # disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti"
+    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti ${CMAKE_CXX_FLAGS_RELEASE}"
 )
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
@@ -157,14 +157,12 @@ endif()
 
 option(OPTIMIZE_SIZE "Build executorch runtime optimizing for binary size" OFF)
 if(OPTIMIZE_SIZE)
-  # -Os: Optimize for size
-  set(CMAKE_CXX_FLAGS_RELEASE "-Os ${CMAKE_CXX_FLAGS_RELEASE}")
+  # -Os: Optimize for size.
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
 else()
   # -O2: Moderate opt.
-  set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
-
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 

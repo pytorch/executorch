@@ -126,13 +126,17 @@ vkapi::ShaderInfo get_conv2d_shader(
     const bool prepack_weights,
     const Conv2dMethod method,
     const ValueRef weight,
-    const bool clamp_out = false) {
+    const bool clamp_out = false,
+    const bool stride_equals_dilation = false) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
   switch (method) {
     case Conv2dMethod::Depthwise:
       kernel_name = "conv2d_dw";
       if (!prepack_weights) {
+        if (!stride_equals_dilation) {
+          kernel_name += "_sned";
+        }
         const auto& weight_sizes = graph.get_tref(weight)->sizes;
         if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
           kernel_name += "_output_tile_3x3";
@@ -286,22 +290,37 @@ Conv2dMethod get_conv2d_method(
   return Conv2dMethod::SlidingWindow;
 }
 
+utils::uvec2 get_conv2d_dw_dispatch_divisor(
+    const std::vector<int64_t>& weight_sizes) {
+  if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
+    return {4u, 2u};
+  }
+  if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
+    return {4u, 2u};
+  }
+  return {4u, 2u};
+}
+
 utils::uvec3 create_conv2d_global_wg_size(
     ComputeGraph& graph,
     const Conv2dMethod method,
-    const ValueRef out) {
+    const ValueRef out,
+    const ValueRef weight_data,
+    const bool stride_equals_dilation) {
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.logical_limits_of(out);
     return {
         utils::div_up(image_extents[0u], 2u),
         utils::div_up(image_extents[1u], 2u),
         image_extents[2u]};
-  } else if (method == Conv2dMethod::Depthwise) {
-    const utils::uvec3 image_extents = graph.logical_limits_of(out);
+  } else if (method == Conv2dMethod::Depthwise && stride_equals_dilation) {
+    const utils::uvec3 image_extents = graph.create_global_wg_size(out);
+    const utils::uvec2 div =
+        get_conv2d_dw_dispatch_divisor(graph.get_tref(weight_data)->sizes);
     return {
-        utils::div_up(image_extents[0u], 1u),
-        utils::div_up(image_extents[1u], 2u),
-        image_extents[2u]};
+        utils::div_up(image_extents[0], div[0]),
+        utils::div_up(image_extents[1], div[1]),
+        image_extents[2]};
   } else {
     return graph.create_global_wg_size(out);
   }
@@ -364,6 +383,10 @@ void add_conv2d_node(
   Conv2dParams extra_params =
       create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
 
+  const bool stride_equals_dilation =
+      (kernel_params.stride[0] == kernel_params.dilation[0] &&
+       kernel_params.stride[1] == kernel_params.dilation[1]);
+
   OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
@@ -374,9 +397,11 @@ void add_conv2d_node(
       /*prepack_weights = */ false,
       method,
       weight_data,
-      clamp_out);
+      clamp_out,
+      stride_equals_dilation);
 
-  utils::uvec3 wg_size = create_conv2d_global_wg_size(graph, method, out);
+  utils::uvec3 wg_size = create_conv2d_global_wg_size(
+      graph, method, out, weight_data, stride_equals_dilation);
 
   if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
     wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};

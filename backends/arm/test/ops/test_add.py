@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -13,7 +13,6 @@ import pytest
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
@@ -51,10 +50,6 @@ class TestSimpleAdd(unittest.TestCase):
         def forward(self, x, y):
             return x + y
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
-
     def _test_add_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
@@ -67,7 +62,7 @@ class TestSimpleAdd(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -87,7 +82,7 @@ class TestSimpleAdd(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -137,7 +132,7 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (test_data,)
         self._test_add_ethos_BI_pipeline(
             self.Add(),
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             test_data,
         )
 
@@ -147,7 +142,7 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (test_data,)
         self._test_add_ethos_BI_pipeline(
             self.Add(),
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             test_data,
         )
 

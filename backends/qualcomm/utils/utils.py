@@ -269,15 +269,17 @@ def update_spill_fill_size(
             options.backend_options.htp_options.max_sf_buf_size = max_sf_buf_size
             set_spec(module, options)
 
+    max_sf_size, modules_map = 0, {}
     if isinstance(exported_program, list):
-        max_sf_size, modules_map = 0, {}
         for prog in exported_program:
             max_sf_buf_size, module_map = get_program_info(prog)
             max_sf_size = max(max_sf_size, max_sf_buf_size)
             modules_map.update(module_map)
-        update_program(max_sf_size, modules_map)
     else:
-        update_program(*get_program_info(exported_program))
+        max_sf_size, module_map = get_program_info(exported_program)
+    update_program(max_sf_size, module_map)
+
+    return max_sf_size
 
 
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
@@ -1057,6 +1059,7 @@ def generate_qnn_executorch_compiler_spec(
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
             SM8650(Snapdragon 8 Gen 3)
+            SM8750(Snapdragon 8 Elite)
         backend_options: Options required by different backends.
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
@@ -1146,6 +1149,7 @@ def generate_qnn_executorch_compiler_spec(
 def get_soc_to_arch_map():
     return {
         "SSG2115P": HtpArch.V73,
+        "SM8750": HtpArch.V79,
         "SM8650": HtpArch.V75,
         "SM8550": HtpArch.V73,
         "SM8475": HtpArch.V69,
@@ -1157,6 +1161,7 @@ def get_soc_to_arch_map():
 def get_soc_to_chipset_map():
     return {
         "SSG2115P": QcomChipset.SSG2115P,
+        "SM8750": QcomChipset.SM8750,
         "SM8650": QcomChipset.SM8650,
         "SM8550": QcomChipset.SM8550,
         "SM8475": QcomChipset.SM8475,

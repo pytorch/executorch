@@ -32,7 +32,7 @@ from executorch.extension.pytree import tree_flatten
 
 class TestBackends(unittest.TestCase):
     _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+        _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
     def assert_outputs_equal(

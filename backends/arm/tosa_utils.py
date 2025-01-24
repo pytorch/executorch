@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -115,10 +115,6 @@ def getNodeArgs(node: Node) -> list[TosaArg]:
     return [TosaArg(arg) for arg in node.args]
 
 
-def get_input_tensor(node: Node) -> TosaArg:
-    return TosaArg(node.args[0])
-
-
 def get_output_node(node: Node) -> Node:
     return list(node.users)[0]
 
@@ -133,19 +129,6 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
 
 
-def is_bias_node_for_quantized_conv(node):
-    consumer_node = list(node.users)[0]
-
-    if (
-        consumer_node.target == exir_ops.edge.aten.convolution.default
-        and consumer_node.args[2] == node
-        and consumer_node.meta["val"].dtype == torch.int8
-    ):
-        return True
-
-    return False
-
-
 def is_consumer_node_depthwise_conv2d(node):
     consumer_node = list(node.users)[0]
     if consumer_node.target == exir_ops.edge.aten.convolution.default:
@@ -157,30 +140,6 @@ def is_consumer_node_depthwise_conv2d(node):
             return True
 
     return False
-
-
-def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
-    """Returns two input nodes to 'node' in order. If 'node' only has one input,
-    it is returned twice.
-
-    Fails if there are no input nodes.
-    Fails if there are >2 input nodes and 'check' is True,
-    """
-
-    num_inputs = len(node.all_input_nodes)
-    assert num_inputs > 0, f"Node '{node.name}' requires >0 input, got {num_inputs}."
-
-    input1 = node.all_input_nodes[0]
-    if num_inputs == 1:
-        input2 = node.all_input_nodes[0]
-    else:
-        input2 = node.all_input_nodes[1]
-    if check:
-        assert (
-            num_inputs <= 2
-        ), f"Node '{node.name}' requires <=2 inputs, got {num_inputs}."
-
-    return input1, input2
 
 
 def tosa_shape(shape, dim_order):

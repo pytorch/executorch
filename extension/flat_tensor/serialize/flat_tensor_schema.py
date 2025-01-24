@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
 
 from dataclasses import dataclass
 from typing import List
@@ -18,7 +19,7 @@ class TensorMetadata:
     fully_qualified_name: str
     scalar_type: ScalarType
     sizes: List[int]
-    dim_order: List[bytes]
+    dim_order: List[int]
 
     segment_index: int
     offset: int

@@ -17,11 +17,13 @@ from executorch.backends.cadence.aot.memory_planning import (
     print_memory_planning_info,
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+from executorch.backends.cadence.aot.quantizer.quantizer import (
+    CadenceDefaultQuantizer,
+    CadenceQuantizer,
+)
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
     MemoryConfig,
-    model_is_quantized,
 )
 from executorch.devtools import generate_etrecord
 from executorch.exir import (
@@ -35,7 +37,6 @@ from executorch.exir.pass_base import PassResult
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from torch._inductor.decomposition import remove_decompositions
-from torch.ao.quantization.pt2e.export_utils import model_is_exported
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torch.export import export
@@ -136,7 +137,7 @@ def quantize_pt2(
 
     # Instantiate the quantizer to CadenceQuantizer if not supplied
     if not quantizer:
-        quantizer = CadenceQuantizer()
+        quantizer = CadenceDefaultQuantizer()
 
     # Get converted graph module
     converted_gm = convert_pt2(model, inputs, quantizer)
@@ -155,26 +156,10 @@ def export_program(
 ) -> ExportedProgram:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
-    # We don't support training mode. Make the model inference mode by
-    # calling model.eval() or an equivalent call for quantized models.
-    # GraphModules cannot call eval(), so we skip them.
-    if not isinstance(model, torch.fx.GraphModule):
-        if hasattr(model, "eval"):
-            model.eval()
-    else:
-        # If the model is quantized, call the suggested torch.ao.quantization API
-        # which only does dropout and batchnorm.
-        if model_is_quantized(model):
-            torch.ao.quantization.move_exported_model_to_eval(model)
-        else:
-            # If we get a GraphModule which is _not_ quantized, then it should already
-            # have been exported.
-            assert model_is_exported(model), "model should be from an ExportedProgram"
-
     # Prevent mkldnn decompositions
     torch._C._set_mkldnn_enabled(False)
 
-    # else: capture the model and return it.
+    # Export the model and return it.
     expo_program = export(model, inputs, strict=True)
 
     if dump_graphs:
@@ -203,8 +188,8 @@ def export_to_edge(
             _skip_dim_order=True,
             # Allow specific non-core aten ops in the IR.
             _core_aten_ops_exception_list=[
+                torch.ops.aten._native_batch_norm_legit_functional.default,
                 torch.ops.aten.linear.default,
-                torch.ops.aten.native_batch_norm.default,
                 torch.ops.aten.linalg_vector_norm.default,
                 torch.ops.aten.unfold.default,
                 torch.ops.aten.angle.default,
@@ -223,10 +208,9 @@ def export_to_cadence(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
-    output_dir: Optional[str] = None,
     opt_level: int = 1,
 ) -> EdgeProgramManager:
-    edge_prog_manager = export_to_edge(model, inputs)
+    edge_prog_manager = export_to_edge(model, inputs, dump_graphs=dump_graphs)
     cadence_passes = get_cadence_passes(opt_level)
 
     # Run a couple required passes for quant/dequant ops

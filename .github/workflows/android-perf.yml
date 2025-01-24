@@ -74,19 +74,27 @@ jobs:
           CRON_DEFAULT_DEVICES: samsung_galaxy_s22
         run: |
           set -eux
+
+          ARGS="--os android"
+
           MODELS="${{ inputs.models }}"
           if [ -z "$MODELS" ]; then
             MODELS="$CRON_DEFAULT_MODELS"
           fi
+          ARGS="$ARGS --models $MODELS"
+
           DEVICES="${{ inputs.devices }}"
           if [ -z "$DEVICES" ]; then
             DEVICES="$CRON_DEFAULT_DEVICES"
           fi
+          ARGS="$ARGS --devices $DEVICES"
 
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py \
-            --os "android" \
-            --models $MODELS \
-            --devices $DEVICES
+          BENCHMARK_CONFIGS="${{ inputs.benchmark_configs }}"
+          if [ -n "$BENCHMARK_CONFIGS" ]; then
+            ARGS="$ARGS --configs $BENCHMARK_CONFIGS"
+          fi
+
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py $ARGS
 
   prepare-test-specs:
     runs-on: linux.2xlarge
@@ -260,7 +268,7 @@ jobs:
                       --output_name="${OUT_ET_MODEL_NAME}.pte"
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 elif [[ ${{ matrix.config }} == "llama3_qnn_htp" ]]; then
-                    export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
+                    export QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029
                     export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
                     export PYTHONPATH=$(pwd)/..
 
@@ -347,7 +355,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
         export ANDROID_ABIS="arm64-v8a"
-        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728 bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029 bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   benchmark-on-device:

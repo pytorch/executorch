@@ -12,6 +12,7 @@ runtime.python_library(
     name = "export_lib",
     srcs = [
         "builder.py",
+        "export_passes.py",
         "partitioner_lib.py",
         "quantizer_lib.py",
     ],
@@ -33,6 +34,7 @@ runtime.python_library(
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:delegate",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_details",
         "//executorch/extension/export_util:export_util",

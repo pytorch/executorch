@@ -61,7 +61,15 @@ class OpSoftmaxOutTest : public OperatorTest {
       });
     // clang-format on
 
-    EXPECT_TENSOR_CLOSE(out, expected);
+    if (DTYPE == ScalarType::BFloat16) {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out,
+          expected,
+          1e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+    } else {
+      EXPECT_TENSOR_CLOSE(out, expected);
+    }
   }
 };
 
@@ -100,9 +108,10 @@ TEST_F(OpSoftmaxOutTest, HalfSupport) {
 }
 
 TEST_F(OpSoftmaxOutTest, AllDtypesSupported) {
-  test_dtype<float, ScalarType::Float>();
-  test_dtype<double, ScalarType::Double>();
-  // TODO: Also add tests for half, complex, quantized, and other types. Easiest
+#define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+  // TODO: Also add tests for complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
   // for those types.
 }

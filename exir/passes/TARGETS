@@ -11,6 +11,7 @@ python_library(
         ":const_prop_pass",
         ":debug_handle_generator_pass",
         ":external_constants_pass",
+        ":init_mutable_pass",
         ":insert_write_back_for_buffers_pass",
         ":memory_format_ops_pass",
         ":memory_planning_pass",
@@ -217,6 +218,16 @@ python_library(
         "//executorch/exir:delegate",
         "//executorch/exir:pass_base",
         "//executorch/exir:tensor",
+    ],
+)
+
+python_library(
+    name = "init_mutable_pass",
+    srcs = [
+        "init_mutable_pass.py",
+    ],
+    deps = [
+        "//executorch/exir:delegate",
     ],
 )
 

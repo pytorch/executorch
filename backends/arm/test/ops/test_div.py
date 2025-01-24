@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -185,7 +185,7 @@ class TestDiv(unittest.TestCase):
         test_data = (input_, other_)
         self._test_div_tosa_BI_pipeline(self.Div(), test_data)
 
-    @parameterized.expand(test_data_suite[:2])
+    @parameterized.expand(test_data_suite[:3])
     @pytest.mark.corstone_fvp
     def test_div_u55_BI(
         self,
@@ -200,7 +200,7 @@ class TestDiv(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[2:])
+    @parameterized.expand(test_data_suite[3:])
     @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_div_u55_BI_xfails(
@@ -215,7 +215,7 @@ class TestDiv(unittest.TestCase):
             self.Div(), common.get_u55_compile_spec(), test_data
         )
 
-    @parameterized.expand(test_data_suite[:2])
+    @parameterized.expand(test_data_suite[:3])
     @pytest.mark.corstone_fvp
     def test_div_u85_BI(
         self,
@@ -230,7 +230,7 @@ class TestDiv(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[2:])
+    @parameterized.expand(test_data_suite[3:])
     @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_div_u85_BI_xfails(
