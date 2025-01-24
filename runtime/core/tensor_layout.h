@@ -18,7 +18,7 @@ namespace runtime {
 namespace {
 size_t calculate_nbytes(
     const Span<const int32_t>& sizes,
-    const exec_aten::ScalarType& scalar_type) {
+    const executorch::aten::ScalarType& scalar_type) {
   ssize_t n = 1;
   for (ssize_t i = 0; i < sizes.size(); i++) {
     ET_CHECK(sizes[i] >= 0);

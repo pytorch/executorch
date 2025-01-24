@@ -15,11 +15,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& stack_out(
     KernelRuntimeContext& ctx,
-    exec_aten::ArrayRef<Tensor> tensors,
+    executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   (void)ctx;

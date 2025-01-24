@@ -14,8 +14,8 @@
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::aten::RuntimeContext;
 using torch::executor::Error;
 
@@ -24,7 +24,7 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;

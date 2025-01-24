@@ -15,9 +15,9 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::can_cast;
 using executorch::runtime::canCast;
 using executorch::runtime::CppTypeToScalarType;
@@ -95,7 +95,7 @@ Tensor& pow_Tensor_Tensor_out(
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(
-      ctx, common_type != exec_aten::ScalarType::Bool, InvalidArgument, out);
+      ctx, common_type != executorch::aten::ScalarType::Bool, InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
   constexpr auto name = "pow.Tensor_Tensor_out";

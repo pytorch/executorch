@@ -18,10 +18,10 @@
 #include <cstdint>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using exec_aten::TensorList;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorList;
 using torch::executor::testing::TensorFactory;
 
 class OpStackOutTest : public OperatorTest {
@@ -30,7 +30,7 @@ class OpStackOutTest : public OperatorTest {
     return torch::executor::aten::stack_outf(context_, tensors, dim, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
 

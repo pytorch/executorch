@@ -185,7 +185,7 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
         !inputs[i].isNone(), InvalidArgument, "input %zu is none", i);
   }
   ET_CHECK_OK_OR_RETURN_ERROR(method->set_inputs(
-      exec_aten::ArrayRef<runtime::EValue>(inputs.data(), inputs.size())));
+      executorch::aten::ArrayRef<runtime::EValue>(inputs.data(), inputs.size())));
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
 
   const auto outputs_size = method->outputs_size();
