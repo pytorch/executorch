@@ -10,7 +10,7 @@ import logging
 import os
 import re
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, NamedTuple
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from examples.models import MODEL_NAME_TO_MODEL
@@ -43,6 +43,46 @@ BENCHMARK_CONFIGS = {
         "coreml_fp16",
         "mps",
         "llama3_coreml_ane",
+    ],
+}
+
+
+class DisabledConfig(NamedTuple):
+    config_name: str
+    github_issue: str  # Link to the GitHub issue
+
+
+# Updated DISABLED_CONFIGS
+DISABLED_CONFIGS: Dict[str, List[DisabledConfig]] = {
+    "resnet50": [
+        DisabledConfig(
+            config_name="qnn_q8",
+            github_issue="https://github.com/pytorch/executorch/issues/7892",
+        ),
+    ],
+    "w2l": [
+        DisabledConfig(
+            config_name="qnn_q8",
+            github_issue="https://github.com/pytorch/executorch/issues/7634",
+        ),
+    ],
+    "mobilebert": [
+        DisabledConfig(
+            config_name="mps",
+            github_issue="https://github.com/pytorch/executorch/issues/7904",
+        ),
+    ],
+    "edsr": [
+        DisabledConfig(
+            config_name="mps",
+            github_issue="https://github.com/pytorch/executorch/issues/7905",
+        ),
+    ],
+    "llama": [
+        DisabledConfig(
+            config_name="mps",
+            github_issue="https://github.com/pytorch/executorch/issues/7907",
+        ),
     ],
 }
 
@@ -117,6 +157,14 @@ def generate_compatible_configs(model_name: str, target_os=None) -> List[str]:
         # Skip unknown models with a warning
         logging.warning(f"Unknown or invalid model name '{model_name}'. Skipping.")
 
+    # Remove disabled configs for the given model
+    disabled_configs = DISABLED_CONFIGS.get(model_name, [])
+    disabled_config_names = {disabled.config_name for disabled in disabled_configs}
+    for disabled in disabled_configs:
+        print(
+            f"Excluding disabled config: '{disabled.config_name}' for model '{model_name}' on '{target_os}'. Linked GitHub issue: {disabled.github_issue}"
+        )
+    configs = [config for config in configs if config not in disabled_config_names]
     return configs
 
 
