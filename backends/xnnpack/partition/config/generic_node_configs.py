@@ -181,10 +181,10 @@ class CatConfig(GenericNodePartitionerConfig):
 
         num_tensors = len(node.all_input_nodes)
 
-        if not (num_tensors >= 2 and num_tensors <= 5):
+        if not (num_tensors >= 2):
             why(
                 node,
-                reason=f"only support concatenation of 2 - 5 tensors, got {num_tensors} tensors",
+                reason=f"only support concatenation of > 2 tensors, got {num_tensors} tensors",
             )
             return False
 
