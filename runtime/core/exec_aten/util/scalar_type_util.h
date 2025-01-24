@@ -252,6 +252,10 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::executorch::aten::Half, Half)        \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::executorch::aten::BFloat16, BFloat16)
 
+#define ET_FORALL_REALHBBF16_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
+  ET_FORALL_REALHBF16_TYPES_WITH2(ANOTHER_INPUT2, ANOTHER_INPUT2, _)        \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, bool, Bool)
+
 // For macros that take `SCALARTYPEn` parameters, those parameters should be
 // an unquoted/unqualified enumerator name like `Int` or `Float`.
 #define ET_FORALL_REAL_TYPES_AND(SCALARTYPE, _)            \
@@ -1031,6 +1035,13 @@ struct promote_types {
   ET_INTERNAL_SWITCH_CASE(                        \
       ::executorch::aten::ScalarType::ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__)
 
+#define ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND3(            \
+    ADDITIONAL1, ADDITIONAL2, ADDITIONAL3, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND2(                  \
+      ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__)    \
+  ET_INTERNAL_SWITCH_CASE(                                   \
+      ::executorch::aten::ScalarType::ADDITIONAL3, CTYPE_ALIAS, __VA_ARGS__)
+
 #define ET_INTERNAL_SWITCH_CASE_QINT_TYPES(CTYPE_ALIAS, ...)              \
   ET_INTERNAL_SWITCH_CASE(                                                \
       ::executorch::aten::ScalarType::QInt8, CTYPE_ALIAS, __VA_ARGS__)    \
@@ -1218,12 +1229,40 @@ struct promote_types {
       ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND2(                      \
           ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__))
 
+#define ET_SWITCH_FLOAT_TYPES_AND3(             \
+    ADDITIONAL1,                                \
+    ADDITIONAL2,                                \
+    ADDITIONAL3,                                \
+    TYPE,                                       \
+    CONTEXT,                                    \
+    NAME,                                       \
+    CTYPE_ALIAS,                                \
+    ...)                                        \
+  ET_INTERNAL_SWITCH(                           \
+      TYPE,                                     \
+      CONTEXT,                                  \
+      NAME,                                     \
+      ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND3( \
+          ADDITIONAL1, ADDITIONAL2, ADDITIONAL3, CTYPE_ALIAS, __VA_ARGS__))
+
 #define ET_SWITCH_FLOATH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_SWITCH_FLOAT_TYPES_AND(Half, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_SWITCH_FLOATHBF16_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_SWITCH_FLOAT_TYPES_AND2(                                             \
       Half, BFloat16, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_SWITCH_FLOATHBF16_TYPES_AND(                \
+    ADDITIONAL, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_FLOAT_TYPES_AND3(                          \
+      Half,                                            \
+      BFloat16,                                        \
+      ADDITIONAL,                                      \
+      TYPE,                                            \
+      CONTEXT,                                         \
+      NAME,                                            \
+      CTYPE_ALIAS,                                     \
+      __VA_ARGS__)
 
 #define ET_SWITCH_QINT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                               \
