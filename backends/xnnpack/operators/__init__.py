@@ -49,4 +49,5 @@ from . import (  # noqa
     op_static_resize_bilinear_2d,
     op_sub,
     op_to_copy,
+    op_view_copy,
 )

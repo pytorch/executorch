@@ -336,6 +336,32 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
         return torch.ops.aten.upsample_bilinear2d.vec
 
 
+class ViewCopyConfig(GenericNodePartitionerConfig):
+    target_name = "view_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_reshape only supports 1 dynamic dimension
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        new_shape = node.args[1]
+        if not all(isinstance(n, int) for n in new_shape):
+            why(node, reason="symbolic reshape is not supported")
+            return False
+
+        dynamic_dim_count = sum(1 for d in new_shape if d == -1)
+        if dynamic_dim_count > 1:
+            why(node, reason="only a single dynamic dimension is supported")
+            return False
+
+        return True
+
+
 class FloorConfig(GenericNodePartitionerConfig):
     target_name = "floor.default"
 
