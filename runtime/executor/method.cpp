@@ -1332,11 +1332,11 @@ Error Method::experimental_step() {
   return step();
 }
 
-Error Method::execute() {
-  internal::event_tracer_create_event_block(event_tracer_, "Execute");
+Error Method::execute(char const* block_name, char const* profile_event_name) {
+  internal::event_tracer_create_event_block(event_tracer_, block_name);
   EventTracerEntry event_tracer_entry =
       internal::event_tracer_begin_profiling_event(
-          event_tracer_, "Method::execute");
+          event_tracer_, profile_event_name);
   EXECUTORCH_SCOPE_PROF("Method::execute");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),

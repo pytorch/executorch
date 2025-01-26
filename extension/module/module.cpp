@@ -184,10 +184,11 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
     ET_CHECK_OR_RETURN_ERROR(
         !inputs[i].isNone(), InvalidArgument, "input %zu is none", i);
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      method->set_inputs(executorch::aten::ArrayRef<runtime::EValue>(
-          inputs.data(), inputs.size())));
-  ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
+  auto block_name = std::string("Execute::" + method_name);
+  auto profile_event_name = std::string("Method::execute::" + method_name);
+  ET_CHECK_OK_OR_RETURN_ERROR(method->set_inputs(
+      executorch::aten::ArrayRef<runtime::EValue>(inputs.data(), inputs.size())));
+  ET_CHECK_OK_OR_RETURN_ERROR(method->execute(block_name.c_str(), profile_event_name.c_str()));
 
   const auto outputs_size = method->outputs_size();
   std::vector<runtime::EValue> outputs(outputs_size);

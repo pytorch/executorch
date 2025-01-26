@@ -180,9 +180,14 @@ class Method final {
    * NOTE: Will fail if the method has been partially executed using the
    * `step()` api.
    *
+   * @param[in] block_name The name of the block to create in the event tracer.
+   * @param[in] profile_event_name The name of the event to create in the event tracer.
+   *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  ET_NODISCARD Error execute();
+  ET_NODISCARD Error execute(
+      char const* block_name = "Method::execute",
+      const char* profile_event_name = "Method::execute");
 
   /**
    * EXPERIMENTAL: Advances/executes a single instruction in the method.
