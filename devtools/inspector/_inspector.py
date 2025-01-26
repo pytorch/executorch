@@ -978,6 +978,8 @@ class Inspector:
             Callable[[Union[int, str], Union[int, float]], Union[int, float]]
         ] = None,
         enable_module_hierarchy: bool = False,
+        module_name: Optional[str] = None,
+        method_name: Optional[str] = None,
     ) -> None:
         r"""
         Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path or binary,
@@ -995,6 +997,8 @@ class Inspector:
             delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of
                     target_time_scale/source_time_scale.
             enable_module_hierarchy: Enable submodules in the operator graph. Defaults to False.
+            module_name: Optional module name to inspect (used with multi-module exports).
+            method_name: Optional method name to inspect (used with multi-module exports).
 
         Returns:
             None
@@ -1059,9 +1063,9 @@ class Inspector:
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
-        self._consume_etrecord()
+        self._consume_etrecord(module_name, method_name)
 
-    def _consume_etrecord(self) -> None:
+    def _consume_etrecord(self,  module_name: Optional[str] = None, method_name: Optional[str] = None,) -> None:
         """
         If an ETRecord is provided, connect it to the EventBlocks and populate the Event metadata.
 
@@ -1081,15 +1085,21 @@ class Inspector:
                 bundled_input_index of the EventBlock.
         """
 
-        if self._etrecord is None:
-            return
+        if method_name is None and module_name is None:
+            method_name = FORWARD
+            edge_dialect_graph_key = EDGE_DIALECT_GRAPH_KEY
+        elif method_name is None or module_name is None:
+            raise ValueError("Either both method_name and module_name should be provided or neither should be provided")
+        else:
+            method_name = method_name
+            edge_dialect_graph_key = f"{module_name}/{method_name}"
 
         # (1) Debug Handle Symbolification
         for event_block in self.event_blocks:
             event_block._gen_resolve_debug_handles(
-                self._etrecord._debug_handle_map[FORWARD],
+                self._etrecord._debug_handle_map[method_name],
                 (
-                    self._etrecord._delegate_map[FORWARD]
+                    self._etrecord._delegate_map[method_name]
                     if self._etrecord._delegate_map is not None
                     else None
                 ),
@@ -1099,9 +1109,10 @@ class Inspector:
         self.op_graph_dict = gen_graphs_from_etrecord(
             etrecord=self._etrecord,
             enable_module_hierarchy=self._enable_module_hierarchy,
+            edge_dialect_graph_key=edge_dialect_graph_key,
         )
         debug_handle_to_op_node_map = create_debug_handle_to_op_node_mapping(
-            self.op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
+            self.op_graph_dict[edge_dialect_graph_key],
         )
         for event_block in self.event_blocks:
             for event in event_block.events:
@@ -1116,7 +1127,7 @@ class Inspector:
             for event_block in self.event_blocks:
                 index = event_block.bundled_input_index
                 if index is not None:
-                    event_block.reference_output = self._reference_outputs[FORWARD][
+                    event_block.reference_output = self._reference_outputs[method_name][
                         index
                     ]
 
