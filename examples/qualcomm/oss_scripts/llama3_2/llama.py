@@ -22,9 +22,7 @@ import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
-    annotate_linear_16a8w_in_affine_layer,
     annotate_matmul_16a8w,
-    annotate_prefill_kv_output,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -40,8 +38,7 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_chipset_map,
     update_spill_fill_size,
 )
-from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tiktoken
-from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+from executorch.examples.qualcomm.oss_scripts.llama2.model.static_llama import (
     LlamaModel,
     ModelArgs,
 )
@@ -58,9 +55,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
-from executorch.extension.llm.tokenizer.tokenizer import (
-    Tokenizer as SentencePieceTokenizer,
-)
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 
 from torch.ao.quantization.observer import MinMaxObserver
@@ -76,28 +70,21 @@ def _kv_calibrate(
     example_inputs,
     user_prompts,
     module: torch.fx.GraphModule,
-    tokenizer,
+    tokenizer_model_path="tokenizer.model",
     max_seq_len=512,
 ):
+    sp_model = get_tokenizer(tokenizer_model_path)
     _, atten_mask, _, k_caches, v_caches = example_inputs
 
     # TODO: change criteria & support batch inputs if necessary
     pos = torch.tensor(0, dtype=torch.int32)
     max_cache_len = max_seq_len - 1
-
-    token_list = []
-    # Llama2 tokenizer has no special tokens
-    if isinstance(tokenizer, SentencePieceTokenizer):
-        token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
-    elif isinstance(tokenizer, Tiktoken):
-        token_list = tokenizer.encode(
-            user_prompts, bos=True, eos=False, allowed_special="all"
-        )
-    else:
-        raise RuntimeError("Unkown tokenizer")
+    token_list = sp_model.encode(
+        user_prompts, bos=True, eos=False, allowed_special="all"
+    )
 
     with torch.no_grad():
-        while token_list[-1] != tokenizer.eos_id and pos < max_cache_len:
+        while token_list[-1] != sp_model.eos_id and pos < max_cache_len:
             logits, new_k_caches, new_v_caches = module(
                 torch.full((1, 1), token_list[pos], dtype=torch.int32),
                 atten_mask,
@@ -119,36 +106,28 @@ def _kv_calibrate(
             if pos >= len(token_list):
                 token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
 
-    print(f"kv calibration data:\n{tokenizer.decode(token_list)}")
+    print(f"calibration data:\n{sp_model.decode(token_list)}")
 
 
 def _prefill_calibrate(
     example_inputs,
     user_prompts,
     module: torch.fx.GraphModule,
-    tokenizer,
+    tokenizer_model_path="tokenizer.model",
     max_seq_len=512,
 ):
+    sp_model = get_tokenizer(tokenizer_model_path)
     _, atten_mask = example_inputs
     max_cache_len = max_seq_len - 1
 
     # TODO: change criteria & support batch inputs if necessary
-
-    token_list = []
-    # Llama2 tokenizer has no special tokens
-    if isinstance(tokenizer, SentencePieceTokenizer):
-        token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
-    elif isinstance(tokenizer, Tiktoken):
-        token_list = tokenizer.encode(
-            user_prompts, bos=True, eos=False, allowed_special="all"
-        )
-    else:
-        raise RuntimeError("Unkown tokenizer")
-
+    token_list = sp_model.encode(
+        user_prompts, bos=True, eos=False, allowed_special="all"
+    )
     pos = len(token_list)
 
     with torch.no_grad():
-        while token_list[-1] != tokenizer.eos_id and pos < max_cache_len:
+        while token_list[-1] != sp_model.eos_id and pos < max_cache_len:
             tmp_token_list = torch.tensor(token_list).reshape(1, -1)
             if pos < max_cache_len:
                 tmp_token_list = torch.cat(
@@ -165,14 +144,14 @@ def _prefill_calibrate(
             token_list.append(torch.argmax(logits[:, pos - 1], dim=-1).item())
             pos += 1
 
-    print(f"prefill calibration data:\n{tokenizer.decode(token_list)}")
+    print(f"calibration data:\n{sp_model.decode(token_list)}")
 
 
 def calibrate(
     example_inputs,
     user_prompts,
     module: torch.fx.GraphModule,
-    tokenizer,
+    tokenizer_model_path="tokenizer.model",
     max_seq_len=512,
 ):
     if len(example_inputs) == 2:
@@ -180,7 +159,7 @@ def calibrate(
             example_inputs,
             user_prompts,
             module,
-            tokenizer,
+            tokenizer_model_path,
             max_seq_len,
         )
     elif len(example_inputs) == 5:
@@ -188,7 +167,7 @@ def calibrate(
             example_inputs,
             user_prompts,
             module,
-            tokenizer,
+            tokenizer_model_path,
             max_seq_len,
         )
     else:
@@ -301,7 +280,7 @@ class SingleLlama:
 
         return quant_attrs
 
-    def quantize(self, quant_dtype, args, tokenizer, custom_annotations=()):
+    def quantize(self, quant_dtype, args, custom_annotations=()):
         self.quant_dtype = quant_dtype
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
@@ -324,7 +303,7 @@ class SingleLlama:
             self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
             args.prompt,
             fx_graph_module,
-            tokenizer=tokenizer,
+            tokenizer_model_path=args.tokenizer_model,
             max_seq_len=self.llama_meta["get_max_seq_len"],
         )
 
@@ -387,7 +366,7 @@ class SingleLlama:
             if num_sharding > 0:
                 update_spill_fill_size(edge_prog_mgr.exported_program())
             exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
-            with open(f"{work_space}/{self.pte_filename}.pte", "wb") as file:
+            with open(f"{work_space}/{pte_filename}.pte", "wb") as file:
                 exec_prog_mgr.write_to_file(file)
 
     def get_example_inputs(self, use_kv_cache=True):
@@ -397,7 +376,7 @@ class SingleLlama:
         return self.quant_attrs
 
 
-def compile(args, pte_filename, tokenizer):
+def compile(args, pte_filename):
     os.makedirs(args.artifact, exist_ok=True)
     start_ts = time.time()
 
@@ -428,13 +407,13 @@ def compile(args, pte_filename, tokenizer):
             )
         elif args.model_mode == "hybrid":
             llama_instance_list.append(
-                LlamaModel(kv_config, output_new_cache_only=True)
-            )
-            llama_instance_list.append(
                 LlamaModel(prefill_config, output_new_cache_only=False)
             )
+            llama_instance_list.append(
+                LlamaModel(kv_config, output_new_cache_only=True)
+            )
         else:
-            raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
+            raise RuntimeError(f"No such model_mode {args.model_mode}.")
 
     if "model" in state_dict:
         state_dict = state_dict["model"]
@@ -488,35 +467,17 @@ def compile(args, pte_filename, tokenizer):
 
     if args.ptq:
         start_quantize_ts = time.time()
-        custom_annotations = (annotate_matmul_16a8w,)
-        if args.llama_model == "stories110m":
-            custom_annotations = custom_annotations + (
-                annotate_linear_16a8w_in_affine_layer,
+        for llama_instance in llama_instance_list:
+            llama_instance.quantize(
+                quant_dtype=quant_dtype,
+                args=args,
+                custom_annotations=(
+                    partial(
+                        annotate_matmul_16a8w,
+                        traverse_input1=llama_instance.llama_meta["get_use_kv_cache"],
+                    ),
+                ),
             )
-        if args.ptq != None:
-            kv_quant_attrs = {}
-            for i, llama_instance in enumerate(llama_instance_list):
-                llama_instance.quantize(
-                    quant_dtype=quant_dtype,
-                    args=args,
-                    tokenizer=tokenizer,
-                    custom_annotations=custom_annotations,
-                )
-                # If hybrid mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
-                if i == 0 and args.model_mode == "hybrid":
-                    output_indices = 0
-                    for node in llama_instance.llama_model.graph.nodes:
-                        if node.op == "output":
-                            for output in node.args[0]:
-                                kv_quant_attrs[output_indices] = output.args[1:]
-                                output_indices += 1
-                            break
-                    custom_annotations = custom_annotations + (
-                        partial(
-                            annotate_prefill_kv_output,
-                            kv_quant_attrs=kv_quant_attrs,
-                        ),
-                    )
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
 
@@ -559,7 +520,7 @@ def compile(args, pte_filename, tokenizer):
         backend_options = generate_htp_compiler_spec(
             use_fp16=use_fp16, use_multi_contexts=args.num_sharding > 0
         )
-        graph_names = ["kv_forward", "prefill_forward"]
+        graph_names = ["prefill_forward", "kv_forward"]
         compiler_specs = [
             generate_qnn_executorch_compiler_spec(
                 soc_model=get_soc_to_chipset_map()[args.model],
@@ -672,7 +633,7 @@ def compile(args, pte_filename, tokenizer):
                 call_delegate_inputs_dict=call_delegate_inputs_dict,
                 outputs_dict=outputs_dict,
                 backend_config=executorch_config,
-                constant_methods=llama_instance_list[0].llama_meta,  # kv method meta
+                constant_methods=llama_instance_list[1].llama_meta,  # kv method meta
             )
             with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
                 exec_prog.write_to_file(file)
@@ -701,7 +662,7 @@ def compile(args, pte_filename, tokenizer):
                 input_nodes_dict=input_nodes_dict,
                 output_nodes_dict=output_nodes_dict,
                 backend_config=executorch_config,
-                constant_methods=llama_instance_list[0].llama_meta,  # kv method meta
+                constant_methods=llama_instance_list[1].llama_meta,  # kv method meta
             )
             with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
                 prog_mgr.write_to_file(file)
@@ -711,7 +672,7 @@ def compile(args, pte_filename, tokenizer):
     return quant_attrs
 
 
-def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
+def inference(args, quant_attrs, pte_filename, pre_gen_pte=""):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
 
     if args.model_mode == "prefill":
@@ -721,14 +682,14 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
     elif args.model_mode == "hybrid":
         eval_mode = 2
     else:
-        raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
+        raise RuntimeError(f"No such model_mode {args.model_mode}.")
 
     seq_len = args.prefill_seq_len if args.model_mode == "prefill" else args.kv_seq_len
     runner_args = " ".join(
         [
             f"--model_path {pte_filename}.pte",
             "--output_path outputs/outputs.txt",
-            f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
+            f"--tokenizer_path {os.path.basename(args.tokenizer_model)}",
             f'--prompt "{args.prompt}"',
             f"--seq_len {seq_len}",
             f"--eval_mode {eval_mode}",
@@ -741,7 +702,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
     runner_cmd = " ".join(
         [
             f"cd {workspace} &&",
-            f"./qnn_llama_runner {runner_args}",
+            f"./qnn_llama3_2_runner {runner_args}",
         ]
     )
 
@@ -759,10 +720,10 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
-        runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+        runner=f"examples/qualcomm/oss_scripts/llama3_2/qnn_llama3_2_runner",
     )
     # No pregen inputs, input_list is not required
-    adb.push(inputs=[], input_list="", files=[runtime_tokenizer_path])
+    adb.push(inputs=[], input_list="", files=[args.tokenizer_model])
     adb.execute(custom_runner_cmd=runner_cmd)
 
     # collect output data
@@ -795,8 +756,8 @@ def main():
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts and output by this example. Default ./llama_qnn",
-        default="./llama_qnn",
+        help="path for storing generated artifacts and output by this example. Default ./llama3_2_qnn",
+        default="./llama3_2_qnn",
         type=str,
     )
 
@@ -805,13 +766,6 @@ def main():
         "--ptq",
         help="If specified, will do PTQ quantization. default is 16bits activation and 4bits weight. Support 8a8w and 16a4w.",
         type=str,
-    )
-
-    parser.add_argument(
-        "--llama_model",
-        choices=["stories110m", "llama3_2"],
-        help="The Llama model to export. Current available options are: [stories110m, llama3_2]",
-        required=True,
     )
 
     parser.add_argument(
@@ -829,9 +783,10 @@ def main():
     )
 
     parser.add_argument(
-        "--tokenizer_bin",
-        help="For Llama2. Pass Llama2 tokenizer binary.",
-        required=False,
+        "--model_size",
+        help="Determine what runner be used. For llama 3.2, we only support 1B/3B. ",
+        choices=["1B", "3B"],
+        required=True,
         type=str,
     )
 
@@ -851,7 +806,7 @@ def main():
 
     parser.add_argument(
         "--system_prompt",
-        help="For Llama3. Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None",
+        help="Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None",
         default="",
         type=str,
     )
@@ -874,7 +829,7 @@ def main():
 
     parser.add_argument(
         "--pre_gen_pte",
-        help="Run the pre-generated llama in the given directory.",
+        help="Run the Pre-generated llama in the given directory",
         type=str,
     )
 
@@ -912,46 +867,26 @@ def main():
         exit("Cannot set both compile_only and pre_gen_pte as true")
 
     if args.model_mode == "kv":
-        pte_filename = "kv_llama_qnn"
+        pte_filename = "kv_llama3_2_qnn"
     elif args.model_mode == "prefill":
-        pte_filename = "prefill_llama_qnn"
+        pte_filename = "prefill_llama3_2_qnn"
     elif args.model_mode == "hybrid":
         assert (
             args.kv_seq_len >= args.prefill_seq_len
         ), "Please ensure kv_seq_len is >= prefill_seq_len"
-        pte_filename = "hybrid_llama_qnn"
+        pte_filename = "hybrid_llama3_2_qnn"
     else:
-        raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
-
-    tokenizer = get_tokenizer(args.tokenizer_model)
-    runtime_tokenizer_path = ""
-    if args.llama_model == "stories110m":
-        assert isinstance(
-            tokenizer, SentencePieceTokenizer
-        ), f"Wrong tokenizer provided for stories110m."
-        assert (
-            args.tokenizer_bin is not None
-        ), "Please provide tokenizer_bin for stories110m."
-        runtime_tokenizer_path = args.tokenizer_bin
-    elif args.llama_model == "llama3_2":
-        assert isinstance(
-            tokenizer, Tiktoken
-        ), f"Wrong tokenizer provided for llama3_2."
-        runtime_tokenizer_path = args.tokenizer_model
-    else:
-        raise RuntimeError(f"Unknown llama_model: {args.llama_model}.")
+        raise RuntimeError(f"No such model_mode {args.model_mode}.")
 
     if args.pre_gen_pte:
         quant_attrs = json.load(
             open(f"{args.pre_gen_pte}/{pte_filename}_quant_attrs.txt")
         )
-        inference(
-            args, quant_attrs, pte_filename, runtime_tokenizer_path, args.pre_gen_pte
-        )
+        inference(args, quant_attrs, pte_filename, args.pre_gen_pte)
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
     if args.compile_only:
-        quant_attrs = compile(args, pte_filename, tokenizer)
+        quant_attrs = compile(args, pte_filename)
         if quant_attrs:
             json.dump(
                 {
@@ -965,7 +900,7 @@ def main():
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
-        quant_attrs = compile(args, pte_filename, tokenizer)
+        quant_attrs = compile(args, pte_filename)
         if quant_attrs:
             logging.info(
                 f"Logit scale: {quant_attrs['scale']}; Logit offset: {quant_attrs['zero_point']}"
@@ -979,7 +914,7 @@ def main():
             )
         else:
             logging.warning("Quant attributes of the logit is None.")
-        inference(args, quant_attrs, pte_filename, runtime_tokenizer_path)
+        inference(args, quant_attrs, pte_filename)
     except Exception as e:
         if args.ip and args.port != -1:
             with Client((args.ip, args.port)) as conn:

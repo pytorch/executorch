@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/io_memory.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/io_memory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <algorithm>
 
@@ -403,7 +403,7 @@ void HybridMemory::update_prefill_to_kv_io(
   // If prompt len is 30, prefill will handle to pos = 30.
   // At this point, pos should be 31.
   for (int i = 0; i < pos + 1; i++) {
-    ptr->kv_attention_mask[kv_cache_len_ - i] = 65535;
+    ptr->kv_attention_mask[kv_cache_len_ - i] = 0;
   }
 
   // update v_cache
