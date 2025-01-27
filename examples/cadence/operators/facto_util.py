@@ -6,11 +6,11 @@ import copy
 from typing import List, OrderedDict, Tuple
 
 import torch
-from inputgen.argtuple.gen import ArgumentTupleGenerator
-from inputgen.specs.model import ConstraintProducer as cp
-from inputgen.utils.random_manager import random_manager
-from inputgen.variable.type import ScalarDtype
-from specdb.db import SpecDictDB
+from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
+from facto.inputgen.specs.model import ConstraintProducer as cp
+from facto.inputgen.utils.random_manager import random_manager
+from facto.inputgen.variable.type import ScalarDtype
+from facto.specdb.db import SpecDictDB
 
 # seed to generate identical cases every run to reproduce from bisect
 random_manager.seed(1729)
