@@ -218,8 +218,6 @@ class ArmTester(Tester):
             if config is not None:
                 to_edge_stage.edge_compile_conf = config
 
-        # TODO(T182928844): Delegate dim order op to backend.
-        to_edge_stage.edge_compile_conf._skip_dim_order = True
         return super().to_edge(to_edge_stage)
 
     def partition(self, partition_stage: Optional[Partition] = None):
@@ -245,7 +243,6 @@ class ArmTester(Tester):
                 to_edge_and_lower_stage.partitioners = partitioners
             if edge_compile_config is not None:
                 to_edge_and_lower_stage.edge_compile_conf = edge_compile_config
-        to_edge_and_lower_stage.edge_compile_conf._skip_dim_order = True
         return super().to_edge_transform_and_lower(to_edge_and_lower_stage)
 
     def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):

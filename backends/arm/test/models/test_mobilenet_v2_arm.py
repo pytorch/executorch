@@ -12,7 +12,6 @@ import torch
 from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir import EdgeCompileConfig
 from torchvision import models, transforms
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
@@ -45,10 +44,6 @@ class TestMobileNetV2(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
     }
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
-
     def test_mv2_tosa_MI(self):
         (
             ArmTester(
@@ -59,7 +54,7 @@ class TestMobileNetV2(unittest.TestCase):
                 ),
             )
             .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
             .to_executorch()
             .run_method_and_compare_outputs(inputs=self.model_inputs)
         )
@@ -75,7 +70,7 @@ class TestMobileNetV2(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
             .to_executorch()
             # atol=1.0 is a defensive upper limit
             # TODO MLETROCH-72
@@ -92,7 +87,7 @@ class TestMobileNetV2(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
             .to_executorch()
             .serialize()
         )
@@ -110,7 +105,7 @@ class TestMobileNetV2(unittest.TestCase):
             )
             .quantize()
             .export()
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
             .to_executorch()
             .serialize()
         )
