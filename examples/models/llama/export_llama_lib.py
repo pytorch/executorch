@@ -662,7 +662,6 @@ def _validate_args(args):
 
 def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
-    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
     builder_exported = _prepare_for_llama_export(args).export()
@@ -672,9 +671,16 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     if args.export_only:
         exit()
 
-    builder_exported_to_edge = builder_exported.pt2e_quantize(
-        quantizers
-    ).export_to_edge()
+    if args.pt2e_quantize:
+        pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+            args
+        )
+        builder_exported_to_edge = builder_exported.pt2e_quantize(
+            quantizers
+        ).export_to_edge()
+    else:
+        pt2e_quant_params = None
+        builder_exported_to_edge = builder_exported.export_to_edge()
 
     modelname = builder_exported_to_edge.modelname
 
