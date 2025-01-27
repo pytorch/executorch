@@ -42,3 +42,18 @@ def define_common_targets():
         visibility = ["//executorch/..."],
         exported_deps = ["//executorch/runtime/core:core"],
     )
+
+    runtime.cxx_library(
+        name = "serialize_cpp",
+        srcs = ["serialize.cpp"],
+        deps = [
+            ":flat_tensor_header",
+            ":generated_headers",
+            "//executorch/runtime/core/exec_aten:lib",
+        ],
+        exported_headers = ["serialize.h"],
+        visibility = [
+            "//executorch/...",
+        ],
+        exported_external_deps = ["flatbuffers-api"],
+    )

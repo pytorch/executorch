@@ -38,6 +38,21 @@ struct FlatTensorHeader {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr char kMagic[kMagicSize] = {'F', 'H', '0', '1'};
 
+  /// The expected length of the header, in bytes.
+  static constexpr uint32_t kHeaderExpectedLength =
+      // Header magic
+      4
+      // Header length
+      + 4
+      // Flatbuffer offset
+      + 8
+      // Flatbuffer data size
+      + 8
+      // Segment base offset
+      + 8
+      // Data size
+      + 8;
+
   /**
    * Look for and parse a FlatTensorHeader in the provided data.
    *
