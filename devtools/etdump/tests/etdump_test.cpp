@@ -40,7 +40,7 @@ class ProfilerETDumpTest : public ::testing::Test {
   void SetUp() override {
     torch::executor::runtime_init();
     etdump_gen[0] = new ETDumpGen();
-    const size_t buf_size = 1024 * 1024;
+    const size_t buf_size = 512 * 1024;
     buf = (uint8_t*)malloc(buf_size * sizeof(uint8_t));
     etdump_gen[1] = new ETDumpGen(Span<uint8_t>(buf, buf_size));
   }
@@ -58,8 +58,11 @@ class ProfilerETDumpTest : public ::testing::Test {
 TEST_F(ProfilerETDumpTest, SingleProfileEvent) {
   for (size_t i = 0; i < 2; i++) {
     etdump_gen[i]->create_event_block("test_block");
-    EventTracerEntry entry = etdump_gen[i]->start_profiling("test_event", 0, 1);
-    etdump_gen[i]->end_profiling(entry);
+    for (size_t j = 0; j < 2048; j++) {
+      EventTracerEntry entry =
+          etdump_gen[i]->start_profiling("test_event", 0, 1);
+      etdump_gen[i]->end_profiling(entry);
+    }
 
     ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);

@@ -9,8 +9,10 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict
+import sys
+from typing import Any, Dict, List, NamedTuple
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from examples.models import MODEL_NAME_TO_MODEL
 
 
@@ -43,6 +45,131 @@ BENCHMARK_CONFIGS = {
         "llama3_coreml_ane",
     ],
 }
+
+
+class DisabledConfig(NamedTuple):
+    config_name: str
+    github_issue: str  # Link to the GitHub issue
+
+
+# Updated DISABLED_CONFIGS
+DISABLED_CONFIGS: Dict[str, List[DisabledConfig]] = {
+    "resnet50": [
+        DisabledConfig(
+            config_name="qnn_q8",
+            github_issue="https://github.com/pytorch/executorch/issues/7892",
+        ),
+    ],
+    "w2l": [
+        DisabledConfig(
+            config_name="qnn_q8",
+            github_issue="https://github.com/pytorch/executorch/issues/7634",
+        ),
+    ],
+    "mobilebert": [
+        DisabledConfig(
+            config_name="mps",
+            github_issue="https://github.com/pytorch/executorch/issues/7904",
+        ),
+        DisabledConfig(
+            config_name="qnn_q8",
+            github_issue="https://github.com/pytorch/executorch/issues/7946",
+        ),
+    ],
+    "edsr": [
+        DisabledConfig(
+            config_name="mps",
+            github_issue="https://github.com/pytorch/executorch/issues/7905",
+        ),
+    ],
+    "llama": [
+        DisabledConfig(
+            config_name="mps",
+            github_issue="https://github.com/pytorch/executorch/issues/7907",
+        ),
+    ],
+}
+
+
+def extract_all_configs(data, target_os=None):
+    if isinstance(data, dict):
+        # If target_os is specified, include "xplat" and the specified branch
+        include_branches = {"xplat", target_os} if target_os else data.keys()
+        return [
+            v
+            for key, value in data.items()
+            if key in include_branches
+            for v in extract_all_configs(value, target_os)
+        ]
+    elif isinstance(data, list):
+        return [v for item in data for v in extract_all_configs(item, target_os)]
+    else:
+        return [data]
+
+
+def generate_compatible_configs(model_name: str, target_os=None) -> List[str]:
+    """
+    Generate a list of compatible benchmark configurations for a given model name and target OS.
+
+    Args:
+        model_name (str): The name of the model to generate configurations for.
+        target_os (Optional[str]): The target operating system (e.g., 'android', 'ios').
+
+    Returns:
+        List[str]: A list of compatible benchmark configurations.
+
+    Raises:
+        None
+
+    Example:
+        generate_compatible_configs('meta-llama/Llama-3.2-1B', 'ios') -> ['llama3_fb16', 'llama3_coreml_ane']
+    """
+    configs = []
+    if is_valid_huggingface_model_id(model_name):
+        if model_name.startswith("meta-llama/"):
+            # LLaMA models
+            repo_name = model_name.split("meta-llama/")[1]
+            if "qlora" in repo_name.lower():
+                configs.append("llama3_qlora")
+            elif "spinquant" in repo_name.lower():
+                configs.append("llama3_spinquant")
+            else:
+                configs.append("llama3_fb16")
+                configs.extend(
+                    [
+                        config
+                        for config in BENCHMARK_CONFIGS.get(target_os, [])
+                        if config.startswith("llama")
+                    ]
+                )
+        else:
+            # Non-LLaMA models
+            configs.append("hf_xnnpack_fp32")
+    elif model_name in MODEL_NAME_TO_MODEL:
+        # ExecuTorch in-tree non-GenAI models
+        configs.append("xnnpack_q8")
+        if target_os != "xplat":
+            # Add OS-specific configs
+            configs.extend(
+                [
+                    config
+                    for config in BENCHMARK_CONFIGS.get(target_os, [])
+                    if not config.startswith("llama")
+                ]
+            )
+    else:
+        # Skip unknown models with a warning
+        logging.warning(f"Unknown or invalid model name '{model_name}'. Skipping.")
+
+    # Remove disabled configs for the given model
+    disabled_configs = DISABLED_CONFIGS.get(model_name, [])
+    disabled_config_names = {disabled.config_name for disabled in disabled_configs}
+    for disabled in disabled_configs:
+        print(
+            f"Excluding disabled config: '{disabled.config_name}' for model '{model_name}' on '{target_os}'. Linked GitHub issue: {disabled.github_issue}"
+        )
+    configs = [config for config in configs if config not in disabled_config_names]
+    return configs
 
 
 def parse_args() -> Any:
@@ -82,6 +209,11 @@ def parse_args() -> Any:
         type=comma_separated,  # Use the custom parser for comma-separated values
         help=f"Comma-separated device names. Available devices: {list(DEVICE_POOLS.keys())}",
     )
+    parser.add_argument(
+        "--configs",
+        type=comma_separated,  # Use the custom parser for comma-separated values
+        help=f"Comma-separated benchmark configs. Available configs: {extract_all_configs(BENCHMARK_CONFIGS)}",
+    )
 
     return parser.parse_args()
 
@@ -98,11 +230,16 @@ def set_output(name: str, val: Any) -> None:
         set_output("benchmark_configs", {"include": [...]})
     """
 
-    if os.getenv("GITHUB_OUTPUT"):
-        print(f"Setting {val} to GitHub output")
-        with open(str(os.getenv("GITHUB_OUTPUT")), "a") as env:
-            print(f"{name}={val}", file=env)
-    else:
+    github_output = os.getenv("GITHUB_OUTPUT")
+    if not github_output:
+        print(f"::set-output name={name}::{val}")
+        return
+
+    try:
+        with open(github_output, "a") as env:
+            env.write(f"{name}={val}\n")
+    except PermissionError:
+        # Fall back to printing in case of permission error in unit tests
         print(f"::set-output name={name}::{val}")
 
 
@@ -123,7 +260,7 @@ def is_valid_huggingface_model_id(model_name: str) -> bool:
     return bool(re.match(pattern, model_name))
 
 
-def get_benchmark_configs() -> Dict[str, Dict]:
+def get_benchmark_configs() -> Dict[str, Dict]:  # noqa: C901
     """
     Gather benchmark configurations for a given set of models on the target operating system and devices.
 
@@ -153,48 +290,26 @@ def get_benchmark_configs() -> Dict[str, Dict]:
         }
     """
     args = parse_args()
-    target_os = args.os
     devices = args.devices
     models = args.models
+    target_os = args.os
+    target_configs = args.configs
 
     benchmark_configs = {"include": []}
 
     for model_name in models:
         configs = []
-        if is_valid_huggingface_model_id(model_name):
-            if model_name.startswith("meta-llama/"):
-                # LLaMA models
-                repo_name = model_name.split("meta-llama/")[1]
-                if "qlora" in repo_name.lower():
-                    configs.append("llama3_qlora")
-                elif "spinquant" in repo_name.lower():
-                    configs.append("llama3_spinquant")
-                else:
-                    configs.append("llama3_fb16")
-                    configs.extend(
-                        [
-                            config
-                            for config in BENCHMARK_CONFIGS.get(target_os, [])
-                            if config.startswith("llama")
-                        ]
+        configs.extend(generate_compatible_configs(model_name, target_os))
+        print(f"Discovered all supported configs for model '{model_name}': {configs}")
+        if target_configs is not None:
+            for config in target_configs:
+                if config not in configs:
+                    raise Exception(
+                        f"Unsupported config '{config}' for model '{model_name}' on '{target_os}'. Skipped.\n"
+                        f"Supported configs are: {configs}"
                     )
-            else:
-                # Non-LLaMA models
-                configs.append("hf_xnnpack_fp32")
-        elif model_name in MODEL_NAME_TO_MODEL:
-            # ExecuTorch in-tree non-GenAI models
-            configs.append("xnnpack_q8")
-            configs.extend(
-                [
-                    config
-                    for config in BENCHMARK_CONFIGS.get(target_os, [])
-                    if not config.startswith("llama")
-                ]
-            )
-        else:
-            # Skip unknown models with a warning
-            logging.warning(f"Unknown or invalid model name '{model_name}'. Skipping.")
-            continue
+            configs = target_configs
+            print(f"Using provided configs {configs} for model '{model_name}'")
 
         # Add configurations for each valid device
         for device in devices:

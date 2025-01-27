@@ -93,6 +93,8 @@ class FlatTensorConfig:
 class FlatTensorHeader:
     # Class constants.
     # The magic bytes that should be at the beginning of the header.
+    # This should be in sync with the magic in
+    # executorch/extension/flat_tensor/serialize/flat_tensor_header.h
     EXPECTED_MAGIC: ClassVar[bytes] = b"FH01"
     EXPECTED_LENGTH: ClassVar[int] = (
         # Header magic
@@ -264,7 +266,7 @@ class FlatTensorSerializer(DataSerializer):
         # Create FlatTensor, which describes of the contents of the file and
         # points to all the data segments. It will be serialized to flatbuffer.
         flat_tensor = FlatTensor(
-            version=0,
+            version=0,  # Keep in sync with c++ version number in serialize.h
             tensor_alignment=self.config.tensor_alignment,
             tensors=flat_tensor_metadata,
             segments=[DataSegment(offset=0, size=len(flat_tensor_data))],

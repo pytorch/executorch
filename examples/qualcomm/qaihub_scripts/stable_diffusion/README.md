@@ -26,7 +26,10 @@ We have verified the code with `diffusers`==0.29.0 and `piq`==0.8.0. Please foll
 sh examples/qualcomm/qaihub_scripts/stable_diffusion/install_requirements.sh
 ```
 
-#### Step4: Run default example
+#### Step4: Verify context binary's version
+Please refer to [Check context binary version](../../README.md#check-context-binary-version) for more info on why and how to verify the context binary's version
+
+#### Step5: Run default example
 In this example, we execute the script for 20 time steps with the `prompt` 'a photo of an astronaut riding a horse on mars':
 ```bash
 python examples/qualcomm/qaihub_scripts/stable_diffusion/qaihub_stable_diffusion.py -b build-android -m ${SOC_MODEL} --s ${SERIAL_NUM} --text_encoder_bin ${PATH_TO_TEXT_ENCODER_CONTEXT_BINARY} --unet_bin ${PATH_TO_UNET_CONTEXT_BINARY} --vae_bin ${PATH_TO_VAE_CONTEXT_BINARY} --vocab_json  ${PATH_TO_VOCAB_JSON_FILE} --num_time_steps 20 --prompt "a photo of an astronaut riding a horse on mars"
