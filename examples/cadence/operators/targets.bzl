@@ -26,8 +26,7 @@ def define_common_targets():
         typing = True,
         deps = [
             "fbcode//caffe2:torch",
-            "fbcode//pytorch/facto:inputgen",
-            "fbcode//pytorch/facto:specdb",
+            "fbcode//pytorch/facto:facto",
         ],
     )
 
