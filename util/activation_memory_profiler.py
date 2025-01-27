@@ -15,7 +15,8 @@ import executorch.exir.memory as memory
 import torch
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import get_node_tensor_specs
-from executorch.exir.tensor import num_bytes_from_shape_and_dtype
+
+from executorch.exir.tensor import num_bytes_from_shape_and_dtype, TensorSpec
 from torch.export import ExportedProgram
 
 
@@ -53,7 +54,7 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
     """
     nodes = graph.nodes
     memory_timeline: List[Optional[MemoryTimeline]] = [None for _ in range(len(nodes))]
-    unique_specs = set()
+    unique_specs: set[TensorSpec] = set()
     for _, node in enumerate(nodes):
         if node.op == "output":
             continue

@@ -11,6 +11,7 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/example/example_operators:example_operators_lib",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
     ],
 )
 
