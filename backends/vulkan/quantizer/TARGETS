@@ -9,5 +9,6 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
     ],
 )
