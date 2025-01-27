@@ -524,7 +524,12 @@ class ExecutorchProgram:
         if self._pte_data is None:
             self._pte_data, self._tensor_data = serialize_for_executorch(
                 self._get_emitter_output(),
-                ExecutorchBackendConfig(),
+                ExecutorchBackendConfig(
+                    extract_delegate_segments=self._extract_delegate_segments,
+                    segment_alignment=self._segment_alignment,
+                    constant_tensor_alignment=self._constant_tensor_alignment,
+                    delegate_alignment=self._delegate_alignment,
+                ),
                 self._data_serializer,
             )
         assert self._pte_data is not None
@@ -1484,7 +1489,7 @@ class ExecutorchProgramManager:
         # Serialize emitter output, ready to be written to a file.
         self._data_serializer = FlatTensorSerializer()
         self._pte_data, self._tensor_data = serialize_for_executorch(
-            self._emitter_output, ExecutorchBackendConfig(), self._data_serializer
+            self._emitter_output, backend_config, self._data_serializer
         )
         self._buffer: Optional[bytes] = None
 
