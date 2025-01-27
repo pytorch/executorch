@@ -79,7 +79,7 @@ my_relu_out(KernelRuntimeContext& context, const Tensor& input, Tensor& out) {
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_REAL_TYPES(RELU)
+    ET_FORALL_REALHBF16_TYPES(RELU)
     default:
       ET_KERNEL_CHECK_MSG(
           context,
