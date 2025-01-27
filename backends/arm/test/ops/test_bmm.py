@@ -134,19 +134,16 @@ class TestBMM(unittest.TestCase):
         self._test_bmm_tosa_MI_pipeline(self.MatMul(), test_data)
 
     @parameterized.expand(MatMul.test_data_generators)
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
     def test_matmul_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_tosa_BI_pipeline(self.MatMul(), test_data)
 
     @parameterized.expand(BMM.test_data_generators)
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
     def test_bmm_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_tosa_BI_pipeline(self.BMM(), test_data)
 
     @parameterized.expand(BMMSingleInput.test_data_generators)
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
     def test_bmm_single_input_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_tosa_BI_pipeline(self.BMMSingleInput(), test_data)
@@ -162,7 +159,6 @@ class TestBMM(unittest.TestCase):
 
     @parameterized.expand(BMM.test_data_generators)
     @pytest.mark.corstone_fvp
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
     def test_bmm_u85_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_ethosu_BI_pipeline(
@@ -183,7 +179,6 @@ class TestBMM(unittest.TestCase):
 
     @parameterized.expand(BMMSingleInput.test_data_generators)
     @pytest.mark.corstone_fvp
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
     def test_bmm_single_input_u85_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_ethosu_BI_pipeline(
