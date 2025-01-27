@@ -174,6 +174,7 @@ def export_to_edge(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
+    constant_methods: Optional[dict[str, object]] = None,
 ) -> EdgeProgramManager:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
@@ -195,6 +196,7 @@ def export_to_edge(
                 torch.ops.aten.angle.default,
             ],
         ),
+        constant_methods=constant_methods,
     )
 
     if dump_graphs:

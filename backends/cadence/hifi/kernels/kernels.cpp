@@ -20,6 +20,11 @@ memcpy(void* dst, const void* src, size_t num_bytes) {
   MEMCPY_8b(dst, src, num_bytes);
 }
 
+void* allocate_temp_memory(KernelRuntimeContext& ctx, size_t size) {
+  Result<void*> temp_mem_res = ctx.allocate_temp(size);
+  return temp_mem_res.ok() ? temp_mem_res.get() : nullptr;
+}
+
 // Quantize a fp32 value to an int8_t/uint8_t value
 template <typename T>
 __attribute__((always_inline)) T

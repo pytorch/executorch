@@ -51,7 +51,7 @@ Tensor& gelu_out(
 
             const CTYPE x_cubed = x * x * x;
             const CTYPE inner = kBeta * (x + kKappa * x_cubed);
-            const CTYPE ret = 0.5 * x * (1 + std::tanh(inner));
+            const CTYPE ret = 0.5 * x * (1.0 + std::tanh(inner));
 
             return ret;
           },
