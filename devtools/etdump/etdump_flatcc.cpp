@@ -116,8 +116,15 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
     builder_ = (struct flatcc_builder*)alignPointer(buffer.data(), 64);
     uintptr_t buffer_with_builder =
         (uintptr_t)alignPointer(builder_ + sizeof(struct flatcc_builder), 64);
-    size_t buffer_size = buffer.size() -
+    size_t builder_size =
         (size_t)(buffer_with_builder - (uintptr_t)buffer.data());
+    size_t min_buf_size = max_alloc_buf_size + builder_size;
+    ET_CHECK_MSG(
+        buffer.size() > min_buf_size,
+        "Static buffer size provided to ETDumpGen is %zu, which is less than or equal to the minimum size of %zu",
+        buffer.size(),
+        min_buf_size);
+    size_t buffer_size = buffer.size() - builder_size;
     alloc_.set_buffer(
         (uint8_t*)buffer_with_builder,
         buffer_size,

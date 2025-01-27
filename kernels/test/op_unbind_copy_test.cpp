@@ -208,19 +208,19 @@ class OpUnbindCopyIntOutTest : public OperatorTest {
  */
 TEST_F(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim0AllRealDtypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim0<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim1AllRealDTypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim1<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim2AllRealDTypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim2<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
