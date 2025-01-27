@@ -24,11 +24,20 @@ ${layout_declare_tensor(0, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d")}
 ${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d")}
 ${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
-${layout_declare_ubo(4, "ivec3", "out_limits")}
-${layout_declare_ubo(5, "ivec4", "in_sizes")}
-${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
-${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
-${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
+
+layout(push_constant) uniform restrict Block {
+  ivec4 out_limits;
+  ivec4 in_sizes;
+  ivec2 kernel_size;
+  ivec2 stride;
+  ivec2 padding;
+  ivec2 dilation;
+  ivec2 overlay_region;
+  int in_group_size;
+  int dummy_padding;
+  float out_min;
+  float out_max;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -70,7 +79,7 @@ void main() {
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
-  if (any(greaterThanEqual(ivec3(pos[0], gpos.z), out_limits))) {
+  if (any(greaterThanEqual(ivec3(pos[0], gpos.z), out_limits.xyz))) {
     return;
   }
 
@@ -144,7 +153,7 @@ void main() {
 
   for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
     const ivec2 pos = pos_shared[(shared_mem_stride * i) + gl_LocalInvocationIndex];
-    if (all(lessThan(ivec3(pos, gpos.z), out_limits))) {
+    if (all(lessThan(ivec3(pos, gpos.z), out_limits.xyz))) {
       imageStore(t_out, ivec3(pos, gpos.z), op(sum[i], out_min, out_max));
     }
   }
