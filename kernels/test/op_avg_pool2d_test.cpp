@@ -103,14 +103,17 @@ class OpAvgPool2DOutTest : public OperatorTest {
          96.75,   -66.75,  48.375,  -79.25,  8.0,     -14.25,  -8.0,
          51.75,   28.375,  32.0,    -50.875, 53.0,    -81.75});
     ::std::vector<int64_t> kernel_size_vec = {2, 3};
-    executorch::aten::ArrayRef<int64_t> kernel_size = executorch::aten::ArrayRef<int64_t>(
-        kernel_size_vec.data(), kernel_size_vec.size());
+    executorch::aten::ArrayRef<int64_t> kernel_size =
+        executorch::aten::ArrayRef<int64_t>(
+            kernel_size_vec.data(), kernel_size_vec.size());
     ::std::vector<int64_t> stride_vec = {3, 2};
     executorch::aten::ArrayRef<int64_t> stride =
-        executorch::aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
+        executorch::aten::ArrayRef<int64_t>(
+            stride_vec.data(), stride_vec.size());
     ::std::vector<int64_t> padding_vec = {1, 1};
     executorch::aten::ArrayRef<int64_t> padding =
-        executorch::aten::ArrayRef<int64_t>(padding_vec.data(), padding_vec.size());
+        executorch::aten::ArrayRef<int64_t>(
+            padding_vec.data(), padding_vec.size());
     bool ceil_mode = false;
     bool count_include_pad = true;
     executorch::aten::optional<int64_t> divisor_override;
@@ -266,14 +269,17 @@ class OpAvgPool2DOutTest : public OperatorTest {
          -58.125, -50.75,  -50.875, 8.375,   35.625,  -72.5,   -76.125, -33.25,
          -18.75,  -71.0,   76.625,  -11.25,  -3.0,    -38.625, -66.375, -25.0});
     ::std::vector<int64_t> kernel_size_vec = {2, 3};
-    executorch::aten::ArrayRef<int64_t> kernel_size = executorch::aten::ArrayRef<int64_t>(
-        kernel_size_vec.data(), kernel_size_vec.size());
+    executorch::aten::ArrayRef<int64_t> kernel_size =
+        executorch::aten::ArrayRef<int64_t>(
+            kernel_size_vec.data(), kernel_size_vec.size());
     ::std::vector<int64_t> stride_vec = {3, 2};
     executorch::aten::ArrayRef<int64_t> stride =
-        executorch::aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
+        executorch::aten::ArrayRef<int64_t>(
+            stride_vec.data(), stride_vec.size());
     ::std::vector<int64_t> padding_vec = {1, 1};
     executorch::aten::ArrayRef<int64_t> padding =
-        executorch::aten::ArrayRef<int64_t>(padding_vec.data(), padding_vec.size());
+        executorch::aten::ArrayRef<int64_t>(
+            padding_vec.data(), padding_vec.size());
     bool ceil_mode = false;
     bool count_include_pad = true;
     executorch::aten::optional<int64_t> divisor_override =
@@ -516,14 +522,17 @@ class OpAvgPool2DOutTest : public OperatorTest {
          -17.25,  -3.125,  34.25,   -54.125, -93.125, 65.0,    -76.375,
          -20.625, -77.875, -65.625, -79.875, 28.75,   58.25,   -25.25});
     ::std::vector<int64_t> kernel_size_vec = {4, 2};
-    executorch::aten::ArrayRef<int64_t> kernel_size = executorch::aten::ArrayRef<int64_t>(
-        kernel_size_vec.data(), kernel_size_vec.size());
+    executorch::aten::ArrayRef<int64_t> kernel_size =
+        executorch::aten::ArrayRef<int64_t>(
+            kernel_size_vec.data(), kernel_size_vec.size());
     ::std::vector<int64_t> stride_vec = {1, 2};
     executorch::aten::ArrayRef<int64_t> stride =
-        executorch::aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
+        executorch::aten::ArrayRef<int64_t>(
+            stride_vec.data(), stride_vec.size());
     ::std::vector<int64_t> padding_vec = {1, 1};
     executorch::aten::ArrayRef<int64_t> padding =
-        executorch::aten::ArrayRef<int64_t>(padding_vec.data(), padding_vec.size());
+        executorch::aten::ArrayRef<int64_t>(
+            padding_vec.data(), padding_vec.size());
     bool ceil_mode = true;
     bool count_include_pad = false;
     executorch::aten::optional<int64_t> divisor_override;

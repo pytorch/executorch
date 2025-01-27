@@ -116,7 +116,8 @@ TEST_F(TensorParserTest, TestModuleAddFloat) {
 }
 
 TEST_F(TensorParserTest, TestModuleAddHalf) {
-  test_module_add(half_loader_, ScalarType::Half, sizeof(executorch::aten::Half));
+  test_module_add(
+      half_loader_, ScalarType::Half, sizeof(executorch::aten::Half));
 }
 
 TEST_F(TensorParserTest, TestMutableState) {

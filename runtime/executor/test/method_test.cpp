@@ -216,9 +216,15 @@ TEST_F(MethodTest, AliasedIOTest) {
   uint8_t dim_order[2] = {0, 1};
   int32_t strides[2] = {4, 1};
   executorch::aten::TensorImpl impl(
-      executorch::aten::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
 
-  auto input_err = method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
   ASSERT_EQ(input_err, Error::Ok);
 
   auto output_err = method->set_output_data_ptr(buffer, sizeof(buffer), 0);
@@ -246,7 +252,12 @@ TEST_F(MethodTest, AliasedIOTest) {
   // Set the input again to update the size.
   sizes[0] = output.toTensor().sizes()[0];
   executorch::aten::TensorImpl impl_2(
-      executorch::aten::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
   input_err = method->set_input(EValue(executorch::aten::Tensor(&impl_2)), 0);
   ASSERT_EQ(input_err, Error::Ok);
 

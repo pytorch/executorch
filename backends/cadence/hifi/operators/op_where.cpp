@@ -13,9 +13,9 @@
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+using executorch::aten::RuntimeContext;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::aten::RuntimeContext;
 using torch::executor::Error;
 
 namespace cadence {

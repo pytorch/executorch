@@ -15,7 +15,8 @@ namespace native {
 
 using Tensor = executorch::aten::Tensor;
 using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
-using DimOrderArrayRef = executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
 using MemoryFormat = executorch::aten::MemoryFormat;
 
 template <typename T>

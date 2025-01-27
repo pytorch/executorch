@@ -96,8 +96,9 @@ INT_T max_override(INT_T a, INT_T b) {
 
 template <
     typename T,
-    typename std::enable_if<std::is_same<T, executorch::aten::Half>::value, bool>::
-        type = true>
+    typename std::enable_if<
+        std::is_same<T, executorch::aten::Half>::value,
+        bool>::type = true>
 T min_override(T a, T b) {
   const auto float_a = static_cast<float>(a);
   if (std::isnan(float_a)) {
@@ -116,8 +117,9 @@ T min_override(T a, T b) {
 
 template <
     typename T,
-    typename std::enable_if<std::is_same<T, executorch::aten::Half>::value, bool>::
-        type = true>
+    typename std::enable_if<
+        std::is_same<T, executorch::aten::Half>::value,
+        bool>::type = true>
 T max_override(T a, T b) {
   const auto float_a = static_cast<float>(a);
   if (std::isnan(float_a)) {

@@ -489,7 +489,8 @@ void expect_tensor_list_output(size_t num_tensors, const char* expected) {
   auto unwrapped_values_memory = std::make_unique<uint8_t[]>(
       sizeof(executorch::aten::Tensor) * wrapped_values.size());
   executorch::aten::Tensor* unwrapped_values =
-      reinterpret_cast<executorch::aten::Tensor*>(unwrapped_values_memory.get());
+      reinterpret_cast<executorch::aten::Tensor*>(
+          unwrapped_values_memory.get());
 #if USE_ATEN_LIB
   // Must be initialized because BoxedEvalueList will use operator=() on each
   // entry. But we can't do this in non-ATen mode because
@@ -565,14 +566,16 @@ void expect_list_optional_tensor_output(
   // optional<Tensor> entries. It's important not to destroy these entries,
   // because the values list will own the underlying Tensors.
   auto unwrapped_values_memory = std::make_unique<uint8_t[]>(
-      sizeof(executorch::aten::optional<executorch::aten::Tensor>) * wrapped_values.size());
+      sizeof(executorch::aten::optional<executorch::aten::Tensor>) *
+      wrapped_values.size());
   executorch::aten::optional<executorch::aten::Tensor>* unwrapped_values =
       reinterpret_cast<executorch::aten::optional<executorch::aten::Tensor>*>(
           unwrapped_values_memory.get());
   // Must be initialized because BoxedEvalueList will use operator=() on each
   // entry.
   for (int i = 0; i < wrapped_values.size(); ++i) {
-    new (&unwrapped_values[i]) executorch::aten::optional<executorch::aten::Tensor>();
+    new (&unwrapped_values[i])
+        executorch::aten::optional<executorch::aten::Tensor>();
   }
 
   ASSERT_LE(num_tensors, wrapped_values.size());
@@ -931,7 +934,8 @@ TEST(PrintEvalueTest, WrappedTensorLists) {
   auto unwrapped_values_memory = std::make_unique<uint8_t[]>(
       sizeof(executorch::aten::Tensor) * wrapped_values.size());
   executorch::aten::Tensor* unwrapped_values =
-      reinterpret_cast<executorch::aten::Tensor*>(unwrapped_values_memory.get());
+      reinterpret_cast<executorch::aten::Tensor*>(
+          unwrapped_values_memory.get());
 #if USE_ATEN_LIB
   // Must be initialized because BoxedEvalueList will use operator=() on each
   // entry. But we can't do this in non-ATen mode because

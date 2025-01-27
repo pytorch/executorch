@@ -84,8 +84,9 @@ Result<Tensor> parseTensor(
     // memory, unless we plan to implement in-place permute
     executorch::aten::SizesType* sizes_buf = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
         method_allocator, executorch::aten::SizesType, dim);
-    executorch::aten::DimOrderType* dim_order_buf = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        method_allocator, executorch::aten::DimOrderType, dim);
+    executorch::aten::DimOrderType* dim_order_buf =
+        ET_ALLOCATE_LIST_OR_RETURN_ERROR(
+            method_allocator, executorch::aten::DimOrderType, dim);
     std::memcpy(
         sizes_buf, serialized_sizes, sizeof(executorch::aten::SizesType) * dim);
     std::memcpy(
@@ -99,7 +100,8 @@ Result<Tensor> parseTensor(
     // Const cast safe here as these tensors can't be resized, so these fields
     // will not be modified.
     sizes = const_cast<executorch::aten::SizesType*>(serialized_sizes);
-    dim_order = const_cast<executorch::aten::DimOrderType*>(serialized_dim_order);
+    dim_order =
+        const_cast<executorch::aten::DimOrderType*>(serialized_dim_order);
   }
   // Validate sizes before using them in case the PTE data is bad. We can't
   // detect bad positive values, but we can reject negative values, which would

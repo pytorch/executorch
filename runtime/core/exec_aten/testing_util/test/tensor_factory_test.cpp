@@ -1164,8 +1164,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 0;
   dim_order[1] = 1;
   dim_order[2] = 2;
-  dim_order_ref =
-      executorch::aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, out.dim_order());
 
@@ -1175,8 +1175,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 0;
   dim_order[1] = 2;
   dim_order[2] = 1;
-  dim_order_ref =
-      executorch::aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 
@@ -1186,8 +1186,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 1;
   dim_order[1] = 2;
   dim_order[2] = 0;
-  dim_order_ref =
-      executorch::aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 }
@@ -1210,8 +1210,8 @@ TEST_F(TensorFactoryTest, AmbgiuousDimOrderToStrideTest) {
   // boundary from strides land to dim order land, we have to resolve
   // such ambiguity in a deterministic way.
   // In dim order land, it is less ambiguous
-  auto dim_order_ref =
-      executorch::aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  auto dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 
@@ -1220,8 +1220,8 @@ TEST_F(TensorFactoryTest, AmbgiuousDimOrderToStrideTest) {
   dim_order[0] = 2;
   dim_order[1] = 0;
   dim_order[2] = 1;
-  dim_order_ref =
-      executorch::aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 }

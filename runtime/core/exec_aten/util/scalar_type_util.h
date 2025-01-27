@@ -52,8 +52,8 @@ using string_view = torch::executor::string_view;
 } // namespace aten
 } // namespace executorch
 #endif // USE_ATEN_LIB
-// DEPRECATED: The executorch::aten:: namespace is deprecated. Use executorch::aten::
-// instead.
+// DEPRECATED: The executorch::aten:: namespace is deprecated. Use
+// executorch::aten:: instead.
 namespace exec_aten = ::executorch::aten;
 
 namespace executorch {

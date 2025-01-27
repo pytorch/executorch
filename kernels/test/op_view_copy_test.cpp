@@ -263,7 +263,8 @@ TEST_F(OpViewTest, UpperBoundOutTensor) {
 
   op_view_copy_out(
       input,
-      executorch::aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
+      executorch::aten::ArrayRef<int64_t>(
+          size_int64_t.data(), size_int64_t.size()),
       output);
   EXPECT_TENSOR_EQ(ref_output, output);
 
@@ -279,7 +280,8 @@ TEST_F(OpViewTest, UpperBoundOutTensor) {
 
   op_view_copy_out(
       input,
-      executorch::aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
+      executorch::aten::ArrayRef<int64_t>(
+          size_int64_t.data(), size_int64_t.size()),
       output);
   EXPECT_TENSOR_EQ(ref_output, output);
 }

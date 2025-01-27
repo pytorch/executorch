@@ -16,8 +16,8 @@ namespace runtime {
 /**
  * Implementation for ATen tensor util, should only be included in
  * `<target>_aten` target and only be used in ATen mode. Explicitly taking
- * at::Tensor (instead of executorch::aten::Tensor) to make sure it fails at compile
- * time if built incorrectly.
+ * at::Tensor (instead of executorch::aten::Tensor) to make sure it fails at
+ * compile time if built incorrectly.
  */
 Error get_dim_order(
     const at::Tensor& tensor,

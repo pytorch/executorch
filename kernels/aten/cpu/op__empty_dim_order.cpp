@@ -19,7 +19,8 @@ namespace native {
 using executorch::aten::IntArrayRef;
 using executorch::aten::Tensor;
 using OptionalIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
-using DimOrderArrayRef = executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
 // Out Aten tensor shall have same memory format stride as dim_order
 const size_t kMaxNumOfDimensions = 16;
 

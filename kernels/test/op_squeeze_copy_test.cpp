@@ -322,7 +322,8 @@ TEST_F(OpSqueezeTest, DynamicShapeUnbound) {
 } // namespace
 
 TEST_F(OpSqueezeCopyDimsOutTest, SanityTest4D) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor self = tfFloat.make(
       {1, 2, 1, 5},
@@ -357,7 +358,8 @@ TEST_F(OpSqueezeCopyDimsOutTest, SanityTest4D) {
 }
 
 TEST_F(OpSqueezeCopyDimsOutTest, SanityCheck5D) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor self = tfFloat.make(
       {1, 2, 1, 5, 4},
@@ -382,7 +384,8 @@ TEST_F(OpSqueezeCopyDimsOutTest, SanityCheck5D) {
 }
 
 TEST_F(OpSqueezeCopyDimsOutTest, SanityCheck5DUnchanged) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor self = tfFloat.make(
       {1, 2, 1, 5, 4},

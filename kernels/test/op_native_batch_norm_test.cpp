@@ -19,7 +19,10 @@ using namespace ::testing;
 
 class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
  protected:
-  ::std::tuple<executorch::aten::Tensor&, executorch::aten::Tensor&, executorch::aten::Tensor&>
+  ::std::tuple<
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&>
   op_native_batch_norm_legit_no_training_out(
       const executorch::aten::Tensor& input,
       const executorch::aten::optional<executorch::aten::Tensor>& weight,
@@ -154,7 +157,10 @@ class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
 
 class OpNativeBatchNormLegitOutTest : public OperatorTest {
  protected:
-  ::std::tuple<executorch::aten::Tensor&, executorch::aten::Tensor&, executorch::aten::Tensor&>
+  ::std::tuple<
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&>
   op_native_batch_norm_legit_out(
       const executorch::aten::Tensor& input,
       const executorch::aten::optional<executorch::aten::Tensor>& weight,
@@ -186,7 +192,10 @@ class OpNativeBatchNormLegitOutTest : public OperatorTest {
 
 class OpNativeBatchNormLegitNoStatsOutTest : public OperatorTest {
  protected:
-  ::std::tuple<executorch::aten::Tensor&, executorch::aten::Tensor&, executorch::aten::Tensor&>
+  ::std::tuple<
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&>
   op_native_batch_norm_legit_no_stats_out(
       const executorch::aten::Tensor& input,
       const executorch::aten::optional<executorch::aten::Tensor>& weight,
@@ -272,13 +281,15 @@ class OpNativeBatchNormLegitNoStatsOutTest : public OperatorTest {
 };
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest2D){
-#define TEST_ENTRY(ctype, dtype) test_2d_dtype<executorch::aten::ScalarType::dtype>();
+#define TEST_ENTRY(ctype, dtype) \
+  test_2d_dtype<executorch::aten::ScalarType::dtype>();
     ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
 #undef TEST_ENTRY
 }
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor input = tfFloat.make(
       {4, 7, 5}, {5.277339935302734,  5.94276237487793,     6.543086051940918,
@@ -438,7 +449,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor input = tfFloat.make(
       {2, 4, 5, 5},
@@ -757,7 +769,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor input = tfFloat.make(
       {4, 7, 5}, {4.1944355964660645,  3.537543296813965,  5.067144393920898,
@@ -910,7 +923,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
 TEST_F(
     OpNativeBatchNormLegitNoTrainingOutTest,
     SampleAtomicTestNoWeightNoBias) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor input = tfFloat.make(
       {2, 4, 2, 2},
@@ -976,7 +990,8 @@ TEST_F(
 }
 
 TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor input = tfFloat.make(
       {4, 7}, {2.876736640930176,  7.67944860458374,   5.701690196990967,
@@ -1064,13 +1079,15 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest2D){
-#define TEST_ENTRY(ctype, dtype) test_2d_dtype<executorch::aten::ScalarType::dtype>();
+#define TEST_ENTRY(ctype, dtype) \
+  test_2d_dtype<executorch::aten::ScalarType::dtype>();
     ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
 #undef TEST_ENTRY
 }
 
 TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest3D) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor input = tfFloat.make(
       {2, 3, 4}, {0,   1,   4,   9,   16,  25,  36,  49,  64,  81,  100, 121,
@@ -1092,7 +1109,8 @@ TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest3D) {
        -0.93578988, -0.82507670, 0.54575467,  0.81593025,  1.10771990,
        1.42112350,  0.61339414,  0.84740579,  1.09560001,  1.35797679,
        0.64582670,  0.86198103,  1.08867943,  1.32592189});
-  executorch::aten::Tensor out1_expected = tfFloat.make({3}, {93.5, 169.5, 277.5});
+  executorch::aten::Tensor out1_expected =
+      tfFloat.make({3}, {93.5, 169.5, 277.5});
   executorch::aten::Tensor out2_expected =
       tfFloat.make({3}, {0.01080702, 0.00709126, 0.00527206});
   op_native_batch_norm_legit_no_stats_out(
@@ -1103,7 +1121,8 @@ TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest3D) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest4D) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
   executorch::aten::Tensor input =
       tfFloat.make({2, 3, 2, 2}, {0,   1,   4,   9,   16,  25,  36,  49,
@@ -1127,7 +1146,8 @@ TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest4D) {
        1.53732157, 1.60185206, 2.96232486, 2.98921227, 3.01926303, 3.05247688,
        2.30033016, 2.59752321, 2.91849184, 3.26323581, 2.62937593, 2.79318404,
        2.96691990, 3.15058374, 3.49374819, 3.55859423, 3.62660384, 3.69777656});
-  executorch::aten::Tensor out1_expected = tfFloat.make({3}, {93.5, 169.5, 277.5});
+  executorch::aten::Tensor out1_expected =
+      tfFloat.make({3}, {93.5, 169.5, 277.5});
   executorch::aten::Tensor out2_expected =
       tfFloat.make({3}, {0.01080702, 0.00709126, 0.00527206});
   op_native_batch_norm_legit_no_stats_out(

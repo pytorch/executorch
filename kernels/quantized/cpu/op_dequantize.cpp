@@ -428,8 +428,9 @@ Tensor& dequantize_per_channel_out(
     zero_point_data = nullptr;
   }
 
-  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>> optional_dim_list{
-      executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>
+      optional_dim_list{
+          executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
   // Actual dequantization logic
   // input, out are the input and output tensors
@@ -446,7 +447,7 @@ Tensor& dequantize_per_channel_out(
       const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
       ET_CHECK_MSG(                                                            \
           axis == 0, "Axis must be 0 for a single dimensional tensors");       \
-      const executorch::aten::optional<int64_t> dim;                                  \
+      const executorch::aten::optional<int64_t> dim;                           \
       apply_over_dim(                                                          \
           [input_data_ptr, out_data_ptr, zero_point_data, &scale](             \
               size_t numel, size_t stride, size_t base_ix) {                   \

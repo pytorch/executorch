@@ -42,7 +42,8 @@ struct PySGD final {
         params_()
 #endif
   {
-    std::map<executorch::aten::string_view, executorch::aten::Tensor> cpp_inputs;
+    std::map<executorch::aten::string_view, executorch::aten::Tensor>
+        cpp_inputs;
     auto py_named_params =
         py::cast<std::unordered_map<std::string, at::Tensor>>(named_params);
     const auto params_size = py::len(named_params);
@@ -75,7 +76,8 @@ struct PySGD final {
   void step(const py::dict& py_dict) {
     auto py_named_gradients =
         py::cast<std::unordered_map<std::string, at::Tensor>>(py_dict);
-    std::map<executorch::aten::string_view, executorch::aten::Tensor> cpp_inputs;
+    std::map<executorch::aten::string_view, executorch::aten::Tensor>
+        cpp_inputs;
 
     std::vector<std::string> fqn;
 #ifndef USE_ATEN_LIB

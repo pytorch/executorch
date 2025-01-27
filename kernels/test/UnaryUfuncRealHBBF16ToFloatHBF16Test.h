@@ -40,7 +40,9 @@ class UnaryUfuncRealHBBF16ToFloatHBF16Test : public OperatorTest {
   // in IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST.
   virtual SupportedFeatures* get_supported_features() const = 0;
 
-  template <executorch::aten::ScalarType IN_DTYPE, executorch::aten::ScalarType OUT_DTYPE>
+  template <
+      executorch::aten::ScalarType IN_DTYPE,
+      executorch::aten::ScalarType OUT_DTYPE>
   void test_floating_point_op_out(
       const std::vector<int32_t>& out_shape = {1, 6},
       executorch::aten::TensorShapeDynamism dynamism =

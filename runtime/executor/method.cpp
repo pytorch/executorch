@@ -385,8 +385,8 @@ Error Method::parse_values() {
             static_cast<const executorch_flatbuffer::DoubleList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
             items != nullptr, InvalidProgram, "Missing list at index %zu", i);
-        new (&values_[i])
-            EValue(executorch::aten::ArrayRef<double>(items->data(), items->size()));
+        new (&values_[i]) EValue(
+            executorch::aten::ArrayRef<double>(items->data(), items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::String: {
         const auto fb_str =
@@ -560,7 +560,8 @@ Error Method::resolve_operator(
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
       executorch::aten::DimOrderType* dim_order_ptr =
-          method_allocator->allocateList<executorch::aten::DimOrderType>(tensor.dim());
+          method_allocator->allocateList<executorch::aten::DimOrderType>(
+              tensor.dim());
       if (dim_order_ptr == nullptr) {
         return Error::MemoryAllocationFailed;
       }

@@ -34,7 +34,8 @@ inline size_t _normalize_non_neg_d(ssize_t d, ssize_t in_dim) {
 
 ET_NODISCARD bool check_dim_list_is_valid(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   if (dim_list.has_value() && dim_list.value().size() != 0) {
     const auto& reduce_dims = dim_list.value();
     bool dim_exist[kTensorDimensionLimit];
@@ -99,7 +100,8 @@ size_t get_reduced_dim_product(
  */
 size_t get_reduced_dim_product(
     const Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   if (in.dim() == 0) {
     return 1;
   }
@@ -149,7 +151,8 @@ size_t get_out_numel(
  */
 size_t get_out_numel(
     const Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   size_t out_numel = 1;
   if (dim_list.has_value() && dim_list.value().size() != 0) {
     for (size_t d = 0; d < in.dim(); ++d) {
@@ -198,7 +201,8 @@ size_t get_init_index(
  */
 size_t get_init_index(
     const Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     const size_t out_ix) {
   if (!dim_list.has_value() || dim_list.value().size() == 0) {
     return 0;
@@ -258,7 +262,8 @@ size_t compute_reduced_out_size(
 
 size_t compute_reduced_out_size(
     const Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim,
     executorch::aten::SizesType* sizes_arr) {
   const auto in_dim = in.dim();
@@ -310,7 +315,8 @@ Error resize_reduction_out(
 
 Error resize_reduction_out(
     const Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim,
     Tensor& out) {
   executorch::aten::SizesType sizes_arr[kTensorDimensionLimit];

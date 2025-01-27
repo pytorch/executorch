@@ -44,8 +44,9 @@ TEST_F(OpMulOutKernelTest, UnhandledDtypeDies) {
   std::vector<SizesType> sizes = {2, 2};
 
   std::vector<executorch::aten::qint8> a_data{};
-  std::generate_n(
-      std::back_inserter(a_data), 4, []() { return executorch::aten::qint8{0}; });
+  std::generate_n(std::back_inserter(a_data), 4, []() {
+    return executorch::aten::qint8{0};
+  });
   std::vector<executorch::aten::qint8> b_data(a_data);
   std::vector<executorch::aten::qint8> out_data(a_data);
 

@@ -38,8 +38,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::test_mismatched_input_shapes_dies() {
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_half_output_static_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
+#define TEST_ENTRY(ctype, dtype)           \
+  test_floating_point_op_out<              \
       executorch::aten::ScalarType::dtype, \
       executorch::aten::ScalarType::Half>();
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
@@ -48,8 +48,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_bfloat16_output_static_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
+#define TEST_ENTRY(ctype, dtype)           \
+  test_floating_point_op_out<              \
       executorch::aten::ScalarType::dtype, \
       executorch::aten::ScalarType::BFloat16>();
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
@@ -58,8 +58,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_float_output_static_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
+#define TEST_ENTRY(ctype, dtype)           \
+  test_floating_point_op_out<              \
       executorch::aten::ScalarType::dtype, \
       executorch::aten::ScalarType::Float>();
   ET_FORALL_REALH_TYPES(TEST_ENTRY);
@@ -68,8 +68,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_double_output_static_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
+#define TEST_ENTRY(ctype, dtype)           \
+  test_floating_point_op_out<              \
       executorch::aten::ScalarType::dtype, \
       executorch::aten::ScalarType::Double>();
   ET_FORALL_REALH_TYPES(TEST_ENTRY);
@@ -78,8 +78,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_half_output_bound_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)    \
-  test_floating_point_op_out<       \
+#define TEST_ENTRY(ctype, dtype)           \
+  test_floating_point_op_out<              \
       executorch::aten::ScalarType::dtype, \
       executorch::aten::ScalarType::Half>( \
       {10, 10}, executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -89,8 +89,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_bfloat16_output_bound_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)        \
-  test_floating_point_op_out<           \
+#define TEST_ENTRY(ctype, dtype)               \
+  test_floating_point_op_out<                  \
       executorch::aten::ScalarType::dtype,     \
       executorch::aten::ScalarType::BFloat16>( \
       {10, 10}, executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -100,8 +100,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_float_output_bound_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)     \
-  test_floating_point_op_out<        \
+#define TEST_ENTRY(ctype, dtype)            \
+  test_floating_point_op_out<               \
       executorch::aten::ScalarType::dtype,  \
       executorch::aten::ScalarType::Float>( \
       {10, 10}, executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -111,8 +111,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_double_output_bound_dynamism_support() {
-#define TEST_ENTRY(ctype, dtype)      \
-  test_floating_point_op_out<         \
+#define TEST_ENTRY(ctype, dtype)             \
+  test_floating_point_op_out<                \
       executorch::aten::ScalarType::dtype,   \
       executorch::aten::ScalarType::Double>( \
       {10, 10}, executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -125,8 +125,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
   if (!get_supported_features()->is_aten) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
-#define TEST_ENTRY(ctype, dtype)     \
-  test_floating_point_op_out<        \
+#define TEST_ENTRY(ctype, dtype)            \
+  test_floating_point_op_out<               \
       executorch::aten::ScalarType::dtype,  \
       executorch::aten::ScalarType::Float>( \
       {1, 1}, executorch::aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
@@ -139,8 +139,8 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
   if (!get_supported_features()->is_aten) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
-#define TEST_ENTRY(ctype, dtype)      \
-  test_floating_point_op_out<         \
+#define TEST_ENTRY(ctype, dtype)             \
+  test_floating_point_op_out<                \
       executorch::aten::ScalarType::dtype,   \
       executorch::aten::ScalarType::Double>( \
       {1, 1}, executorch::aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
@@ -149,9 +149,9 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 }
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::test_non_float_output_dtype_dies() {
-#define TEST_ENTRY(ctype, dtype)     \
-  test_op_invalid_output_dtype_dies< \
-      executorch::aten::ScalarType::Float,  \
+#define TEST_ENTRY(ctype, dtype)           \
+  test_op_invalid_output_dtype_dies<       \
+      executorch::aten::ScalarType::Float, \
       executorch::aten::ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY

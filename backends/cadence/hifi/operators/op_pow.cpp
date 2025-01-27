@@ -95,7 +95,10 @@ Tensor& pow_Tensor_Tensor_out(
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(
-      ctx, common_type != executorch::aten::ScalarType::Bool, InvalidArgument, out);
+      ctx,
+      common_type != executorch::aten::ScalarType::Bool,
+      InvalidArgument,
+      out);
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
   constexpr auto name = "pow.Tensor_Tensor_out";

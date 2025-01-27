@@ -328,10 +328,13 @@ void apply_kernel_2d_reduce_then_map_fn(
     Tensor& out,
     executorch::aten::optional<Tensor> indices = {}) {
   executorch::aten::ArrayRef<executorch::aten::SizesType> in_sizes = in.sizes();
-  executorch::aten::ArrayRef<executorch::aten::SizesType> out_sizes = out.sizes();
+  executorch::aten::ArrayRef<executorch::aten::SizesType> out_sizes =
+      out.sizes();
 
-  executorch::aten::ArrayRef<executorch::aten::DimOrderType> in_dim_order = in.dim_order();
-  executorch::aten::ArrayRef<executorch::aten::DimOrderType> out_dim_order = out.dim_order();
+  executorch::aten::ArrayRef<executorch::aten::DimOrderType> in_dim_order =
+      in.dim_order();
+  executorch::aten::ArrayRef<executorch::aten::DimOrderType> out_dim_order =
+      out.dim_order();
 
   executorch::aten::StridesType in_strides[kTensorDimensionLimit];
   dim_order_to_stride_nocheck(

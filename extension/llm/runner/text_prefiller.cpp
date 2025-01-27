@@ -60,7 +60,8 @@ TextPrefiller::TextPrefiller(
     cur_token = prompt_tokens[0];
 
     // initialize tensor wrappers
-    auto tokens = from_blob(&cur_token, {1, 1}, executorch::aten::ScalarType::Long);
+    auto tokens =
+        from_blob(&cur_token, {1, 1}, executorch::aten::ScalarType::Long);
 
     auto start_pos_tensor =
         from_blob(&start_pos, {1}, executorch::aten::ScalarType::Long);

@@ -146,7 +146,8 @@ void apply_on_flat_ix_with_dim_mask_and_base(
 
 ET_NODISCARD bool check_dim_list_is_valid(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list);
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list);
 
 bool check_dim_in_dim_list(
     const size_t dim,
@@ -159,7 +160,8 @@ size_t get_reduced_dim_product(
 
 size_t get_reduced_dim_product(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list);
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list);
 
 size_t get_out_numel(
     const executorch::aten::Tensor& in,
@@ -167,7 +169,8 @@ size_t get_out_numel(
 
 size_t get_out_numel(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list);
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list);
 
 size_t get_init_index(
     const executorch::aten::Tensor& in,
@@ -176,7 +179,8 @@ size_t get_init_index(
 
 size_t get_init_index(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     const size_t out_ix);
 
 //
@@ -302,7 +306,8 @@ template <typename Fn>
 void apply_over_dim_list(
     const Fn& fn,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     const size_t out_ix,
     const int64_t start = 0,
     const int64_t end = -1) {
@@ -457,7 +462,8 @@ CTYPE_OUT map_reduce_over_dim_list(
     const MapOp& map_fun,
     const ReduceOp& reduce_fun,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     const size_t out_ix) {
   ET_CHECK(check_dim_list_is_valid(in, dim_list));
 
@@ -543,7 +549,8 @@ template <typename CTYPE, typename ReduceOp>
 CTYPE reduce_over_dim_list(
     const ReduceOp& reduce_fun,
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     const size_t out_ix) {
   return map_reduce_over_dim_list<CTYPE, CTYPE>(
       [](CTYPE v) { return v; }, reduce_fun, in, dim_list, out_ix);
@@ -561,7 +568,8 @@ size_t compute_reduced_out_size(
 
 size_t compute_reduced_out_size(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim,
     executorch::aten::SizesType* sizes_arr);
 
@@ -577,7 +585,8 @@ inline ssize_t compute_reduced_out_dim(
 
 inline ssize_t compute_reduced_out_dim(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim) {
   return (
       keepdim ? in.dim()
@@ -600,7 +609,8 @@ Error resize_reduction_out(
 
 Error resize_reduction_out(
     const executorch::aten::Tensor& in,
-    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim,
     executorch::aten::Tensor& out);
 

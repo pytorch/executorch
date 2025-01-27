@@ -105,7 +105,8 @@ TensorPtr make_tensor_ptr(
       std::move(strides),
       std::move(deleter));
   const auto tensor_ptr = &storage->tensor;
-  return std::shared_ptr<executorch::aten::Tensor>(std::move(storage), tensor_ptr);
+  return std::shared_ptr<executorch::aten::Tensor>(
+      std::move(storage), tensor_ptr);
 #else
   auto options = c10::TensorOptions()
                      .dtype(c10::scalarTypeToTypeMeta(type))
@@ -135,7 +136,8 @@ TensorPtr make_tensor_ptr(
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism) {
   ET_CHECK_MSG(
-      data.size() >= executorch::aten::compute_numel(sizes.data(), sizes.size()) *
+      data.size() >=
+          executorch::aten::compute_numel(sizes.data(), sizes.size()) *
               executorch::aten::elementSize(type),
       "Data size is smaller than required by sizes and scalar type.");
   auto data_ptr = data.data();
@@ -188,7 +190,8 @@ runtime::Error resize_tensor_ptr(
     const std::vector<executorch::aten::SizesType>& sizes) {
   return runtime::resize_tensor(
       *tensor,
-      executorch::aten::ArrayRef<executorch::aten::SizesType>(sizes.data(), sizes.size()));
+      executorch::aten::ArrayRef<executorch::aten::SizesType>(
+          sizes.data(), sizes.size()));
 }
 
 } // namespace extension

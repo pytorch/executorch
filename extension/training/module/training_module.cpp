@@ -84,9 +84,11 @@ TrainingModule::execute_forward_backward(
   return user_outputs;
 }
 
-runtime::Result<const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
+runtime::Result<
+    const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
 TrainingModule::named_parameters(const std::string& method_name) {
-  std::map<executorch::aten::string_view, executorch::aten::Tensor> named_parameters;
+  std::map<executorch::aten::string_view, executorch::aten::Tensor>
+      named_parameters;
   const std::string fqn_method_name = fqn_method_prefix + method_name;
   const std::string parameters_method_name =
       parameters_method_prefix + method_name;
@@ -124,7 +126,8 @@ TrainingModule::named_parameters(const std::string& method_name) {
   return named_parameters;
 }
 
-runtime::Result<const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
+runtime::Result<
+    const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
 TrainingModule::named_gradients(const std::string& method_name) {
   if (method_named_gradients_.find(method_name) ==
       method_named_gradients_.end()) {

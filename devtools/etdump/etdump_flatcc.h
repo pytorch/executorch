@@ -111,7 +111,8 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
-      const ::executorch::runtime::ArrayRef<executorch::aten::Tensor> output) override;
+      const ::executorch::runtime::ArrayRef<executorch::aten::Tensor> output)
+      override;
 
   /**
    * Log an intermediate int output from a delegate.

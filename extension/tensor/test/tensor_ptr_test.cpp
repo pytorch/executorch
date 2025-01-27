@@ -507,8 +507,8 @@ TEST_F(TensorPtrTest, TensorDataCastingFromIntToFloat) {
 
 TEST_F(TensorPtrTest, TensorDataCastingFromIntToDouble) {
   std::vector<int32_t> int_data = {1, 2, 3};
-  auto tensor =
-      make_tensor_ptr(std::move(int_data), executorch::aten::ScalarType::Double);
+  auto tensor = make_tensor_ptr(
+      std::move(int_data), executorch::aten::ScalarType::Double);
 
   EXPECT_EQ(tensor->dim(), 1);
   EXPECT_EQ(tensor->size(0), 3);
@@ -522,8 +522,8 @@ TEST_F(TensorPtrTest, TensorDataCastingFromIntToDouble) {
 
 TEST_F(TensorPtrTest, TensorDataCastingFromFloatToHalf) {
   std::vector<float> float_data = {1.0f, 2.0f, 3.0f};
-  auto tensor =
-      make_tensor_ptr(std::move(float_data), executorch::aten::ScalarType::Half);
+  auto tensor = make_tensor_ptr(
+      std::move(float_data), executorch::aten::ScalarType::Half);
 
   EXPECT_EQ(tensor->dim(), 1);
   EXPECT_EQ(tensor->size(0), 3);
@@ -537,8 +537,8 @@ TEST_F(TensorPtrTest, TensorDataCastingFromFloatToHalf) {
 
 TEST_F(TensorPtrTest, TensorDataCastingFromDoubleToFloat) {
   std::vector<double> double_data = {1.1, 2.2, 3.3};
-  auto tensor =
-      make_tensor_ptr(std::move(double_data), executorch::aten::ScalarType::Float);
+  auto tensor = make_tensor_ptr(
+      std::move(double_data), executorch::aten::ScalarType::Float);
 
   EXPECT_EQ(tensor->dim(), 1);
   EXPECT_EQ(tensor->size(0), 3);
@@ -565,8 +565,8 @@ TEST_F(TensorPtrTest, TensorDataCastingFromInt64ToInt32) {
 
 TEST_F(TensorPtrTest, TensorDataCastingFromFloatToBFloat16) {
   std::vector<float> float_data = {1.0f, 2.0f, 3.0f};
-  auto tensor =
-      make_tensor_ptr(std::move(float_data), executorch::aten::ScalarType::BFloat16);
+  auto tensor = make_tensor_ptr(
+      std::move(float_data), executorch::aten::ScalarType::BFloat16);
 
   EXPECT_EQ(tensor->dim(), 1);
   EXPECT_EQ(tensor->size(0), 3);
@@ -579,8 +579,8 @@ TEST_F(TensorPtrTest, TensorDataCastingFromFloatToBFloat16) {
 }
 
 TEST_F(TensorPtrTest, InitializerListDoubleToHalf) {
-  auto tensor =
-      make_tensor_ptr<double>({1.5, 2.7, 3.14}, executorch::aten::ScalarType::Half);
+  auto tensor = make_tensor_ptr<double>(
+      {1.5, 2.7, 3.14}, executorch::aten::ScalarType::Half);
   EXPECT_EQ(tensor->dim(), 1);
   EXPECT_EQ(tensor->size(0), 3);
   EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Half);
@@ -592,8 +592,8 @@ TEST_F(TensorPtrTest, InitializerListDoubleToHalf) {
 }
 
 TEST_F(TensorPtrTest, InitializerListInt8ToInt64) {
-  auto tensor =
-      make_tensor_ptr<int8_t>({1, -2, 3, -4}, executorch::aten::ScalarType::Long);
+  auto tensor = make_tensor_ptr<int8_t>(
+      {1, -2, 3, -4}, executorch::aten::ScalarType::Long);
   EXPECT_EQ(tensor->dim(), 1);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Long);
@@ -806,8 +806,8 @@ TEST_F(TensorPtrTest, TensorDataCastingInvalidCast) {
   std::vector<float> float_data = {1.0f, 2.0f, 3.0f};
   ET_EXPECT_DEATH(
       {
-        auto _ =
-            make_tensor_ptr(std::move(float_data), executorch::aten::ScalarType::Int);
+        auto _ = make_tensor_ptr(
+            std::move(float_data), executorch::aten::ScalarType::Int);
       },
       "");
 }

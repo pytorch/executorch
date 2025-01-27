@@ -95,7 +95,8 @@ TEST_F(OpCloneTest, MismatchedSizesDie) {
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_clone_out(input, /*memory_format=*/executorch::aten::nullopt, out));
+      context_,
+      op_clone_out(input, /*memory_format=*/executorch::aten::nullopt, out));
 }
 
 TEST_F(OpCloneTest, MismatchedTypesDie) {
@@ -105,7 +106,8 @@ TEST_F(OpCloneTest, MismatchedTypesDie) {
       tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_out.zeros({3, 1, 1, 2});
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_clone_out(input, /*memory_format=*/executorch::aten::nullopt, out));
+      context_,
+      op_clone_out(input, /*memory_format=*/executorch::aten::nullopt, out));
 }
 
 // Only contiguous memory is supported, the memory type other than nullopt or
@@ -122,7 +124,8 @@ TEST_F(OpCloneTest, MismatchedMemoryFormatDie) {
   Tensor out = tf_out.zeros({3, 1, 1, 2});
   ET_EXPECT_KERNEL_FAILURE(
       context_,
-      op_clone_out(input, static_cast<executorch::aten::MemoryFormat>(55), out));
+      op_clone_out(
+          input, static_cast<executorch::aten::MemoryFormat>(55), out));
 }
 
 TEST_F(OpCloneTest, SimpleGeneratedCase) {

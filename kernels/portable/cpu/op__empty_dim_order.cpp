@@ -18,7 +18,8 @@ namespace native {
 
 using executorch::aten::Tensor;
 using OptionalIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
-using DimOrderArrayRef = executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
 
 namespace {
 

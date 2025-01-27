@@ -24,11 +24,12 @@ class TensorPtrMakerTest : public ::testing::Test {
 
 TEST_F(TensorPtrMakerTest, CreateTensorUsingTensorMaker) {
   float data[20] = {2};
-  auto tensor = for_blob(data, {4, 5})
-                    .dim_order({0, 1})
-                    .strides({5, 1})
-                    .dynamism(executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND)
-                    .make_tensor_ptr();
+  auto tensor =
+      for_blob(data, {4, 5})
+          .dim_order({0, 1})
+          .strides({5, 1})
+          .dynamism(executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND)
+          .make_tensor_ptr();
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);

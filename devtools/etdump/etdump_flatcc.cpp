@@ -548,7 +548,8 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
     }
 
     case Tag::ListTensor: {
-      executorch::aten::ArrayRef<executorch::aten::Tensor> tensors = evalue.toTensorList();
+      executorch::aten::ArrayRef<executorch::aten::Tensor> tensors =
+          evalue.toTensorList();
       etdump_Tensor_vec_start(builder_);
       for (size_t i = 0; i < tensors.size(); ++i) {
         long offset = copy_tensor_to_debug_buffer(tensors[i]);

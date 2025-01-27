@@ -314,7 +314,8 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_18) {
   executorch::aten::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0.0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale = executorch::aten::optional<double>(-INFINITY);
+  executorch::aten::optional<double> scale =
+      executorch::aten::optional<double>(-INFINITY);
   executorch::aten::Tensor ret_expected = tfFloat.make(
       {3, 2, 2, 6},
       {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN,

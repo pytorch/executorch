@@ -293,8 +293,9 @@ Tensor& quantize_per_channel_out(
   const double* scale_data = scale.const_data_ptr<double>();
   const int64_t* zero_point_data = zero_point.const_data_ptr<int64_t>();
 
-  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>> optional_dim_list{
-      executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>
+      optional_dim_list{
+          executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
   // Actual quantization logic
   // input, out are the input and output tensors

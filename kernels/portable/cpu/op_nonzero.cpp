@@ -56,7 +56,8 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
       static_cast<SizesType>(num_nonzero), static_cast<SizesType>(input.dim())};
   ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(output, ArrayRef<executorch::aten::SizesType>(out_shape, 2)) ==
+      resize_tensor(
+          output, ArrayRef<executorch::aten::SizesType>(out_shape, 2)) ==
           Error::Ok,
       InvalidArgument, );
 

@@ -73,7 +73,8 @@ void Runner::generate(const std::string& prompt, std::size_t max_seq_len) {
   std::cout << std::endl;
 }
 
-uint64_t Runner::logits_to_token(const executorch::aten::Tensor& logits_tensor) {
+uint64_t Runner::logits_to_token(
+    const executorch::aten::Tensor& logits_tensor) {
   return sampler_->sample(logits_tensor.data_ptr<float>());
 }
 

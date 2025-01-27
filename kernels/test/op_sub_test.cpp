@@ -575,7 +575,8 @@ TEST_F(OpSubScalarOutTest, OptimizedSanityCheck) {
 }
 
 TEST_F(OpSubScalarOutTest, DtypeTest_float16_float_int_float16) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Half> tfHalf;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Half>
+      tfHalf;
 
   executorch::aten::Tensor self = tfHalf.ones({2, 2});
   executorch::aten::Scalar other = executorch::aten::Scalar(-1.0);

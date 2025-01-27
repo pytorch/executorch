@@ -21,8 +21,10 @@ using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
-using DimOrderArrayRef = executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
-using StridesArrayRef = executorch::aten::ArrayRef<executorch::aten::StridesType>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
+using StridesArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::StridesType>;
 
 namespace {
 

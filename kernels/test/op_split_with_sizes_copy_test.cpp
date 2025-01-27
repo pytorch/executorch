@@ -28,7 +28,8 @@ class OpSplitWithSizesCopyOutTest : public OperatorTest {
         context_, self, split_sizes, dim, out);
   }
 
-  void test_tensor_shape_dynamism(executorch::aten::TensorShapeDynamism dynamism) {
+  void test_tensor_shape_dynamism(
+      executorch::aten::TensorShapeDynamism dynamism) {
     torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
         tfFloat;
 
@@ -40,8 +41,9 @@ class OpSplitWithSizesCopyOutTest : public OperatorTest {
          -61.375, 13.125,  28.625,  -94.0,   -67.0,   -8.625,  -88.875, -79.125,
          0.375,   -61.375, 65.0,    -99.375});
     ::std::vector<int64_t> split_sizes_vec = {3, 1, 2};
-    executorch::aten::ArrayRef<int64_t> split_sizes = executorch::aten::ArrayRef<int64_t>(
-        split_sizes_vec.data(), split_sizes_vec.size());
+    executorch::aten::ArrayRef<int64_t> split_sizes =
+        executorch::aten::ArrayRef<int64_t>(
+            split_sizes_vec.data(), split_sizes_vec.size());
     int64_t dim = 1;
 
     ::std::vector<executorch::aten::Tensor> out_vec;
@@ -98,8 +100,8 @@ class OpSplitWithSizesCopyOutTest : public OperatorTest {
              -61.375,
              65.0,
              -99.375})};
-    executorch::aten::TensorList out_expected =
-        executorch::aten::TensorList(out_expected_vec.data(), out_expected_vec.size());
+    executorch::aten::TensorList out_expected = executorch::aten::TensorList(
+        out_expected_vec.data(), out_expected_vec.size());
     op_split_with_sizes_copy_out(self, split_sizes, dim, out);
     EXPECT_TENSOR_LISTS_CLOSE(out, out_expected);
   }
@@ -110,5 +112,6 @@ TEST_F(OpSplitWithSizesCopyOutTest, SanityCheckDim1) {
 }
 
 TEST_F(OpSplitWithSizesCopyOutTest, DynamicShape) {
-  test_tensor_shape_dynamism(executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
+  test_tensor_shape_dynamism(
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
 }

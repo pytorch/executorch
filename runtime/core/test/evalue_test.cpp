@@ -37,7 +37,8 @@ class EValueTest : public ::testing::Test {
 class TensorWrapper {
  public:
   explicit TensorWrapper(executorch::aten::Tensor tensor)
-      : tensor_(std::make_unique<executorch::aten::Tensor>(std::move(tensor))) {}
+      : tensor_(std::make_unique<executorch::aten::Tensor>(std::move(tensor))) {
+  }
 
   executorch::aten::Tensor& operator*() {
     return *tensor_;
@@ -120,7 +121,8 @@ TEST_F(EValueTest, ToOptionalScalar) {
   EXPECT_TRUE(e.isScalar());
   EXPECT_FALSE(e.isNone());
 
-  executorch::aten::optional<executorch::aten::Scalar> o = e.toOptional<executorch::aten::Scalar>();
+  executorch::aten::optional<executorch::aten::Scalar> o =
+      e.toOptional<executorch::aten::Scalar>();
   EXPECT_TRUE(o.has_value());
   EXPECT_TRUE(o.value().isFloatingPoint());
   EXPECT_EQ(o.value().to<double>(), 3.141);
@@ -139,7 +141,8 @@ TEST_F(EValueTest, NoneToOptionalScalar) {
   EValue e;
   EXPECT_TRUE(e.isNone());
 
-  executorch::aten::optional<executorch::aten::Scalar> o = e.toOptional<executorch::aten::Scalar>();
+  executorch::aten::optional<executorch::aten::Scalar> o =
+      e.toOptional<executorch::aten::Scalar>();
   EXPECT_FALSE(o.has_value());
 }
 
@@ -147,7 +150,8 @@ TEST_F(EValueTest, NoneToOptionalTensor) {
   EValue e;
   EXPECT_TRUE(e.isNone());
 
-  executorch::aten::optional<executorch::aten::Tensor> o = e.toOptional<executorch::aten::Tensor>();
+  executorch::aten::optional<executorch::aten::Tensor> o =
+      e.toOptional<executorch::aten::Tensor>();
   EXPECT_FALSE(o.has_value());
 }
 
@@ -173,7 +177,8 @@ TEST_F(EValueTest, toString) {
 TEST_F(EValueTest, MemoryFormat) {
   const EValue e((int64_t)0);
   EXPECT_TRUE(e.isInt());
-  const executorch::aten::MemoryFormat m = e.to<executorch::aten::MemoryFormat>();
+  const executorch::aten::MemoryFormat m =
+      e.to<executorch::aten::MemoryFormat>();
   EXPECT_EQ(m, executorch::aten::MemoryFormat::Contiguous);
 }
 
@@ -222,8 +227,9 @@ TEST_F(EValueTest, toOptionalTensorList) {
   EXPECT_TRUE(e.isListOptionalTensor());
 
   // Convert back to list
-  executorch::aten::ArrayRef<executorch::aten::optional<executorch::aten::Tensor>> x =
-      e.toListOptionalTensor();
+  executorch::aten::ArrayRef<
+      executorch::aten::optional<executorch::aten::Tensor>>
+      x = e.toListOptionalTensor();
   EXPECT_EQ(x.size(), 2);
   EXPECT_FALSE(x[0].has_value());
   EXPECT_FALSE(x[1].has_value());

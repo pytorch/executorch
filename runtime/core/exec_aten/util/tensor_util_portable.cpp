@@ -18,8 +18,8 @@ namespace runtime {
 /**
  * Implementation for ExecuTorch tensor util, should only be included in
  * an target with ATen mode turned off. Explicitly taking
- * torch::executor::Tensor (instead of executorch::aten::Tensor) to make sure it fails
- * at compile time if built incorrectly.
+ * torch::executor::Tensor (instead of executorch::aten::Tensor) to make sure it
+ * fails at compile time if built incorrectly.
  */
 Error get_dim_order(
     const torch::executor::Tensor& tensor,
