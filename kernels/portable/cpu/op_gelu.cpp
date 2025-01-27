@@ -37,7 +37,7 @@ Tensor& gelu_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "gelu.out", CTYPE, [&]() {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, "gelu.out", CTYPE, [&]() {
     if (approximate == "tanh") {
       apply_unary_map_fn(
           [](const CTYPE x) {
@@ -51,7 +51,7 @@ Tensor& gelu_out(
 
             const CTYPE x_cubed = x * x * x;
             const CTYPE inner = kBeta * (x + kKappa * x_cubed);
-            const CTYPE ret = 0.5 * x * (1 + std::tanh(inner));
+            const CTYPE ret = 0.5 * x * (1.0 + std::tanh(inner));
 
             return ret;
           },

@@ -1,7 +1,7 @@
 // Schema for flatbuffer-serialized tensors.
 
 include "scalar_type.fbs";
-namespace flat_tensor;
+namespace flat_tensor_flatbuffer;
 
 // Update after BC breaking changes.
 file_identifier "FT01";
