@@ -794,6 +794,8 @@ lowering process.
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_sin_default'), target=None)])
     Range constraints: {}
 
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/passes/infra/pass_base.py:44: FutureWarning: MemoryPlanningPass.call() is deprecated as it does not handle graphs         with mutation, please use MemoryPlanningPass.run() instead
+      res = self.call(graph_module)
 
 
 
@@ -1270,7 +1272,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.112 seconds)
+   **Total running time of the script:** (0 minutes 3.392 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
