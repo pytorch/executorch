@@ -45,7 +45,9 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     SliceCopyConfig,
     SoftmaxConfig,
     SquareRootConfig,
+    SqueezeCopyConfig,
     SubConfig,
+    UnsqueezeCopyConfig,
     UpsampleBilinear2dConfig,
     ViewCopyConfig,
 )
@@ -99,7 +101,9 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     SliceCopyConfig,
     SoftmaxConfig,
     SquareRootConfig,
+    SqueezeCopyConfig,
     SubConfig,
+    UnsqueezeCopyConfig,
     UpsampleBilinear2dConfig,
     ViewCopyConfig,
     # Quant/Dequant Op Configs
