@@ -59,6 +59,13 @@ dtype_enum_to_type = {
     "20": "Bits4x2",
     "21": "Bits8",
     "22": "Bits16",
+    "23": "Float8_e5m2",
+    "24": "Float8_e4m3fn",
+    "25": "Float8_e5m2fnuz",
+    "26": "Float8_e4m3fnuz",
+    "27": "UInt16",
+    "28": "UInt32",
+    "29": "Uint64",
 }
 
 
@@ -84,7 +91,8 @@ def write_selected_op_variants(yaml_file_path: str, output_dir: str) -> None:
                 dtype_set = set([x.split(";")[0] for x in tensor_meta])
                 dtype_list = sorted([dtype_enum_to_type[x] for x in dtype_set])
                 conditions = [
-                    "scalar_type == executorch::aten::ScalarType::" + x for x in dtype_list
+                    "scalar_type == executorch::aten::ScalarType::" + x
+                    for x in dtype_list
                 ]
             body_parts.append(
                 ops_and_dtypes_template.substitute(
