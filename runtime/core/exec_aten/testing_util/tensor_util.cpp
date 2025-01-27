@@ -80,6 +80,9 @@ double default_atol_for_type(ScalarType t) {
   if (t == ScalarType::Half) {
     return internal::kDefaultHalfAtol;
   }
+  if (t == ScalarType::BFloat16) {
+    return internal::kDefaultBFloat16Atol;
+  }
   return internal::kDefaultAtol;
 }
 } // namespace

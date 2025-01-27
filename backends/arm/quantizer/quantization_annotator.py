@@ -304,6 +304,21 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_output = _QuantProperty(
             0, SharedQuantizationSpec((node.args[0], node))
         )
+    elif node.target in [
+        torch.ops.aten.eq.Tensor,
+        torch.ops.aten.ge.Tensor,
+        torch.ops.aten.gt.Tensor,
+        torch.ops.aten.le.Tensor,
+        torch.ops.aten.lt.Tensor,
+    ]:
+        shared_qspec = SharedQuantizationSpec((node.args[0], node))
+        quant_properties.quant_inputs = [
+            _QuantProperty(0, input_act_qspec),
+            _QuantProperty(
+                1, input_act_qspec if node.args[0] == node.args[1] else shared_qspec
+            ),
+        ]
+        quant_properties.quant_output = None
     elif node.target in _parent_shared_qspec:
         if not isinstance(node.args[0], Node):
             return None
