@@ -289,7 +289,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> convolution_backward_out(
 
   constexpr auto name = "convolution_backward.out";
 
-  ET_SWITCH_FLOATH_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     conv2d_backward_impl<CTYPE>(
         grad_output,
         input,

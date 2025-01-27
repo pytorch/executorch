@@ -266,7 +266,7 @@ class FlatTensorSerializer(DataSerializer):
         # Create FlatTensor, which describes of the contents of the file and
         # points to all the data segments. It will be serialized to flatbuffer.
         flat_tensor = FlatTensor(
-            version=0,
+            version=0,  # Keep in sync with c++ version number in serialize.h
             tensor_alignment=self.config.tensor_alignment,
             tensors=flat_tensor_metadata,
             segments=[DataSegment(offset=0, size=len(flat_tensor_data))],
