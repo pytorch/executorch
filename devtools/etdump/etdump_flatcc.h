@@ -31,8 +31,11 @@ struct ETDumpStaticAllocator {
     data_size = alloc_buf_size;
     allocated = 0;
     out_size = total_buf_size - alloc_buf_size;
-    front_cursor = &buffer[alloc_buf_size];
-    front_left = out_size / 2;
+    // The front of the buffer is the end of the allocation buffer.
+    // We start writing from the end of the allocation buffer, and
+    // move backwards.
+    front_cursor = &buffer[alloc_buf_size + out_size];
+    front_left = out_size;
   }
 
   // Pointer to backing buffer to allocate from.
