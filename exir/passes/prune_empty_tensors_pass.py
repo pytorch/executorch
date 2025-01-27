@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
+from typing import cast, List
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -30,7 +31,7 @@ class PruneEmptyTensorsPass(ExportPass):
         """
         Removes empty tensors from the graph that are inputs to aten.cat.default
         """
-        concat_list = cat_node.all_input_nodes
+        concat_list = cast(List[Node], cat_node.args[0])
         pruned_concat_list = []
         for input_arg in concat_list:
             input_arg_tensor = input_arg.meta["val"]
