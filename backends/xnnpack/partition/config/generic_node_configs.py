@@ -9,6 +9,8 @@
 import logging
 from typing import cast, List, Optional
 
+import executorch.backends.xnnpack.operators.op_expand_copy as op_expand_copy
+
 import numpy as np
 import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
@@ -260,6 +262,30 @@ class EluConfig(GenericNodePartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.elu.default
+
+
+class ExpandCopyConfig(GenericNodePartitionerConfig):
+    target_name = "expand_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.expand_copy.default
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Only partition expand_copy nodes that can be converted to view_copy (insertion of
+        singleton dims).
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Explicit false check here avoids non partitioning identity expand_copy.
+        if not op_expand_copy.check_expand_copy_constraints(node):
+            why(node, reason="only insertion of singleton dims is supported")
+            return False
+        return True
 
 
 class SoftmaxConfig(GenericNodePartitionerConfig):
