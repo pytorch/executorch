@@ -18,16 +18,18 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
     XnnpackPartitioner,
 )
+
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+)
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+)
 from executorch.backends.xnnpack.test.tester import Quantize, Tester
 from executorch.backends.xnnpack.test.tester.tester import (
     Partition,
     ToEdgeTransformAndLower,
 )
-
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-)
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 
 try:
     from torchao.quantization.quant_api import (

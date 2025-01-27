@@ -26,18 +26,18 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    OperatorConfig,
+    QuantizationAnnotation,
+    QuantizationConfig,
+    QuantizationSpec,
+)
 
 from torch import fx
 
 from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
-    OperatorConfig,
-    QuantizationAnnotation,
-    QuantizationConfig,
-    QuantizationSpec,
-)
 
 
 act_qspec = QuantizationSpec(
@@ -183,3 +183,15 @@ class CadenceDefaultQuantizer(CadenceQuantizer):
             qconfig = _default_qconfig
         quantizers = get_cadence_default_quantizer_list_with_config(qconfig)
         super().__init__(quantizers)
+
+
+# Nop quantizer, used to run fp32 cases
+# Calls an empty list of quantizers (no quantization). Note
+# that we do not strictly need that class since we could call
+# CadenceQuantizer([]), but this is more explicit and
+# does not require knowledge of the internals of the base class.
+class CadenceNopQuantizer(CadenceQuantizer):
+    def __init__(
+        self,
+    ) -> None:
+        super().__init__([])
