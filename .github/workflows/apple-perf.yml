@@ -74,19 +74,27 @@ jobs:
           CRON_DEFAULT_DEVICES: apple_iphone_15
         run: |
           set -eux
+
+          ARGS="--os ios"
+
           MODELS="${{ inputs.models }}"
           if [ -z "$MODELS" ]; then
             MODELS="$CRON_DEFAULT_MODELS"
           fi
+          ARGS="$ARGS --models $MODELS"
+
           DEVICES="${{ inputs.devices }}"
           if [ -z "$DEVICES" ]; then
             DEVICES="$CRON_DEFAULT_DEVICES"
           fi
+          ARGS="$ARGS --devices $DEVICES"
 
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py \
-            --os "ios" \
-            --models $MODELS \
-            --devices $DEVICES
+          BENCHMARK_CONFIGS="${{ inputs.benchmark_configs }}"
+          if [ -n "$BENCHMARK_CONFIGS" ]; then
+            ARGS="$ARGS --configs $BENCHMARK_CONFIGS"
+          fi
+
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py $ARGS
 
           echo "benchmark_configs is: ${{ steps.set-parameters.outputs.benchmark_configs }}"
 

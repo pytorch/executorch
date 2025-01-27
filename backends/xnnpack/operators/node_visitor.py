@@ -560,11 +560,11 @@ class NodeVisitor:
             # which should be used for depthwise/transpose convolution weights for XNNPACK
             shape = const_val.shape
             const_val = const_val.reshape(
-                (groups, const_val.shape[0] // groups) + const_val.shape[1:]
+                (groups, const_val.shape[0] // groups) + tuple(const_val.shape[1:])
             )
             const_val = const_val.permute((0, 2, 1) + tuple(range(3, const_val.dim())))
             const_val = const_val.reshape(
-                (shape[1] * groups, shape[0] // groups) + shape[2:]
+                (shape[1] * groups, shape[0] // groups) + tuple(shape[2:])
             ).contiguous()
 
         if convert_to_nhwc:

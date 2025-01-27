@@ -26,7 +26,7 @@ Tensor& opt_neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       out,
       "Failed to resize output tensor.");
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
     using Vec = executorch::vec::Vectorized<CTYPE>;
     executorch::vec::map<CTYPE>(
         [](Vec x) { return x.neg(); },

@@ -17,6 +17,13 @@ import executorch.exir as exir
 import executorch.exir.memory_planning  # noqa
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+)
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, memory, to_edge
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -67,11 +74,6 @@ from torch import nn
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import QuantizationSpec
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -1593,6 +1595,34 @@ class TestPasses(unittest.TestCase):
         FileCheck().check_count("executorch_exir_memory_view", 2, exactly=True).run(
             gm.code
         )
+
+    def test_constant_prop_pass_for_mutable_buffers(self) -> None:
+        def count_adds(gm: torch.fx.GraphModule) -> int:
+            return len(
+                gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.add.Tensor
+                )
+            )
+
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                x = x + self.state
+                # Add 1 (constant) to state.
+                self.state.add_(1)
+                return x
+
+        edge_manager = to_edge(
+            export(MutableStateModule(), (torch.zeros(1),), strict=True)
+        )
+        self.assertEqual(count_adds(edge_manager.exported_program().graph_module), 2)
+        edge_manager._edge_programs["forward"] = constant_prop_pass(
+            edge_manager._edge_programs["forward"]
+        )
+        self.assertEqual(count_adds(edge_manager.exported_program().graph_module), 2)
 
     def test_constant_prop_pass_for_no_grad(self) -> None:
         class LSTM(torch.nn.Module):

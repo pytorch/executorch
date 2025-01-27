@@ -43,15 +43,17 @@ except ImportError as e:
     logger.warning(f"{e=}")
     pass
 
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+)
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
@@ -558,10 +560,8 @@ class Tester:
         )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
-        # TODO(T182187531): Skip dim order for now. Support dim order and its op after alpha release.
         if not to_edge_stage:
             to_edge_stage = ToEdge()
-        to_edge_stage.edge_compile_conf._skip_dim_order = True
         res = self._run_stage(to_edge_stage)
         return res
 

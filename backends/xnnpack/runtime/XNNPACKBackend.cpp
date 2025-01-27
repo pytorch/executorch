@@ -76,6 +76,13 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
     auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         context.get_runtime_allocator(), xnnpack::delegate::XNNExecutor);
 
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
+    // This is needed to serialize access to xnn_create_runtime which is not
+    // thread safe. This can heppen when multiple threads call init() on
+    // the same backend instance.
+    const std::lock_guard<std::mutex> lock(workspace_mutex_);
+#endif
+
     // Executor has been allocated but not constructed, ensure that runtime_ is
     // nullptr by constructing it in place here. NOTE: Since we use placement
     // new and since this type is not trivially destructible, we must call the

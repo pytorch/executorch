@@ -81,8 +81,8 @@ else
 fi
 executor_runner_path=$(realpath ${executor_runner_path})
 
+mkdir -p ${root_dir}/ethos-u
 ethos_u_root_dir="$(cd ${root_dir}/ethos-u && pwd)"
-ethos_u_build_dir=${ethos_u_root_dir}/core_platform/build
 setup_path_script=${root_dir}/setup_path.sh
 
 # Executorch
