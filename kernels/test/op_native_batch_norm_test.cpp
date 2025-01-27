@@ -280,10 +280,10 @@ class OpNativeBatchNormLegitNoStatsOutTest : public OperatorTest {
   }
 };
 
-TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest2D){
+TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest2D) {
 #define TEST_ENTRY(ctype, dtype) \
   test_2d_dtype<executorch::aten::ScalarType::dtype>();
-    ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
 #undef TEST_ENTRY
 }
 
@@ -1078,10 +1078,10 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
 }
 
-TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest2D){
+TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest2D) {
 #define TEST_ENTRY(ctype, dtype) \
   test_2d_dtype<executorch::aten::ScalarType::dtype>();
-    ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
 #undef TEST_ENTRY
 }
 

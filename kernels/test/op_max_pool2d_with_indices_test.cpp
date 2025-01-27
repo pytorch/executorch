@@ -43,8 +43,10 @@ class OpMaxPool2DWithIndicesOutTest : public OperatorTest {
 };
 
 TEST_F(OpMaxPool2DWithIndicesOutTest, SanityTest4D) {
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
-  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Long>
+      tfLong;
 
   executorch::aten::Tensor self = tfFloat.make(
       {2, 3, 5, 5},
@@ -68,17 +70,20 @@ TEST_F(OpMaxPool2DWithIndicesOutTest, SanityTest4D) {
        26.75,   68.25,   -24.625, -53.0,   51.0,    90.625,  65.375,  43.875,
        90.875,  -41.625, 99.875,  6.375,   -31.25,  -94.0});
   ::std::vector<int64_t> kernel_size_vec = {2, 2};
-  executorch::aten::ArrayRef<int64_t> kernel_size = executorch::aten::ArrayRef<int64_t>(
-      kernel_size_vec.data(), kernel_size_vec.size());
+  executorch::aten::ArrayRef<int64_t> kernel_size =
+      executorch::aten::ArrayRef<int64_t>(
+          kernel_size_vec.data(), kernel_size_vec.size());
   ::std::vector<int64_t> stride_vec = {1, 1};
   executorch::aten::ArrayRef<int64_t> stride =
       executorch::aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
   ::std::vector<int64_t> padding_vec = {0, 0};
   executorch::aten::ArrayRef<int64_t> padding =
-      executorch::aten::ArrayRef<int64_t>(padding_vec.data(), padding_vec.size());
+      executorch::aten::ArrayRef<int64_t>(
+          padding_vec.data(), padding_vec.size());
   ::std::vector<int64_t> dilation_vec = {1, 1};
   executorch::aten::ArrayRef<int64_t> dilation =
-      executorch::aten::ArrayRef<int64_t>(dilation_vec.data(), dilation_vec.size());
+      executorch::aten::ArrayRef<int64_t>(
+          dilation_vec.data(), dilation_vec.size());
   bool ceil_mode = false;
   executorch::aten::Tensor out = tfFloat.zeros({2, 3, 4, 4});
   executorch::aten::Tensor indices = tfLong.zeros({2, 3, 4, 4});
