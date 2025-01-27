@@ -84,6 +84,14 @@ TEST_F(OpRoundTest, DoubleTensors) {
   test_round_execution_floats<ScalarType::Double>();
 }
 
+TEST_F(OpRoundTest, HalfTensors) {
+  test_round_execution_floats<ScalarType::Half>();
+}
+
+TEST_F(OpRoundTest, BFloat16Tensors) {
+  test_round_execution_floats<ScalarType::BFloat16>();
+}
+
 TEST_F(OpRoundTest, ByteTensors) {
   TensorFactory<ScalarType::Byte> tf;
 

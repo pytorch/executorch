@@ -54,10 +54,10 @@ void unbind_copy_int_out(
   ScalarType in_type = input.scalar_type();
   ScalarType out_type = out[0].scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "unbind_copy.int_out", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, out_type, ctx, "unbind_copy.int_out", CTYPE_OUT, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(
+      in_type, ctx, "unbind_copy.int_out", CTYPE_IN, [&]() {
+        ET_SWITCH_REALHBF16_TYPES(
+            out_type, ctx, "unbind_copy.int_out", CTYPE_OUT, [&]() {
               const CTYPE_IN* const input_data =
                   input.const_data_ptr<CTYPE_IN>();
               for (size_t i = 0, e = out.size(); i < e; ++i) {
