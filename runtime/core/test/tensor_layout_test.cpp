@@ -6,26 +6,31 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/tensor_layout.h>
 
 #include <gtest/gtest.h>
 
 using namespace ::testing;
 using executorch::aten::ScalarType;
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::TensorLayout;
 
 TEST(TestTensorLayout, Ctor) {
-  int32_t sizes[2] = {1, 2};
-  uint8_t dim_order[2] = {0, 1};
+  std::array<int32_t, 2> sizes = {1, 2};
+  std::array<uint8_t, 2> dim_order = {0, 1};
+  Span<const int32_t> sizes_span = {sizes.data(), sizes.size()};
+  Span<const uint8_t> dim_order_span = {dim_order.data(), dim_order.size()};
 
-  Span<const int32_t> sizes_span = {sizes, sizes + 2};
-  Span<const uint8_t> dim_order_span = {dim_order, dim_order + 2};
+  Result<TensorLayout> layout_res =
+      TensorLayout::create(sizes_span, dim_order_span, ScalarType::Float);
+  EXPECT_TRUE(layout_res.ok());
 
-  TensorLayout layout =
-      TensorLayout(ScalarType::Float, sizes_span, dim_order_span);
-
+  TensorLayout layout = layout_res.get();
   EXPECT_EQ(layout.scalar_type(), ScalarType::Float);
 
   EXPECT_EQ(layout.sizes().size(), sizes_span.size());
@@ -37,4 +42,37 @@ TEST(TestTensorLayout, Ctor) {
   EXPECT_EQ(layout.dim_order()[1], dim_order_span[1]);
 
   EXPECT_EQ(layout.nbytes(), 8);
+}
+
+TEST(TestTensorLayout, Ctor_InvalidDimOrder) {
+  std::array<int32_t, 1> sizes = {2};
+  std::array<uint8_t, 1> dim_order = {1};
+  Span<const int32_t> sizes_span = {sizes.data(), sizes.size()};
+  Span<const uint8_t> dim_order_span = {dim_order.data(), dim_order.size()};
+
+  Result<TensorLayout> layout_res =
+      TensorLayout::create(sizes_span, dim_order_span, ScalarType::Float);
+  EXPECT_EQ(layout_res.error(), Error::InvalidArgument);
+}
+
+TEST(TestTensorLayout, Ctor_InvalidSizes) {
+  std::array<int32_t, 1> sizes = {-1};
+  std::array<uint8_t, 1> dim_order = {0};
+  Span<const int32_t> sizes_span = {sizes.data(), sizes.size()};
+  Span<const uint8_t> dim_order_span = {dim_order.data(), dim_order.size()};
+
+  Result<TensorLayout> layout_res =
+      TensorLayout::create(sizes_span, dim_order_span, ScalarType::Float);
+  EXPECT_EQ(layout_res.error(), Error::InvalidArgument);
+}
+
+TEST(TestTensorLayout, Ctor_SizesDimOrderMismatch) {
+  std::array<int32_t, 1> sizes = {2};
+  std::array<uint8_t, 2> dim_order = {0, 1};
+  Span<const int32_t> sizes_span = {sizes.data(), sizes.size()};
+  Span<const uint8_t> dim_order_span = {dim_order.data(), dim_order.size()};
+
+  Result<TensorLayout> layout_res =
+      TensorLayout::create(sizes_span, dim_order_span, ScalarType::Float);
+  EXPECT_EQ(layout_res.error(), Error::InvalidArgument);
 }

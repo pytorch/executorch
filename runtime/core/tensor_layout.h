@@ -10,55 +10,48 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 
 namespace executorch {
 namespace runtime {
 
-namespace {
-size_t calculate_nbytes(
-    const Span<const int32_t>& sizes,
-    const exec_aten::ScalarType& scalar_type) {
-  ssize_t n = 1;
-  for (ssize_t i = 0; i < sizes.size(); i++) {
-    ET_CHECK(sizes[i] >= 0);
-    n *= sizes[i];
-  }
-  // Use the full namespace to disambiguate from c10::elementSize.
-  return n * executorch::runtime::elementSize(scalar_type);
-}
-} // namespace
-
 /**
- * Metadata describing the layout of external tensors (tensors that are not
- stored in the PTE file).
- *
- * The NamedDataMap used to create the TensorLayout must outlive the
- TensorLayout.
+ * Describes the layout of a tensor.
  */
-class TensorLayout {
+class ET_EXPERIMENTAL TensorLayout final {
  public:
-  TensorLayout(
-      executorch::aten::ScalarType scalar_type,
+  TensorLayout() = delete;
+
+  /**
+   * Creates a TensorLayout from the given parameters.
+   *
+   * @param[in] sizes The sizes of the tensor. Note: the span passed here must
+   * outlive the TensorLayout and all copies of it.
+   * @param[in] dim_order The dim order of the tensor. Note: the span passed
+   * here must outlive the TensorLayout and all copies of it.
+   * @param[in] scalar_type The scalar type of the tensor.
+   * @return A Result containing the TensorLayout on success, or an error.
+   */
+  static executorch::runtime::Result<TensorLayout> create(
       Span<const int32_t> sizes,
-      Span<const uint8_t> dim_order)
-      : sizes_(sizes),
-        dim_order_(dim_order),
-        scalar_type_(scalar_type),
-        nbytes_(calculate_nbytes(sizes_, scalar_type_)) {}
+      Span<const uint8_t> dim_order,
+      executorch::aten::ScalarType scalar_type);
 
-  TensorLayout(const TensorLayout&) = default;
-  TensorLayout(TensorLayout&&) = default;
-  TensorLayout& operator=(const TensorLayout&) = default;
-  TensorLayout& operator=(TensorLayout&& other) = default;
-  ~TensorLayout() = default;
-
-  /// Returns the sizes of the tensor.
+  /**
+   * Returns the sizes of the tensor.
+   *
+   * NOTE: The TensorLayout must outlive the spans returned here.
+   */
   Span<const int32_t> sizes() const {
     return sizes_;
   }
 
-  /// Returns the dim order of the tensor.
+  /**
+   * Returns the dim order of the tensor.
+   *
+   * NOTE: The TensorLayout must outlive the spans returned here.
+   */
   Span<const uint8_t> dim_order() const {
     return dim_order_;
   }
@@ -74,6 +67,15 @@ class TensorLayout {
   }
 
  private:
+  TensorLayout(
+      Span<const int32_t> sizes,
+      Span<const uint8_t> dim_order,
+      executorch::aten::ScalarType scalar_type,
+      size_t nbytes)
+      : sizes_(sizes),
+        dim_order_(dim_order),
+        scalar_type_(scalar_type),
+        nbytes_(nbytes) {}
   /// The sizes of the tensor.
   Span<const int32_t> sizes_;
 
