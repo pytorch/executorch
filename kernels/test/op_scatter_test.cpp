@@ -368,7 +368,7 @@ class OpScatterValueOutTest : public OperatorTest {
 
 TEST_F(OpScatterSrcOutTest, AllValidInputOutputSupport) {
 #define TEST_ENTRY(CTYPE, DTYPE) test_scatter_src_out<ScalarType::DTYPE>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -381,7 +381,7 @@ TEST_F(OpScatterSrcOutTest, InvalidDimensionsDies) {
 
 TEST_F(OpScatterValueOutTest, AllValidInputOutputSupport) {
 #define TEST_ENTRY(CTYPE, DTYPE) test_scatter_value_out<ScalarType::DTYPE>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
