@@ -537,8 +537,8 @@ class TestMisc(unittest.TestCase):
         verifier.verify_graph_input_output()
 
         idx = 0
-        reference_output = dict()
-        actual_output = dict()
+        reference_output = {}
+        actual_output = {}
         for node in graph_module.graph.nodes:
             if node.op == "placeholder" or (
                 node.op == "call_function"

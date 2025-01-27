@@ -6,8 +6,8 @@
 
 import logging
 import warnings
-from typing import Any, Callable, List, Optional
 from functools import partial
+from typing import Any, Callable, List, Optional
 
 import torch
 from executorch.exir.error import internal_assert
