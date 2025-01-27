@@ -16,6 +16,10 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
     XnnpackPartitioner,
 )
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 from executorch.backends.xnnpack.utils.configs import (
     get_transform_passes,
     get_xnnpack_edge_compile_config,
@@ -68,10 +72,6 @@ from torch.ao.quantization.quantize_fx import (
 )
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from torch.export import export_for_training
 
 from torch.testing import FileCheck
