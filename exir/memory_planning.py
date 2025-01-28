@@ -669,6 +669,22 @@ def get_node_tensor_specs(
         ]
 
 
+# Little bit hacky to check if the graph contains
+# XNNPACK delegate
+# Why?
+
+
+def _contains_xnnpack_delegate(graph_module: torch.fx.GraphModule) -> bool:
+    for node in graph_module.graph.nodes:
+        if node.target == executorch_call_delegate:
+            lowered_module = getattr(
+                graph_module.graph.owning_module, node.args[0].target
+            )
+            if "xnnpack" in lowered_module.backend_id.lower():
+                return True
+    return False
+
+
 def greedy(
     graph_module: torch.fx.GraphModule,
     alignment: int,
@@ -685,6 +701,18 @@ def greedy(
     This flag is added to allow for Vulkan to use MemoryPlanningPass with overlapping
     allocations disabled
     """
+    # padding allocation with 64 bytes.
+    # this requirement is really for XNNPACK backend which can read tensors
+    # beyond the end of the tensor. This is done for performance
+    # optimizations in XNNPACK.
+    # While accounting for backend specific requirement is not the right choice
+    # in backend agnostic memory planning, we do it here as it seems most appropriate.
+    # Right now this applies to greedy only so any other
+    # algorithm that plans memory for XNNPACK backend will
+    # not have this.
+    extra_padded_bytes = 0
+    if _contains_xnnpack_delegate(graph_module):
+        extra_padded_bytes = 64
     spec2obj = {}
     shared_objects = defaultdict(list)
     # Don't do assertion in collect_specs_from_nodes if we have already encountered
@@ -732,13 +760,8 @@ def greedy(
             total_sizes[mem_id] = materialize_buffer(
                 shared_objects[mem_id], input_total_size
             )
-            # padding allocation with 64 bytes.
-            # this requirement really for XNNPACK backend which can access tensors
-            # for reading beyond the end of the tensor. This is done for performance
-            # optimizations in XNNPACK.
-            # While account for backend specific requirement is not the right choice
-            # in backend agnostic memory planning, we do it here for now.
-            total_sizes[mem_id] += 64
+            total_sizes[mem_id] += extra_padded_bytes
+
             # Since we now know the number of shared objects we need and the size of
             # each shared object, we can assign offset in the memory buffer for each
             # shared object.
