@@ -20,7 +20,7 @@ from executorch.backends.xnnpack.utils.utils import get_input_node
 
 
 @register_node_visitor
-class SquareRootVisitor(NodeVisitor):
+class ReciprocalSquareRootVisitor(NodeVisitor):
     target = "aten.rsqrt.default"
 
     def __init__(self, *args) -> None:
