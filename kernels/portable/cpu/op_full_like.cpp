@@ -54,7 +54,8 @@ Tensor& full_like_out(
 
   ET_SWITCH_REALB_TYPES(val_type, ctx, name, CTYPE_VAL, [&] {
     CTYPE_VAL val;
-    utils::extract_scalar(fill_value, &val);
+    ET_KERNEL_CHECK(
+        ctx, utils::extract_scalar(fill_value, &val), InvalidArgument, );
 
     ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
