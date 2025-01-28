@@ -1,9 +1,3 @@
-# Copyright (c) Qualcomm Innovation Center, Inc.
-# All rights reserved
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 set(CMAKE_CXX_STANDARD 17)
 
 cmake_minimum_required(VERSION 3.19)
@@ -46,6 +40,27 @@ list(PREPEND _openvino_executor_runner__srcs
      ${CMAKE_CURRENT_LIST_DIR}/../openvino/executor_runner/openvino_executor_runner.cpp
 )
 
+find_package(executorch CONFIG REQUIRED)
+target_include_directories(executorch INTERFACE ${_common_include_directories})
+target_compile_options(executorch INTERFACE ${_common_compile_options})
+
+# portable_ops_lib
+gen_selected_ops(LIB_NAME "openvino_portable_ops_lib" INCLUDE_ALL_OPS "ON")
+generate_bindings_for_kernels(
+  LIB_NAME "openvino_portable_ops_lib" FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/backends/openvino/openvino_functions.yaml
+)
+gen_operators_lib(
+  LIB_NAME "openvino_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
+)
+target_compile_options(
+  openvino_portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED
+)
+target_include_directories(
+  openvino_portable_ops_lib PUBLIC ${_common_include_directories}
+)
+
+
 # build executor runner
 add_executable(openvino_executor_runner ${_openvino_executor_runner__srcs})
 target_include_directories(
@@ -69,7 +84,7 @@ set(LIBRARIES_TO_LINK ${LIBRARY_DIR}/libopenvino_backend.so
 link_directories(${LIBRARY_DIR})
 
 # Link all libraries at once
-target_link_libraries(openvino_executor_runner PRIVATE ${LIBRARIES_TO_LINK})
+target_link_libraries(openvino_executor_runner PRIVATE ${LIBRARIES_TO_LINK} openvino_portable_ops_lib)
 
 set_target_properties(
   openvino_executor_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
