@@ -1019,11 +1019,13 @@ def _load_llama_model(
             # pyre-fixme[6]: For 5th argument expected `ModelArgs` but got
             #  `Union[Tensor, Module]`.
             model.max_seq_len,
+            # pyre-fixme[6]: For 6th argument expected `ModelArgs` but got
+            #  `Union[Tensor, Module]`.
             model.max_context_len,
-            # pyre-fixme[6]: For 6th argument expected `int` but got `Union[Tensor,
+            # pyre-fixme[6]: For 7th argument expected `int` but got `Union[Tensor,
             #  Module]`.
             model.n_layers,
-            # pyre-fixme[6]: For 7th argument expected `int` but got `Union[Tensor,
+            # pyre-fixme[6]: For 8th argument expected `int` but got `Union[Tensor,
             #  Module]`.
             model.vocab_size,
             metadata_str,
