@@ -17,10 +17,10 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::optional;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::ArrayRef;
+using exec_aten::optional;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 using torch::executor::native::quantized_embedding_4bit_out;
 

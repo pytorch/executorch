@@ -16,8 +16,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
-using TensorList = executorch::aten::TensorList;
+using Tensor = exec_aten::Tensor;
+using TensorList = exec_aten::TensorList;
 
 /**
  * Splits the tensor into chunks of size `split_size` along the specified

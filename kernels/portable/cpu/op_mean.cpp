@@ -15,8 +15,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
-using ScalarType = executorch::aten::ScalarType;
+using Tensor = exec_aten::Tensor;
+using ScalarType = exec_aten::ScalarType;
 
 Tensor& mean_dim_out(
     KernelRuntimeContext& ctx,

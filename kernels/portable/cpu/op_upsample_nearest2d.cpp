@@ -13,9 +13,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using executorch::aten::ArrayRef;
-using executorch::aten::optional;
-using executorch::aten::SizesType;
+using exec_aten::ArrayRef;
+using exec_aten::optional;
+using exec_aten::SizesType;
 
 namespace {
 template <typename CTYPE>
@@ -51,8 +51,8 @@ void upsample_nearest2d_kernel_impl(
 Tensor& upsample_nearest2d_vec_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::OptionalArrayRef<int64_t> output_size,
-    const executorch::aten::OptionalArrayRef<double> scale_factors,
+    const exec_aten::OptionalArrayRef<int64_t> output_size,
+    const exec_aten::OptionalArrayRef<double> scale_factors,
     Tensor& out) {
   // Preconditions (checked in check_..._args):
   //  In and out tensors have same dtype.

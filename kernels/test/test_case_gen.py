@@ -398,7 +398,7 @@ def gen_test_case_op_clone():
         make_simple_generated_case(
             torch.ones(10, 10),
             ArgForPyTorch(
-                EnumArg("executorch::aten::MemoryFormat::Contiguous"),
+                EnumArg("exec_aten::MemoryFormat::Contiguous"),
                 "memory_format",
                 torch.contiguous_format,
             ),
@@ -406,7 +406,7 @@ def gen_test_case_op_clone():
         )
         + make_test_cases_dynamic_shape(
             x,
-            EnumArg("executorch::aten::MemoryFormat::Contiguous"),
+            EnumArg("exec_aten::MemoryFormat::Contiguous"),
             torch.clone(x, memory_format=torch.contiguous_format),
         ),
     )

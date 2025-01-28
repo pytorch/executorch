@@ -23,9 +23,9 @@ namespace executor {
  * @returns The status of the repeat operation.
  */
 Error repeat_tensor(
-    const executorch::aten::Tensor& in,
-    executorch::aten::ArrayRef<int64_t> repeats,
-    executorch::aten::Tensor& out);
+    const exec_aten::Tensor& in,
+    exec_aten::ArrayRef<int64_t> repeats,
+    exec_aten::Tensor& out);
 
 } // namespace executor
 } // namespace torch

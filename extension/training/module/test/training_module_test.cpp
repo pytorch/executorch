@@ -16,8 +16,8 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-CArray
 
 using namespace ::testing;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 using torch::executor::Error;
 using torch::executor::Span;
 using torch::executor::testing::TensorFactory;

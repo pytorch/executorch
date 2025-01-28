@@ -252,8 +252,7 @@ class Module final {
       const std::optional<std::vector<Span<uint8_t>>>& output_storages =
           std::nullopt) {
     auto& method = get_method(method_name);
-    executorch::aten::ArrayRef<EValue> input_evalue_list(
-        args.data(), args.size());
+    exec_aten::ArrayRef<EValue> input_evalue_list(args.data(), args.size());
 
     Error set_inputs_status = method.set_inputs(input_evalue_list);
     THROW_IF_ERROR(
@@ -494,8 +493,7 @@ struct PyTensorInfo final {
   }
 
   int8_t dtype() const {
-    return static_cast<
-        std::underlying_type<executorch::aten::ScalarType>::type>(
+    return static_cast<std::underlying_type<exec_aten::ScalarType>::type>(
         info_.scalar_type());
   }
 
