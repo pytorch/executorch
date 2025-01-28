@@ -456,59 +456,63 @@ class Attention(nn.Module):
 
         if self.decode_kv_cache_as_io:
             assert self.use_kv_cache
-            # mask = self.mask[None, None, input_pos]
+            mask = attn_mask
             if self.use_additive_kv_cache_update:
-                assert cache_pos_mask is not None
                 assert seqlen == 1
-                k_update = cache_pos_mask * k
-                v_update = cache_pos_mask * v
-                k = k_cache + k_update
-                v = v_cache + v_update
-                assert k.shape == k_cache.shape
-                assert v.shape == v_cache.shape
+                # assert cache_pos_mask is not None
+                # k_update = cache_pos_mask * k
+                # v_update = cache_pos_mask * v
+                # print("k_update", k_update.shape)
+                # print("k_cache", k_cache.shape)
+                # k = k_cache + k_update
+                # v = v_cache + v_update
+                # assert k.shape == k_cache.shape
+                # assert v.shape == v_cache.shape
 
-                # # Attempt 1 to use torch.cat:
-                # # This fails to lower to ET during to_executorch due to a dynamo error related to the
-                # # delegate call.  We can talk to compiler about this, but the bigger issue is although
-                # # the CoreML mlpackage lowers, it fails at runtime on CPU/ANE with "input data broken / unsupported
-                # # model (model code -7)".  It does run on GPU.
-                # # I suspect it is related to the data-dependent / dynamic shape of k, v, and mask
+                # Attempt 1 to use torch.cat:
+                # This fails to lower to ET during to_executorch due to a dynamo error related to the
+                # delegate call.  We can talk to compiler about this, but the bigger issue is although
+                # the CoreML mlpackage lowers, it fails at runtime on CPU/ANE with "input data broken / unsupported
+                # model (model code -7)".  It does run on GPU.
+                # I suspect it is related to the data-dependent / dynamic shape of k, v, and mask
 
-                # buffer = 2 # needed to make dynamo happy
-                # input_pos_item = input_pos[0].item()
-                # torch._check_is_size(input_pos_item)
-                # torch._check(input_pos_item + seqlen <= self.max_seq_len - buffer)
-                # mask = torch.narrow(mask, dim=3, start=0, length=input_pos_item + seqlen)
+                buffer = 2  # needed to make dynamo happy
+                torch._check(input_pos + seqlen <= self.max_seq_len - buffer)
+                mask = torch.narrow(mask, dim=1, start=0, length=input_pos + seqlen)
 
-                # k = torch.cat([torch.narrow(k_cache, dim=2, start=0, length=input_pos_item), k], axis=2)
-                # v = torch.cat([torch.narrow(v_cache, dim=2, start=0, length=input_pos_item), v], axis=2)
+                k = torch.cat(
+                    [torch.narrow(k_cache, dim=2, start=0, length=input_pos), k], axis=2
+                )
+                v = torch.cat(
+                    [torch.narrow(v_cache, dim=2, start=0, length=input_pos), v], axis=2
+                )
 
-                # # Attempt 2 to use torch.cat
-                # # Dynamo fails with "expand: attempting to expand a dimension of length u0 + 1024!"
-                # # I'm not confident this variant will work in CoreML if we can export it, though.
+                # # # Attempt 2 to use torch.cat
+                # # # Dynamo fails with "expand: attempting to expand a dimension of length u0 + 1024!"
+                # # # I'm not confident this variant will work in CoreML if we can export it, though.
                 # buffer = 2
-                # input_pos_item = input_pos[0].item()
-                # torch._check_is_size(input_pos_item)
-                # torch._check(input_pos_item + seqlen <= self.max_seq_len - buffer)
+                # # input_pos_item = input_pos[0].item()
+                # # torch._check_is_size(input_pos_item)
+                # torch._check(input_pos + seqlen <= self.max_seq_len - buffer)
 
-                # k = torch.cat([torch.narrow(k_cache, dim=2, start=0, length=input_pos_item), k], axis=2)
-                # k = k.expand(k_cache.size())
-                # v = torch.cat([torch.narrow(v_cache, dim=2, start=0, length=input_pos_item), v], axis=2)
+                # k = torch.cat([torch.narrow(k_cache, dim=2, start=0, length=input_pos), k], axis=2)
+
+                # # torch.Size([1, 12, 1, 64]) torch.Size([1, 12, 1024, 64]) torch.Size([1, 12, 1024, 64])
+                # k = k.expand(k_cache.size()) # torch.Size([1, 12, 1024, 64])
+                # v = torch.cat([torch.narrow(v_cache, dim=2, start=0, length=input_pos), v], axis=2)
                 # v = v.expand(v_cache.size())
             else:
                 k = torch.ops.aten.index_put(k_cache, [None, None, input_pos, None], k)
                 v = torch.ops.aten.index_put(v_cache, [None, None, input_pos, None], v)
         else:
             assert not self.use_kv_cache
-            # assert hasattr(self, "mask")
-
-            # mask = self.mask[:seqlen, :seqlen]
+            mask = attn_mask
 
         # grouped multiquery attention: expand out keys and values
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
-        output = torch.ops.coreml.sdpa(q, k, v, attn_mask)
+        output = torch.ops.coreml.sdpa(q, k, v, mask)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
