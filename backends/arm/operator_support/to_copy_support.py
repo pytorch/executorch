@@ -125,6 +125,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         # Check dim_order (to_dim_order_copy)
         if "dim_order" in node.kwargs:
             dim_order = node.kwargs["dim_order"]
+            # pyre-ignore[6]
             if dim_order != list(range(len(dim_order))):
                 logger.info(
                     f"Argument {dim_order=} is not supported for "

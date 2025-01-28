@@ -302,9 +302,9 @@ TEST_F(OpUpsampleBilinear2dTest, SmokeTestAlignCornersScales) {
 }
 
 TEST_F(OpUpsampleBilinear2dTest, DType) {
-#define TEST_ENTRY(ctype, dtype)                              \
-  test_upsample_bilinear2d_dtype<ctype, ScalarType::dtype>(); \
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+#define TEST_ENTRY(ctype, dtype) \
+  test_upsample_bilinear2d_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

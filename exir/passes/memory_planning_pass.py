@@ -10,6 +10,7 @@ from functools import partial
 from typing import Any, Callable, List, Optional
 
 import torch
+from executorch.exir._warnings import deprecated
 from executorch.exir.error import internal_assert
 from executorch.exir.memory import alloc
 from executorch.exir.memory_planning import (
@@ -95,6 +96,11 @@ class MemoryPlanningPass(PassBase):
                         )
                         out_alloc_node.meta["spec"] = specs[i]
 
+    @deprecated(
+        "MemoryPlanningPass.call() is deprecated as it does not handle graphs \
+        with mutation, please use MemoryPlanningPass.run() instead",
+        category=FutureWarning,
+    )
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         return self.run(graph_module)
 

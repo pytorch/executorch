@@ -338,7 +338,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max_context_length",
         type=int,
-        default=128,
+        default=None,
         help="maximum length of context for model to remember",
     )
 
@@ -645,6 +645,8 @@ def _validate_args(args):
     """
     TODO: Combine all the backends under --backend args
     """
+    if args.max_context_length is None:
+        args.max_context_length = args.max_seq_length
     if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
         raise ValueError(
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
