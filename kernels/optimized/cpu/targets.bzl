@@ -33,7 +33,9 @@ _OPTIMIZED_ATEN_OPS = (
             "ovr_config//cpu:arm64": [
                 "fbsource//third-party/sleef:sleef_arm",
             ],
-        }),
+        }) + [
+            "//executorch/kernels/portable/cpu/util:activation_ops_util",
+        ],
     ),
     op_target(
         name = "op_le",
