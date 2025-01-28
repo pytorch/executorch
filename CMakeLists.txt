@@ -146,8 +146,7 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
 endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
-# they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
-# disables exceptions and runtime type.
+# they can be properly gc'd. -s: strip symbol.
 set(CMAKE_CXX_FLAGS_RELEASE
     "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
 )
