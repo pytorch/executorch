@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpRoundTest : public OperatorTest {
@@ -82,6 +82,14 @@ TEST_F(OpRoundTest, FloatTensors) {
 
 TEST_F(OpRoundTest, DoubleTensors) {
   test_round_execution_floats<ScalarType::Double>();
+}
+
+TEST_F(OpRoundTest, HalfTensors) {
+  test_round_execution_floats<ScalarType::Half>();
+}
+
+TEST_F(OpRoundTest, BFloat16Tensors) {
+  test_round_execution_floats<ScalarType::BFloat16>();
 }
 
 TEST_F(OpRoundTest, ByteTensors) {

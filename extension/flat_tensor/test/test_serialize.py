@@ -80,7 +80,7 @@ class TestSerialize(unittest.TestCase):
 
         # Check header.
         header = FlatTensorHeader.from_bytes(
-            serialized_data[0 : FlatTensorHeader.EXPECTED_LENGTH]
+            serialized_data[8 : FlatTensorHeader.EXPECTED_LENGTH + 8]
         )
         self.assertTrue(header.is_valid())
 
@@ -107,15 +107,13 @@ class TestSerialize(unittest.TestCase):
 
         # Confirm the flatbuffer magic is present.
         self.assertEqual(
-            serialized_data[
-                header.flatbuffer_offset + 4 : header.flatbuffer_offset + 8
-            ],
+            serialized_data[4:8],
             b"FT01",
         )
 
         # Check flat tensor data.
         flat_tensor_bytes = serialized_data[
-            header.flatbuffer_offset : header.flatbuffer_offset + header.flatbuffer_size
+            0 : header.flatbuffer_offset + header.flatbuffer_size
         ]
 
         flat_tensor = _deserialize_to_flat_tensor(flat_tensor_bytes)

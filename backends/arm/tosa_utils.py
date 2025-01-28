@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 import numpy as np
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 
