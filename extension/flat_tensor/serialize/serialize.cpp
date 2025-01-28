@@ -43,7 +43,7 @@ void write_nulls(std::ostream& out, size_t num_bytes) {
 
 runtime::Error save_ptd(
     const std::string& path,
-    const std::map<std::string, exec_aten::Tensor>& tensor_map,
+    const std::map<std::string, executorch::aten::Tensor>& tensor_map,
     const size_t tensor_alignment) {
   // Create File
   std::ofstream file;
@@ -55,7 +55,7 @@ runtime::Error save_ptd(
 
 runtime::Error save_ptd(
     std::ostream& out,
-    const std::map<std::string, exec_aten::Tensor>& tensor_map,
+    const std::map<std::string, executorch::aten::Tensor>& tensor_map,
     const size_t tensor_alignment) {
   // Assert the system is little endian. Since we are sending the data over
   // the wire, we need to ensure that the data is always in the same format.

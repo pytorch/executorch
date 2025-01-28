@@ -79,7 +79,7 @@ inline double calculate_scale(const Tensor& query, optional<double> scale) {
 
 } // namespace util
 namespace vec = ::executorch::vec;
-using Tensor = exec_aten::Tensor;
+using Tensor = ::executorch::aten::Tensor;
 
 namespace {
 
@@ -727,23 +727,23 @@ void update_cache(
   ET_CHECK_MSG(cache_data, "cache data is null");
 
   auto cache_strides = cache.strides();
-  exec_aten::StridesType cache_batch_dim_stride = cache_strides[0];
-  exec_aten::StridesType cache_seq_dim_stride = cache_strides[1];
+  ::executorch::aten::StridesType cache_batch_dim_stride = cache_strides[0];
+  ::executorch::aten::StridesType cache_seq_dim_stride = cache_strides[1];
 
   auto value_strides = projected_value.strides();
-  exec_aten::StridesType value_batch_dim_stride = value_strides[0];
+  ::executorch::aten::StridesType value_batch_dim_stride = value_strides[0];
 
-  exec_aten::SizesType num_bytes_to_copy =
+  ::executorch::aten::SizesType num_bytes_to_copy =
       (projected_value.numel() / projected_value.size(0)) *
       projected_value.element_size();
 
   for (int64_t batch_line = 0; batch_line < projected_value.size(0);
        ++batch_line) {
-    exec_aten::SizesType cache_pos_offset =
+    ::executorch::aten::SizesType cache_pos_offset =
         (batch_line * cache_batch_dim_stride +
          start_pos * cache_seq_dim_stride) *
         cache.element_size();
-    exec_aten::SizesType value_pos_offset =
+    ::executorch::aten::SizesType value_pos_offset =
         (batch_line * value_batch_dim_stride) * cache.element_size();
 
     std::memcpy(
@@ -863,14 +863,14 @@ Tensor& custom_sdpa_out(
 
   // Refactor the following into create_view util perhaps using
   // TensorPtr
-  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_key_dim_order{
-      0, 1, 2, 3};
-  std::array<exec_aten::SizesType, util::kKVDim> sliced_key_sizes;
+  std::array<::executorch::aten::DimOrderType, util::kKVDim>
+      sliced_key_dim_order{0, 1, 2, 3};
+  std::array<::executorch::aten::SizesType, util::kKVDim> sliced_key_sizes;
   sliced_key_sizes[0] = k.size(0);
   sliced_key_sizes[1] = start_pos + seq_len; // key_cache.size(2);
   sliced_key_sizes[2] = k.size(2);
   sliced_key_sizes[3] = k.size(3);
-  std::array<exec_aten::StridesType, util::kKVDim> sliced_key_strides;
+  std::array<::executorch::aten::StridesType, util::kKVDim> sliced_key_strides;
   dim_order_to_stride_nocheck(
       sliced_key_sizes.data(),
       sliced_key_dim_order.data(),
@@ -889,14 +889,15 @@ Tensor& custom_sdpa_out(
       TensorShapeDynamism::STATIC);
   Tensor sliced_key_cache(&k_impl);
 
-  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_value_dim_order{
-      0, 1, 2, 3};
-  std::array<exec_aten::SizesType, util::kKVDim> sliced_value_sizes;
+  std::array<::executorch::aten::DimOrderType, util::kKVDim>
+      sliced_value_dim_order{0, 1, 2, 3};
+  std::array<::executorch::aten::SizesType, util::kKVDim> sliced_value_sizes;
   sliced_value_sizes[0] = v.size(0);
   sliced_value_sizes[1] = start_pos + seq_len; // value_cache.size(2);
   sliced_value_sizes[2] = v.size(2);
   sliced_value_sizes[3] = v.size(3);
-  std::array<exec_aten::StridesType, util::kKVDim> sliced_value_strides;
+  std::array<::executorch::aten::StridesType, util::kKVDim>
+      sliced_value_strides;
   dim_order_to_stride_nocheck(
       sliced_value_sizes.data(),
       sliced_value_dim_order.data(),

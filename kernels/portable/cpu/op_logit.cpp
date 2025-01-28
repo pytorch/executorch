@@ -15,12 +15,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 Tensor& logit_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::optional<double> eps,
+    executorch::aten::optional<double> eps,
     Tensor& out) {
   (void)ctx;
 

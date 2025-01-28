@@ -35,7 +35,7 @@ class FlatTensorSerializeTest : public ::testing::Test {
 
 TEST_F(FlatTensorSerializeTest, ValidFlatTensorSerialized) {
   const size_t kTensorAlignment = 16;
-  std::map<std::string, exec_aten::Tensor> flat_tensor_map;
+  std::map<std::string, executorch::aten::Tensor> flat_tensor_map;
 
   float linear_weight = 3.14f;
   auto weight = executorch::extension::make_tensor_ptr({1}, &linear_weight);

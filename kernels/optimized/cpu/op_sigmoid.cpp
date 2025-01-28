@@ -19,8 +19,8 @@ namespace native {
 namespace {
 
 template <typename T>
-constexpr bool is_half_or_bf16_v = std::is_same_v<T, exec_aten::Half> ||
-    std::is_same_v<T, exec_aten::BFloat16>;
+constexpr bool is_half_or_bf16_v = std::is_same_v<T, executorch::aten::Half> ||
+    std::is_same_v<T, executorch::aten::BFloat16>;
 
 template <
     typename CTYPE_IN,
@@ -63,7 +63,7 @@ void sigmoid_data(
 
 } // namespace
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor&
 opt_sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {

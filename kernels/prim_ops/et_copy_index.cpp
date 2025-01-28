@@ -13,8 +13,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
-using exec_aten::SizesType;
-using exec_aten::Tensor;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
 using torch::executor::Error;
 using torch::executor::resize_tensor;
 

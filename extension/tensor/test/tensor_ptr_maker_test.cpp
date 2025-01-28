@@ -24,11 +24,12 @@ class TensorPtrMakerTest : public ::testing::Test {
 
 TEST_F(TensorPtrMakerTest, CreateTensorUsingTensorMaker) {
   float data[20] = {2};
-  auto tensor = for_blob(data, {4, 5})
-                    .dim_order({0, 1})
-                    .strides({5, 1})
-                    .dynamism(exec_aten::TensorShapeDynamism::DYNAMIC_BOUND)
-                    .make_tensor_ptr();
+  auto tensor =
+      for_blob(data, {4, 5})
+          .dim_order({0, 1})
+          .strides({5, 1})
+          .dynamism(executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND)
+          .make_tensor_ptr();
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
@@ -41,9 +42,9 @@ TEST_F(TensorPtrMakerTest, CreateTensorUsingTensorMaker) {
 
 TEST_F(TensorPtrMakerTest, PerfectForwardingLValue) {
   float data[20] = {2};
-  std::vector<exec_aten::SizesType> sizes = {4, 5};
-  std::vector<exec_aten::DimOrderType> dim_order = {0, 1};
-  std::vector<exec_aten::StridesType> strides = {5, 1};
+  std::vector<executorch::aten::SizesType> sizes = {4, 5};
+  std::vector<executorch::aten::DimOrderType> dim_order = {0, 1};
+  std::vector<executorch::aten::StridesType> strides = {5, 1};
 
   auto tensor = for_blob(data, sizes)
                     .dim_order(dim_order)
@@ -63,9 +64,9 @@ TEST_F(TensorPtrMakerTest, PerfectForwardingLValue) {
 
 TEST_F(TensorPtrMakerTest, PerfectForwardingRValue) {
   float data[20] = {2};
-  std::vector<exec_aten::SizesType> sizes = {4, 5};
-  std::vector<exec_aten::DimOrderType> dim_order = {0, 1};
-  std::vector<exec_aten::StridesType> strides = {5, 1};
+  std::vector<executorch::aten::SizesType> sizes = {4, 5};
+  std::vector<executorch::aten::DimOrderType> dim_order = {0, 1};
+  std::vector<executorch::aten::StridesType> strides = {5, 1};
 
   auto tensor = for_blob(data, std::move(sizes))
                     .dim_order(std::move(dim_order))
@@ -116,7 +117,7 @@ TEST_F(TensorPtrMakerTest, TensorMakerConversionOperator) {
   float data[20] = {2};
   TensorPtr tensor =
       for_blob(data, {4, 5})
-          .dynamism(exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
+          .dynamism(executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
@@ -169,7 +170,7 @@ TEST_F(TensorPtrMakerTest, TensorDeleterReleasesCapturedSharedPtr) {
   auto tensor = from_blob(
       data_ptr.get(),
       {4, 5},
-      exec_aten::ScalarType::Float,
+      executorch::aten::ScalarType::Float,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);
@@ -184,25 +185,25 @@ TEST_F(TensorPtrMakerTest, CreateEmpty) {
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
 
-  auto tensor2 = empty({4, 5}, exec_aten::ScalarType::Int);
+  auto tensor2 = empty({4, 5}, executorch::aten::ScalarType::Int);
   EXPECT_EQ(tensor2->dim(), 2);
   EXPECT_EQ(tensor2->size(0), 4);
   EXPECT_EQ(tensor2->size(1), 5);
-  EXPECT_EQ(tensor2->scalar_type(), exec_aten::ScalarType::Int);
+  EXPECT_EQ(tensor2->scalar_type(), executorch::aten::ScalarType::Int);
 
-  auto tensor3 = empty({4, 5}, exec_aten::ScalarType::Long);
+  auto tensor3 = empty({4, 5}, executorch::aten::ScalarType::Long);
   EXPECT_EQ(tensor3->dim(), 2);
   EXPECT_EQ(tensor3->size(0), 4);
   EXPECT_EQ(tensor3->size(1), 5);
-  EXPECT_EQ(tensor3->scalar_type(), exec_aten::ScalarType::Long);
+  EXPECT_EQ(tensor3->scalar_type(), executorch::aten::ScalarType::Long);
 
-  auto tensor4 = empty({4, 5}, exec_aten::ScalarType::Double);
+  auto tensor4 = empty({4, 5}, executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor4->dim(), 2);
   EXPECT_EQ(tensor4->size(0), 4);
   EXPECT_EQ(tensor4->size(1), 5);
-  EXPECT_EQ(tensor4->scalar_type(), exec_aten::ScalarType::Double);
+  EXPECT_EQ(tensor4->scalar_type(), executorch::aten::ScalarType::Double);
 }
 
 TEST_F(TensorPtrMakerTest, CreateFull) {
@@ -210,28 +211,28 @@ TEST_F(TensorPtrMakerTest, CreateFull) {
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(tensor->const_data_ptr<float>()[0], 7);
 
-  auto tensor2 = full({4, 5}, 3, exec_aten::ScalarType::Int);
+  auto tensor2 = full({4, 5}, 3, executorch::aten::ScalarType::Int);
   EXPECT_EQ(tensor2->dim(), 2);
   EXPECT_EQ(tensor2->size(0), 4);
   EXPECT_EQ(tensor2->size(1), 5);
-  EXPECT_EQ(tensor2->scalar_type(), exec_aten::ScalarType::Int);
+  EXPECT_EQ(tensor2->scalar_type(), executorch::aten::ScalarType::Int);
   EXPECT_EQ(tensor2->const_data_ptr<int32_t>()[0], 3);
 
-  auto tensor3 = full({4, 5}, 9, exec_aten::ScalarType::Long);
+  auto tensor3 = full({4, 5}, 9, executorch::aten::ScalarType::Long);
   EXPECT_EQ(tensor3->dim(), 2);
   EXPECT_EQ(tensor3->size(0), 4);
   EXPECT_EQ(tensor3->size(1), 5);
-  EXPECT_EQ(tensor3->scalar_type(), exec_aten::ScalarType::Long);
+  EXPECT_EQ(tensor3->scalar_type(), executorch::aten::ScalarType::Long);
   EXPECT_EQ(tensor3->const_data_ptr<int64_t>()[0], 9);
 
-  auto tensor4 = full({4, 5}, 11, exec_aten::ScalarType::Double);
+  auto tensor4 = full({4, 5}, 11, executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor4->dim(), 2);
   EXPECT_EQ(tensor4->size(0), 4);
   EXPECT_EQ(tensor4->size(1), 5);
-  EXPECT_EQ(tensor4->scalar_type(), exec_aten::ScalarType::Double);
+  EXPECT_EQ(tensor4->scalar_type(), executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor4->const_data_ptr<double>()[0], 11);
 }
 
@@ -240,21 +241,21 @@ TEST_F(TensorPtrMakerTest, CreateScalar) {
 
   EXPECT_EQ(tensor->dim(), 0);
   EXPECT_EQ(tensor->numel(), 1);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3.14f);
 
-  auto tensor2 = scalar_tensor(5, exec_aten::ScalarType::Int);
+  auto tensor2 = scalar_tensor(5, executorch::aten::ScalarType::Int);
 
   EXPECT_EQ(tensor2->dim(), 0);
   EXPECT_EQ(tensor2->numel(), 1);
-  EXPECT_EQ(tensor2->scalar_type(), exec_aten::ScalarType::Int);
+  EXPECT_EQ(tensor2->scalar_type(), executorch::aten::ScalarType::Int);
   EXPECT_EQ(tensor2->const_data_ptr<int32_t>()[0], 5);
 
-  auto tensor3 = scalar_tensor(7.0, exec_aten::ScalarType::Double);
+  auto tensor3 = scalar_tensor(7.0, executorch::aten::ScalarType::Double);
 
   EXPECT_EQ(tensor3->dim(), 0);
   EXPECT_EQ(tensor3->numel(), 1);
-  EXPECT_EQ(tensor3->scalar_type(), exec_aten::ScalarType::Double);
+  EXPECT_EQ(tensor3->scalar_type(), executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor3->const_data_ptr<double>()[0], 7.0);
 }
 
@@ -263,28 +264,28 @@ TEST_F(TensorPtrMakerTest, CreateOnes) {
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(tensor->const_data_ptr<float>()[0], 1);
 
-  auto tensor2 = ones({4, 5}, exec_aten::ScalarType::Int);
+  auto tensor2 = ones({4, 5}, executorch::aten::ScalarType::Int);
   EXPECT_EQ(tensor2->dim(), 2);
   EXPECT_EQ(tensor2->size(0), 4);
   EXPECT_EQ(tensor2->size(1), 5);
-  EXPECT_EQ(tensor2->scalar_type(), exec_aten::ScalarType::Int);
+  EXPECT_EQ(tensor2->scalar_type(), executorch::aten::ScalarType::Int);
   EXPECT_EQ(tensor2->const_data_ptr<int32_t>()[0], 1);
 
-  auto tensor3 = ones({4, 5}, exec_aten::ScalarType::Long);
+  auto tensor3 = ones({4, 5}, executorch::aten::ScalarType::Long);
   EXPECT_EQ(tensor3->dim(), 2);
   EXPECT_EQ(tensor3->size(0), 4);
   EXPECT_EQ(tensor3->size(1), 5);
-  EXPECT_EQ(tensor3->scalar_type(), exec_aten::ScalarType::Long);
+  EXPECT_EQ(tensor3->scalar_type(), executorch::aten::ScalarType::Long);
   EXPECT_EQ(tensor3->const_data_ptr<int64_t>()[0], 1);
 
-  auto tensor4 = ones({4, 5}, exec_aten::ScalarType::Double);
+  auto tensor4 = ones({4, 5}, executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor4->dim(), 2);
   EXPECT_EQ(tensor4->size(0), 4);
   EXPECT_EQ(tensor4->size(1), 5);
-  EXPECT_EQ(tensor4->scalar_type(), exec_aten::ScalarType::Double);
+  EXPECT_EQ(tensor4->scalar_type(), executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor4->const_data_ptr<double>()[0], 1);
 }
 
@@ -293,28 +294,28 @@ TEST_F(TensorPtrMakerTest, CreateZeros) {
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(tensor->const_data_ptr<float>()[0], 0);
 
-  auto tensor2 = zeros({4, 5}, exec_aten::ScalarType::Int);
+  auto tensor2 = zeros({4, 5}, executorch::aten::ScalarType::Int);
   EXPECT_EQ(tensor2->dim(), 2);
   EXPECT_EQ(tensor2->size(0), 4);
   EXPECT_EQ(tensor2->size(1), 5);
-  EXPECT_EQ(tensor2->scalar_type(), exec_aten::ScalarType::Int);
+  EXPECT_EQ(tensor2->scalar_type(), executorch::aten::ScalarType::Int);
   EXPECT_EQ(tensor2->const_data_ptr<int32_t>()[0], 0);
 
-  auto tensor3 = zeros({4, 5}, exec_aten::ScalarType::Long);
+  auto tensor3 = zeros({4, 5}, executorch::aten::ScalarType::Long);
   EXPECT_EQ(tensor3->dim(), 2);
   EXPECT_EQ(tensor3->size(0), 4);
   EXPECT_EQ(tensor3->size(1), 5);
-  EXPECT_EQ(tensor3->scalar_type(), exec_aten::ScalarType::Long);
+  EXPECT_EQ(tensor3->scalar_type(), executorch::aten::ScalarType::Long);
   EXPECT_EQ(tensor3->const_data_ptr<int64_t>()[0], 0);
 
-  auto tensor4 = zeros({4, 5}, exec_aten::ScalarType::Double);
+  auto tensor4 = zeros({4, 5}, executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor4->dim(), 2);
   EXPECT_EQ(tensor4->size(0), 4);
   EXPECT_EQ(tensor4->size(1), 5);
-  EXPECT_EQ(tensor4->scalar_type(), exec_aten::ScalarType::Double);
+  EXPECT_EQ(tensor4->scalar_type(), executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor4->const_data_ptr<double>()[0], 0);
 }
 
@@ -324,7 +325,7 @@ TEST_F(TensorPtrMakerTest, CreateRandTensor) {
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
 
   for (auto i = 0; i < tensor->numel(); ++i) {
     auto val = tensor->const_data_ptr<float>()[i];
@@ -334,12 +335,12 @@ TEST_F(TensorPtrMakerTest, CreateRandTensor) {
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandTensorWithIntType) {
-  auto tensor = rand({4, 5}, exec_aten::ScalarType::Int);
+  auto tensor = rand({4, 5}, executorch::aten::ScalarType::Int);
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Int);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Int);
 
   for (auto i = 0; i < tensor->numel(); ++i) {
     auto val = tensor->const_data_ptr<int32_t>()[i];
@@ -348,12 +349,12 @@ TEST_F(TensorPtrMakerTest, CreateRandTensorWithIntType) {
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandTensorWithDoubleType) {
-  auto tensor = rand({4, 5}, exec_aten::ScalarType::Double);
+  auto tensor = rand({4, 5}, executorch::aten::ScalarType::Double);
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Double);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Double);
 
   for (auto i = 0; i < tensor->numel(); ++i) {
     auto val = tensor->const_data_ptr<double>()[i];
@@ -368,7 +369,7 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensor) {
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 100);
   EXPECT_EQ(tensor->size(1), 100);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
 
   auto sum = 0.0f;
   for (auto i = 0; i < tensor->numel(); ++i) {
@@ -379,12 +380,12 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensor) {
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandnTensorWithDoubleType) {
-  auto tensor = randn({100, 100}, exec_aten::ScalarType::Double);
+  auto tensor = randn({100, 100}, executorch::aten::ScalarType::Double);
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 100);
   EXPECT_EQ(tensor->size(1), 100);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Double);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Double);
 
   auto sum = 0.0;
   for (auto i = 0; i < tensor->numel(); ++i) {
@@ -395,12 +396,12 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensorWithDoubleType) {
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandIntTensorWithIntType) {
-  auto tensor = randint(10, 20, {4, 5}, exec_aten::ScalarType::Int);
+  auto tensor = randint(10, 20, {4, 5}, executorch::aten::ScalarType::Int);
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Int);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Int);
 
   for (auto i = 0; i < tensor->numel(); ++i) {
     auto val = tensor->const_data_ptr<int32_t>()[i];
@@ -410,12 +411,12 @@ TEST_F(TensorPtrMakerTest, CreateRandIntTensorWithIntType) {
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandIntTensorWithLongType) {
-  auto tensor = randint(10, 20, {4, 5}, exec_aten::ScalarType::Long);
+  auto tensor = randint(10, 20, {4, 5}, executorch::aten::ScalarType::Long);
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Long);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Long);
 
   for (auto i = 0; i < tensor->numel(); ++i) {
     auto val = tensor->const_data_ptr<int64_t>()[i];
@@ -425,12 +426,12 @@ TEST_F(TensorPtrMakerTest, CreateRandIntTensorWithLongType) {
 }
 
 TEST_F(TensorPtrMakerTest, CreateRandnTensorWithIntType) {
-  auto tensor = rand({4, 5}, exec_aten::ScalarType::Int);
+  auto tensor = rand({4, 5}, executorch::aten::ScalarType::Int);
 
   EXPECT_EQ(tensor->dim(), 2);
   EXPECT_EQ(tensor->size(0), 4);
   EXPECT_EQ(tensor->size(1), 5);
-  EXPECT_EQ(tensor->scalar_type(), exec_aten::ScalarType::Int);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Int);
 
   for (auto i = 0; i < tensor->numel(); ++i) {
     auto val = tensor->const_data_ptr<int32_t>()[i];
