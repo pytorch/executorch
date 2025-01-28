@@ -66,7 +66,7 @@ void main() {
   pos.y *= BATCH_SIZE_Y;
 
   // do not process if top pixel does not fit within the output range
-  if (pos.z >= out_limits.z) {
+  if (any(greaterThanEqual(pos, out_limits))) {
     return;
   }
 
