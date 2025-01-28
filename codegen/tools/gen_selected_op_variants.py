@@ -59,6 +59,13 @@ dtype_enum_to_type = {
     "20": "Bits4x2",
     "21": "Bits8",
     "22": "Bits16",
+    "23": "Float8_e5m2",
+    "24": "Float8_e4m3fn",
+    "25": "Float8_e5m2fnuz",
+    "26": "Float8_e4m3fnuz",
+    "27": "UInt16",
+    "28": "UInt32",
+    "29": "Uint64",
 }
 
 
