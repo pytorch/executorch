@@ -50,7 +50,7 @@ Tensor& softmax_out(
   // Adjust for negative dim
   dim = dim < 0 ? dim + executorch::runtime::nonzero_dim(in) : dim;
 
-  const executorch::aten::optional<int64_t>& dim_t = dim;
+  const exec_aten::optional<int64_t>& dim_t = dim;
   const size_t d = ET_NORMALIZE_IX(dim_t.value(), in.dim());
   const size_t size = in.size(d);
 

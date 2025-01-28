@@ -17,9 +17,9 @@
 
 #include <gtest/gtest.h>
 
-using executorch::aten::optional;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::optional;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
@@ -27,7 +27,7 @@ using torch::executor::testing::TensorFactory;
 template <class T>
 using OptionalArrayRef = std::optional<c10::ArrayRef<T>>;
 #else
-using executorch::aten::OptionalArrayRef;
+using exec_aten::OptionalArrayRef;
 #endif
 
 class OpUpsampleNearest2dTest : public OperatorTest {
@@ -41,7 +41,7 @@ class OpUpsampleNearest2dTest : public OperatorTest {
         context_, in, output_size, scale_factors, out);
   }
 
-  template <class CTYPE, executorch::aten::ScalarType DTYPE>
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
   void test_upsample_nearest2d_dtype() {
     TensorFactory<DTYPE> tf;
 

@@ -13,22 +13,21 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
-using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
-using DimOrderArrayRef =
-    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
-using MemoryFormat = executorch::aten::MemoryFormat;
+using Tensor = exec_aten::Tensor;
+using SizesArrayRef = exec_aten::ArrayRef<exec_aten::SizesType>;
+using DimOrderArrayRef = exec_aten::ArrayRef<exec_aten::DimOrderType>;
+using MemoryFormat = exec_aten::MemoryFormat;
 
 template <typename T>
-using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
+using OptionalArrayRef = exec_aten::OptionalArrayRef<T>;
 
 template <typename T>
-using Optional = executorch::aten::optional<T>;
+using Optional = exec_aten::optional<T>;
 
 namespace {
 Optional<MemoryFormat> get_memory_format(OptionalArrayRef<int64_t> dim_order) {
   if (!dim_order.has_value()) {
-    return executorch::aten::nullopt;
+    return exec_aten::nullopt;
   }
   if (is_contiguous_dim_order(
           dim_order.value().data(), dim_order.value().size())) {
@@ -44,7 +43,7 @@ Optional<MemoryFormat> get_memory_format(OptionalArrayRef<int64_t> dim_order) {
 bool check__to_dim_order_copy_args(
     const Tensor& input,
     bool non_blocking,
-    executorch::aten::OptionalArrayRef<int64_t> dim_order,
+    exec_aten::OptionalArrayRef<int64_t> dim_order,
     Tensor& out) {
   // Right now we only support blocking data transfer
   ET_LOG_AND_RETURN_IF_FALSE(non_blocking == false);
@@ -52,7 +51,7 @@ bool check__to_dim_order_copy_args(
   // dim_order is set, the target dim_order will be either contiguous or
   // channels_last memory format
   if (dim_order.has_value()) {
-    executorch::aten::ArrayRef<int64_t> dim_order_ref = dim_order.value();
+    exec_aten::ArrayRef<int64_t> dim_order_ref = dim_order.value();
 
     // dim order size shall equal to input dim
     ET_LOG_AND_RETURN_IF_FALSE(dim_order_ref.size() == input.dim());
@@ -66,7 +65,7 @@ bool check__to_dim_order_copy_args(
     // Out Aten tensor shall have same memory format stride as dim_order
     const size_t kMaxNumOfDimensions = 16;
     ET_LOG_AND_RETURN_IF_FALSE(kMaxNumOfDimensions >= out.dim());
-    executorch::aten::StridesType target_strides[kMaxNumOfDimensions];
+    exec_aten::StridesType target_strides[kMaxNumOfDimensions];
     dim_order_to_stride_nocheck(
         out.sizes().data(),
         dim_order_ref.data(),

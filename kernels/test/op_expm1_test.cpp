@@ -13,7 +13,7 @@
 
 #include <cmath>
 
-using executorch::aten::Tensor;
+using exec_aten::Tensor;
 class OpExpm1OutTest
     : public torch::executor::testing::UnaryUfuncRealHBBF16ToFloatHBF16Test {
  protected:

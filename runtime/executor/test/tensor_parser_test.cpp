@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
@@ -116,8 +116,7 @@ TEST_F(TensorParserTest, TestModuleAddFloat) {
 }
 
 TEST_F(TensorParserTest, TestModuleAddHalf) {
-  test_module_add(
-      half_loader_, ScalarType::Half, sizeof(executorch::aten::Half));
+  test_module_add(half_loader_, ScalarType::Half, sizeof(exec_aten::Half));
 }
 
 TEST_F(TensorParserTest, TestMutableState) {

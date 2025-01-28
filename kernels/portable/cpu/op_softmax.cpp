@@ -17,7 +17,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
+using Tensor = exec_aten::Tensor;
 
 Tensor& softmax_out(
     KernelRuntimeContext& ctx,

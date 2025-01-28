@@ -14,7 +14,7 @@
 namespace torch::executor::native {
 namespace {
 Tensor& fast_hadamard_transform_out_no_context(const Tensor& vec, Tensor& out) {
-  executorch::aten::RuntimeContext context;
+  exec_aten::RuntimeContext context;
   return fast_hadamard_transform_out(context, vec, out);
 }
 at::Tensor fast_hadamard_transform_aten(const at::Tensor& vec) {

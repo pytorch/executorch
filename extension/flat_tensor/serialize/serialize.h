@@ -32,7 +32,7 @@ constexpr uint32_t kSchemaVersion = 0;
  */
 ET_EXPERIMENTAL runtime::Error save_ptd(
     const std::string& path,
-    const std::map<std::string, executorch::aten::Tensor>& tensor_map,
+    const std::map<std::string, exec_aten::Tensor>& tensor_map,
     const size_t tensor_alignment);
 
 /**
@@ -45,7 +45,7 @@ ET_EXPERIMENTAL runtime::Error save_ptd(
  */
 ET_EXPERIMENTAL runtime::Error save_ptd(
     std::ostream& out,
-    const std::map<std::string, executorch::aten::Tensor>& tensor_map,
+    const std::map<std::string, exec_aten::Tensor>& tensor_map,
     const size_t tensor_alignment);
 
 } // namespace flat_tensor

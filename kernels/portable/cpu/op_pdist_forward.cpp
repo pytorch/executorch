@@ -13,7 +13,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
+using Tensor = exec_aten::Tensor;
 
 Tensor& _pdist_forward_out(
     KernelRuntimeContext& ctx,

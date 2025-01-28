@@ -14,8 +14,8 @@
 namespace torch {
 namespace executor {
 
-using SizesType = executorch::aten::SizesType;
-using StridesType = executorch::aten::StridesType;
+using SizesType = exec_aten::SizesType;
+using StridesType = exec_aten::StridesType;
 
 /**
  * Returns a tensor that is a transposed version of input in out.

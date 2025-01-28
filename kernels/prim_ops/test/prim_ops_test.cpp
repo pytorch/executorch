@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 
-using executorch::aten::SizesType;
+using exec_aten::SizesType;
 using torch::executor::Error;
 using torch::executor::resize_tensor;
 

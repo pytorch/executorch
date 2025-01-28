@@ -13,12 +13,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
+using Tensor = exec_aten::Tensor;
 
 Tensor& replication_pad2d_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    executorch::aten::ArrayRef<int64_t> padding,
+    exec_aten::ArrayRef<int64_t> padding,
     Tensor& out) {
   (void)ctx;
 

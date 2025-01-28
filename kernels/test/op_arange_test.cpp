@@ -20,10 +20,10 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::Scalar;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::ArrayRef;
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 
 using torch::executor::testing::TensorFactory;
 
@@ -33,7 +33,7 @@ class OpArangeOutTest : public OperatorTest {
     return torch::executor::aten::arange_outf(context_, end, out);
   }
 
-  template <class CTYPE, executorch::aten::ScalarType DTYPE>
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
   void test_arange_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -63,7 +63,7 @@ class OpArangeStartOutTest : public OperatorTest {
     return torch::executor::aten::arange_outf(context_, start, end, step, out);
   }
 
-  template <class CTYPE, executorch::aten::ScalarType DTYPE>
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
   void test_arange_start_dtype() {
     TensorFactory<DTYPE> tf;
 
