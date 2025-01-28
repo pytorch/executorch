@@ -169,7 +169,7 @@ def get_coreml_partitioner(
         take_over_mutable_buffer=take_over_mutable_buffer,
         skip_ops_for_coreml_delegation=[
             "quantized_decomposed.embedding_4bit.dtype",
-            "aten.select_copy.int",
+            # "aten.select_copy.int",
         ],
     )
 
