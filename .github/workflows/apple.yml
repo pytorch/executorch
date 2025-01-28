@@ -197,7 +197,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-frameworks-ios, set-version]
     timeout-minutes: 30
-    environment: ${{ github.ref == 'refs/heads/main' && 'cherry-pick-bot' || '' }}
+    environment: ${{ github.ref == 'refs/heads/release/0.5' && 'cherry-pick-bot' || '' }}
     permissions:
       id-token: write
       contents: write
@@ -221,11 +221,11 @@ jobs:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
-      - name: Only push to S3 when running the workflow manually from main branch
-        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+      - name: Only push to S3 when running the workflow manually from release branch
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/release/0.5' }}
         shell: bash
         run: |
-          echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
+          echo "UPLOAD_ON_RELEASE=1" >> "${GITHUB_ENV}"
       - name: Upload the artifact to ossci-ios S3 bucket
         shell: bash
         run: |
@@ -235,7 +235,7 @@ jobs:
           pip install awscli==1.32.18
 
           AWS_CMD="aws s3 cp --dryrun"
-          if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+          if [[ "${UPLOAD_ON_RELEASE:-0}" == "1" ]]; then
             AWS_CMD="aws s3 cp"
           fi
 
