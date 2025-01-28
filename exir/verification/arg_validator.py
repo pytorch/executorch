@@ -37,9 +37,9 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
 
     def __init__(self, graph_module: torch.fx.GraphModule) -> None:
         super().__init__(graph_module)
-        self.violating_ops: Dict[EdgeOpOverload, Dict[str, Optional[torch.dtype]]] = (
-            defaultdict(dict)
-        )
+        self.violating_ops: Dict[
+            EdgeOpOverload, Tuple[Dict[str, Optional[torch.dtype]], torch.fx.Node]
+        ] = defaultdict(dict)
 
     def run_node(self, n: torch.fx.Node) -> None:
         self.node = n
@@ -125,5 +125,5 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
 
         valid = target._schema.dtype_constraint.validate(tensor_arg_types)
         if not valid:
-            self.violating_ops[target] = tensor_arg_types
+            self.violating_ops[target] = (tensor_arg_types, self.node)
         return super().call_function(target, args, kwargs)  # pyre-fixme[6]
