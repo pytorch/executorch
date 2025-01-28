@@ -14,8 +14,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using executorch::aten::optional;
-using executorch::aten::Tensor;
+using exec_aten::optional;
+using exec_aten::Tensor;
 
 namespace {
 

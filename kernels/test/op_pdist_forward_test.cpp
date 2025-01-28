@@ -17,9 +17,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::ArrayRef;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_pdist_forward_out(const Tensor& input, double p, Tensor& out) {

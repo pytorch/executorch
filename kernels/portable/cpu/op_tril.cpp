@@ -14,8 +14,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using executorch::aten::Scalar;
-using ScalarType = executorch::aten::ScalarType;
+using exec_aten::Scalar;
+using ScalarType = exec_aten::ScalarType;
 
 namespace {
 

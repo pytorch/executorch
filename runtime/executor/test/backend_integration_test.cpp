@@ -28,7 +28,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
+using exec_aten::ArrayRef;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendInterface;

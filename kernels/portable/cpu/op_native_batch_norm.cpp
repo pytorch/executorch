@@ -18,14 +18,14 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
-using SizesType = executorch::aten::SizesType;
+using Tensor = exec_aten::Tensor;
+using SizesType = exec_aten::SizesType;
 
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const exec_aten::optional<Tensor>& weight,
+    const exec_aten::optional<Tensor>& bias,
     const Tensor& running_mean,
     const Tensor& running_var,
     double momentum,
@@ -139,8 +139,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const exec_aten::optional<Tensor>& weight,
+    const exec_aten::optional<Tensor>& bias,
     Tensor& running_mean,
     Tensor& running_var,
     bool training,
@@ -177,8 +177,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_out(
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const exec_aten::optional<Tensor>& weight,
+    const exec_aten::optional<Tensor>& bias,
     bool training,
     double momentum,
     double eps,
@@ -196,8 +196,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
           in,
           weight,
           bias,
-          executorch::aten::optional<Tensor>(),
-          executorch::aten::optional<Tensor>(),
+          exec_aten::optional<Tensor>(),
+          exec_aten::optional<Tensor>(),
           momentum,
           eps,
           out,

@@ -13,8 +13,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
-using ScalarType = executorch::aten::ScalarType;
+using Tensor = exec_aten::Tensor;
+using ScalarType = exec_aten::ScalarType;
 
 Tensor& any_all_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;

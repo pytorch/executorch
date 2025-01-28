@@ -25,7 +25,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
+using Tensor = exec_aten::Tensor;
 namespace {
 
 template <typename IN_T, typename OUT_T>

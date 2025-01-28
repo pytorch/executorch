@@ -417,10 +417,10 @@ bool maybe_update_scalar_tensor(
     executorch::aten::Tensor& scalar_tensor_src) {
   const int32_t cur_val = graph->read_symint(ref);
   int32_t scalar_tensor_val = 0;
-  executorch::aten::ScalarType dtype = scalar_tensor_src.scalar_type();
-  if (dtype == executorch::aten::ScalarType::Int) {
+  exec_aten::ScalarType dtype = scalar_tensor_src.scalar_type();
+  if (dtype == exec_aten::ScalarType::Int) {
     scalar_tensor_val = *scalar_tensor_src.const_data_ptr<int32_t>();
-  } else if (dtype == executorch::aten::ScalarType::Long) {
+  } else if (dtype == exec_aten::ScalarType::Long) {
     scalar_tensor_val = int32_t(*scalar_tensor_src.const_data_ptr<int64_t>());
   }
   bool was_updated = false;

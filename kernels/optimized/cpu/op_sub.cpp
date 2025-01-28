@@ -68,8 +68,8 @@ struct SubInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
 
 } // namespace
 
-using Tensor = executorch::aten::Tensor;
-using ScalarType = executorch::aten::ScalarType;
+using Tensor = exec_aten::Tensor;
+using ScalarType = exec_aten::ScalarType;
 
 Tensor& opt_sub_out(
     KernelRuntimeContext& ctx,

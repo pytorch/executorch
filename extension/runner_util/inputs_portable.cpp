@@ -16,8 +16,8 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/log.h>
 
-using executorch::aten::Tensor;
-using executorch::aten::TensorImpl;
+using exec_aten::Tensor;
+using exec_aten::TensorImpl;
 using executorch::runtime::Error;
 using executorch::runtime::Method;
 using executorch::runtime::TensorInfo;

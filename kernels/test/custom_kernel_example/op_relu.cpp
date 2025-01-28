@@ -15,8 +15,8 @@
 namespace my_custom_kernels {
 namespace native {
 
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 using executorch::runtime::Error;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::resize_tensor;

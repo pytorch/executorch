@@ -13,9 +13,9 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 using namespace ::testing;
-using executorch::aten::optional;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::optional;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpRepeatInterleaveTensorOutTest : public OperatorTest {

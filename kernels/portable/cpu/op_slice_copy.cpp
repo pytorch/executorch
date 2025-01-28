@@ -14,14 +14,14 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
+using Tensor = exec_aten::Tensor;
 
 Tensor& slice_copy_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
-    executorch::aten::optional<int64_t> start_val,
-    executorch::aten::optional<int64_t> end_val,
+    exec_aten::optional<int64_t> start_val,
+    exec_aten::optional<int64_t> end_val,
     int64_t step,
     Tensor& out) {
   (void)ctx;

@@ -21,10 +21,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
-using executorch::aten::TensorImpl;
-using executorch::aten::TensorList;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using exec_aten::TensorImpl;
+using exec_aten::TensorList;
 using executorch::runtime::testing::IsCloseTo;
 using executorch::runtime::testing::IsDataCloseTo;
 using executorch::runtime::testing::IsDataEqualTo;
