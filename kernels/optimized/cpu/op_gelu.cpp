@@ -69,7 +69,7 @@ void gelu(
     }
 #else
     size_t i = 0;
-    if (std::is_same<CTYPE, float>::value) {
+    if constexpr (std::is_same_v<CTYPE, float>) {
       for (; i + 4 < lim; i += 4) {
         const float32x4_t in =
             vld1q_f32(static_cast<const float*>(&in_data[i]));
