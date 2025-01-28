@@ -84,6 +84,20 @@ bool tensors_are_close(
         a.numel(),
         rtol,
         atol);
+  } else if (a.scalar_type() == ScalarType::Half) {
+    return data_is_close<Half>(
+        a.const_data_ptr<Half>(),
+        b.const_data_ptr<Half>(),
+        a.numel(),
+        rtol,
+        atol);
+  } else if (a.scalar_type() == ScalarType::BFloat16) {
+    return data_is_close<BFloat16>(
+        a.const_data_ptr<BFloat16>(),
+        b.const_data_ptr<BFloat16>(),
+        a.numel(),
+        rtol,
+        atol);
   } else {
     // Non-floating-point types can be compared bitwise.
     return memcmp(a.mutable_data_ptr(), b.mutable_data_ptr(), a.nbytes()) == 0;
