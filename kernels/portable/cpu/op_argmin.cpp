@@ -17,8 +17,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::optional;
-using exec_aten::Tensor;
+using executorch::aten::optional;
+using executorch::aten::Tensor;
 
 Tensor& argmin_out(
     KernelRuntimeContext& ctx,
