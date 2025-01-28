@@ -33,7 +33,6 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
@@ -187,6 +186,7 @@ def export_to_edge(
     edge_prog_manager = to_edge(
         expo_program,
         compile_config=EdgeCompileConfig(
+            _skip_dim_order=True,
             # Allow specific non-core aten ops in the IR.
             _core_aten_ops_exception_list=[
                 torch.ops.aten._native_batch_norm_legit_functional.default,
@@ -194,10 +194,6 @@ def export_to_edge(
                 torch.ops.aten.linalg_vector_norm.default,
                 torch.ops.aten.unfold.default,
                 torch.ops.aten.angle.default,
-                # cadence replaced to_dim_order_copy with _to_copy for performance
-                # skip _to_copy op to get around of dim order check
-                # We should remove this op once cadence can support dim order
-                exir_ops.edge.aten._to_copy.default,
             ],
         ),
         constant_methods=constant_methods,
