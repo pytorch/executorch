@@ -444,6 +444,20 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_prune_empty_tensors",
+    srcs = [
+        "test_prune_empty_tensors_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+python_unittest(
     name = "warnings",
     srcs = [
         "test_warnings.py",
