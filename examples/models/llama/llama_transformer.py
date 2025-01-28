@@ -474,7 +474,6 @@ class Attention(nn.Module):
 
         if self.decode_kv_cache_as_io:
             assert self.use_kv_cache
-            mask = attn_mask
             if self.use_additive_kv_cache_update:
                 assert seqlen == 1
                 # assert cache_pos_mask is not None
@@ -494,16 +493,12 @@ class Attention(nn.Module):
                 # model (model code -7)".  It does run on GPU.
                 # I suspect it is related to the data-dependent / dynamic shape of k, v, and mask
 
-                buffer = 2  # needed to make dynamo happy
-                torch._check(input_pos + seqlen <= self.max_seq_len - buffer)
-                mask = torch.narrow(mask, dim=1, start=0, length=input_pos + seqlen)
+                # buffer = 2  # needed to make dynamo happy
+                # torch._check(input_pos + seqlen <= self.max_seq_len - buffer)
+                # mask = torch.narrow(mask, dim=1, start=0, length=input_pos + seqlen)
 
-                k = torch.cat(
-                    [torch.narrow(k_cache, dim=2, start=0, length=input_pos), k], axis=2
-                )
-                v = torch.cat(
-                    [torch.narrow(v_cache, dim=2, start=0, length=input_pos), v], axis=2
-                )
+                k = torch.cat([k_cache, k], axis=2)
+                v = torch.cat([v_cache, v], axis=2)
 
                 # # # Attempt 2 to use torch.cat
                 # # # Dynamo fails with "expand: attempting to expand a dimension of length u0 + 1024!"
@@ -524,13 +519,12 @@ class Attention(nn.Module):
                 v = torch.ops.aten.index_put(v_cache, [None, None, input_pos, None], v)
         else:
             assert not self.use_kv_cache
-            mask = attn_mask
 
         # grouped multiquery attention: expand out keys and values
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
-        output = torch.ops.coreml.sdpa(q, k, v, mask)
+        output = torch.ops.coreml.sdpa(q, k, v, attn_mask)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
@@ -680,8 +674,8 @@ class Transformer(nn.Module):
         self.max_seq_len = params.max_seq_len
         causal_mask = torch.tril(
             torch.ones(
-                self.max_seq_len,
-                self.max_seq_len,
+                self.max_seq_len + 1,
+                self.max_seq_len + 1,
                 dtype=torch.float16,
                 device="cpu",
             )
