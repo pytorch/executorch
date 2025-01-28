@@ -253,12 +253,15 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether use additive KV cache updates",
     )
     parser.add_argument(
+<<<<<<< HEAD
         "--prefill_seq_length",
         type=int,
         default=32,
         help="Sequence length for prefill model",
     )
     parser.add_argument(
+=======
+>>>>>>> f82348c (Resolved conflicts in llama_transformer.py)
         "--quantize_kv_cache",
         default=False,
         action="store_true",

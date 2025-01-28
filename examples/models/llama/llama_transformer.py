@@ -440,8 +440,9 @@ class Attention(nn.Module):
         # RoPE relative positional embeddings
         q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
-        if self.use_kv_cache:
+        if self.use_kv_cache and not self.decode_kv_cache_as_io:
             assert input_pos is not None
+            assert not self.return_kv_values
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
             return self.wo(output)
 
@@ -455,6 +456,60 @@ class Attention(nn.Module):
             k, v = self.kv_cache.update(input_pos, k, v)
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
             return self.wo(output)
+
+        if self.return_kv_values:
+            k_ret = k
+            v_ret = v
+
+        if self.decode_kv_cache_as_io:
+            assert self.use_kv_cache
+            mask = self.mask[None, None, input_pos]
+            if self.use_additive_kv_cache_update:
+                assert cache_pos_mask is not None
+                assert seqlen == 1
+                k_update = cache_pos_mask * k
+                v_update = cache_pos_mask * v
+                k = k_cache + k_update
+                v = v_cache + v_update
+                assert k.shape == k_cache.shape
+                assert v.shape == v_cache.shape
+
+                # # Attempt 1 to use torch.cat:
+                # # This fails to lower to ET during to_executorch due to a dynamo error related to the
+                # # delegate call.  We can talk to compiler about this, but the bigger issue is although
+                # # the CoreML mlpackage lowers, it fails at runtime on CPU/ANE with "input data broken / unsupported
+                # # model (model code -7)".  It does run on GPU.
+                # # I suspect it is related to the data-dependent / dynamic shape of k, v, and mask
+
+                # buffer = 2 # needed to make dynamo happy
+                # input_pos_item = input_pos[0].item()
+                # torch._check_is_size(input_pos_item)
+                # torch._check(input_pos_item + seqlen <= self.max_seq_len - buffer)
+                # mask = torch.narrow(mask, dim=3, start=0, length=input_pos_item + seqlen)
+
+                # k = torch.cat([torch.narrow(k_cache, dim=2, start=0, length=input_pos_item), k], axis=2)
+                # v = torch.cat([torch.narrow(v_cache, dim=2, start=0, length=input_pos_item), v], axis=2)
+
+                # # Attempt 2 to use torch.cat
+                # # Dynamo fails with "expand: attempting to expand a dimension of length u0 + 1024!"
+                # # I'm not confident this variant will work in CoreML if we can export it, though.
+                # buffer = 2
+                # input_pos_item = input_pos[0].item()
+                # torch._check_is_size(input_pos_item)
+                # torch._check(input_pos_item + seqlen <= self.max_seq_len - buffer)
+
+                # k = torch.cat([torch.narrow(k_cache, dim=2, start=0, length=input_pos_item), k], axis=2)
+                # k = k.expand(k_cache.size())
+                # v = torch.cat([torch.narrow(v_cache, dim=2, start=0, length=input_pos_item), v], axis=2)
+                # v = v.expand(v_cache.size())
+            else:
+                k = torch.ops.aten.index_put(k_cache, [None, None, input_pos, None], k)
+                v = torch.ops.aten.index_put(v_cache, [None, None, input_pos, None], v)
+        else:
+            assert not self.use_kv_cache
+            # assert hasattr(self, "mask")
+
+            # mask = self.mask[:seqlen, :seqlen]
 
         if self.return_kv_values:
             k_ret = k

@@ -315,6 +315,7 @@ the checkpoint format to avoid generating faulty models.
                     [0], dtype=torch.long
                 ),  # start_pos, what token of output are we on.
             )
+<<<<<<< HEAD
             
         if self.decode_kv_cache_as_io:
             args = args + (
@@ -328,6 +329,20 @@ the checkpoint format to avoid generating faulty models.
                 torch.zeros(self._cache_pos_mask_shape, dtype=torch.float16),
             )
         return args
+=======
+            if self.decode_kv_cache_as_io:
+                args = args + (
+                    # (n_layers, max_batch_size, n_heads, max_seq_length, head_dim)
+                    torch.zeros(self._cache_shape, dtype=torch.float16),  # k-cache
+                    torch.zeros(self._cache_shape, dtype=torch.float16),  # v-cache
+                )
+
+            if self.use_additive_kv_cache_update:
+                args = args + (
+                    torch.zeros(self._cache_pos_mask_shape, dtype=torch.float16),
+                )
+            return args
+>>>>>>> f82348c (Resolved conflicts in llama_transformer.py)
 
     def _transform_for_pre_quantization(self, checkpoint, model_args):
         assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
