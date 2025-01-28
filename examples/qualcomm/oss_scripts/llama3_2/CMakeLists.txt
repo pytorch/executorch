@@ -18,14 +18,14 @@ target_link_libraries(
 )
 target_link_options_shared_lib(custom_ops)
 
-# preprocess qnn runner src files for llama
-set(_llama_runner__srcs ${_llama_runner__srcs})
-list(TRANSFORM _llama_runner__srcs PREPEND "${EXECUTORCH_SOURCE_DIR}/")
-list(FILTER _llama_runner__srcs EXCLUDE REGEX ".*(/runner/).*")
+# preprocess qnn runner src files for llama3.2
+set(_llama3_2_runner__srcs ${_llama_runner__srcs})
+list(TRANSFORM _llama3_2_runner__srcs PREPEND "${EXECUTORCH_SOURCE_DIR}/")
+list(FILTER _llama3_2_runner__srcs EXCLUDE REGEX ".*(/runner/).*")
 list(
   PREPEND
-  _llama_runner__srcs
-  ${CMAKE_CURRENT_LIST_DIR}/qnn_llama_runner.cpp
+  _llama3_2_runner__srcs
+  ${CMAKE_CURRENT_LIST_DIR}/qnn_llama3_2_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/io_memory.cpp
@@ -33,20 +33,23 @@ list(
 )
 
 list(
-  APPEND
-  _llama_runner__srcs
+  APPEND _llama3_2_runner__srcs
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
+)
+list(
+  APPEND
+  _llama3_2_runner__srcs
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama/tokenizer/llama_tiktoken.cpp
 )
 
-# build qnn llama runner
-add_executable(qnn_llama_runner ${_llama_runner__srcs})
+# build qnn llama3.2 1b runner
+add_executable(qnn_llama3_2_runner ${_llama3_2_runner__srcs})
 target_include_directories(
-  qnn_llama_runner PUBLIC ${_common_include_directories}
+  qnn_llama3_2_runner PUBLIC ${_common_include_directories}
 )
 
 target_link_libraries(
-  qnn_llama_runner
+  qnn_llama3_2_runner
   qnn_executorch_backend
   executorch_core
   extension_data_loader
@@ -57,8 +60,8 @@ target_link_libraries(
   custom_ops
 )
 target_compile_options(
-  qnn_llama_runner PUBLIC ${_common_compile_options}
+  qnn_llama3_2_runner PUBLIC ${_common_compile_options}
 )
 set_target_properties(
-  qnn_llama_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+  qnn_llama3_2_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )

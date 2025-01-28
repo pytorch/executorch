@@ -32,7 +32,7 @@ from executorch.extension.pytree import tree_flatten
 
 class TestBackends(unittest.TestCase):
     _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+        _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
     def assert_outputs_equal(
@@ -97,6 +97,7 @@ class TestBackends(unittest.TestCase):
         dynamic_shapes=None,
         test_inputs=None,
         first_output_only=False,
+        expect_no_delegates=False,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
@@ -125,10 +126,23 @@ class TestBackends(unittest.TestCase):
             )
             executorch_program = edge_program.to_executorch()
 
-            self.assertEqual(
-                executorch_program.executorch_program.execution_plan[0].delegates[0].id,
-                VulkanBackend.__name__,
-            )
+            if expect_no_delegates:
+                self.assertEqual(
+                    len(
+                        executorch_program.executorch_program.execution_plan[
+                            0
+                        ].delegates
+                    ),
+                    0,
+                )
+                return
+            else:
+                self.assertEqual(
+                    executorch_program.executorch_program.execution_plan[0]
+                    .delegates[0]
+                    .id,
+                    VulkanBackend.__name__,
+                )
 
             executorch_module = _load_for_executorch_from_buffer(
                 executorch_program.buffer
@@ -1682,4 +1696,18 @@ class TestBackends(unittest.TestCase):
         self.lower_module_and_test_output(
             GridPriorsModule(),
             (torch.rand(size=[1, 5, 2, 3]),),
+        )
+
+    def test_vulkan_backend_high_dim_tensors_fail(self):
+        class UnsqueezeHigherDim(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.unsqueeze(x, 2)
+
+        self.lower_module_and_test_output(
+            UnsqueezeHigherDim(),
+            (torch.ones(size=[5, 4, 1, 2, 6]),),
+            expect_no_delegates=True,
         )
