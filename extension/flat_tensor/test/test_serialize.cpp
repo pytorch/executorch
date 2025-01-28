@@ -53,35 +53,46 @@ TEST_F(FlatTensorSerializeTest, ValidFlatTensorSerialized) {
   auto x = buf.str();
   const char* byte_buffer = x.c_str();
 
-  // Check Magic
-  EXPECT_EQ(byte_buffer[0], 'F');
-  EXPECT_EQ(byte_buffer[1], 'H');
-  EXPECT_EQ(byte_buffer[2], '0');
-  EXPECT_EQ(byte_buffer[3], '1');
+  // First 4 bytes are an offset to the flatbuffer root table.
+
+  // Check magic ids.
+  EXPECT_EQ(byte_buffer[4], 'F');
+  EXPECT_EQ(byte_buffer[5], 'T');
+  ASSERT_EQ(byte_buffer[6], '0');
+  ASSERT_EQ(byte_buffer[7], '1');
+
+  ASSERT_EQ(byte_buffer[8], 'F');
+  ASSERT_EQ(byte_buffer[9], 'H');
+  EXPECT_EQ(byte_buffer[10], '0');
+  EXPECT_EQ(byte_buffer[11], '1');
 
   // Check Header
-  EXPECT_EQ( // Header length
-      *(uint32_t*)(byte_buffer + 4),
+  auto header_buffer = byte_buffer + 8;
+  EXPECT_EQ( // Check expected length
+      *(uint32_t*)(header_buffer + 4),
       executorch::extension::FlatTensorHeader::kHeaderExpectedLength);
-  EXPECT_EQ(
-      *(uint64_t*)(byte_buffer + 8),
-      48); // Flatbuffer offset, header is 40 bytes + 8 bytes of padding today,
-           // and then the flatbuffer starts.
-  EXPECT_EQ(
-      *(uint64_t*)(byte_buffer + 16),
-      224); // Flatbuffer size, This is fragile, and depends on the schema, the
-            // builder, and the padding needed.
-  const uint64_t segment_offset = 48 +
-      224; // Segment offset, depends on the padded header and flatbuffer sizes.
-  EXPECT_EQ(*(uint64_t*)(byte_buffer + 24), segment_offset);
 
   EXPECT_EQ(
-      *(uint64_t*)(byte_buffer + 32),
+      *(uint64_t*)(header_buffer + 8),
+      48); // Flatbuffer offset, header is 40 bytes + 8 bytes of padding
+           // today, and then the flatbuffer starts.
+
+  EXPECT_EQ(
+      *(uint64_t*)(header_buffer + 16),
+      232); // Flatbuffer size. This is fragile, and depends on the schema,
+            // the builder, and the padding needed.
+
+  // Segment offset, depends on the padded header and flatbuffer sizes.
+  const uint64_t segment_offset = 48 + 232 + 8; // 8 is padding.
+  EXPECT_EQ(*(uint64_t*)(header_buffer + 24), segment_offset);
+
+  EXPECT_EQ(
+      *(uint64_t*)(header_buffer + 32),
       20); // Segment total size, 8 bytes of data (2 floats), 24 bytes of
            // padding.
 
   // Check Flatbuffer
-  auto flat_tensor = ::flat_tensor_flatbuffer::GetFlatTensor(byte_buffer + 48);
+  auto flat_tensor = ::flat_tensor_flatbuffer::GetFlatTensor(byte_buffer);
 
   EXPECT_EQ(
       flat_tensor->version(),
