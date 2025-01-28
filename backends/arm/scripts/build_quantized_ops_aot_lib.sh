@@ -20,9 +20,9 @@ echo "--------------------------------------------------------------------------
 
 # Since we only want to build the quantized_aot lib in the specified folder,
 # we want exactly the configuration set below and deleting the cache is OK.
-rm -f cmake-out-aot-lib/CMakeCache.txt 
+rm -f cmake-out-aot-lib/CMakeCache.txt
 
-cmake \
+CXXFLAGS="-fno-exceptions -fno-rtti" cmake \
     -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"    \
     -DCMAKE_BUILD_TYPE=${build_type}            \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON      \

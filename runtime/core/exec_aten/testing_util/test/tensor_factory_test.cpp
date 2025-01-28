@@ -20,12 +20,12 @@
 #endif // USE_ATEN_LIB
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::SizesType;
-using exec_aten::StridesType;
-using exec_aten::Tensor;
-using exec_aten::TensorList;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::SizesType;
+using executorch::aten::StridesType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorList;
 using executorch::runtime::Error;
 using executorch::runtime::resize_tensor;
 using executorch::runtime::TensorShapeDynamism;
@@ -76,7 +76,7 @@ void resize_tensor_to_assert_dynamic_unbound(Tensor&& t) {
 }
 
 #ifndef USE_ATEN_LIB
-using exec_aten::DimOrderType;
+using executorch::aten::DimOrderType;
 using torch::executor::TensorImpl;
 #endif // !USE_ATEN_LIB
 
@@ -449,7 +449,7 @@ TEST_F(TensorFactoryTest, MakeStridedDataIsCopied) {
 
   // Create two tensors using the same input data and strided vector.
   std::vector<int32_t> data = {1, 2, 3, 4};
-  std::vector<exec_aten::StridesType> strides = {1, 2};
+  std::vector<executorch::aten::StridesType> strides = {1, 2};
   Tensor t1 = tf.make(/*sizes=*/{2, 2}, data, strides);
   Tensor t2 = tf.make(/*sizes=*/{2, 2}, data, strides);
 
@@ -1154,7 +1154,7 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order.resize(2);
   dim_order[0] = 0;
   dim_order[1] = 1;
-  exec_aten::ArrayRef<DimOrderType> dim_order_ref(
+  executorch::aten::ArrayRef<DimOrderType> dim_order_ref(
       dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, out.dim_order());
@@ -1164,8 +1164,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 0;
   dim_order[1] = 1;
   dim_order[2] = 2;
-  dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, out.dim_order());
 
@@ -1175,8 +1175,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 0;
   dim_order[1] = 2;
   dim_order[2] = 1;
-  dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 
@@ -1186,8 +1186,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 1;
   dim_order[1] = 2;
   dim_order[2] = 0;
-  dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 }
@@ -1210,8 +1210,8 @@ TEST_F(TensorFactoryTest, AmbgiuousDimOrderToStrideTest) {
   // boundary from strides land to dim order land, we have to resolve
   // such ambiguity in a deterministic way.
   // In dim order land, it is less ambiguous
-  auto dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  auto dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 
@@ -1220,8 +1220,8 @@ TEST_F(TensorFactoryTest, AmbgiuousDimOrderToStrideTest) {
   dim_order[0] = 2;
   dim_order[1] = 0;
   dim_order[2] = 1;
-  dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 }
