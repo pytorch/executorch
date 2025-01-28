@@ -65,7 +65,7 @@ tosa_reference_model_rev="v0.80.1"
 
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="fc970e3da72e5f6930b840b357684126602b3126"
+vela_rev="e131bf4f528f0d461868229972e07f371dcbc881"
 
 
 ########
