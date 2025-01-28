@@ -37,9 +37,9 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
 
     def __init__(self, graph_module: torch.fx.GraphModule) -> None:
         super().__init__(graph_module)
-        self.violating_ops: Dict[EdgeOpOverload, Tuple[Dict[str, Optional[torch.dtype]], torch.fx.Node]] = (
-            defaultdict(dict)
-        )
+        self.violating_ops: Dict[
+            EdgeOpOverload, Tuple[Dict[str, Optional[torch.dtype]], torch.fx.Node]
+        ] = defaultdict(dict)
 
     def run_node(self, n: torch.fx.Node) -> None:
         self.node = n
