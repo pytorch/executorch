@@ -142,18 +142,30 @@ def define_common_targets(is_fbcode = False):
                 "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so",
             ]
         else:
+            link_moltenvk = read_config("etvk", "link_moltenvk", "1") == "1"
+            mac_deps = default_deps
+            if link_moltenvk:
+                mac_deps = [
+                    "//third-party/khronos:moltenVK_static"
+                ]
+            mac_flags = default_flags
+            if link_moltenvk:
+                mac_flags = []
+
             VK_API_DEPS += select({
                 "DEFAULT": default_deps,
                 "ovr_config//os:android": android_deps,
-                "ovr_config//os:macos": [
-                    "//third-party/khronos:moltenVK_static"
-                ],
+                "ovr_config//os:macos": mac_deps,
             })
             VK_API_PREPROCESSOR_FLAGS += select({
                 "DEFAULT": default_flags,
                 "ovr_config//os:android": android_flags,
-                "ovr_config//os:macos": []
+                "ovr_config//os:macos": mac_flags,
             })
+
+            debug_mode = read_config("etvk", "debug", "0") == "1"
+            if debug_mode:
+                VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
 
         runtime.cxx_library(
             name = "vulkan_compute_api{}".format(suffix),
