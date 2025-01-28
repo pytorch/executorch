@@ -197,7 +197,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-frameworks-ios, set-version]
     timeout-minutes: 30
-    environment: ${{ github.ref == 'refs/heads/release/0.5' && 'cherry-pick-bot' || '' }}
+    environment: ${{ github.ref == 'refs/heads/main' && 'cherry-pick-bot' || '' }}
     permissions:
       id-token: write
       contents: write
