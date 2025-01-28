@@ -19,7 +19,7 @@
 
 #include <flatcc/flatcc_types.h>
 
-using ::executorch::aten::Tensor;
+using ::exec_aten::Tensor;
 using ::executorch::runtime::AllocatorID;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::ChainID;
@@ -37,27 +37,27 @@ namespace etdump {
 namespace {
 
 executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
-    executorch::aten::ScalarType tensor_scalar_type) {
+    exec_aten::ScalarType tensor_scalar_type) {
   switch (tensor_scalar_type) {
-    case executorch::aten::ScalarType::Byte:
+    case exec_aten::ScalarType::Byte:
       return executorch_flatbuffer_ScalarType_BYTE;
-    case executorch::aten::ScalarType::Char:
+    case exec_aten::ScalarType::Char:
       return executorch_flatbuffer_ScalarType_CHAR;
-    case executorch::aten::ScalarType::Short:
+    case exec_aten::ScalarType::Short:
       return executorch_flatbuffer_ScalarType_SHORT;
-    case executorch::aten::ScalarType::Float:
+    case exec_aten::ScalarType::Float:
       return executorch_flatbuffer_ScalarType_FLOAT;
-    case executorch::aten::ScalarType::Int:
+    case exec_aten::ScalarType::Int:
       return executorch_flatbuffer_ScalarType_INT;
-    case executorch::aten::ScalarType::Long:
+    case exec_aten::ScalarType::Long:
       return executorch_flatbuffer_ScalarType_LONG;
-    case executorch::aten::ScalarType::Double:
+    case exec_aten::ScalarType::Double:
       return executorch_flatbuffer_ScalarType_DOUBLE;
-    case executorch::aten::ScalarType::Bool:
+    case exec_aten::ScalarType::Bool:
       return executorch_flatbuffer_ScalarType_BOOL;
-    case executorch::aten::ScalarType::Bits16:
+    case exec_aten::ScalarType::Bits16:
       return executorch_flatbuffer_ScalarType_BITS16;
-    case executorch::aten::ScalarType::UInt16:
+    case exec_aten::ScalarType::UInt16:
       return executorch_flatbuffer_ScalarType_UINT16;
     default:
       ET_CHECK_MSG(
@@ -69,7 +69,7 @@ executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
 
 etdump_Tensor_ref_t add_tensor_entry(
     flatcc_builder_t* builder_,
-    const executorch::aten::Tensor& tensor,
+    const exec_aten::Tensor& tensor,
     long offset) {
   etdump_Tensor_start(builder_);
 
@@ -508,7 +508,7 @@ void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
   debug_buffer_ = buffer;
 }
 
-size_t ETDumpGen::copy_tensor_to_debug_buffer(executorch::aten::Tensor tensor) {
+size_t ETDumpGen::copy_tensor_to_debug_buffer(exec_aten::Tensor tensor) {
   if (tensor.nbytes() == 0) {
     return static_cast<size_t>(-1);
   }
@@ -536,7 +536,7 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
 
   switch (evalue.tag) {
     case Tag::Tensor: {
-      executorch::aten::Tensor tensor = evalue.toTensor();
+      exec_aten::Tensor tensor = evalue.toTensor();
       long offset = copy_tensor_to_debug_buffer(tensor);
       etdump_Tensor_ref_t tensor_ref =
           add_tensor_entry(builder_, tensor, offset);
@@ -555,8 +555,7 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
     }
 
     case Tag::ListTensor: {
-      executorch::aten::ArrayRef<executorch::aten::Tensor> tensors =
-          evalue.toTensorList();
+      exec_aten::ArrayRef<exec_aten::Tensor> tensors = evalue.toTensorList();
       etdump_Tensor_vec_start(builder_);
       for (size_t i = 0; i < tensors.size(); ++i) {
         long offset = copy_tensor_to_debug_buffer(tensors[i]);

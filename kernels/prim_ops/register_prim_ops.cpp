@@ -77,8 +77,7 @@ static Kernel prim_ops[] = {
           EValue& self = *stack[0];
           EValue& dim = *stack[1];
           EValue& out = *stack[2];
-          executorch::aten::Tensor self_tensor =
-              self.to<executorch::aten::Tensor>();
+          exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
           int64_t dim_val = dim.to<int64_t>();
           int64_t size = self_tensor.size(dim_val);
           out = EValue(size);
@@ -90,8 +89,7 @@ static Kernel prim_ops[] = {
           (void)context;
           EValue& self = *stack[0];
           EValue& out = *stack[1];
-          executorch::aten::Tensor self_tensor =
-              self.to<executorch::aten::Tensor>();
+          exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
           ET_SWITCH_REAL_TYPES_AND(
               Bool,
               self_tensor.scalar_type(),
@@ -109,8 +107,7 @@ static Kernel prim_ops[] = {
           (void)context;
           EValue& self = *stack[0];
           EValue& out = *stack[1];
-          executorch::aten::Tensor self_tensor =
-              self.to<executorch::aten::Tensor>();
+          exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
           int64_t numel = self_tensor.numel();
           out = EValue(numel);
         }),

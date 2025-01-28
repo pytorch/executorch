@@ -19,9 +19,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
-using Scalar = executorch::aten::Scalar;
-using ScalarType = executorch::aten::ScalarType;
+using Tensor = exec_aten::Tensor;
+using Scalar = exec_aten::Scalar;
+using ScalarType = exec_aten::ScalarType;
 
 namespace {
 
@@ -255,7 +255,7 @@ std::tuple<Tensor&, Tensor&> choose_qparams_per_token_asymmetric_out(
     Tensor& zero_point_out) {
   int64_t quant_min = -128;
   int64_t quant_max = 127;
-  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
+  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
   for (ssize_t i = 0; i < input.dim() - 1; i++) {
     output_sizes[i] = input.size(i);
   }

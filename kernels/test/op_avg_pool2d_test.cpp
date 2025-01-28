@@ -16,19 +16,19 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ScalarType;
+using exec_aten::ScalarType;
 
 class OpAvgPool2DOutTest : public OperatorTest {
  protected:
-  executorch::aten::Tensor& op_avg_pool2d_out(
-      const executorch::aten::Tensor& self,
-      executorch::aten::ArrayRef<int64_t> kernel_size,
-      executorch::aten::ArrayRef<int64_t> stride,
-      executorch::aten::ArrayRef<int64_t> padding,
+  exec_aten::Tensor& op_avg_pool2d_out(
+      const exec_aten::Tensor& self,
+      exec_aten::ArrayRef<int64_t> kernel_size,
+      exec_aten::ArrayRef<int64_t> stride,
+      exec_aten::ArrayRef<int64_t> padding,
       bool ceil_mode,
       bool count_include_pad,
-      executorch::aten::optional<int64_t> divisor_override,
-      executorch::aten::Tensor& out) {
+      exec_aten::optional<int64_t> divisor_override,
+      exec_aten::Tensor& out) {
     return torch::executor::aten::avg_pool2d_outf(
         context_,
         self,
@@ -45,7 +45,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
   void test_4d_dtype() {
     torch::executor::testing::TensorFactory<DTYPE> tf_dtype;
 
-    executorch::aten::Tensor self = tf_dtype.make(
+    exec_aten::Tensor self = tf_dtype.make(
         {2, 3, 8, 8},
         {-81.875, -37.25,  -99.75,  -60.5,   -1.375,  25.625,  -54.25,
          -95.875, 48.0,    26.125,  -14.625, -5.0,    98.25,   1.75,
@@ -103,22 +103,19 @@ class OpAvgPool2DOutTest : public OperatorTest {
          96.75,   -66.75,  48.375,  -79.25,  8.0,     -14.25,  -8.0,
          51.75,   28.375,  32.0,    -50.875, 53.0,    -81.75});
     ::std::vector<int64_t> kernel_size_vec = {2, 3};
-    executorch::aten::ArrayRef<int64_t> kernel_size =
-        executorch::aten::ArrayRef<int64_t>(
-            kernel_size_vec.data(), kernel_size_vec.size());
+    exec_aten::ArrayRef<int64_t> kernel_size = exec_aten::ArrayRef<int64_t>(
+        kernel_size_vec.data(), kernel_size_vec.size());
     ::std::vector<int64_t> stride_vec = {3, 2};
-    executorch::aten::ArrayRef<int64_t> stride =
-        executorch::aten::ArrayRef<int64_t>(
-            stride_vec.data(), stride_vec.size());
+    exec_aten::ArrayRef<int64_t> stride =
+        exec_aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
     ::std::vector<int64_t> padding_vec = {1, 1};
-    executorch::aten::ArrayRef<int64_t> padding =
-        executorch::aten::ArrayRef<int64_t>(
-            padding_vec.data(), padding_vec.size());
+    exec_aten::ArrayRef<int64_t> padding =
+        exec_aten::ArrayRef<int64_t>(padding_vec.data(), padding_vec.size());
     bool ceil_mode = false;
     bool count_include_pad = true;
-    executorch::aten::optional<int64_t> divisor_override;
-    executorch::aten::Tensor out = tf_dtype.zeros({2, 3, 3, 4});
-    executorch::aten::Tensor out_expected = tf_dtype.make(
+    exec_aten::optional<int64_t> divisor_override;
+    exec_aten::Tensor out = tf_dtype.zeros({2, 3, 3, 4});
+    exec_aten::Tensor out_expected = tf_dtype.make(
         {2, 3, 3, 4},
         {-19.85416603088379,
          -32.91666793823242,
@@ -218,7 +215,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
   void test_4d_divisor_override_dtype() {
     torch::executor::testing::TensorFactory<ScalarType::Float> tfFloat;
 
-    executorch::aten::Tensor self = tfFloat.make(
+    exec_aten::Tensor self = tfFloat.make(
         {2, 3, 8, 8},
         {13.25,   87.125,  -61.875, 52.875,  -74.5,   37.5,    -62.125, 25.375,
          -34.375, 68.5,    87.875,  91.125,  -22.75,  96.875,  79.25,   38.125,
@@ -269,23 +266,20 @@ class OpAvgPool2DOutTest : public OperatorTest {
          -58.125, -50.75,  -50.875, 8.375,   35.625,  -72.5,   -76.125, -33.25,
          -18.75,  -71.0,   76.625,  -11.25,  -3.0,    -38.625, -66.375, -25.0});
     ::std::vector<int64_t> kernel_size_vec = {2, 3};
-    executorch::aten::ArrayRef<int64_t> kernel_size =
-        executorch::aten::ArrayRef<int64_t>(
-            kernel_size_vec.data(), kernel_size_vec.size());
+    exec_aten::ArrayRef<int64_t> kernel_size = exec_aten::ArrayRef<int64_t>(
+        kernel_size_vec.data(), kernel_size_vec.size());
     ::std::vector<int64_t> stride_vec = {3, 2};
-    executorch::aten::ArrayRef<int64_t> stride =
-        executorch::aten::ArrayRef<int64_t>(
-            stride_vec.data(), stride_vec.size());
+    exec_aten::ArrayRef<int64_t> stride =
+        exec_aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
     ::std::vector<int64_t> padding_vec = {1, 1};
-    executorch::aten::ArrayRef<int64_t> padding =
-        executorch::aten::ArrayRef<int64_t>(
-            padding_vec.data(), padding_vec.size());
+    exec_aten::ArrayRef<int64_t> padding =
+        exec_aten::ArrayRef<int64_t>(padding_vec.data(), padding_vec.size());
     bool ceil_mode = false;
     bool count_include_pad = true;
-    executorch::aten::optional<int64_t> divisor_override =
-        executorch::aten::optional<int64_t>(10);
-    executorch::aten::Tensor out = tfFloat.zeros({2, 3, 3, 4});
-    executorch::aten::Tensor out_expected = tfFloat.make(
+    exec_aten::optional<int64_t> divisor_override =
+        exec_aten::optional<int64_t>(10);
+    exec_aten::Tensor out = tfFloat.zeros({2, 3, 3, 4});
+    exec_aten::Tensor out_expected = tfFloat.make(
         {2, 3, 3, 4},
         {10.037500381469727,
          7.8125,
@@ -375,7 +369,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
   void test_4d_ceil_mode_no_include_padding_dtype() {
     torch::executor::testing::TensorFactory<ScalarType::Float> tfFloat;
 
-    executorch::aten::Tensor self = tfFloat.make(
+    exec_aten::Tensor self = tfFloat.make(
         {2, 3, 14, 12},
         {26.375,  -17.0,   63.5,    83.0,    21.375,  -46.5,   -69.125,
          99.875,  -67.125, -76.0,   -1.125,  -2.625,  -48.0,   -1.5,
@@ -522,22 +516,19 @@ class OpAvgPool2DOutTest : public OperatorTest {
          -17.25,  -3.125,  34.25,   -54.125, -93.125, 65.0,    -76.375,
          -20.625, -77.875, -65.625, -79.875, 28.75,   58.25,   -25.25});
     ::std::vector<int64_t> kernel_size_vec = {4, 2};
-    executorch::aten::ArrayRef<int64_t> kernel_size =
-        executorch::aten::ArrayRef<int64_t>(
-            kernel_size_vec.data(), kernel_size_vec.size());
+    exec_aten::ArrayRef<int64_t> kernel_size = exec_aten::ArrayRef<int64_t>(
+        kernel_size_vec.data(), kernel_size_vec.size());
     ::std::vector<int64_t> stride_vec = {1, 2};
-    executorch::aten::ArrayRef<int64_t> stride =
-        executorch::aten::ArrayRef<int64_t>(
-            stride_vec.data(), stride_vec.size());
+    exec_aten::ArrayRef<int64_t> stride =
+        exec_aten::ArrayRef<int64_t>(stride_vec.data(), stride_vec.size());
     ::std::vector<int64_t> padding_vec = {1, 1};
-    executorch::aten::ArrayRef<int64_t> padding =
-        executorch::aten::ArrayRef<int64_t>(
-            padding_vec.data(), padding_vec.size());
+    exec_aten::ArrayRef<int64_t> padding =
+        exec_aten::ArrayRef<int64_t>(padding_vec.data(), padding_vec.size());
     bool ceil_mode = true;
     bool count_include_pad = false;
-    executorch::aten::optional<int64_t> divisor_override;
-    executorch::aten::Tensor out = tfFloat.zeros({2, 3, 13, 7});
-    executorch::aten::Tensor out_expected = tfFloat.make(
+    exec_aten::optional<int64_t> divisor_override;
+    exec_aten::Tensor out = tfFloat.zeros({2, 3, 13, 7});
+    exec_aten::Tensor out_expected = tfFloat.make(
         {2, 3, 13, 7},
         {-9.166666984558105,
          -8.583333015441895,

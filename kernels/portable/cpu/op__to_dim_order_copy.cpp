@@ -15,17 +15,16 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
-using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
-using DimOrderArrayRef =
-    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
-using MemoryFormat = executorch::aten::MemoryFormat;
+using Tensor = exec_aten::Tensor;
+using SizesArrayRef = exec_aten::ArrayRef<exec_aten::SizesType>;
+using DimOrderArrayRef = exec_aten::ArrayRef<exec_aten::DimOrderType>;
+using MemoryFormat = exec_aten::MemoryFormat;
 
 template <typename T>
-using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
+using OptionalArrayRef = exec_aten::OptionalArrayRef<T>;
 
 template <typename T>
-using Optional = executorch::aten::optional<T>;
+using Optional = exec_aten::optional<T>;
 
 namespace {
 
@@ -35,7 +34,7 @@ int64_t coordinateToIndexWithDimOrder(
     const Tensor& self,
     const size_t* cur_indices) {
   int64_t index = 0;
-  executorch::aten::StridesType strides[kTensorDimensionLimit];
+  exec_aten::StridesType strides[kTensorDimensionLimit];
   SizesArrayRef sizes = self.sizes();
   DimOrderArrayRef dim_order = self.dim_order();
 

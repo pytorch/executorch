@@ -219,7 +219,7 @@ void quantized_linear_out(
     int64_t out_zero_point,
     __ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
-  if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
+  if (out.scalar_type() == exec_aten::ScalarType::Byte) {
     _quantized_linear_asym8u(
         in,
         weight,
@@ -231,7 +231,7 @@ void quantized_linear_out(
         out_zero_point,
         offset,
         out);
-  } else if (out.scalar_type() == executorch::aten::ScalarType::Char) {
+  } else if (out.scalar_type() == exec_aten::ScalarType::Char) {
     _quantized_linear_asym8s(
         in,
         weight,
@@ -261,7 +261,7 @@ void quantized_linear_per_tensor_out(
     int64_t out_zero_point,
     __ET_UNUSED const optional<Tensor>& offset,
     Tensor& out) {
-  if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
+  if (out.scalar_type() == exec_aten::ScalarType::Byte) {
     _quantized_linear_per_tensor_asym8u(
         in,
         weight,
@@ -273,7 +273,7 @@ void quantized_linear_per_tensor_out(
         out_zero_point,
         offset,
         out);
-  } else if (out.scalar_type() == executorch::aten::ScalarType::Char) {
+  } else if (out.scalar_type() == exec_aten::ScalarType::Char) {
     _quantized_linear_per_tensor_asym8s(
         in,
         weight,

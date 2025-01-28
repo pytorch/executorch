@@ -19,9 +19,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = executorch::aten::Tensor;
-using Scalar = executorch::aten::Scalar;
-using ScalarType = executorch::aten::ScalarType;
+using Tensor = exec_aten::Tensor;
+using Scalar = exec_aten::Scalar;
+using ScalarType = exec_aten::ScalarType;
 
 namespace {
 
@@ -293,9 +293,8 @@ Tensor& quantize_per_channel_out(
   const double* scale_data = scale.const_data_ptr<double>();
   const int64_t* zero_point_data = zero_point.const_data_ptr<int64_t>();
 
-  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>
-      optional_dim_list{
-          executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+  exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
+      exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
   // Actual quantization logic
   // input, out are the input and output tensors
@@ -400,11 +399,11 @@ Tensor& quantize_per_token_out(
   Tensor reshaped_input = at::from_blob(
       input.mutable_data_ptr(), sizes, at::TensorOptions(input.scalar_type()));
 #else
-  std::array<executorch::aten::DimOrderType, 2> input_dim_order{0, 1};
-  std::array<executorch::aten::SizesType, 2> input_sizes;
+  std::array<exec_aten::DimOrderType, 2> input_dim_order{0, 1};
+  std::array<exec_aten::SizesType, 2> input_sizes;
   input_sizes[0] = num_tokens;
   input_sizes[1] = input.size(input.dim() - 1);
-  std::array<executorch::aten::StridesType, 2> input_strides;
+  std::array<exec_aten::StridesType, 2> input_strides;
   dim_order_to_stride_nocheck(
       input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
   void* input_data = input.mutable_data_ptr();

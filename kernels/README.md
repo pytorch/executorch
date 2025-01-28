@@ -304,8 +304,8 @@ starting point:
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
 using torch::executor::native::<operator_function_name>;
 using torch::executor::testing::IsCloseTo;
 using torch::executor::testing::TensorFactory;

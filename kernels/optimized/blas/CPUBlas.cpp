@@ -24,8 +24,8 @@ extern "C" void sgemm_(char *transa, char *transb, int *m, int *n, int *k, float
 namespace executorch {
 namespace cpublas {
 
-using executorch::aten::BFloat16;
-using executorch::aten::Half;
+using exec_aten::BFloat16;
+using exec_aten::Half;
 
 #ifdef ET_BUILD_WITH_BLAS
 #ifdef ET_BUILD_FOR_APPLE
