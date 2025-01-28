@@ -97,20 +97,20 @@ void gemm(
 void gemm(
     TransposeType transa, TransposeType transb,
     int64_t m, int64_t n, int64_t k,
-    const exec_aten::Half alpha,
-    const exec_aten::Half *a, int64_t lda,
-    const exec_aten::Half *b, int64_t ldb,
-    const exec_aten::Half beta,
-    exec_aten::Half *c, int64_t ldc);
+    const executorch::aten::Half alpha,
+    const executorch::aten::Half *a, int64_t lda,
+    const executorch::aten::Half *b, int64_t ldb,
+    const executorch::aten::Half beta,
+    executorch::aten::Half *c, int64_t ldc);
 
 void gemm(
     TransposeType transa, TransposeType transb,
     int64_t m, int64_t n, int64_t k,
-    const exec_aten::BFloat16 alpha,
-    const exec_aten::BFloat16 *a, int64_t lda,
-    const exec_aten::BFloat16 *b, int64_t ldb,
-    const exec_aten::BFloat16 beta,
-    exec_aten::BFloat16 *c, int64_t ldc);
+    const executorch::aten::BFloat16 alpha,
+    const executorch::aten::BFloat16 *a, int64_t lda,
+    const executorch::aten::BFloat16 *b, int64_t ldb,
+    const executorch::aten::BFloat16 beta,
+    executorch::aten::BFloat16 *c, int64_t ldc);
 // clang-format on
 
 // clang-format off

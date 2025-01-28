@@ -15,8 +15,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::complex;
-using exec_aten::ScalarType;
+using executorch::aten::complex;
+using executorch::aten::ScalarType;
 using executorch::runtime::elementSize;
 using executorch::runtime::isValid;
 using executorch::runtime::toString;
@@ -48,20 +48,20 @@ TEST(ScalarTypeUtilTest, ElementSize) {
       {ScalarType::Short, sizeof(int16_t)},
       {ScalarType::Int, sizeof(int32_t)},
       {ScalarType::Long, sizeof(int64_t)},
-      {ScalarType::Half, sizeof(exec_aten::Half)},
+      {ScalarType::Half, sizeof(executorch::aten::Half)},
       {ScalarType::Float, sizeof(float)},
       {ScalarType::Double, sizeof(double)},
       {ScalarType::ComplexHalf,
-       sizeof(::exec_aten::complex<::exec_aten::Half>)},
-      {ScalarType::ComplexFloat, sizeof(::exec_aten::complex<float>)},
-      {ScalarType::ComplexDouble, sizeof(::exec_aten::complex<double>)},
+       sizeof(::executorch::aten::complex<::executorch::aten::Half>)},
+      {ScalarType::ComplexFloat, sizeof(::executorch::aten::complex<float>)},
+      {ScalarType::ComplexDouble, sizeof(::executorch::aten::complex<double>)},
       {ScalarType::Bool, sizeof(bool)},
-      {ScalarType::QInt8, sizeof(::exec_aten::qint8)},
-      {ScalarType::QUInt8, sizeof(::exec_aten::quint8)},
-      {ScalarType::QInt32, sizeof(::exec_aten::qint32)},
-      {ScalarType::BFloat16, sizeof(::exec_aten::BFloat16)},
-      {ScalarType::QUInt4x2, sizeof(::exec_aten::quint4x2)},
-      {ScalarType::QUInt2x4, sizeof(::exec_aten::quint2x4)},
+      {ScalarType::QInt8, sizeof(::executorch::aten::qint8)},
+      {ScalarType::QUInt8, sizeof(::executorch::aten::quint8)},
+      {ScalarType::QInt32, sizeof(::executorch::aten::qint32)},
+      {ScalarType::BFloat16, sizeof(::executorch::aten::BFloat16)},
+      {ScalarType::QUInt4x2, sizeof(::executorch::aten::quint4x2)},
+      {ScalarType::QUInt2x4, sizeof(::executorch::aten::quint2x4)},
   };
   for (const auto& test_case : test_cases) {
     EXPECT_EQ(elementSize(test_case.type), test_case.expected_size);
@@ -101,7 +101,7 @@ TEST(ScalarTypeUtilTest, UnknownTypeElementSizeDies) {
 }
 
 TEST(ScalarTypeUtilTest, canCastTest) {
-  using exec_aten::ScalarType;
+  using executorch::aten::ScalarType;
   using executorch::runtime::canCast;
 
   // Check some common cases
@@ -134,7 +134,7 @@ TEST(ScalarTypeUtilTest, canCastTest) {
 }
 
 TEST(ScalarTypeUtilTest, promoteTypesTest) {
-  using exec_aten::ScalarType;
+  using executorch::aten::ScalarType;
   using executorch::runtime::promoteTypes;
 
   // Check some common cases
