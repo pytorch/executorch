@@ -347,9 +347,7 @@ class SDPA(nn.Module):
             # can natively support GQA now. But needs enable_gqa=True
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=0.0)
 
-        # y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=0.0)
         y = torch.ops.coreml.sdpa(q, k, v, attn_mask)
         return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
@@ -442,6 +440,11 @@ class Attention(nn.Module):
         # RoPE relative positional embeddings
         q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
+        if self.use_kv_cache:
+            assert input_pos is not None
+            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
+            return self.wo(output)
+
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
@@ -483,6 +486,7 @@ class Attention(nn.Module):
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
+
         output = torch.ops.coreml.sdpa(q, k, v, attn_mask)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
