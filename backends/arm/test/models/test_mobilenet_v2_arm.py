@@ -14,8 +14,10 @@ import torch
 from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from torchvision import models, transforms
-from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+from torchvision import models, transforms  # type: ignore[import-untyped]
+from torchvision.models.mobilenetv2 import (  # type: ignore[import-untyped]
+    MobileNet_V2_Weights,
+)
 
 
 logger = logging.getLogger(__name__)
