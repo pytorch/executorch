@@ -482,6 +482,13 @@ class SquareRootConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class ReciprocalSquareRootConfig(GenericNodePartitionerConfig):
+    target_name = "rsqrt.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class ConstantPadConfig(GenericNodePartitionerConfig):
     target_name = "constant_pad_nd.default"
 
