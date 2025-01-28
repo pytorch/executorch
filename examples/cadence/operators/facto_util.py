@@ -18,58 +18,36 @@ random_manager.seed(1729)
 
 def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> None:
     match op_name:
-        case (
-            "sigmoid.default"
-            | "_softmax.default"
-            | "rsqrt.default"
-            | "exp.default"
-            | "mul.Tensor"
-            | "div.Tensor"
-        ):
+        case "sigmoid.default" | "rsqrt.default":
             tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float]),
-                    cp.Size.Le(lambda deps, r, d: 2),
-                    cp.Rank.Le(lambda deps: 2),
+                    cp.Rank.Le(lambda deps: 2**3),
                 ]
             )
-        case (
-            "add.Tensor"
-            | "sub.Tensor"
-            | "add.Scalar"
-            | "sub.Scalar"
-            | "mul.Scalar"
-            | "div.Scalar"
-        ):
+        case "exp.default":
             tensor_constraints.extend(
                 [
-                    cp.Dtype.In(lambda deps: [torch.float, torch.int32]),
-                    cp.Size.Le(lambda deps, r, d: 2),
-                    cp.Rank.Le(lambda deps: 2),
-                ]
-            )
-        case "native_layer_norm.default":
-            tensor_constraints.extend(
-                [
-                    cp.Dtype.In(lambda deps: [torch.float, torch.int32]),
-                    cp.Size.Le(lambda deps, r, d: 2**4),
-                    cp.Rank.Le(lambda deps: 2**4),
+                    cp.Rank.Le(lambda deps: 2**3),
+                    cp.Value.Ge(lambda deps, dtype, struct: -(2**2)),
+                    cp.Value.Le(lambda deps, dtype, struct: 2**2),
                 ]
             )
         case _:
             tensor_constraints.extend(
                 [
-                    cp.Dtype.In(lambda deps: [torch.float, torch.int32]),
-                    cp.Size.Le(lambda deps, r, d: 2),
-                    cp.Rank.Le(lambda deps: 2),
+                    cp.Rank.Le(lambda deps: 2**2),
                 ]
             )
     tensor_constraints.extend(
         [
-            cp.Value.Ge(lambda deps, dtype, struct: -(2**8)),
-            cp.Value.Le(lambda deps, dtype, struct: 2**8),
+            cp.Dtype.In(lambda deps: [torch.int, torch.float]),
+            cp.Dtype.NotIn(lambda deps: [torch.int64, torch.float64]),
+            cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+            cp.Value.Le(lambda deps, dtype, struct: 2**4),
             cp.Rank.Ge(lambda deps: 1),
             cp.Size.Ge(lambda deps, r, d: 1),
+            cp.Size.Le(lambda deps, r, d: 2**9),
         ]
     )
 
