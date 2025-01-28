@@ -357,10 +357,16 @@ jobs:
 
   android:
     uses: ./.github/workflows/_android.yml
+    permissions:
+      id-token: write
+      contents: read
     needs: test-llama-runner-linux
 
   unittest:
     uses: ./.github/workflows/_unittest.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       docker-image: executorch-ubuntu-22.04-clang12
 
