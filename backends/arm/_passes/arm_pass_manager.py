@@ -21,7 +21,7 @@ from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
 from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
-from executorch.backends.arm._passes.convert_squeezes_to_view import (
+from executorch.backends.arm._passes.convert_squeezes_to_view import (  # type: ignore[import-not-found]
     ConvertSqueezesToViewPass,
 )
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
@@ -30,7 +30,9 @@ from executorch.backends.arm._passes.decompose_layernorm_pass import (
 )
 from executorch.backends.arm._passes.decompose_linear_pass import DecomposeLinearPass
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
-from executorch.backends.arm._passes.decompose_select import DecomposeSelectPass
+from executorch.backends.arm._passes.decompose_select import (  # type: ignore[import-not-found]
+    DecomposeSelectPass,
+)
 from executorch.backends.arm._passes.decompose_softmaxes_pass import (
     DecomposeSoftmaxesPass,
 )
@@ -40,7 +42,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     QuantizeFullArgument,
     RetraceFoldedDtypesPass,
 )
-from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
+from executorch.backends.arm._passes.fuse_quantized_activation_pass import (  # type: ignore[import-not-found]
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
@@ -48,10 +50,12 @@ from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
     KeepDimsFalseToSqueezePass,
 )
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
-from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
+from executorch.backends.arm._passes.meandim_to_averagepool_pass import (  # type: ignore[attr-defined]
     ConvertMeanDimToAveragePoolPass,
 )
-from executorch.backends.arm._passes.mm_to_bmm_pass import ConvertMmToBmmPass
+from executorch.backends.arm._passes.mm_to_bmm_pass import (  # type: ignore[import-not-found]
+    ConvertMmToBmmPass,
+)
 from executorch.backends.arm._passes.remove_clone_pass import RemoveClonePass
 from executorch.backends.arm._passes.scalars_to_attribute_pass import (
     ScalarsToAttributePass,
@@ -89,7 +93,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeFullArgument())
-        self.add_pass(FoldAndAnnotateQParamsPass())
+        self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
 
@@ -125,7 +129,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeFullArgument())
-        self.add_pass(FoldAndAnnotateQParamsPass())
+        self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
 

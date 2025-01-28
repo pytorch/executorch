@@ -209,7 +209,7 @@ class AnnotateChannelsLastDimOrder(ExportPass):
                     # dim_order = (2, 3, 0, 1) (https://www.mlplatform.org/tosa/tosa_spec.html#_depthwise_conv2d).
                     dim_order = self.HWCM_order
             else:
-                dim_order = tuple(range(node_data.dim()))
+                dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]
             node.meta["tosa_dim_order"] = dim_order
         # Take care of cases when:
         # 4D (NHWC) -> >4D (NCH)
