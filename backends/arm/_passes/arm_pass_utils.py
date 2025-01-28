@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -58,9 +58,9 @@ def get_param_tensor(
     elif is_get_attr_node(node):
         # This is a hack to support both lifted and unlifted graph
         try:
-            return getattr(node.graph.owning_module, node.target)
+            return getattr(node.graph.owning_module, node.target)  # type: ignore[arg-type]
         except AttributeError:
-            return getattr(exp_prog.graph_module, node.target)
+            return getattr(exp_prog.graph_module, node.target)  # type: ignore[arg-type]
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
@@ -156,7 +156,7 @@ def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
                 f"Out of bounds index {key} for getting value in args (of size {len(args)})"
             )
     elif isinstance(key, str):
-        return args.get(key, default_value)  # pyre-ignore[16]
+        return args.get(key, default_value)  # type: ignore[union-attr]  # pyre-ignore[16]
     elif isclass(key):
         for arg in args:
             if isinstance(arg, key):
