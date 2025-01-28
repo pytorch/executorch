@@ -74,8 +74,10 @@ void add_q_8w_linear_node(
   ValueRef mat1_W_packed = mat1;
   ValueRef out_W_packed = out;
   // Create temporary tensors to store the width packed versions of mat1 and out
-  TmpTensor mat1_tmp(&graph, graph.sizes_of(mat1), graph.dtype_of(mat1), utils::kWidthPacked);
-  TmpTensor out_tmp(&graph, graph.sizes_of(out), graph.dtype_of(out), utils::kWidthPacked);
+  TmpTensor mat1_tmp(
+      &graph, graph.sizes_of(mat1), graph.dtype_of(mat1), utils::kWidthPacked);
+  TmpTensor out_tmp(
+      &graph, graph.sizes_of(out), graph.dtype_of(out), utils::kWidthPacked);
   if (!graph.is_buffer_storage(out) &&
       graph.packed_dim_of(mat1) != WHCN::kWidthDim) {
     // Ensure mat1 is width packed
