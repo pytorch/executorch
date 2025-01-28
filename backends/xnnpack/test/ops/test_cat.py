@@ -187,6 +187,15 @@ class TestCat(unittest.TestCase):
                 inputs.append(torch.randn(1, 2, 3))
             self._test_cat(self.Cat(), tuple(inputs), cat_num=num_inputs, quant=True)
 
+    def test_qs8_cat_with_empty_tensor(self):
+        inputs = (
+            torch.randn(0, 2, 3),
+            torch.randn(1, 2, 3),
+            torch.randn(3, 2, 3),
+            torch.randn(0, 2, 3),
+        )
+        self._test_cat(self.Cat(), inputs, cat_num=4, quant=True)
+
     class CatNegativeDim(torch.nn.Module):
         def __init__(self):
             super().__init__()
