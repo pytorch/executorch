@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpLogitOutTest : public OperatorTest {
@@ -100,27 +100,27 @@ void OpLogitOutTest::
 TEST_F(OpLogitOutTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out<ScalarType::dtype, ScalarType::Float>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpLogitOutTest, AllRealInputDoubleOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out<ScalarType::dtype, ScalarType::Double>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 TEST_F(OpLogitOutTest, AllRealInputFloatOutputSupportEpsSet) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out_eps_set<ScalarType::dtype, ScalarType::Float>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpLogitOutTest, AllRealInputDoubleOutputSupportEpsSet) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out_eps_set<ScalarType::dtype, ScalarType::Double>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

@@ -15,7 +15,7 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Error select_copy_util(
     const Tensor& in,
