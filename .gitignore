@@ -39,3 +39,8 @@ __pycache__/
 *~
 .~lock.*
 *.idea
+
+
+build/build_apple_frameworks.sh
+extension/benchmark/apple/Benchmark/Benchmark.xcodeproj/xcshareddata/xcschemes/Benchmark.xcscheme
+extension/benchmark/apple/Benchmark/Tests/Tests.xctestplan
