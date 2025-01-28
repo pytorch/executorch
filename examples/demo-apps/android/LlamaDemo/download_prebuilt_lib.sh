@@ -7,8 +7,8 @@
 
 set -eu
 
-AAR_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/executorch-241002/executorch.aar"
-AAR_SHASUM_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/executorch-241002/executorch.aar.sha256sums"
+AAR_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar"
+AAR_SHASUM_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar.sha256sums"
 LIBS_PATH="$(dirname "$0")/app/libs"
 
 mkdir -p "$LIBS_PATH"
