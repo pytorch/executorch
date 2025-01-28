@@ -53,7 +53,7 @@ void main() {
     div_by_x % out_limits.y,
     div_by_x / out_limits.y);
 
-  if (any(greaterThanEqual(pos, out_limits))) {
+  if (pos.z >= out_limits.z) {
     return;
   }
 

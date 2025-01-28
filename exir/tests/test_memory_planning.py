@@ -519,6 +519,39 @@ class TestMisc(unittest.TestCase):
                 idx += 1
         self.assertEqual(graph_module.meta["non_const_buffer_sizes"], expected_bufsizes)
 
+    def test_mutation_not_double_allocated(self) -> None:
+        class Simple(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("constant", torch.ones(5, 5))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.constant.add_(1)
+                return x - self.constant
+
+        model = Simple()
+        inputs = (torch.ones(5, 5),)
+
+        et = to_edge(export(model, inputs, strict=True)).to_executorch()
+
+        # 0 and 11 should refer to the same tensor. 0 is the input, 11 is the output of copy_
+        self.assertEqual(
+            et.executorch_program.execution_plan[0]
+            .values[0]
+            .val.allocation_info.memory_offset_low,
+            et.executorch_program.execution_plan[0]
+            .values[11]
+            .val.allocation_info.memory_offset_low,
+        )
+        self.assertEqual(
+            et.executorch_program.execution_plan[0]
+            .values[0]
+            .val.allocation_info.memory_offset_high,
+            et.executorch_program.execution_plan[0]
+            .values[11]
+            .val.allocation_info.memory_offset_high,
+        )
+
     def test_constants_not_memory_planned(self) -> None:
         class Simple(torch.nn.Module):
             def __init__(self) -> None:
