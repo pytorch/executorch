@@ -338,7 +338,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max_context_length",
         type=int,
-        default=None,
+        default=128,
         help="maximum length of context for model to remember",
     )
 
@@ -645,8 +645,6 @@ def _validate_args(args):
     """
     TODO: Combine all the backends under --backend args
     """
-    if args.max_context_length is None:
-        args.max_context_length = args.max_seq_length
     if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
         raise ValueError(
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
@@ -672,6 +670,7 @@ def _validate_args(args):
 
 def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
+
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
