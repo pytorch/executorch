@@ -64,8 +64,8 @@ void pixel_unshuffle_impl(
 
 } // namespace
 
-using SizesType = exec_aten::SizesType;
-using Tensor = exec_aten::Tensor;
+using SizesType = executorch::aten::SizesType;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& pixel_unshuffle_out(
     KernelRuntimeContext& ctx,

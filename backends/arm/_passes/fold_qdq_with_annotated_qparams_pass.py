@@ -134,7 +134,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             node.meta["input_qparams"][i] = input_qparams
             for n in nodes_to_remove:
                 assert n.target == dq_op
-                n.replace_all_uses_with(n.args[0])
+                n.replace_all_uses_with(n.args[0])  # type: ignore[arg-type]
                 graph_module.graph.erase_node(n)
 
     def call(self, graph_module: GraphModule) -> PassResult:

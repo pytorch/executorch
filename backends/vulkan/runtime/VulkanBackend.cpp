@@ -417,10 +417,10 @@ bool maybe_update_scalar_tensor(
     executorch::aten::Tensor& scalar_tensor_src) {
   const int32_t cur_val = graph->read_symint(ref);
   int32_t scalar_tensor_val = 0;
-  exec_aten::ScalarType dtype = scalar_tensor_src.scalar_type();
-  if (dtype == exec_aten::ScalarType::Int) {
+  executorch::aten::ScalarType dtype = scalar_tensor_src.scalar_type();
+  if (dtype == executorch::aten::ScalarType::Int) {
     scalar_tensor_val = *scalar_tensor_src.const_data_ptr<int32_t>();
-  } else if (dtype == exec_aten::ScalarType::Long) {
+  } else if (dtype == executorch::aten::ScalarType::Long) {
     scalar_tensor_val = int32_t(*scalar_tensor_src.const_data_ptr<int64_t>());
   }
   bool was_updated = false;
@@ -593,16 +593,18 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 #ifdef ET_EVENT_TRACER_ENABLED
     runtime::EventTracer* event_tracer = context.event_tracer();
     compute_graph->context()->querypool().extract_results();
-    for (const auto& tup :
+    for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
       std::string event_name =
-          std::get<0>(tup) + "_" + std::to_string(std::get<1>(tup));
+          r.kernel_name + "_" + std::to_string(r.dispatch_id);
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),
-          -1,
-          std::get<2>(tup),
-          std::get<3>(tup));
+          /* delegate_debug_id = */ -1,
+          r.start_time_ns,
+          r.end_time_ns,
+          (void*)(&r.metadata),
+          sizeof(r.metadata));
     }
 #endif // ET_EVENT_TRACER_ENABLED
 

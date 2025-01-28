@@ -1,5 +1,5 @@
 mpmath==1.3.0
-numpy==2.0.0; python_version >= '3.10'
+numpy>=2.0.0; python_version >= '3.10'
 PyYAML==6.0.1
 ruamel.yaml==0.17.32
 sympy==1.12
@@ -8,7 +8,7 @@ tomli==2.0.1
 torchsr==1.0.4
 transformers==4.47.1
 zstd==1.5.5.1
-pandas==2.2.2; python_version >= '3.10'
+pandas>=2.2.2; python_version >= '3.10'
 pytest==7.2.0
 pytest-cov==4.1.0
 expecttest==0.1.6
@@ -21,7 +21,7 @@ sphinx-gallery==0.14.0
 breathe==4.34.0
 exhale==0.2.3
 docutils==0.16
-matplotlib==3.9.4
+matplotlib>=3.9.4
 # PyTorch Theme
 -e git+https://github.com/pytorch/pytorch_sphinx_theme.git#egg=pytorch_sphinx_theme
 myst-parser==0.18.1

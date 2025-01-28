@@ -146,10 +146,9 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
 endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
-# they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
-# disables exceptions and runtime type.
+# they can be properly gc'd. -s: strip symbol.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti ${CMAKE_CXX_FLAGS_RELEASE}"
+    "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
 )
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
@@ -163,8 +162,6 @@ else()
   # -O2: Moderate opt.
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
-
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 
