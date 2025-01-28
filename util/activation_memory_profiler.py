@@ -15,7 +15,8 @@ import executorch.exir.memory as memory
 import torch
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import get_node_tensor_specs
-from executorch.exir.tensor import num_bytes_from_shape_and_dtype
+
+from executorch.exir.tensor import num_bytes_from_shape_and_dtype, TensorSpec
 from torch.export import ExportedProgram
 
 
@@ -53,10 +54,11 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
     """
     nodes = graph.nodes
     memory_timeline: List[Optional[MemoryTimeline]] = [None for _ in range(len(nodes))]
+    unique_specs: set[TensorSpec] = set()
     for _, node in enumerate(nodes):
         if node.op == "output":
             continue
-        if node.target == memory.alloc:
+        if node.target == memory.alloc or node.target == memory.view:
             continue
         tensor_specs = get_node_tensor_specs(node)
         if tensor_specs is None:
@@ -65,6 +67,9 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
             # TODO: Make use of mem_id in the allocation info
             if tensor_spec is None or tensor_spec.mem_id is None or tensor_spec.const:
                 continue
+            if tensor_spec in unique_specs:
+                continue
+            unique_specs.add(tensor_spec)
             start, end = tensor_spec.lifetime
             size = num_bytes_from_shape_and_dtype(
                 typing.cast(torch.Size, tensor_spec.shape), tensor_spec.dtype
@@ -75,6 +80,7 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
                 memory_timeline_j = memory_timeline[j]
                 if memory_timeline_j is None:
                     memory_timeline_j = MemoryTimeline()
+                    memory_timeline[j] = memory_timeline_j
                 assert memory_timeline_j
                 memory_timeline_j.allocations.append(
                     Allocation(
@@ -106,6 +112,7 @@ def generate_memory_trace(
     chrome_trace_filename: str,
     enable_memory_offsets: bool = False,
     method_name: str = "forward",
+    ommit_metadata: bool = False,
 ):
     """
     Generate the memory timeline from the given ExecuTorch program.
@@ -151,13 +158,14 @@ def generate_memory_trace(
             e["pid"] = int(allocation.memory_id)
             e["tid"] = tid
             e["args"] = {}
-            e["args"]["op_name"] = f"{allocation.op_name}"
-            # ID refers to memory space, typically from 1 to N.
-            # For CPU, everything is allocated on one "space", other backends may have multiple.
-            e["args"]["Memory ID"] = allocation.memory_id
-            e["args"]["fqn"] = f"{allocation.fqn}"
-            e["args"]["source"] = f"{allocation.file_and_line_num}"
-            e["args"]["bytes"] = allocation.size_bytes
+            if not ommit_metadata:
+                e["args"]["op_name"] = f"{allocation.op_name}"
+                # ID refers to memory space, typically from 1 to N.
+                # For CPU, everything is allocated on one "space", other backends may have multiple.
+                e["args"]["Memory ID"] = allocation.memory_id
+                e["args"]["fqn"] = f"{allocation.fqn}"
+                e["args"]["source"] = f"{allocation.file_and_line_num}"
+                e["args"]["bytes"] = allocation.size_bytes
             start_time += allocation_size_kb
             trace_events.append(e)
         tid += 1
