@@ -747,6 +747,7 @@ def apply_algo(
        storage with tensors in the outer module.
     TODO: make these optimizations once we have some baseline working.
     """
+
     specs = update_all_tensors_lifetime(graph_module, graph_signature)
     bufsizes: List[int] = algo(
         graph_module, alignment, graph_signature, alloc_graph_input, alloc_graph_output

@@ -158,7 +158,7 @@ Tensor& tril_out(
   clear_out(out);
 
   ScalarType out_type = out.scalar_type();
-  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, __func__, CTYPE, [&]() {
     tril_kernel<CTYPE>(ctx, self, diagonal, out);
   });
 

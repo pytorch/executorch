@@ -276,7 +276,7 @@ TEST_F(OpStackOutTest, InsertEnd) {
 /// zeros().
 TEST_F(OpStackOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()

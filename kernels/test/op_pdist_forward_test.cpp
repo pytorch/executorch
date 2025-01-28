@@ -8,6 +8,7 @@
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
+#include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -37,6 +38,12 @@ class OpPdistForwardOutTest : public ::testing::Test {
   template <ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
+
+    if ((DTYPE == ScalarType::Half || DTYPE == ScalarType::BFloat16) &&
+        torch::executor::testing::SupportedFeatures::get()->is_aten) {
+      // ATen doesn't support Half/BFloat for this op.
+      return;
+    }
 
     Tensor in = tf.make({4, 5}, {0, 1, 2,  3, 5, 4, 3, 2, -1, 5,
                                  1, 1, -2, 1, 5, 4, 3, 2, -1, 5});
