@@ -479,6 +479,10 @@ Tensor& div_scalar_out(
     optimized = false;
   }
 
+  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
+    optimized = false;
+  }
+
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "div.Scalar_out";
 
@@ -586,12 +590,16 @@ Tensor& div_scalar_mode_out(
     optimized = false;
   }
 
+  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
+    optimized = false;
+  }
+
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "div.Scalar_mode_out";
 
   int mode_value = (mode_val == "trunc") ? 1 : 2;
 
-  if (a.scalar_type() == ScalarType::Int) {
+  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     int inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -607,7 +615,7 @@ Tensor& div_scalar_mode_out(
         inp2_val,
         mode_value,
         out.numel());
-  } else if (a.scalar_type() == ScalarType::Float) {
+  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     float inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);

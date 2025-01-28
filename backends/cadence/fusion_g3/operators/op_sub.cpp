@@ -262,6 +262,10 @@ Tensor& sub_scalar_out(
     optimized = false;
   }
 
+  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
+    optimized = false;
+  }
+
   if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     int inp2_val;

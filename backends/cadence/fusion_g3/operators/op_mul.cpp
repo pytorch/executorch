@@ -246,7 +246,11 @@ Tensor& mul_scalar_out(
 
   if (!(((a.scalar_type() == ScalarType::Int) ||
          (a.scalar_type() == ScalarType::Float)) &&
-         (a.scalar_type() == out.scalar_type()))) {
+        (a.scalar_type() == out.scalar_type()))) {
+    optimized = false;
+  }
+
+  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
     optimized = false;
   }
 
