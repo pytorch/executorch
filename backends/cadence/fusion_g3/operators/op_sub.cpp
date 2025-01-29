@@ -35,19 +35,6 @@ Tensor& sub_out(
     const Scalar& alpha,
     Tensor& out) {
 #ifdef OP_ARG_CHECK
-  ScalarType alpha_type =
-      torch::executor::native::utils::get_scalar_dtype(alpha);
-  // Check alpha type
-  ET_KERNEL_CHECK(ctx, alpha_type != ScalarType::Bool, InvalidArgument, out);
-
-  // Check Common Dtype
-  ET_KERNEL_CHECK(
-      ctx,
-      (canCast(common_type, out.scalar_type()) &&
-       canCast(alpha_type, common_type)),
-      InvalidArgument,
-      out);
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx,
@@ -72,12 +59,12 @@ Tensor& sub_out(
   int inp2_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
 
-  bool broadcast = 0;
+  bool broadcast = false;
 
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
-  bool optimized = 1;
+  bool optimized = true;
 
   for (int i = 0; i < max_dim; i++) {
     out_shape[i] = 1;
@@ -103,16 +90,16 @@ Tensor& sub_out(
   for (int i = 0; i < out.dim(); i++) {
     if (((inp1_shape[i]) != (out_shape[i])) ||
         ((inp2_shape[i]) != (out_shape[i]))) {
-      broadcast = 1;
+      broadcast = true;
     }
   }
 
-  if (((broadcast == 1) && (max_dim > kTensorDimensionLimit)) ||
+  if (((broadcast) && (max_dim > kTensorDimensionLimit)) ||
       (!(((a.scalar_type() == ScalarType::Int) ||
           (a.scalar_type() == ScalarType::Float)) &&
          (a.scalar_type() == b.scalar_type()) &&
          (a.scalar_type() == out.scalar_type())))) {
-    optimized = 0;
+    optimized = false;
   }
 
   if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
@@ -207,6 +194,19 @@ Tensor& sub_out(
     ScalarType compute_type =
         torch::executor::native::utils::get_compute_type(common_type);
 
+    ScalarType alpha_type =
+        torch::executor::native::utils::get_scalar_dtype(alpha);
+    // Check alpha type
+    ET_KERNEL_CHECK(ctx, alpha_type != ScalarType::Bool, InvalidArgument, out);
+
+    // Check Common Dtype
+    ET_KERNEL_CHECK(
+        ctx,
+        (canCast(common_type, out.scalar_type()) &&
+         canCast(alpha_type, common_type)),
+        InvalidArgument,
+        out);
+
     ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       const CTYPE_COMPUTE val_alpha =
           torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(alpha);
@@ -236,18 +236,6 @@ Tensor& sub_scalar_out(
     const Scalar& alpha,
     Tensor& out) {
 #ifdef OP_ARG_CHECK
-  ScalarType alpha_type =
-      torch::executor::native::utils::get_scalar_dtype(alpha);
-  // Check alpha type
-  ET_KERNEL_CHECK(ctx, alpha_type != ScalarType::Bool, InvalidArgument, out);
-
-  // Check Common Dtype
-  ET_KERNEL_CHECK(
-      ctx,
-      (common_type == out.scalar_type() && canCast(alpha_type, common_type)),
-      InvalidArgument,
-      out);
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx,
@@ -266,14 +254,16 @@ Tensor& sub_scalar_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "sub.Scalar_out";
 
-  bool optimized = 1;
-  ScalarType b_type = torch::executor::native::utils::get_scalar_dtype(b);
+  bool optimized = true;
 
   if (!(((a.scalar_type() == ScalarType::Int) ||
          (a.scalar_type() == ScalarType::Float)) &&
-        (a.scalar_type() == b_type) &&
         (a.scalar_type() == out.scalar_type()))) {
-    optimized = 0;
+    optimized = false;
+  }
+
+  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
+    optimized = false;
   }
 
   if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
@@ -322,6 +312,19 @@ Tensor& sub_scalar_out(
     // Compute Dtype
     ScalarType compute_type =
         torch::executor::native::utils::get_compute_type(common_type);
+
+    ScalarType alpha_type =
+        torch::executor::native::utils::get_scalar_dtype(alpha);
+    // Check alpha type
+    ET_KERNEL_CHECK(ctx, alpha_type != ScalarType::Bool, InvalidArgument, out);
+
+    // Check Common Dtype
+    ET_KERNEL_CHECK(
+        ctx,
+        (common_type == out.scalar_type() && canCast(alpha_type, common_type)),
+        InvalidArgument,
+        out);
+
     ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       const CTYPE_COMPUTE val_b =
           torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(b);

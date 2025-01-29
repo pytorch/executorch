@@ -46,11 +46,6 @@ Tensor& cat_out(
   int kTensorDimensionLimit = executorch::runtime::kTensorDimensionLimit;
 
 #ifdef OP_ARG_CHECK
-  ET_KERNEL_CHECK(
-      ctx,
-      torch::executor::check_cat_args(tensors, dim, out),
-      InvalidArgument,
-      out);
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
@@ -106,7 +101,16 @@ Tensor& cat_out(
     out_shapes[i] = out_size[i];
   }
 
-  if ((out.scalar_type() == ScalarType::Int) ||
+  bool optimized = true;
+
+  for (int i = 0; i < tensors.size(); i++) {
+    if (out.scalar_type() != tensors[i].scalar_type()) {
+      optimized = false;
+      break;
+    }
+  }
+
+  if ((optimized) && (out.scalar_type() == ScalarType::Int) ||
       (out.scalar_type() == ScalarType::Short) ||
       (out.scalar_type() == ScalarType::Char) ||
       (out.scalar_type() == ScalarType::UInt32) ||
@@ -125,6 +129,12 @@ Tensor& cat_out(
         (int)dim,
         get_element_size(out.scalar_type()));
   } else {
+    ET_KERNEL_CHECK(
+        ctx,
+        torch::executor::check_cat_args(tensors, dim, out),
+        InvalidArgument,
+        out);
+
     const size_t outer = executorch::runtime::getLeadingDims(out, dim);
     const size_t dim_stride = executorch::runtime::getTrailingDims(out, dim);
     const size_t ninputs = tensors.size();
