@@ -49,9 +49,10 @@ Tensor& exp_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       out);
 #endif
 
-  if (in.scalar_type() == ScalarType::Float) {
-    float* __restrict__ out_data = out.mutable_data_ptr<float>();
-    const float* __restrict__ in_data = in.const_data_ptr<float>();
+  if ((in.scalar_type() == ScalarType::Float) &&
+      (out.scalar_type() == ScalarType::Float)) {
+    float* const out_data = out.mutable_data_ptr<float>();
+    const float* const in_data = in.const_data_ptr<float>();
 
     XT_KERNEL_CHECK(
         ctx, out, xa_nn_elm_exp_f32_f32, out_data, in_data, out.numel());
