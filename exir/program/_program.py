@@ -268,12 +268,41 @@ def lift_constant_tensor_pass(ep):
     buffers = list(graph_signature.buffers)
 
     fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
-    first_user_input = None
+    insert_before_node = None
     lifted_constants = []
     for node in ep.graph.nodes:
         if node.op == "placeholder" and node.name in graph_signature.user_inputs:
-            first_user_input = node
+            insert_before_node = node  # first user input
             break
+
+    if insert_before_node is None:
+        # we have no user inputs, find the node after the last buffer
+        # (that we will insert the lifted constants before).
+        # this is a bit hacky, but I am not certain of what the contract is for
+        # node ordering. is the first non-placeholder node guranteed to be the
+        # first node after input paramters? what if there is no op, and it is
+        # just placeholders? Easier to just find the last buffer, and insert after.
+
+        # also error if we have no buffers and no user inputs... if that is an issue, fix it later?
+        last_buffer = None
+        for node in ep.graph.nodes:
+            node_buffer_fqn = graph_signature.inputs_to_buffers.get(node.name, None)
+            # not sure if both cases are needed, if is it possible to encounter a
+            # buffer that is not a user input?
+            if (
+                node_buffer_fqn is not None
+                and node_buffer_fqn in graph_signature.buffers
+            ):
+                last_buffer = node
+                continue
+            if node.op == "placeholder" and node.name in graph_signature.buffers:
+                last_buffer = node
+                continue
+        # we have our last buffer, grab the node after it, to insert the lifted constants before.
+        insert_before_node = last_buffer.next
+
+    if insert_before_node is None:
+        raise ValueError("No user inputs and no buffers found. Cannot lift constants.")
 
     for node in ep.graph.nodes:
         if node.op == "get_attr":
@@ -283,7 +312,7 @@ def lift_constant_tensor_pass(ep):
 
             constant_tensor_fqn = f"_lifted_tensor_constant{len(buffers)}"
 
-            with ep.graph.inserting_before(first_user_input):
+            with ep.graph.inserting_before(insert_before_node):
                 # Insert the constant node before the first user input
                 const_placeholder_node = ep.graph.placeholder(constant_tensor_fqn)
                 for k, v in node.meta.items():
@@ -316,6 +345,9 @@ def lift_constant_tensor_pass(ep):
             new_input_specs.extend(lifted_constants)
             lifted_constants.clear()
         new_input_specs.append(s)
+    # Add remaining lifted constants if no user inputs exist.
+    if len(lifted_constants) > 0:
+        new_input_specs.extend(lifted_constants)
     ep.graph_signature.input_specs = new_input_specs
     ep.graph_module.recompile()
     return ep
