@@ -30,7 +30,7 @@ namespace native {
 
 Tensor& cat_out(
     RuntimeContext& ctx,
-    exec_aten::ArrayRef<Tensor> tensors,
+    executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   if (dim < 0) {

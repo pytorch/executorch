@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::string_view;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::string_view;
+using executorch::aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
