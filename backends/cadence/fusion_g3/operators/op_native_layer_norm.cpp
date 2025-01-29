@@ -225,7 +225,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
     if (weight.has_value()) {
       weight_data = weight.value().mutable_data_ptr<float>();
     } else {
-      weight_data = (float*)malloc(num_elm * sizeof(float));
+      executorch::runtime::Result<void*> temp_mem_weight =
+          ctx.allocate_temp(num_elm * sizeof(float));
+      weight_data = (float*)(temp_mem_weight.get());
+
       for (int i = 0; i < num_elm; i++) {
         weight_data[i] = 1;
       }
@@ -234,7 +237,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
     if (bias.has_value()) {
       bias_data = bias.value().mutable_data_ptr<float>();
     } else {
-      bias_data = (float*)malloc(num_elm * sizeof(float));
+      executorch::runtime::Result<void*> temp_mem_bias =
+          ctx.allocate_temp(num_elm * sizeof(float));
+      bias_data = (float*)(temp_mem_bias.get());
+
       for (int i = 0; i < num_elm; i++) {
         bias_data[i] = 0;
       }
@@ -255,12 +261,6 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
         bias_data,
         (float)eps);
 
-    if (!bias.has_value()) {
-      free(bias_data);
-    }
-    if (!weight.has_value()) {
-      free(weight_data);
-    }
   } else {
     ET_KERNEL_CHECK(
         ctx,
