@@ -17,7 +17,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/io_memory.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/io_memory.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
@@ -73,6 +73,10 @@ class Runner {
   get_methods_meta(std::string& method_name);
 
  private:
+  enum LlamaVersion {
+    kLlama2 = 0,
+    kLlama3,
+  };
   template <typename T>
   T getMetadataHelper(std::string method_name, T default_val);
   int32_t logitsToToken(
@@ -104,6 +108,7 @@ class Runner {
   std::string prefill_forward_name_;
   std::string kv_forward_name_;
   std::vector<std::string> method_names_;
+  LlamaVersion llama_version_;
 };
 
 } // namespace example
