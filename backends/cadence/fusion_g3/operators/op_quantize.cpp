@@ -159,6 +159,12 @@ Tensor& quantize_impl(
 
   bool is_asym_quant = 0;
 
+  bool optimized = true;
+
+  if (input.scalar_type() != ScalarType::Float) {
+    optimized = false;
+  }
+
   if (zero_point_data != NULL) // asymmetric quant
   {
     if (axis != NULL) // channel
@@ -177,7 +183,7 @@ Tensor& quantize_impl(
   }
 
   if (is_asym_quant) {
-    if (out.scalar_type() == ScalarType::Byte) {
+    if ((out.scalar_type() == ScalarType::Byte) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -192,7 +198,7 @@ Tensor& quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::Char) {
+    } else if ((out.scalar_type() == ScalarType::Char) && (optimized)) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
 
       XT_KERNEL_CHECK(
@@ -208,7 +214,7 @@ Tensor& quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::UInt16) {
+    } else if ((out.scalar_type() == ScalarType::UInt16) && (optimized)) {
       uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -223,7 +229,7 @@ Tensor& quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::Short) {
+    } else if ((out.scalar_type() == ScalarType::Short) && (optimized)) {
       int16_t* out_data = out.mutable_data_ptr<int16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -238,7 +244,7 @@ Tensor& quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Bits4u) {
+    } else if ((out.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -253,7 +259,7 @@ Tensor& quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Bits4) {
+    } else if ((out.scalar_type() == (ScalarType)Bits4) && (optimized)) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -391,7 +397,7 @@ Tensor& quantize_impl(
 #undef ASYM_QUANTIZE_IMPL_CHANNEL
     }
   } else {
-    if (out.scalar_type() == ScalarType::Byte) {
+    if ((out.scalar_type() == ScalarType::Byte) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -405,7 +411,7 @@ Tensor& quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::Char) {
+    } else if ((out.scalar_type() == ScalarType::Char) && (optimized)) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -419,7 +425,7 @@ Tensor& quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::UInt16) {
+    } else if ((out.scalar_type() == ScalarType::UInt16) && (optimized)) {
       uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -433,7 +439,7 @@ Tensor& quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::Short) {
+    } else if ((out.scalar_type() == ScalarType::Short) && (optimized)) {
       int16_t* out_data = out.mutable_data_ptr<int16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -447,7 +453,7 @@ Tensor& quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Bits4u) {
+    } else if ((out.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -461,7 +467,7 @@ Tensor& quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Bits4) {
+    } else if ((out.scalar_type() == (ScalarType)Bits4) && (optimized)) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
       XT_KERNEL_CHECK(
           ctx,

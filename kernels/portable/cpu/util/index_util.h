@@ -31,7 +31,7 @@ void get_index_select_out_target_size(
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_nonzero_args(const Tensor& in, const Tensor& out);

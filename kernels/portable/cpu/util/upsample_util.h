@@ -17,27 +17,27 @@ namespace executor {
 
 bool check_upsample_2d_common_args(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out);
 
 bool check_upsample_bilinear2d_args(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
     const bool align_corners,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out);
 
 bool check_upsample_nearest2d_args(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out);
 
 Error resize_upsample_2d(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     double& scale_h_out,
     double& scale_w_out,
     Tensor& out);
@@ -45,7 +45,7 @@ Error resize_upsample_2d(
 // Ported from aten/src/ATen/native/UpSample.h
 template <typename scalar_t>
 inline scalar_t compute_scales_value(
-    const exec_aten::optional<double>& scale,
+    const executorch::aten::optional<double>& scale,
     int64_t input_size,
     int64_t output_size) {
   return scale.has_value() ? static_cast<scalar_t>(1.0 / scale.value())
@@ -58,7 +58,7 @@ inline scalar_t area_pixel_compute_scale(
     int64_t input_size,
     int64_t output_size,
     bool align_corners,
-    const exec_aten::optional<double>& scale) {
+    const executorch::aten::optional<double>& scale) {
   // see Note [area_pixel_compute_scale]
   if (align_corners) {
     if (output_size > 1) {

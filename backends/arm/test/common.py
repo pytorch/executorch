@@ -49,8 +49,8 @@ def maybe_get_tosa_collate_path() -> str | None:
     if tosa_test_base:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
         #'backends/arm/test/ops/test_mean_dim.py::TestMeanDim::test_meandim_tosa_BI_0_zeros (call)'
-        test_class = current_test.split("::")[1]
-        test_name = current_test.split("::")[-1].split(" ")[0]
+        test_class = current_test.split("::")[1]  # type: ignore[union-attr]
+        test_name = current_test.split("::")[-1].split(" ")[0]  # type: ignore[union-attr]
         if "BI" in test_name:
             tosa_test_base = os.path.join(tosa_test_base, "tosa-bi")
         elif "MI" in test_name:
@@ -108,7 +108,7 @@ def get_u85_compile_spec(
     """
     Default compile spec for Ethos-U85 tests.
     """
-    return get_u85_compile_spec_unbuilt(
+    return get_u85_compile_spec_unbuilt(  # type: ignore[attr-defined]
         custom_path=custom_path,
     ).build()
 
@@ -152,7 +152,7 @@ def get_u85_compile_spec_unbuilt(
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
-    return compile_spec
+    return compile_spec  # type: ignore[return-value]
 
 
 SkipIfNoCorstone300 = pytest.mark.skipif(

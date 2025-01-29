@@ -17,9 +17,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 using torch::executor::native::quantized_mixed_linear_out;
 using torch::executor::testing::TensorFactory;

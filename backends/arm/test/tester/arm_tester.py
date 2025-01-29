@@ -12,7 +12,7 @@ from typing import Iterable, List, Optional, Tuple, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
 
 import torch.fx
 import torch.utils._pytree as pytree
