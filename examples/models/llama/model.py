@@ -52,6 +52,7 @@ class Llama2Model(EagerModelBase):
         self.input_prune_map_path = kwargs.get("input_prune_map_path", None)
         self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
         self.max_seq_len = kwargs.get("max_seq_len", 128)
+        self.static_seq_length = kwargs.get("static_seq_length", 1)
         self.args = kwargs.get("args", None)
 
         # The example is using a dummy small model with random weights for demo purpose only.
@@ -281,7 +282,9 @@ the checkpoint format to avoid generating faulty models.
     def get_example_inputs_kvcache_sdpa(self):
         if self.enable_dynamic_shape:
             return (
-                torch.tensor([[2, 3, 4]], dtype=torch.long),
+                torch.tensor(
+                    [[0 for _ in range(self.static_seq_length)]], dtype=torch.long
+                ),
                 torch.tensor([0], dtype=torch.long),
             )
         else:

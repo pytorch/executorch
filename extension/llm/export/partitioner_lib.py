@@ -167,6 +167,10 @@ def get_coreml_partitioner(
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
         take_over_mutable_buffer=take_over_mutable_buffer,
+        skip_ops_for_coreml_delegation=[
+            "quantized_decomposed.embedding_4bit.dtype",
+            "aten.select_copy.int",
+        ],
     )
 
 
