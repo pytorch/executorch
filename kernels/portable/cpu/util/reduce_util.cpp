@@ -15,7 +15,7 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 //
 // Helper Functions
@@ -33,8 +33,9 @@ inline size_t _normalize_non_neg_d(ssize_t d, ssize_t in_dim) {
 }
 
 ET_NODISCARD bool check_dim_list_is_valid(
-    const exec_aten::Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::Tensor& in,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   if (dim_list.has_value() && dim_list.value().size() != 0) {
     const auto& reduce_dims = dim_list.value();
     bool dim_exist[kTensorDimensionLimit];
@@ -64,7 +65,7 @@ ET_NODISCARD bool check_dim_list_is_valid(
 bool check_dim_in_dim_list(
     const size_t dim,
     const size_t max_dim,
-    const exec_aten::ArrayRef<int64_t>& dim_list) {
+    const executorch::aten::ArrayRef<int64_t>& dim_list) {
   for (const auto& d : dim_list) {
     const size_t non_neg_dim = _normalize_non_neg_d(d, max_dim);
     if (dim == non_neg_dim) {
@@ -79,7 +80,7 @@ bool check_dim_in_dim_list(
  */
 size_t get_reduced_dim_product(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim) {
+    const executorch::aten::optional<int64_t>& dim) {
   if (in.dim() == 0) {
     return 1;
   }
@@ -99,7 +100,8 @@ size_t get_reduced_dim_product(
  */
 size_t get_reduced_dim_product(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   if (in.dim() == 0) {
     return 1;
   }
@@ -124,7 +126,7 @@ size_t get_reduced_dim_product(
  */
 size_t get_out_numel(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim) {
+    const executorch::aten::optional<int64_t>& dim) {
   size_t out_numel = 1;
   if (dim.has_value()) {
     const auto dim_val = dim.value();
@@ -149,7 +151,8 @@ size_t get_out_numel(
  */
 size_t get_out_numel(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list) {
   size_t out_numel = 1;
   if (dim_list.has_value() && dim_list.value().size() != 0) {
     for (size_t d = 0; d < in.dim(); ++d) {
@@ -167,7 +170,7 @@ size_t get_out_numel(
  */
 size_t get_init_index(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim,
+    const executorch::aten::optional<int64_t>& dim,
     const size_t out_ix) {
   if (!dim.has_value()) {
     return 0;
@@ -198,7 +201,8 @@ size_t get_init_index(
  */
 size_t get_init_index(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     const size_t out_ix) {
   if (!dim_list.has_value() || dim_list.value().size() == 0) {
     return 0;
@@ -221,9 +225,9 @@ size_t get_init_index(
 
 size_t compute_reduced_out_size(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim,
+    const executorch::aten::optional<int64_t>& dim,
     bool keepdim,
-    exec_aten::SizesType* sizes_arr) {
+    executorch::aten::SizesType* sizes_arr) {
   const auto in_dim = in.dim();
   size_t out_dim = in_dim;
 
@@ -258,9 +262,10 @@ size_t compute_reduced_out_size(
 
 size_t compute_reduced_out_size(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim,
-    exec_aten::SizesType* sizes_arr) {
+    executorch::aten::SizesType* sizes_arr) {
   const auto in_dim = in.dim();
   size_t out_dim = in_dim;
 
@@ -298,25 +303,26 @@ size_t compute_reduced_out_size(
 
 Error resize_reduction_out(
     const Tensor& in,
-    const exec_aten::optional<int64_t>& dim,
+    const executorch::aten::optional<int64_t>& dim,
     bool keepdim,
     Tensor& out) {
-  exec_aten::SizesType sizes_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType sizes_arr[kTensorDimensionLimit];
   const auto out_dim = compute_reduced_out_size(in, dim, keepdim, sizes_arr);
-  exec_aten::ArrayRef<exec_aten::SizesType> out_size{
+  executorch::aten::ArrayRef<executorch::aten::SizesType> out_size{
       sizes_arr, static_cast<size_t>(out_dim)};
   return resize_tensor(out, out_size);
 }
 
 Error resize_reduction_out(
     const Tensor& in,
-    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
+    const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+        dim_list,
     bool keepdim,
     Tensor& out) {
-  exec_aten::SizesType sizes_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType sizes_arr[kTensorDimensionLimit];
   const auto out_dim =
       compute_reduced_out_size(in, dim_list, keepdim, sizes_arr);
-  exec_aten::ArrayRef<exec_aten::SizesType> out_size{
+  executorch::aten::ArrayRef<executorch::aten::SizesType> out_size{
       sizes_arr, static_cast<size_t>(out_dim)};
   return resize_tensor(out, out_size);
 }

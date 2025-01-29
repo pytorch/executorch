@@ -16,9 +16,13 @@
 #include <limits>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::extract_scalar_tensor;
+using executorch::runtime::kMaximumPrintableTensorShapeElement;
+using executorch::runtime::kTensorDimensionLimit;
+using executorch::runtime::kTensorShapeStringSizeLimit;
+using executorch::runtime::tensor_shape_to_c_string;
 using executorch::runtime::testing::TensorFactory;
 
 class TensorUtilTest : public ::testing::Test {
@@ -608,24 +612,16 @@ TEST_F(TensorUtilTest, SameShapesDifferentDimOrder) {
 }
 
 TEST_F(TensorUtilTest, TensorShapeToCStringBasic) {
-  char str[executorch::runtime::kTensorShapeStringSizeLimit];
   std::array<executorch::aten::SizesType, 3> sizes = {123, 456, 789};
-  executorch::runtime::tensor_shape_to_c_string(str, sizes);
-  EXPECT_STREQ(str, "(123, 456, 789)");
+  auto str = tensor_shape_to_c_string(sizes);
+  EXPECT_STREQ(str.data(), "(123, 456, 789)");
 
   std::array<executorch::aten::SizesType, 1> one_size = {1234567890};
-  executorch::runtime::tensor_shape_to_c_string(str, one_size);
-  EXPECT_STREQ(str, "(1234567890)");
+  str = tensor_shape_to_c_string(one_size);
+  EXPECT_STREQ(str.data(), "(1234567890)");
 }
 
 TEST_F(TensorUtilTest, TensorShapeToCStringMaximumLength) {
-  using executorch::runtime::kMaximumPrintableTensorShapeElement;
-  using executorch::runtime::kTensorDimensionLimit;
-  using executorch::runtime::kTensorShapeStringSizeLimit;
-  using executorch::runtime::tensor_shape_to_c_string;
-  char str[executorch::runtime::kTensorShapeStringSizeLimit + 1];
-  std::memset(str, '@', sizeof(str));
-
   std::array<
       executorch::aten::SizesType,
       executorch::runtime::kTensorDimensionLimit>
@@ -635,7 +631,7 @@ TEST_F(TensorUtilTest, TensorShapeToCStringMaximumLength) {
       sizes.end(),
       executorch::runtime::kMaximumPrintableTensorShapeElement);
 
-  executorch::runtime::tensor_shape_to_c_string(str, sizes);
+  auto str = executorch::runtime::tensor_shape_to_c_string(sizes);
 
   std::ostringstream expected;
   expected << '(' << kMaximumPrintableTensorShapeElement;
@@ -645,6 +641,5 @@ TEST_F(TensorUtilTest, TensorShapeToCStringMaximumLength) {
   expected << ')';
   auto expected_str = expected.str();
 
-  EXPECT_EQ(str[executorch::runtime::kTensorShapeStringSizeLimit], '@');
-  EXPECT_EQ(expected_str, str);
+  EXPECT_EQ(expected_str, str.data());
 }

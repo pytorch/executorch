@@ -73,14 +73,15 @@ void Runner::generate(const std::string& prompt, std::size_t max_seq_len) {
   std::cout << std::endl;
 }
 
-uint64_t Runner::logits_to_token(const exec_aten::Tensor& logits_tensor) {
+uint64_t Runner::logits_to_token(
+    const executorch::aten::Tensor& logits_tensor) {
   return sampler_->sample(logits_tensor.data_ptr<float>());
 }
 
 uint64_t Runner::prefill(std::vector<uint64_t>& tokens) {
   auto result = module_->forward(executorch::extension::from_blob(
       tokens.data(),
-      {1, static_cast<exec_aten::SizesType>(tokens.size())},
+      {1, static_cast<executorch::aten::SizesType>(tokens.size())},
       ScalarType::Long));
   ET_CHECK_MSG(result.error() == Error::Ok, "Failed to prefill tokens");
 

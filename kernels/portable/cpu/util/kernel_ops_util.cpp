@@ -14,7 +14,7 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -134,7 +134,7 @@ bool output_padding_is_valid(
 }
 
 bool output_size_is_valid(
-    exec_aten::ArrayRef<exec_aten::SizesType> output_size,
+    executorch::aten::ArrayRef<executorch::aten::SizesType> output_size,
     size_t kernel_ndim) {
   bool valid = true;
   size_t out_dim = output_size.size();
@@ -164,7 +164,7 @@ bool output_size_is_valid(
 void get_unsqueezed_sizes(
     const Tensor& t,
     int64_t unsqueeze_dim,
-    exec_aten::SizesType* sizes_arr,
+    executorch::aten::SizesType* sizes_arr,
     size_t& ndim) {
   ndim = t.dim() + 1;
   for (int d = 0; d < unsqueeze_dim; ++d) {
@@ -178,11 +178,11 @@ void get_unsqueezed_sizes(
 
 void get_unsqueezed_dim_order(
     const Tensor& t,
-    exec_aten::DimOrderType unsqueeze_dim,
-    exec_aten::DimOrderType* dim_order_arr) {
+    executorch::aten::DimOrderType unsqueeze_dim,
+    executorch::aten::DimOrderType* dim_order_arr) {
   int offset = 0;
   for (int i = 0; i < t.dim(); ++i) {
-    exec_aten::DimOrderType dim = t.dim_order()[i];
+    executorch::aten::DimOrderType dim = t.dim_order()[i];
     if (dim == unsqueeze_dim) {
       dim_order_arr[i] = dim;
       dim_order_arr[i + 1] = dim + 1;
@@ -227,7 +227,7 @@ void calculate_kernel_output_sizes(
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     bool ceil_mode,
     bool transposed,
     IntArrayRef output_padding) {
@@ -265,7 +265,7 @@ bool check_avg_pool2d_args(
     const IntArrayRef padding,
     const bool ceil_mode,
     const bool count_include_pad,
-    const exec_aten::optional<int64_t>& divisor_override,
+    const executorch::aten::optional<int64_t>& divisor_override,
     const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
 
@@ -300,7 +300,7 @@ void get_avg_pool2d_out_target_size(
     const IntArrayRef stride,
     const IntArrayRef padding,
     const bool ceil_mode,
-    exec_aten::SizesType* const out_sizes,
+    executorch::aten::SizesType* const out_sizes,
     size_t* const out_ndim) {
   *out_ndim = in.dim();
 
@@ -319,7 +319,7 @@ void get_avg_pool2d_out_target_size(
 bool check_convolution_args(
     const Tensor& in,
     const Tensor& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
@@ -412,7 +412,7 @@ void get_convolution_out_target_size(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
@@ -503,7 +503,7 @@ void get_max_pool2d_with_indices_out_target_size(
     IntArrayRef padding,
     IntArrayRef dilation,
     bool ceil_mode,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
 

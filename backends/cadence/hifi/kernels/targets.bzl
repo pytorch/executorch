@@ -2,12 +2,17 @@ load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
+    common_deps = [
+        "//executorch/runtime/kernel:kernel_includes",
+    ]
+
     runtime.cxx_library(
         name = "kernels",
         srcs = ["kernels.cpp"],
         exported_headers = [
             "kernels.h",
         ],
+        deps = common_deps,
         visibility = [
             "//executorch/backends/cadence/...",
         ],

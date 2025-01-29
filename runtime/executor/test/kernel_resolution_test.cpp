@@ -25,8 +25,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Kernel;
@@ -97,7 +97,7 @@ TEST_F(KernelResolutionTest, ResolveKernelKeySuccess) {
   // args are Float with dim order (0, 1)
 
   // Construct a kernel key with the following meta:
-  // exec_aten::DimOrderType contiguous[] = {0, 1};
+  // executorch::aten::DimOrderType contiguous[] = {0, 1};
   // TensorMeta float_contiguous[] = {
   //     TensorMeta(ScalarType::Float, contiguous),
   //     TensorMeta(ScalarType::Float, contiguous),

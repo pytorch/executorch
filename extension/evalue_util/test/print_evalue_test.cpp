@@ -20,9 +20,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
+using executorch::aten::ArrayRef;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
 using torch::executor::BoxedEvalueList;
 using torch::executor::EValue;
 using torch::executor::testing::TensorFactory;
@@ -47,12 +47,12 @@ TEST(PrintEvalueTest, None) {
 //
 
 TEST(PrintEvalueTest, TrueBool) {
-  EValue value(exec_aten::Scalar(true));
+  EValue value(executorch::aten::Scalar(true));
   expect_output(value, "True");
 }
 
 TEST(PrintEvalueTest, FalseBool) {
-  EValue value(exec_aten::Scalar(false));
+  EValue value(executorch::aten::Scalar(false));
   expect_output(value, "False");
 }
 
@@ -61,17 +61,17 @@ TEST(PrintEvalueTest, FalseBool) {
 //
 
 TEST(PrintEvalueTest, ZeroInt) {
-  EValue value(exec_aten::Scalar(0));
+  EValue value(executorch::aten::Scalar(0));
   expect_output(value, "0");
 }
 
 TEST(PrintEvalueTest, PositiveInt) {
-  EValue value(exec_aten::Scalar(10));
+  EValue value(executorch::aten::Scalar(10));
   expect_output(value, "10");
 }
 
 TEST(PrintEvalueTest, NegativeInt) {
-  EValue value(exec_aten::Scalar(-10));
+  EValue value(executorch::aten::Scalar(-10));
   expect_output(value, "-10");
 }
 
@@ -79,7 +79,7 @@ TEST(PrintEvalueTest, LargePositiveInt) {
   // A value that can't fit in 32 bits. Saying Scalar(<literal-long-long>) is
   // ambiguous with c10::Scalar, so use a non-literal value.
   constexpr int64_t i = 1152921504606846976;
-  EValue value = {exec_aten::Scalar(i)};
+  EValue value = {executorch::aten::Scalar(i)};
   expect_output(value, "1152921504606846976");
 }
 
@@ -87,7 +87,7 @@ TEST(PrintEvalueTest, LargeNegativeInt) {
   // A value that can't fit in 32 bits. Saying Scalar(<literal-long-long>) is
   // ambiguous with c10::Scalar, so use a non-literal value.
   constexpr int64_t i = -1152921504606846976;
-  EValue value = {exec_aten::Scalar(i)};
+  EValue value = {executorch::aten::Scalar(i)};
   expect_output(value, "-1152921504606846976");
 }
 
@@ -96,52 +96,52 @@ TEST(PrintEvalueTest, LargeNegativeInt) {
 //
 
 TEST(PrintEvalueTest, ZeroDouble) {
-  EValue value(exec_aten::Scalar(0.0));
+  EValue value(executorch::aten::Scalar(0.0));
   expect_output(value, "0.");
 }
 
 TEST(PrintEvalueTest, PositiveZeroDouble) {
-  EValue value(exec_aten::Scalar(+0.0));
+  EValue value(executorch::aten::Scalar(+0.0));
   expect_output(value, "0.");
 }
 
 TEST(PrintEvalueTest, NegativeZeroDouble) {
-  EValue value(exec_aten::Scalar(-0.0));
+  EValue value(executorch::aten::Scalar(-0.0));
   expect_output(value, "-0.");
 }
 
 TEST(PrintEvalueTest, PositiveIntegralDouble) {
-  EValue value(exec_aten::Scalar(10.0));
+  EValue value(executorch::aten::Scalar(10.0));
   expect_output(value, "10.");
 }
 
 TEST(PrintEvalueTest, PositiveFractionalDouble) {
-  EValue value(exec_aten::Scalar(10.1));
+  EValue value(executorch::aten::Scalar(10.1));
   expect_output(value, "10.1");
 }
 
 TEST(PrintEvalueTest, NegativeIntegralDouble) {
-  EValue value(exec_aten::Scalar(-10.0));
+  EValue value(executorch::aten::Scalar(-10.0));
   expect_output(value, "-10.");
 }
 
 TEST(PrintEvalueTest, NegativeFractionalDouble) {
-  EValue value(exec_aten::Scalar(-10.1));
+  EValue value(executorch::aten::Scalar(-10.1));
   expect_output(value, "-10.1");
 }
 
 TEST(PrintEvalueTest, PositiveInfinityDouble) {
-  EValue value((exec_aten::Scalar(INFINITY)));
+  EValue value((executorch::aten::Scalar(INFINITY)));
   expect_output(value, "inf");
 }
 
 TEST(PrintEvalueTest, NegativeInfinityDouble) {
-  EValue value((exec_aten::Scalar(-INFINITY)));
+  EValue value((executorch::aten::Scalar(-INFINITY)));
   expect_output(value, "-inf");
 }
 
 TEST(PrintEvalueTest, NaNDouble) {
-  EValue value((exec_aten::Scalar(NAN)));
+  EValue value((executorch::aten::Scalar(NAN)));
   expect_output(value, "nan");
 }
 
@@ -487,9 +487,10 @@ void expect_tensor_list_output(size_t num_tensors, const char* expected) {
   // Tensor entries. It's important not to destroy these entries, because the
   // values list will own the underlying Tensors.
   auto unwrapped_values_memory = std::make_unique<uint8_t[]>(
-      sizeof(exec_aten::Tensor) * wrapped_values.size());
-  exec_aten::Tensor* unwrapped_values =
-      reinterpret_cast<exec_aten::Tensor*>(unwrapped_values_memory.get());
+      sizeof(executorch::aten::Tensor) * wrapped_values.size());
+  executorch::aten::Tensor* unwrapped_values =
+      reinterpret_cast<executorch::aten::Tensor*>(
+          unwrapped_values_memory.get());
 #if USE_ATEN_LIB
   // Must be initialized because BoxedEvalueList will use operator=() on each
   // entry. But we can't do this in non-ATen mode because
@@ -500,7 +501,7 @@ void expect_tensor_list_output(size_t num_tensors, const char* expected) {
 #endif
 
   ASSERT_LE(num_tensors, wrapped_values.size());
-  BoxedEvalueList<exec_aten::Tensor> list(
+  BoxedEvalueList<executorch::aten::Tensor> list(
       wrapped_values.data(), unwrapped_values, num_tensors);
   EValue value(list);
   expect_output(value, expected);
@@ -565,18 +566,20 @@ void expect_list_optional_tensor_output(
   // optional<Tensor> entries. It's important not to destroy these entries,
   // because the values list will own the underlying Tensors.
   auto unwrapped_values_memory = std::make_unique<uint8_t[]>(
-      sizeof(exec_aten::optional<exec_aten::Tensor>) * wrapped_values.size());
-  exec_aten::optional<exec_aten::Tensor>* unwrapped_values =
-      reinterpret_cast<exec_aten::optional<exec_aten::Tensor>*>(
+      sizeof(executorch::aten::optional<executorch::aten::Tensor>) *
+      wrapped_values.size());
+  executorch::aten::optional<executorch::aten::Tensor>* unwrapped_values =
+      reinterpret_cast<executorch::aten::optional<executorch::aten::Tensor>*>(
           unwrapped_values_memory.get());
   // Must be initialized because BoxedEvalueList will use operator=() on each
   // entry.
   for (int i = 0; i < wrapped_values.size(); ++i) {
-    new (&unwrapped_values[i]) exec_aten::optional<exec_aten::Tensor>();
+    new (&unwrapped_values[i])
+        executorch::aten::optional<executorch::aten::Tensor>();
   }
 
   ASSERT_LE(num_tensors, wrapped_values.size());
-  BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>> list(
+  BoxedEvalueList<executorch::aten::optional<executorch::aten::Tensor>> list(
       wrapped_values.data(), unwrapped_values, num_tensors);
   EValue value(list);
   expect_output(value, expected);
@@ -929,9 +932,10 @@ TEST(PrintEvalueTest, WrappedTensorLists) {
   // Tensor entries. It's important not to destroy these entries, because the
   // values list will own the underlying Tensors.
   auto unwrapped_values_memory = std::make_unique<uint8_t[]>(
-      sizeof(exec_aten::Tensor) * wrapped_values.size());
-  exec_aten::Tensor* unwrapped_values =
-      reinterpret_cast<exec_aten::Tensor*>(unwrapped_values_memory.get());
+      sizeof(executorch::aten::Tensor) * wrapped_values.size());
+  executorch::aten::Tensor* unwrapped_values =
+      reinterpret_cast<executorch::aten::Tensor*>(
+          unwrapped_values_memory.get());
 #if USE_ATEN_LIB
   // Must be initialized because BoxedEvalueList will use operator=() on each
   // entry. But we can't do this in non-ATen mode because
@@ -942,7 +946,7 @@ TEST(PrintEvalueTest, WrappedTensorLists) {
 #endif
 
   // Demonstrate the formatting when printing a list with multiple tensors.
-  BoxedEvalueList<exec_aten::Tensor> list(
+  BoxedEvalueList<executorch::aten::Tensor> list(
       wrapped_values.data(), unwrapped_values, wrapped_values.size());
   EValue value(list);
 

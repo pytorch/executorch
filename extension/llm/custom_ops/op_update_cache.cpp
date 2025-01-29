@@ -101,21 +101,21 @@ Tensor& update_cache_out(
   ET_CHECK_MSG(cache_data, "cache data is null");
 
   auto cache_strides = cache.strides();
-  exec_aten::StridesType cache_batch_dim_stride = cache_strides[0];
-  exec_aten::StridesType cache_seq_dim_stride = cache_strides[1];
+  executorch::aten::StridesType cache_batch_dim_stride = cache_strides[0];
+  executorch::aten::StridesType cache_seq_dim_stride = cache_strides[1];
 
   auto value_strides = value.strides();
-  exec_aten::StridesType value_batch_dim_stride = value_strides[0];
+  executorch::aten::StridesType value_batch_dim_stride = value_strides[0];
 
-  exec_aten::SizesType num_bytes_to_copy =
+  executorch::aten::SizesType num_bytes_to_copy =
       (value.numel() / value.size(0)) * value.element_size();
 
   for (int64_t batch_line = 0; batch_line < value.size(0); ++batch_line) {
-    exec_aten::SizesType cache_pos_offset =
+    executorch::aten::SizesType cache_pos_offset =
         (batch_line * cache_batch_dim_stride +
          start_pos * cache_seq_dim_stride) *
         cache.element_size();
-    exec_aten::SizesType value_pos_offset =
+    executorch::aten::SizesType value_pos_offset =
         (batch_line * value_batch_dim_stride) * cache.element_size();
 
     std::memcpy(
