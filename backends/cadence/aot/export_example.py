@@ -23,13 +23,13 @@ from executorch.backends.cadence.aot.compiler import (
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
 from executorch.backends.cadence.runtime import runtime
 from executorch.backends.cadence.runtime.executor import BundledProgramManager
-from executorch.exir import ExecutorchProgramManager
-from torch import nn
-from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     QuantizationConfig,
     QuantizationSpec,
 )
+from executorch.exir import ExecutorchProgramManager
+from torch import nn
+from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 
 from .utils import save_bpte_program, save_pte_program
 

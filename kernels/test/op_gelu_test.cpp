@@ -70,6 +70,14 @@ TEST_F(OpGeluTest, FloatTensors) {
   test_gelu_execution<ScalarType::Float>();
 }
 
+TEST_F(OpGeluTest, HalfTensors) {
+  test_gelu_execution<ScalarType::Half>();
+}
+
+TEST_F(OpGeluTest, BFloat16Tensors) {
+  test_gelu_execution<ScalarType::BFloat16>();
+}
+
 TEST_F(OpGeluTest, DoubleTensors) {
   if (!SupportedFeatures::get()->op_gelu_dtype_double) {
     GTEST_SKIP();

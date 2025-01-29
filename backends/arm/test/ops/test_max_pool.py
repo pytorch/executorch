@@ -19,6 +19,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
@@ -86,15 +87,11 @@ class TestMaxPool2d(unittest.TestCase):
     def _test_maxpool2d_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        compile_spec = common.get_tosa_compile_spec(tosa_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI",
-                ),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.max_pool2d.default": 1})
@@ -118,7 +115,8 @@ class TestMaxPool2d(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.tensor],
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         tester = (
             ArmTester(
                 module,
@@ -175,9 +173,7 @@ class TestMaxPool2d(unittest.TestCase):
             (test_data,),
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=(test_data,), target_board="corstone-300"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
     @parameterized.expand(test_data_suite)
     @pytest.mark.corstone_fvp
@@ -193,9 +189,7 @@ class TestMaxPool2d(unittest.TestCase):
             (test_data,),
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=(test_data,), target_board="corstone-320"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
     @parameterized.expand(test_data_suite_mult_batches)
     def test_maxpool2d_tosa_MI_mult_batches(
@@ -234,9 +228,7 @@ class TestMaxPool2d(unittest.TestCase):
             (test_data,),
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=(test_data,), target_board="corstone-300"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
     @parameterized.expand(test_data_suite_mult_batches)
     @pytest.mark.corstone_fvp
@@ -253,6 +245,4 @@ class TestMaxPool2d(unittest.TestCase):
             (test_data,),
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=(test_data,), target_board="corstone-320"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))

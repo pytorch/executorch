@@ -155,7 +155,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> opt_native_layer_norm_out(
       InvalidArgument,
       ret_val);
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       input.scalar_type(), ctx, "native_layer_norm.out", CTYPE, [&]() {
         layer_norm<CTYPE>(
             input,

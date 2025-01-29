@@ -11,94 +11,67 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::can_cast;
 using executorch::runtime::canCast;
 using executorch::runtime::CppTypeToScalarType;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::promoteTypes;
+using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
+using torch::executor::native::utils::apply_bitensor_elementwise_fn;
+using torch::executor::native::utils::apply_unitensor_elementwise_fn;
+using torch::executor::native::utils::get_compute_type;
+using torch::executor::native::utils::promote_type_with_scalar;
+using torch::executor::native::utils::scalar_to;
+using torch::executor::native::utils::SupportedTensorDtypes;
 
 namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
-namespace {
-template <
-    bool can_cast,
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct PowInner;
-
-template <
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct PowInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
-  static void run(const Tensor& a, const Tensor& b, Tensor& out) {
-    torch::executor::apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-        // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
-        [](const CTYPE_A val_a, const CTYPE_B val_b) {
-          CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-          CTYPE_IN value = std::pow(a_casted, b_casted);
-          return static_cast<CTYPE_OUT>(value);
-        },
-        a,
-        b,
-        out);
-  }
-};
-
-struct ReportCanCastBug {
-  static void run(const Tensor&, const Tensor&, Tensor&) {
-    ET_DCHECK_MSG(false, "BUG: canCast should have been checked above");
-  }
-};
-
-template <
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct PowInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
-    : public ReportCanCastBug {};
-
-} // namespace
-
 Tensor& pow_Tensor_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  // Determine output size and resize for dynamic shapes
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
+
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx,
+      (canCast(common_type, out.scalar_type()) &&
+       common_type != ScalarType::Bool),
+      InvalidArgument,
+      out);
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
-  ScalarType out_type = out.scalar_type();
+  // Compute Dtype
+  ScalarType compute_type = get_compute_type(common_type);
+  if (compute_type != ScalarType::Float) {
+    compute_type = ScalarType::Double;
+  }
 
-  ET_KERNEL_CHECK(
-      ctx, common_type != exec_aten::ScalarType::Bool, InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
-
-  constexpr auto name = "pow.Tensor_Tensor_out";
   constexpr int kNnlibMaxDim = 16;
   int a_dim = a.dim(), b_dim = b.dim(), out_dim = out.dim();
   bool optimized = true;
@@ -108,6 +81,8 @@ Tensor& pow_Tensor_Tensor_out(
   const bool broadcast = (a_is_broadcasted && b_is_broadcasted);
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
+
+  ScalarType out_type = out.scalar_type();
 
   if (out_type != ScalarType::Float)
     optimized = false;
@@ -120,9 +95,16 @@ Tensor& pow_Tensor_Tensor_out(
   if (optimized) {
     if (broadcast) {
       WORD32* __restrict__ ptr1 =
-          (WORD32* __restrict__)malloc(num_elm * sizeof(WORD32));
+          (WORD32* __restrict__)kernels::allocate_temp_memory(
+              ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
+
       WORD32* __restrict__ ptr2 =
-          (WORD32* __restrict__)malloc(num_elm * sizeof(WORD32));
+          (WORD32* __restrict__)kernels::allocate_temp_memory(
+              ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr2 != nullptr, MemoryAllocationFailed, out);
 
       WORD32* __restrict__ pin1 =
           (WORD32* __restrict__)a.const_data_ptr<float>();
@@ -151,11 +133,12 @@ Tensor& pow_Tensor_Tensor_out(
 
       xa_nn_elm_pow_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
-      free(ptr2);
     } else if (a_is_broadcasted && (!b_is_broadcasted)) {
       FLOAT32* __restrict__ ptr1 =
-          (FLOAT32* __restrict__)malloc((num_elm + 2) * sizeof(WORD32));
+          (FLOAT32* __restrict__)kernels::allocate_temp_memory(
+              ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
 
       FLOAT32* __restrict__ pin1 =
           (FLOAT32* __restrict__)a.const_data_ptr<float>();
@@ -179,10 +162,12 @@ Tensor& pow_Tensor_Tensor_out(
 
       xa_nn_elm_pow_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
     } else if (b_is_broadcasted && (!a_is_broadcasted)) {
       WORD32* __restrict__ ptr1 =
-          (WORD32* __restrict__)malloc(num_elm * sizeof(WORD32));
+          (WORD32* __restrict__)kernels::allocate_temp_memory(
+              ctx, num_elm * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, ptr1 != nullptr, MemoryAllocationFailed, out);
 
       WORD32* __restrict__ pin1 =
           (WORD32* __restrict__)b.const_data_ptr<float>();
@@ -205,7 +190,6 @@ Tensor& pow_Tensor_Tensor_out(
 
       xa_nn_elm_pow_f32(p_out, p_inp1, p_inp2, num_elm);
 
-      free(ptr1);
     } else {
       FLOAT32* __restrict__ p_out =
           (FLOAT32* __restrict__)out.mutable_data_ptr<float>();
@@ -219,21 +203,21 @@ Tensor& pow_Tensor_Tensor_out(
     return out;
   }
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      using CTYPE_IN = typename torch::executor::
-          promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
-      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-      ET_SWITCH_REALH_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-        PowInner<
-            !std::is_same<CTYPE_IN, bool>::value &&
-                can_cast<CTYPE_IN, CTYPE_OUT>::value,
-            CTYPE_A,
-            CTYPE_B,
-            CTYPE_IN,
-            CTYPE_OUT>::run(a, b, out);
-      });
-    });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "pow.Tensor_Tensor_out";
+
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          return std::pow(val_a, val_b);
+        },
+        ctx,
+        a,
+        SupportedTensorDtypes::REALHBBF16,
+        b,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::REALHBF16);
   });
 
   return out;
@@ -244,50 +228,43 @@ Tensor& pow_Tensor_Scalar_out(
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
-  (void)ctx;
+  // Common Dtype
+  ScalarType common_type = promote_type_with_scalar(a.scalar_type(), b);
 
-  // Resize for dynamic shape
-  ET_KERNEL_CHECK_MSG(
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
+      (canCast(common_type, out.scalar_type()) &&
+       common_type != ScalarType::Bool),
       InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
+      out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = torch::executor::native::utils::get_scalar_dtype(b);
-  ScalarType common_type =
-      torch::executor::native::utils::promote_type_with_scalar(
-          a_type, b, /*half_to_float*/ false);
-  ScalarType out_type = out.scalar_type();
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Resize
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
-  constexpr auto name = "pow.Tensor_Scalar_out";
-  if (common_type == ScalarType::Half) {
-    common_type = ScalarType::Float;
+  // Compute Dtype
+  ScalarType compute_type = get_compute_type(common_type);
+  if (compute_type != ScalarType::Float) {
+    compute_type = ScalarType::Double;
   }
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, name, CTYPE_IN, [&]() {
-        ET_SWITCH_REALH_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          CTYPE_B val_b = 0;
-          torch::executor::native::utils::extract_scalar(b, &val_b);
-          torch::executor::apply_unary_map_fn(
-              [val_b](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                CTYPE_IN value = std::pow(a_casted, b_casted);
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "pow.Tensor_Scalar_out";
 
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
-        });
-      });
-    });
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_b = scalar_to<CTYPE_COMPUTE>(b);
+    apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_b](const CTYPE_COMPUTE val_a) { return std::pow(val_a, val_b); },
+        ctx,
+        a,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::REALHBF16);
   });
 
   return out;
@@ -298,50 +275,43 @@ Tensor& pow_Scalar_out(
     const Scalar& a,
     const Tensor& b,
     Tensor& out) {
-  (void)ctx;
+  // Common Dtype
+  ScalarType common_type = promote_type_with_scalar(b.scalar_type(), a);
 
-  // Resize for dynamic shape
-  ET_KERNEL_CHECK_MSG(
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(out, b.sizes()) == Error::Ok,
+      (canCast(common_type, out.scalar_type()) &&
+       common_type != ScalarType::Bool),
       InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
+      out);
 
-  ScalarType a_type = torch::executor::native::utils::get_scalar_dtype(a);
-  ScalarType b_type = b.scalar_type();
-  ScalarType common_type =
-      torch::executor::native::utils::promote_type_with_scalar(
-          b_type, a, /*half_to_float*/ false);
-  ScalarType out_type = out.scalar_type();
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(b, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Resize
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, b.sizes()) == Error::Ok, InvalidArgument, out);
 
-  constexpr auto name = "pow.Scalar_out";
-  if (common_type == ScalarType::Half) {
-    common_type = ScalarType::Float;
+  // Compute Dtype
+  ScalarType compute_type = get_compute_type(common_type);
+  if (compute_type != ScalarType::Float) {
+    compute_type = ScalarType::Double;
   }
 
-  ET_SWITCH_SCALAR_OBJ_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, name, CTYPE_IN, [&]() {
-        ET_SWITCH_REALH_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          CTYPE_A val_a = 0;
-          torch::executor::native::utils::extract_scalar(a, &val_a);
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "pow.Scalar_out";
 
-          torch::executor::apply_unary_map_fn(
-              [val_a](const CTYPE_B val_b) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                CTYPE_IN value = std::pow(a_casted, b_casted);
-                return static_cast<CTYPE_OUT>(value);
-              },
-              b.const_data_ptr<CTYPE_B>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
-        });
-      });
-    });
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_a = scalar_to<CTYPE_COMPUTE>(a);
+    apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_a](const CTYPE_COMPUTE val_b) { return std::pow(val_a, val_b); },
+        ctx,
+        b,
+        SupportedTensorDtypes::REALHBBF16,
+        out,
+        SupportedTensorDtypes::REALHBF16);
   });
 
   return out;

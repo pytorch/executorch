@@ -34,6 +34,7 @@ python_library(
         ":patterns",
         ":utils",
         "//caffe2:torch",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
     ],
 )
 

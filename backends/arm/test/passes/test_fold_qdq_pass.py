@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -16,8 +16,6 @@ from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.xnnpack.test.tester.tester import RunPasses
 
-from executorch.exir.dialects._ops import ops as exir_ops
-
 
 class SimpleQuantizeModel(torch.nn.Module):
     def forward(self, x, y):
@@ -25,16 +23,6 @@ class SimpleQuantizeModel(torch.nn.Module):
 
     def get_inputs(self):
         return (torch.rand(1, 1280, 7, 7), torch.rand(1, 1280, 7, 7))
-
-
-class FoldAndAnnotateQParamsPassTestClass(FoldAndAnnotateQParamsPass):
-    def __init__(self):
-        super(FoldAndAnnotateQParamsPassTestClass, self).__init__(
-            [
-                exir_ops.edge.aten.add.Tensor,
-                exir_ops.edge.aten.maximum.default,
-            ]
-        )
 
 
 class TestFoldAndAnnotateQParamsPass(unittest.TestCase):
@@ -49,7 +37,7 @@ class TestFoldAndAnnotateQParamsPass(unittest.TestCase):
         is removed from the representation.
         """
         module = SimpleQuantizeModel()
-        test_pass_stage = RunPasses([FoldAndAnnotateQParamsPassTestClass])
+        test_pass_stage = RunPasses([FoldAndAnnotateQParamsPass])
         (
             ArmTester(
                 module,

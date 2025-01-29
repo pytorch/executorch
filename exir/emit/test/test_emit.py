@@ -27,6 +27,9 @@ from executorch.exir import (
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import (
+    ExecutorBackendPartitioner,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
@@ -63,7 +66,8 @@ from executorch.runtime import Runtime
 from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import Dim, export
+from torch.export import Dim, export, export_for_training
+from torch.export.experimental import _export_forward_backward
 
 
 class WrapperModule(torch.nn.Module):
@@ -639,7 +643,7 @@ class TestEmit(unittest.TestCase):
             def forward(self, x):
                 return torch.nn.functional.interpolate(x, scale_factor=2)
 
-        x = (torch.randn(1, 1, 2, 2),)
+        x = (torch.randn(1, 1, 2, 2, 2),)
         program = (
             to_edge(export(M(), x, strict=True)).to_executorch().executorch_program
         )
@@ -1679,3 +1683,104 @@ class TestEmit(unittest.TestCase):
         ]
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
+
+    def test_delegate_deduplicate(self) -> None:
+        class SharedModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        class Module1(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        class Module2(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        shared_module = SharedModule()
+        module_1 = Module1(shared_module)
+        module_2 = Module2(shared_module)
+        example_inputs = (torch.randn(2, 2),)
+        module_1(*example_inputs)
+        module_2(*example_inputs)
+
+        ep1 = export_for_training(module_1, example_inputs)
+        ep2 = export_for_training(module_2, example_inputs)
+
+        edge_program_manager = exir.to_edge(
+            {"forward1": ep1, "forward2": ep2},
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
+
+        edge_program_manager = edge_program_manager.to_backend(
+            ExecutorBackendPartitioner()
+        ).to_executorch()
+
+        # Check that there is only one delegate because two methods are exactly the same
+        self.assertEqual(
+            len(edge_program_manager.executorch_program.backend_delegate_data), 1
+        )
+
+    def test_constant_tagged_mutable_tensors(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        # On device training requires the loss to be embedded in the model (and be the first output).
+        # We wrap the original model here and add the loss calculation. This will be the model we export.
+        class TrainingNet(nn.Module):
+            def __init__(self, net):
+                super().__init__()
+                self.net = net
+                self.loss = nn.CrossEntropyLoss()
+
+            def forward(self, input, label):
+                pred = self.net(input)
+                return self.loss(pred, label), pred.detach().argmax(dim=1)
+
+        net = TrainingNet(Net())
+
+        # Captures the forward graph. The graph will look similar to the model definition now.
+        # Will move to export_for_training soon which is the api planned to be supported in the long term.
+        ep = export(
+            net, (torch.randn(1, 2), torch.ones(1, dtype=torch.int64)), strict=True
+        )
+        # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
+        ep = _export_forward_backward(ep)
+        # Lower the graph to edge dialect.
+        ep = to_edge(ep)
+        # Lower the graph to executorch.
+        ep = ep.to_executorch(
+            config=ExecutorchBackendConfig(external_mutable_weights=True)
+        )
+
+        emitter_output = ep._emitter_output
+        # Check that constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant weights are in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_mutable_weights=True, saves all constants with an associated gradient to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(external_map["net.linear.weight"], 0)
+        self.assertEqual(external_map["net.linear.bias"], 1)

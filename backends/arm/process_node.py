@@ -12,12 +12,7 @@ import serializer.tosa_serializer as ts
 import torch
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
-from executorch.backends.arm.tosa_quant_utils import (
-    dq_op,
-    get_quantized_node_output_dtype,
-    is_node_quantized,
-)
+from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import getNodeArgs, tosa_shape
 from torch.export.exported_program import ExportedProgram
@@ -35,15 +30,8 @@ def process_call_function(
     # Convert output (this node itself)
     output = TosaArg(node)
 
-    is_dq_node = node.target == dq_op
-    if is_dq_node:
-        output_dtype = ts.DType.INT8
-    else:
-        output_dtype = output.dtype
     tosa_graph.currRegion.currBasicBlock.addTensor(
-        output.name,
-        tosa_shape(output.shape, output.dim_order),
-        output_dtype,
+        output.name, tosa_shape(output.shape, output.dim_order), output.dtype
     )
 
     # Visiting each Node
@@ -79,11 +67,7 @@ def process_inputs(
     tensor = ts.TosaSerializerTensor(
         inputs[0].name,
         tosa_shape(input_shape, input_dim_order),
-        (
-            map_dtype(get_quantized_node_output_dtype(node))
-            if is_node_quantized(node)
-            else inputs[0].dtype
-        ),
+        inputs[0].dtype,
         data=None,
         placeholderFilename=inputs[0].name + ".npy",
     )

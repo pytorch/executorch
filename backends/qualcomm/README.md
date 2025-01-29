@@ -20,6 +20,7 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 - Snapdragon 8 Gen 1+
 - Snapdragon 8 Gen 2
 - Snapdragon 8 Gen 3
+- Snapdragon 8 Elite
 
 ### Adding more supported Chipset
 Currently, users cannot add additional chipset models because the chipset ID is not accessible to community users. If you have specific chipset models you wish to add, please contact one of the authors in the `Code Reviews` section at the bottom of this page.
@@ -120,11 +121,9 @@ PRs are always welcome to help improve the codebase in a comprehensive manner. B
 
 - **Code Reviews**:<br/>
     Please ping authors in Qualcomm AI Engine Direct related PRs for reviewing, possible candidates are listed below:
-    - [chiwwang](https://github.com/chiwwang)
     - [shewu-quic](https://github.com/shewu-quic)
     - [chunit-quic](https://github.com/chunit-quic)
     - [winskuo-quic](https://github.com/winskuo-quic)
-    - [chuntl](https://github.com/chuntl)
     - [haowhsu-quic](https://github.com/haowhsu-quic)
 
 Thanks again for your contribution!

@@ -29,7 +29,6 @@ build_with_etdump=false
 build_type="Release"
 extra_build_flags=""
 build_only=false
-reorder_inputs=""
 system_config=""
 memory_mode=""
 
@@ -46,7 +45,6 @@ help() {
     echo "  --extra_build_flags                    Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --build_only                           Only build, don't run FVP"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default"
-    echo "  --reorder_inputs=<FLAGS>               Reorder the inputs. This can be required when inputs > 1."
     echo "  --system_config=<CONFIG>               System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
     echo "  --memory_mode=<MODE>                   Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
@@ -66,7 +64,6 @@ for arg in "$@"; do
       --extra_build_flags=*) extra_build_flags="${arg#*=}";;
       --build_only) build_only=true ;;
       --scratch-dir=*) root_dir="${arg#*=}";;
-      --reorder_inputs=*) reorder_inputs="${arg#*=}";;
       --system_config=*) system_config="${arg#*=}";;
       --memory_mode=*) memory_mode="${arg#*=}";;
       *)
@@ -84,8 +81,8 @@ else
 fi
 executor_runner_path=$(realpath ${executor_runner_path})
 
+mkdir -p ${root_dir}/ethos-u
 ethos_u_root_dir="$(cd ${root_dir}/ethos-u && pwd)"
-ethos_u_build_dir=${ethos_u_root_dir}/core_platform/build
 setup_path_script=${root_dir}/setup_path.sh
 
 # Executorch
@@ -151,7 +148,7 @@ function generate_pte_file() {
     # We are using the aot_lib from build_quantization_aot_lib below
     SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.${SO_EXT})
 
-    local ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --reorder_inputs=${reorder_inputs} --output ${output_folder} --so_library=$SO_LIB --system_config=${system_config} --memory_mode=${memory_mode}"
+    local ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --output ${output_folder} --so_library=$SO_LIB --system_config=${system_config} --memory_mode=${memory_mode}"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
@@ -372,7 +369,6 @@ if [[ -z "$model_name" ]]; then
 else
     test_model=( "$model_name" )
     model_compiler_flags=( "$aot_arm_compiler_flags" )
-    reorder_inputs=( "$reorder_inputs" )
 fi
 
 # loop over running the AoT flow and executing the model on device

@@ -36,7 +36,7 @@ git submodule update --init
 ```
 Install dependencies
 ```
-./install_requirements.sh
+./install_executorch.sh
 ```
 ## Setup Environment Variables
 ### Download Buck2 and make executable

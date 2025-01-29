@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -6,7 +6,7 @@
 
 import copy
 
-from typing import cast, Dict, Iterable, Set, Tuple
+from typing import cast, Dict, Set, Tuple
 
 from executorch.backends.arm.tosa_quant_utils import QuantArgs
 
@@ -32,10 +32,16 @@ def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
     Raises a ValueError if the node doesn't have any parameters set.
     """
     if "input_qparams" not in node.meta.keys():
-        raise ValueError(f"No input quantization parameter found in node {node}")
+        raise ValueError(
+            f"No input quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
     input_qparams = cast(dict[int, QuantArgs], node.meta["input_qparams"])
     if len(input_qparams) == 0:
-        raise ValueError(f"No input quantization parameter found in node {node}")
+        raise ValueError(
+            f"No input quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
     return input_qparams
 
 
@@ -45,17 +51,23 @@ def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
     Raises a ValueError if the node doesn't have any parameters set.
     """
     if "output_qparams" not in node.meta.keys():
-        raise ValueError(f"No output quantization parameter found in node {node}")
-    input_qparams = cast(dict[int, QuantArgs], node.meta["output_qparams"])
-    if len(input_qparams) == 0:
-        raise ValueError(f"No output quantization parameter found in node {node}")
-    return input_qparams
+        raise ValueError(
+            f"No output quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
+    output_qparams = cast(dict[int, QuantArgs], node.meta["output_qparams"])
+    if len(output_qparams) == 0:
+        raise ValueError(
+            f"No output quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
+    return output_qparams
 
 
 class FoldAndAnnotateQParamsPass(ExportPass):
     """
     A pass that walks the graph and removes any DQ and Q nodes before and after the target
-     node in the supplied list of operators.
+     node.
      The quantization parameters from the DQ/Q nodes are stored as meta values to be
      accessible for later lowering and serialization passes.
      The assumption is that the quantization annotatation adds DQ nodes for all tensor
@@ -82,9 +94,8 @@ class FoldAndAnnotateQParamsPass(ExportPass):
 
     """
 
-    def __init__(self, targeted_ops: Iterable[EdgeOpOverload]) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.targeted_ops = targeted_ops
 
     def fold_and_annotate_arg(
         self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
@@ -131,7 +142,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
-            if n.op != "call_function" or n.target not in self.targeted_ops:
+            if n.op != "call_function":
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
@@ -180,7 +191,7 @@ class QuantizeFullArgument(ExportPass):
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
-        # Loop over the graph nodes and find any node in the 'targeted_ops' list.
+        # Loop over the graph nodes and find full.default nodes.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
             if n.target != exir_ops.edge.aten.full.default:

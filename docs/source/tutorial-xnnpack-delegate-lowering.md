@@ -86,7 +86,7 @@ sample_inputs = (torch.randn(1, 3, 224, 224), )
 mobilenet_v2 = export_for_training(mobilenet_v2, sample_inputs).module() # 2-stage export for quantization path
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
@@ -147,7 +147,7 @@ After exporting the XNNPACK Delegated model, we can now try running it with exam
 cd executorch
 
 # Get a clean cmake-out directory
-./install_requirements.sh --clean
+./install_executorch.sh --clean
 mkdir cmake-out
 
 # Configure cmake
