@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -48,12 +48,11 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                example_inputs=module.get_inputs(),  # type: ignore[operator]
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .dump_artifact(dump_file)
             .dump_artifact()
         )
@@ -62,8 +61,8 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                example_inputs=module.get_inputs(),  # type: ignore[operator]
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -111,7 +110,8 @@ class TestNumericalDiffPrints(unittest.TestCase):
                 model,
                 example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
+                    custom_path=tempfile.mkdtemp("diff_print_test"),
                 ),
             )
             .export()
@@ -136,7 +136,7 @@ def test_dump_ops_and_dtypes():
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .dump_dtype_distribution()
@@ -157,7 +157,7 @@ def test_dump_ops_and_dtypes_parseable():
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .dump_dtype_distribution(print_table=False)
@@ -185,7 +185,7 @@ class TestCollateTosaTests(unittest.TestCase):
             ArmTester(
                 model,
                 example_inputs=model.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -197,10 +197,10 @@ class TestCollateTosaTests(unittest.TestCase):
             "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
         )
         assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag5.tosa"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag6.tosa"
         )
         assert os.path.exists(
-            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag5.json"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag6.json"
         )
 
         os.environ.pop("TOSA_TESTCASES_BASE_PATH")
@@ -214,7 +214,7 @@ def test_dump_tosa_ops(caplog):
         ArmTester(
             model,
             example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
         )
         .quantize()
         .export()

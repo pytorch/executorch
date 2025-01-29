@@ -1,5 +1,7 @@
 .hypothesis
 buck-out/
+.mypy_cache/
+buck2-bin/
 cmake-out*
 .DS_Store
 cmake-android-out/

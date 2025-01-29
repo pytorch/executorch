@@ -367,7 +367,7 @@ def copy_portable_header_files(name):
         default_outs = ["."],
     )
 
-def build_portable_lib(name, oplist_header_name, feature = None):
+def build_portable_lib(name, oplist_header_name, feature = None, expose_operator_symbols = False):
     """Build portable lib from source. We build from source so that the generated header file, 
     selected_op_variants.h, can be used to selectively build the lib for different dtypes.
     """
@@ -389,6 +389,20 @@ def build_portable_lib(name, oplist_header_name, feature = None):
     # Include dtype header.
     portable_header_files["selected_op_variants.h"] = ":{}[selected_op_variants]".format(oplist_header_name)
 
+    # For shared library build, we don't want to expose symbols of
+    # kernel implementation (ex torch::executor::native::tanh_out)
+    # to library users. They should use kernels through registry only.
+    # With visibility=hidden, linker won't expose kernel impl symbols
+    # so it can prune unregistered kernels.
+    # Currently fbcode links all dependent libraries through shared
+    # library, and it blocks users like unit tests to use kernel
+    # implementation directly. So we enable this for xplat only.
+    compiler_flags = ["-Wno-missing-prototypes"]
+    if not expose_operator_symbols:
+        # Removing '-fvisibility=hidden' exposes operator symbols.
+        # This allows operators to be called outside of the kernel registry.
+        compiler_flags += ["-fvisibility=hidden"]
+
     # Build portable lib.
     runtime.cxx_library(
         name = name,
@@ -398,16 +412,7 @@ def build_portable_lib(name, oplist_header_name, feature = None):
         deps = ["//executorch/kernels/portable/cpu/pattern:all_deps", "//executorch/kernels/portable/cpu/util:all_deps"],
         # header_namespace is only available in xplat. See https://fburl.com/code/we2gvopk
         header_namespace = "executorch/kernels/portable/cpu",
-        compiler_flags = ["-Wno-missing-prototypes"] +
-                         # For shared library build, we don't want to expose symbols of
-                         # kernel implementation (ex torch::executor::native::tanh_out)
-                         # to library users. They should use kernels through registry only.
-                         # With visibility=hidden, linker won't expose kernel impl symbols
-                         # so it can prune unregistered kernels.
-                         # Currently fbcode links all dependent libraries through shared
-                         # library, and it blocks users like unit tests to use kernel
-                         # implementation directly. So we enable this for xplat only.
-                         ["-fvisibility=hidden"],
+        compiler_flags = compiler_flags,
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to
@@ -440,7 +445,8 @@ def executorch_generated_lib(
         compiler_flags = [],
         kernel_deps = [],
         dtype_selective_build = False,
-        feature = None):
+        feature = None,
+        expose_operator_symbols = False):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -531,12 +537,12 @@ def executorch_generated_lib(
     )
 
     # genrule for selective build from static operator list
-    oplist_dir_name = name + "_pt_oplist"
+    oplist_dir_name = name + "_et_oplist"
     runtime.genrule(
         name = oplist_dir_name,
         macros_only = False,
         cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:gen_all_oplist) " +
-               "--model_file_list_path $(@query_outputs 'attrfilter(labels, et_operator_library, deps(set({deps})))') " +
+               "--model_file_list_path $(@query_outputs \'attrfilter(labels, et_operator_library, deps(set({deps})))\') " +
                "--allow_include_all_overloads " +
                "--output_dir $OUT ").format(deps = " ".join(["\"{}\"".format(d) for d in deps])),
         outs = {"selected_operators.yaml": ["selected_operators.yaml"]},
@@ -584,7 +590,7 @@ def executorch_generated_lib(
 
         # Build portable lib.
         portable_lib_name = name + "_portable_lib"
-        build_portable_lib(portable_lib_name, oplist_header_name, feature)
+        build_portable_lib(portable_lib_name, oplist_header_name, feature, expose_operator_symbols)
         portable_lib = [":{}".format(portable_lib_name)]
 
     # Exports headers that declare the function signatures of the C++ functions
@@ -665,3 +671,31 @@ def executorch_generated_lib(
             define_static_target = define_static_targets,
             platforms = platforms,
         )
+
+# Util macro that takes in a binary or a shared library, find targets ending with `_et_oplist` in the transitive closure of deps, 
+# get the `selected_operators.yaml` from those targets, try to merge them into a single yaml. This target will fail to build, if
+# there are intersections of all `selected_operators.yaml` the `target` is depending on.
+#
+# An example failure case: a binary `bin` is depending on 2 `executorch_generated_lib`s and they both register `aten::add.out`
+# with either the same or different kernels associated to it.
+#
+# If build successfully, all of the `selected_operators.yaml` will be merged into 1 `selected_operators.yaml` for debugging purpose.
+def executorch_ops_check(
+    name,
+    deps,
+    **kwargs,
+):
+    runtime.genrule(
+        name = name,
+        macros_only = False,
+        cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:gen_all_oplist) " +
+               "--model_file_list_path $(@query_outputs \"filter('.*_et_oplist', deps(set({deps})))\") " +
+               "--allow_include_all_overloads " +
+               "--check_ops_not_overlapping " +
+               "--output_dir $OUT ").format(deps = " ".join(["\'{}\'".format(d) for d in deps])),
+        define_static_target = False,
+        platforms = kwargs.pop("platforms", get_default_executorch_platforms()),
+        outs = {"selected_operators.yaml": ["selected_operators.yaml"]},
+        default_outs = ["."],
+        **kwargs,
+    )

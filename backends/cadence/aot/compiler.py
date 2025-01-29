@@ -12,23 +12,31 @@ from typing import Callable, cast, Optional
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
+from executorch.backends.cadence.aot.memory_planning import (
+    CadenceMemoryPlanning,
+    print_memory_planning_info,
+)
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
-
-from executorch.backends.cadence.aot.replace_ops import ReplaceSafeSoftmaxWithSoftmax
-from executorch.backends.cadence.aot.utils import model_gm_has_SDPA, model_is_quantized
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
+from executorch.backends.cadence.aot.quantizer.quantizer import (
+    CadenceDefaultQuantizer,
+    CadenceQuantizer,
+)
+from executorch.backends.cadence.aot.utils import (
+    get_default_memory_config,
+    MemoryConfig,
 )
 from executorch.devtools import generate_etrecord
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
+    ExecutorchBackendConfig,
     ExecutorchProgramManager,
     to_edge,
 )
 from executorch.exir.pass_base import PassResult
-from torch.ao.quantization.pt2e.export_utils import model_is_exported
+from executorch.exir.passes import ToOutVarPass
+from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
+from torch._inductor.decomposition import remove_decompositions
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torch.export import export
@@ -48,6 +56,7 @@ def convert_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     quantizer: CadenceQuantizer,
+    dump_graphs: bool = False,
 ) -> torch.fx.GraphModule:
     """
     Prepare and convert a model using the given quantizer.
@@ -58,18 +67,29 @@ def convert_pt2(
     Returns a GraphModule with the converted model.
     """
 
+    # Get default decompositions
+    decomp_table = torch.export.default_decompositions()
+    # Select ops to keep
+    ops_to_keep = [
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.conv2d.default,
+        torch.ops.aten.layer_norm.default,
+        torch.ops.aten.linear.default,
+        torch.ops.aten.matmul.default,
+    ]
+    # Remove decompositions for the ops we want to keep
+    # pyre-fixme[6]: For 1st argument expected `Dict[typing.Callable[..., typing.Any
+    remove_decompositions(decomp_table, ops_to_keep)
     # Export with dynamo
-    model_gm = torch.export.export_for_training(model, inputs).module()
+    model_gm = (
+        torch.export.export_for_training(model, inputs)
+        .run_decompositions(decomp_table)
+        .module()
+    )
 
-    if model_gm_has_SDPA(model_gm):  # pyre-fixme[6]
-        # Decompose SDPA
-        DecomposeScaledDotProductAttention(False)(model_gm)  # pyre-fixme[6]
-
-        # Swap _safe_softmax with _softmax (see https://github.com/pytorch/pytorch/pull/133882
-        # for details).
-        result = ReplaceSafeSoftmaxWithSoftmax()(model_gm)  # pyre-fixme[6]
-        assert result is not None
-        model_gm = result.graph_module
+    if dump_graphs:
+        logging.info("Graph before quantization:")
+        logging.info(model_gm.graph.print_tabular())
 
     # Prepare
     prepared_model = prepare_pt2e(model_gm, quantizer)
@@ -79,6 +99,10 @@ def convert_pt2(
 
     # Convert
     converted_model = convert_pt2e(prepared_model)
+
+    if dump_graphs:
+        logging.info("Graph after quantization (before fusion):")
+        logging.info(model_gm.graph.print_tabular())
 
     return converted_model
 
@@ -112,20 +136,28 @@ def quantize_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     quantizer: Optional[CadenceQuantizer] = None,
+    dump_graphs: bool = False,
 ) -> torch.fx.GraphModule:
     """
     Prepare, convert and fuse the model using the given quantizer.
     Returns a GraphModule with the quantized model.
     """
-    # Quantizer
+    # Make the model inference mode by calling model.eval()
+    model.eval()
+
+    # Instantiate the quantizer to CadenceQuantizer if not supplied
     if not quantizer:
-        quantizer = CadenceQuantizer()
+        quantizer = CadenceDefaultQuantizer()
 
     # Get converted graph module
-    converted_gm = convert_pt2(model, inputs, quantizer)
+    converted_gm = convert_pt2(model, inputs, quantizer, dump_graphs)
 
     # Get fused model
     fused_gm = fuse_pt2(converted_gm, quantizer)
+
+    if dump_graphs:
+        logging.info("Graph after quantization and fusion:")
+        logging.info(fused_gm.graph.print_tabular())
 
     return fused_gm
 
@@ -134,35 +166,14 @@ def quantize_pt2(
 def export_program(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
-    dump_graphs: bool = False,
 ) -> ExportedProgram:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
-
-    # We don't support training mode. Make the model inference mode by
-    # calling model.eval() or an equivalent call for quantized models.
-    # GraphModules cannot call eval(), so we skip them.
-    if not isinstance(model, torch.fx.GraphModule):
-        if hasattr(model, "eval"):
-            model.eval()
-    else:
-        # If the model is quantized, call the suggested torch.ao.quantization API
-        # which only does dropout and batchnorm.
-        if model_is_quantized(model):
-            torch.ao.quantization.move_exported_model_to_eval(model)
-        else:
-            # If we get a GraphModule which is _not_ quantized, then it should already
-            # have been exported.
-            assert model_is_exported(model), "model should be from an ExportedProgram"
 
     # Prevent mkldnn decompositions
     torch._C._set_mkldnn_enabled(False)
 
-    # else: capture the model and return it.
-    expo_program = export(model, inputs)
-
-    if dump_graphs:
-        logging.info("Exported graph:")
-        expo_program.graph_module.graph.print_tabular()
+    # Export the model and return it.
+    expo_program = export(model, inputs, strict=True)
 
     return expo_program
 
@@ -172,24 +183,36 @@ def export_to_edge(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
+    constant_methods: Optional[dict[str, object]] = None,
 ) -> EdgeProgramManager:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
     # Export the model into an ExportedProgram.
-    expo_program = export_program(model, inputs, dump_graphs=dump_graphs)
+    expo_program = export_program(model, inputs)
 
     # Call to_edge to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
     edge_prog_manager = to_edge(
         expo_program,
         compile_config=EdgeCompileConfig(
-            _check_ir_validity=False, _skip_dim_order=True
+            _skip_dim_order=True,
+            # Allow specific non-core aten ops in the IR.
+            _core_aten_ops_exception_list=[
+                torch.ops.aten._native_batch_norm_legit_functional.default,
+                torch.ops.aten.linear.default,
+                torch.ops.aten.linalg_vector_norm.default,
+                torch.ops.aten.unfold.default,
+                torch.ops.aten.angle.default,
+            ],
         ),
+        constant_methods=constant_methods,
     )
 
     if dump_graphs:
-        logging.info("Edge graph:")
-        edge_prog_manager.exported_program().graph_module.graph.print_tabular()
+        logging.info("Graph after Edge lowering:")
+        logging.info(
+            edge_prog_manager.exported_program().graph_module.graph.print_tabular()
+        )
 
     return edge_prog_manager
 
@@ -198,10 +221,9 @@ def export_to_cadence(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
-    output_dir: Optional[str] = None,
     opt_level: int = 1,
 ) -> EdgeProgramManager:
-    edge_prog_manager = export_to_edge(model, inputs)
+    edge_prog_manager = export_to_edge(model, inputs, dump_graphs=dump_graphs)
     cadence_passes = get_cadence_passes(opt_level)
 
     # Run a couple required passes for quant/dequant ops
@@ -237,6 +259,10 @@ def export_to_executorch_gen_etrecord(
     inputs: tuple[object, ...],
     output_dir: Optional[str] = None,
     opt_level: int = 1,
+    mem_algo: int = 0,
+    alloc_graph_input: bool = True,
+    alloc_graph_output: bool = True,
+    memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
 ) -> ExecutorchProgramManager:
     cadence_passes = get_cadence_passes(opt_level)
@@ -255,8 +281,36 @@ def export_to_executorch_gen_etrecord(
         cadence_prog_manager.exported_program().graph_module,
     )
 
+    if memory_config is None:
+        memory_config = get_default_memory_config()
+
+    memory_planning_pass = CadenceMemoryPlanning(
+        memory_config,
+        opt_level=opt_level,
+        mem_algo=mem_algo,
+        alloc_graph_input=alloc_graph_input,
+        alloc_graph_output=alloc_graph_output,
+    )
+
     # Get executorch program after Cadence specific passes
-    exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch()
+    exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch(
+        ExecutorchBackendConfig(
+            memory_planning_pass=memory_planning_pass,
+            emit_stacktrace=False,
+            to_out_var_pass=ToOutVarPass(),
+            extract_delegate_segments=False,
+            sym_shape_eval_pass=HintBasedSymShapeEvalPass(),
+        ),
+    )
+
+    print_memory_planning_info(
+        exec_prog,
+        memory_config,
+        opt_level,
+        alloc_graph_input,
+        alloc_graph_output,
+    )
+
     if output_dir:
         _gen_etrecord(edge_prog_manager, exec_prog, Path(output_dir))
     else:

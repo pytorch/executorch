@@ -30,7 +30,6 @@ def define_common_targets():
         exported_deps = [
             "fbsource//third-party/toolchains:log",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm:qc_binary_info_schema",
             "//executorch/runtime/core:core",
         ],
     )
@@ -45,8 +44,7 @@ def define_common_targets():
                     "*.cpp",
                     "backends/*.cpp",
                     "backends/htpbackend/*.cpp",
-                    "backends/htpbackend/aarch64/*.cpp",
-                ],
+                ] + (["backends/htpbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htpbackend/aarch64/*.cpp"]),
                 exclude = ["Logging.cpp"],
             ),
             exported_headers = glob(
@@ -69,7 +67,6 @@ def define_common_targets():
                 "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
                 ":logging",
                 "//executorch/backends/qualcomm:schema",
-                "//executorch/backends/qualcomm:qc_binary_info_schema",
                 "//executorch/backends/qualcomm/aot/ir:qcir_utils",
                 "//executorch/backends/qualcomm/aot/wrappers:wrappers",
                 "//executorch/runtime/backend:interface",

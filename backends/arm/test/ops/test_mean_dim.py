@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -81,7 +81,7 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check(["torch.ops.aten.adaptive_avg_pool2d.default"])
@@ -101,7 +101,7 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -150,7 +150,7 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_not(["torch.ops.quantized_decomposed"])
@@ -169,7 +169,7 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -269,10 +269,8 @@ class TestMeanDim(unittest.TestCase):
     ):
         self._test_meandim_tosa_BI_pipeline(self.MeanDim(dim, keepdim), (test_data,))
 
-    # Expected to fail as this is not supported on u55.
     @parameterized.expand(MeanDim.test_data_suite)
-    @unittest.expectedFailure
-    def test_meandim_tosa_u55_BI_xfails(
+    def test_meandim_tosa_u55_BI(
         self,
         test_name: str,
         test_data: torch.Tensor,

@@ -12,6 +12,10 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
@@ -19,6 +23,9 @@ from executorch.examples.models.llama.export_llama_lib import (
 from executorch.examples.models.llama.source_transformation.quantize import (
     EmbeddingQuantHandler,
     get_quant_weight_transform,
+)
+from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
 )
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
@@ -41,10 +48,6 @@ from executorch.exir.passes.sym_shape_eval_pass import (
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
 
@@ -101,6 +104,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
     _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
+        source_transforms.append(replace_kv_cache_with_custom_kv_cache)
         source_transforms.append(replace_sdpa_with_custom_op)
     source_transforms.append(quant_transform)
     manager = (
@@ -116,6 +120,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             manager.pre_autograd_graph_module,
             manager.example_inputs,
             dynamic_shapes=manager._get_dynamic_shape(),
+            strict=True,
         )
     return text_model_ep
 
@@ -158,6 +163,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             manager.pre_autograd_graph_module,
             manager.example_inputs,
             dynamic_shapes=manager.dynamic_shapes,
+            strict=True,
         )
     return image_encoder_ep
 
@@ -176,7 +182,10 @@ def export_token_embedding(llava, prompt):
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
         token_embedding_ep = torch.export.export(
-            quantized_token_embed.embed_tokens, (prompt,), dynamic_shapes=dynamic_shapes
+            quantized_token_embed.embed_tokens,
+            (prompt,),
+            dynamic_shapes=dynamic_shapes,
+            strict=True,
         )
     return token_embedding_ep
 

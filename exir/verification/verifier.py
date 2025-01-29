@@ -15,10 +15,12 @@ from executorch.exir.capture._config import EdgeCompileConfig
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.passes.dim_order_ops_registry import DimOrderOpsMap
 from executorch.exir.verification.arg_validator import (
     EdgeOpArgValidator,
     RunHigherOrderOperatorError,
 )
+
 from torch._dispatch.python import enable_python_dispatcher
 from torch._export.utils import _detect_fake_mode_from_gm
 
@@ -44,7 +46,7 @@ def _check_tensors_are_contiguous(gm: GraphModule) -> None:
 
 def _check_valid_dim_order_ops(op, use_dim_order) -> None:
     if use_dim_order:
-        if op in (torch.ops.aten._to_copy.default,):
+        if op in DimOrderOpsMap:
             raise SpecViolationError(f"{op} should not be used in dim_order mode")
     else:  # not using dim_order
         if op.namespace in ("dim_order_ops",):
@@ -119,7 +121,17 @@ def EXIRATenDialectVerifier(  # noqa: C901
                     # NOTE(qihan): whether view_copy operators are marked as canonical is still under
                     #            discussion.
                     raise SpecViolationError(
-                        f"Operator {op.__module__}.{op.__name__} is not Aten Canonical."
+                        f"""
+Operator {op.__module__}.{op.__name__} is not in Core ATen opset (https://pytorch.org/docs/stable/torch.compiler_ir.html#core-aten-ir)."
+There are a few things to try:
+1. You can proceed with `to_edge(compile_config=EdgeCompileConfig(_core_aten_ops_exception_list=[torch.ops.{str(op)}]))`.
+   Please make sure that the backend(s) you are planning to lower to is able to handle {str(op)}, or you have a corresponding kernel linked to your runtime.
+
+2. Sometimes inference and training gives slightly different op set. Try adding `with torch.no_grad():` context manager if you are export for inference only.
+
+3. If the error persists after 2, this is likely caused by torch.export() + core ATen decomposition producing unexpected operators for your model.
+   If you believe this operator should be included into core ATen opset, please create an issue in https://github.com/pytorch/pytorch/issues and add `module: core aten` tag.
+                        """
                     )
 
     ret = _EXIRATenDialectVerifier
@@ -177,8 +189,15 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
         return
 
     if validator.violating_ops:
+        error_msg = ""
+        for op, node in validator.violating_ops.items():
+            # error_msg += f"#####################################################\n"
+            error_msg += f"\nOperator: {op} with args: {node[0]}\n"
+            error_msg += f"stack trace: {node[1].stack_trace}\n"
+            # error_msg += f"#####################################################\n"
         raise SpecViolationError(
-            f"These operators are taking Tensor inputs with mismatched dtypes: {validator.violating_ops}"
+            f"These operators are taking Tensor inputs with mismatched dtypes:\n{error_msg}"
+            "Please make sure the dtypes of the Tensor inputs are the same as the dtypes of the corresponding outputs."
         )
 
 
@@ -248,7 +267,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                     )
                 )
             if isinstance(op, EdgeOpOverload):
-                _check_valid_dim_order_ops(op._op, self.use_dim_order)
+                _check_valid_dim_order_ops(op, self.use_dim_order)
                 self.check_valid_aten_op(op._op)
 
             if isinstance(op, types.FunctionType):
@@ -260,31 +279,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             if self.check_edge_ops:
                 _check_tensors_are_contiguous(gm)
                 _check_tensor_args_matching_op_allowed_dtype(gm)
-
-        def check_valid_op(self, op):
-            if isinstance(op, OpOverload):
-                # TODO These special ops should be removable easily.
-                if op.namespace in (
-                    "quantized_decomposed",
-                    "boltnn_nimble",
-                    "nimble",
-                    "quantized",
-                    "dim_order_ops",
-                ) or op in (
-                    torch.ops.aten.mkldnn_rnn_layer.default,
-                    torch.ops.aten._upsample_bilinear2d_aa.default,
-                    torch.ops.aten.quantize_per_tensor.default,
-                    torch.ops.aten.dequantize.self,
-                    torch.ops.aten.max.default,
-                    torch.ops.aten.full_like.default,  # TODO(T183507359)
-                ):
-                    return
-                if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
-                    # NOTE(qihan): whether view_copy operators are marked as canonical is still under
-                    #            discussion.
-                    raise SpecViolationError(
-                        f"Operator {op.__module__}.{op.__name__} is not Aten Canonical."
-                    )
 
         def is_valid(self, gm: GraphModule) -> bool:
             try:

@@ -110,12 +110,20 @@ else
   COREML=OFF
 fi
 
+if [[ "${MODE}" =~ .*quantize_kv.* ]]; then
+  QUANTIZE_KV_CACHE=ON
+  # quantize_kv cache transform uses custom kv cache update op
+  CUSTOM=ON
+else
+  QUANTIZE_KV_CACHE=OFF
+fi
+
 echo "COREML option ${COREML}"
 
 if [[ "${MODE}" =~ .*qnn.* ]]; then
   QNN=ON
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-  export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
+  export QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029
   export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
   export PYTHONPATH=".."
   cp schema/program.fbs exir/_serialize/program.fbs
@@ -202,7 +210,7 @@ prepare_artifacts_upload() {
 PARAMS="params.json"
 CHECKPOINT_FILE_NAME=""
 touch "${PARAMS}"
-if [[ "${MODEL_NAME}" == "stories110M" ]]; then
+if [[ "${MODEL_NAME}" == "llama" ]] || [[ "${MODEL_NAME}" == "stories"* ]] || [[ "${MODEL_NAME}" == "tinyllama" ]]; then
   CHECKPOINT_FILE_NAME="stories110M.pt"
   download_stories_model_artifacts
 else
@@ -248,6 +256,9 @@ if [[ "${QNN}" == "ON" ]]; then
   if [[ "${PT2E_QUANTIZE}" == "qnn_16a16w" ]]; then
     EXPORT_ARGS+=" --tokenizer_path tokenizer.model --pt2e_quantize qnn_16a16w --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --calibration_data Once "
   fi
+fi
+if [[ "${QUANTIZE_KV_CACHE}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} --quantize_kv_cache"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}

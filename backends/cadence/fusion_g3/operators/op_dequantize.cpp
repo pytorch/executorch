@@ -6,28 +6,32 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/reduce_util.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <xa_nnlib_kernels_api.h>
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
+#include <xa_nnlib_kernels_api.h>
+
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
+#include <executorch/kernels/portable/cpu/util/reduce_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
-using optional = exec_aten::optional<T>;
+using optional = ::executorch::aten::optional<T>;
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
 
-enum datatype { Ushort = 20, Bits4u = 21, Bits4 = 22 };
+enum datatype { Bits4u = 21, Bits4 = 22 };
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
@@ -47,14 +51,13 @@ void check_dequantize_per_tensor_args(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType>& out_dtype,
+    ::executorch::aten::optional<ScalarType>& out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
           input.scalar_type() == ScalarType::Char ||
-          input.scalar_type() == ScalarType::Bits16 ||
+          input.scalar_type() == ScalarType::UInt16 ||
           input.scalar_type() == ScalarType::Short ||
-          input.scalar_type() == (ScalarType)Ushort ||
           input.scalar_type() == (ScalarType)Bits4 ||
           input.scalar_type() == (ScalarType)Bits4u ||
           input.scalar_type() == ScalarType::Int,
@@ -64,8 +67,8 @@ void check_dequantize_per_tensor_args(
 
   ET_CHECK_MSG(
       input.scalar_type() == dtype,
-      "input.scalar_type() %" PRId8 " is not matching dtype argumenta:",
-      static_cast<int8_t>(input.scalar_type()));
+      "input.scalar_type() %s is not matching dtype arguments:",
+      ::executorch::runtime::toString(input.scalar_type()));
 
   if (out_dtype.has_value()) {
     ET_CHECK_MSG(
@@ -83,14 +86,16 @@ void check_dequantize_per_tensor_args(
 } // namespace
 
 /* Local function which calls the kernels based on the input datatype */
-void Dequantize_impl(
+Tensor& dequantize_impl(
+    KernelRuntimeContext& ctx,
     Tensor& out,
     const Tensor& input,
     float* scale_data,
     int* zero_point_data,
     int* axis,
-    exec_aten::optional<ScalarType> out_dtype) {
-  const exec_aten::ArrayRef<Tensor::SizesType> input_size = input.sizes();
+    ::executorch::aten::optional<ScalarType> out_dtype) {
+  const ::executorch::aten::ArrayRef<Tensor::SizesType> input_size =
+      input.sizes();
 
   int kTensorDimensionLimit = 5;
 
@@ -112,7 +117,7 @@ void Dequantize_impl(
         }
       }
     } else {
-      if (*zero_point_data != 0) // tesor
+      if (*zero_point_data != 0) // tensor
       {
         is_asym_dequant |= 1;
       }
@@ -120,10 +125,19 @@ void Dequantize_impl(
   }
   float* out_data = out.mutable_data_ptr<float>();
 
+  bool optimized = true;
+
+  if (out.scalar_type() != ScalarType::Float) {
+    optimized = false;
+  }
+
   if (is_asym_dequant) {
-    if (input.scalar_type() == ScalarType::Byte) {
+    if ((input.scalar_type() == ScalarType::Byte) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
-      xa_nn_elm_dequantize_asym8u_f32(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_asym8u_f32,
           out_data,
           input_data,
           inp_shape,
@@ -131,9 +145,12 @@ void Dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == ScalarType::Char) {
+    } else if ((input.scalar_type() == ScalarType::Char) && (optimized)) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
-      xa_nn_elm_dequantize_asym8_f32(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_asym8_f32,
           out_data,
           input_data,
           inp_shape,
@@ -141,9 +158,12 @@ void Dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Ushort) {
+    } else if ((input.scalar_type() == ScalarType::UInt16) && (optimized)) {
       const uint16_t* input_data = input.const_data_ptr<uint16_t>();
-      xa_nn_elm_dequantize_asym16u_f32(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_asym16u_f32,
           out_data,
           input_data,
           inp_shape,
@@ -151,9 +171,12 @@ void Dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == ScalarType::Short) {
+    } else if ((input.scalar_type() == ScalarType::Short) && (optimized)) {
       const int16_t* input_data = input.const_data_ptr<int16_t>();
-      xa_nn_elm_dequantize_asym16_f32(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_asym16_f32,
           out_data,
           input_data,
           inp_shape,
@@ -161,9 +184,12 @@ void Dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Bits4u) {
+    } else if ((input.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
-      xa_nn_elm_dequantize_asym4u_f32(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_asym4u_f32,
           out_data,
           input_data,
           inp_shape,
@@ -171,9 +197,12 @@ void Dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Bits4) {
+    } else if ((input.scalar_type() == (ScalarType)Bits4) && (optimized)) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
-      xa_nn_elm_dequantize_asym4_f32(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_asym4_f32,
           out_data,
           input_data,
           inp_shape,
@@ -185,7 +214,7 @@ void Dequantize_impl(
       if (axis == NULL) {
 // calculate the dequantized output, cast scale to float to match fbgemm
 // behavior
-#define ASYM_DEQUANTIZE_IMPL_TESNOR(IN_CTYPE, OUT_CTYPE, out_dtype)            \
+#define ASYM_DEQUANTIZE_IMPL_TENSOR(IN_CTYPE, OUT_CTYPE, out_dtype)            \
   case ScalarType::out_dtype: {                                                \
     /* Hoist these function calls out of our inner loop because they might not \
      * get inlined without LTO, particularly in ATen mode. */                  \
@@ -201,7 +230,7 @@ void Dequantize_impl(
 #define ASYM_CALCULATE_INT_TYPE_TENSOR(IN_CTYPE, in_dtype)               \
   case ScalarType::in_dtype:                                             \
     switch (out.scalar_type()) {                                         \
-      ET_FORALL_FLOAT_TYPES_WITH(IN_CTYPE, ASYM_DEQUANTIZE_IMPL_TESNOR); \
+      ET_FORALL_FLOAT_TYPES_WITH(IN_CTYPE, ASYM_DEQUANTIZE_IMPL_TENSOR); \
       default:                                                           \
         ET_CHECK_MSG(                                                    \
             false,                                                       \
@@ -211,7 +240,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_TENSOR);
-          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, Bits16);
+          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -219,7 +248,7 @@ void Dequantize_impl(
                 static_cast<int8_t>(input.scalar_type()));
         }
 #undef ASYM_CALCULATE_INT_TYPE_TENSOR
-#undef ASYM_DEQUANTIZE_IMPL_TESNOR
+#undef ASYM_DEQUANTIZE_IMPL_TENSOR
       } else {
         // a list contains all dimensions except axis
         int64_t dims[input.dim() - 1];
@@ -231,8 +260,9 @@ void Dequantize_impl(
           }
         }
 
-        exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
-            exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
+            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+                dims, size_t(input.dim() - 1)}};
 
 // Actual dequantization logic
 // input, out are the input and output tensors
@@ -302,7 +332,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_CHANNEL);
-          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, Bits16);
+          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -314,30 +344,78 @@ void Dequantize_impl(
       }
     }
   } else {
-    if (input.scalar_type() == ScalarType::Byte) {
+    if ((input.scalar_type() == ScalarType::Byte) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
-      xa_nn_elm_dequantize_sym8u_f32(
-          out_data, input_data, inp_shape, input.dim(), axis, scale_data);
-    } else if (input.scalar_type() == ScalarType::Char) {
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_sym8u_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          scale_data);
+    } else if ((input.scalar_type() == ScalarType::Char) && (optimized)) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
-      xa_nn_elm_dequantize_sym8_f32(
-          out_data, input_data, inp_shape, input.dim(), axis, scale_data);
-    } else if (input.scalar_type() == (ScalarType)Ushort) {
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_sym8_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          scale_data);
+    } else if ((input.scalar_type() == ScalarType::UInt16) && (optimized)) {
       const uint16_t* input_data = input.const_data_ptr<uint16_t>();
-      xa_nn_elm_dequantize_sym16u_f32(
-          out_data, input_data, inp_shape, input.dim(), axis, scale_data);
-    } else if (input.scalar_type() == ScalarType::Short) {
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_sym16u_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          scale_data);
+    } else if ((input.scalar_type() == ScalarType::Short) && (optimized)) {
       const int16_t* input_data = input.const_data_ptr<int16_t>();
-      xa_nn_elm_dequantize_sym16_f32(
-          out_data, input_data, inp_shape, input.dim(), axis, scale_data);
-    } else if (input.scalar_type() == (ScalarType)Bits4u) {
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_sym16_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          scale_data);
+    } else if ((input.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
-      xa_nn_elm_dequantize_sym4u_f32(
-          out_data, input_data, inp_shape, input.dim(), axis, scale_data);
-    } else if (input.scalar_type() == (ScalarType)Bits4) {
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_sym4u_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          scale_data);
+    } else if ((input.scalar_type() == (ScalarType)Bits4) && (optimized)) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
-      xa_nn_elm_dequantize_sym4_f32(
-          out_data, input_data, inp_shape, input.dim(), axis, scale_data);
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_dequantize_sym4_f32,
+          out_data,
+          input_data,
+          inp_shape,
+          input.dim(),
+          axis,
+          scale_data);
     } else {
       if (axis == NULL) {
 // calculate the dequantized output, cast scale to float to match fbgemm
@@ -368,7 +446,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_TENSOR);
-          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, Bits16);
+          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -388,8 +466,9 @@ void Dequantize_impl(
           }
         }
 
-        exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
-            exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
+            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+                dims, size_t(input.dim() - 1)}};
 
 // Actual dequantization logic
 // input, out are the input and output tensors
@@ -459,7 +538,7 @@ void Dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_CHANNEL);
-          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, Bits16);
+          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -471,6 +550,7 @@ void Dequantize_impl(
       }
     }
   }
+  return out;
 }
 
 /**
@@ -483,14 +563,17 @@ void Dequantize_impl(
  * info.
  */
 Tensor& dequantize_per_tensor_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
     int64_t zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
+    __ET_UNUSED int64_t quant_min,
+    __ET_UNUSED int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
+  constexpr ScalarType out_dtype = ScalarType::Float;
+
+#ifdef OP_ARG_CHECK
   torch::executor::Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
       err == torch::executor::Error::Ok,
@@ -498,24 +581,28 @@ Tensor& dequantize_per_tensor_out(
 
   check_dequantize_per_tensor_args(
       input, quant_min, quant_max, dtype, out_dtype, out);
+#endif
 
   float scale_data = (float)scale;
   int zero_point_data = (int)zero_point;
 
-  Dequantize_impl(out, input, &scale_data, &zero_point_data, NULL, out_dtype);
+  dequantize_impl(
+      context, out, input, &scale_data, &zero_point_data, NULL, out_dtype);
 
   return out;
 }
 
 Tensor& dequantize_per_tensor_tensor_args_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
+    ::executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
+#ifdef OP_ARG_CHECK
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
       "Expected scale to be Double tensor received: %" PRId8,
@@ -532,8 +619,10 @@ Tensor& dequantize_per_tensor_tensor_args_out(
       zero_point.numel() == 1,
       "Exepcted zero_point to only have one element received: %zd",
       ssize_t(zero_point.numel()));
+#endif
 
   dequantize_per_tensor_out(
+      context,
       input,
       scale.const_data_ptr<double>()[0],
       zero_point.const_data_ptr<int64_t>()[0],
@@ -547,15 +636,24 @@ Tensor& dequantize_per_tensor_tensor_args_out(
 }
 
 Tensor& dequantize_per_channel_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
-    const exec_aten::optional<Tensor>& opt_zero_points,
+    const ::executorch::aten::optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
+    ::executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
+  if (axis < 0) {
+    axis += executorch::runtime::nonzero_dim(input);
+  }
+  /* if the arguments are passed properly to the operator disable the Macro -
+   * "OP_ARG_CHECK" if not the case, enable the Macro - "OP_ARG_CHECK", to have
+   * the checks only in operator level(As there are no checks in kernel).
+   */
+#ifdef OP_ARG_CHECK
   torch::executor::Error err = resize_tensor(out, input.sizes());
 
   // normalize axis
@@ -564,10 +662,6 @@ Tensor& dequantize_per_channel_out(
       "axis %zd is not legal it should be -input.dim() <= axis < input.dim() %zd",
       ssize_t(axis),
       ssize_t(input.dim()));
-
-  if (axis < 0) {
-    axis += executorch::runtime::nonzero_dim(input);
-  }
 
   ET_CHECK_MSG(
       err == torch::executor::Error::Ok,
@@ -597,9 +691,9 @@ Tensor& dequantize_per_channel_out(
         ssize_t(zero_point.numel()),
         ssize_t(input.size(axis)));
   }
-
   check_dequantize_per_tensor_args(
       input, quant_min, quant_max, dtype, out_dtype, out);
+#endif
 
   int* axis_ptr = (int*)&axis;
 
@@ -620,74 +714,14 @@ Tensor& dequantize_per_channel_out(
   for (int i = 0; i < scale.numel(); i++) {
     scale_data[i] = (float)scale_dt[i];
   }
-  Dequantize_impl(out, input, scale_data, zero_point_ptr, axis_ptr, out_dtype);
+  dequantize_impl(
+      context, out, input, scale_data, zero_point_ptr, axis_ptr, out_dtype);
 
   return out;
 }
 
-Tensor& dequantize_per_channel_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
-    const Tensor& scale,
-    const exec_aten::optional<Tensor>& opt_zero_points,
-    int64_t axis,
-    int64_t quant_min,
-    int64_t quant_max,
-    ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
-    Tensor& out) {
-  (void)context;
-  torch::executor::Error err = resize_tensor(out, input.sizes());
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in dequantize_per_channel_out");
-  return dequantize_per_channel_out(
-      input,
-      scale,
-      opt_zero_points,
-      axis,
-      quant_min,
-      quant_max,
-      dtype,
-      out_dtype,
-      out);
-}
-
-Tensor& dequantize_per_tensor_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
-    double scale,
-    int64_t zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
-    Tensor& out) {
-  // TODO(larryliu): Add a context arg to the real op function and remove this
-  // wrapper
-  (void)context;
-  return dequantize_per_tensor_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
-}
-
-Tensor& dequantize_per_tensor_tensor_args_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
-    const Tensor& scale,
-    const Tensor& zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
-    Tensor& out) {
-  // TODO(larryliu): Add a context arg to the real op function and remove this
-  // wrapper
-  (void)context;
-  return dequantize_per_tensor_tensor_args_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
-}
-
 Tensor& dequantize_per_token_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_points,
@@ -703,18 +737,18 @@ Tensor& dequantize_per_token_out(
   }
   // This unfortunate change is needed because we compile op_quantize for aten
   // mode as well
-  std::array<exec_aten::SizesType, 2> input_sizes;
-  input_sizes[0] = static_cast<exec_aten::SizesType>(num_channels);
+  std::array<::executorch::aten::SizesType, 2> input_sizes;
+  input_sizes[0] = static_cast<::executorch::aten::SizesType>(num_channels);
   input_sizes[1] =
-      static_cast<exec_aten::SizesType>(input.size(input.dim() - 1));
+      static_cast<::executorch::aten::SizesType>(input.size(input.dim() - 1));
 #ifdef USE_ATEN_LIB
   Tensor reshaped_input = at::from_blob(
       input.mutable_data_ptr(),
       input_sizes,
       at::TensorOptions(input.scalar_type()));
 #else
-  std::array<exec_aten::DimOrderType, 2> input_dim_order{0, 1};
-  std::array<exec_aten::StridesType, 2> input_strides;
+  std::array<::executorch::aten::DimOrderType, 2> input_dim_order{0, 1};
+  std::array<::executorch::aten::StridesType, 2> input_strides;
   executorch::runtime::dim_order_to_stride_nocheck(
       input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
   void* input_data = input.mutable_data_ptr();
@@ -735,6 +769,7 @@ Tensor& dequantize_per_token_out(
 #endif
 
   return dequantize_per_channel_out(
+      context,
       reshaped_input,
       scale,
       zero_points,
@@ -744,21 +779,6 @@ Tensor& dequantize_per_token_out(
       dtype,
       out_dtype,
       out);
-}
-
-Tensor& dequantize_per_token_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
-    const Tensor& scale,
-    const Tensor& zero_points,
-    int64_t quant_min,
-    int64_t quant_max,
-    ScalarType dtype,
-    ScalarType out_dtype,
-    Tensor& out) {
-  (void)context;
-  return dequantize_per_token_out(
-      input, scale, zero_points, quant_min, quant_max, dtype, out_dtype, out);
 }
 
 } // namespace native

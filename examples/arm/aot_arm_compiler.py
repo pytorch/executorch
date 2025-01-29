@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,12 +16,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder, CompileSpec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
@@ -88,6 +89,7 @@ def get_model_and_inputs_from_name(model_name: str) -> Tuple[torch.nn.Module, An
 def quantize(
     model: torch.nn.Module,
     model_name: str,
+    tosa_spec: TosaSpecification,
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
@@ -95,7 +97,7 @@ def quantize(
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
-    quantizer = ArmQuantizer()
+    quantizer = ArmQuantizer(tosa_spec)
 
     # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
     operator_config = get_symmetric_quantization_config(is_per_channel=False)
@@ -257,40 +259,25 @@ def get_calibration_data(
 def get_compile_spec(
     target: str,
     intermediates: Optional[str] = None,
-    reorder_inputs: Optional[str] = None,
-) -> ArmCompileSpecBuilder:
+    system_config: Optional[str] = None,
+    memory_mode: Optional[str] = None,
+) -> list[CompileSpec]:
     spec_builder = None
     if target == "TOSA":
-        spec_builder = (
-            ArmCompileSpecBuilder()
-            .tosa_compile_spec("TOSA-0.80.0+BI")
-            .set_permute_memory_format(True)
-        )
+        spec_builder = ArmCompileSpecBuilder().tosa_compile_spec("TOSA-0.80+BI")
     elif "ethos-u55" in target:
-        spec_builder = (
-            ArmCompileSpecBuilder()
-            .ethosu_compile_spec(
-                target,
-                system_config="Ethos_U55_High_End_Embedded",
-                memory_mode="Shared_Sram",
-                extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
-            )
-            .set_permute_memory_format(True)
-            .set_quantize_io(True)
-            .set_input_order(reorder_inputs)
+        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
+            target,
+            system_config=system_config,
+            memory_mode=memory_mode,
+            extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
         )
     elif "ethos-u85" in target:
-        spec_builder = (
-            ArmCompileSpecBuilder()
-            .ethosu_compile_spec(
-                target,
-                system_config="Ethos_U85_SYS_DRAM_Mid",
-                memory_mode="Shared_Sram",
-                extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
-            )
-            .set_permute_memory_format(True)
-            .set_quantize_io(True)
-            .set_input_order(reorder_inputs)
+        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
+            target,
+            system_config=system_config,
+            memory_mode=memory_mode,
+            extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
         )
 
     if intermediates is not None:
@@ -434,12 +421,16 @@ def get_args():
         help="Location for outputs, if not the default of cwd.",
     )
     parser.add_argument(
-        "-r",
-        "--reorder_inputs",
-        type=str,
+        "--system_config",
         required=False,
         default=None,
-        help="Provide the order of the inputs. This can be required when inputs > 1.",
+        help="System configuration to select from the Vela configuration file (see vela.ini). This option must match the selected target, default is for an optimal system 'Ethos_U55_High_End_Embedded'/'Ethos_U85_SYS_DRAM_High'",
+    )
+    parser.add_argument(
+        "--memory_mode",
+        required=False,
+        default=None,
+        help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U85 targets",
     )
     args = parser.parse_args()
 
@@ -471,6 +462,22 @@ def get_args():
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
+    if args.system_config is None:
+        if "u55" in args.target:
+            args.system_config = "Ethos_U55_High_End_Embedded"
+        elif "u85" in args.target:
+            args.system_confg = "Ethos_U85_SYS_DRAM_Mid"
+        else:
+            raise RuntimeError(f"Invalid target name {args.target}")
+
+    if args.memory_mode is None:
+        if "u55" in args.target:
+            args.memory_mode = "Shared_Sram"
+        elif "u85" in args.target:
+            args.memory_mode = "Sram_Only"
+        else:
+            raise RuntimeError(f"Invalid target name {args.target}")
+
     return args
 
 
@@ -489,37 +496,62 @@ if __name__ == "__main__":
 
     # Quantize if required
     model_int8 = None
-    if args.quantize:
-        model = quantize(
-            model, args.model_name, example_inputs, args.evaluate, args.evaluate_config
-        )
-        model_int8 = model
-        # Wrap quantized model back into an exported_program
-        exported_program = torch.export.export_for_training(model, example_inputs)
-
-    if args.intermediates:
-        os.makedirs(args.intermediates, exist_ok=True)
-
     if args.delegate:
         # As we can target multiple output encodings from ArmBackend, one must
         # be specified.
         compile_spec = get_compile_spec(
-            args.target, args.intermediates, args.reorder_inputs
+            args.target,
+            args.intermediates,
+            args.system_config,
+            args.memory_mode,
         )
+        if args.quantize:
+            tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+            model = quantize(
+                model,
+                args.model_name,
+                tosa_spec,
+                example_inputs,
+                args.evaluate,
+                args.evaluate_config,
+            )
+            model_int8 = model
+            # Wrap quantized model back into an exported_program
+            exported_program = torch.export.export_for_training(model, example_inputs)
+
+            if args.intermediates:
+                os.makedirs(args.intermediates, exist_ok=True)
+
         edge = to_edge_transform_and_lower(
             exported_program,
             partitioner=[ArmPartitioner(compile_spec)],
             compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
-                _skip_dim_order=True,
             ),
         )
+
     else:
+        if args.quantize:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-0.80.0+BI")
+            model = quantize(
+                model,
+                args.model_name,
+                tosa_spec,
+                example_inputs,
+                args.evaluate,
+                args.evaluate_config,
+            )
+            model_int8 = model
+            # Wrap quantized model back into an exported_program
+            exported_program = torch.export.export_for_training(model, example_inputs)
+
+            if args.intermediates:
+                os.makedirs(args.intermediates, exist_ok=True)
+
         edge = to_edge_transform_and_lower(
             exported_program,
             compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
-                _skip_dim_order=True,
             ),
         )
 

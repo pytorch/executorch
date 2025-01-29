@@ -33,10 +33,10 @@ class SplitWithSizes(NodeVisitor):
 
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         input_tensor_wrappers = [input_tensor_wrapper]
 
@@ -46,10 +46,10 @@ class SplitWithSizes(NodeVisitor):
             output_tensor = self.get_tensor(node, node, index)
             output_tensor_wrapper = self.define_tensor(
                 node,
+                node,
                 output_tensor,
                 PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
-                is_input_tensor=False,
                 wrapper_idx=index,
             )
             output_tensor_wrappers.append(output_tensor_wrapper)
@@ -64,9 +64,13 @@ class SplitWithSizes(NodeVisitor):
             split_indices.append(sum)
 
         split_indices_shape = [len(split_indices)]
-        dim = cast(int, node.args[2])
-        if dim < 0:
-            dim = dim % len(input_tensor.shape)
+
+        if len(node.args) > 2:
+            dim = cast(int, node.args[2])
+            if dim < 0:
+                dim = dim % len(input_tensor.shape)
+        else:
+            dim = 0
 
         if QCOM_AXIS_ORDER in node.meta:
             dim = node.meta[QCOM_AXIS_ORDER].index(dim)

@@ -32,8 +32,9 @@ Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor);
 
 flatbuffers::Offset<qcir::Tensor> ToTensor(
     const Qnn_Tensor_t& tensor,
+    const uint64_t data_offset,
     flatbuffers::FlatBufferBuilder* builder);
-Qnn_Tensor_t ToTensor(const tensor_type& tensor);
+Qnn_Tensor_t ToTensor(const tensor_type& tensor, const uint8_t* data_ptr);
 
 } // namespace qnn
 } // namespace backends

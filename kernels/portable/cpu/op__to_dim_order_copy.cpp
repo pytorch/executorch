@@ -15,16 +15,17 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using SizesArrayRef = exec_aten::ArrayRef<exec_aten::SizesType>;
-using DimOrderArrayRef = exec_aten::ArrayRef<exec_aten::DimOrderType>;
-using MemoryFormat = exec_aten::MemoryFormat;
+using Tensor = executorch::aten::Tensor;
+using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
+using MemoryFormat = executorch::aten::MemoryFormat;
 
 template <typename T>
-using OptionalArrayRef = exec_aten::OptionalArrayRef<T>;
+using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
 
 template <typename T>
-using Optional = exec_aten::optional<T>;
+using Optional = executorch::aten::optional<T>;
 
 namespace {
 
@@ -34,7 +35,7 @@ int64_t coordinateToIndexWithDimOrder(
     const Tensor& self,
     const size_t* cur_indices) {
   int64_t index = 0;
-  exec_aten::StridesType strides[kTensorDimensionLimit];
+  executorch::aten::StridesType strides[kTensorDimensionLimit];
   SizesArrayRef sizes = self.sizes();
   DimOrderArrayRef dim_order = self.dim_order();
 
@@ -96,13 +97,17 @@ Tensor& _to_dim_order_copy_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALHB_TYPES(
+  if (self.numel() == 0) {
+    return out;
+  }
+
+  ET_SWITCH_REALHBBF16_TYPES(
       self.scalar_type(),
       ctx,
       "dim_order_ops::_to_dim_order_copy.out",
       CTYPE_IN,
       [&] {
-        ET_SWITCH_REALHB_TYPES(
+        ET_SWITCH_REALHBBF16_TYPES(
             out.scalar_type(),
             ctx,
             "dim_order_ops::_to_dim_order_copy.out",

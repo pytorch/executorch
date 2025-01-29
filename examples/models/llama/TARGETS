@@ -109,6 +109,7 @@ runtime.python_library(
         "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
+        "//executorch/exir/passes:init_mutable_pass",
         "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
         "//executorch/extension/llm/export:export_lib",
         # one definition has to be included in the user of the libarary
@@ -116,6 +117,7 @@ runtime.python_library(
         # "//executorch/extension/pybindings:aten_lib",
         # "//executorch/extension/pybindings:portable_lib",
         # "//executorch/extension/pybindings:portable_lib_plus_custom",
+        "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/devtools/etrecord:etrecord",
         "//executorch/util:memory_profiler",
         "//executorch/util:python_profiler",
@@ -150,6 +152,8 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        "fbsource//third-party/pypi/tqdm:tqdm",
+        "fbsource//third-party/pypi/datasets:datasets",
         "fbsource//third-party/pypi/lm-eval:lm-eval",
         "fbsource//third-party/pypi/tiktoken:tiktoken",
         ":export_library",

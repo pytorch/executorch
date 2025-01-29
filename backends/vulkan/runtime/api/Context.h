@@ -185,22 +185,27 @@ class Context final {
     }
   }
 
+  void check_device_capabilities(const vkapi::ShaderInfo& shader);
+
   vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo&,
       const utils::uvec3&,
-      const vkapi::SpecVarList&);
+      const vkapi::SpecVarList&,
+      const uint32_t push_constants_size);
 
   inline vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo& shader_descriptor,
       const utils::uvec3& local_work_group_size) {
-    return get_descriptor_set(shader_descriptor, local_work_group_size, {});
+    return get_descriptor_set(shader_descriptor, local_work_group_size, {}, 0u);
   }
 
   void register_shader_dispatch(
       const vkapi::DescriptorSet&,
       vkapi::PipelineBarrier&,
       const vkapi::ShaderInfo&,
-      const utils::uvec3&);
+      const utils::uvec3&,
+      const void* = nullptr,
+      const uint32_t = 0);
 
   void register_blit(
       vkapi::PipelineBarrier&,
@@ -331,8 +336,10 @@ inline bool Context::submit_compute_job(
       dispatch_id);
 
   // Factor out template parameter independent code to minimize code bloat.
+  // Note that push constants are not exposed yet via this API, therefore the
+  // push constants size is assumed to be 0.
   vkapi::DescriptorSet descriptor_set = get_descriptor_set(
-      shader, local_work_group_size, specialization_constants);
+      shader, local_work_group_size, specialization_constants, 0u);
 
   detail::bind(
       descriptor_set,

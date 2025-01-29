@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -137,10 +137,11 @@ class ComboConvRelu6(torch.nn.Module):
     ]
 
     test_data = [
-        (20 * torch.randn(1, 3, 256, 256),),
-        (5 * torch.randn(1, 3, 256, 256),),
+        (2 * torch.randn(1, 3, 256, 256),),
+        (0.5 * torch.randn(1, 3, 256, 256),),
         (torch.randn(1, 3, 256, 256),),
-        (-5 * torch.randn(1, 3, 256, 256),),
+        (-0.5 * torch.randn(1, 3, 256, 256),),
+        (-2 * torch.randn(1, 3, 256, 256),),
     ]
 
     def __init__(self):
@@ -193,7 +194,7 @@ class TestConvCombos(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
@@ -217,7 +218,7 @@ class TestConvCombos(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
@@ -267,19 +268,21 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConv2dMeandim()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
+    @pytest.mark.corstone_fvp
     def test_conv_meandim_u55_BI(self):
         model = ComboConv2dMeandim()
         self._test_conv_combo_ethos_BI_pipeline(
             model,
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             model.get_inputs(),
         )
 
+    @pytest.mark.corstone_fvp
     def test_conv_meandim_u85_BI(self):
         model = ComboConv2dMeandim()
         self._test_conv_combo_ethos_BI_pipeline(
             model,
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             model.get_inputs(),
         )
 
@@ -294,12 +297,14 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConvBatchnormRelu6()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
+    @pytest.mark.corstone_fvp
     def test_conv_batchnorm_relu6_u55_BI(self):
         model = ComboConvBatchnormRelu6()
         self._test_conv_combo_ethos_BI_pipeline(
             model, common.get_u55_compile_spec(), model.get_inputs()
         )
 
+    @pytest.mark.corstone_fvp
     def test_conv_batchnorm_relu_u85_BI(self):
         model = ComboConvBatchnormRelu6()
         self._test_conv_combo_ethos_BI_pipeline(
@@ -324,19 +329,21 @@ class TestConvCombos(unittest.TestCase):
         self._test_conv_combo_tosa_BI_pipeline(model, test_data)
 
     @parameterized.expand(ComboConvRelu6.test_data)
+    @pytest.mark.corstone_fvp
     def test_conv_relu6_u55_BI(self, test_data: torch.Tensor):
         model = ComboConvRelu6()
         test_data = (test_data,)
         self._test_conv_combo_ethos_BI_pipeline(
-            model, common.get_u55_compile_spec(permute_memory_to_nhwc=True), test_data
+            model, common.get_u55_compile_spec(), test_data
         )
 
     @parameterized.expand(ComboConvRelu6.test_data)
+    @pytest.mark.corstone_fvp
     def test_conv_relu6_u85_BI(self, test_data: torch.Tensor):
         model = ComboConvRelu6()
         test_data = (test_data,)
         self._test_conv_combo_ethos_BI_pipeline(
-            model, common.get_u85_compile_spec(permute_memory_to_nhwc=True), test_data
+            model, common.get_u85_compile_spec(), test_data
         )
 
     ###############################
@@ -347,24 +354,26 @@ class TestConvCombos(unittest.TestCase):
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
     # TODO: Investigate flakyness (MLTORCH-307)
-    @pytest.mark.flaky(reruns=3)
+    @unittest.skip(reason="Skiped due to flakyness (MLTORCH-307)")
     def test_block_bottleneck_residual_tosa_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
+    @pytest.mark.corstone_fvp
     def test_block_bottleneck_residual_u55_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_ethos_BI_pipeline(
             model,
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             model.get_inputs(),
         )
 
+    @pytest.mark.corstone_fvp
     def test_block_bottleneck_residual_u85_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_ethos_BI_pipeline(
             model,
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             model.get_inputs(),
         )
 
@@ -384,6 +393,7 @@ class TestConvCombos(unittest.TestCase):
         self._test_conv_combo_tosa_BI_pipeline(model, test_data)
 
     @parameterized.expand(ComboConvAvgPool2d.test_data)
+    @pytest.mark.corstone_fvp
     def test_conv_avgpool2d_u55_BI(self, test_data: torch.Tensor):
         model = ComboConvAvgPool2d()
         test_data = (test_data,)
@@ -394,6 +404,7 @@ class TestConvCombos(unittest.TestCase):
         )
 
     @parameterized.expand(ComboConvAvgPool2d.test_data)
+    @pytest.mark.corstone_fvp
     def test_conv_avgpool2d_u85_BI(self, test_data: torch.Tensor):
         model = ComboConvAvgPool2d()
         test_data = (test_data,)

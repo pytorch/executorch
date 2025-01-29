@@ -42,6 +42,7 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
+from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.remove_noop_pass import RemoveNoopPass, RemoveToCopyPass
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
@@ -302,7 +303,6 @@ def make_alloc_node(
                     "Memory allocator node needs FakeTensor val or TensorMetadata to proceed"
                 )
 
-    # pyre-fixme[6]
     alloc = graph_module.graph.call_function(memory.alloc, (alloc_spec,))
     alloc.meta["val"] = val
     alloc.meta["tensor_meta"] = tensor_meta
@@ -487,6 +487,7 @@ base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = Pass
         ScalarToTensorPass(),
         SymToTensorPass(),
         RemoveNoopPass(),
+        PruneEmptyTensorsPass(),
         RemoveToCopyPass(),
     ]
 ).passes

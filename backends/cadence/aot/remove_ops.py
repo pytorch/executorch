@@ -16,7 +16,7 @@
 import itertools
 import logging
 from dataclasses import dataclass, field
-from typing import Callable, cast, Dict, List, Optional, Sequence
+from typing import Callable, cast, Dict, Iterable, List, Optional, Sequence, Union
 
 import torch
 import torch.fx
@@ -110,7 +110,8 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
 
         # Otherwise, we replace args[0] with cat_inputs.
         new_args = list(args)
-        new_args[0] = cat_inputs
+        # pyre error introduced after D66937105
+        new_args[0] = cat_inputs  # pyre-ignore[6]
         return super().call_operator(op, tuple(new_args), kwargs, meta)
 
 
@@ -697,16 +698,45 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             sg.is_valid = False
 
     def is_starting_permute(self, node: torch.fx.Node) -> bool:
-        return (
-            node.target == exir_ops.edge.aten.permute_copy.default
-            and cast(list[int], node.args[1]) == self.to_NCHW
-        )
+        return self.is_boundary_permute(node, self.to_NCHW)
 
     def is_ending_permute(self, node: torch.fx.Node) -> bool:
-        return (
-            node.target == exir_ops.edge.aten.permute_copy.default
-            and cast(list[int], node.args[1]) == self.to_NHWC
-        )
+        return self.is_boundary_permute(node, self.to_NHWC)
+
+    @staticmethod
+    def is_boundary_permute(node: torch.fx.Node, permute_dims: Iterable[int]) -> bool:
+        permute_dims = list(permute_dims)
+        if node.target == exir_ops.edge.aten.permute_copy.default:
+            return cast(list[int], node.args[1]) == permute_dims
+        elif node.target == exir_ops.edge.aten.view_copy.default:
+            # If there's a view node, check if it's swapping two dimensions and
+            # not splitting any others from the input shape.
+            inp = node.args[0]
+            if not isinstance(inp, torch.fx.Node):
+                return False
+            input_shape = inp.meta["val"].shape
+            output_shape = node.args[1]
+            assert isinstance(output_shape, (tuple, list))
+            # If the shapes are equal in length, no dimension is being split or
+            # grouped. Then check if a permute of the input shape results in the output shape.
+            return (
+                len(input_shape) == len(output_shape)
+                and len(input_shape) == len(permute_dims)
+                and RemovePermutesAroundElementwiseOps.permute_shape(
+                    input_shape, permute_dims
+                )
+                == output_shape
+            )
+        else:
+            return False
+
+    @staticmethod
+    def permute_shape(
+        shape: Union[List[int], torch.Size], permute_dims: Iterable[int]
+    ) -> List[int]:
+        permute_dims = list(permute_dims)
+        assert len(shape) == len(permute_dims)
+        return [shape[p] for p in permute_dims]
 
 
 # The following class consolidates functions to remove ops that are redundant

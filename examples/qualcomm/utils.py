@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import argparse
 import os
 import subprocess
@@ -256,8 +259,29 @@ def build_executorch_binary(
     custom_pass_config=frozenset(),
     qat_training_data=None,
 ):
+    """
+    A function to generate an ExecuTorch binary for Qualcomm platforms.
+
+    Attributes:
+        model (torch.nn.Module): The model to be converted into an ExecuTorch binary.
+        inputs (torch.Tensor): Sample input tensors required for model export.
+        soc_model (QcomChipset): The target Qualcomm System on Chip (SoC) model.
+        file_name (str): Name for the output binary file (.pte).
+        dataset (List[torch.Tensor] | Callable): A dataset for quantization calibration.
+        skip_node_id_set (set, optional): Set of node IDs to be skipped during partition.
+        skip_node_op_set (set, optional): Set of operation node  to be skipped during partition.
+        quant_dtype (QuantDtype, optional): Data type for quantization.
+        custom_quantizer (Callable, optional): Custom quantizer.
+        shared_buffer (bool, optional): Applies zero-copy mechanism to optimize runtime memory allocation.
+        metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
+        dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
+        custom_pass_config (frozenset, optional): Set of custom passes for model processing.
+
+    Returns:
+        None: The function writes the output to a specified .pte file.
+    """
     if quant_dtype is not None:
-        captured_model = torch.export.export(model, inputs).module()
+        captured_model = torch.export.export(model, inputs, strict=True).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
                 quant_dtype=quant_dtype, is_qat=True
@@ -540,6 +564,8 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None
         for idx, data in enumerate(inputs):
             for i, d in enumerate(data):
                 file_name = f"{dest_path}/input_{idx}_{i}.raw"
+                if not isinstance(d, torch.Tensor):
+                    d = torch.tensor(d)
                 d.detach().numpy().tofile(file_name)
                 input_files.append(file_name)
 

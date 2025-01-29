@@ -20,10 +20,10 @@
 #include <limits>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 
 using torch::executor::testing::TensorFactory;
 
@@ -33,7 +33,7 @@ class OpArangeOutTest : public OperatorTest {
     return torch::executor::aten::arange_outf(context_, end, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_arange_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -63,7 +63,7 @@ class OpArangeStartOutTest : public OperatorTest {
     return torch::executor::aten::arange_outf(context_, start, end, step, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_arange_start_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -86,9 +86,9 @@ class OpArangeStartOutTest : public OperatorTest {
 };
 
 /// A generic smoke test that works for any dtype that supports  zeros().
-TEST_F(OpArangeOutTest, AllRealDtypesSupported) {
+TEST_F(OpArangeOutTest, AllRealHBF16DtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_arange_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -164,10 +164,10 @@ TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
 }
 
 /// A generic smoke test that works for any dtype that supports  zeros().
-TEST_F(OpArangeStartOutTest, AllRealDtypesSupported) {
+TEST_F(OpArangeStartOutTest, AllRealHBF16DtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) \
   test_arange_start_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

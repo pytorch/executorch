@@ -19,7 +19,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -115,8 +115,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> opt_native_layer_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     double eps,
     Tensor& out,
     Tensor& mean_out,
@@ -155,7 +155,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> opt_native_layer_norm_out(
       InvalidArgument,
       ret_val);
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       input.scalar_type(), ctx, "native_layer_norm.out", CTYPE, [&]() {
         layer_norm<CTYPE>(
             input,

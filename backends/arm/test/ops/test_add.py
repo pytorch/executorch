@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -9,12 +9,12 @@ import unittest
 
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from parameterized import parameterized  # type: ignore[import-untyped]
 
 
 class TestSimpleAdd(unittest.TestCase):
@@ -50,10 +50,6 @@ class TestSimpleAdd(unittest.TestCase):
         def forward(self, x, y):
             return x + y
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
-
     def _test_add_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
@@ -61,12 +57,12 @@ class TestSimpleAdd(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -80,13 +76,13 @@ class TestSimpleAdd(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -131,20 +127,22 @@ class TestSimpleAdd(unittest.TestCase):
         self._test_add_tosa_BI_pipeline(self.Add(), test_data)
 
     @parameterized.expand(Add.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_add_u55_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
         self._test_add_ethos_BI_pipeline(
             self.Add(),
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             test_data,
         )
 
     @parameterized.expand(Add.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_add_u85_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
         self._test_add_ethos_BI_pipeline(
             self.Add(),
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             test_data,
         )
 
@@ -159,6 +157,7 @@ class TestSimpleAdd(unittest.TestCase):
         self._test_add_tosa_BI_pipeline(self.Add2(), test_data)
 
     @parameterized.expand(Add2.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_add2_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_add_ethos_BI_pipeline(
@@ -166,6 +165,7 @@ class TestSimpleAdd(unittest.TestCase):
         )
 
     @parameterized.expand(Add2.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_add2_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_add_ethos_BI_pipeline(

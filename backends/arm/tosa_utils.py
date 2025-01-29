@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,18 +7,13 @@
 
 import logging
 import os
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 
-from executorch.backends.arm.tosa_quant_utils import (
-    get_quant_arg_downstream,
-    get_quant_arg_upstream,
-    q_op,
-)
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
@@ -78,7 +73,7 @@ def dbg_fail(node, tosa_graph, path):
 
 
 # Helper function to match TOSA's broadcasting rank requirement
-# Ref: TOSA 0.80.0 specification - 1.9.3. Data Layouts from
+# Ref: TOSA 0.80 specification - 1.9.3. Data Layouts from
 # https://www.mlplatform.org/tosa/tosa_spec.html
 def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
     assert np.prod(arg.shape) == np.prod(promoted_shape), "Incompatible promoted shape"
@@ -90,7 +85,7 @@ def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
 
 
 # Helper transpose function to match TOSA's shape requirements
-# E.g., TOSA 0.80.0 specification - 2.3.3 CONV2D shapes:
+# E.g., TOSA 0.80 specification - 2.3.3 CONV2D shapes:
 # https://www.mlplatform.org/tosa/tosa_spec.html#_conv2d
 def transpose_helper(tosa_fb, input, new_order, out_dtype):
     # Check new_order's length is equal to input rank
@@ -120,10 +115,6 @@ def getNodeArgs(node: Node) -> list[TosaArg]:
     return [TosaArg(arg) for arg in node.args]
 
 
-def get_input_tensor(node: Node) -> TosaArg:
-    return TosaArg(node.args[0])
-
-
 def get_output_node(node: Node) -> Node:
     return list(node.users)[0]
 
@@ -138,14 +129,6 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
 
 
-def is_bias_node_for_quantized_conv(node):
-    consumer_node = list(node.users)[0]
-    return (
-        consumer_node.target == exir_ops.edge.aten.convolution.default
-        and list(consumer_node.users)[0].target == q_op
-    )
-
-
 def is_consumer_node_depthwise_conv2d(node):
     consumer_node = list(node.users)[0]
     if consumer_node.target == exir_ops.edge.aten.convolution.default:
@@ -157,72 +140,6 @@ def is_consumer_node_depthwise_conv2d(node):
             return True
 
     return False
-
-
-def build_avg_pool_2d_common(
-    node: torch.fx.Node,
-    tosa_graph: ts.TosaSerializer,
-    input_tensor: TosaArg,
-    kernel_size: list,
-    stride: list,
-    padding: list,
-    is_quant_node: bool,
-    output: TosaArg,
-):
-    accumulator_type = input_tensor.dtype
-
-    if is_quant_node:
-        # Accumulator type always is int32 when input tensor is an integer type.
-        accumulator_type = ts.DType.INT32
-
-    # Initilize zero point to zero.
-    input_zp = 0
-    output_zp = 0
-
-    if is_quant_node:
-        input_zp = get_quant_arg_upstream(cast(torch.fx.Node, node.args[0])).zp
-        output_zp = get_quant_arg_downstream(list(node.users)[0]).zp
-
-    attr = ts.TosaSerializerAttribute()
-    attr.PoolAttribute(
-        kernel=kernel_size,
-        stride=stride,
-        pad=padding,
-        input_zp=input_zp,
-        output_zp=output_zp,
-        accum_dtype=accumulator_type,
-    )
-
-    tosa_graph.addOperator(
-        TosaOp.Op().AVG_POOL2D,
-        [input_tensor.name],
-        [output.name],
-        attr,
-    )
-
-
-def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
-    """Returns two input nodes to 'node' in order. If 'node' only has one input,
-    it is returned twice.
-
-    Fails if there are no input nodes.
-    Fails if there are >2 input nodes and 'check' is True,
-    """
-
-    num_inputs = len(node.all_input_nodes)
-    assert num_inputs > 0, f"Node '{node.name}' requires >0 input, got {num_inputs}."
-
-    input1 = node.all_input_nodes[0]
-    if num_inputs == 1:
-        input2 = node.all_input_nodes[0]
-    else:
-        input2 = node.all_input_nodes[1]
-    if check:
-        assert (
-            num_inputs <= 2
-        ), f"Node '{node.name}' requires <=2 inputs, got {num_inputs}."
-
-    return input1, input2
 
 
 def tosa_shape(shape, dim_order):

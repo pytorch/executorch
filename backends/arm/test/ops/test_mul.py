@@ -1,11 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+
+import pytest
 
 import torch
 from executorch.backends.arm.test import common, conftest
@@ -71,7 +73,7 @@ class TestMul(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
@@ -92,7 +94,7 @@ class TestMul(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
@@ -153,6 +155,7 @@ class TestMul(unittest.TestCase):
         self._test_mul_tosa_BI_pipeline(self.Mul(), test_data)
 
     @parameterized.expand(test_data_sute)
+    @pytest.mark.corstone_fvp
     def test_mul_u55_BI(
         self,
         test_name: str,
@@ -165,6 +168,7 @@ class TestMul(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_sute)
+    @pytest.mark.corstone_fvp
     def test_mul_u85_BI(
         self,
         test_name: str,

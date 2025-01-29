@@ -169,6 +169,13 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=inception_v3
   elif [[ "${MODEL_NAME}" == "vit" ]]; then
     EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "edsr" ]]; then
+    EXPORT_SCRIPT=edsr
+    # Additional deps for edsr
+    pip install piq
+  else
+    echo "Unsupported model $MODEL_NAME"
+    exit 1
   fi
 
   # Use SM8450 for S22, SM8550 for S23, and SM8560 for S24
@@ -209,25 +216,25 @@ test_model_with_mps() {
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
-elif [[ "${BACKEND}" == "qnn" ]]; then
+elif [[ "${BACKEND}" == *"qnn"* ]]; then
   echo "Testing ${MODEL_NAME} with qnn..."
   test_model_with_qnn
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
-elif [[ "${BACKEND}" == "coreml" ]]; then
+elif [[ "${BACKEND}" == *"coreml"* ]]; then
   echo "Testing ${MODEL_NAME} with coreml..."
   test_model_with_coreml
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
-elif [[ "${BACKEND}" == "mps" ]]; then
+elif [[ "${BACKEND}" == *"mps"* ]]; then
   echo "Testing ${MODEL_NAME} with mps..."
   test_model_with_mps
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
-elif [[ "${BACKEND}" == "xnnpack" ]]; then
+elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
   echo "Testing ${MODEL_NAME} with xnnpack..."
   WITH_QUANTIZATION=true
   WITH_DELEGATION=true

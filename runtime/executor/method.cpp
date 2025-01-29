@@ -8,6 +8,7 @@
 
 #include <executorch/runtime/executor/method.h>
 
+#include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
 #include <cstdio>
@@ -253,16 +254,16 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
   // is a Bool Scalar which resolves to false and points us to the instruction
   // to jump to which will take us to a point that is after the else branch.
   if (cond_value.isTensor()) {
-    const exec_aten::Tensor& cond_val = cond_value.toTensor();
+    const executorch::aten::Tensor& cond_val = cond_value.toTensor();
 
     // All the tensors and scalar cond values should be of bool type
     // currently. If that's not the case then something is wrong in the model
     // and we should exit.
     ET_CHECK_OR_RETURN_ERROR(
-        exec_aten::ScalarType::Bool == cond_val.scalar_type(),
+        executorch::aten::ScalarType::Bool == cond_val.scalar_type(),
         InvalidProgram,
         "Expected dtype of %" PRId8 " got %" PRId8,
-        static_cast<int8_t>(exec_aten::ScalarType::Bool),
+        static_cast<int8_t>(executorch::aten::ScalarType::Bool),
         static_cast<int8_t>(cond_val.scalar_type()));
 
     const bool* cond_data = cond_val.const_data_ptr<bool>();
@@ -313,6 +314,8 @@ Error Method::parse_values() {
         "Null value at index %zu",
         i);
 
+    const auto val = serialization_value->val();
+
     switch (serialization_value->val_type()) {
       case executorch_flatbuffer::KernelTypes::Null: {
         // Placement new as the list elements are not initialized, so calling
@@ -321,18 +324,21 @@ Error Method::parse_values() {
         new (&values_[i]) EValue();
       } break;
       case executorch_flatbuffer::KernelTypes::Int: {
-        new (&values_[i]) EValue(serialization_value->val_as_Int()->int_val());
+        new (&values_[i]) EValue(
+            static_cast<const executorch_flatbuffer::Int*>(val)->int_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Double: {
         new (&values_[i])
-            EValue(serialization_value->val_as_Double()->double_val());
+            EValue(static_cast<const executorch_flatbuffer::Double*>(val)
+                       ->double_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Bool: {
-        new (&values_[i])
-            EValue(serialization_value->val_as_Bool()->bool_val());
+        new (&values_[i]) EValue(
+            static_cast<const executorch_flatbuffer::Bool*>(val)->bool_val());
       } break;
       case executorch_flatbuffer::KernelTypes::IntList: {
-        const auto items = serialization_value->val_as_IntList()->items();
+        const auto items =
+            static_cast<const executorch_flatbuffer::IntList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
             items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // Allocate space for boxed and unboxed list representations using
@@ -346,13 +352,22 @@ Error Method::parse_values() {
 
         // initialize boxed list
         for (size_t j = 0; j < items->size(); j++) {
-          evalp_list[j] = &values_[static_cast<size_t>(items->Get(j))];
+          auto value_index = items->Get(j);
+          ET_CHECK_OR_RETURN_ERROR(
+              value_index >= 0 && value_index < n_value,
+              InvalidProgram,
+              "Invalid value index %" PRId64 " for IntList %zu index %zu",
+              value_index,
+              i,
+              j);
+          evalp_list[j] = &values_[static_cast<size_t>(value_index)];
         }
         new (&values_[i]) EValue(
             BoxedEvalueList<int64_t>(evalp_list, int_list, items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::BoolList: {
-        const auto items = serialization_value->val_as_BoolList()->items();
+        const auto items =
+            static_cast<const executorch_flatbuffer::BoolList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
             items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // NOTE: This is technically not portable. A platform could technically
@@ -362,18 +377,21 @@ Error Method::parse_values() {
         // portable here we need to allocate a new array of bool and copy cast
         // the flatbuffer data into it, but because of how exceptionally rare
         // this case is its low prio TODO: jakeszwe
-        new (&values_[i]) EValue(exec_aten::ArrayRef<bool>(
+        new (&values_[i]) EValue(executorch::aten::ArrayRef<bool>(
             (const bool*)items->data(), items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::DoubleList: {
-        const auto items = serialization_value->val_as_DoubleList()->items();
+        const auto items =
+            static_cast<const executorch_flatbuffer::DoubleList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
             items != nullptr, InvalidProgram, "Missing list at index %zu", i);
-        new (&values_[i])
-            EValue(exec_aten::ArrayRef<double>(items->data(), items->size()));
+        new (&values_[i]) EValue(
+            executorch::aten::ArrayRef<double>(items->data(), items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::String: {
-        const auto fb_str = serialization_value->val_as_String()->string_val();
+        const auto fb_str =
+            static_cast<const executorch_flatbuffer::String*>(val)
+                ->string_val();
         ET_CHECK_OR_RETURN_ERROR(
             fb_str != nullptr,
             InvalidProgram,
@@ -383,7 +401,9 @@ Error Method::parse_values() {
       } break;
       case executorch_flatbuffer::KernelTypes::Tensor: {
         auto t = deserialization::parseTensor(
-            program_, memory_manager_, serialization_value->val_as_Tensor());
+            program_,
+            memory_manager_,
+            static_cast<const executorch_flatbuffer::Tensor*>(val));
         if (!t.ok()) {
           ET_LOG(
               Error,
@@ -395,11 +415,16 @@ Error Method::parse_values() {
         new (&values_[i]) EValue(t.get());
       } break;
       case executorch_flatbuffer::KernelTypes::TensorList: {
+        const auto items =
+            static_cast<const executorch_flatbuffer::TensorList*>(val)->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // get list of serialization tensors and allocate storage for executor
         // tensors
         auto tensors = deserialization::parseTensorList(
-            serialization_value->val_as_TensorList()->items(),
+            items,
             values_,
+            n_value, // The size of the full array.
             memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
@@ -412,11 +437,17 @@ Error Method::parse_values() {
         new (&values_[i]) EValue(tensors.get());
       } break;
       case executorch_flatbuffer::KernelTypes::OptionalTensorList: {
+        const auto items =
+            static_cast<const executorch_flatbuffer::OptionalTensorList*>(val)
+                ->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // Same as TensorList but optional<Tensor> instead of Tensor
         auto tensors =
-            deserialization::parseListOptionalType<exec_aten::Tensor>(
-                serialization_value->val_as_OptionalTensorList()->items(),
+            deserialization::parseListOptionalType<executorch::aten::Tensor>(
+                items,
                 values_,
+                n_value, // The size of the full array.
                 memory_manager_);
         if (!tensors.ok()) {
           ET_LOG(
@@ -528,8 +559,9 @@ Error Method::resolve_operator(
     if (eval->isTensor()) {
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
-      exec_aten::DimOrderType* dim_order_ptr =
-          method_allocator->allocateList<exec_aten::DimOrderType>(tensor.dim());
+      executorch::aten::DimOrderType* dim_order_ptr =
+          method_allocator->allocateList<executorch::aten::DimOrderType>(
+              tensor.dim());
       if (dim_order_ptr == nullptr) {
         return Error::MemoryAllocationFailed;
       }
@@ -542,7 +574,7 @@ Error Method::resolve_operator(
           i,
           static_cast<uint32_t>(err));
       meta[count].dim_order_ =
-          Span<exec_aten::DimOrderType>(dim_order_ptr, size);
+          Span<executorch::aten::DimOrderType>(dim_order_ptr, size);
       count++;
     }
   }
@@ -628,6 +660,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
       const auto& delegate = *delegates->Get(i);
       BackendInitContext backend_init_context(
           method_allocator,
+          /*event_tracer=*/event_tracer_,
           /*method_name=*/serialization_plan_->name()->c_str());
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
@@ -688,10 +721,13 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             "Null instruction at index %zu",
             instr_idx);
 
+        const void* instr_args = instruction->instr_args();
         switch (instruction->instr_args_type()) {
           case executorch_flatbuffer::InstructionArguments::KernelCall: {
-            const auto arg_idxs =
-                instruction->instr_args_as_KernelCall()->args();
+            const auto* instr_args_as_KernelCall =
+                static_cast<const executorch_flatbuffer::KernelCall*>(
+                    instr_args);
+            const auto arg_idxs = instr_args_as_KernelCall->args();
             ET_CHECK_OR_RETURN_ERROR(
                 arg_idxs != nullptr, InvalidProgram, "KernelCall args missing");
             auto res = gen_instruction_arguments(
@@ -705,7 +741,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             }
             chain_instruction_arg_lists[instr_idx] = res.get();
             auto err = resolve_operator(
-                instruction->instr_args_as_KernelCall()->op_index(),
+                instr_args_as_KernelCall->op_index(),
                 chain_instruction_kernels,
                 instr_idx,
                 res.get(),
@@ -720,7 +756,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
           } break;
           case executorch_flatbuffer::InstructionArguments::DelegateCall: {
             const auto arg_idxs =
-                instruction->instr_args_as_DelegateCall()->args();
+                static_cast<const executorch_flatbuffer::DelegateCall*>(
+                    instr_args)
+                    ->args();
             ET_CHECK_OR_RETURN_ERROR(
                 arg_idxs != nullptr,
                 InvalidProgram,
@@ -740,7 +778,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             // Validate the index at load time so we can trust it during
             // execution.
             auto index =
-                instruction->instr_args_as_JumpFalseCall()->cond_value_index();
+                static_cast<const executorch_flatbuffer::JumpFalseCall*>(
+                    instr_args)
+                    ->cond_value_index();
             ET_CHECK_OR_RETURN_ERROR(
                 index >= 0 && index < n_value_,
                 InvalidProgram,
@@ -792,38 +832,55 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       input_idx < inputs_size(),
       InvalidArgument,
-      "Given input index must be less than the number of inputs in method, but got %zu and %zu",
+      "Input index (%zu) must be less than the number of inputs in method (%zu).",
       input_idx,
       inputs_size());
 
   const auto& e = get_value(get_input_index(input_idx));
-  ET_CHECK_OR_RETURN_ERROR(
-      e.isTensor() || e.isScalar(),
-      InvalidArgument,
-      "The %zu-th input in method is expected Tensor or prim, but received %" PRIu32,
-      input_idx,
-      static_cast<uint32_t>(e.tag));
 
-  ET_CHECK_OR_RETURN_ERROR(
-      e.tag == input_evalue.tag,
-      InvalidArgument,
-      "The %zu-th input of method should have the same type as the input_evalue, but get tag %" PRIu32
-      " and tag %" PRIu32,
-      input_idx,
-      static_cast<uint32_t>(e.tag),
-      static_cast<uint32_t>(input_evalue.tag));
+  if (!e.isTensor() && !e.isScalar()) {
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> tag_name;
+    tag_to_string(e.tag, tag_name.data(), tag_name.size());
+    ET_LOG(
+        Error,
+        "Input %zu was expected to be a Tensor or primitive but was %s.",
+        input_idx,
+        tag_name.data());
+#endif
+
+    return Error::InvalidArgument;
+  }
+
+  if (e.tag != input_evalue.tag) {
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> e_tag_name;
+    std::array<char, kTagNameBufferSize> input_tag_name;
+    tag_to_string(e.tag, e_tag_name.data(), e_tag_name.size());
+    tag_to_string(
+        input_evalue.tag, input_tag_name.data(), input_tag_name.size());
+    ET_LOG(
+        Error,
+        "Input %zu was expected to have type %s but was %s.",
+        input_idx,
+        e_tag_name.data(),
+        input_tag_name.data());
+#endif
+
+    return Error::InvalidArgument;
+  }
 
   if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
+
     ET_CHECK_OR_RETURN_ERROR(
         t_dst.scalar_type() == t_src.scalar_type(),
         InvalidArgument,
-        "The %zu-th input tensor's scalartype does not meet requirement: found %" PRId8
-        " but expected %" PRId8,
+        "Input %zu has unexpected scalar type: expected %s but was %s.",
         input_idx,
-        static_cast<int8_t>(t_src.scalar_type()),
-        static_cast<int8_t>(t_dst.scalar_type()));
+        executorch::runtime::toString(t_dst.scalar_type()),
+        executorch::runtime::toString(t_src.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     Error err = resize_tensor(t_dst, t_src.sizes());
@@ -901,14 +958,19 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         e.toString().data(),
         input_evalue.toString().data());
   } else {
-    ET_LOG(Error, "Unsupported input type: %d", (int32_t)e.tag);
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> tag_name;
+    tag_to_string(e.tag, tag_name.data(), tag_name.size());
+    ET_LOG(Error, "Unsupported input type: %s", tag_name.data());
+#endif
+
     return Error::InvalidArgument;
   }
   return Error::Ok;
 }
 
 ET_NODISCARD Error
-Method::set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues) {
+Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,
@@ -953,11 +1015,15 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       outputs_size());
 
   auto& output = mutable_value(get_output_index(output_idx));
-  ET_CHECK_OR_RETURN_ERROR(
-      output.isTensor(),
-      InvalidArgument,
-      "output type: %zu is not tensor",
-      (size_t)output.tag);
+  if (!output.isTensor()) {
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> tag_name;
+    tag_to_string(output.tag, tag_name.data(), tag_name.size());
+    ET_LOG(Error, "Output type: %s is not a tensor.", tag_name.data());
+#endif
+
+    return Error::InvalidArgument;
+  }
 
   auto tensor_meta = this->method_meta().output_tensor_meta(output_idx);
   if (tensor_meta->is_memory_planned()) {
@@ -970,11 +1036,16 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   }
 
   auto& t = output.toTensor();
-  ET_CHECK_OR_RETURN_ERROR(
-      output.isTensor(),
-      InvalidArgument,
-      "output type: %zu is not tensor",
-      (size_t)output.tag);
+  if (!output.isTensor()) {
+#if ET_LOG_ENABLED
+    std::array<char, kTagNameBufferSize> tag_name;
+    tag_to_string(output.tag, tag_name.data(), tag_name.size());
+    ET_LOG(Error, "output type: %s is not a tensor.", tag_name.data());
+#endif
+
+    return Error::InvalidArgument;
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       t.nbytes() <= size,
       InvalidArgument,
@@ -1061,7 +1132,7 @@ Error Method::execute_instruction() {
         // We know that instr_args_as_KernelCall is non-null because it was
         // checked at init time.
         auto op_index = instruction->instr_args_as_KernelCall()->op_index();
-        auto op = serialization_plan_->operators()->Get(op_index);
+        ET_UNUSED auto op = serialization_plan_->operators()->Get(op_index);
         ET_LOG(
             Error,
             "KernelCall failed at instruction %zu:%zu in operator %s.%s: 0x%x",

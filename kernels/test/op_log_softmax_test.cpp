@@ -17,9 +17,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
@@ -35,7 +35,7 @@ class OpLogSoftmaxOutTest : public OperatorTest {
   }
 
   // A generic smoke test that works for the supported dtypes.
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -62,7 +62,15 @@ class OpLogSoftmaxOutTest : public OperatorTest {
       });
     // clang-format on
 
-    EXPECT_TENSOR_CLOSE(out, expected);
+    if constexpr (DTYPE == ScalarType::BFloat16) {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out,
+          expected,
+          1e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+    } else {
+      EXPECT_TENSOR_CLOSE(out, expected);
+    }
   }
 };
 
@@ -88,11 +96,9 @@ TEST_F(OpLogSoftmaxOutTest, AllDtypesSupported) {
     GTEST_SKIP() << "This kernel does not support dtype double";
   }
 
-  test_dtype<float, ScalarType::Float>();
-  test_dtype<double, ScalarType::Double>();
-  // TODO: Also add tests for half, complex, quantized, and other types. Easiest
-  // way to do that would be to make TensorFactory support zeros() and ones()
-  // for those types.
+#define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
+#undef TEST_ENTRY
 }
 
 TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {

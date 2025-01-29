@@ -39,6 +39,28 @@ Other:
 - `third-party/` - Dependencies on other code - in particular the TOSA serialization_lib for compiling to TOSA and the ethos-u-core-driver for the bare-metal backend supporting Ethos-U
 - `test/` - Unit test and test support functions
 
+## Testing
+
+After a setup you can run unit tests with the test_arm_baremetal.sh script.
+
+To run the pytests suite run
+
+```
+backends/arm/test/test_arm_baremetal.sh test_pytest
+```
+
+To run the unit test suite with Corstone3x0 FVP simulator support use
+
+```
+backends/arm/test/test_arm_baremetal.sh test_pytest_ethosu_fvp
+```
+
+You can test to run some models with the run.sh flow
+
+```
+backends/arm/test/test_arm_baremetal.sh test_run_ethosu_fvp
+```
+
 ## Unit tests
 This is the structure of the test directory
 
@@ -51,12 +73,20 @@ test                            #  Root test folder
 ├── tester                      #  Arm Tester class
 ├── tosautil                    #  Utility functions for TOSA artifacts
 ├ common.py                     #  Common functions and definitions used by many tests
+├ setup_testing.sh              #  Script to prepare testing for using the Corstone 3x0 FVP
+├ test_arm_baremetal.sh         #  Help script to trigger testing
 ```
 
 Some example commands to run these tests follow. Run a single test:
 
 ```
 python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd -k test_add2_tosa_BI
+```
+
+or with pytest
+
+```
+pytest -c /dev/null -v -n auto backends/arm/test/ops/test_add.py -k test_add2_tosa_BI
 ```
 
 Or all tests in "TestSimpleAdd":
@@ -70,6 +100,50 @@ Or discover and run many tests:
 ```
 python -m unittest discover -s backends/arm/test/ops/
 ```
+
+or with pytest
+
+```
+pytest -c /dev/null -v -n auto backends/arm/test/ops/
+```
+
+
+You can run tests using Corstone3x0 simulators to see how it would work on something more target like
+first you need to build and prepare some used target libs
+
+```
+examples/arm/run.sh --model_name=add --build_only
+backends/arm/test/setup_testing.sh
+```
+
+The you can run the tests with
+
+```
+pytest -c /dev/null -v -n auto backends/arm/test --arm_run_corstoneFVP
+```
+
+### Code coverage
+
+To get code coverage:
+
+```
+coverage run --source=<SRC> --rcfile=backends/arm/test/.coveragerc -m pytest \
+--config-file=/dev/null backends/arm/test/
+```
+
+All files in `SRC` and its child directories will be analysed for code coverage,
+unless explicitly exluded in the .coveragerc file. If using venv this might be
+under `env/lib/python<VERSION_NUMBER>/site-packages/executorch/`. To get the
+absolute path, run:
+
+```
+python -c "import executorch; print(executorch.__path__)"
+```
+
+This contains a list of paths where the source directory is located. Pick the
+one that is located in `env/lib`. If that does not work try the others. Add
+`backends/arm` to the path in `--source` to only get code coverage for the Arm
+backend.
 
 ### A note on unit tests
 
@@ -104,8 +178,8 @@ The Arm Backend should be considered a prototype quality at this point, likely s
 ## Current flows
 
 The ArmBackend has a two stage process,
-- Compile to TOSA to rationalise the graph into known hardware support profiles. Currently this is to v0.80.0 TOSA BI with specific concern to a subset which gives support on Ethos-U55, the target of the initial prototype efforts.
-- Lower via the ethos-u-vela compilation flow which takes TOSA v0.80.0 as an input and produces a low level commandstream for the hardware which is then passed via the delegate to the ethos-u-core-driver for direct execution.
+- Compile to TOSA to rationalise the graph into known hardware support profiles. Currently this is to v0.80 TOSA BI with specific concern to a subset which gives support on Ethos-U55, the target of the initial prototype efforts.
+- Lower via the ethos-u-vela compilation flow which takes TOSA v0.80 as an input and produces a low level commandstream for the hardware which is then passed via the delegate to the ethos-u-core-driver for direct execution.
 
 The ArmPartitioner is currenly used to ensure the operations converted are Ethos-U compatible, but will be extended to offer spec-correct TOSA Base inference and TOSA Main Inference generation in future.
 

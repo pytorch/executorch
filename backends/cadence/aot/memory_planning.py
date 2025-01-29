@@ -4,13 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import collections
 import itertools
 import logging
+import typing
 from functools import partial
 from typing import Iterable, List, Optional, Tuple
 
 import torch
+from executorch.backends.cadence.aot.memory_constraints import (
+    GenerateMemConstraints,
+    MemConstraints,
+)
 from executorch.backends.cadence.aot.utils import MemoryConfig
 
 from executorch.exir import ExecutorchProgramManager
@@ -51,6 +58,7 @@ def collect_specs_from_graph_module(
 
 # baseline tensor placement algorithm, that greedily tries to place the tensor in
 # the fastest memory available
+# flake8: noqa 'position_based_greedy_with_hierarchy' is too complex (13)
 def position_based_greedy_with_hierarchy(
     graph_module: torch.fx.GraphModule,
     alignment: int,
@@ -59,10 +67,24 @@ def position_based_greedy_with_hierarchy(
     alloc_graph_output: bool,
     *,
     memory_config: MemoryConfig,
+    mem_constraints: MemConstraints,
+    additional_constraint_gen_passes: Optional[
+        List[
+            typing.Callable[
+                [MemConstraints],
+                typing.Callable[[torch.fx.GraphModule], Optional[PassResult]],
+            ]
+        ]
+    ] = None,
 ) -> List[int]:
     num_memories = get_num_memories(memory_config)
     bufsizes = [0] * num_memories
     allocated_buffers: List[List[TensorSpec]] = [[] for _ in range(num_memories)]
+
+    # Generate the memory constraints
+    GenerateMemConstraints(mem_constraints, additional_constraint_gen_passes)(
+        graph_module
+    )
 
     def overlap(spec: TensorSpec) -> Optional[TensorSpec]:
         for allocated_spec in allocated_buffers[spec.mem_id]:
@@ -85,7 +107,13 @@ def position_based_greedy_with_hierarchy(
         key=lambda spec: spec.allocated_memory,
         reverse=True,
     ):
+        # Skip allocation memory to any tensor whose spec id is in skip list.
+        if mem_constraints.skipped_spec(spec):
+            continue
+
         for spec.mem_id in range(1, num_memories):
+            if mem_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
+                continue
             spec.mem_offset = 0
             while memory_available(spec) and (overlapped := overlap(spec)):
                 spec.mem_offset = overlapped.mem_offset + overlapped.allocated_memory
@@ -100,6 +128,15 @@ def position_based_greedy_with_hierarchy(
             or allocated_buffers[spec.mem_id][-1] is not spec
         ):
             raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
+
+        # And now honor the various memory location constraints (i.e., infer the memory
+        # location of tensors in skip_specs from the constraints) for this spec.
+        if mem_constraints.relative_loc_constraints_exist():
+            mem_constraints.resolve_relative_loc_constraints(spec)
+
+    # At the end, all the keys in relative_loc_constraints should have been visited
+    # and emptied.
+    assert not mem_constraints.relative_loc_constraints_exist()
 
     logging.debug(
         f"position based greedy algorithm with hierarchy returns bufsizes: {bufsizes}"
@@ -116,10 +153,24 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
     alloc_graph_output: bool,
     *,
     memory_config: MemoryConfig,
+    mem_constraints: MemConstraints,
+    additional_constraint_gen_passes: Optional[
+        List[
+            typing.Callable[
+                [MemConstraints],
+                typing.Callable[[torch.fx.GraphModule], Optional[PassResult]],
+            ]
+        ]
+    ] = None,
 ) -> List[int]:
     num_memories = get_num_memories(memory_config)
     bufsizes = [0] * num_memories
     allocated_buffers = [[] for _ in range(num_memories)]
+
+    # Generate the memory constraints
+    GenerateMemConstraints(mem_constraints, additional_constraint_gen_passes)(
+        graph_module
+    )
 
     # Iterate over all the specs in sorted order
     for spec in sorted(
@@ -129,7 +180,13 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
         key=lambda spec: spec.allocated_memory,
         reverse=True,
     ):
+        # Skip allocation memory to any tensor whose spec id is in skip list.
+        if mem_constraints.skipped_spec(spec):
+            continue
+
         for spec.mem_id in range(1, num_memories):
+            if mem_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
+                continue
             prev_offset, smallest_gap = 0, float("inf")
             for allocated_spec in allocated_buffers[spec.mem_id]:
                 if Verifier.lifetime_overlap(spec, allocated_spec):
@@ -166,6 +223,15 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
         if spec not in allocated_buffers[spec.mem_id]:
             raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
 
+        # And now honor the various memory location constraints (i.e., infer the memory
+        # location of tensors in skip_specs from the constraints) for this spec.
+        if mem_constraints.relative_loc_constraints_exist():
+            mem_constraints.resolve_relative_loc_constraints(spec)
+
+    # At the end, all the keys in relative_loc_constraints should have been visited
+    # and emptied.
+    assert not mem_constraints.relative_loc_constraints_exist()
+
     logging.debug(
         f"greedy by size for offset calculation with hierarchy returns bufsizes: {bufsizes}"
     )
@@ -176,6 +242,7 @@ def find_peak_memory_usages_per_memory(
     graph_module: torch.fx.GraphModule,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
+    mem_constraints: Optional[MemConstraints] = None,
 ) -> List[int]:
     """
     Given a GraphModule with a memory plan, find the peak memory usages for each memory
@@ -190,6 +257,8 @@ def find_peak_memory_usages_per_memory(
     for spec in collect_specs_from_graph_module(
         graph_module, alloc_graph_input, alloc_graph_output
     ):
+        if mem_constraints is not None and mem_constraints.skipped_spec(spec):
+            continue
         usages[spec.mem_id] = max(
             usages[spec.mem_id], spec.mem_offset + spec.allocated_memory
         )
@@ -211,6 +280,7 @@ def find_peak_memory_usage(
     graph_module: torch.fx.GraphModule,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
+    mem_constraints: Optional[MemConstraints] = None,
 ) -> Tuple[int, int]:
     """
     Given a GraphModule with a memory plan, find the peak usage over time across all
@@ -225,7 +295,9 @@ def find_peak_memory_usage(
     for spec in collect_specs_from_graph_module(
         graph_module, alloc_graph_input, alloc_graph_output
     ):
-        if spec.lifetime[0] is None:
+        if spec.lifetime[0] is None or (
+            mem_constraints is not None and mem_constraints.skipped_spec(spec)
+        ):
             continue
 
         # lifetime is [start, end], both ends inclusive
@@ -261,17 +333,24 @@ def find_peak_memory_usage(
 # | Peak memory usage across all spaces | 2380032 bytes | Node 86 |
 # +-------------------------------------+---------------+---------+
 def print_memory_planning_info(
-    # pyre-fixme[11]: Annotation `ExecutorchProgramManager` is not defined as a type.
     executorch_prog: ExecutorchProgramManager,
     memory_config: MemoryConfig,
+    opt_level: int,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
 ) -> None:
+    # Get the peak memory usages per memory space
+    mem_constraints = MemConstraints(
+        opt_level=opt_level,
+        alloc_graph_input=alloc_graph_input,
+        alloc_graph_output=alloc_graph_output,
+    )
     # Get the peak memory usages per memory space
     peak_memory_usages_per_memory = find_peak_memory_usages_per_memory(
         executorch_prog.exported_program().graph_module,
         alloc_graph_input,
         alloc_graph_output,
+        mem_constraints,
     )
 
     # Create a table of memory spaces and their base addresses, total memory sizes, and peak memory usage
@@ -288,7 +367,8 @@ def print_memory_planning_info(
 
     # Print the memory usage per memory space as a table
     logging.info(
-        tabulate(
+        "\n"
+        + tabulate(
             memory_usage_table,
             headers=[
                 "Memory Space",
@@ -305,6 +385,7 @@ def print_memory_planning_info(
         executorch_prog.exported_program().graph_module,
         alloc_graph_input,
         alloc_graph_output,
+        mem_constraints,
     )
 
     # Create a table with total peak memory usage and node at which this occurs
@@ -318,7 +399,8 @@ def print_memory_planning_info(
 
     # Print the total memory usage as a table
     logging.info(
-        tabulate(
+        "\n"
+        + tabulate(
             total_memory_usage_table,
             tablefmt="outline",
         )
@@ -329,16 +411,27 @@ class CadenceMemoryPlanning:
     def __init__(
         self,
         memory_config: MemoryConfig,
+        opt_level: int,
         mem_algo: int,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
+        additional_constraint_gen_passes: Optional[
+            List[
+                typing.Callable[
+                    [MemConstraints],
+                    typing.Callable[[torch.fx.GraphModule], Optional[PassResult]],
+                ]
+            ]
+        ] = None,
     ) -> None:
         self._init_mem_algos()
 
         self.memory_config = memory_config
+        self.opt_level = opt_level
         self.mem_algo = mem_algo
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
+        self.additional_constraint_gen_passes = additional_constraint_gen_passes
 
     def _init_mem_algos(self) -> None:
         self.available_mem_algos = [
@@ -347,16 +440,23 @@ class CadenceMemoryPlanning:
         ]
 
     def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        mem_constraints = MemConstraints(
+            opt_level=self.opt_level,
+            alloc_graph_input=self.alloc_graph_input,
+            alloc_graph_output=self.alloc_graph_output,
+        )
         algo = partial(
             self.available_mem_algos[self.mem_algo],
             memory_config=self.memory_config,
+            mem_constraints=mem_constraints,
+            additional_constraint_gen_passes=self.additional_constraint_gen_passes,
         )
         # Create the memory planning pass. We allocate memory for input
         # (output) tensors if alloc_graph_input (alloc_graph_output) is
         # True.
         mem_planning = MemoryPlanningPass(
             algo,
-            allow_lifetime_and_storage_overlap=False,
+            allow_lifetime_and_storage_overlap=(self.opt_level >= 2),
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
         )

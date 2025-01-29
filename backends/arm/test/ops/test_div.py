@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -9,6 +9,8 @@ import logging
 import unittest
 
 from typing import Optional, Tuple, Union
+
+import pytest
 
 import torch
 from executorch.backends.arm.test import common, conftest
@@ -102,7 +104,7 @@ class TestDiv(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.div.Tensor": 1})
@@ -121,7 +123,7 @@ class TestDiv(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -183,7 +185,8 @@ class TestDiv(unittest.TestCase):
         test_data = (input_, other_)
         self._test_div_tosa_BI_pipeline(self.Div(), test_data)
 
-    @parameterized.expand(test_data_suite[:2])
+    @parameterized.expand(test_data_suite[:3])
+    @pytest.mark.corstone_fvp
     def test_div_u55_BI(
         self,
         test_name: str,
@@ -197,7 +200,8 @@ class TestDiv(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[2:])
+    @parameterized.expand(test_data_suite[3:])
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_div_u55_BI_xfails(
         self,
@@ -211,7 +215,8 @@ class TestDiv(unittest.TestCase):
             self.Div(), common.get_u55_compile_spec(), test_data
         )
 
-    @parameterized.expand(test_data_suite[:2])
+    @parameterized.expand(test_data_suite[:3])
+    @pytest.mark.corstone_fvp
     def test_div_u85_BI(
         self,
         test_name: str,
@@ -225,7 +230,8 @@ class TestDiv(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[2:])
+    @parameterized.expand(test_data_suite[3:])
+    @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
     def test_div_u85_BI_xfails(
         self,

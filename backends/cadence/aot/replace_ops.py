@@ -9,6 +9,8 @@
 # 3. functions that replace an ATen op with another semantically equivalent ATen op.
 # 4. functions that concretize optional args.
 
+# pyre-unsafe
+
 import math
 from operator import neg
 from typing import cast, Dict, Iterable, Sequence, Set, Tuple
@@ -577,7 +579,7 @@ class ReplacePadWithCatPass(ExportPass):
                 arg_shape[:dim] + (left_padding_size,) + arg_shape[dim + 1 :]
             )
             left_padding_node = super().call_operator(
-                torch.ops.aten.full.default,
+                exir_ops.edge.aten.full.default,
                 (
                     left_padding_shape,
                     value,
@@ -594,7 +596,7 @@ class ReplacePadWithCatPass(ExportPass):
                 arg_shape[:dim] + (right_padding_size,) + arg_shape[dim + 1 :]
             )
             right_padding_node = super().call_operator(
-                torch.ops.aten.full.default,
+                exir_ops.edge.aten.full.default,
                 (
                     right_padding_shape,
                     value,
@@ -724,7 +726,7 @@ class ReplaceAtenConvolutionWithJarvisConvolutionPass(ExportPass):
 
             flipped_weight = (
                 super().call_operator(
-                    torch.ops.aten.flip.default,
+                    exir_ops.edge.aten.flip.default,
                     (
                         transposed_weight,
                         [-1] if transposed_weight.to_tensor().dim() == 3 else [-1, -2],
@@ -1698,12 +1700,6 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
         if leading_dims != 1:
             return super().call_operator(op, args, kwargs, meta)
 
-        # If the op is quantized::linear, but per-channel quantized, bail.
-        if op == exir_ops.edge.cadence.quantized_linear.default:
-            weight = args[1].to_tensor() if isinstance(args[1], ProxyValue) else args[1]
-            if weight.shape != [1]:
-                return super().call_operator(op, args, kwargs, meta)
-
         # Replace the linear with fully connected op
         return super().call_operator(
             self.linear_to_fc_op[op],
@@ -1892,6 +1888,10 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
         exir_ops.edge.cadence.quantized_conv: (
             exir_ops.edge.cadence.quantized_conv.per_tensor,
             [8, 9, 12, 13],
+        ),
+        exir_ops.edge.cadence.quantized_fully_connected: (
+            exir_ops.edge.cadence.quantized_fully_connected.per_tensor,
+            [4, 5, 6],
         ),
         exir_ops.edge.cadence.quantized_layer_norm: (
             exir_ops.edge.cadence.quantized_layer_norm.per_tensor,

@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -43,6 +43,7 @@ class TestView(unittest.TestCase):
             (torch.rand(1, 1, 5, 10), (1, 1, 50, 1)),
             (torch.rand(5, 10, 1, 1), (1, 25, 2)),
             (torch.rand(2, 50, 1, 1), (1, 100)),
+            (torch.rand(2, 3, 2, 3), (2, 3, 3, 2)),
         ]
 
         def forward(self, x: torch.Tensor, new_shape):
@@ -55,7 +56,7 @@ class TestView(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+MI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
@@ -73,7 +74,7 @@ class TestView(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80.0+BI"),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -128,13 +129,8 @@ class TestView(unittest.TestCase):
     def test_view_tosa_BI(self, test_tensor: torch.Tensor, new_shape):
         self._test_view_tosa_BI_pipeline(self.View(), (test_tensor, new_shape))
 
-    @parameterized.expand(View.no_transpose_tests)
+    @parameterized.expand(View.needs_transpose_tests + View.no_transpose_tests)
     def test_view_u55_BI(self, test_tensor: torch.Tensor, new_shape):
-        self._test_view_u55_BI_pipeline(self.View(), (test_tensor, new_shape))
-
-    @parameterized.expand(View.needs_transpose_tests)
-    @unittest.expectedFailure
-    def test_view_transpose_u55_BI(self, test_tensor: torch.Tensor, new_shape):
         self._test_view_u55_BI_pipeline(self.View(), (test_tensor, new_shape))
 
     @parameterized.expand(View.needs_transpose_tests + View.no_transpose_tests)

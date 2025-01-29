@@ -16,9 +16,7 @@ from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
-
-    # TODO(T182928844): Delegate dim order op to backend.
-    edge_compile_config = executorch.exir.EdgeCompileConfig(_skip_dim_order=True)
+    edge_compile_config = executorch.exir.EdgeCompileConfig()
 
     def test_add_sub_skip_mm(self):
         class Model(torch.nn.Module):
@@ -34,7 +32,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         model.eval()
 
         example_inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-        exir_program_aten = torch.export.export(model, example_inputs)
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
 
         edge_program_manager = executorch.exir.to_edge(
             exir_program_aten, compile_config=self.edge_compile_config
@@ -61,7 +59,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         model.eval()
 
         example_inputs = (torch.randn(1, 3, 224, 224),)
-        exir_program_aten = torch.export.export(model, example_inputs)
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
         edge_program_manager = executorch.exir.to_edge(
             exir_program_aten, compile_config=self.edge_compile_config
         )
@@ -106,7 +104,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         k_val = torch.randn((1, embedding_dim))
         input_pos = torch.tensor([0])
         example_inputs = (q, k_val, input_pos)
-        exir_program_aten = torch.export.export(model, example_inputs)
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
 
         compile_specs = CoreMLBackend.generate_compile_specs(
             minimum_deployment_target=ct.target.iOS18

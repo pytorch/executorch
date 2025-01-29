@@ -83,11 +83,18 @@ class TagImplicitQDqPass(XNNPACKPass):
         return is_dynamic_qdq(node)
 
     def is_supported_quant_op(self, node: torch.fx.Node) -> bool:
-        return (
-            node.op == "call_function"
-            and cast(torch._ops.OpOverload, node.target).name()
-            in SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET
-        )
+        if node.op != "call_function":
+            return False
+
+        op_name = cast(torch._ops.OpOverload, node.target).name()
+
+        # Weight and Input should both be quantized
+        if op_name == exir_ops.edge.aten.convolution.default.name():
+            if isinstance(node.args[1], torch.fx.Node):
+                # pyre-ignore Incompatible parameter type [6]: is_dequant expects Node
+                return is_dequant(node.args[1])
+
+        return op_name in SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET
 
     def is_supported_quant_module(self, node: torch.fx.Node) -> bool:
         is_supported = (

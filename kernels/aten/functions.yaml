@@ -257,6 +257,8 @@
 
 - op: mean.out
 
+- op: mean.dtype_out
+
 - op: min.dim_min
 
 - op: min.unary_out
@@ -312,6 +314,8 @@
 - op: remainder.Scalar_out
 
 - op: repeat.out
+
+- op: repeat_interleave.Tensor_out
 
 - op: reflection_pad1d.out
 
@@ -403,7 +407,7 @@
 
 - op: unsqueeze_copy.out
 
-- op: upsample_nearest2d.out
+- op: upsample_bilinear2d.vec_out
 
 - op: upsample_nearest2d.vec_out
 

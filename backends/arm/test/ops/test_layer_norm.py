@@ -1,11 +1,14 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+
 from typing import List, Tuple, Union
+
+import pytest
 
 import torch
 from executorch.backends.arm.test import common, conftest
@@ -75,7 +78,7 @@ class TestLayerNorm(unittest.TestCase):
                 model=module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
@@ -96,7 +99,7 @@ class TestLayerNorm(unittest.TestCase):
                 model=module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80.0+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
@@ -155,10 +158,8 @@ class TestLayerNorm(unittest.TestCase):
             self.LayerNorm(*model_params), (test_data,)
         )
 
-    # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    # Skip tests that require transposes.
-    @parameterized.expand(test_data_suite[:-2])
-    @unittest.expectedFailure
+    @parameterized.expand(test_data_suite[4:])
+    @pytest.mark.corstone_fvp
     def test_layer_norm_u55_BI(
         self,
         test_name: str,
@@ -170,8 +171,25 @@ class TestLayerNorm(unittest.TestCase):
         )
 
     # Numerical issues on FVP likely due to mul op, MLETORCH-521
+    # Skip tests that require transposes.
+    @parameterized.expand(test_data_suite[:4])
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    def test_layer_norm_u55_BI_xfails(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        model_params,
+    ):
+        self._test_layernorm_ethosu_BI_pipeline(
+            self.LayerNorm(*model_params), common.get_u55_compile_spec(), (test_data,)
+        )
+
+    # Numerical issues on FVP likely due to mul op, MLETORCH-521
     @parameterized.expand(test_data_suite[:-2])
-    def test_layer_norm_u85_BI_fvp(
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    def test_layer_norm_u85_BI_xfails(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -182,7 +200,7 @@ class TestLayerNorm(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite[-2:])
-    @unittest.skip  # Flaky
+    @pytest.mark.corstone_fvp
     def test_layer_norm_u85_BI(
         self,
         test_name: str,

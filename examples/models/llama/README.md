@@ -148,7 +148,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 ## Step 1: Setup
 > :warning: **double check your python environment**: make sure `conda activate <VENV>` is run before all the bash and python scripts.
 
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
+1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_executorch.sh --pybind xnnpack`
 2. Run `examples/models/llama/install_requirements.sh` to install a few dependencies.
 
 
@@ -168,6 +168,7 @@ LLAMA_CHECKPOINT=path/to/checkpoint.pth
 LLAMA_PARAMS=path/to/params.json
 
 python -m examples.models.llama.export_llama \
+  --model "llama3_2" \
   --checkpoint "${LLAMA_CHECKPOINT:?}" \
   --params "${LLAMA_PARAMS:?}" \
   -kv \
@@ -189,6 +190,7 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/checkpoint.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m examples.models.llama.export_llama \
+   --model "llama3_2" \
    --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
    --params "${LLAMA_PARAMS:?}" \
    --use_sdpa_with_kv_cache \
@@ -214,6 +216,7 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/checkpoint.pth
 LLAMA_PARAMS=path/to/qlora/params.json
 
 python -m examples.models.llama.export_llama \
+   --model "llama3_2" \
    --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
    --params "${LLAMA_PARAMS:?}" \
    -qat \
@@ -437,9 +440,8 @@ This example tries to reuse the Python code, with minimal modifications to make 
 ```
 git clean -xfd
 pip uninstall executorch
-./install_requirements.sh --pybind xnnpack
-
-rm -rf cmake-out
+./install_executorch.sh --clean
+./install_executorch.sh --pybind xnnpack
 ```
 - If you encounter `pthread` related issues during link time, add `pthread` in `target_link_libraries` in `CMakeLists.txt`
 - On Mac, if there is linking error in Step 4 with error message like

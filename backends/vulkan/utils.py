@@ -130,6 +130,20 @@ def within_buffer_limit(node: torch.fx.Node, buffer_limit: int) -> int:
         raise RuntimeError(f"Cannot get numel for val of type {type(node.meta['val'])}")
 
 
+def tensor_node_is_high_dim(node: torch.fx.Node) -> bool:
+    """
+    Returns true if a given node contains a tensor with more than 4 dimensions
+    """
+    if isinstance(node.meta["val"], FakeTensor):
+        return len(node.meta["val"].shape) > 4
+    if isinstance(node.meta["val"], list) or isinstance(node.meta["val"], tuple):
+        for fake_tensor in node.meta["val"]:
+            if isinstance(fake_tensor, FakeTensor):
+                if len(fake_tensor.shape) > 4:
+                    return True
+    return False
+
+
 def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageExtents:
     """
     Calculate the image extents that will be used to represent a tensor with the given sizes
@@ -202,7 +216,7 @@ def set_node_spec_attr(node: torch.fx.Node, attr: str, value):
     spec = node.meta["spec"]
     if isinstance(spec, TensorSpec):
         setattr(spec, attr, value)
-    elif isinstance(spec, list) or isinstance(spec, tuple):
+    elif isinstance(spec, (list, tuple)):
         for s in spec:
             assert isinstance(s, TensorSpec)
             setattr(s, attr, value)
@@ -215,9 +229,9 @@ def get_node_spec_attr(node: torch.fx.Node, attr: str, return_first: bool = True
     spec = node.meta["spec"]
     if isinstance(spec, TensorSpec):
         return getattr(spec, attr) if hasattr(spec, attr) else None
-    elif isinstance(spec, list) or isinstance(spec, tuple):
+    elif isinstance(spec, (list, tuple)):
         if return_first:
-            return getattr(spec[0], attr) if hasattr(spec, attr) else None
+            return getattr(spec[0], attr) if hasattr(spec[0], attr) else None
         else:
             return [getattr(s, attr) if hasattr(s, attr) else None for s in spec]
     else:

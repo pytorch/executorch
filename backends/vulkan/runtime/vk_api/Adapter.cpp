@@ -182,9 +182,9 @@ Adapter::Adapter(
   VkImage image = VK_NULL_HANDLE;
   VkResult res =
       vkCreateImage(device_.handle, &image_create_info, nullptr, &image);
-  if (res == VK_ERROR_FEATURE_NOT_PRESENT) {
+  if (res != VK_SUCCESS) {
     linear_tiling_3d_enabled_ = false;
-  } else if (res == VK_SUCCESS) {
+  } else {
     vkDestroyImage(device_.handle, image, nullptr);
   }
   return;
@@ -256,6 +256,9 @@ std::string Adapter::stringize() const {
   ss << "    deviceType:    " << device_type << std::endl;
   ss << "    deviceName:    " << properties.deviceName << std::endl;
 
+#define PRINT_BOOL(value, name) \
+  ss << "      " << std::left << std::setw(36) << #name << value << std::endl;
+
 #define PRINT_PROP(struct, name)                                       \
   ss << "      " << std::left << std::setw(36) << #name << struct.name \
      << std::endl;
@@ -298,12 +301,13 @@ std::string Adapter::stringize() const {
   ss << "    }" << std::endl;
 #endif /* VK_KHR_8bit_storage */
 
-#ifdef VK_KHR_shader_float16_int8
   ss << "    Shader 16bit and 8bit Features {" << std::endl;
+  PRINT_BOOL(physical_device_.supports_int16_shader_types, shaderInt16)
+#ifdef VK_KHR_shader_float16_int8
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderFloat16);
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderInt8);
-  ss << "    }" << std::endl;
 #endif /* VK_KHR_shader_float16_int8 */
+  ss << "    }" << std::endl;
 
   const VkPhysicalDeviceMemoryProperties& mem_props =
       physical_device_.memory_properties;

@@ -15,6 +15,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     BOOL,
     DOUBLE,
     INT,
+    OLD_STRING,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
@@ -44,7 +45,12 @@ class GeneratedOpsTest_{op_name} : public ::testing::Test {{
 test_suite_template = """
 TEST_P(GeneratedOpsTest_{op_name}, {case_name}) {{
 {create_ref_data}
+try {{
 {create_and_check_out}
+}}
+catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {{
+    GTEST_SKIP() << e.what();
+}}
 }}
 """
 
@@ -192,8 +198,8 @@ class CorrectnessTestGen:
                 ret_str += "std::nullopt;"
             else:
                 ret_str += f"{str(data)};"
-        elif cpp_type == STRING:
-            ret_str += f'c10::string_view("{data}");'
+        elif cpp_type == STRING or cpp_type == OLD_STRING:
+            ret_str += f'std::string_view("{data}");'
         elif (
             cpp_type == OPT_SCALAR_TYPE
             or cpp_type == OPT_LAYOUT

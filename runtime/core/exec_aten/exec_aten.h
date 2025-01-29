@@ -57,7 +57,7 @@ using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
 using Tensor = at::Tensor;
 using TensorList = at::TensorList;
 using TensorImpl = at::TensorImpl;
-using string_view = c10::string_view;
+using string_view = std::string_view;
 template <typename T>
 using ArrayRef = c10::ArrayRef<T>;
 template <typename T>
@@ -149,6 +149,6 @@ namespace exec_aten = executorch::aten;
 
 namespace torch {
 namespace executor {
-using TensorList = exec_aten::TensorList;
+using TensorList = ::executorch::aten::TensorList;
 } // namespace executor
 } // namespace torch

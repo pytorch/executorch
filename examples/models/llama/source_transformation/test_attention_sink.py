@@ -10,6 +10,7 @@ import torch
 from executorch.examples.models.llama.llama_transformer import ModelArgs
 
 from executorch.examples.models.llama.source_transformation.attention_sink import (
+    KVCacheWithAttentionSink,
     RopeWithAttentionSink,
 )
 from parameterized import parameterized
@@ -79,14 +80,10 @@ class RopeWithAttentionSinkTest(unittest.TestCase):
     def test_rotate(self, original_position, new_position):
         seq_len = 32
 
-        q = torch.rand(
-            1, seq_len, self.params.n_heads, self.params.head_dim, dtype=torch.float32
-        )
+        size = (1, seq_len, self.params.n_heads, self.params.head_dim)
+        q = torch.rand(*size, dtype=torch.float32)
         k = torch.rand(
-            1,
-            seq_len,
-            self.params.n_heads,
-            self.params.head_dim,
+            *size,
             dtype=torch.float32,
         )
         freqs_cos, freqs_sin = self.rope_with_attention_sink.get_freqs(
@@ -118,3 +115,400 @@ class RopeWithAttentionSinkTest(unittest.TestCase):
         )
 
         torch.testing.assert_close(rerotated_k, expected_k)
+
+
+class KVCacheWithAttentionSinkTest(unittest.TestCase):
+
+    _single_evict_test_cases = [
+        [4, 1],
+    ]
+
+    _batch_evict_test_cases = [
+        [4, 8],
+    ]
+
+    _sliding_window_test_cases = [
+        [0, 1],
+    ]
+
+    def _init_cache(self, sink_size, eviction_batch_size):
+        self.params = ModelArgs(
+            use_kv_cache=True,
+            enable_dynamic_shape=True,
+            max_seq_len=self.window_size + sink_size,
+        )
+        self.rope_with_attention_sink = RopeWithAttentionSink(
+            params=self.params,
+            window_size=self.window_size,
+            sink_size=sink_size,
+            eviction_batch_size=eviction_batch_size,
+        )
+        self.kv_cache = KVCacheWithAttentionSink(
+            n_heads=self.params.n_heads,
+            head_dim=self.params.head_dim,
+            enable_dynamic_shape=self.params.enable_dynamic_shape,
+            rope=self.rope_with_attention_sink,
+            max_batch_size=self.max_batch_size,
+            window_size=self.window_size,
+            sink_size=sink_size,
+            eviction_batch_size=eviction_batch_size,
+            dtype=self.dtype,
+        )
+
+    def _rand_kv_with_length(self, seq_len):
+        size = (
+            self.max_batch_size,
+            self.params.n_heads,
+            seq_len,
+            self.params.head_dim,
+        )
+        k = torch.rand(
+            *size,
+            dtype=self.dtype,
+        )
+        v = torch.rand(
+            *size,
+            dtype=self.dtype,
+        )
+        return k, v
+
+    def _zero_kv_with_length(self, seq_len):
+        size = (
+            self.max_batch_size,
+            self.params.n_heads,
+            seq_len,
+            self.params.head_dim,
+        )
+        k = torch.zeros(
+            *size,
+            dtype=self.dtype,
+        )
+        v = torch.zeros(
+            *size,
+            dtype=self.dtype,
+        )
+        return k, v
+
+    def _get_dim_to_slice(self):
+        return 2
+
+    def _get_expected_rotated_k(self, k, original_position, new_position):
+        return self.rope_with_attention_sink.rerotate_k(
+            k=k.transpose(1, 2),
+            original_position=original_position,
+            new_position=new_position,
+        ).transpose(1, 2)
+
+    def setUp(self):
+        torch.manual_seed(42)
+        self.max_batch_size = 1
+        self.window_size = 28
+        self.dtype = torch.float32
+
+    @parameterized.expand(
+        _single_evict_test_cases + _batch_evict_test_cases + _sliding_window_test_cases
+    )
+    def test_evict_empty_cache(self, sink_size, eviction_batch_size):
+        self._init_cache(sink_size, eviction_batch_size)
+
+        # KV cache is empty, evict does nothing
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 1) == 0
+
+        expected_k, expected_v = self._zero_kv_with_length(self.window_size + sink_size)
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    @parameterized.expand(
+        _single_evict_test_cases + _batch_evict_test_cases + _sliding_window_test_cases
+    )
+    def test_evict_without_shift(self, sink_size, eviction_batch_size):
+        dimension_to_slice = 2
+
+        self._init_cache(sink_size, eviction_batch_size)
+
+        # KV cache has enough spaces for new tokens, no shift
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(10)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([10], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 1) == 0
+
+        zero_k, zero_v = self._zero_kv_with_length(self.window_size + sink_size - 10)
+
+        expected_k = torch.cat(
+            [
+                k,
+                zero_k,
+            ],
+            dim=dimension_to_slice,
+        )
+        expected_v = torch.cat(
+            [
+                v,
+                zero_v,
+            ],
+            dim=dimension_to_slice,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    @parameterized.expand(_single_evict_test_cases)
+    def test_evict_with_some_shift(self, sink_size, eviction_batch_size):
+        dimension_to_slice = self._get_dim_to_slice()
+
+        self._init_cache(sink_size, eviction_batch_size)
+
+        # KV cache has some spaces for new tokens but not all, shift some tokens
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([5], dtype=torch.int32)
+        k1, v1 = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k1, v1)
+
+        input_pos = torch.tensor([10], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 24) == -2
+
+        zero_k, zero_v = self._zero_kv_with_length(24)
+        expected_k = torch.cat(
+            [
+                k.narrow(dimension_to_slice, 0, sink_size),
+                self._get_expected_rotated_k(k1.narrow(dimension_to_slice, 1, 4), 6, 4),
+                zero_k,
+            ],
+            dim=dimension_to_slice,
+        )
+        expected_v = torch.cat(
+            [
+                v.narrow(dimension_to_slice, 0, sink_size),
+                v1.narrow(dimension_to_slice, 1, 4),
+                zero_v,
+            ],
+            dim=dimension_to_slice,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    @parameterized.expand(_single_evict_test_cases)
+    def test_evict_with_all_shift(self, sink_size, eviction_batch_size):
+        dimension_to_slice = self._get_dim_to_slice()
+
+        self._init_cache(sink_size, eviction_batch_size)
+
+        # KV cache has no spaces for new tokens, shift all tokens
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([5], dtype=torch.int32)
+        k1, v1 = self._rand_kv_with_length(27)
+
+        self.kv_cache.update(input_pos, k1, v1)
+
+        input_pos = torch.tensor([32], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 6) == -6
+
+        zero_k, zero_v = self._zero_kv_with_length(6)
+        expected_k = torch.cat(
+            [
+                k.narrow(dimension_to_slice, 0, sink_size),
+                self._get_expected_rotated_k(
+                    k1.narrow(dimension_to_slice, 5, 22), 10, 4
+                ),
+                zero_k,
+            ],
+            dim=dimension_to_slice,
+        )
+        expected_v = torch.cat(
+            [
+                v.narrow(dimension_to_slice, 0, sink_size),
+                v1.narrow(dimension_to_slice, 5, 22),
+                zero_v,
+            ],
+            dim=dimension_to_slice,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    @parameterized.expand(_sliding_window_test_cases)
+    def test_evict_with_some_shift_for_sliding_window(
+        self, sink_size, eviction_batch_size
+    ):
+        dimension_to_slice = self._get_dim_to_slice()
+
+        self._init_cache(sink_size, eviction_batch_size)
+
+        # KV cache has some spaces for new tokens but not all, shift some tokens
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([5], dtype=torch.int32)
+        k1, v1 = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k1, v1)
+
+        input_pos = torch.tensor([10], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 20) == -2
+
+        zero_k, zero_v = self._zero_kv_with_length(20)
+        expected_k = torch.cat(
+            [
+                self._get_expected_rotated_k(k.narrow(dimension_to_slice, 2, 3), 2, 0),
+                self._get_expected_rotated_k(k1, 5, 3),
+                zero_k,
+            ],
+            dim=dimension_to_slice,
+        )
+        expected_v = torch.cat(
+            [
+                v.narrow(dimension_to_slice, 2, 3),
+                v1,
+                zero_v,
+            ],
+            dim=dimension_to_slice,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    @parameterized.expand(_sliding_window_test_cases)
+    def test_evict_with_all_shift_for_sliding_window(
+        self, sink_size, eviction_batch_size
+    ):
+        dimension_to_slice = self._get_dim_to_slice()
+
+        self._init_cache(sink_size, eviction_batch_size)
+
+        # KV cache has no spaces for new tokens, shift all tokens
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([5], dtype=torch.int32)
+        k1, v1 = self._rand_kv_with_length(23)
+
+        self.kv_cache.update(input_pos, k1, v1)
+
+        input_pos = torch.tensor([28], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 6) == -6
+
+        zero_k, zero_v = self._zero_kv_with_length(6)
+        expected_k = torch.cat(
+            [
+                self._get_expected_rotated_k(
+                    k1.narrow(dimension_to_slice, 1, 22), 6, 0
+                ),
+                zero_k,
+            ],
+            dim=dimension_to_slice,
+        )
+        expected_v = torch.cat(
+            [
+                v1.narrow(dimension_to_slice, 1, 22),
+                zero_v,
+            ],
+            dim=dimension_to_slice,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    @parameterized.expand(_batch_evict_test_cases)
+    def test_batch_evict_with_seq_len(self, sink_size, eviction_batch_size):
+        dimension_to_slice = self._get_dim_to_slice()
+
+        self._init_cache(sink_size, eviction_batch_size)
+
+        # KV cache has some spaces for new tokens but not all, shift some tokens
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([5], dtype=torch.int32)
+        k1, v1 = self._rand_kv_with_length(25)
+
+        self.kv_cache.update(input_pos, k1, v1)
+
+        input_pos = torch.tensor([30], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 12) == -10
+
+        zero_k, zero_v = self._zero_kv_with_length(12)
+        expected_k = torch.cat(
+            [
+                k.narrow(dimension_to_slice, 0, sink_size),
+                self._get_expected_rotated_k(
+                    k1.narrow(dimension_to_slice, 9, 16), 14, 4
+                ),
+                zero_k,
+            ],
+            dim=dimension_to_slice,
+        )
+        expected_v = torch.cat(
+            [
+                v.narrow(dimension_to_slice, 0, sink_size),
+                v1.narrow(dimension_to_slice, 9, 16),
+                zero_v,
+            ],
+            dim=dimension_to_slice,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)
+
+    @parameterized.expand(_batch_evict_test_cases)
+    def test_batch_evict_with_batch_size(self, sink_size, eviction_batch_size):
+        dimension_to_slice = self._get_dim_to_slice()
+
+        self._init_cache(sink_size, eviction_batch_size)
+
+        # KV cache has no spaces for new tokens, shift all tokens
+        input_pos = torch.tensor([0], dtype=torch.int32)
+        k, v = self._rand_kv_with_length(5)
+
+        self.kv_cache.update(input_pos, k, v)
+
+        input_pos = torch.tensor([5], dtype=torch.int32)
+        k1, v1 = self._rand_kv_with_length(25)
+
+        self.kv_cache.update(input_pos, k1, v1)
+
+        input_pos = torch.tensor([30], dtype=torch.int32)
+        assert self.kv_cache.evict_tokens(input_pos, 6) == -8
+
+        zero_k, zero_v = self._zero_kv_with_length(10)
+        expected_k = torch.cat(
+            [
+                k.narrow(dimension_to_slice, 0, sink_size),
+                self._get_expected_rotated_k(
+                    k1.narrow(dimension_to_slice, 7, 18), 12, 4
+                ),
+                zero_k,
+            ],
+            dim=dimension_to_slice,
+        )
+        expected_v = torch.cat(
+            [
+                v.narrow(dimension_to_slice, 0, sink_size),
+                v1.narrow(dimension_to_slice, 7, 18),
+                zero_v,
+            ],
+            dim=dimension_to_slice,
+        )
+
+        torch.testing.assert_close(self.kv_cache.k_cache, expected_k)
+        torch.testing.assert_close(self.kv_cache.v_cache, expected_v)

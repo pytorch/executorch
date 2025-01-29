@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import glob
 import json
 import logging
 import os
@@ -22,6 +23,7 @@ logging.basicConfig(level=logging.INFO)
 
 BENCHMARK_RESULTS_FILENAME = "benchmark_results.json"
 ARTIFACTS_FILENAME_REGEX = re.compile(r"(android|ios)-artifacts-(?P<job_id>\d+).json")
+BENCHMARK_CONFIG_REGEX = re.compile(r"The benchmark config is (?P<benchmark_config>.+)")
 
 # iOS-related regexes and variables
 IOS_TEST_SPEC_REGEX = re.compile(
@@ -51,7 +53,7 @@ class ValidateArtifacts(Action):
         parser.error(f"{values} is not a valid JSON file (*.json)")
 
 
-class ValidateOutputDir(Action):
+class ValidateDir(Action):
     def __call__(
         self,
         parser: ArgumentParser,
@@ -81,7 +83,7 @@ def parse_args() -> Any:
         "--output-dir",
         type=str,
         required=True,
-        action=ValidateOutputDir,
+        action=ValidateDir,
         help="the directory to keep the benchmark results",
     )
     parser.add_argument(
@@ -113,6 +115,13 @@ def parse_args() -> Any:
         type=int,
         required=True,
         help="which retry of the workflow this is",
+    )
+    parser.add_argument(
+        "--benchmark-configs",
+        type=str,
+        required=True,
+        action=ValidateDir,
+        help="the directory to keep the benchmark configs",
     )
 
     return parser.parse_args()
@@ -300,9 +309,60 @@ def extract_job_id(artifacts_filename: str) -> int:
     return int(m.group("job_id"))
 
 
+def read_all_benchmark_configs() -> Dict[str, Dict[str, str]]:
+    """
+    Read all the benchmark configs that we can find
+    """
+    benchmark_configs = {}
+
+    for file in glob.glob(f"{benchmark_configs}/*.json"):
+        filename = os.path.basename(file)
+        with open(file) as f:
+            try:
+                benchmark_configs[filename] = json.load(f)
+            except json.JSONDecodeError as e:
+                warning(f"Fail to load benchmark config {file}: {e}")
+
+    return benchmark_configs
+
+
+def read_benchmark_config(
+    artifact_s3_url: str, benchmark_configs_dir: str
+) -> Dict[str, str]:
+    """
+    Get the correct benchmark config for this benchmark run
+    """
+    try:
+        with request.urlopen(artifact_s3_url) as data:
+            for line in data.read().decode("utf8").splitlines():
+                m = BENCHMARK_CONFIG_REGEX.match(line)
+                if not m:
+                    continue
+
+                benchmark_config = m.group("benchmark_config")
+                filename = os.path.join(
+                    benchmark_configs_dir, f"{benchmark_config}.json"
+                )
+
+                if not os.path.exists(filename):
+                    warning(f"There is no benchmark config {filename}")
+                    continue
+
+                with open(filename) as f:
+                    try:
+                        return json.load(f)
+                    except json.JSONDecodeError as e:
+                        warning(f"Fail to load benchmark config {filename}: {e}")
+    except error.HTTPError:
+        warning(f"Fail to read the test spec output at {artifact_s3_url}")
+
+    return {}
+
+
 def transform(
     app_type: str,
     benchmark_results: List,
+    benchmark_config: Dict[str, str],
     repo: str,
     head_branch: str,
     workflow_name: str,
@@ -310,6 +370,7 @@ def transform(
     workflow_run_attempt: int,
     job_name: str,
     job_id: int,
+    schema_version: str,
 ) -> List:
     """
     Transform the benchmark results into the format writable into the benchmark database
@@ -319,45 +380,88 @@ def transform(
     for r in benchmark_results:
         r["deviceInfo"]["device"] = job_name
 
-    # TODO (huydhn): This is the current schema of the database oss_ci_benchmark_v2,
-    # and I'm trying to fit ET benchmark results into it, which is kind of awkward.
-    # However, the schema is going to be updated soon
-    return [
-        {
-            # GH-info to identify where the benchmark is run
-            "repo": repo,
-            "head_branch": head_branch,
-            "workflow_id": workflow_run_id,
-            "run_attempt": workflow_run_attempt,
-            "job_id": job_id,
-            # The model
-            "name": f"{r['benchmarkModel']['name']} {r['benchmarkModel'].get('backend', '')}".strip(),
-            "dtype": (
-                r["benchmarkModel"]["quantization"]
-                if r["benchmarkModel"]["quantization"]
-                else "unknown"
-            ),
-            # The metric value
-            "metric": r["metric"],
-            "actual": r["actualValue"],
-            "target": r["targetValue"],
-            # The device
-            "device": r["deviceInfo"]["device"],
-            "arch": r["deviceInfo"].get("os", ""),
-            # Not used here, just set it to something unique here
-            "filename": workflow_name,
-            "test_name": app_type,
-            "runner": job_name,
-        }
-        for r in benchmark_results
-    ]
+    if schema_version == "v2":
+        # TODO (huydhn): Clean up this branch after ExecuTorch dashboard migrates to v3
+        return [
+            {
+                # GH-info to identify where the benchmark is run
+                "repo": repo,
+                "head_branch": head_branch,
+                "workflow_id": workflow_run_id,
+                "run_attempt": workflow_run_attempt,
+                "job_id": job_id,
+                # The model
+                "name": f"{r['benchmarkModel']['name']} {r['benchmarkModel'].get('backend', '')}".strip(),
+                "dtype": (
+                    r["benchmarkModel"]["quantization"]
+                    if r["benchmarkModel"]["quantization"]
+                    else "unknown"
+                ),
+                # The metric value
+                "metric": r["metric"],
+                "actual": r["actualValue"],
+                "target": r["targetValue"],
+                # The device
+                "device": r["deviceInfo"]["device"],
+                "arch": r["deviceInfo"].get("os", ""),
+                # Not used here, just set it to something unique here
+                "filename": workflow_name,
+                "test_name": app_type,
+                "runner": job_name,
+            }
+            for r in benchmark_results
+        ]
+    elif schema_version == "v3":
+        v3_benchmark_results = []
+        # From https://github.com/pytorch/pytorch/wiki/How-to-integrate-with-PyTorch-OSS-benchmark-database
+        return [
+            {
+                "benchmark": {
+                    "name": "ExecuTorch",
+                    "mode": "inference",
+                    "extra_info": {
+                        "app_type": app_type,
+                        # Just keep a copy of the benchmark config here
+                        "benchmark_config": json.dumps(benchmark_config),
+                    },
+                },
+                "model": {
+                    "name": benchmark_config.get("model", r["benchmarkModel"]["name"]),
+                    "type": "OSS model",
+                    "backend": benchmark_config.get(
+                        "config", r["benchmarkModel"].get("backend", "")
+                    ),
+                },
+                "metric": {
+                    "name": r["metric"],
+                    "benchmark_values": [r["actualValue"]],
+                    "target_value": r["targetValue"],
+                    "extra_info": {
+                        "method": r.get("method", ""),
+                    },
+                },
+                "runners": [
+                    {
+                        "name": r["deviceInfo"]["device"],
+                        "type": r["deviceInfo"]["os"],
+                        "avail_mem_in_gb": r["deviceInfo"].get("availMem", ""),
+                        "total_mem_in_gb": r["deviceInfo"].get("totalMem", ""),
+                    }
+                ],
+            }
+            for r in benchmark_results
+        ]
 
 
 def main() -> None:
     args = parse_args()
 
-    # Across all devices
-    all_benchmark_results = []
+    # Across all devices, keeping both schemas for now until ExecuTorch dashboard migrates to v3
+    all_benchmark_results = {
+        "v2": [],
+        "v3": [],
+    }
+    benchmark_config = {}
 
     with open(args.artifacts) as f:
         for artifact in json.load(f):
@@ -373,6 +477,11 @@ def main() -> None:
             artifact_type = artifact["type"]
             artifact_s3_url = artifact["s3_url"]
 
+            if artifact_type == "TESTSPEC_OUTPUT":
+                benchmark_config = read_benchmark_config(
+                    artifact_s3_url, args.benchmark_configs
+                )
+
             if app_type == "ANDROID_APP":
                 benchmark_results = extract_android_benchmark_results(
                     job_name, artifact_type, artifact_s3_url
@@ -384,23 +493,32 @@ def main() -> None:
                 )
 
             if benchmark_results:
-                benchmark_results = transform(
-                    app_type,
-                    benchmark_results,
-                    args.repo,
-                    args.head_branch,
-                    args.workflow_name,
-                    args.workflow_run_id,
-                    args.workflow_run_attempt,
-                    job_name,
-                    extract_job_id(args.artifacts),
-                )
-                all_benchmark_results.extend(benchmark_results)
+                for schema in all_benchmark_results.keys():
+                    results = transform(
+                        app_type,
+                        benchmark_results,
+                        benchmark_config,
+                        args.repo,
+                        args.head_branch,
+                        args.workflow_name,
+                        args.workflow_run_id,
+                        args.workflow_run_attempt,
+                        job_name,
+                        extract_job_id(args.artifacts),
+                        schema,
+                    )
+                    all_benchmark_results[schema].extend(results)
 
-    if all_benchmark_results:
+    for schema in all_benchmark_results.keys():
+        if not all_benchmark_results.get(schema):
+            continue
+
+        output_dir = os.path.join(args.output_dir, schema)
+        os.makedirs(output_dir, exist_ok=True)
+
         output_file = os.path.basename(args.artifacts)
-        with open(f"{args.output_dir}/{output_file}", "w") as f:
-            json.dump(all_benchmark_results, f)
+        with open(f"{output_dir}/{output_file}", "w") as f:
+            json.dump(all_benchmark_results[schema], f)
 
 
 if __name__ == "__main__":

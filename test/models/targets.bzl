@@ -75,9 +75,28 @@ def define_common_targets():
         name = "exported_programs",
         cmd = "$(exe :export_program) --modules " + ",".join(MODULES_TO_EXPORT) + " --outdir $OUT",
         outs = {
-            fname + seg_suffix + ".pte": [fname + seg_suffix + ".pte"]
+            fname + ".pte": [fname + ".pte"]
             for fname in MODULES_TO_EXPORT
-            for seg_suffix in ["", "-no-constant-segment"]
+        },
+        default_outs = ["."],
+        visibility = [
+            "//executorch/...",
+            # This genrule can't run in xplat since it uses EXIR, so make its
+            # output visible to xplat tests. This is an exceptional case, and
+            # typically shouldn't be done.
+            "fbsource//xplat/executorch/...",
+        ],
+        # Allow the xplat entry in the visibility list. This is an exceptional
+        # case, and typically shouldn't be done.
+        _is_external_target = True,
+    )
+    
+    runtime.genrule(
+        name = "exported_programs_with_data_separated",
+        cmd = "$(exe :export_program) --modules ModuleLinear --external-constants --outdir $OUT",
+        outs = {
+            "ModuleLinear.pte": ["ModuleLinear.pte"],
+            "ModuleLinear.ptd": ["_default_external_constant.ptd"],
         },
         default_outs = ["."],
         visibility = [
@@ -117,6 +136,8 @@ def define_common_targets():
         par_style = "xar",
         deps = [
             ":export_delegated_program_lib",
+            "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+
         ],
         visibility = [],  # Private
     )
@@ -124,6 +145,8 @@ def define_common_targets():
     # Class names of nn.Modules for :exported_delegated_programs to export.
     DELEGATED_MODULES_TO_EXPORT = [
         "ModuleAddMul",
+        "ModuleAddLarge",
+        "ModuleSubLarge",
     ]
 
     # Name of the backend to use when exporting delegated programs.
@@ -152,4 +175,24 @@ def define_common_targets():
             "//executorch/runtime/executor/test/...",
             "//executorch/test/...",
         ],
+    )
+
+    runtime.genrule(
+        name = "exported_xnnp_delegated_programs",
+        cmd = "$(exe :export_delegated_program)" +
+              " --modules " + ",".join(DELEGATED_MODULES_TO_EXPORT) +
+              " --backend_id " + "XnnpackBackend" +
+              " --outdir $OUT",
+        outs = {
+            fname + ".pte": [fname + ".pte"]
+            for fname in DELEGATED_MODULES_TO_EXPORT
+        },
+        default_outs = ["."],
+        visibility = [
+            "//executorch/runtime/executor/test/...",
+            "//executorch/backends/test/...",
+            "//executorch/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        env = {"PYTORCH_DISABLE_JUSTKNOBS": "1",},
     )

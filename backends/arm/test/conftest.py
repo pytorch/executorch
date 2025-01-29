@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,11 +7,9 @@ import logging
 import os
 import platform
 import random
-import re
 import shutil
 import subprocess
 import sys
-from enum import auto, Enum
 from typing import Any
 
 import pytest
@@ -22,21 +20,13 @@ This file contains the pytest hooks, fixtures etc. for the Arm test suite.
 """
 
 
-class arm_test_options(Enum):
-    quantize_io = auto()
-    corstone_fvp = auto()
-    fast_fvp = auto()
-
-
-_test_options: dict[arm_test_options, Any] = {}
-
 # ==== Pytest hooks ====
 
 
 def pytest_configure(config):
-    if config.option.arm_quantize_io:
-        _load_libquantized_ops_aot_lib()
-        _test_options[arm_test_options.quantize_io] = True
+
+    pytest._test_options = {}  # type: ignore[attr-defined]
+
     if config.option.arm_run_corstoneFVP:
         corstone300_exists = shutil.which("FVP_Corstone_SSE-300_Ethos-U55")
         corstone320_exists = shutil.which("FVP_Corstone_SSE-320")
@@ -44,34 +34,24 @@ def pytest_configure(config):
             raise RuntimeError(
                 "Tests are run with --arm_run_corstoneFVP but corstone FVP is not installed."
             )
-        _test_options[arm_test_options.corstone_fvp] = True
-    _test_options[arm_test_options.fast_fvp] = config.option.fast_fvp
+        pytest._test_options["corstone_fvp"] = True  # type: ignore[attr-defined]
+    pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
 def pytest_collection_modifyitems(config, items):
-    """
-    Skip all tests that require run on Ethos-U if the option arm_quantize_io is
-    not set.
-    """
-    if not config.option.arm_quantize_io:
-        skip_if_aot_lib_not_loaded = pytest.mark.skip(
-            "Ethos-U tests can only run on FVP with quantize_io=True."
-        )
-
-        for item in items:
-            if re.search(r"u55|u65|u85", item.name, re.IGNORECASE):
-                item.add_marker(skip_if_aot_lib_not_loaded)
+    pass
 
 
 def pytest_addoption(parser):
-    parser.addoption("--arm_quantize_io", action="store_true")
+    parser.addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
     parser.addoption("--arm_run_corstoneFVP", action="store_true")
     parser.addoption("--fast_fvp", action="store_true")
 
 
 def pytest_sessionstart(session):
-    pass
+    if not session.config.option.collectonly:
+        _load_libquantized_ops_aot_lib()
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -131,23 +111,16 @@ def expectedFailureOnFVP(test_item):
 # ==== End of Custom Pytest decorators =====
 
 
-def is_option_enabled(
-    option: str | arm_test_options, fail_if_not_enabled: bool = False
-) -> bool:
+def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
     """
     Returns whether an option is successfully enabled, i.e. if the flag was
     given to pytest and the necessary requirements are available.
-    Implemented options are:
-        - corstone_fvp.
-        - quantize_io.
 
     The optional parameter 'fail_if_not_enabled' makes the function raise
       a RuntimeError instead of returning False.
     """
-    if isinstance(option, str):
-        option = arm_test_options[option.lower()]
 
-    if option in _test_options and _test_options[option]:
+    if option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
         return True
     else:
         if fail_if_not_enabled:
@@ -156,22 +129,21 @@ def is_option_enabled(
             return False
 
 
-def get_option(option: arm_test_options) -> Any | None:
+def get_option(option: str) -> Any | None:
     """
     Returns the value of an pytest option if it is set, otherwise None.
 
     Args:
-        option (arm_test_options): The option to check for.
+        option (str): The option to check for.
     """
-    if option in _test_options:
-        return _test_options[option]
+    if option in pytest._test_options:  # type: ignore[attr-defined]
+        return pytest._test_options[option]  # type: ignore[attr-defined]
     return None
 
 
 def _load_libquantized_ops_aot_lib():
     """
-    Load the libquantized_ops_aot_lib shared library. It's required when
-    arm_quantize_io is set.
+    Find and load the libquantized_ops_aot_lib shared library.
     """
     so_ext = {
         "Darwin": "dylib",
@@ -192,5 +164,5 @@ def _load_libquantized_ops_aot_lib():
         torch.ops.load_library(library_path)
     else:
         raise RuntimeError(
-            f"Failed to load libquantized_ops_aot_lib.{so_ext}. Did you build it?"
+            f"Did not find libquantized_ops_aot_lib.{so_ext} in cmake-out-aot-lib. Did you build it?"
         )
