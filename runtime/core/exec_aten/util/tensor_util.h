@@ -1064,8 +1064,8 @@ template <
     typename FLOAT_T,
     typename std::enable_if<
         std::is_floating_point_v<FLOAT_T> ||
-            std::is_same_v<FLOAT_T, exec_aten::BFloat16> ||
-            std::is_same_v<FLOAT_T, exec_aten::Half>,
+            std::is_same_v<FLOAT_T, executorch::aten::BFloat16> ||
+            std::is_same_v<FLOAT_T, executorch::aten::Half>,
         bool>::type = true>
 bool extract_scalar_tensor(executorch::aten::Tensor tensor, FLOAT_T* out_val) {
   if (tensor.numel() != 1) {
@@ -1139,8 +1139,7 @@ constexpr size_t kMaximumPrintableTensorShapeElement =
     ? std::numeric_limits<int32_t>::max()
     : std::numeric_limits<uint32_t>::max();
 
-void tensor_shape_to_c_string(
-    char out[kTensorShapeStringSizeLimit],
+std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
     executorch::aten::ArrayRef<executorch::aten::SizesType> shape);
 
 /// These APIs should not be used outside of Executor.cpp.

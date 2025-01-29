@@ -19,7 +19,7 @@
 
 #include <flatcc/flatcc_types.h>
 
-using ::exec_aten::Tensor;
+using ::executorch::aten::Tensor;
 using ::executorch::runtime::AllocatorID;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::ChainID;
@@ -37,27 +37,27 @@ namespace etdump {
 namespace {
 
 executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
-    exec_aten::ScalarType tensor_scalar_type) {
+    executorch::aten::ScalarType tensor_scalar_type) {
   switch (tensor_scalar_type) {
-    case exec_aten::ScalarType::Byte:
+    case executorch::aten::ScalarType::Byte:
       return executorch_flatbuffer_ScalarType_BYTE;
-    case exec_aten::ScalarType::Char:
+    case executorch::aten::ScalarType::Char:
       return executorch_flatbuffer_ScalarType_CHAR;
-    case exec_aten::ScalarType::Short:
+    case executorch::aten::ScalarType::Short:
       return executorch_flatbuffer_ScalarType_SHORT;
-    case exec_aten::ScalarType::Float:
+    case executorch::aten::ScalarType::Float:
       return executorch_flatbuffer_ScalarType_FLOAT;
-    case exec_aten::ScalarType::Int:
+    case executorch::aten::ScalarType::Int:
       return executorch_flatbuffer_ScalarType_INT;
-    case exec_aten::ScalarType::Long:
+    case executorch::aten::ScalarType::Long:
       return executorch_flatbuffer_ScalarType_LONG;
-    case exec_aten::ScalarType::Double:
+    case executorch::aten::ScalarType::Double:
       return executorch_flatbuffer_ScalarType_DOUBLE;
-    case exec_aten::ScalarType::Bool:
+    case executorch::aten::ScalarType::Bool:
       return executorch_flatbuffer_ScalarType_BOOL;
-    case exec_aten::ScalarType::Bits16:
+    case executorch::aten::ScalarType::Bits16:
       return executorch_flatbuffer_ScalarType_BITS16;
-    case exec_aten::ScalarType::UInt16:
+    case executorch::aten::ScalarType::UInt16:
       return executorch_flatbuffer_ScalarType_UINT16;
     default:
       ET_CHECK_MSG(
@@ -69,7 +69,7 @@ executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
 
 etdump_Tensor_ref_t add_tensor_entry(
     flatcc_builder_t* builder_,
-    const exec_aten::Tensor& tensor,
+    const executorch::aten::Tensor& tensor,
     long offset) {
   etdump_Tensor_start(builder_);
 
@@ -116,8 +116,15 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
     builder_ = (struct flatcc_builder*)alignPointer(buffer.data(), 64);
     uintptr_t buffer_with_builder =
         (uintptr_t)alignPointer(builder_ + sizeof(struct flatcc_builder), 64);
-    size_t buffer_size = buffer.size() -
+    size_t builder_size =
         (size_t)(buffer_with_builder - (uintptr_t)buffer.data());
+    size_t min_buf_size = max_alloc_buf_size + builder_size;
+    ET_CHECK_MSG(
+        buffer.size() > min_buf_size,
+        "Static buffer size provided to ETDumpGen is %zu, which is less than or equal to the minimum size of %zu",
+        buffer.size(),
+        min_buf_size);
+    size_t buffer_size = buffer.size() - builder_size;
     alloc_.set_buffer(
         (uint8_t*)buffer_with_builder,
         buffer_size,
@@ -501,7 +508,7 @@ void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
   debug_buffer_ = buffer;
 }
 
-size_t ETDumpGen::copy_tensor_to_debug_buffer(exec_aten::Tensor tensor) {
+size_t ETDumpGen::copy_tensor_to_debug_buffer(executorch::aten::Tensor tensor) {
   if (tensor.nbytes() == 0) {
     return static_cast<size_t>(-1);
   }
@@ -529,7 +536,7 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
 
   switch (evalue.tag) {
     case Tag::Tensor: {
-      exec_aten::Tensor tensor = evalue.toTensor();
+      executorch::aten::Tensor tensor = evalue.toTensor();
       long offset = copy_tensor_to_debug_buffer(tensor);
       etdump_Tensor_ref_t tensor_ref =
           add_tensor_entry(builder_, tensor, offset);
@@ -548,7 +555,8 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
     }
 
     case Tag::ListTensor: {
-      exec_aten::ArrayRef<exec_aten::Tensor> tensors = evalue.toTensorList();
+      executorch::aten::ArrayRef<executorch::aten::Tensor> tensors =
+          evalue.toTensorList();
       etdump_Tensor_vec_start(builder_);
       for (size_t i = 0; i < tensors.size(); ++i) {
         long offset = copy_tensor_to_debug_buffer(tensors[i]);

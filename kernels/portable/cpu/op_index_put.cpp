@@ -16,12 +16,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& index_put_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    executorch::aten::ArrayRef<executorch::aten::optional<Tensor>> indices,
     const Tensor& values,
     const bool accumulate,
     Tensor& out) {

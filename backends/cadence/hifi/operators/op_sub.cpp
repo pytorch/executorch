@@ -16,10 +16,10 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::can_cast;
 using executorch::runtime::CppTypeToScalarType;
 using torch::executor::Error;

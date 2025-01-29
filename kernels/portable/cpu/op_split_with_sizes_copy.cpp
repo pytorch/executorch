@@ -17,13 +17,13 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using TensorList = exec_aten::TensorList;
+using Tensor = executorch::aten::Tensor;
+using TensorList = executorch::aten::TensorList;
 
 void split_with_sizes_copy_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> split_sizes,
+    executorch::aten::ArrayRef<int64_t> split_sizes,
     int64_t dim,
     TensorList out) {
   (void)ctx;

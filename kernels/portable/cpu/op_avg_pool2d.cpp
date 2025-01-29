@@ -16,9 +16,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 
 Tensor& avg_pool2d_out(
     KernelRuntimeContext& ctx,
@@ -28,7 +28,7 @@ Tensor& avg_pool2d_out(
     IntArrayRef padding,
     bool ceil_mode,
     bool count_include_pad,
-    exec_aten::optional<int64_t> divisor_override,
+    executorch::aten::optional<int64_t> divisor_override,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
@@ -50,7 +50,7 @@ Tensor& avg_pool2d_out(
   ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   size_t output_ndim = 0;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   get_avg_pool2d_out_target_size(
       in, kernel_size, stride, padding, ceil_mode, output_sizes, &output_ndim);
 

@@ -67,12 +67,6 @@ Tensor& permute_copy_out(
 #ifdef OP_ARG_CHECK
   ET_KERNEL_CHECK(
       ctx,
-      torch::executor::check_permute_copy_args(in, dims, out),
-      InvalidArgument,
-      out);
-
-  ET_KERNEL_CHECK(
-      ctx,
       executorch::runtime::tensors_have_same_dim_order(in, out),
       InvalidArgument,
       out);
@@ -112,7 +106,8 @@ Tensor& permute_copy_out(
   signed char* out_data = out.mutable_data_ptr<signed char>();
   const signed char* const inp_data = in.const_data_ptr<signed char>();
 
-  if (((out.scalar_type() == ScalarType::Int) ||
+  if (((out.scalar_type() == in.scalar_type()) &&
+           (out.scalar_type() == ScalarType::Int) ||
        (out.scalar_type() == ScalarType::Short) ||
        (out.scalar_type() == ScalarType::Char) ||
        (out.scalar_type() == ScalarType::UInt32) ||
@@ -131,9 +126,15 @@ Tensor& permute_copy_out(
         in.dim(),
         get_element_size(out.scalar_type()));
   } else {
+    ET_KERNEL_CHECK(
+        ctx,
+        torch::executor::check_permute_copy_args(in, dims, out),
+        InvalidArgument,
+        out);
+
     const auto in_type = out.scalar_type();
-    size_t in_coord[5] = {0};
-    size_t trailing_dims_memo[kTensorDimensionLimit];
+    size_t in_coord[executorch::runtime::kTensorDimensionLimit] = {0};
+    size_t trailing_dims_memo[executorch::runtime::kTensorDimensionLimit];
     executorch::runtime::memoizeTrailingDims(in, trailing_dims_memo);
     // in and out must be the same dtype
     ET_SWITCH_ALL_TYPES(in_type, ctx, "permute_copy.out", CTYPE, [&] {

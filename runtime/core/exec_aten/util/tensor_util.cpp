@@ -17,10 +17,10 @@ namespace executorch::runtime {
  * Shared implementation for tensor_util.h, may only contain code that
  * works whether or not ATen mode is active.
  */
-void tensor_shape_to_c_string(
-    char out[kTensorShapeStringSizeLimit],
+std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
     executorch::aten::ArrayRef<executorch::aten::SizesType> shape) {
-  char* p = out;
+  std::array<char, kTensorShapeStringSizeLimit> out;
+  char* p = out.data();
   *p++ = '(';
   for (const auto elem : shape) {
     if (elem < 0 || elem > kMaximumPrintableTensorShapeElement) {
@@ -31,13 +31,14 @@ void tensor_shape_to_c_string(
       // we want.
       p += snprintf(
           p,
-          kTensorShapeStringSizeLimit - (p - out),
+          kTensorShapeStringSizeLimit - (p - out.data()),
           "%" PRIu32 ", ",
           static_cast<uint32_t>(elem));
     }
   }
   *(p - 2) = ')';
   *(p - 1) = '\0';
+  return out;
 }
 
 } // namespace executorch::runtime
