@@ -21,9 +21,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using string_view = exec_aten::string_view;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using string_view = executorch::aten::string_view;
 
 namespace {
 
@@ -69,7 +69,7 @@ void gelu(
     }
 #else
     size_t i = 0;
-    if (std::is_same<CTYPE, float>::value) {
+    if constexpr (std::is_same_v<CTYPE, float>) {
       for (; i + 4 < lim; i += 4) {
         const float32x4_t in =
             vld1q_f32(static_cast<const float*>(&in_data[i]));

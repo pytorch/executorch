@@ -19,7 +19,6 @@
 // removed some implicit const -> non-const conversions that rely on
 // complicated std::enable_if meta-programming
 // removed a bunch of slice variants for simplicity...
-// remove constructors for std::array
 // remove constructors and operators for std::vector
 // removed some prevention of accidental assignments from temporary that
 // required std::enable_if meta-programming
@@ -27,6 +26,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <executorch/runtime/platform/assert.h>
@@ -86,6 +86,11 @@ class ArrayRef final {
 
   /// Construct a ArrayRef from a range.
   ArrayRef(const T* begin, const T* end) : Data(begin), Length(end - begin) {}
+
+  /// Construct an ArrayRef from a std::array
+  template <size_t N>
+  /* implicit */ constexpr ArrayRef(const std::array<T, N>& Arr)
+      : Data(Arr.data()), Length(N) {}
 
   /// Construct a ArrayRef from a C array.
   template <size_t N>
@@ -200,6 +205,12 @@ ArrayRef<T> makeArrayRef(const T* data, size_t length) {
 template <typename T>
 ArrayRef<T> makeArrayRef(const T* begin, const T* end) {
   return ArrayRef<T>(begin, end);
+}
+
+/// Construct an ArrayRef from a std::array.
+template <typename T, std::size_t N>
+ArrayRef<T> makeArrayRef(const std::array<T, N>& Arr) {
+  return Arr;
 }
 
 /// Construct an ArrayRef from an ArrayRef (no-op) (const)

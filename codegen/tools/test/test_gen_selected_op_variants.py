@@ -71,13 +71,13 @@ custom_classes: []
 
 inline constexpr bool should_include_kernel_dtype(
   const char *operator_name,
-  exec_aten::ScalarType scalar_type
+  executorch::aten::ScalarType scalar_type
 ) {
-  return ((exec_aten::string_view(operator_name).compare("add.out") == 0)
-        && (scalar_type == exec_aten::ScalarType::Float || scalar_type == exec_aten::ScalarType::Int))
- || ((exec_aten::string_view(operator_name).compare("mul.out") == 0)
-        && (scalar_type == exec_aten::ScalarType::Float))
- || ((exec_aten::string_view(operator_name).compare("sub.out") == 0)
+  return ((executorch::aten::string_view(operator_name).compare("add.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float || scalar_type == executorch::aten::ScalarType::Int))
+ || ((executorch::aten::string_view(operator_name).compare("mul.out") == 0)
+        && (scalar_type == executorch::aten::ScalarType::Float))
+ || ((executorch::aten::string_view(operator_name).compare("sub.out") == 0)
         && (true));
 }
 """,
@@ -124,7 +124,7 @@ operators: {}
 
 inline constexpr bool should_include_kernel_dtype(
   const char *operator_name,
-  exec_aten::ScalarType scalar_type
+  executorch::aten::ScalarType scalar_type
 ) {
   return true;
 }

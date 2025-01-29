@@ -17,11 +17,11 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
-using exec_aten::IntArrayRef;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::SizesType;
-using exec_aten::Tensor;
+using executorch::aten::IntArrayRef;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::get_op_function_from_registry;
@@ -80,7 +80,7 @@ TEST_F(ExecutorTest, TensorHalf) {
   ASSERT_EQ(a.numel(), 4);
   ASSERT_EQ(a.scalar_type(), ScalarType::Half);
 
-  auto data_p = a.const_data_ptr<exec_aten::Half>();
+  auto data_p = a.const_data_ptr<executorch::aten::Half>();
   ASSERT_NEAR(
       data_p[0], 1.0f, toleranceFloat16(fmax(fabs(1.0f), fabs(data_p[0]))));
   ASSERT_NEAR(

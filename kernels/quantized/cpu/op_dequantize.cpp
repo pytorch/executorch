@@ -22,11 +22,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
-using StridesType = exec_aten::StridesType;
-using SizesType = exec_aten::SizesType;
+using Tensor = executorch::aten::Tensor;
+using Scalar = executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
+using StridesType = executorch::aten::StridesType;
+using SizesType = executorch::aten::SizesType;
 
 namespace {
 
@@ -38,7 +38,7 @@ void check_dequantize_per_tensor_args(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType>& out_dtype,
+    executorch::aten::optional<ScalarType>& out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
@@ -78,7 +78,7 @@ void check_dequantize_per_tensor_args(
 template <typename Fn>
 void apply_over_unpacked_dim(
     const Fn& fn,
-    const exec_aten::Tensor& in,
+    const executorch::aten::Tensor& in,
     const int64_t& dim) {
   if (in.numel() == 0) {
     return;
@@ -170,7 +170,7 @@ float get_scale(const Tensor& scale, size_t channel_ix) {
 bool can_use_optimized_dequantize_per_channel(
     const Tensor& in,
     const ScalarType in_dtype,
-    exec_aten::optional<ScalarType>& out_dtype) {
+    executorch::aten::optional<ScalarType>& out_dtype) {
   bool is_contiguous = false;
 #ifdef USE_ATEN_LIB
   is_contiguous = in.is_contiguous();
@@ -188,13 +188,13 @@ bool can_use_optimized_dequantize_per_channel(
 void dequantize_per_channel_optimized(
     const Tensor& in,
     const Tensor& scales,
-    const exec_aten::optional<Tensor>& opt_zero_points,
+    const executorch::aten::optional<Tensor>& opt_zero_points,
     Tensor& out,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType in_dtype,
-    exec_aten::optional<ScalarType>& out_dtype) {
+    executorch::aten::optional<ScalarType>& out_dtype) {
   check_dequantize_per_tensor_args(
       in, quant_min, quant_max, in_dtype, out_dtype, out);
   ET_CHECK_MSG(
@@ -263,7 +263,7 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   torch::executor::Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
@@ -323,7 +323,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
@@ -357,12 +357,12 @@ Tensor& dequantize_per_tensor_tensor_args_out(
 Tensor& dequantize_per_channel_out(
     const Tensor& input,
     const Tensor& scale,
-    const exec_aten::optional<Tensor>& opt_zero_points,
+    const executorch::aten::optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // normalize axis
   ET_CHECK_MSG(
@@ -428,8 +428,9 @@ Tensor& dequantize_per_channel_out(
     zero_point_data = nullptr;
   }
 
-  exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
-      exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>
+      optional_dim_list{
+          executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
   // Actual dequantization logic
   // input, out are the input and output tensors
@@ -446,7 +447,7 @@ Tensor& dequantize_per_channel_out(
       const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
       ET_CHECK_MSG(                                                            \
           axis == 0, "Axis must be 0 for a single dimensional tensors");       \
-      const exec_aten::optional<int64_t> dim;                                  \
+      const executorch::aten::optional<int64_t> dim;                           \
       apply_over_dim(                                                          \
           [input_data_ptr, out_data_ptr, zero_point_data, &scale](             \
               size_t numel, size_t stride, size_t base_ix) {                   \
@@ -517,12 +518,12 @@ Tensor& dequantize_per_channel_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
-    const exec_aten::optional<Tensor>& opt_zero_points,
+    const executorch::aten::optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   (void)context;
   torch::executor::Error err = resize_tensor(out, input.sizes());
@@ -550,7 +551,7 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
@@ -567,7 +568,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
@@ -592,18 +593,18 @@ Tensor& dequantize_per_token_out(
   }
   // This unfortunate change is needed because we compile op_quantize for aten
   // mode as well
-  std::array<exec_aten::SizesType, 2> input_sizes;
-  input_sizes[0] = static_cast<exec_aten::SizesType>(num_channels);
+  std::array<executorch::aten::SizesType, 2> input_sizes;
+  input_sizes[0] = static_cast<executorch::aten::SizesType>(num_channels);
   input_sizes[1] =
-      static_cast<exec_aten::SizesType>(input.size(input.dim() - 1));
+      static_cast<executorch::aten::SizesType>(input.size(input.dim() - 1));
 #ifdef USE_ATEN_LIB
   Tensor reshaped_input = at::from_blob(
       input.mutable_data_ptr(),
       input_sizes,
       at::TensorOptions(input.scalar_type()));
 #else
-  std::array<exec_aten::DimOrderType, 2> input_dim_order{0, 1};
-  std::array<exec_aten::StridesType, 2> input_strides;
+  std::array<executorch::aten::DimOrderType, 2> input_dim_order{0, 1};
+  std::array<executorch::aten::StridesType, 2> input_strides;
   dim_order_to_stride_nocheck(
       input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
   void* input_data = input.mutable_data_ptr();

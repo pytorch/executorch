@@ -39,14 +39,7 @@ Tensor& _softmax_out(
 
   // Adjust for negative dim
   dim = dim < 0 ? dim + executorch::runtime::nonzero_dim(in) : dim;
-
 #ifdef OP_ARG_CHECK
-  ET_KERNEL_CHECK(
-      ctx,
-      torch::executor::check_softmax_args(in, dim, half_to_float, out),
-      InvalidArgument,
-      out);
-
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
@@ -63,7 +56,8 @@ Tensor& _softmax_out(
     inp_shapes[i] = in_size[i];
   }
 
-  if (out.scalar_type() == ScalarType::Float) {
+  if ((in.scalar_type() == ScalarType::Float) &&
+      (out.scalar_type() == ScalarType::Float)) {
     const float* const inp_data = in.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();
     int axis = dim;
@@ -77,6 +71,12 @@ Tensor& _softmax_out(
         in.dim(),
         &axis);
   } else {
+    ET_KERNEL_CHECK(
+        ctx,
+        torch::executor::check_softmax_args(in, dim, half_to_float, out),
+        InvalidArgument,
+        out);
+
     ET_SWITCH_FLOATH_TYPES(in.scalar_type(), ctx, "_softmax.out", CTYPE, [&]() {
       const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
       CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();

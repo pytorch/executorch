@@ -189,9 +189,15 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
         return
 
     if validator.violating_ops:
+        error_msg = ""
+        for op, node in validator.violating_ops.items():
+            # error_msg += f"#####################################################\n"
+            error_msg += f"\nOperator: {op} with args: {node[0]}\n"
+            error_msg += f"stack trace: {node[1].stack_trace}\n"
+            # error_msg += f"#####################################################\n"
         raise SpecViolationError(
-            f"These operators are taking Tensor inputs with mismatched dtypes: {validator.violating_ops}"
-            "Please make sure the dtypes of the Tensor inputs are the same as the dtypes of the corresponding "
+            f"These operators are taking Tensor inputs with mismatched dtypes:\n{error_msg}"
+            "Please make sure the dtypes of the Tensor inputs are the same as the dtypes of the corresponding outputs."
         )
 
 

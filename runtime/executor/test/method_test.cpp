@@ -20,7 +20,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
+using executorch::aten::ArrayRef;
 using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
@@ -215,10 +215,16 @@ TEST_F(MethodTest, AliasedIOTest) {
   int32_t sizes[2] = {2, 4};
   uint8_t dim_order[2] = {0, 1};
   int32_t strides[2] = {4, 1};
-  exec_aten::TensorImpl impl(
-      exec_aten::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
 
-  auto input_err = method->set_input(EValue(exec_aten::Tensor(&impl)), 0);
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
   ASSERT_EQ(input_err, Error::Ok);
 
   auto output_err = method->set_output_data_ptr(buffer, sizeof(buffer), 0);
@@ -245,9 +251,14 @@ TEST_F(MethodTest, AliasedIOTest) {
 
   // Set the input again to update the size.
   sizes[0] = output.toTensor().sizes()[0];
-  exec_aten::TensorImpl impl_2(
-      exec_aten::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
-  input_err = method->set_input(EValue(exec_aten::Tensor(&impl_2)), 0);
+  executorch::aten::TensorImpl impl_2(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      buffer,
+      dim_order,
+      strides);
+  input_err = method->set_input(EValue(executorch::aten::Tensor(&impl_2)), 0);
   ASSERT_EQ(input_err, Error::Ok);
 
   // Execute the method again. Cat a 1x4 to a 3x4.

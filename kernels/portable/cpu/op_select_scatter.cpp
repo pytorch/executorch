@@ -17,7 +17,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 /// aten::select_scatter.out(Tensor self, Tensor src, int dim, SymInt index, *,
 /// Tensor(a!) out) -> Tensor(a!)
