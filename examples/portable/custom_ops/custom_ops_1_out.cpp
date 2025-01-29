@@ -11,8 +11,8 @@
 namespace custom {
 namespace native {
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 
 namespace {
