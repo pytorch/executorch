@@ -116,7 +116,7 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         with graph_module.graph.inserting_before(node):
             permute_node = create_node(
                 graph_module.graph,
-                torch.ops.passthrough_to_tosa._transpose,
+                torch.ops.passthrough_to_tosa._transpose.default,
                 args=(
                     input_node,
                     list(AnnotateChannelsLastDimOrder.NHWC_inverse_order),
@@ -135,7 +135,7 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         with graph_module.graph.inserting_after(node):
             permute_node = create_node(
                 graph_module.graph,
-                torch.ops.passthrough_to_tosa._transpose,
+                torch.ops.passthrough_to_tosa._transpose.default,
                 args=(node, list(AnnotateChannelsLastDimOrder.NHWC_order)),
             )
             permute_node.meta["tosa_dim_order"] = (
