@@ -13,8 +13,8 @@ We provide two prebuilt Android libraries (AAR), `executorch.aar` for generic us
     - Comes with two ABI variants, arm64-v8a and x86_64.
 
 ## Downloading AAR
-[executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar)
-[executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar.sha256sums)
+[executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar)
+[executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar.sha256sums)
 
 ## Using prebuilt libraries
 
@@ -23,7 +23,7 @@ To add the Java library to your app, simply download the AAR, and add it to your
 In your app working directory, such as example executorch/examples/demo-apps/android/LlamaDemo,
 ```
 mkdir -p app/libs
-curl https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar -o app/libs/executorch.aar
+curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar -o app/libs/executorch.aar
 ```
 
 And include it in gradle:
