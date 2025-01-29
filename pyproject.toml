@@ -65,6 +65,9 @@ dependencies=[
   "ruamel.yaml",
   "sympy",
   "tabulate",
+  "torch==2.6.0",
+  "torchaudio==2.6.0",
+  "torchvision==0.21.0",
   "typing-extensions",
 ]
 
