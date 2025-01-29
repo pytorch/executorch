@@ -17,7 +17,7 @@ import yaml
 from torchgen.code_template import CodeTemplate
 
 
-ops_and_dtypes_template_str = """((exec_aten::string_view(operator_name).compare("$operator_name") == 0)\n        && ($dtype_checks))"""
+ops_and_dtypes_template_str = """((executorch::aten::string_view(operator_name).compare("$operator_name") == 0)\n        && ($dtype_checks))"""
 ops_and_dtypes_template = CodeTemplate(ops_and_dtypes_template_str)
 
 selected_kernel_dtypes_h_template_str = """#pragma once
@@ -27,7 +27,7 @@ selected_kernel_dtypes_h_template_str = """#pragma once
 
 inline constexpr bool should_include_kernel_dtype(
   const char *operator_name,
-  exec_aten::ScalarType scalar_type
+  executorch::aten::ScalarType scalar_type
 ) {
   return $body;
 }
@@ -91,7 +91,8 @@ def write_selected_op_variants(yaml_file_path: str, output_dir: str) -> None:
                 dtype_set = set([x.split(";")[0] for x in tensor_meta])
                 dtype_list = sorted([dtype_enum_to_type[x] for x in dtype_set])
                 conditions = [
-                    "scalar_type == exec_aten::ScalarType::" + x for x in dtype_list
+                    "scalar_type == executorch::aten::ScalarType::" + x
+                    for x in dtype_list
                 ]
             body_parts.append(
                 ops_and_dtypes_template.substitute(

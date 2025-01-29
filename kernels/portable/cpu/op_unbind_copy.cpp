@@ -16,8 +16,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using TensorList = exec_aten::TensorList;
+using Tensor = executorch::aten::Tensor;
+using TensorList = executorch::aten::TensorList;
 
 /**
  * unbind_copy.int_out(Tensor input, int dim=0, *, Tensor(a!)[] out) -> ()

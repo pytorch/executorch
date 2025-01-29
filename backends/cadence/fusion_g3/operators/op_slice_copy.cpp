@@ -60,12 +60,6 @@ Tensor& slice_copy_Tensor_out(
 #ifdef OP_ARG_CHECK
   ET_KERNEL_CHECK(
       ctx,
-      torch::executor::check_slice_copy_args(in, dim, step, out),
-      InvalidArgument,
-      out);
-
-  ET_KERNEL_CHECK(
-      ctx,
       executorch::runtime::tensors_have_same_dim_order(in, out),
       InvalidArgument,
       out);
@@ -101,12 +95,13 @@ Tensor& slice_copy_Tensor_out(
   signed char* out_data = out.mutable_data_ptr<signed char>();
   const signed char* const inp_data = in.const_data_ptr<signed char>();
 
-  if ((out.scalar_type() == ScalarType::Int) ||
-      (out.scalar_type() == ScalarType::Short) ||
-      (out.scalar_type() == ScalarType::Char) ||
-      (out.scalar_type() == ScalarType::UInt32) ||
-      (out.scalar_type() == ScalarType::UInt16) ||
-      (out.scalar_type() == ScalarType::Byte)) {
+  if ((out.scalar_type() == in.scalar_type()) &&
+      ((out.scalar_type() == ScalarType::Int) ||
+       (out.scalar_type() == ScalarType::Short) ||
+       (out.scalar_type() == ScalarType::Char) ||
+       (out.scalar_type() == ScalarType::UInt32) ||
+       (out.scalar_type() == ScalarType::UInt16) ||
+       (out.scalar_type() == ScalarType::Byte))) {
     XT_KERNEL_CHECK(
         ctx,
         out,
@@ -122,6 +117,12 @@ Tensor& slice_copy_Tensor_out(
         (int)dim,
         get_element_size(out.scalar_type()));
   } else {
+    ET_KERNEL_CHECK(
+        ctx,
+        torch::executor::check_slice_copy_args(in, dim, step, out),
+        InvalidArgument,
+        out);
+
     torch::executor::compute_slice(in, dim, start, length, step, out);
   }
 

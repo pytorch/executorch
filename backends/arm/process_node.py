@@ -8,7 +8,7 @@
 from typing import cast, Dict
 
 import numpy as np
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
@@ -36,9 +36,9 @@ def process_call_function(
 
     # Visiting each Node
     # pyre-ignore[16]: Undefined attribute.
-    if node.target.__name__ in node_visitors:
+    if node.target.__name__ in node_visitors:  # type: ignore[union-attr]
         # pyre-ignore[16]: Undefined attribute.
-        node_visitors[node.target.__name__].define_node(
+        node_visitors[node.target.__name__].define_node(  # type: ignore[union-attr]
             node,
             tosa_graph,
             inputs,

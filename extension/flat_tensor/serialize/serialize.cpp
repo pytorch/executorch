@@ -43,7 +43,7 @@ void write_nulls(std::ostream& out, size_t num_bytes) {
 
 runtime::Error save_ptd(
     const std::string& path,
-    const std::map<std::string, exec_aten::Tensor>& tensor_map,
+    const std::map<std::string, executorch::aten::Tensor>& tensor_map,
     const size_t tensor_alignment) {
   // Create File
   std::ofstream file;
@@ -55,7 +55,7 @@ runtime::Error save_ptd(
 
 runtime::Error save_ptd(
     std::ostream& out,
-    const std::map<std::string, exec_aten::Tensor>& tensor_map,
+    const std::map<std::string, executorch::aten::Tensor>& tensor_map,
     const size_t tensor_alignment) {
   // Assert the system is little endian. Since we are sending the data over
   // the wire, we need to ensure that the data is always in the same format.
@@ -109,13 +109,38 @@ runtime::Error save_ptd(
       tensor_alignment,
       builder.CreateVector(tensors),
       builder.CreateVector(buffers));
-  builder.Finish(flat_tensor); // Our flatbuffer is created now.
+  builder.Finish(flat_tensor, ::flat_tensor_flatbuffer::FlatTensorIdentifier());
+  // Our flatbuffer is created now.
 
   // Calculate flatbuffer padding.
   auto padded_flatbufer_size =
       aligned_size(builder.GetSize(), tensor_alignment);
   auto padded_header_size =
       aligned_size(FlatTensorHeader::kHeaderExpectedLength, tensor_alignment);
+
+  // The general structure of the file is:
+  // [flatbuffer offset to root table][flatbuffer file indentifier]
+  //   [FlatTensorHeader][padding][flatbuffer contents][padding]
+  //   [segment data].
+  // This means we first serialize the first 8 bytes of the flatbuffer,
+  // updating the offset to the root table, then the header, then the
+  // flatbuffer. We are embedding the header inside the flatbuffer doing
+  // this which allows us to continue using flatbuffer tools directly on the
+  // .ptd file.
+
+  // Calculate new offset to root table.
+  uint32_t current_offset =
+      *reinterpret_cast<uint32_t*>(builder.GetBufferPointer());
+  uint32_t new_offset = current_offset + padded_header_size;
+
+  // Write flatbuffer offset to root table
+  out.write(reinterpret_cast<const char*>(&new_offset), sizeof(new_offset));
+
+  // Write flatbuffer magic bytes
+  out.write(
+      reinterpret_cast<const char*>(builder.GetBufferPointer()) +
+          sizeof(new_offset),
+      4); // This is the file identifier from flat_tensor.fbs.
 
   // Write header
   out.write(FlatTensorHeader::kMagic, sizeof(FlatTensorHeader::kMagic));
@@ -149,10 +174,11 @@ runtime::Error save_ptd(
       padding_required(
           FlatTensorHeader::kHeaderExpectedLength, tensor_alignment));
 
-  // Write flatbuffer
+  // Write flatbuffer, offset by 8 bytes (4-byte root table offset + 4-byte
+  // file identifier) since we wrote those before the FlatTensorHeader.
   out.write(
-      reinterpret_cast<const char*>(builder.GetBufferPointer()),
-      builder.GetSize());
+      reinterpret_cast<const char*>(builder.GetBufferPointer()) + 8,
+      builder.GetSize() - 8);
 
   // Write flatbuffer padding
   write_nulls(out, padding_required(builder.GetSize(), tensor_alignment));

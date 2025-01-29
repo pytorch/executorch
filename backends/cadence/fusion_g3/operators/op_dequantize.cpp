@@ -117,7 +117,7 @@ Tensor& dequantize_impl(
         }
       }
     } else {
-      if (*zero_point_data != 0) // tesor
+      if (*zero_point_data != 0) // tensor
       {
         is_asym_dequant |= 1;
       }
@@ -125,8 +125,14 @@ Tensor& dequantize_impl(
   }
   float* out_data = out.mutable_data_ptr<float>();
 
+  bool optimized = true;
+
+  if (out.scalar_type() != ScalarType::Float) {
+    optimized = false;
+  }
+
   if (is_asym_dequant) {
-    if (input.scalar_type() == ScalarType::Byte) {
+    if ((input.scalar_type() == ScalarType::Byte) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -139,7 +145,7 @@ Tensor& dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == ScalarType::Char) {
+    } else if ((input.scalar_type() == ScalarType::Char) && (optimized)) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -152,7 +158,7 @@ Tensor& dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == ScalarType::UInt16) {
+    } else if ((input.scalar_type() == ScalarType::UInt16) && (optimized)) {
       const uint16_t* input_data = input.const_data_ptr<uint16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -165,7 +171,7 @@ Tensor& dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == ScalarType::Short) {
+    } else if ((input.scalar_type() == ScalarType::Short) && (optimized)) {
       const int16_t* input_data = input.const_data_ptr<int16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -178,7 +184,7 @@ Tensor& dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Bits4u) {
+    } else if ((input.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -191,7 +197,7 @@ Tensor& dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Bits4) {
+    } else if ((input.scalar_type() == (ScalarType)Bits4) && (optimized)) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -338,7 +344,7 @@ Tensor& dequantize_impl(
       }
     }
   } else {
-    if (input.scalar_type() == ScalarType::Byte) {
+    if ((input.scalar_type() == ScalarType::Byte) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -350,7 +356,7 @@ Tensor& dequantize_impl(
           input.dim(),
           axis,
           scale_data);
-    } else if (input.scalar_type() == ScalarType::Char) {
+    } else if ((input.scalar_type() == ScalarType::Char) && (optimized)) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -362,7 +368,7 @@ Tensor& dequantize_impl(
           input.dim(),
           axis,
           scale_data);
-    } else if (input.scalar_type() == ScalarType::UInt16) {
+    } else if ((input.scalar_type() == ScalarType::UInt16) && (optimized)) {
       const uint16_t* input_data = input.const_data_ptr<uint16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -374,7 +380,7 @@ Tensor& dequantize_impl(
           input.dim(),
           axis,
           scale_data);
-    } else if (input.scalar_type() == ScalarType::Short) {
+    } else if ((input.scalar_type() == ScalarType::Short) && (optimized)) {
       const int16_t* input_data = input.const_data_ptr<int16_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -386,7 +392,7 @@ Tensor& dequantize_impl(
           input.dim(),
           axis,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Bits4u) {
+    } else if ((input.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
           ctx,
@@ -398,7 +404,7 @@ Tensor& dequantize_impl(
           input.dim(),
           axis,
           scale_data);
-    } else if (input.scalar_type() == (ScalarType)Bits4) {
+    } else if ((input.scalar_type() == (ScalarType)Bits4) && (optimized)) {
       const int8_t* input_data = input.const_data_ptr<int8_t>();
       XT_KERNEL_CHECK(
           ctx,

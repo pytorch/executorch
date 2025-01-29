@@ -14,7 +14,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 Tensor& abs_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;

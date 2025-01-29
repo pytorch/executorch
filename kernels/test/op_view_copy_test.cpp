@@ -17,9 +17,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::IntArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::IntArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpViewTest : public OperatorTest {
@@ -28,7 +28,7 @@ class OpViewTest : public OperatorTest {
     return torch::executor::aten::view_copy_outf(context_, self, size, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void run_view_test_cases(
       const Tensor& input,
       const std::vector<std::vector<int32_t>>& out_shapes) {
@@ -47,7 +47,7 @@ class OpViewTest : public OperatorTest {
 
       Tensor ret = op_view_copy_out(
           input,
-          exec_aten::ArrayRef<int64_t>(
+          executorch::aten::ArrayRef<int64_t>(
               size_int64_t.data(), size_int64_t.size()),
           out);
       EXPECT_TENSOR_EQ(out, ret);
@@ -56,7 +56,7 @@ class OpViewTest : public OperatorTest {
   }
 
   // Test if op_view_copy_out works well under all kinds of legal input type.
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
     Tensor input = tf.make(/*sizes=*/{2, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
@@ -163,7 +163,7 @@ TEST_F(OpViewTest, InputOutputMismatchedSizesDie) {
       context_,
       op_view_copy_out(
           input,
-          exec_aten::ArrayRef<int64_t>(
+          executorch::aten::ArrayRef<int64_t>(
               size_int64_t.data(), size_int64_t.size()),
           out));
 }
@@ -185,7 +185,7 @@ TEST_F(OpViewTest, SizeOutputMismatchedSizesDie) {
       context_,
       op_view_copy_out(
           input,
-          exec_aten::ArrayRef<int64_t>(
+          executorch::aten::ArrayRef<int64_t>(
               size_int64_t.data(), size_int64_t.size()),
           out));
 }
@@ -208,7 +208,7 @@ TEST_F(OpViewTest, MismatchedTypesDie) {
       context_,
       op_view_copy_out(
           input,
-          exec_aten::ArrayRef<int64_t>(
+          executorch::aten::ArrayRef<int64_t>(
               size_int64_t.data(), size_int64_t.size()),
           out));
 }
@@ -233,7 +233,7 @@ TEST_F(OpViewTest, SizeInfer) {
   // Inferring one dimension is valid.
   op_view_copy_out(
       input,
-      exec_aten::ArrayRef<int64_t>(
+      executorch::aten::ArrayRef<int64_t>(
           valid_size_int64_t.data(), valid_size_int64_t.size()),
       out);
   EXPECT_TENSOR_DATA_EQ(input, out);
@@ -242,7 +242,7 @@ TEST_F(OpViewTest, SizeInfer) {
       context_,
       op_view_copy_out(
           input,
-          exec_aten::ArrayRef<int64_t>(
+          executorch::aten::ArrayRef<int64_t>(
               invalid_size_int64_t.data(), invalid_size_int64_t.size()),
           out));
 }
@@ -263,7 +263,8 @@ TEST_F(OpViewTest, UpperBoundOutTensor) {
 
   op_view_copy_out(
       input,
-      exec_aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
+      executorch::aten::ArrayRef<int64_t>(
+          size_int64_t.data(), size_int64_t.size()),
       output);
   EXPECT_TENSOR_EQ(ref_output, output);
 
@@ -279,7 +280,8 @@ TEST_F(OpViewTest, UpperBoundOutTensor) {
 
   op_view_copy_out(
       input,
-      exec_aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
+      executorch::aten::ArrayRef<int64_t>(
+          size_int64_t.data(), size_int64_t.size()),
       output);
   EXPECT_TENSOR_EQ(ref_output, output);
 }
