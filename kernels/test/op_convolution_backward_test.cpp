@@ -15,12 +15,12 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using OptIntArrayRef = exec_aten::OptionalArrayRef<int64_t>;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
+using OptIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
 using torch::executor::testing::TensorFactory;
 
 class OpConvolutionBackwardOutTest : public OperatorTest {

@@ -16,7 +16,7 @@
 #include <ostream>
 #include <sstream>
 
-using exec_aten::ScalarType;
+using executorch::aten::ScalarType;
 
 namespace executorch {
 namespace extension {
@@ -75,7 +75,7 @@ void print_double(std::ostream& os, double value) {
 template <class T>
 void print_scalar_list(
     std::ostream& os,
-    exec_aten::ArrayRef<T> list,
+    executorch::aten::ArrayRef<T> list,
     bool print_length = true,
     bool elide_inner_items = true) {
   long edge_items = elide_inner_items ? get_stream_edge_items(os)
@@ -104,7 +104,7 @@ void print_scalar_list(
       // We've printed a full line, so wrap and begin a new one.
       os << "\n  ";
     }
-    os << executorch::runtime::EValue(exec_aten::Scalar(list[i]));
+    os << executorch::runtime::EValue(executorch::aten::Scalar(list[i]));
     if (wrapping || i < list.size() - 1) {
       // No trailing comma when not wrapping. Always a trailing comma when
       // wrapping. This will leave a trailing space at the end of every wrapped
@@ -137,7 +137,7 @@ void print_scalar_list(
   os << "]";
 }
 
-void print_tensor(std::ostream& os, exec_aten::Tensor tensor) {
+void print_tensor(std::ostream& os, executorch::aten::Tensor tensor) {
   os << "tensor(sizes=";
   // Always print every element of the sizes list.
   print_scalar_list(
@@ -155,7 +155,7 @@ void print_tensor(std::ostream& os, exec_aten::Tensor tensor) {
   case ScalarType::dtype:                                    \
     print_scalar_list(                                       \
         os,                                                  \
-        exec_aten::ArrayRef<ctype>(                          \
+        executorch::aten::ArrayRef<ctype>(                   \
             tensor.const_data_ptr<ctype>(), tensor.numel()), \
         /*print_length=*/false);                             \
     break;
@@ -172,7 +172,7 @@ void print_tensor(std::ostream& os, exec_aten::Tensor tensor) {
 
 void print_tensor_list(
     std::ostream& os,
-    exec_aten::ArrayRef<exec_aten::Tensor> list) {
+    executorch::aten::ArrayRef<executorch::aten::Tensor> list) {
   os << "(len=" << list.size() << ")[";
   for (size_t i = 0; i < list.size(); ++i) {
     if (list.size() > 1) {
@@ -191,7 +191,8 @@ void print_tensor_list(
 
 void print_list_optional_tensor(
     std::ostream& os,
-    exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>> list) {
+    executorch::aten::ArrayRef<
+        executorch::aten::optional<executorch::aten::Tensor>> list) {
   os << "(len=" << list.size() << ")[";
   for (size_t i = 0; i < list.size(); ++i) {
     if (list.size() > 1) {

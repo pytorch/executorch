@@ -729,18 +729,18 @@ class QuantizedGroupEmbedding(torch.nn.Module):
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
         if not self.packed:  # 8bit
             return torch.ops.quantized_decomposed.embedding_byte.dtype(
-                self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
+                self.weight, self.scales, None, -128, 127, indices, dtype=self.dtype
             )
         else:  # packed
             if self.bitwidth == 2:
                 return torch.ops.quantized_decomposed.embedding_2bit.dtype(
-                    self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
+                    self.weight, self.scales, None, -2, 1, indices, dtype=self.dtype
                 )
 
             # Remaining case (always return to make pyre happy)
             assert self.bitwidth == 4
             return torch.ops.quantized_decomposed.embedding_4bit.dtype(
-                self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
+                self.weight, self.scales, None, -8, 7, indices, dtype=self.dtype
             )
 
 

@@ -12,7 +12,7 @@ import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
@@ -146,12 +146,14 @@ class Quantize(Stage):
         quantizer: Optional[Quantizer] = None,
         quantization_config: Optional[QuantizationConfig] = None,
         calibrate: bool = True,
+        calibration_samples: Optional[Sequence[Any]] = None,
     ):
         self.quantizer = quantizer or XNNPACKQuantizer()
         self.quantization_config = (
             quantization_config or get_symmetric_quantization_config()
         )
         self.calibrate = calibrate
+        self.calibration_samples = calibration_samples
 
         self.quantizer.set_global(self.quantization_config)
 
@@ -168,7 +170,11 @@ class Quantize(Stage):
 
         if self.calibrate:
             # Calibrate prepared model to provide data to quantization observers.
-            prepared(*inputs)
+            if self.calibration_samples is not None:
+                for inp in self.calibration_samples:
+                    prepared(*inp)
+            else:
+                prepared(*inputs)
 
         converted = convert_pt2e(prepared)
         self.converted_graph = converted

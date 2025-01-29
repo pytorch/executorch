@@ -19,7 +19,7 @@ template <
     typename std::enable_if<
         std::is_integral<INT_T>::value && !std::is_same<INT_T, bool>::value,
         bool>::type = true>
-bool extract_scalar(exec_aten::Scalar scalar, INT_T* out_val) {
+bool extract_scalar(executorch::aten::Scalar scalar, INT_T* out_val) {
   if (!scalar.isIntegral(/*includeBool=*/false)) {
     return false;
   }
@@ -36,7 +36,7 @@ template <
     typename FLOAT_T,
     typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
         type = true>
-bool extract_scalar(exec_aten::Scalar scalar, FLOAT_T* out_val) {
+bool extract_scalar(executorch::aten::Scalar scalar, FLOAT_T* out_val) {
   double val;
   if (scalar.isFloatingPoint()) {
     val = scalar.to<double>();
@@ -58,7 +58,7 @@ template <
     typename BOOL_T,
     typename std::enable_if<std::is_same<BOOL_T, bool>::value, bool>::type =
         true>
-bool extract_scalar(exec_aten::Scalar scalar, BOOL_T* out_val) {
+bool extract_scalar(executorch::aten::Scalar scalar, BOOL_T* out_val) {
   if (scalar.isIntegral(false)) {
     *out_val = static_cast<bool>(scalar.to<int64_t>());
     return true;
@@ -77,10 +77,10 @@ bool extract_scalar(exec_aten::Scalar scalar, BOOL_T* out_val) {
 
 template <typename Distribution>
 TensorPtr random_strided(
-    std::vector<exec_aten::SizesType> sizes,
-    std::vector<exec_aten::StridesType> strides,
-    exec_aten::ScalarType type,
-    exec_aten::TensorShapeDynamism dynamism,
+    std::vector<executorch::aten::SizesType> sizes,
+    std::vector<executorch::aten::StridesType> strides,
+    executorch::aten::ScalarType type,
+    executorch::aten::TensorShapeDynamism dynamism,
     Distribution&& distribution) {
   auto tensor =
       empty_strided(std::move(sizes), std::move(strides), type, dynamism);
@@ -97,13 +97,13 @@ TensorPtr random_strided(
 } // namespace
 
 TensorPtr empty_strided(
-    std::vector<exec_aten::SizesType> sizes,
-    std::vector<exec_aten::StridesType> strides,
-    exec_aten::ScalarType type,
-    exec_aten::TensorShapeDynamism dynamism) {
+    std::vector<executorch::aten::SizesType> sizes,
+    std::vector<executorch::aten::StridesType> strides,
+    executorch::aten::ScalarType type,
+    executorch::aten::TensorShapeDynamism dynamism) {
   std::vector<uint8_t> data(
-      exec_aten::compute_numel(sizes.data(), sizes.size()) *
-      exec_aten::elementSize(type));
+      executorch::aten::compute_numel(sizes.data(), sizes.size()) *
+      executorch::aten::elementSize(type));
   return make_tensor_ptr(
       std::move(sizes),
       std::move(data),
@@ -114,11 +114,11 @@ TensorPtr empty_strided(
 }
 
 TensorPtr full_strided(
-    std::vector<exec_aten::SizesType> sizes,
-    std::vector<exec_aten::StridesType> strides,
-    exec_aten::Scalar fill_value,
-    exec_aten::ScalarType type,
-    exec_aten::TensorShapeDynamism dynamism) {
+    std::vector<executorch::aten::SizesType> sizes,
+    std::vector<executorch::aten::StridesType> strides,
+    executorch::aten::Scalar fill_value,
+    executorch::aten::ScalarType type,
+    executorch::aten::TensorShapeDynamism dynamism) {
   auto tensor =
       empty_strided(std::move(sizes), std::move(strides), type, dynamism);
   ET_SWITCH_REALB_TYPES(type, nullptr, "full_strided", CTYPE, [&] {
@@ -133,10 +133,10 @@ TensorPtr full_strided(
 }
 
 TensorPtr rand_strided(
-    std::vector<exec_aten::SizesType> sizes,
-    std::vector<exec_aten::StridesType> strides,
-    exec_aten::ScalarType type,
-    exec_aten::TensorShapeDynamism dynamism) {
+    std::vector<executorch::aten::SizesType> sizes,
+    std::vector<executorch::aten::StridesType> strides,
+    executorch::aten::ScalarType type,
+    executorch::aten::TensorShapeDynamism dynamism) {
   return random_strided(
       std::move(sizes),
       std::move(strides),
@@ -146,10 +146,10 @@ TensorPtr rand_strided(
 }
 
 TensorPtr randn_strided(
-    std::vector<exec_aten::SizesType> sizes,
-    std::vector<exec_aten::StridesType> strides,
-    exec_aten::ScalarType type,
-    exec_aten::TensorShapeDynamism dynamism) {
+    std::vector<executorch::aten::SizesType> sizes,
+    std::vector<executorch::aten::StridesType> strides,
+    executorch::aten::ScalarType type,
+    executorch::aten::TensorShapeDynamism dynamism) {
   return random_strided(
       std::move(sizes),
       std::move(strides),
@@ -161,10 +161,10 @@ TensorPtr randn_strided(
 TensorPtr randint_strided(
     int64_t low,
     int64_t high,
-    std::vector<exec_aten::SizesType> sizes,
-    std::vector<exec_aten::StridesType> strides,
-    exec_aten::ScalarType type,
-    exec_aten::TensorShapeDynamism dynamism) {
+    std::vector<executorch::aten::SizesType> sizes,
+    std::vector<executorch::aten::StridesType> strides,
+    executorch::aten::ScalarType type,
+    executorch::aten::TensorShapeDynamism dynamism) {
   return random_strided(
       std::move(sizes),
       std::move(strides),

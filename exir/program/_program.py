@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +11,7 @@ import copy
 import io
 import logging
 import os
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Type, Union
 
 import torch
 import torch._export
@@ -66,6 +67,7 @@ from executorch.exir.verification.verifier import (
 )
 from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
@@ -213,21 +215,29 @@ def _transform(self, *passes: PassType) -> "ExportedProgram":
     if transformed_gm is self.graph_module and not res.modified:
         return self
 
+    return _update_exported_program_graph_module(self, transformed_gm)
+
+
+def _update_exported_program_graph_module(
+    exported_program: ExportedProgram,
+    gm: torch.fx.GraphModule,
+    override_verifiers: None | list[Type[Verifier]] = None,
+) -> "ExportedProgram":
     transformed_ep = ExportedProgram(
-        root=transformed_gm,
-        graph=transformed_gm.graph,
+        root=gm,
+        graph=gm.graph,
         graph_signature=_get_updated_graph_signature(
-            self.graph_signature, transformed_gm
+            exported_program.graph_signature, gm
         ),
-        state_dict=self.state_dict,
-        range_constraints=_get_updated_range_constraints(transformed_gm),
-        module_call_graph=copy.deepcopy(self._module_call_graph),
-        example_inputs=self.example_inputs,
-        constants=self.constants,
-        verifiers=[self.verifier],
+        state_dict=exported_program.state_dict,
+        range_constraints=_get_updated_range_constraints(gm),
+        module_call_graph=copy.deepcopy(exported_program._module_call_graph),
+        example_inputs=exported_program.example_inputs,
+        constants=exported_program.constants,
+        verifiers=override_verifiers or [exported_program.verifier],
     )
-    transformed_ep.graph_module.meta.update(self.graph_module.meta)
-    transformed_ep.graph_module.meta.update(res.graph_module.meta)
+    transformed_ep.graph_module.meta.update(exported_program.graph_module.meta)
+    transformed_ep.graph_module.meta.update(gm.meta)
     return transformed_ep
 
 

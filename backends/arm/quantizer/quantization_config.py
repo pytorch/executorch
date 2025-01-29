@@ -82,14 +82,14 @@ class QuantizationConfig:
             input_act = node.args[0]
             weight = node.args[1]
             quantization_spec = DerivedQuantizationSpec(
-                derived_from=[(input_act, node), (weight, node)],
+                derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]
                 derive_qparams_fn=_derive_qparams_fn,
                 dtype=torch.int32,
                 quant_min=torch.iinfo(torch.int32).min,
                 quant_max=torch.iinfo(torch.int32).max - 1,
                 qscheme=torch.per_tensor_symmetric,
             )
-            return quantization_spec
+            return quantization_spec  # type: ignore[return-value]
 
         if self.bias is None:
             return None

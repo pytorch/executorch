@@ -14,7 +14,7 @@ import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from parameterized import parameterized  # type: ignore[import-untyped]
 
 
 class TestSimpleAdd(unittest.TestCase):

@@ -10,7 +10,7 @@ import os
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import (
+from executorch.backends.arm.arm_backend import (  # type: ignore[attr-defined]
     ArmBackend,
 )  # usort: skip
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
