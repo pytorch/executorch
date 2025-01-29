@@ -645,6 +645,11 @@ def _validate_args(args):
     """
     TODO: Combine all the backends under --backend args
     """
+
+    if args.max_context_length < args.max_seq_length:
+        raise ValueError(
+            f"max_context_length {args.max_context_length} must be >= max_seq_len {args.max_seq_length}. max_context_length impacts kv cache size that is used to remember history, while max_seq_length refers to user prompt length. Please use --max_context_length to specify context length."
+        )
     if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
         raise ValueError(
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
