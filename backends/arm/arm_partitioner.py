@@ -14,7 +14,7 @@ from executorch.backends.arm.arm_backend import (  # type: ignore[attr-defined]
     ArmBackend,
 )  # usort: skip
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
-    TOSASupportedOperators,
+    tosa_support_factory,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -72,7 +72,7 @@ class ArmPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            TOSASupportedOperators(tosa_spec),
+            tosa_support_factory(tosa_spec),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
