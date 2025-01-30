@@ -51,6 +51,10 @@ DEFINE_int32(
     "0: PromptProcessor(prefill) / 1: TokenGenerator(kv) / 2: HybridMode (prefill+kv)");
 DEFINE_double(logits_scale, 0.0, "Logits scale");
 DEFINE_int32(logits_offset, 0, "Logits offset");
+DEFINE_string(
+    kv_updator,
+    "How to update kv cache. Choose between SmartMask and ShiftPointer",
+    "SmartMask");
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -62,7 +66,8 @@ int main(int argc, char** argv) {
       FLAGS_logits_scale,
       FLAGS_logits_offset,
       FLAGS_temperature,
-      FLAGS_eval_mode);
+      FLAGS_eval_mode,
+      FLAGS_kv_updator);
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
   std::ofstream fout(FLAGS_output_path.c_str());
