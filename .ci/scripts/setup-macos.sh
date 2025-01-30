@@ -136,4 +136,7 @@ install_pytorch_and_domains
 # the pinned commit from PyTorch
 install_executorch "use-pt-pinned-commit"
 build_executorch_runner "${BUILD_TOOL}"
-do_not_use_nightly_on_ci
+
+if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]];
+  do_not_use_nightly_on_ci
+fi
