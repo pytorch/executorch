@@ -21,6 +21,8 @@ from typing import Callable, List, Optional, Union
 
 import pkg_resources
 import torch
+
+from executorch.backends.vulkan._passes.remove_asserts import remove_asserts
 from executorch.devtools.backend_debug import get_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord
@@ -726,6 +728,9 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
             get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
         )
         modelname = f"vulkan_{modelname}"
+
+        # Need to remove asserts from the graph to prevent graph breaks
+        remove_asserts(builder_exported_to_edge.edge_manager.exported_program())
 
     if args.mps:
         partitioners.append(get_mps_partitioner(args.use_kv_cache))

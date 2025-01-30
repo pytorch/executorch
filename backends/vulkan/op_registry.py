@@ -490,7 +490,7 @@ def register_sdpa_with_kv_cache_op(features: OpFeatures):
 
 
 # TODO(ssjia) allow registration after remove assertions pass is implemented
-# @update_features(["llama::update_cache", exir_ops.edge.llama.custom_sdpa.default])
+@update_features(["llama::update_cache", exir_ops.edge.llama.custom_sdpa.default])
 def register_sdpa_ops(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims={PackedDim.WIDTH},
