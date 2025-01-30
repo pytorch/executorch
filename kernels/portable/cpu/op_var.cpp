@@ -38,7 +38,7 @@ void compute_variance(
           in,
           dim_list,
           out_ix);
-      CTYPE_OUT mean = sum / num;
+      CTYPE_OUT mean = sum / static_cast<CTYPE_OUT>(num);
       CTYPE_OUT sum2 = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
           [mean](CTYPE_IN v) {
             return (
@@ -90,8 +90,8 @@ Tensor& var_out(
 
   constexpr auto name = "var.out";
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_FLOAT_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
+    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
       compute_variance<CTYPE_IN, CTYPE_OUT>(in, out, dim_list, num, denom);
     });
   });
@@ -135,8 +135,8 @@ Tensor& var_correction_out(
   const size_t num = get_reduced_dim_product(in, dim_list);
   const double denom = num - correction_val;
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_FLOAT_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
+    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
       compute_variance<CTYPE_IN, CTYPE_OUT>(in, out, dim_list, num, denom);
     });
   });

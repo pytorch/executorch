@@ -33,7 +33,10 @@ jobs:
 
   test-setup-linux-gcc:
     name: test-setup-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -55,7 +58,10 @@ jobs:
 
   test-models-linux:
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     needs: gather-models
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
@@ -82,7 +88,10 @@ jobs:
 
   test-llama-runner-linux:
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         dtype: [fp32]
@@ -121,7 +130,10 @@ jobs:
 
   test-llama-runner-linux-android:
     name: test-llama-runner-linux-android
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -143,7 +155,10 @@ jobs:
 
   test-custom-ops-linux:
     name: test-custom-ops-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -164,7 +179,10 @@ jobs:
 
   test-selective-build-linux:
     name: test-selective-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -185,7 +203,10 @@ jobs:
 
   test-llava-runner-linux:
     name: test-llava-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -202,7 +223,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
+        bash install_executorch.sh --pybind xnnpack
 
         # install Llava requirements
         bash examples/models/llama/install_requirements.sh
@@ -216,7 +237,10 @@ jobs:
 
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -236,7 +260,10 @@ jobs:
 
   test-pybind-build-linux:
     name: test-pybind-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -262,7 +289,10 @@ jobs:
 
   test-binary-size-linux-gcc:
     name: test-binary-size-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -294,7 +324,10 @@ jobs:
 
   test-binary-size-linux:
     name: test-binary-size-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -326,10 +359,16 @@ jobs:
 
   android:
     uses: ./.github/workflows/_android.yml
+    permissions:
+      id-token: write
+      contents: read
     needs: test-llama-runner-linux
 
   unittest:
     uses: ./.github/workflows/_unittest.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       docker-image: executorch-ubuntu-22.04-clang12
 
@@ -367,7 +406,10 @@ jobs:
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         dtype: [fp32]
@@ -402,7 +444,10 @@ jobs:
 
   test-qnn-models-linux:
     name: test-qnn-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -421,7 +466,10 @@ jobs:
 
   test-phi-3-mini-runner-linux:
     name: test-phi-3-mini-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -438,7 +486,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
+        bash install_executorch.sh --pybind xnnpack
 
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
@@ -448,7 +496,10 @@ jobs:
 
   test-eval_llama-wikitext-linux:
     name: test-eval_llama-wikitext-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -465,7 +516,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
+        bash install_executorch.sh --pybind xnnpack
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
@@ -475,7 +526,10 @@ jobs:
 
   test-eval_llama-mmlu-linux:
     name: test-eval_llama-mmlu-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -492,7 +546,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
+        bash install_executorch.sh --pybind xnnpack
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
@@ -502,7 +556,10 @@ jobs:
 
   test-llama_runner_eager-linux:
     name: test-llama_runner_eager-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:
@@ -519,7 +576,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
+        bash install_executorch.sh --pybind xnnpack
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
@@ -529,7 +586,10 @@ jobs:
 
   test-mediatek-models-linux:
     name: test-mediatek-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
     with:

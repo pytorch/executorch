@@ -112,6 +112,8 @@ fi
 
 if [[ "${MODE}" =~ .*quantize_kv.* ]]; then
   QUANTIZE_KV_CACHE=ON
+  # quantize_kv cache transform uses custom kv cache update op
+  CUSTOM=ON
 else
   QUANTIZE_KV_CACHE=OFF
 fi

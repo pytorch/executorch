@@ -72,12 +72,42 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
 
 
+def smart_mask_updator(atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches):
+    for i, k_cache in enumerate(k_caches):
+        k_cache[:, :, pos] = new_k_caches[i][:, :, 0]
+
+    for i, v_cache in enumerate(v_caches):
+        v_cache[:, pos, :] = new_v_caches[i]
+
+    atten_mask[0][pos] = 0
+    pos += 1
+    return (atten_mask, pos, k_caches, v_caches)
+
+
+def shift_pointer_updator(
+    atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
+):
+    k_caches = [
+        torch.cat([k_cache[:, :, 1:], new_k_caches[i]], dim=-1)
+        for i, k_cache in enumerate(k_caches)
+    ]
+    v_caches = [
+        torch.cat([v_cache[:, 1:, :], new_v_caches[i]], dim=1)
+        for i, v_cache in enumerate(v_caches)
+    ]
+
+    pos += 1
+    atten_mask[0][-pos - 1] = 0
+    return (atten_mask, pos, k_caches, v_caches)
+
+
 def _kv_calibrate(
     example_inputs,
     user_prompts,
     module: torch.fx.GraphModule,
     tokenizer,
     max_seq_len=512,
+    updator=smart_mask_updator,
 ):
     _, atten_mask, _, k_caches, v_caches = example_inputs
 
@@ -105,17 +135,9 @@ def _kv_calibrate(
                 *k_caches,
                 *v_caches,
             )
-            k_caches = [
-                torch.cat([k_cache[:, :, 1:], new_k_caches[i]], dim=-1)
-                for i, k_cache in enumerate(k_caches)
-            ]
-            v_caches = [
-                torch.cat([v_cache[:, 1:, :], new_v_caches[i]], dim=1)
-                for i, v_cache in enumerate(v_caches)
-            ]
-
-            pos += 1
-            atten_mask[0][-pos - 1] = 0
+            atten_mask, pos, k_caches, v_caches = updator(
+                atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
+            )
             if pos >= len(token_list):
                 token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
 
@@ -174,6 +196,7 @@ def calibrate(
     module: torch.fx.GraphModule,
     tokenizer,
     max_seq_len=512,
+    kv_updator=smart_mask_updator,
 ):
     if len(example_inputs) == 2:
         _prefill_calibrate(
@@ -190,6 +213,7 @@ def calibrate(
             module,
             tokenizer,
             max_seq_len,
+            updator=kv_updator,
         )
     else:
         raise RuntimeError("Get wrong inputs")
@@ -319,6 +343,7 @@ class SingleLlama:
                 self.llama_model, self.inputs, strict=True
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
+
         logging.info("Quantizing the model...")
         calibrate(
             self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
@@ -326,6 +351,7 @@ class SingleLlama:
             fx_graph_module,
             tokenizer=tokenizer,
             max_seq_len=self.llama_meta["get_max_seq_len"],
+            kv_updator=args.kv_updator,
         )
 
         self.llama_model = convert_pt2e(fx_graph_module)
@@ -337,6 +363,7 @@ class SingleLlama:
         use_fp16=False,
         soc_model=QcomChipset.SM8650,
         num_sharding=0,
+        shared_buffer=False,
     ):
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -357,7 +384,7 @@ class SingleLlama:
             compiler_specs = generate_qnn_executorch_compiler_spec(
                 soc_model=soc_model,
                 backend_options=backend_options,
-                shared_buffer=False,
+                shared_buffer=shared_buffer,
             )
             skip_node_op_set = {"llama.fallback.default"}
             partitioner = QnnPartitioner(
@@ -530,6 +557,7 @@ def compile(args, pte_filename, tokenizer):
             use_fp16=use_fp16,
             soc_model=get_soc_to_chipset_map()[args.model],
             num_sharding=args.num_sharding,
+            shared_buffer=args.shared_buffer,
         )
         quant_attrs = llama_instance_list[0].get_quant_attrs()
     else:
@@ -564,7 +592,7 @@ def compile(args, pte_filename, tokenizer):
             generate_qnn_executorch_compiler_spec(
                 soc_model=get_soc_to_chipset_map()[args.model],
                 backend_options=backend_options,
-                shared_buffer=True,
+                shared_buffer=args.shared_buffer,
                 multiple_graphs=True,
                 graph_name=graph_name,
             )
@@ -736,6 +764,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
             f"--system_prompt '{args.system_prompt}'",
             f"--logits_scale {quant_attrs['scale']}",
             f"--logits_offset {quant_attrs['zero_point']}",
+            f"--kv_updator {'SmartMask' if args.kv_updator == smart_mask_updator else 'ShiftPointer'}",
         ]
     )
     runner_cmd = " ".join(
@@ -907,6 +936,14 @@ def main():
         type=int,
     )
 
+    parser.add_argument(
+        "--kv_updator",
+        help="Choose how to update kv cache during runtime",
+        choices=["smart_mask", "shift_pointer"],
+        default="smart_mask",
+        type=str,
+    )
+
     args = parser.parse_args()
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")
@@ -940,6 +977,14 @@ def main():
         runtime_tokenizer_path = args.tokenizer_model
     else:
         raise RuntimeError(f"Unknown llama_model: {args.llama_model}.")
+
+    if args.kv_updator == "smart_mask":
+        args.shared_buffer = True
+        args.kv_updator = smart_mask_updator
+    elif args.kv_updator == "shift_pointer":
+        args.kv_updator = shift_pointer_updator
+    else:
+        exit(f"Using an unkown kv update {args.kv_updator}")
 
     if args.pre_gen_pte:
         quant_attrs = json.load(

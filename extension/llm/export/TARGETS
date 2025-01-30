@@ -12,6 +12,7 @@ runtime.python_library(
     name = "export_lib",
     srcs = [
         "builder.py",
+        "export_passes.py",
         "partitioner_lib.py",
         "quantizer_lib.py",
     ],
@@ -21,6 +22,7 @@ runtime.python_library(
         "//bento/...",
         "//bento_kernels/...",
         "//executorch/examples/...",
+        "//meta_intern_odllm/...",
     ],
     deps = [
         "//caffe2:torch",
@@ -33,6 +35,7 @@ runtime.python_library(
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_details",

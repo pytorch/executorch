@@ -282,6 +282,11 @@ class XNNSquareRoot(XNNNode1x1):
 
 
 @dataclass
+class XNNReciprocalSquareRoot(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNCeiling(XNNNode1x1):
     pass
 
@@ -373,6 +378,7 @@ XNodeUnion = Union[
     XNNStaticSlice,
     XNNScaledDotProductAttention,
     XNNBatchMatrixMultiply,
+    XNNReciprocalSquareRoot,
 ]
 
 
