@@ -17,11 +17,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::IntArrayRef;
-using exec_aten::MemoryFormat;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::IntArrayRef;
+using executorch::aten::MemoryFormat;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpEmptyOutTest : public OperatorTest {
@@ -38,7 +38,7 @@ class OpEmptyOutTest : public OperatorTest {
   void test_empty_out(std::vector<int32_t>&& size_int32_t) {
     TensorFactory<DTYPE> tf;
     std::vector<int64_t> sizes(size_int32_t.begin(), size_int32_t.end());
-    auto aref = exec_aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
+    auto aref = executorch::aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
     optional<MemoryFormat> memory_format;
     Tensor out = tf.ones(size_int32_t);
 
@@ -59,7 +59,7 @@ TEST_F(OpEmptyOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   optional<MemoryFormat> memory_format;
   Tensor out =
       tf.ones({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -70,7 +70,7 @@ TEST_F(OpEmptyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   optional<MemoryFormat> memory_format;
   Tensor out =
       tf.ones({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -84,7 +84,7 @@ TEST_F(OpEmptyOutTest, DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   optional<MemoryFormat> memory_format;
   Tensor out =
       tf.ones({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);

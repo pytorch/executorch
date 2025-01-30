@@ -1064,8 +1064,8 @@ template <
     typename FLOAT_T,
     typename std::enable_if<
         std::is_floating_point_v<FLOAT_T> ||
-            std::is_same_v<FLOAT_T, exec_aten::BFloat16> ||
-            std::is_same_v<FLOAT_T, exec_aten::Half>,
+            std::is_same_v<FLOAT_T, executorch::aten::BFloat16> ||
+            std::is_same_v<FLOAT_T, executorch::aten::Half>,
         bool>::type = true>
 bool extract_scalar_tensor(executorch::aten::Tensor tensor, FLOAT_T* out_val) {
   if (tensor.numel() != 1) {
