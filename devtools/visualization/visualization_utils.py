@@ -6,9 +6,13 @@
 
 import subprocess
 import time
+from typing import Any, Callable, Type
 
 from executorch.exir import EdgeProgramManager, ExecutorchProgramManager
+from executorch.exir.program._program import _update_exported_program_graph_module
+from torch._export.verifier import Verifier
 from torch.export.exported_program import ExportedProgram
+from torch.fx import GraphModule
 
 try:
     from model_explorer import config, consts, visualize_from_config  # type: ignore
@@ -27,7 +31,7 @@ class SingletonModelExplorerServer:
 
     server: None | subprocess.Popen = None
     num_open: int = 0
-    wait_after_start = 2.0
+    wait_after_start = 3.0
 
     def __init__(self, open_in_browser: bool = True, port: int | None = None):
         if SingletonModelExplorerServer.server is None:
@@ -124,3 +128,29 @@ def visualize(
         no_open_in_browser=no_open_in_browser,
         **kwargs,
     )
+
+
+def visualize_graph(
+    graph_module: GraphModule,
+    exported_program: ExportedProgram | EdgeProgramManager | ExecutorchProgramManager,
+    reuse_server: bool = True,
+    no_open_in_browser: bool = False,
+    **kwargs,
+):
+    """Overrides the graph_module of the supplied exported_program with 'graph_module' before visualizing.
+    Also disables validating operators to allow visualizing graphs containing custom ops.
+
+    A typical example is after running passes, which returns a graph_module rather than an ExportedProgram.
+    """
+
+    class _any_op(Verifier):
+        dialect = "ANY_OP"
+
+        def allowed_op_types(self) -> tuple[Type[Any], ...]:
+            return (Callable,)  # type: ignore
+
+    exported_program = _get_exported_program(exported_program)
+    exported_program = _update_exported_program_graph_module(
+        exported_program, graph_module, override_verifiers=[_any_op]
+    )
+    visualize(exported_program, reuse_server, no_open_in_browser, **kwargs)

@@ -17,6 +17,7 @@ python_library(
         ":memory_planning_pass",
         ":normalize_transpose_pass",
         ":prim_ops_py_registry",
+        ":prune_empty_tensor_pass",
         ":quant_fusion_pass",
         ":quantize_io_pass",
         ":remove_noop_pass",
@@ -189,6 +190,18 @@ python_library(
     name = "remove_noop_pass",
     srcs = [
         "remove_noop_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "prune_empty_tensor_pass",
+    srcs = [
+        "prune_empty_tensors_pass.py",
     ],
     deps = [
         "//caffe2:torch",

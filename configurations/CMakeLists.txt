@@ -56,7 +56,6 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     DEPS
     executorch
   )
-  target_compile_options(optimized_native_cpu_ops_lib PRIVATE "-fexceptions")
 
   install(TARGETS optimized_native_cpu_ops_lib DESTINATION lib)
 endif()

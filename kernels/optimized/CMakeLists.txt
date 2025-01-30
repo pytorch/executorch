@@ -23,8 +23,6 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations)
 
-add_compile_options("-fexceptions")
-
 # Note for apple platform we can rely on Accelerate framework Will come back to
 # this
 include(${CMAKE_CURRENT_LIST_DIR}/External/EigenBLAS.cmake)

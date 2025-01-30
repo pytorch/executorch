@@ -16,15 +16,15 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpAliasCopyTest : public OperatorTest {
  protected:
-  exec_aten::Tensor& op_alias_copy_out(
-      const exec_aten::Tensor& self,
-      exec_aten::Tensor& out) {
+  executorch::aten::Tensor& op_alias_copy_out(
+      const executorch::aten::Tensor& self,
+      executorch::aten::Tensor& out) {
     return torch::executor::aten::alias_copy_outf(context_, self, out);
   }
 };

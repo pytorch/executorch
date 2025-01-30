@@ -151,6 +151,7 @@ def _prepare_genrule_and_lib(
         "--source-path=$(location //executorch/codegen:templates)",
         "--tags-path $(location {})/aten/src/ATen/native/tags.yaml".format(aten_src_path),
         "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
+        "--add-exception-boundary",
         "--install_dir=${OUT}",
         # TODO(dbort): Add a second step that verifies that the set of
         # actually-generated files matches GENERATED_FILES.
@@ -247,6 +248,7 @@ def _prepare_custom_ops_genrule_and_lib(
             "--tags-path $(location {})/aten/src/ATen/native/tags.yaml".format(aten_src_path),
             "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
             "--custom_ops_yaml_path=" + custom_ops_yaml_path,
+            "--add_exception_boundary",
             "--install_dir=${OUT}",
             "--op_selection_yaml_path=$(location :{}[selected_operators.yaml])".format(oplist_dir_name),
         ]
@@ -368,7 +370,7 @@ def copy_portable_header_files(name):
     )
 
 def build_portable_lib(name, oplist_header_name, feature = None, expose_operator_symbols = False):
-    """Build portable lib from source. We build from source so that the generated header file, 
+    """Build portable lib from source. We build from source so that the generated header file,
     selected_op_variants.h, can be used to selectively build the lib for different dtypes.
     """
 
@@ -672,7 +674,7 @@ def executorch_generated_lib(
             platforms = platforms,
         )
 
-# Util macro that takes in a binary or a shared library, find targets ending with `_et_oplist` in the transitive closure of deps, 
+# Util macro that takes in a binary or a shared library, find targets ending with `_et_oplist` in the transitive closure of deps,
 # get the `selected_operators.yaml` from those targets, try to merge them into a single yaml. This target will fail to build, if
 # there are intersections of all `selected_operators.yaml` the `target` is depending on.
 #
