@@ -37,15 +37,17 @@ class TestSimpleExpand(unittest.TestCase):
         test_parameters = [
             (torch.rand(1), (2,)),
             (torch.randn(1, 4), (1, -1)),
-            (torch.rand(1, 1, 2, 2), (4, 3, -1, 2)),
             (torch.randn(1), (2, 2, 4)),
-            (torch.rand(3, 2, 4, 1), (-1, -1, -1, 3)),
+            (torch.randn(1, 1, 1, 5), (1, 4, -1, -1)),
             (torch.randn(1, 1, 192), (1, -1, -1)),
+            (torch.randn(1, 1), (1, 2, 2, 4)),
+            (torch.randn(1, 1), (2, 2, 2, 4)),
             (torch.randn(10, 1, 1, 97), (-1, 4, -1, -1)),
+            (torch.rand(1, 1, 2, 2), (4, 3, -1, 2)),
         ]
 
-        def forward(self, x: torch.Tensor, multiples: Sequence):
-            return x.expand(multiples)
+        def forward(self, x: torch.Tensor, m: Sequence):
+            return x.expand(m)
 
     def _test_expand_tosa_MI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
         (
@@ -113,20 +115,34 @@ class TestSimpleExpand(unittest.TestCase):
     def test_expand_tosa_BI(self, test_input, multiples):
         self._test_expand_tosa_BI_pipeline(self.Expand(), (test_input, multiples))
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
-    @parameterized.expand(Expand.test_parameters)
+    @parameterized.expand(Expand.test_parameters[:-3])
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
     def test_expand_u55_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
         )
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
-    @parameterized.expand(Expand.test_parameters)
+    # MLETORCH-629: Expand does not work on FVP with batch>1
+    @parameterized.expand(Expand.test_parameters[-3:])
     @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
+    def test_expand_u55_BI_xfails(self, test_input, multiples):
+        self._test_expand_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
+        )
+
+    @parameterized.expand(Expand.test_parameters[:-3])
+    @pytest.mark.corstone_fvp
     def test_expand_u85_BI(self, test_input, multiples):
+        self._test_expand_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
+        )
+
+    # MLETORCH-629: Expand does not work on FVP with batch>1
+    @parameterized.expand(Expand.test_parameters[-3:])
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    def test_expand_u85_BI_xfails(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
         )

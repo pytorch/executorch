@@ -17,9 +17,9 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpScatterSrcOutTest : public OperatorTest {
@@ -368,7 +368,7 @@ class OpScatterValueOutTest : public OperatorTest {
 
 TEST_F(OpScatterSrcOutTest, AllValidInputOutputSupport) {
 #define TEST_ENTRY(CTYPE, DTYPE) test_scatter_src_out<ScalarType::DTYPE>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -381,7 +381,7 @@ TEST_F(OpScatterSrcOutTest, InvalidDimensionsDies) {
 
 TEST_F(OpScatterValueOutTest, AllValidInputOutputSupport) {
 #define TEST_ENTRY(CTYPE, DTYPE) test_scatter_value_out<ScalarType::DTYPE>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
