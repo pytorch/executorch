@@ -13,14 +13,14 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 bool check_quantized_mixed_linear_args(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
-    const exec_aten::optional<ScalarType> dtype,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<ScalarType> dtype,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, 2));
@@ -64,8 +64,8 @@ Tensor& quantized_mixed_linear_out(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
-    const exec_aten::optional<ScalarType> dtype,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<ScalarType> dtype,
     Tensor& out) {
   // TODO (gjcomer) Replace with ET_KERNEL_CHECK when context is available.
   ET_CHECK(check_quantized_mixed_linear_args(
@@ -74,7 +74,7 @@ Tensor& quantized_mixed_linear_out(
   ScalarType out_dtype = dtype.has_value() ? dtype.value() : out.scalar_type();
 
   size_t output_ndim = 2;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   output_sizes[0] = in.size(0);
   output_sizes[1] = weight.size(0);
 
@@ -117,8 +117,8 @@ Tensor& quantized_mixed_linear_out(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
-    const exec_aten::optional<ScalarType> dtype,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<ScalarType> dtype,
     Tensor& out) {
   // TODO(mcandales): Remove the need for this wrapper
   // TODO(mkg): add support for dtype

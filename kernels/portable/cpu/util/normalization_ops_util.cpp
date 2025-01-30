@@ -13,14 +13,14 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 bool check_batch_norm_args(
     const Tensor& in,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
-    const exec_aten::optional<Tensor>& running_mean,
-    const exec_aten::optional<Tensor>& running_var,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& running_mean,
+    const executorch::aten::optional<Tensor>& running_var,
     double momentum,
     double eps,
     Tensor& out,
@@ -75,8 +75,8 @@ bool check_batch_norm_args(
 bool check_layer_norm_args(
     const Tensor& in,
     IntArrayRef normalized_shape,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     Tensor& out,
     Tensor& mean_out,
     Tensor& rstd_out) {
@@ -93,9 +93,9 @@ bool check_layer_norm_args(
         in.size(d + shift) == normalized_shape[d],
         "Expected normalized_shape to match the sizes of input's rightmost dimensions.");
   }
-  exec_aten::SizesType shape[ndim];
+  executorch::aten::SizesType shape[ndim];
   for (size_t i = 0; i < ndim; ++i) {
-    shape[i] = static_cast<exec_aten::SizesType>(normalized_shape[i]);
+    shape[i] = static_cast<executorch::aten::SizesType>(normalized_shape[i]);
   }
 
   if (weight.has_value()) {
@@ -132,8 +132,8 @@ void get_layer_norm_out_target_size(
 
 bool check_group_norm_args(
     const Tensor& in,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     int64_t N,
     int64_t C,
     int64_t HxW,

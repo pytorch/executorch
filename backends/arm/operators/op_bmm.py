@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -7,7 +7,7 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
 # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
@@ -75,14 +75,14 @@ class BMMVisitor(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             output_qparams = get_output_qparams(node)[0]  # pyre-ignore[16]
             final_output_scale = (
-                input_qparams[0].scale * input_qparams[1].scale  # pyre-ignore[61]
+                input_qparams[0].scale * input_qparams[1].scale  # type: ignore[possibly-undefined]  # pyre-ignore[61]
             ) / output_qparams.scale
 
             build_rescale(
                 tosa_fb=tosa_graph,
                 scale=final_output_scale,
                 # pyre-ignore[61]: Uninitialized local [61]: Local variable `bmm_result` is undefined, or not always defined.
-                input_node=bmm_result,
+                input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=ts.DType.INT8,
                 output_shape=bmm_result.shape,

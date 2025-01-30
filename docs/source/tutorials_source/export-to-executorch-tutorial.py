@@ -194,11 +194,11 @@ pre_autograd_aten_dialect = export_for_training(SimpleConv(), example_args).modu
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
 prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)  # type: ignore[arg-type]

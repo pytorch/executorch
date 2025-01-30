@@ -61,8 +61,8 @@ void pixel_shuffle_impl(const Tensor& in, int64_t upscale_factor, Tensor& out) {
 
 } // namespace
 
-using SizesType = exec_aten::SizesType;
-using Tensor = exec_aten::Tensor;
+using SizesType = executorch::aten::SizesType;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& pixel_shuffle_out(
     KernelRuntimeContext& ctx,

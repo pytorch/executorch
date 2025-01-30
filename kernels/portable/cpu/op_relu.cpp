@@ -16,8 +16,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& relu_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
@@ -33,12 +33,16 @@ Tensor& relu_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_realhbf16_type(out),
+      InvalidArgument,
+      out);
 
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "relu.out", CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "relu.out", CTYPE, [&]() {
     apply_unary_map_fn(
         [](const CTYPE val_in) {
           return (std::isnan(val_in) || val_in >= CTYPE(0)) ? val_in : CTYPE(0);

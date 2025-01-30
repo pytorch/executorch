@@ -254,16 +254,16 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
   // is a Bool Scalar which resolves to false and points us to the instruction
   // to jump to which will take us to a point that is after the else branch.
   if (cond_value.isTensor()) {
-    const exec_aten::Tensor& cond_val = cond_value.toTensor();
+    const executorch::aten::Tensor& cond_val = cond_value.toTensor();
 
     // All the tensors and scalar cond values should be of bool type
     // currently. If that's not the case then something is wrong in the model
     // and we should exit.
     ET_CHECK_OR_RETURN_ERROR(
-        exec_aten::ScalarType::Bool == cond_val.scalar_type(),
+        executorch::aten::ScalarType::Bool == cond_val.scalar_type(),
         InvalidProgram,
         "Expected dtype of %" PRId8 " got %" PRId8,
-        static_cast<int8_t>(exec_aten::ScalarType::Bool),
+        static_cast<int8_t>(executorch::aten::ScalarType::Bool),
         static_cast<int8_t>(cond_val.scalar_type()));
 
     const bool* cond_data = cond_val.const_data_ptr<bool>();
@@ -377,7 +377,7 @@ Error Method::parse_values() {
         // portable here we need to allocate a new array of bool and copy cast
         // the flatbuffer data into it, but because of how exceptionally rare
         // this case is its low prio TODO: jakeszwe
-        new (&values_[i]) EValue(exec_aten::ArrayRef<bool>(
+        new (&values_[i]) EValue(executorch::aten::ArrayRef<bool>(
             (const bool*)items->data(), items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::DoubleList: {
@@ -385,8 +385,8 @@ Error Method::parse_values() {
             static_cast<const executorch_flatbuffer::DoubleList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
             items != nullptr, InvalidProgram, "Missing list at index %zu", i);
-        new (&values_[i])
-            EValue(exec_aten::ArrayRef<double>(items->data(), items->size()));
+        new (&values_[i]) EValue(
+            executorch::aten::ArrayRef<double>(items->data(), items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::String: {
         const auto fb_str =
@@ -415,10 +415,14 @@ Error Method::parse_values() {
         new (&values_[i]) EValue(t.get());
       } break;
       case executorch_flatbuffer::KernelTypes::TensorList: {
+        const auto items =
+            static_cast<const executorch_flatbuffer::TensorList*>(val)->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // get list of serialization tensors and allocate storage for executor
         // tensors
         auto tensors = deserialization::parseTensorList(
-            static_cast<const executorch_flatbuffer::TensorList*>(val)->items(),
+            items,
             values_,
             n_value, // The size of the full array.
             memory_manager_);
@@ -433,12 +437,15 @@ Error Method::parse_values() {
         new (&values_[i]) EValue(tensors.get());
       } break;
       case executorch_flatbuffer::KernelTypes::OptionalTensorList: {
+        const auto items =
+            static_cast<const executorch_flatbuffer::OptionalTensorList*>(val)
+                ->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // Same as TensorList but optional<Tensor> instead of Tensor
         auto tensors =
-            deserialization::parseListOptionalType<exec_aten::Tensor>(
-                static_cast<const executorch_flatbuffer::OptionalTensorList*>(
-                    val)
-                    ->items(),
+            deserialization::parseListOptionalType<executorch::aten::Tensor>(
+                items,
                 values_,
                 n_value, // The size of the full array.
                 memory_manager_);
@@ -552,8 +559,9 @@ Error Method::resolve_operator(
     if (eval->isTensor()) {
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
-      exec_aten::DimOrderType* dim_order_ptr =
-          method_allocator->allocateList<exec_aten::DimOrderType>(tensor.dim());
+      executorch::aten::DimOrderType* dim_order_ptr =
+          method_allocator->allocateList<executorch::aten::DimOrderType>(
+              tensor.dim());
       if (dim_order_ptr == nullptr) {
         return Error::MemoryAllocationFailed;
       }
@@ -566,7 +574,7 @@ Error Method::resolve_operator(
           i,
           static_cast<uint32_t>(err));
       meta[count].dim_order_ =
-          Span<exec_aten::DimOrderType>(dim_order_ptr, size);
+          Span<executorch::aten::DimOrderType>(dim_order_ptr, size);
       count++;
     }
   }
@@ -962,7 +970,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 }
 
 ET_NODISCARD Error
-Method::set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues) {
+Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,

@@ -24,16 +24,16 @@ namespace native {
 Tensor& upsample_bilinear2d_vec_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t> output_size,
+    const executorch::aten::OptionalArrayRef<int64_t> output_size,
     bool align_corners,
-    const exec_aten::OptionalArrayRef<double> scale_factors,
+    const executorch::aten::OptionalArrayRef<double> scale_factors,
     Tensor& out);
 
 Tensor& upsample_bilinear2d_vec_out_no_context(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t> output_size,
+    const executorch::aten::OptionalArrayRef<int64_t> output_size,
     bool align_corners,
-    const exec_aten::OptionalArrayRef<double> scale_factors,
+    const executorch::aten::OptionalArrayRef<double> scale_factors,
     Tensor& out) {
   KernelRuntimeContext ctx;
   auto& ret = upsample_bilinear2d_vec_out(
@@ -51,14 +51,14 @@ Tensor& upsample_bilinear2d_vec_out_no_context(
 Tensor& upsample_nearest2d_vec_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t> output_size,
-    const exec_aten::OptionalArrayRef<double> scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t> output_size,
+    const executorch::aten::OptionalArrayRef<double> scale_factors,
     Tensor& out);
 
 Tensor& upsample_nearest2d_vec_out_no_context(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t> output_size,
-    const exec_aten::OptionalArrayRef<double> scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t> output_size,
+    const executorch::aten::OptionalArrayRef<double> scale_factors,
     Tensor& out) {
   KernelRuntimeContext ctx;
   auto& ret =
