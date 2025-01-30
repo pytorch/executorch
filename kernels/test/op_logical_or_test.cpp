@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 class OpLogicalOrTest : public torch::executor::testing::BinaryLogicalOpTest {
  protected:

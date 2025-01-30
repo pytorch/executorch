@@ -48,7 +48,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                example_inputs=module.get_inputs(),
+                example_inputs=module.get_inputs(),  # type: ignore[operator]
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
@@ -61,7 +61,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                example_inputs=module.get_inputs(),
+                example_inputs=module.get_inputs(),  # type: ignore[operator]
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()

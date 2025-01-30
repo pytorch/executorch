@@ -65,16 +65,7 @@ def get_input_names(program: ExportedProgram) -> list[str]:
     Returns:
         A list of strings with the names of the model input.
     """
-    input_names = []
-
-    # E.g. bias and weights are 'placeholders' as well. This is used to
-    # get only the use inputs.
-    usr_inputs = program.graph_signature.user_inputs
-    for node in program.graph.nodes:
-        if node.op == "placeholder" and node.name in usr_inputs:
-            input_names.append(node.name)
-
-    return input_names
+    return [spec.arg.name for spec in program.graph_signature.input_specs]
 
 
 def get_input_quantization_params(
@@ -270,7 +261,7 @@ def run_corstone(
                 "-C",
                 f"cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
-                elf_path,
+                str(elf_path),
                 "--timelimit",
                 f"{timeout}",
             ]
@@ -302,7 +293,7 @@ def run_corstone(
                 "-C",
                 f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
                 "-a",
-                elf_path,
+                str(elf_path),
                 "--timelimit",
                 f"{timeout}",
             ]
@@ -334,13 +325,16 @@ def run_corstone(
 
 
 def prep_data_for_save(
-    data: torch.Tensor,
+    data,
     input_name: str,
     quant_param: Optional[QuantizationParams] = None,
 ):
-    data_np = np.array(data.detach(), order="C").astype(
-        torch_to_numpy_dtype_dict[data.dtype]
-    )
+    if isinstance(data, torch.Tensor):
+        data_np = np.array(data.detach(), order="C").astype(
+            torch_to_numpy_dtype_dict[data.dtype]
+        )
+    else:
+        data_np = np.array(data)
     if quant_param is not None:
         assert quant_param.node_name in input_name, (
             f"The quantization params name '{quant_param.node_name}' does not "

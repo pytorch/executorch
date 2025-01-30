@@ -17,8 +17,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -155,12 +155,10 @@ Tensor& glu_out(
   const size_t non_negative_dim = dim < 0 ? dim + self.dim() : dim;
   const auto in_dtype = self.scalar_type();
 
-  ET_SWITCH_FLOAT_TYPES(in_dtype, ctx, "glu", CTYPE_IN, [&]() {
-    if (out.scalar_type() == ScalarType::Float) {
-      glu_out_tensor<CTYPE_IN, float>(self, non_negative_dim, out);
-    } else {
-      glu_out_tensor<CTYPE_IN, double>(self, non_negative_dim, out);
-    }
+  ET_SWITCH_FLOATHBF16_TYPES(in_dtype, ctx, "glu", CTYPE_IN, [&]() {
+    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, "glu", CTYPE_OUT, [&]() {
+      glu_out_tensor<CTYPE_IN, CTYPE_OUT>(self, non_negative_dim, out);
+    });
   });
 
   return out;

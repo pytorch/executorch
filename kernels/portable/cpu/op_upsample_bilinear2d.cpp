@@ -13,9 +13,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::SizesType;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::SizesType;
 
 namespace {
 template <typename CTYPE>
@@ -93,9 +93,9 @@ void upsample_bilinear2d_kernel_impl(
 Tensor& upsample_bilinear2d_vec_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t> output_size,
+    const executorch::aten::OptionalArrayRef<int64_t> output_size,
     bool align_corners,
-    const exec_aten::OptionalArrayRef<double> scale_factors,
+    const executorch::aten::OptionalArrayRef<double> scale_factors,
     Tensor& out) {
   // Preconditions (checked in check_..._args):
   //  In and out tensors have same dtype.
@@ -123,7 +123,7 @@ Tensor& upsample_bilinear2d_vec_out(
   const auto kernel_scale_w = area_pixel_compute_scale<double>(
       in.sizes()[3], out.sizes()[3], align_corners, scale_w);
 
-  ET_SWITCH_REAL_TYPES(
+  ET_SWITCH_REALHBF16_TYPES(
       in.scalar_type(), ctx, "upsample_bilinear2d.out", CTYPE, [&]() {
         upsample_bilinear2d_kernel_impl<CTYPE>(
             in, align_corners, kernel_scale_h, kernel_scale_w, out);
