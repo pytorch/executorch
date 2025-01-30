@@ -6,12 +6,12 @@
 # pyre-unsafe
 
 import operator
-from typing import final, Type
+from typing import final, Optional, Sequence, Type
 
 import torch.fx as fx
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
+from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
 
 
 class SupportedTOSAOperatorCheck(OperatorSupportBase):
@@ -69,10 +69,19 @@ def get_registered_tosa_support_checks(
     return _tosa_spec_support[tosa_spec]
 
 
-def tosa_support_factory(tosa_spec: TosaSpecification) -> OperatorSupportBase:
-    return any_chain(
-        BaseTOSASupportList(),
-        *(check(tosa_spec) for check in get_registered_tosa_support_checks(tosa_spec)),
+def tosa_support_factory(
+    tosa_spec: TosaSpecification,
+    additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
+) -> OperatorSupportBase:
+    return chain(
+        any_chain(
+            BaseTOSASupportList(),
+            *(
+                check(tosa_spec)
+                for check in get_registered_tosa_support_checks(tosa_spec)
+            ),
+        ),
+        *additional_checks if additional_checks else [],
     )
 
 

@@ -7,7 +7,7 @@
 
 import logging
 import os
-from typing import Callable, final, List, Optional, Tuple
+from typing import Callable, final, List, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.arm.arm_backend import (  # type: ignore[attr-defined]
@@ -27,6 +27,8 @@ from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.operator_support import OperatorSupportBase
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -54,8 +56,13 @@ def is_dequant_node(node: torch.fx.node.Node) -> bool:
 
 @final
 class ArmPartitioner(Partitioner):
-    def __init__(self, compile_spec: List[CompileSpec]) -> None:
+    def __init__(
+        self,
+        compile_spec: List[CompileSpec],
+        additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
+    ) -> None:
         self.delegation_spec = DelegationSpec(ArmBackend.__name__, compile_spec)
+        self.additional_checks = additional_checks
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -72,7 +79,7 @@ class ArmPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            tosa_support_factory(tosa_spec),
+            tosa_support_factory(tosa_spec, self.additional_checks),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
