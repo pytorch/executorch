@@ -16,10 +16,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::MemoryFormat;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::MemoryFormat;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpCopyTest : public OperatorTest {
@@ -34,7 +34,7 @@ class OpCopyTest : public OperatorTest {
   }
 
   // test if copy.out works well under all kinds of legal input type.
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
     Tensor self = tf.make(/*sizes=*/{2, 4}, /*data=*/{2, 3, 2, 4, 1, 5, 1, 6});

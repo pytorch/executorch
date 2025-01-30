@@ -117,6 +117,7 @@ runtime.python_library(
         # "//executorch/extension/pybindings:aten_lib",
         # "//executorch/extension/pybindings:portable_lib",
         # "//executorch/extension/pybindings:portable_lib_plus_custom",
+        "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/devtools/etrecord:etrecord",
         "//executorch/util:memory_profiler",
         "//executorch/util:python_profiler",

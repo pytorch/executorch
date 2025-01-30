@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
 # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
@@ -165,13 +165,13 @@ class Conv2dVisitor(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if inputs[0].dtype == ts.DType.INT8:
             # Get scale_factor from input, weight, and output.
-            input_scale = input_qparams[0].scale  # pyre-ignore [61]
+            input_scale = input_qparams[0].scale  # type: ignore[possibly-undefined]  # pyre-ignore [61]
             weight_scale = input_qparams[1].scale  # pyre-ignore [61]
             output_qargs = get_output_qparams(node)  # pyre-ignore [16]
             build_rescale_conv_output(
                 tosa_graph,
                 # pyre-fixme[61]: Uninitialized local [61]: Local variable `conv2d_res` is undefined, or not always defined.
-                conv2d_res,
+                conv2d_res,  # type: ignore[possibly-undefined]
                 output.name,
                 output.dtype,
                 input_scale,

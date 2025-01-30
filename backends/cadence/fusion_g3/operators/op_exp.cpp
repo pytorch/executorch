@@ -49,7 +49,8 @@ Tensor& exp_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       out);
 #endif
 
-  if (out.scalar_type() == ScalarType::Float) {
+  if ((in.scalar_type() == ScalarType::Float) &&
+      (out.scalar_type() == ScalarType::Float)) {
     float* const out_data = out.mutable_data_ptr<float>();
     const float* const in_data = in.const_data_ptr<float>();
 

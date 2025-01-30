@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -13,7 +13,7 @@ from executorch.backends.arm.tosa_specification import (
 )
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from parameterized import parameterized  # type: ignore[import-untyped]
 
 test_valid_0_80_strings = [
     "TOSA-0.80+BI",
@@ -64,13 +64,13 @@ test_compile_specs_no_version = [
 class TestTosaSpecification(unittest.TestCase):
     """Tests the TOSA specification class"""
 
-    @parameterized.expand(test_valid_0_80_strings)
+    @parameterized.expand(test_valid_0_80_strings)  # type: ignore[misc]
     def test_version_string_0_80(self, version_string: str):
         tosa_spec = TosaSpecification.create_from_string(version_string)
         assert isinstance(tosa_spec, Tosa_0_80)
         assert tosa_spec.profile in ["BI", "MI"]
 
-    @parameterized.expand(test_valid_1_00_strings)
+    @parameterized.expand(test_valid_1_00_strings)  # type: ignore[misc]
     def test_version_string_1_00(self, version_string: str):
         tosa_spec = TosaSpecification.create_from_string(version_string)
         assert isinstance(tosa_spec, Tosa_1_00)
@@ -83,7 +83,7 @@ class TestTosaSpecification(unittest.TestCase):
                 e in test_valid_1_00_extensions[profile] for e in tosa_spec.extensions
             ]
 
-    @parameterized.expand(test_invalid_strings)
+    @parameterized.expand(test_invalid_strings)  # type: ignore[misc]
     def test_invalid_version_strings(self, version_string: str):
         tosa_spec = None
         with self.assertRaises(ValueError):
@@ -91,12 +91,12 @@ class TestTosaSpecification(unittest.TestCase):
 
         assert tosa_spec is None
 
-    @parameterized.expand(test_compile_specs)
+    @parameterized.expand(test_compile_specs)  # type: ignore[misc]
     def test_create_from_compilespec(self, compile_specs: list[CompileSpec]):
         tosa_spec = TosaSpecification.create_from_compilespecs(compile_specs)
         assert isinstance(tosa_spec, TosaSpecification)
 
-    @parameterized.expand(test_compile_specs_no_version)
+    @parameterized.expand(test_compile_specs_no_version)  # type: ignore[misc]
     def test_create_from_invalid_compilespec(self, compile_specs: list[CompileSpec]):
         tosa_spec = None
         with self.assertRaises(ValueError):

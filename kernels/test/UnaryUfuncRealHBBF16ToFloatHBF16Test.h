@@ -24,9 +24,9 @@ class UnaryUfuncRealHBBF16ToFloatHBF16Test : public OperatorTest {
  protected:
   // Implement this to call the torch::executor::aten::op_outf function for the
   // op.
-  virtual exec_aten::Tensor& op_out(
-      const exec_aten::Tensor& self,
-      exec_aten::Tensor& out) = 0;
+  virtual executorch::aten::Tensor& op_out(
+      const executorch::aten::Tensor& self,
+      executorch::aten::Tensor& out) = 0;
 
   // Scalar reference implementation of the function in question for testing.
   virtual double op_reference(double x) const = 0;
@@ -40,15 +40,17 @@ class UnaryUfuncRealHBBF16ToFloatHBF16Test : public OperatorTest {
   // in IMPLEMENT_UNARY_UFUNC_REALHB_TO_FLOATH_TEST.
   virtual SupportedFeatures* get_supported_features() const = 0;
 
-  template <exec_aten::ScalarType IN_DTYPE, exec_aten::ScalarType OUT_DTYPE>
+  template <
+      executorch::aten::ScalarType IN_DTYPE,
+      executorch::aten::ScalarType OUT_DTYPE>
   void test_floating_point_op_out(
       const std::vector<int32_t>& out_shape = {1, 6},
-      exec_aten::TensorShapeDynamism dynamism =
-          exec_aten::TensorShapeDynamism::STATIC) {
+      executorch::aten::TensorShapeDynamism dynamism =
+          executorch::aten::TensorShapeDynamism::STATIC) {
     TensorFactory<IN_DTYPE> tf_in;
     TensorFactory<OUT_DTYPE> tf_out;
 
-    exec_aten::Tensor out = tf_out.zeros(out_shape, dynamism);
+    executorch::aten::Tensor out = tf_out.zeros(out_shape, dynamism);
 
     using IN_CTYPE = typename decltype(tf_in)::ctype;
     using OUT_CTYPE = typename decltype(tf_out)::ctype;
@@ -93,16 +95,16 @@ class UnaryUfuncRealHBBF16ToFloatHBF16Test : public OperatorTest {
 
   // Unhandled output dtypes.
   template <
-      exec_aten::ScalarType INPUT_DTYPE,
-      exec_aten::ScalarType OUTPUT_DTYPE>
+      executorch::aten::ScalarType INPUT_DTYPE,
+      executorch::aten::ScalarType OUTPUT_DTYPE>
   void test_op_invalid_output_dtype_dies() {
     TensorFactory<INPUT_DTYPE> tf;
     TensorFactory<OUTPUT_DTYPE> tf_out;
 
     const std::vector<int32_t> sizes = {2, 5};
 
-    exec_aten::Tensor in = tf.ones(sizes);
-    exec_aten::Tensor out = tf_out.zeros(sizes);
+    executorch::aten::Tensor in = tf.ones(sizes);
+    executorch::aten::Tensor out = tf_out.zeros(sizes);
 
     ET_EXPECT_KERNEL_FAILURE(context_, op_out(in, out));
   }
