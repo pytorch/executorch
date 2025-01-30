@@ -189,7 +189,7 @@ mkdir -p "$HEADERS_PATH"
 
 BUCK2=$(find $SOURCE_ROOT_DIR -type f -path '*/buck2-bin/buck2-*' | head -n 1)
 if [[ -z "$BUCK2" ]]; then
-  echo "Could not find buck2 executable in any buck2-bin directory under $OUTPUT"
+  echo "Could not find buck2 executable in any buck2-bin directory under $SOURCE_ROOT_DIR"
   BUCK2=$(which buck2)
 fi
 

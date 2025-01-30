@@ -21,10 +21,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 // To further emphasize the accuracy of our op_to, we TEST_F the conversion
@@ -37,8 +37,8 @@ typedef std::map<
           std::variant<
             std::vector<float>,
             std::vector<double>,
-            std::vector<exec_aten::Half>,
-            std::vector<exec_aten::BFloat16>>>
+            std::vector<executorch::aten::Half>,
+            std::vector<executorch::aten::BFloat16>>>
         FloatingTypeToDataMap;
 
 typedef std::map<
@@ -57,7 +57,7 @@ class OpToDimOrderCopyTest : public OperatorTest {
   Tensor& op__to_dim_order_copy_out(
       const Tensor& self,
       bool non_blocking,
-      exec_aten::optional<ArrayRef<int64_t>> dim_order,
+      executorch::aten::optional<ArrayRef<int64_t>> dim_order,
       Tensor& out) {
     return torch::executor::dim_order_ops::_to_dim_order_copy_outf(
         context_, self, non_blocking, dim_order, out);
@@ -415,8 +415,8 @@ TEST_F(OpToDimOrderCopyTest, HardcodeFloatConvertInt) {
       -0.30919688936285893988};
   // clang-format on
 
-  std::vector<exec_aten::Half> half_data;
-  std::vector<exec_aten::BFloat16> bf16_data;
+  std::vector<executorch::aten::Half> half_data;
+  std::vector<executorch::aten::BFloat16> bf16_data;
   for (auto d : double_data) {
     half_data.emplace_back(d);
     bf16_data.emplace_back(d);
@@ -435,8 +435,8 @@ TEST_F(OpToDimOrderCopyTest, HardcodeFloatConvertInt) {
   FloatingTypeToDataMap floating_point_data;
   floating_point_data[typeid(float)] = float_data;
   floating_point_data[typeid(double)] = double_data;
-  floating_point_data[typeid(exec_aten::Half)] = half_data;
-  floating_point_data[typeid(exec_aten::BFloat16)] = bf16_data;
+  floating_point_data[typeid(executorch::aten::Half)] = half_data;
+  floating_point_data[typeid(executorch::aten::BFloat16)] = bf16_data;
 
   // Gathering all int data together for better traversial
   IntTypeToDataMap int_data;
@@ -580,7 +580,7 @@ TEST_F(OpToDimOrderCopyTest, ContiguousToChannelsLast) {
       /*dim_order=*/{0, 2, 3, 1});
 
   std::vector<int64_t> dim_order_vec = {0, 2, 3, 1};
-  exec_aten::ArrayRef<int64_t> dim_order(
+  executorch::aten::ArrayRef<int64_t> dim_order(
       dim_order_vec.data(), dim_order_vec.size());
   Tensor ret = op__to_dim_order_copy_out(
       /*self*/ x, /*non_blocking*/ false, /*dim_order*/ dim_order, out);
@@ -615,7 +615,7 @@ TEST_F(OpToDimOrderCopyTest, ChannelsLastToContiguous) {
        0.8416, 0.4296, 0.7203, 0.8963, 0.3597, 0.5552});
 
   std::vector<int64_t> dim_order_vec = {0, 1, 2, 3};
-  exec_aten::ArrayRef<int64_t> dim_order(
+  executorch::aten::ArrayRef<int64_t> dim_order(
       dim_order_vec.data(), dim_order_vec.size());
   Tensor ret = op__to_dim_order_copy_out(
       /*self*/ x, /*non_blocking*/ false, /*dim_order*/ dim_order, out);
@@ -653,7 +653,7 @@ TEST_F(OpToDimOrderCopyTest, PreserveChanneslLast) {
   Tensor ret = op__to_dim_order_copy_out(
       /*self*/ x,
       /*non_blocking*/ false,
-      /*dim_order*/ exec_aten::nullopt,
+      /*dim_order*/ executorch::aten::nullopt,
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
