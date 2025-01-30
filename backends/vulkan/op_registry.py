@@ -478,7 +478,7 @@ def register_convolution_op(features: OpFeatures):
 
 
 @update_features("llama::sdpa_with_kv_cache")
-def register_sdpa_op(features: OpFeatures):
+def register_sdpa_with_kv_cache_op(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims={PackedDim.WIDTH},
     )
@@ -486,6 +486,20 @@ def register_sdpa_op(features: OpFeatures):
     features.optimal_storage = VkStorageType.TEXTURE_3D
     features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
     features.handles_own_prepacking = True
+    return features
+
+
+# TODO(ssjia) allow registration after remove assertions pass is implemented
+# @update_features(["llama::update_cache", exir_ops.edge.llama.custom_sdpa.default])
+def register_sdpa_ops(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims={PackedDim.WIDTH},
+    )
+    features.resize_fn = False
+    features.buffer_impl = False
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims={PackedDim.WIDTH},
+    )
     return features
 
 
