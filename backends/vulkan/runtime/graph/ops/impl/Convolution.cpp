@@ -407,7 +407,9 @@ void add_conv2d_node(
     wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
   }
 
-  if (method == Conv2dMethod::Pointwise) {
+  vkapi::ParamsBindList param_buffers;
+  std::vector<PushConstantDataInfo> push_constants;
+  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
     const utils::ivec4 kernel_param_size_stride = {
         kernel_params.kernel_size[0],
         kernel_params.kernel_size[1],
@@ -420,55 +422,43 @@ void add_conv2d_node(
         kernel_params.dilation[0],
         kernel_params.dilation[1]};
 
-    graph.execute_nodes().emplace_back(new DispatchNode(
-        graph,
-        shader,
-        wg_size,
-        graph.create_local_wg_size(wg_size),
-        // Inputs and Outputs
-        {{out, vkapi::MemoryAccessType::WRITE},
-         {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
-        // Shader params buffers
-        {},
-        // Specialization Constants
-        {},
-        // Resizing Logic
-        resize_conv2d_node,
-        {weight_data, stride, padding, dilation, transposed, output_padding},
-        {
-            graph.logical_limits_pc_of(out),
-            graph.sizes_pc_of(in),
-            PushConstantDataInfo(
-                &kernel_param_size_stride, sizeof(kernel_param_size_stride)),
-            PushConstantDataInfo(
-                &kernel_param_pad_dial, sizeof(kernel_param_pad_dial)),
-            PushConstantDataInfo(
-                &extra_params, sizeof(extra_params), sizeof(utils::ivec4)),
-            PushConstantDataInfo(&out_params, sizeof(out_params)),
-        }));
+    push_constants = {
+        graph.logical_limits_pc_of(out),
+        graph.sizes_pc_of(in),
+        PushConstantDataInfo(
+            &kernel_param_size_stride, sizeof(kernel_param_size_stride)),
+        PushConstantDataInfo(
+            &kernel_param_pad_dial, sizeof(kernel_param_pad_dial)),
+        PushConstantDataInfo(
+            &extra_params, sizeof(extra_params), sizeof(utils::ivec4)),
+        PushConstantDataInfo(&out_params, sizeof(out_params)),
+    };
   } else {
-    graph.execute_nodes().emplace_back(new DispatchNode(
-        graph,
-        shader,
-        wg_size,
-        graph.create_local_wg_size(wg_size),
-        // Inputs and Outputs
-        {{out, vkapi::MemoryAccessType::WRITE},
-         {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
-        // Shader params buffers
-        {
-            t_out->logical_limits_ubo(),
-            t_in->sizes_ubo(),
-            graph.create_params_buffer(kernel_params),
-            graph.create_params_buffer(extra_params),
-            graph.create_params_buffer(out_params),
-        },
-        // Specialization Constants
-        {},
-        // Resizing Logic
-        resize_conv2d_node,
-        {weight_data, stride, padding, dilation, transposed, output_padding}));
+    param_buffers = {
+        t_out->logical_limits_ubo(),
+        t_in->sizes_ubo(),
+        graph.create_params_buffer(kernel_params),
+        graph.create_params_buffer(extra_params),
+        graph.create_params_buffer(out_params),
+    };
   }
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
+      graph,
+      shader,
+      wg_size,
+      graph.create_local_wg_size(wg_size),
+      // Inputs and Outputs
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+      // Shader params buffers
+      param_buffers,
+      // Specialization Constants
+      {},
+      // Resizing Logic
+      resize_conv2d_node,
+      {weight_data, stride, padding, dilation, transposed, output_padding},
+      push_constants));
 }
 
 void add_conv1d_node(
