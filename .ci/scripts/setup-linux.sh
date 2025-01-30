@@ -24,6 +24,6 @@ fi
 install_executorch "use-pt-pinned-commit"
 build_executorch_runner "${BUILD_TOOL}"
 
-if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]];
+if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
   do_not_use_nightly_on_ci
 fi
