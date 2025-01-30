@@ -220,9 +220,7 @@ class TagMemoryMetaPass(ExportPass):
 
     # noqa
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        sorted_nodes: NodeList = topo_sort(list(graph_module.graph.nodes))
-
-        for node in sorted_nodes:
+        for node in graph_module.graph.nodes:
             if not self.should_annotate(node) or self.should_delay_annotation(node):
                 continue
 
