@@ -791,6 +791,34 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  if (EXECUTORCH_BUILD_EXTENSION_TRAINING)
+
+    set(_pybind_training_dep_libs
+        ${TORCH_PYTHON_LIBRARY}
+        bundled_program
+        etdump
+        executorch
+        extension_data_loader
+        util
+        torch
+        extension_training
+    )
+
+    # pybind training
+    pybind11_add_module(_training_lib SHARED extension/training/pybindings/_training_lib.cpp)
+
+    target_compile_definitions(
+      _training_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_training_lib
+    )
+    target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_options(_training_lib PUBLIC ${_pybind_compile_options})
+    target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
+
+    install(TARGETS _training_lib
+            LIBRARY DESTINATION extension/training/pybindings
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
