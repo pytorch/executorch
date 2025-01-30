@@ -78,7 +78,7 @@ Tensor& div_out_mode(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    exec_aten::optional<exec_aten::string_view> mode,
+    executorch::aten::optional<executorch::aten::string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
     return div_out(ctx, a, b, out);
@@ -204,7 +204,7 @@ Tensor& div_scalar_mode_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
-    exec_aten::optional<exec_aten::string_view> mode,
+    executorch::aten::optional<executorch::aten::string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
     return div_scalar_out(ctx, a, b, out);

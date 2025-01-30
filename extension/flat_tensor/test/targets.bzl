@@ -16,3 +16,16 @@ def define_common_targets():
             "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
         ],
     )
+
+    runtime.cxx_test(
+        name = "serialize_cpp_test",
+        srcs = [
+            "test_serialize.cpp",
+        ],
+        deps = [
+            "//executorch/extension/flat_tensor/serialize:serialize_cpp",
+            "//executorch/extension/flat_tensor/serialize:generated_headers",
+            "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
+            "//executorch/extension/tensor:tensor",
+        ],
+    )

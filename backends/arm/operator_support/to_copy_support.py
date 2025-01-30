@@ -97,7 +97,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if input_dtype not in supported_dtypes:
             logger.info(
                 f"Input dtype {input_val.dtype} is not supported in "
-                f"{node.target.name()}."  # pyre-ignore[16]
+                f"{node.target.name()}."  # type: ignore[union-attr]  # pyre-ignore[16]
             )
             return False
 
@@ -107,7 +107,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if output_val.dtype not in supported_dtypes[input_dtype]:
             logger.info(
                 f"Output dtype {output_val.dtype} is not supported in "
-                f"{node.target.name()} for input dtype {input_dtype}. "  # pyre-ignore[16]
+                f"{node.target.name()} for input dtype {input_dtype}. "  # type: ignore[union-attr]  # pyre-ignore[16]
                 f"Supported output types: "
                 f"{''.join(str(t) for t in supported_dtypes[input_dtype])}"
             )
@@ -118,17 +118,18 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             if node.kwargs["memory_format"] in (torch.preserve_format,):
                 logger.info(
                     f"Argument 'memory_format' is not supported for "
-                    f"{node.target.name()} right now."  # pyre-ignore[16]
+                    f"{node.target.name()} right now."  # type: ignore[union-attr]  # pyre-ignore[16]
                 )
                 return False
 
         # Check dim_order (to_dim_order_copy)
         if "dim_order" in node.kwargs:
             dim_order = node.kwargs["dim_order"]
-            if dim_order != list(range(len(dim_order))):
+            # pyre-ignore[6]
+            if dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
                 logger.info(
                     f"Argument {dim_order=} is not supported for "
-                    f"{node.target.name()} right now."  # pyre-ignore[16]
+                    f"{node.target.name()} right now."  # type: ignore[union-attr]  # pyre-ignore[16]
                 )
                 return False
 

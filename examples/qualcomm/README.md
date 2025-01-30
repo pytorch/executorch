@@ -10,9 +10,9 @@ We have seperated the example scripts into the following subfolders, please refe
    For example, [llama](./oss_scripts/llama/qnn_llama_runner.cpp) contains not only the python scripts to prepare the model but also a customized runner for executing the model.
 
 3. qaihub_scripts: QAIHub stands for [Qualcomm AI Hub](https://aihub.qualcomm.com/). On QAIHub, users can find pre-compiled context binaries, a format used by QNN to save its models. This provides users with a new option for model deployment. Different from oss_scripts & scripts, which the example scripts are converting a model from nn.Module to ExecuTorch .pte files, qaihub_scripts provides example scripts for converting pre-compiled context binaries to ExecuTorch .pte files. Additionaly, users can find customized example runners specific to the QAIHub models for execution. For example [qaihub_llama2_7b](./qaihub_scripts/llama2/qaihub_llama2_7b.py) is a script converting context binaries to ExecuTorch .pte files, and [qaihub_llama2_7b_runner](./qaihub_scripts/llama2/qaihub_llama2_7b_runner.cpp) is a customized example runner to execute llama2 .pte files. Please be aware that context-binaries downloaded from QAIHub are tied to a specific QNN SDK version.
-Before executing the scripts and runner, please ensure that you are using the QNN SDK version that is matching the context binary. Tutorial below will also cover how to check the QNN Version for a context binary.
+Before executing the scripts and runner, please ensure that you are using the QNN SDK version that is matching the context binary. Please refer to [Check context binary version](#check-context-binary-version) for tutorial on how to check the QNN Version for a context binary.
 
-4. scripts: This folder contains scripts to build models provided by executorch.
+4. scripts: This folder contains scripts to build models provided by Executorch.
 
 
 
@@ -62,12 +62,13 @@ python deeplab_v3.py -s <device_serial> -m "SM8550" -b path/to/build-android/ --
 ```
 
 #### Check context binary version
+This is typically useful when users want to run any models under `qaihub_scripts`. When users retrieve context binaries from Qualcomm AI Hub, we need to ensure the QNN SDK used to run the `qaihub_scripts` is the same version as the QNN SDK that Qualcomm AI Hub used to compile the context binaries. To do so, please run the following script to retrieve the JSON file that contains the metadata about the context binary:
 ```bash
 cd ${QNN_SDK_ROOT}/bin/x86_64-linux-clang
 ./qnn-context-binary-utility --context_binary ${PATH_TO_CONTEXT_BINARY} --json_file ${OUTPUT_JSON_NAME}
 ```
-After retreiving the json file, search in the json file for the field "buildId" and ensure it matches the ${QNN_SDK_ROOT} you are using for the environment variable.
-If you run into the following error, that means the ${QNN_SDK_ROOT} that you are using is older than the context binary QNN SDK version. In this case, please download a newer QNN SDK version.
+After retrieving the json file, search in the json file for the field "buildId" and ensure it matches the `${QNN_SDK_ROOT}` you are using for the environment variable.
+If you run into the following error, that means the ${QNN_SDK_ROOT} that you are using is older than the context binary's QNN SDK version. In this case, please download a newer QNN SDK version.
 ```
 Error: Failed to get context binary info.
 ```

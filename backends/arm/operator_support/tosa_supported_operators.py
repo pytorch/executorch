@@ -138,5 +138,5 @@ class TOSASupportedOperators(OperatorSupportBase):
     def is_node_supported_custom(self, node: fx.Node) -> bool:
         tosa_checks = get_registered_tosa_support_checks(self.tosa_spec)
         if node.target in tosa_checks.keys():
-            return tosa_checks[node.target].is_node_supported(node, self.tosa_spec)
+            return tosa_checks[node.target].is_node_supported(node, self.tosa_spec)  # type: ignore[index]
         return False

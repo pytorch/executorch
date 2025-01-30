@@ -134,6 +134,7 @@ union XNodeUnion {
   XNNBatchMatrixMultiply: _XNNNode2x1,
   XNNConcatenate5: _XNNCat,
   XNNConvTranspose2d: _XNNNodeConv,
+  XNNReciprocalSquareRoot: _XNNNode1x1,
 }
 
 union XValueUnion {

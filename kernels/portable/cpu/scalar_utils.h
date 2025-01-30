@@ -116,12 +116,12 @@ struct promote_type_with_scalar_type {
           (std::is_same<
                promote_type_with_scalar_type_not_respecting_half_to_float,
                typename ScalarTypeToCppType<
-                   exec_aten::ScalarType::Half>::type>::value ||
+                   executorch::aten::ScalarType::Half>::type>::value ||
            std::is_same<
                promote_type_with_scalar_type_not_respecting_half_to_float,
                typename ScalarTypeToCppType<
-                   exec_aten::ScalarType::BFloat16>::type>::value),
-      typename ScalarTypeToCppType<exec_aten::ScalarType::Float>::type,
+                   executorch::aten::ScalarType::BFloat16>::type>::value),
+      typename ScalarTypeToCppType<executorch::aten::ScalarType::Float>::type,
       promote_type_with_scalar_type_not_respecting_half_to_float>::type;
 };
 

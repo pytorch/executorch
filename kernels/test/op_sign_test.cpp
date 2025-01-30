@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpSignTest : public OperatorTest {
@@ -25,22 +25,31 @@ class OpSignTest : public OperatorTest {
   Tensor& op_sign_out(const Tensor& self, Tensor& out) {
     return torch::executor::aten::sign_outf(context_, self, out);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_et_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    const auto infinity = std::numeric_limits<CTYPE>::infinity();
+    const auto nan = std::numeric_limits<CTYPE>::quiet_NaN();
+    Tensor in = tf.make({1, 7}, {-infinity, -3., -1.5, 0., 1.5, nan, infinity});
+    Tensor out = tf.zeros({1, 7});
+    Tensor expected = tf.make({1, 7}, {-1., -1., -1., 0., 1., nan, 1.});
+
+    Tensor ret = op_sign_out(in, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 };
 
 TEST_F(OpSignTest, ETSanityCheckFloat) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen returns 0 on NAN input";
   }
-  TensorFactory<ScalarType::Float> tf;
-
-  Tensor in = tf.make({1, 7}, {-INFINITY, -3., -1.5, 0., 1.5, NAN, INFINITY});
-  Tensor out = tf.zeros({1, 7});
-  Tensor expected = tf.make({1, 7}, {-1., -1., -1., 0., 1., NAN, 1.});
-
-  Tensor ret = op_sign_out(in, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_CLOSE(out, expected);
+#define TEST_ENTRY(ctype, dtype) test_et_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
 TEST_F(OpSignTest, ATenSanityCheckFloat) {

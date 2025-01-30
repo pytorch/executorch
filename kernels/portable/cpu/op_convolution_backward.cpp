@@ -16,10 +16,10 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using OptIntArrayRef = exec_aten::OptionalArrayRef<int64_t>;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
+using OptIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
 
 namespace {
 
@@ -34,7 +34,7 @@ bool check_convolution_backward_args(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    ET_UNUSED exec_aten::ArrayRef<bool> output_mask,
+    ET_UNUSED executorch::aten::ArrayRef<bool> output_mask,
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias) {
@@ -53,7 +53,7 @@ bool check_convolution_backward_args(
       check_convolution_args(
           input,
           weight,
-          exec_aten::optional<Tensor>(),
+          executorch::aten::optional<Tensor>(),
           stride,
           padding,
           dilation,
@@ -64,7 +64,7 @@ bool check_convolution_backward_args(
       "Invalid convolution arguments");
 
   size_t output_ndim = 0;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   get_convolution_out_target_size(
       input,
       weight,
@@ -99,7 +99,7 @@ void conv2d_backward_impl(
     IntArrayRef padding,
     IntArrayRef dilation,
     int64_t groups,
-    exec_aten::ArrayRef<bool> output_mask,
+    executorch::aten::ArrayRef<bool> output_mask,
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias) {
@@ -147,11 +147,11 @@ void conv2d_backward_impl(
   }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  exec_aten::SizesType out_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType out_coord[kTensorDimensionLimit];
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  exec_aten::SizesType in_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType in_coord[kTensorDimensionLimit];
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  exec_aten::SizesType weight_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType weight_coord[kTensorDimensionLimit];
 
   // Compute gradients
   for (int64_t b = 0; b < batch_size; ++b) { // Loop over each batch
@@ -238,7 +238,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> convolution_backward_out(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    exec_aten::ArrayRef<bool> output_mask,
+    executorch::aten::ArrayRef<bool> output_mask,
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias) {
@@ -289,7 +289,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> convolution_backward_out(
 
   constexpr auto name = "convolution_backward.out";
 
-  ET_SWITCH_FLOATH_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     conv2d_backward_impl<CTYPE>(
         grad_output,
         input,
