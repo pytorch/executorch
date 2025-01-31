@@ -37,11 +37,19 @@ def parse_arguments():
         type=str,
         default="CPU",
     )
+    parser.add_argument(
+        "-p",
+        "--pattern",
+        help="Pattern to match test files. Provide complete file name to run individual op tests",
+        type=str,
+        default="test_*.py",
+    )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
     test_params = {}
     test_params["device"] = args.device
     test_params["build_folder"] = args.build_folder
+    test_params["pattern"] = args.pattern
     return test_params
 
 if __name__ == "__main__":
@@ -49,8 +57,9 @@ if __name__ == "__main__":
     # Replace the default test suite with a custom test suite to be able to
     # pass test parameter to the test cases
     loader.suiteClass = OpenvinoTestSuite
-    loader.suiteClass.test_params = parse_arguments()
+    test_params = parse_arguments()
+    loader.suiteClass.test_params = test_params
     # Discover all existing op tests in "ops" folder
-    suite = loader.discover("ops", pattern='test_*.py')
+    suite = loader.discover("ops", pattern=test_params['pattern'])
     # Start running tests
     unittest.TextTestRunner().run(suite)

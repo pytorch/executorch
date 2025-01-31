@@ -83,10 +83,11 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                 # Start a subprocess to execute model with openvino_executor_runner
                 cmd = [
                     f"{self.build_folder}/examples/openvino/openvino_executor_runner",
+                    "--model_path",
                     pte_fname,
-                    #"--input_list_path",
+                    "--input_list_path",
                     f"{tmp_dir}/input_list.txt",
-                    #"--output_folder_path",
+                    "--output_folder_path",
                     output_dir,
                 ]
 

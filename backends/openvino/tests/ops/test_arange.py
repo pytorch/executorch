@@ -16,6 +16,5 @@ class TestArangeOperator(BaseOpenvinoOpTest):
 
     def test_arange(self):
         module = self.create_model(5)
-        #sample_input = (torch.randn(5),)
-        sample_input = (torch.ones(5),)
+        sample_input = (torch.randn(5),)
         self.execute_layer_test(module, sample_input)
