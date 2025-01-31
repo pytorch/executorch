@@ -30,7 +30,7 @@ Result<size_t> calculate_nbytes(
 }
 } // namespace
 
-Result<TensorLayout> TensorLayout::create(
+Result<const TensorLayout> TensorLayout::create(
     Span<const int32_t> sizes,
     Span<const uint8_t> dim_order,
     executorch::aten::ScalarType scalar_type) {
