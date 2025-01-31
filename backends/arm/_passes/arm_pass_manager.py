@@ -42,6 +42,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     QuantizeOperatorArguments,
     RetraceFoldedDtypesPass,
 )
+from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (  # type: ignore[import-not-found]
     FuseQuantizedActivationPass,
 )
@@ -126,6 +127,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxesPass())
+        self.add_pass(FuseBatchnorm2DPass(exported_program))
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
