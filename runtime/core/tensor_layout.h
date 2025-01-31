@@ -77,16 +77,16 @@ class ET_EXPERIMENTAL TensorLayout final {
         scalar_type_(scalar_type),
         nbytes_(nbytes) {}
   /// The sizes of the tensor.
-  Span<const int32_t> sizes_;
+  const Span<const int32_t> sizes_;
 
   /// The dim order of the tensor.
-  Span<const uint8_t> dim_order_;
+  const Span<const uint8_t> dim_order_;
 
   /// The scalar type of the tensor.
-  executorch::aten::ScalarType scalar_type_;
+  const executorch::aten::ScalarType scalar_type_;
 
   /// The size in bytes of the tensor.
-  size_t nbytes_;
+  const size_t nbytes_;
 };
 
 } // namespace runtime
