@@ -117,7 +117,6 @@ def define_common_targets():
             ],
         )
 
-
     runtime.cxx_library(
         name = "tag",
         srcs = ["tag.cpp"],
