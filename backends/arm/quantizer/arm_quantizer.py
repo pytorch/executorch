@@ -20,8 +20,12 @@ import torch
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.quantizer import arm_quantizer_utils
-from executorch.backends.arm.quantizer.arm_quantizer_utils import mark_node_as_annotated
-from executorch.backends.arm.quantizer.quantization_annotator import annotate_graph
+from executorch.backends.arm.quantizer.arm_quantizer_utils import (  # type: ignore[attr-defined]
+    mark_node_as_annotated,
+)
+from executorch.backends.arm.quantizer.quantization_annotator import (  # type: ignore[import-not-found]
+    annotate_graph,
+)
 
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -253,7 +257,7 @@ class ArmQuantizer(Quantizer):
         Currently transforms scalar values to tensor attributes.
         """
 
-        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(
+        return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
             graph_module=model
         )
 

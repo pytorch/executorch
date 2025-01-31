@@ -114,6 +114,17 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         "hardshrink");                                                   \
   }
 
+#define DEFINE_LEAKY_RELU_FN(op_name)                                    \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_unary_op_node(                                            \
+        graph,                                                           \
+        args[0],                                                         \
+        get_val_or_inf(graph, args[1], /*neg slope*/ false),             \
+        kDummyFloat,                                                     \
+        args[2],                                                         \
+        "leaky_relu");                                                   \
+  }
+
 void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // args[1] is the `approximate` string
   // https://fburl.com/code/9omngmyo
@@ -137,6 +148,7 @@ DEFINE_RELU_FN(relu);
 DEFINE_HARDSHRINK_FN(hardshrink);
 DEFINE_ACTIVATION_FN(hardswish);
 DEFINE_ACTIVATION_FN(hardsigmoid);
+DEFINE_LEAKY_RELU_FN(leaky_relu);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -155,6 +167,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
   VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
+  VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
 }
 
 } // namespace vkcompute

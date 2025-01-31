@@ -29,7 +29,7 @@ class RopeWithAttentionSinkTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(42)
         self.params = ModelArgs(
-            use_kv_cache=True, enable_dynamic_shape=True, max_seq_len=256
+            use_kv_cache=True, enable_dynamic_shape=True, max_context_len=256
         )
         self.rope_with_attention_sink = self._init_rope(
             params=self.params, eviction_batch_size=1
@@ -135,7 +135,7 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
         self.params = ModelArgs(
             use_kv_cache=True,
             enable_dynamic_shape=True,
-            max_seq_len=self.window_size + sink_size,
+            max_context_len=self.window_size + sink_size,
         )
         self.rope_with_attention_sink = RopeWithAttentionSink(
             params=self.params,

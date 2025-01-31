@@ -44,22 +44,23 @@ int prepare_data(
   for (int i = 0; i < num_out_dims; i++) {
     out_shape[i] = out.size(i);
   }
-
   int num_axis_dims = 0;
-  for (const auto& d : dim_list.value()) {
-    if (d < 0) {
-      p_axis[num_axis_dims] = num_inp_dims + d;
-      num_axis_dims++;
-    } else {
-      p_axis[num_axis_dims] = d;
-      num_axis_dims++;
+  if (dim_list.has_value()) {
+    for (const auto& d : dim_list.value()) {
+      if (d < 0) {
+        p_axis[num_axis_dims] = num_inp_dims + d;
+        num_axis_dims++;
+      } else {
+        p_axis[num_axis_dims] = d;
+        num_axis_dims++;
+      }
     }
   }
 
   return num_axis_dims;
 }
 
-Tensor& mean_out(
+Tensor& mean_dim_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
@@ -69,12 +70,6 @@ Tensor& mean_out(
   (void)ctx;
 
 #ifdef OP_ARG_CHECK
-  ET_KERNEL_CHECK(
-      ctx,
-      torch::executor::check_mean_dim_args(in, dim_list, keepdim, dtype, out),
-      InvalidArgument,
-      out);
-
   ET_KERNEL_CHECK(
       ctx,
       executorch::runtime::tensors_have_same_dim_order(in, out),
@@ -97,13 +92,14 @@ Tensor& mean_out(
 
   constexpr int kNnlibMaxDim = 5;
 
-  bool optimized = 1;
+  bool optimized = true;
 
-  if (out.scalar_type() != ScalarType::Float)
-    optimized = 0;
+  if (!((out.scalar_type() == ScalarType::Float) &&
+        (in.scalar_type() == ScalarType::Float)))
+    optimized = false;
 
   if (in.dim() > kNnlibMaxDim)
-    optimized = 0;
+    optimized = false;
 
   if (optimized) {
     float* __restrict__ p_out = out.mutable_data_ptr<float>();
@@ -135,9 +131,8 @@ Tensor& mean_out(
         num_inp_dims,
         num_out_dims);
 
-    if (num_axis_dims == num_inp_dims) {
+    if ((num_axis_dims == num_inp_dims) || (!dim_list.has_value())) {
       num_out_dims = 1;
-      out_shape[0] = 1;
     }
 
     int inp_shape_max = inp_shape[p_axis[0]];
@@ -168,6 +163,12 @@ Tensor& mean_out(
         num_axis_dims,
         p_scratch_in);
   } else {
+    ET_KERNEL_CHECK(
+        ctx,
+        torch::executor::check_mean_dim_args(in, dim_list, keepdim, dtype, out),
+        InvalidArgument,
+        out);
+
     ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "mean.out", CTYPE_IN, [&] {
       ET_SWITCH_FLOATH_TYPES(
           out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {

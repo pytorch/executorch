@@ -33,7 +33,7 @@ class QuantizedKVCache(nn.Module):
     def __init__(
         self,
         max_batch_size,
-        max_seq_length,
+        max_context_length,
         n_heads,
         head_dim,
         cache_type: QuantizedCacheType = QuantizedCacheType.AffineSymmetric,
@@ -52,8 +52,8 @@ class QuantizedKVCache(nn.Module):
         self.use_custom_update_cache_op = use_custom_update_cache_op
         self.quantized_cache_dtype = torch.int8
         self.cache_fp_type = torch.float32
-        cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
-        scale_shape = (max_batch_size, max_seq_length, n_heads, 1)
+        cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
+        scale_shape = (max_batch_size, max_context_length, n_heads, 1)
         self.register_buffer(
             "k_cache", torch.zeros(cache_shape, dtype=self.quantized_cache_dtype)
         )
@@ -161,13 +161,15 @@ class QuantizedKVCache(nn.Module):
         cache_type: QuantizedCacheType,
         use_custom_update_cache_op: bool = False,
     ):
-        max_batch_size, n_heads, max_seq_length, head_dim = kv_cache.k_cache.shape
+        max_batch_size, n_heads, max_context_length, head_dim = kv_cache.k_cache.shape
         if isinstance(kv_cache, CustomKVCache):
             # If replacing custom kv cache, then the shape is [B, S, H, D]
-            max_batch_size, max_seq_length, n_heads, head_dim = kv_cache.k_cache.shape
+            max_batch_size, max_context_length, n_heads, head_dim = (
+                kv_cache.k_cache.shape
+            )
         return cls(
             max_batch_size,
-            max_seq_length,
+            max_context_length,
             n_heads,
             head_dim,
             cache_type,
@@ -226,14 +228,14 @@ class CustomKVCache(nn.Module):
     def __init__(
         self,
         max_batch_size: int,
-        max_seq_length: int,
+        max_context_length: int,
         n_heads: int,
         head_dim: int,
         dtype=torch.float32,
     ):
         super().__init__()
-        self.max_seq_length = max_seq_length
-        cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
+        self.max_context_length = max_context_length
+        cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
 
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
@@ -275,13 +277,13 @@ def replace_kv_cache_with_custom_kv_cache(module):
         if isinstance(child, KVCache):
             cache_shape = child.k_cache.shape
             cache_dtype = child.k_cache.dtype
-            max_batch_size, n_heads, max_seq_length, head_dim = cache_shape
+            max_batch_size, n_heads, max_context_length, head_dim = cache_shape
             setattr(
                 module,
                 name,
                 CustomKVCache(
                     max_batch_size,
-                    max_seq_length,
+                    max_context_length,
                     n_heads,
                     head_dim,
                     dtype=cache_dtype,

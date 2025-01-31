@@ -126,6 +126,6 @@ namespace aten {
 using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
 } // namespace aten
 } // namespace executorch
-// DEPRECATED: The exec_aten:: namespace is deprecated. Use executorch::aten::
-// instead.
+// DEPRECATED: The executorch::aten:: namespace is deprecated. Use
+// executorch::aten:: instead.
 namespace exec_aten = ::executorch::aten;

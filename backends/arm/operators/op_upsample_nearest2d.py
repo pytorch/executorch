@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -16,7 +16,7 @@ from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_utils import get_resize_parameters, tosa_shape
 from serializer.tosa_serializer import TosaOp
 
-from tosa.ResizeMode import ResizeMode
+from tosa.ResizeMode import ResizeMode  # type: ignore
 
 
 @register_node_visitor

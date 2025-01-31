@@ -149,6 +149,6 @@ namespace exec_aten = executorch::aten;
 
 namespace torch {
 namespace executor {
-using TensorList = exec_aten::TensorList;
+using TensorList = ::executorch::aten::TensorList;
 } // namespace executor
 } // namespace torch

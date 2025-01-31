@@ -70,7 +70,7 @@ Since weight packing creates an extra copy of the weights inside XNNPACK, We fre
 When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors.
 
 #### **Profiling**
-We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. With ExecuTorch's Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in [Using the ExecuTorch Developer Tools to Profile a Model](./tutorials/devtools-integration-tutorial) on how to profile ExecuTorch models and use Developer Tools' Inspector API to view XNNPACK's internal profiling information.
+We have enabled basic profiling for the XNNPACK delegate that can be enabled with the compiler flag `-DEXECUTORCH_ENABLE_EVENT_TRACER` (add `-DENABLE_XNNPACK_PROFILING` for additional details). With ExecuTorch's Developer Tools integration, you can also now use the Developer Tools to profile the model. You can follow the steps in [Using the ExecuTorch Developer Tools to Profile a Model](./tutorials/devtools-integration-tutorial) on how to profile ExecuTorch models and use Developer Tools' Inspector API to view XNNPACK's internal profiling information. An example implementation is available in the `xnn_executor_runner` (see [tutorial here](tutorial-xnnpack-delegate-lowering.md#profiling)).
 
 
 [comment]: <> (TODO: Refactor quantizer to a more official quantization doc)
@@ -80,7 +80,7 @@ The XNNPACK delegate can also be used as a backend to execute symmetrically quan
 ### Configuring the XNNPACKQuantizer
 
 ```python
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
   XNNPACKQuantizer,
   get_symmetric_quantization_config,
 )

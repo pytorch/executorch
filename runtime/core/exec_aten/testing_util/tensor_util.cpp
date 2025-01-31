@@ -16,10 +16,10 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
-using exec_aten::BFloat16;
-using exec_aten::Half;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::BFloat16;
+using executorch::aten::Half;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 
 namespace executorch {
 namespace runtime {
@@ -79,6 +79,9 @@ bool data_is_close(
 double default_atol_for_type(ScalarType t) {
   if (t == ScalarType::Half) {
     return internal::kDefaultHalfAtol;
+  }
+  if (t == ScalarType::BFloat16) {
+    return internal::kDefaultBFloat16Atol;
   }
   return internal::kDefaultAtol;
 }
@@ -189,9 +192,9 @@ bool tensor_data_is_close(
 }
 
 bool tensor_lists_are_close(
-    const exec_aten::Tensor* tensors_a,
+    const executorch::aten::Tensor* tensors_a,
     size_t num_tensors_a,
-    const exec_aten::Tensor* tensors_b,
+    const executorch::aten::Tensor* tensors_b,
     size_t num_tensors_b,
     double rtol,
     std::optional<double> opt_atol) {

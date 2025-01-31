@@ -19,11 +19,11 @@
 #include <limits>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 using torch::executor::native::add_out;
 using torch::executor::native::dequantize_per_tensor_out;
@@ -34,7 +34,7 @@ using torch::executor::testing::TensorFactory;
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-template <exec_aten::ScalarType DTYPE>
+template <executorch::aten::ScalarType DTYPE>
 void test_dtype() {
   TensorFactory<ScalarType::Float> tf;
 
