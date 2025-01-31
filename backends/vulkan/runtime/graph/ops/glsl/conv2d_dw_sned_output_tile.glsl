@@ -24,11 +24,20 @@ ${layout_declare_tensor(0, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d")}
 ${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d")}
 ${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
-${layout_declare_ubo(4, "ivec3", "out_limits")}
-${layout_declare_ubo(5, "ivec4", "in_sizes")}
-${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
-${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
-${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
+
+layout(push_constant) uniform restrict Block {
+  ivec4 out_limits;
+  ivec4 in_sizes;
+  ivec2 kernel_size;
+  ivec2 stride;
+  ivec2 padding;
+  ivec2 dilation;
+  ivec2 overlay_region;
+  int in_group_size;
+  int dummy_padding;
+  float out_min;
+  float out_max;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -44,7 +53,7 @@ void main() {
     div_by_x % out_limits.y,
     div_by_x / out_limits.y);
 
-  if (any(greaterThanEqual(pos, out_limits))) {
+  if (pos.z >= out_limits.z) {
     return;
   }
 

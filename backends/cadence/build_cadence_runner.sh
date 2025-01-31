@@ -21,7 +21,7 @@ main() {
   cd "${EXECUTORCH_ROOT}"
 
   rm -rf cmake-out
-  cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+  CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
@@ -33,7 +33,7 @@ main() {
   local build_dir="cmake-out/${example_dir}"
   local cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
   rm -rf ${build_dir}
-  cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
+  CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_CADENCE_CPU_RUNNER=ON \
     -DEXECUTORCH_ENABLE_LOGGING=ON \

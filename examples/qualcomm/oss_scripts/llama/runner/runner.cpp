@@ -43,14 +43,16 @@ Runner::Runner(
     const float logits_scale,
     const int32_t logits_offset,
     const float temperature,
-    const int eval_mode)
+    const int eval_mode,
+    const std::string& kv_updator)
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
       logits_scale_(logits_scale),
       logits_offset_(logits_offset),
       temperature_(temperature),
-      eval_mode_(static_cast<EvalMode>(eval_mode)) {
+      eval_mode_(static_cast<EvalMode>(eval_mode)),
+      kv_updator_(kv_updator) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
         models_path[i], Module::LoadMode::MmapUseMlockIgnoreErrors));
@@ -125,31 +127,47 @@ Error Runner::load() {
   vocab_size_ = method_meta.output_tensor_meta(0)->sizes()[2]; // logit_tensor
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
 
-  io_mem_ = std::make_unique<HybridMemory>(
-      modules_,
-      prefill_cache_len_,
-      kv_cache_len_,
-      vocab_size_,
-      num_layers,
-      head_dim,
-      num_heads,
-      eval_mode_,
-      prefill_forward_name_,
-      kv_forward_name_);
+  if (kv_updator_ == "SmartMask") {
+    io_mgr_ = std::make_unique<SmartMaskIoMgr>(
+        modules_,
+        prefill_cache_len_,
+        kv_cache_len_,
+        vocab_size_,
+        num_layers,
+        head_dim,
+        num_heads,
+        eval_mode_,
+        prefill_forward_name_,
+        kv_forward_name_);
+  } else if (kv_updator_ == "ShiftPointer") {
+    io_mgr_ = std::make_unique<ShiftPointerIoMgr>(
+        modules_,
+        prefill_cache_len_,
+        kv_cache_len_,
+        vocab_size_,
+        num_layers,
+        head_dim,
+        num_heads,
+        eval_mode_,
+        prefill_forward_name_,
+        kv_forward_name_);
+  } else {
+    ET_LOG(Error, "Using an unknown updator %s", kv_updator_.c_str());
+  }
   ET_LOG(Info, "creating io_memory");
 
   // prepare io
-  io_mem_->init_io();
+  io_mgr_->init_io();
   switch (eval_mode_) {
     case EvalMode::kPrefill:
-      io_mem_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
+      io_mgr_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
       break;
     case EvalMode::kKVCached:
-      io_mem_->prepare_kv_io(get_methods_meta(kv_forward_name_));
+      io_mgr_->prepare_kv_io(get_methods_meta(kv_forward_name_));
       break;
     case EvalMode::kHybrid:
-      io_mem_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
-      io_mem_->prepare_kv_io(get_methods_meta(kv_forward_name_));
+      io_mgr_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
+      io_mgr_->prepare_kv_io(get_methods_meta(kv_forward_name_));
       break;
     case EvalMode::kUnsupported:
       ET_CHECK_MSG(false, "unsupported mode");
@@ -255,9 +273,9 @@ Error Runner::generate(
     for (auto method_name : method_names_) {
       for (int i = 0; i < modules_.size(); ++i) {
         input_tensors[method_name].emplace_back(
-            io_mem_->get_input_tensors(i, method_name));
+            io_mgr_->get_input_tensors(i, method_name));
         output_tensors[method_name].emplace_back(
-            io_mem_->get_output_tensors(i, method_name));
+            io_mgr_->get_output_tensors(i, method_name));
         for (size_t j = 0; j < output_tensors[method_name][i].size(); ++j) {
           ET_CHECK_MSG(
               modules_[i]->set_output(
@@ -327,16 +345,11 @@ Error Runner::generate(
   }
 
   int64_t pos = 0, prev_token, cur_token = prompt_tokens[0];
-  HybridMemory::IO* ptr =
-      static_cast<HybridMemory::IO*>(io_mem_->get_mutable_ptr());
   if (token_callback) {
     token_callback(prompt_);
   }
-
   auto prefill_execute = [&](const std::string& method_name) {
-    for (int i = 0; i < num_prompt_tokens; i++) {
-      ptr->prefill_input_toks[i] = static_cast<int32_t>(prompt_tokens[i]);
-    }
+    io_mgr_->fill_prefill_toks(prompt_tokens);
 
     pos = num_prompt_tokens - 1;
     cur_token = prompt_tokens[pos];
@@ -349,7 +362,7 @@ Error Runner::generate(
       cur_token = logitsToToken(logits_tensor, pos);
       stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
 
-      io_mem_->update_prefill_io(cur_token, ++pos, output_tensors[method_name]);
+      io_mgr_->update_prefill_io(cur_token, ++pos, output_tensors[method_name]);
       auto piece_res = tokenizer_->decode(prev_token, cur_token);
       ET_CHECK(piece_res.ok());
       if (token_callback) {
@@ -373,8 +386,7 @@ Error Runner::generate(
   };
 
   auto kv_execute = [&](const std::string& method_name) {
-    ptr->input_tok = static_cast<int32_t>(cur_token);
-    ptr->kv_attention_mask[kv_cache_len_] = 65535;
+    io_mgr_->fill_kv_tok_mask(pos, cur_token);
     while (pos < seq_len - 1) {
       // inference
       run_model_step(method_name, inputs[method_name]);
@@ -396,7 +408,7 @@ Error Runner::generate(
       if (pos < num_prompt_tokens - 1) {
         cur_token = prompt_tokens[pos + 1];
       }
-      io_mem_->update_kv_io(cur_token, ++pos, output_tensors[method_name]);
+      io_mgr_->update_kv_io(cur_token, ++pos, output_tensors[method_name]);
       auto piece_res = tokenizer_->decode(prev_token, cur_token);
       ET_CHECK(piece_res.ok());
 
@@ -420,7 +432,7 @@ Error Runner::generate(
       break;
     case EvalMode::kHybrid:
       prefill_execute(prefill_forward_name_);
-      io_mem_->update_prefill_to_kv_io(
+      io_mgr_->update_prefill_to_kv_io(
           cur_token, pos, output_tensors[kv_forward_name_]);
       kv_execute(kv_forward_name_);
       break;

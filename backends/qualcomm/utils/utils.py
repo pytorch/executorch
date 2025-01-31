@@ -90,7 +90,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture import ExecutorchBackendConfig
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import _get_updated_graph_signature
-from torch._decomp import core_aten_decompositions as torch_core_aten_decompositions
+from torch._decomp import core_aten_decompositions, remove_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -283,9 +283,10 @@ def update_spill_fill_size(
 
 
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
-    source_decompositions = torch_core_aten_decompositions()
+    source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
-    remove_decompositions = [
+    skip_decompositions = [
+        torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.hardsigmoid.default,
@@ -293,8 +294,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
         torch.ops.aten._safe_softmax.default,
     ]
 
-    for key in remove_decompositions:
-        source_decompositions.pop(key)
+    remove_decompositions(source_decompositions, skip_decompositions)
 
     return source_decompositions
 

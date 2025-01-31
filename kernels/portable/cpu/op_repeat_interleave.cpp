@@ -47,12 +47,12 @@ bool check_repeat_interleave_args(
 
 } // namespace
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& repeat_interleave_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& repeats,
-    exec_aten::optional<int64_t> output_size,
+    executorch::aten::optional<int64_t> output_size,
     Tensor& out) {
   (void)ctx;
 
@@ -86,7 +86,7 @@ Tensor& repeat_interleave_Tensor_out(
   ET_KERNEL_CHECK_MSG(
       ctx,
       resize_tensor(
-          out, {static_cast<exec_aten::SizesType>(output_size_value)}) ==
+          out, {static_cast<executorch::aten::SizesType>(output_size_value)}) ==
           Error::Ok,
       InvalidArgument,
       out,

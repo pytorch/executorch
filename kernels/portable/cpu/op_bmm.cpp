@@ -14,7 +14,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& bmm_out(
     KernelRuntimeContext& ctx,
@@ -29,7 +29,7 @@ Tensor& bmm_out(
   ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   size_t output_ndim = 0;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   get_bmm_out_target_size(in, mat2, output_sizes, &output_ndim);
   ET_KERNEL_CHECK(
       ctx,
