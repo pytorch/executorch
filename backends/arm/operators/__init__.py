@@ -9,7 +9,6 @@ from . import (  # noqa
     node_visitor,
     op_add,
     op_avg_pool2d,
-    op_batch_norm,
     op_bmm,
     op_cat,
     op_clamp,

@@ -24,6 +24,9 @@ from executorch.backends.arm._passes.convert_split_to_slice import (
 from executorch.backends.arm._passes.convert_squeezes_to_view import (  # type: ignore[import-not-found]
     ConvertSqueezesToViewPass,
 )
+from executorch.backends.arm._passes.decompose_batchnorm_pass import (
+    DecomposeBatchNormPass,
+)
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_layernorm_pass import (
     DecomposeLayerNormPass,
@@ -87,6 +90,7 @@ class ArmPassManager(PassManager):
     def _tosa_080_BI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
+        self.add_pass(DecomposeBatchNormPass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
@@ -121,6 +125,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeBatchNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
