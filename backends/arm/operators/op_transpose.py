@@ -25,7 +25,7 @@ class TransposeVisitor(NodeVisitor):
     Inserts a TOSA TRANSPOSE.
     """
 
-    target = "_transpose"
+    target = "_transpose.default"
 
     def define_node(
         self,

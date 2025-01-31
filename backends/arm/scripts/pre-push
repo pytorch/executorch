@@ -1,0 +1,45 @@
+#!/bin/bash
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Check 1: If commit header contains WIP, everything is ok
+git rev-list --format=%s --max-count=1 HEAD | grep -q WIP && exit 0
+
+# Check 2: lintunner on latest patches.
+lintrunner --revision 'HEAD^'
+if [[ $? != 0 ]]
+	then
+	echo "Failed linting"
+	exit 1
+fi
+
+# Check 3: License headers
+# We do a simple check of if all committed headers contain "$current_year Arm".
+# This does not guarantee OK in ci but should be ok most of the time.
+
+current_year=$(date +%Y)
+failed_license_check=false
+commit_files=$(git diff-tree --no-commit-id --name-only --diff-filter=ACMR HEAD -r)
+
+
+for commited_file in $commit_files; do
+	head $commited_file | grep -q "$current_year Arm"
+	if [[ $? != 0 ]]
+		then
+			echo "Header in $commited_file did not contain '$current_year Arm'"
+			failed_license_check=true
+		else
+			echo "$commited_file passed license check"
+	fi
+done
+
+if [[ $failed_license_check == true ]]
+	then
+		exit 1
+	else
+		echo "Passed simple license check"
+fi
+
+exit 0

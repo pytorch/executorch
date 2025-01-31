@@ -143,20 +143,16 @@ class TestFull(unittest.TestCase):
     def test_full_tosa_BI(self, test_tensor: Tuple):
         self._test_full_tosa_BI_pipeline(self.AddVariableFull(), test_tensor)
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
     def test_full_u55_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u55_pipeline(
             self.AddVariableFull(),
             test_tensor,
         )
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
     def test_full_u85_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u85_pipeline(
             self.AddVariableFull(),

@@ -18,12 +18,22 @@ namespace executorch::runtime {
  * works whether or not ATen mode is active.
  */
 std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
-    executorch::aten::ArrayRef<executorch::aten::SizesType> shape) {
+    executorch::runtime::Span<const executorch::aten::SizesType> shape) {
   std::array<char, kTensorShapeStringSizeLimit> out;
   char* p = out.data();
+  if ET_UNLIKELY (shape.size() > kTensorDimensionLimit) {
+    static constexpr char kLimitExceededError[] =
+        "(ERR: tensor ndim exceeds limit, can't happen)";
+    static_assert(sizeof(kLimitExceededError) <= kTensorShapeStringSizeLimit);
+    std::memcpy(p, kLimitExceededError, sizeof(kLimitExceededError));
+    return out;
+  }
   *p++ = '(';
   for (const auto elem : shape) {
-    if (elem < 0 || elem > kMaximumPrintableTensorShapeElement) {
+    if (elem < 0 || elem > internal::kMaximumPrintableTensorShapeElement) {
+      static_assert(
+          internal::kMaximumPrintableTensorShapeElement > 99999,
+          "must have room for error string!");
       strcpy(p, "ERR, ");
       p += strlen("ERR, ");
     } else {

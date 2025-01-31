@@ -21,7 +21,7 @@ from serializer.tosa_serializer import TosaOp
 
 @register_node_visitor
 class TableVisitor(NodeVisitor):
-    target = "_table"
+    target = "_table.default"
 
     def define_node(
         self,
