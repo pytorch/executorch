@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -54,7 +54,7 @@ class ScalarsToAttributePass(ExportPass):
                 if isinstance(arg, int) and not torch.is_floating_point(
                     get_first_fake_tensor(n)
                 ):
-                    new_args.append(arg)
+                    new_args.append(arg)  # type: ignore[arg-type]
                     continue
 
                 prefix = "_tensor_constant_"

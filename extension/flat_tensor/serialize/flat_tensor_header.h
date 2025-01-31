@@ -24,6 +24,12 @@ struct FlatTensorHeader {
   static constexpr size_t kNumHeadBytes = 64;
 
   /**
+   * The offset into the serialized FlatTensor data where the FlatTensor
+   * header should begin.
+   */
+  static constexpr size_t kHeaderOffset = 8;
+
+  /**
    * The magic bytes that identify the header. This should be in sync with
    * the magic in executorch/extension/flat_tensor/serialize/serialize.py
    *
@@ -37,6 +43,21 @@ struct FlatTensorHeader {
   static constexpr size_t kMagicSize = 4;
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr char kMagic[kMagicSize] = {'F', 'H', '0', '1'};
+
+  /// The expected length of the header, in bytes.
+  static constexpr uint32_t kHeaderExpectedLength =
+      // Header magic
+      4
+      // Header length
+      + 4
+      // Flatbuffer offset
+      + 8
+      // Flatbuffer data size
+      + 8
+      // Segment base offset
+      + 8
+      // Data size
+      + 8;
 
   /**
    * Look for and parse a FlatTensorHeader in the provided data.

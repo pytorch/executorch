@@ -7,17 +7,16 @@
  */
 
 #include <executorch/extension/flat_tensor/named_data_map/data_map.h>
+
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/extension/flat_tensor/serialize/schema_generated.h>
+
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/compiler.h>
-
-#include <tuple>
-#include <unordered_map>
 
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
@@ -47,24 +46,65 @@ bool IsAligned(const void* data) {
 
 ET_NODISCARD Result<const TensorLayout> DataMap::get_metadata(
     const char* key) const {
-  auto result = _name_to_tensor.find(key);
-  if (result == _name_to_tensor.end()) {
-    return Error::InvalidArgument;
+  auto tensor_metadata = _flat_tensor->tensors();
+  // Linear search by name here.
+  for (int i = 0; i < tensor_metadata->size(); i++) {
+    if (std::strcmp(
+            tensor_metadata->Get(i)->fully_qualified_name()->c_str(), key) ==
+        0) {
+      // create TensorLayout.
+      ScalarType scalar_type =
+          static_cast<ScalarType>(tensor_metadata->Get(i)->scalar_type());
+      const int dim = tensor_metadata->Get(i)->sizes()->size();
+      const auto serialized_sizes = tensor_metadata->Get(i)->sizes()->data();
+      const auto serialized_dim_order =
+          tensor_metadata->Get(i)->dim_order()->data();
+      return TensorLayout::create(
+          Span<const int32_t>(serialized_sizes, dim),
+          Span<const uint8_t>(serialized_dim_order, dim),
+          scalar_type);
+    }
   }
-  // value is a tuple of (segment_index, offset, tensor_layout)
-  return std::get<2>(result->second);
+  return Error::InvalidArgument;
 }
 
 ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* key) const {
-  auto result = _name_to_tensor.find(key);
-  if (result == _name_to_tensor.end()) {
+  auto tensor_metadata = _flat_tensor->tensors();
+  // Linear search by name here.
+  int segment_index = -1;
+  int offset = -1;
+  int nbytes = 0;
+  for (int i = 0; i < tensor_metadata->size(); i++) {
+    if (std::strcmp(
+            tensor_metadata->Get(i)->fully_qualified_name()->c_str(), key) ==
+        0) {
+      // Load data.
+      segment_index = tensor_metadata->Get(i)->segment_index();
+      // Assert one segment, for now.
+      assert(segment_index == 0);
+      offset = tensor_metadata->Get(i)->offset();
+
+      // Find nbytes.
+      ScalarType scalar_type =
+          static_cast<ScalarType>(tensor_metadata->Get(i)->scalar_type());
+      const int dim = tensor_metadata->Get(i)->sizes()->size();
+      const auto serialized_sizes = tensor_metadata->Get(i)->sizes()->data();
+      const auto serialized_dim_order =
+          tensor_metadata->Get(i)->dim_order()->data();
+      Result<const TensorLayout> tensor_layout = TensorLayout::create(
+          Span<const int32_t>(serialized_sizes, dim),
+          Span<const uint8_t>(serialized_dim_order, dim),
+          scalar_type);
+      nbytes = tensor_layout.get().nbytes();
+    }
+  }
+
+  if (segment_index == -1 || offset == -1) {
+    // Key doesn't exist.
     return Error::InvalidArgument;
   }
-  int offset = std::get<1>(result->second);
-  TensorLayout tensor = std::get<2>(result->second);
-
-  const uint8_t* data = static_cast<const uint8_t*>(_data_ro.data()) + offset;
-  return FreeableBuffer(data, tensor.nbytes(), nullptr);
+  return FreeableBuffer(
+      static_cast<const uint8_t*>(_data_ro.data()) + offset, nbytes, nullptr);
 }
 
 ET_NODISCARD Result<size_t>
@@ -73,19 +113,14 @@ DataMap::load_data_into(const char* key, void* buffer, size_t size) const {
 }
 
 ET_NODISCARD Result<size_t> DataMap::get_num_keys() const {
-  return _name_to_tensor.size();
+  return _flat_tensor->tensors()->size();
 }
 
 ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
-  if (index < 0 || index >= _name_to_tensor.size()) {
+  if (index < 0 || index >= _flat_tensor->tensors()->size()) {
     return Error::InvalidArgument;
   }
-
-  auto iter = _name_to_tensor.begin();
-  for (int i = 0; i < index; ++i) {
-    ++iter;
-  }
-  return iter->first.c_str();
+  return _flat_tensor->tensors()->Get(index)->fully_qualified_name()->c_str();
 }
 
 /* static */ Result<DataMap> DataMap::load(DataLoader* loader) {
@@ -122,10 +157,18 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
     }
   }
 
+  ET_LOG(
+      Info,
+      "Flatbuffer offset %zu, size %zu, segment base offset %zu, segment size: %zu",
+      flatbuffer_offset,
+      flatbuffer_size,
+      segment_base_offset,
+      segment_data_size);
+
   // Load flatbuffer data as a segment.
   Result<FreeableBuffer> flat_tensor_data = loader->load(
-      /*offset=*/flatbuffer_offset,
-      flatbuffer_size,
+      /*offset=*/0,
+      flatbuffer_offset + flatbuffer_size,
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
   if (!flat_tensor_data.ok()) {
     return flat_tensor_data.error();
@@ -159,30 +202,6 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
   const auto* s_tensor_metadata = flat_tensor->tensors();
   assert(s_tensor_metadata != nullptr);
 
-  std::unordered_map<std::string, std::tuple<int, int, TensorLayout>>
-      name_to_tensor = {};
-  for (int i = 0; i < s_tensor_metadata->size(); i++) {
-    // Create TensorLayouts.
-    ScalarType scalar_type =
-        static_cast<ScalarType>(s_tensor_metadata->Get(i)->scalar_type());
-    const int dim = s_tensor_metadata->Get(i)->sizes()->size();
-
-    const auto serialized_sizes = s_tensor_metadata->Get(i)->sizes()->data();
-    const auto serialized_dim_order =
-        s_tensor_metadata->Get(i)->dim_order()->data();
-    TensorLayout tensor_layout = TensorLayout(
-        scalar_type,
-        Span<const int32_t>(serialized_sizes, dim),
-        Span<const uint8_t>(serialized_dim_order, dim));
-
-    int segment_index = s_tensor_metadata->Get(i)->segment_index();
-    int offset = s_tensor_metadata->Get(i)->offset();
-    std::string key = s_tensor_metadata->Get(i)->fully_qualified_name()->str();
-
-    auto val = std::make_tuple(segment_index, offset, tensor_layout);
-    name_to_tensor.insert({key, std::move(val)});
-  }
-
   // Load constant data.
   const auto* s_data_segment = flat_tensor->segments();
 
@@ -204,12 +223,16 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
   }
 
   return DataMap(
+      loader,
+      segment_base_offset,
       std::move(flat_tensor_data.get()),
-      std::move(name_to_tensor),
+      flat_tensor,
       std::move(_data_ro.get()));
 }
 
-DataMap::~DataMap() {}
+DataMap::~DataMap() {
+  _data_ro.Free();
+}
 
 } // namespace extension
 } // namespace executorch

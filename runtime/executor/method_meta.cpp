@@ -54,7 +54,7 @@ Result<Tag> get_tag(
 
 size_t calculate_nbytes(
     Span<const int32_t> sizes,
-    exec_aten::ScalarType scalar_type) {
+    executorch::aten::ScalarType scalar_type) {
   ssize_t n = 1;
   for (ssize_t i = 0; i < sizes.size(); i++) {
     n *= sizes[i];
@@ -68,7 +68,7 @@ size_t calculate_nbytes(
 TensorInfo::TensorInfo(
     Span<const int32_t> sizes,
     Span<const uint8_t> dim_order,
-    exec_aten::ScalarType scalar_type,
+    executorch::aten::ScalarType scalar_type,
     const bool is_memory_planned)
     : sizes_(sizes),
       dim_order_(dim_order),
@@ -84,7 +84,7 @@ Span<const uint8_t> TensorInfo::dim_order() const {
   return dim_order_;
 }
 
-exec_aten::ScalarType TensorInfo::scalar_type() const {
+executorch::aten::ScalarType TensorInfo::scalar_type() const {
   return scalar_type_;
 }
 
@@ -147,7 +147,7 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
-      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
+      static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
           tensor_value->data_buffer_idx() !=
               0); // Count constant returns as memory planned.
@@ -198,7 +198,7 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
-      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
+      static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
           tensor_value->data_buffer_idx() !=
               0); // Count constant returns as memory planned.

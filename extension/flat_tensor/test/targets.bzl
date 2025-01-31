@@ -17,6 +17,19 @@ def define_common_targets(is_fbcode=False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "serialize_cpp_test",
+        srcs = [
+            "test_serialize.cpp",
+        ],
+        deps = [
+            "//executorch/extension/flat_tensor/serialize:serialize_cpp",
+            "//executorch/extension/flat_tensor/serialize:generated_headers",
+            "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
+            "//executorch/extension/tensor:tensor",
+        ],
+    )
+
     if not runtime.is_oss and is_fbcode:
         modules_env = {
             # The tests use this var to find the program file to load. This uses
@@ -32,12 +45,12 @@ def define_common_targets(is_fbcode=False):
                 "data_map_test.cpp",
             ],
             deps = [
-                "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/flat_tensor/named_data_map:data_map",
                 "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
                 "//executorch/extension/flat_tensor/serialize:generated_headers",
                 "//executorch/extension/flat_tensor/serialize:schema",
+                "//executorch/runtime/core:named_data_map",
                 "//executorch/runtime/core/exec_aten:lib",
             ],
             env = modules_env,

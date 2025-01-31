@@ -56,6 +56,7 @@ def convert_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     quantizer: CadenceQuantizer,
+    dump_graphs: bool = False,
 ) -> torch.fx.GraphModule:
     """
     Prepare and convert a model using the given quantizer.
@@ -86,6 +87,10 @@ def convert_pt2(
         .module()
     )
 
+    if dump_graphs:
+        logging.info("Graph before quantization:")
+        logging.info(model_gm.graph.print_tabular())
+
     # Prepare
     prepared_model = prepare_pt2e(model_gm, quantizer)
 
@@ -94,6 +99,10 @@ def convert_pt2(
 
     # Convert
     converted_model = convert_pt2e(prepared_model)
+
+    if dump_graphs:
+        logging.info("Graph after quantization (before fusion):")
+        logging.info(model_gm.graph.print_tabular())
 
     return converted_model
 
@@ -127,6 +136,7 @@ def quantize_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     quantizer: Optional[CadenceQuantizer] = None,
+    dump_graphs: bool = False,
 ) -> torch.fx.GraphModule:
     """
     Prepare, convert and fuse the model using the given quantizer.
@@ -140,10 +150,14 @@ def quantize_pt2(
         quantizer = CadenceDefaultQuantizer()
 
     # Get converted graph module
-    converted_gm = convert_pt2(model, inputs, quantizer)
+    converted_gm = convert_pt2(model, inputs, quantizer, dump_graphs)
 
     # Get fused model
     fused_gm = fuse_pt2(converted_gm, quantizer)
+
+    if dump_graphs:
+        logging.info("Graph after quantization and fusion:")
+        logging.info(fused_gm.graph.print_tabular())
 
     return fused_gm
 
@@ -152,7 +166,6 @@ def quantize_pt2(
 def export_program(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
-    dump_graphs: bool = False,
 ) -> ExportedProgram:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
@@ -162,10 +175,6 @@ def export_program(
     # Export the model and return it.
     expo_program = export(model, inputs, strict=True)
 
-    if dump_graphs:
-        logging.info("Exported graph:")
-        expo_program.graph_module.graph.print_tabular()
-
     return expo_program
 
 
@@ -174,11 +183,12 @@ def export_to_edge(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
+    constant_methods: Optional[dict[str, object]] = None,
 ) -> EdgeProgramManager:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
     # Export the model into an ExportedProgram.
-    expo_program = export_program(model, inputs, dump_graphs=dump_graphs)
+    expo_program = export_program(model, inputs)
 
     # Call to_edge to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
@@ -195,11 +205,14 @@ def export_to_edge(
                 torch.ops.aten.angle.default,
             ],
         ),
+        constant_methods=constant_methods,
     )
 
     if dump_graphs:
-        logging.info("Edge graph:")
-        edge_prog_manager.exported_program().graph_module.graph.print_tabular()
+        logging.info("Graph after Edge lowering:")
+        logging.info(
+            edge_prog_manager.exported_program().graph_module.graph.print_tabular()
+        )
 
     return edge_prog_manager
 

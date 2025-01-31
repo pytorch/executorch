@@ -33,8 +33,7 @@ class DataMapTest : public ::testing::Test {
     // first.
     executorch::runtime::runtime_init();
 
-    // Load data map.
-    // The eager linear model is defined at:
+    // Load data map. The eager linear model is defined at:
     // //executorch/test/models/linear_model.py
     const char* path = std::getenv("ET_MODULE_LINEAR_DATA");
     Result<FileDataLoader> loader = FileDataLoader::from(path);
@@ -132,11 +131,11 @@ TEST_F(DataMapTest, DataMap_Keys) {
   // Check get_key returns the correct keys.
   Result<const char*> key0_res = data_map->get_key(0);
   assert(key0_res.ok());
-  EXPECT_EQ(strcmp(key0_res.get(), "b"), 0);
+  EXPECT_EQ(strcmp(key0_res.get(), "a"), 0);
 
   Result<const char*> key1_res = data_map->get_key(1);
   assert(key1_res.ok());
-  EXPECT_EQ(strcmp(key1_res.get(), "a"), 0);
+  EXPECT_EQ(strcmp(key1_res.get(), "b"), 0);
 
   // Check get_key fails when out of bounds.
   Result<const char*> key2_res = data_map->get_key(2);

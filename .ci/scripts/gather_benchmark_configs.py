@@ -71,6 +71,10 @@ DISABLED_CONFIGS: Dict[str, List[DisabledConfig]] = {
             config_name="mps",
             github_issue="https://github.com/pytorch/executorch/issues/7904",
         ),
+        DisabledConfig(
+            config_name="qnn_q8",
+            github_issue="https://github.com/pytorch/executorch/issues/7946",
+        ),
     ],
     "edsr": [
         DisabledConfig(
