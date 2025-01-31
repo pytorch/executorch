@@ -19,7 +19,7 @@ namespace native {
 
 Tensor&
 tile_crop_out_no_context(const Tensor& input, int64_t tile_size, Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::aten::RuntimeContext context{};
   return tile_crop_out_impl(context, input, tile_size, out);
 }
 

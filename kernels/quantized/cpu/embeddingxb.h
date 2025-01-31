@@ -15,16 +15,16 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using Scalar = executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& quantized_embedding_xbit_out(
     // TODO Evaluate whether this name is appropriate for an operator that takes
     // non quant input and returns fp output
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
@@ -35,7 +35,7 @@ Tensor& quantized_embedding_xbit_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
@@ -47,11 +47,11 @@ Tensor& quantized_embedding_xbit_dtype_out(
     // non quant input and returns fp output
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out,
     int weight_nbit);
 
@@ -59,11 +59,11 @@ Tensor& quantized_embedding_xbit_dtype_out(
     KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out,
     int weight_nbit);
 

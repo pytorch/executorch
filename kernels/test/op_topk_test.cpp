@@ -18,9 +18,9 @@
 #include <algorithm>
 
 using namespace ::testing;
-using exec_aten::IntArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::IntArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::MemoryAllocator;
 using torch::executor::testing::TensorFactory;
 

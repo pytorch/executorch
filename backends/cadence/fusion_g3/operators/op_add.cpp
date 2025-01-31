@@ -35,21 +35,7 @@ Tensor& add_out(
     const Tensor& b,
     const Scalar& alpha,
     Tensor& out) {
-  // Common Dtype
-  ScalarType common_type =
-      executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
-
 #ifdef OP_ARG_CHECK
-  // Check Common Dtype
-  ET_KERNEL_CHECK(
-      ctx,
-      (canCast(common_type, out.scalar_type()) &&
-       torch::executor::check_alpha_type(
-           torch::executor::native::utils::get_scalar_dtype(alpha),
-           common_type)),
-      InvalidArgument,
-      out);
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx,
@@ -65,10 +51,6 @@ Tensor& add_out(
       out);
 #endif
 
-  // Compute Dtype
-  ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
-
   static constexpr const char op_name[] = "add.out";
 
   int kTensorDimensionLimit = 5;
@@ -77,12 +59,12 @@ Tensor& add_out(
   int inp2_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
 
-  bool broadcast = 0;
+  bool broadcast = false;
 
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
-  bool optimized = 1;
+  bool optimized = true;
 
   /* Added change to work with input dimensions more than 5 */
   for (int i = 0; i < max_dim; i++) {
@@ -109,15 +91,19 @@ Tensor& add_out(
   for (int i = 0; i < out.dim(); i++) {
     if (((inp1_shape[i]) != (out_shape[i])) ||
         ((inp2_shape[i]) != (out_shape[i]))) {
-      broadcast = 1;
+      broadcast = true;
     }
   }
 
-  if ((broadcast == 1) && (max_dim > kTensorDimensionLimit)) {
-    optimized = 0;
+  if (((broadcast) && (max_dim > kTensorDimensionLimit)) ||
+      (!(((a.scalar_type() == ScalarType::Int) ||
+          (a.scalar_type() == ScalarType::Float)) &&
+         (a.scalar_type() == b.scalar_type()) &&
+         (a.scalar_type() == out.scalar_type())))) {
+    optimized = false;
   }
 
-  if ((compute_type == ScalarType::Int) && (optimized)) {
+  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     const int* const inp2_data = b.const_data_ptr<int>();
     int* const out_data = out.mutable_data_ptr<int>();
@@ -169,7 +155,7 @@ Tensor& add_out(
           alpha_val,
           out.numel());
     }
-  } else if ((compute_type == ScalarType::Float) && (optimized)) {
+  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     const float* const inp2_data = b.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();
@@ -222,6 +208,23 @@ Tensor& add_out(
           out.numel());
     }
   } else {
+    // Common Dtype
+    ScalarType common_type =
+        executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
+    // Compute Dtype
+    ScalarType compute_type =
+        torch::executor::native::utils::get_compute_type(common_type);
+
+    // Check Common Dtype
+    ET_KERNEL_CHECK(
+        ctx,
+        (canCast(common_type, out.scalar_type()) &&
+         torch::executor::check_alpha_type(
+             torch::executor::native::utils::get_scalar_dtype(alpha),
+             common_type)),
+        InvalidArgument,
+        out);
+
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       const CTYPE_COMPUTE val_alpha =
           torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(alpha);
@@ -249,22 +252,7 @@ Tensor& add_scalar_out(
     const Scalar& b,
     const Scalar& alpha,
     Tensor& out) {
-  // Common Dtype
-  ScalarType common_type =
-      torch::executor::native::utils::promote_type_with_scalar(
-          a.scalar_type(), b);
-
 #ifdef OP_ARG_CHECK
-  // Check Common Dtype
-  ET_KERNEL_CHECK(
-      ctx,
-      (common_type == out.scalar_type() &&
-       torch::executor::check_alpha_type(
-           torch::executor::native::utils::get_scalar_dtype(alpha),
-           common_type)),
-      InvalidArgument,
-      out);
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx,
@@ -279,14 +267,23 @@ Tensor& add_scalar_out(
       InvalidArgument,
       out);
 #endif
-  // Compute Dtype
-  ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "add.Scalar_out";
 
-  if (compute_type == ScalarType::Int) {
+  bool optimized = true;
+
+  if (!(((a.scalar_type() == ScalarType::Int) ||
+         (a.scalar_type() == ScalarType::Float)) &&
+        (a.scalar_type() == out.scalar_type()))) {
+    optimized = false;
+  }
+
+  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
+    optimized = false;
+  }
+
+  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     int inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -306,7 +303,7 @@ Tensor& add_scalar_out(
         alpha_val,
         out.numel());
 
-  } else if (compute_type == ScalarType::Float) {
+  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     float inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -327,6 +324,24 @@ Tensor& add_scalar_out(
         out.numel());
 
   } else {
+    // Common Dtype
+    ScalarType common_type =
+        torch::executor::native::utils::promote_type_with_scalar(
+            a.scalar_type(), b);
+    // Compute Dtype
+    ScalarType compute_type =
+        torch::executor::native::utils::get_compute_type(common_type);
+
+    // Check Common Dtype
+    ET_KERNEL_CHECK(
+        ctx,
+        (common_type == out.scalar_type() &&
+         torch::executor::check_alpha_type(
+             torch::executor::native::utils::get_scalar_dtype(alpha),
+             common_type)),
+        InvalidArgument,
+        out);
+
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       torch::executor::native::utils::
           apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
