@@ -322,7 +322,7 @@ the checkpoint format to avoid generating faulty models.
                 # (n_layers, max_batch_size, n_heads, max_seq_length, head_dim)
                 torch.zeros(self._cache_shape, dtype=torch.float16),  # k-cache
                 torch.zeros(self._cache_shape, dtype=torch.float16),  # v-cache
-                torch.zeros(attn_mask_shape, dtype=torch.bool),  # attn_mask
+                torch.zeros(attn_mask_shape, dtype=torch.float16),  # attn_mask
             )
 
         if self.use_additive_kv_cache_update:
