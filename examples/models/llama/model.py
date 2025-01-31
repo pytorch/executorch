@@ -15,8 +15,9 @@ from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
+from executorch.examples.models.llama.llama_transformer import Transformer
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama.model_args import ModelArgs
 
 try:
     from .fairseq2 import convert_to_llama_checkpoint
