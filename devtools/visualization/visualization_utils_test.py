@@ -8,6 +8,7 @@ import time
 
 import pytest
 import torch
+from executorch.backends.arm._passes.decompose_linear_pass import DecomposeLinearPass
 from executorch.backends.xnnpack.test.tester import Tester
 
 from executorch.devtools.visualization import (
@@ -15,8 +16,9 @@ from executorch.devtools.visualization import (
     SingletonModelExplorerServer,
     visualization_utils,
     visualize,
+    visualize_graph,
 )
-from executorch.exir import ExportedProgram
+from executorch.exir import ExportedProgram, to_edge_transform_and_lower
 
 try:
     from model_explorer.config import ModelExplorerConfig  # type: ignore
@@ -145,6 +147,17 @@ def test_visualize_to_executorch(server):
         )
 
 
+def test_visualize_graph(server):
+    with server():
+        model = Linear(20, 30)
+        exported_program = torch.export.export(model, model.get_inputs())
+        exported_program = to_edge_transform_and_lower(
+            exported_program
+        ).exported_program()
+        modified_gm = DecomposeLinearPass()(exported_program.graph_module).graph_module
+        visualize_graph(modified_gm, exported_program)
+
+
 if __name__ == "__main__":
     """A test to run locally to make sure that the web browser opens up
     automatically as intended.
@@ -158,3 +171,7 @@ if __name__ == "__main__":
         test_visualize_to_edge(SingletonModelExplorerServer)
         test_visualize_partition(SingletonModelExplorerServer)
         test_visualize_to_executorch(SingletonModelExplorerServer)
+        test_visualize_graph(SingletonModelExplorerServer)
+
+        # Sleep to give the server time to load the last graph before killing it.
+        time.sleep(3.0)

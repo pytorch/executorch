@@ -10,9 +10,9 @@
 import math
 from typing import cast, NamedTuple
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch.fx
-import tosa.Op as TosaOp
+import tosa.Op as TosaOp  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaSerializerTensor

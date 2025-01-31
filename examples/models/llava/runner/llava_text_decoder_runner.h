@@ -23,7 +23,7 @@ class ET_EXPERIMENTAL LlavaTextDecoderRunner
       float temperature)
       : TextDecoderRunner(module, true, vocab_size, temperature){};
 
-  inline executorch::runtime::Result<exec_aten::Tensor> step(
+  inline executorch::runtime::Result<executorch::aten::Tensor> step(
       executorch::extension::TensorPtr& tokens,
       executorch::extension::TensorPtr& start_pos) override {
     // run token embedding

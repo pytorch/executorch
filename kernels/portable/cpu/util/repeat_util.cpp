@@ -16,13 +16,13 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
 bool check_repeat_args(
     Tensor self,
-    exec_aten::ArrayRef<int64_t> repeats,
+    executorch::aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
   // Ensure the self tensors list is non-empty.
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
@@ -108,8 +108,8 @@ void repeat_internal(
   // Treats zero-dim self as one-dim tensor with size {1}.
   ssize_t self_dim = self.dim() ? self.dim() : 1;
   int32_t one = 1;
-  exec_aten::ArrayRef<int32_t> self_size =
-      self.dim() ? self.sizes() : exec_aten::ArrayRef<int32_t>(&one, 1);
+  executorch::aten::ArrayRef<int32_t> self_size =
+      self.dim() ? self.sizes() : executorch::aten::ArrayRef<int32_t>(&one, 1);
 
   // Get the size of the array in bytes.
   size_t num_bytes = self_size[self_dim - 1] * out.element_size();
@@ -167,7 +167,7 @@ void repeat_internal(
 // than kTensorDimensionLimit.
 Error repeat_tensor(
     const Tensor& self,
-    exec_aten::ArrayRef<int64_t> repeats,
+    executorch::aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
   // Verify that the args are valid.
   ET_CHECK_OR_RETURN_ERROR(
@@ -194,8 +194,8 @@ Error repeat_tensor(
   // Treats zero-dim self as one-dim tensor with size {1}.
   ssize_t self_dim = self.dim() ? self.dim() : 1;
   int32_t one = 1;
-  exec_aten::ArrayRef<int32_t> self_size = self.sizes().empty()
-      ? exec_aten::ArrayRef<int32_t>(&one, 1)
+  executorch::aten::ArrayRef<int32_t> self_size = self.sizes().empty()
+      ? executorch::aten::ArrayRef<int32_t>(&one, 1)
       : self.sizes();
 
   // Compute the stride (in bytes) along each out tensor dimension.

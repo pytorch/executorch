@@ -7,6 +7,7 @@
 from . import (
     node_visitor,
     op_abs,
+    op_adaptive_avg_pool2d,
     op_add,
     op_arange,
     op_avg_pool2d,
@@ -78,6 +79,7 @@ from . import (
 __all__ = [
     node_visitor,
     op_abs,
+    op_adaptive_avg_pool2d,
     op_add,
     op_arange,
     op_avg_pool2d,
