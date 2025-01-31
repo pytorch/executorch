@@ -19,8 +19,7 @@ def define_common_targets():
         name = "tensor_layout_test",
         srcs = ["tensor_layout_test.cpp"],
         deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core:tensor_layout",
         ],
     )
 

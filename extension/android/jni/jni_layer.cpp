@@ -43,10 +43,10 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
   constexpr static const char* kJavaDescriptor =
       "Lorg/pytorch/executorch/Tensor;";
 
-  explicit TensorHybrid(exec_aten::Tensor tensor) {}
+  explicit TensorHybrid(executorch::aten::Tensor tensor) {}
 
   static facebook::jni::local_ref<TensorHybrid::javaobject>
-  newJTensorFromTensor(const exec_aten::Tensor& tensor) {
+  newJTensorFromTensor(const executorch::aten::Tensor& tensor) {
     // Java wrapper currently only supports contiguous tensors.
 
     const auto scalarType = tensor.scalar_type();
@@ -54,7 +54,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     if (scalar_type_to_java_dtype.count(scalarType) == 0) {
       facebook::jni::throwNewJavaException(
           facebook::jni::gJavaLangIllegalArgumentException,
-          "exec_aten::Tensor scalar type %d is not supported on java side",
+          "executorch::aten::Tensor scalar type %d is not supported on java side",
           scalarType);
     }
     int jdtype = scalar_type_to_java_dtype.at(scalarType);
@@ -175,7 +175,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
       const auto rank = jshape->size();
 
       const auto shapeArr = jshape->getRegion(0, rank);
-      std::vector<exec_aten::SizesType> shape_vec;
+      std::vector<executorch::aten::SizesType> shape_vec;
       shape_vec.reserve(rank);
 
       auto numel = 1;

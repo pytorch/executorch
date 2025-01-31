@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -33,6 +33,8 @@ class TestCat(unittest.TestCase):
                 ),
                 -1,
             ),
+            ((torch.randn(1, 2, 4, 4), torch.randn(1, 2, 4, 1)), 3),
+            ((torch.randn(1, 2, 4, 4), torch.randn(1, 2, 4, 4)), 0),
             ((torch.randn(2, 2, 4, 4), torch.randn(2, 2, 4, 1)), 3),
             (
                 (
@@ -47,8 +49,8 @@ class TestCat(unittest.TestCase):
         def __init__(self):
             super().__init__()
 
-        def forward(self, tensors: tuple[torch.Tensor, ...], dim: int) -> torch.Tensor:
-            return torch.cat(tensors, dim=dim)
+        def forward(self, t: tuple[torch.Tensor, ...], dim: int) -> torch.Tensor:
+            return torch.cat(t, dim=dim)
 
     def _test_cat_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[tuple[torch.Tensor, ...], int]
@@ -134,21 +136,37 @@ class TestCat(unittest.TestCase):
         test_data = (operands, dim)
         self._test_cat_tosa_BI_pipeline(self.Cat(), test_data)
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
-    @parameterized.expand(Cat.test_parameters)
+    @parameterized.expand(Cat.test_parameters[:-3])
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
     def test_cat_u55_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)
         self._test_cat_ethosu_BI_pipeline(
             self.Cat(), common.get_u55_compile_spec(), test_data
         )
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
-    @parameterized.expand(Cat.test_parameters)
+    # MLETORCH-630 Cat does not work on FVP with batch>1
+    @parameterized.expand(Cat.test_parameters[-3:])
     @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
+    def test_cat_u55_BI_xfails(self, operands: tuple[torch.Tensor, ...], dim: int):
+        test_data = (operands, dim)
+        self._test_cat_ethosu_BI_pipeline(
+            self.Cat(), common.get_u55_compile_spec(), test_data
+        )
+
+    @parameterized.expand(Cat.test_parameters[:-3])
+    @pytest.mark.corstone_fvp
     def test_cat_u85_BI(self, operands: tuple[torch.Tensor, ...], dim: int):
+        test_data = (operands, dim)
+        self._test_cat_ethosu_BI_pipeline(
+            self.Cat(), common.get_u85_compile_spec(), test_data
+        )
+
+    # MLETORCH-630 Cat does not work on FVP with batch>1
+    @parameterized.expand(Cat.test_parameters[-3:])
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    def test_cat_u85_BI_xfails(self, operands: tuple[torch.Tensor, ...], dim: int):
         test_data = (operands, dim)
         self._test_cat_ethosu_BI_pipeline(
             self.Cat(), common.get_u85_compile_spec(), test_data

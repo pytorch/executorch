@@ -8,4 +8,5 @@ from executorch.devtools.visualization.visualization_utils import (  # noqa: F40
     ModelExplorerServer,
     SingletonModelExplorerServer,
     visualize,
+    visualize_graph,
 )

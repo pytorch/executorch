@@ -91,6 +91,7 @@ class ModelArgs:
     norm_eps: float = 1e-5
     max_batch_size: int = 32
     max_seq_len: int = 2048
+    max_context_len: int = 2048
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
@@ -163,9 +164,9 @@ class Rope(torch.nn.Module):
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
             self.params.head_dim,
             (
-                self.params.max_seq_len  # Normal llama2.
+                self.params.max_context_len  # Normal llama2.
                 if self.params.ffn_dim_multiplier is None
-                else self.params.max_seq_len * 2  # Sharded checkpoint.
+                else self.params.max_context_len * 2  # Sharded checkpoint.
             ),
             self.params.rope_freq_base,
         )
@@ -205,7 +206,7 @@ class Rope(torch.nn.Module):
                 # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
                 input_pos_item = input_pos[-1].item()
                 torch._check_is_size(input_pos_item)
-                torch._check(input_pos_item < self.params.max_seq_len)
+                torch._check(input_pos_item < self.params.max_context_len)
                 # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
                 freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seq_len)
                 # pyre-ignore: Incompatible parameter type [6]
@@ -229,15 +230,15 @@ class KVCache(nn.Module):
     def __init__(
         self,
         max_batch_size: int,
-        max_seq_length: int,
+        max_context_length: int,
         n_heads: int,
         head_dim: int,
         enable_dynamic_shape: bool,
         dtype=torch.float32,
     ):
         super().__init__()
-        self.max_seq_length = max_seq_length
-        cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
+        self.max_context_length = max_context_length
+        cache_shape = (max_batch_size, n_heads, max_context_length, head_dim)
 
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
@@ -257,7 +258,7 @@ class KVCache(nn.Module):
         if self.enable_dynamic_shape:
             start_pos = input_pos[0].item()
             torch._check_is_size(start_pos)
-            torch._check(start_pos < self.max_seq_length)
+            torch._check(start_pos < self.max_context_length)
             dim_to_slice = 2
             seq_length = k_val.size(dim_to_slice)
             # Replace the entry in the cache for this token
@@ -289,14 +290,14 @@ class SDPA(nn.Module):
         dim: int,
         head_dim: int,
         n_rep: int,
-        max_seq_len: int,
+        max_context_len: int,
         enable_dynamic_shape: bool,
     ):
         super().__init__()
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
-        self.max_seq_len = max_seq_len
+        self.max_context_len = max_context_len
         self.enable_dynamic_shape = enable_dynamic_shape
 
     def forward(
@@ -312,7 +313,7 @@ class SDPA(nn.Module):
         if self.enable_dynamic_shape:
             start_pos = input_pos[-1].item()
             torch._check_is_size(start_pos)
-            torch._check(start_pos < self.max_seq_len)
+            torch._check(start_pos < self.max_context_len)
             seq_length = q.size(2)
             # pyre-ignore: Incompatible parameter type [6]
             attn_mask = mask.narrow(0, start_pos, seq_length)
@@ -341,7 +342,7 @@ class Attention(nn.Module):
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = args.head_dim
         self.max_batch_size = args.max_batch_size
-        self.max_seq_len = args.max_seq_len
+        self.max_context_len = args.max_context_len
         self.dim = args.dim
         self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
@@ -354,8 +355,8 @@ class Attention(nn.Module):
 
         causal_mask = torch.tril(
             torch.ones(
-                self.max_seq_len,
-                self.max_seq_len,
+                self.max_context_len,
+                self.max_context_len,
                 dtype=torch.bool,
                 device="cpu",
             )
@@ -365,7 +366,7 @@ class Attention(nn.Module):
         if self.use_kv_cache:
             self.kv_cache = KVCache(
                 args.max_batch_size,
-                args.max_seq_len,
+                args.max_context_len,
                 self.n_kv_heads,
                 self.head_dim,
                 args.enable_dynamic_shape,
@@ -374,7 +375,7 @@ class Attention(nn.Module):
                 dim=self.n_local_heads * self.head_dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
-                max_seq_len=self.max_seq_len,
+                max_context_len=self.max_context_len,
                 enable_dynamic_shape=args.enable_dynamic_shape,
             )
 
@@ -528,6 +529,7 @@ class Transformer(nn.Module):
         self.use_kv_cache = params.use_kv_cache
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
+        self.max_context_len = params.max_context_len
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
 

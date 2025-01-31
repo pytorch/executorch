@@ -68,7 +68,7 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
 }
 } // namespace
 
-ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
+ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
     EValue* values,
     size_t values_len,
@@ -76,8 +76,8 @@ ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensorList");
 
   auto* tensor_list =
-      memory_manager->method_allocator()->allocateList<exec_aten::Tensor>(
-          tensor_indices->size());
+      memory_manager->method_allocator()
+          ->allocateList<executorch::aten::Tensor>(tensor_indices->size());
   if (tensor_list == nullptr) {
     return Error::MemoryAllocationFailed;
   }
@@ -99,13 +99,13 @@ ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
 
     // Placement new as the list elements are not initialized, so calling
     // copy assignment is not defined if it's non trivial.
-    new (&tensor_list[output_idx])
-        exec_aten::Tensor(values[static_cast<size_t>(tensor_index)].toTensor());
+    new (&tensor_list[output_idx]) executorch::aten::Tensor(
+        values[static_cast<size_t>(tensor_index)].toTensor());
     evalp_list[output_idx] = &values[static_cast<size_t>(tensor_index)];
     output_idx++;
   }
 
-  return BoxedEvalueList<exec_aten::Tensor>(
+  return BoxedEvalueList<executorch::aten::Tensor>(
       evalp_list, tensor_list, tensor_indices->size());
 }
 

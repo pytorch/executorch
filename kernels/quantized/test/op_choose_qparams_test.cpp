@@ -18,10 +18,10 @@
 #include <limits>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::native::choose_qparams_per_token_asymmetric_out;
 using torch::executor::native::choose_qparams_tensor_out;
 using torch::executor::testing::TensorFactory;
