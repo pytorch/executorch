@@ -17,9 +17,9 @@
 
 #include <gtest/gtest.h>
 
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
@@ -27,7 +27,7 @@ using torch::executor::testing::TensorFactory;
 template <class T>
 using OptionalArrayRef = std::optional<c10::ArrayRef<T>>;
 #else
-using exec_aten::OptionalArrayRef;
+using executorch::aten::OptionalArrayRef;
 #endif
 
 class OpUpsampleNearest2dTest : public OperatorTest {
@@ -41,7 +41,7 @@ class OpUpsampleNearest2dTest : public OperatorTest {
         context_, in, output_size, scale_factors, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_upsample_nearest2d_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -52,7 +52,6 @@ class OpUpsampleNearest2dTest : public OperatorTest {
     op_upsample_nearest2d_out(
         input,
         OptionalArrayRef<int64_t>({output_size.data(), output_size.size()}),
-        true,
         {},
         out);
 
@@ -254,9 +253,9 @@ TEST_F(OpUpsampleNearest2dTest, MultiBatchAndChannel) {
 }
 
 TEST_F(OpUpsampleNearest2dTest, DType) {
-#define TEST_ENTRY(ctype, dtype)                             \
-  test_upsample_nearest2d_dtype<ctype, ScalarType::dtype>(); \
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+#define TEST_ENTRY(ctype, dtype) \
+  test_upsample_nearest2d_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

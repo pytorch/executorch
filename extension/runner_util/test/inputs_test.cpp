@@ -18,8 +18,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::extension::BufferCleanup;
 using executorch::extension::FileDataLoader;
 using executorch::extension::prepare_input_tensors;

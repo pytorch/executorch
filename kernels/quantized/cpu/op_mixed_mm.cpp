@@ -13,13 +13,13 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 bool check_quantized_mixed_mm_args(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, 2));
@@ -55,13 +55,13 @@ Tensor& quantized_mixed_mm_out(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
   ET_CHECK(check_quantized_mixed_mm_args(
       in, weight, weight_scales, opt_weight_zero_points, out));
 
   size_t output_ndim = 2;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   output_sizes[0] = in.size(0);
   output_sizes[1] = weight.size(1);
 
@@ -92,7 +92,7 @@ Tensor& quantized_mixed_mm_out(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const exec_aten::optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
   // TODO(mcandales): Remove the need for this wrapper
   (void)ctx;

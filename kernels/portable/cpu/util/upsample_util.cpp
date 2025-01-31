@@ -14,8 +14,8 @@ namespace executor {
 
 bool check_upsample_2d_common_args(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(in.dim() == 4);
@@ -39,25 +39,25 @@ bool check_upsample_2d_common_args(
 
 bool check_upsample_bilinear2d_args(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
     ET_UNUSED const bool align_corners,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out) {
   return check_upsample_2d_common_args(in, output_size, scale_factors, out);
 }
 
 bool check_upsample_nearest2d_args(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out) {
   return check_upsample_2d_common_args(in, output_size, scale_factors, out);
 }
 
 Error resize_upsample_2d(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     double& scale_h_out,
     double& scale_w_out,
     Tensor& out) {

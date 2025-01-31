@@ -17,7 +17,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/examples/qualcomm/oss_scripts/llama3_2/runner/io_memory.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
@@ -32,7 +32,8 @@ class Runner {
       const float logits_scale,
       const int32_t logits_offset,
       const float temperature,
-      const int eval_mode);
+      const int eval_mode,
+      const std::string& kv_updator);
 
   struct Stats {
     // Scaling factor for timestamps - in this case, we use ms.
@@ -73,6 +74,10 @@ class Runner {
   get_methods_meta(std::string& method_name);
 
  private:
+  enum LlamaVersion {
+    kLlama2 = 0,
+    kLlama3,
+  };
   template <typename T>
   T getMetadataHelper(std::string method_name, T default_val);
   int32_t logitsToToken(
@@ -99,11 +104,13 @@ class Runner {
   std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
   Stats stats_;
-  std::unique_ptr<Memory> io_mem_;
+  std::unique_ptr<IoMgrBase> io_mgr_;
   EvalMode eval_mode_;
   std::string prefill_forward_name_;
   std::string kv_forward_name_;
   std::vector<std::string> method_names_;
+  LlamaVersion llama_version_;
+  std::string kv_updator_;
 };
 
 } // namespace example

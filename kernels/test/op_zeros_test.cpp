@@ -17,9 +17,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::IntArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::IntArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpZerosOutTest : public OperatorTest {
@@ -32,7 +32,7 @@ class OpZerosOutTest : public OperatorTest {
   void test_zeros_out(std::vector<int32_t>&& size_int32_t) {
     TensorFactory<DTYPE> tf;
     std::vector<int64_t> sizes(size_int32_t.begin(), size_int32_t.end());
-    auto aref = exec_aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
+    auto aref = executorch::aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
     Tensor out = tf.ones(size_int32_t);
 
     op_zeros_out(aref, out);
@@ -55,7 +55,7 @@ TEST_F(OpZerosOutTest, DynamicShapeUpperBoundSameAsExpected) {
   Tensor expected = tf.zeros({3, 2});
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   Tensor out =
       tf.ones({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   op_zeros_out(sizes_aref, out);
@@ -67,7 +67,7 @@ TEST_F(OpZerosOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   Tensor expected = tf.zeros({3, 2});
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   Tensor out =
       tf.ones({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   op_zeros_out(sizes_aref, out);
@@ -82,7 +82,7 @@ TEST_F(OpZerosOutTest, DynamicShapeUnbound) {
   Tensor expected = tf.zeros({3, 2});
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   Tensor out =
       tf.ones({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   op_zeros_out(sizes_aref, out);

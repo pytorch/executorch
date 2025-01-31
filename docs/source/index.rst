@@ -87,7 +87,7 @@ Topics in this section will help you get started with ExecuTorch.
    getting-started-setup
    export-overview
    runtime-build-and-cross-compilation
-
+   getting-started-faqs
 
 .. toctree::
    :glob:
