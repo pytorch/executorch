@@ -54,10 +54,6 @@ Tensor& div_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  // Common Dtype
-  ScalarType common_type =
-      executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
-
 #ifdef OP_ARG_CHECK
   // Check Dim Order
   ET_KERNEL_CHECK(
@@ -73,11 +69,6 @@ Tensor& div_out(
       InvalidArgument,
       out);
 #endif
-
-  // Compute Dtype
-  ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
-
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "div.out";
 
@@ -87,12 +78,12 @@ Tensor& div_out(
   int inp2_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
 
-  bool broadcast = 0;
+  bool broadcast = false;
 
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
-  bool optimized = 1;
+  bool optimized = true;
 
   for (int i = 0; i < max_dim; i++) {
     out_shape[i] = 1;
@@ -118,15 +109,19 @@ Tensor& div_out(
   for (int i = 0; i < out.dim(); i++) {
     if (((inp1_shape[i]) != (out_shape[i])) ||
         ((inp2_shape[i]) != (out_shape[i]))) {
-      broadcast = 1;
+      broadcast = true;
     }
   }
 
-  if ((broadcast == 1) && (max_dim > kTensorDimensionLimit)) {
-    optimized = 0;
+  if (((broadcast) && (max_dim > kTensorDimensionLimit)) ||
+      (!(((a.scalar_type() == ScalarType::Int) ||
+          (a.scalar_type() == ScalarType::Float)) &&
+         (a.scalar_type() == b.scalar_type()) &&
+         (out.scalar_type() == ScalarType::Float)))) {
+    optimized = false;
   }
 
-  if ((compute_type == ScalarType::Int) && (optimized)) {
+  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     const int* const inp2_data = b.const_data_ptr<int>();
     float* const out_data = out.mutable_data_ptr<float>();
@@ -162,7 +157,7 @@ Tensor& div_out(
           inp2_data,
           out.numel());
     }
-  } else if ((compute_type == ScalarType::Float) && (optimized)) {
+  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     const float* const inp2_data = b.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();
@@ -244,19 +239,7 @@ Tensor& div_out_mode(
   ET_KERNEL_CHECK(
       ctx, mode_val == "trunc" || mode_val == "floor", InvalidArgument, out);
 
-  // Common Dtype
-  ScalarType common_type =
-      executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
-
 #ifdef OP_ARG_CHECK
-  // Check Common Dtype
-  ET_KERNEL_CHECK(
-      ctx,
-      (canCast(common_type, out.scalar_type()) &&
-       common_type != ScalarType::Bool),
-      InvalidArgument,
-      out);
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx,
@@ -271,9 +254,6 @@ Tensor& div_out_mode(
       InvalidArgument,
       out);
 #endif
-  // Compute Dtype
-  ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "div.out_mode";
@@ -287,12 +267,12 @@ Tensor& div_out_mode(
   int inp2_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
 
-  bool broadcast = 0;
+  bool broadcast = false;
 
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
 
-  bool optimized = 1;
+  bool optimized = true;
 
   for (int i = 0; i < max_dim; i++) {
     out_shape[i] = 1;
@@ -318,17 +298,21 @@ Tensor& div_out_mode(
   for (int i = 0; i < out.dim(); i++) {
     if (((inp1_shape[i]) != (out_shape[i])) ||
         ((inp2_shape[i]) != (out_shape[i]))) {
-      broadcast = 1;
+      broadcast = true;
     }
   }
 
-  if ((broadcast == 1) && (max_dim > kTensorDimensionLimit)) {
-    optimized = 0;
+  if (((broadcast) && (max_dim > kTensorDimensionLimit)) ||
+      (!(((a.scalar_type() == ScalarType::Int) ||
+          (a.scalar_type() == ScalarType::Float)) &&
+         (a.scalar_type() == b.scalar_type()) &&
+         (a.scalar_type() == out.scalar_type())))) {
+    optimized = false;
   }
 
   int mode_value = (mode_val == "trunc") ? 1 : 2;
 
-  if ((compute_type == ScalarType::Int) && (optimized)) {
+  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     const int* const inp2_data = b.const_data_ptr<int>();
     int* const out_data = out.mutable_data_ptr<int>();
@@ -367,7 +351,7 @@ Tensor& div_out_mode(
           mode_value,
           out.numel());
     }
-  } else if ((compute_type == ScalarType::Float) && (optimized)) {
+  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     const float* const inp2_data = b.const_data_ptr<float>();
     float* const out_data = out.mutable_data_ptr<float>();
@@ -407,6 +391,21 @@ Tensor& div_out_mode(
           out.numel());
     }
   } else {
+    // Common Dtype
+    ScalarType common_type =
+        executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
+    // Compute Dtype
+    ScalarType compute_type =
+        torch::executor::native::utils::get_compute_type(common_type);
+
+    // Check Common Dtype
+    ET_KERNEL_CHECK(
+        ctx,
+        (canCast(common_type, out.scalar_type()) &&
+         common_type != ScalarType::Bool),
+        InvalidArgument,
+        out);
+
     ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       torch::executor::native::utils::
           apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
@@ -456,15 +455,7 @@ Tensor& div_scalar_out(
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
-  // Common Dtype
-  ScalarType common_type =
-      torch::executor::native::utils::promote_type_with_scalar(
-          a.scalar_type(), b);
-
 #ifdef OP_ARG_CHECK
-  // Check Common Dtype
-  ET_KERNEL_CHECK(ctx, common_type == out.scalar_type(), InvalidArgument, out);
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx,
@@ -480,14 +471,22 @@ Tensor& div_scalar_out(
       out);
 #endif
 
-  // Compute Dtype
-  ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
+  bool optimized = true;
+
+  if (!(((a.scalar_type() == ScalarType::Int) ||
+         (a.scalar_type() == ScalarType::Float)) &&
+        (out.scalar_type() == ScalarType::Float))) {
+    optimized = false;
+  }
+
+  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
+    optimized = false;
+  }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "div.Scalar_out";
 
-  if (compute_type == ScalarType::Int) {
+  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     int inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -502,7 +501,7 @@ Tensor& div_scalar_out(
         inp1_data,
         inp2_val,
         out.numel());
-  } else if (compute_type == ScalarType::Float) {
+  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     float inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -526,6 +525,11 @@ Tensor& div_scalar_out(
         : ScalarType::Float;
     ScalarType compute_type =
         torch::executor::native::utils::get_compute_type(common_type);
+
+    // Check Common Dtype
+    ET_KERNEL_CHECK(
+        ctx, common_type == out.scalar_type(), InvalidArgument, out);
+
     ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       const CTYPE_COMPUTE val_b =
           torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(b);
@@ -560,29 +564,7 @@ Tensor& div_scalar_mode_out(
   ET_KERNEL_CHECK(
       ctx, mode_val == "trunc" || mode_val == "floor", InvalidArgument, out);
 
-  // Common Dtype
-  ScalarType common_type =
-      torch::executor::native::utils::promote_type_with_scalar(
-          a.scalar_type(), b);
-
 #ifdef OP_ARG_CHECK
-  // Check Common Dtype
-  ET_KERNEL_CHECK(
-      ctx,
-      (canCast(common_type, out.scalar_type()) &&
-       common_type != ScalarType::Bool),
-      InvalidArgument,
-      out);
-
-  // Check for intergral division by zero
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      !(executorch::runtime::isIntegralType(common_type, true) &&
-        torch::executor::native::utils::scalar_to<double>(b) == 0),
-      InvalidArgument,
-      out,
-      "Div mode operation encountered integer division by zero");
-
   // Check Dim Order
   ET_KERNEL_CHECK(
       ctx,
@@ -598,18 +580,26 @@ Tensor& div_scalar_mode_out(
       out);
 #endif
 
-  // Compute Dtype
-  ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
-
   const bool mode_is_trunc = mode_val == "trunc";
+
+  bool optimized = true;
+
+  if (!(((a.scalar_type() == ScalarType::Int) ||
+         (a.scalar_type() == ScalarType::Float)) &&
+        (a.scalar_type() == out.scalar_type()))) {
+    optimized = false;
+  }
+
+  if ((b.isFloatingPoint()) && (a.scalar_type() == ScalarType::Int)) {
+    optimized = false;
+  }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "div.Scalar_mode_out";
 
   int mode_value = (mode_val == "trunc") ? 1 : 2;
 
-  if (compute_type == ScalarType::Int) {
+  if ((a.scalar_type() == ScalarType::Int) && (optimized)) {
     const int* const inp1_data = a.const_data_ptr<int>();
     int inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -625,7 +615,7 @@ Tensor& div_scalar_mode_out(
         inp2_val,
         mode_value,
         out.numel());
-  } else if (compute_type == ScalarType::Float) {
+  } else if ((a.scalar_type() == ScalarType::Float) && (optimized)) {
     const float* const inp1_data = a.const_data_ptr<float>();
     float inp2_val;
     torch::executor::native::utils::extract_scalar(b, &inp2_val);
@@ -642,6 +632,31 @@ Tensor& div_scalar_mode_out(
         mode_value,
         out.numel());
   } else {
+    // Common Dtype
+    ScalarType common_type =
+        torch::executor::native::utils::promote_type_with_scalar(
+            a.scalar_type(), b);
+    // Compute Dtype
+    ScalarType compute_type =
+        torch::executor::native::utils::get_compute_type(common_type);
+
+    // Check Common Dtype
+    ET_KERNEL_CHECK(
+        ctx,
+        (canCast(common_type, out.scalar_type()) &&
+         common_type != ScalarType::Bool),
+        InvalidArgument,
+        out);
+
+    // Check for intergral division by zero
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        !(executorch::runtime::isIntegralType(common_type, true) &&
+          torch::executor::native::utils::scalar_to<double>(b) == 0),
+        InvalidArgument,
+        out,
+        "Div mode operation encountered integer division by zero");
+
     ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       const CTYPE_COMPUTE val_b =
           torch::executor::native::utils::scalar_to<CTYPE_COMPUTE>(b);

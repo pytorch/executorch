@@ -15,8 +15,8 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 void free_broadcast_tensor(const Tensor& broadcast_tensor) {
   free((void*)broadcast_tensor.const_data_ptr());
@@ -76,8 +76,8 @@ Tensor make_tensor(
 } // namespace
 
 bool tensor_is_broadcastable_to(
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_to_shape) {
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_to_shape) {
   bool feasible_bcast = true;
 
   if (broadcast_to_shape.size() < broadcast_from_shape.size()) {
@@ -108,8 +108,8 @@ bool tensor_is_broadcastable_to(
 }
 
 bool tensors_are_broadcastable_between(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_shape) {
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_shape) {
   auto a_dim = a_shape.size();
   auto b_dim = b_shape.size();
 
@@ -208,8 +208,8 @@ Tensor broadcast_tensor(
 }
 
 ET_NODISCARD Error get_broadcast_target_size(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_size,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim) {
@@ -260,7 +260,7 @@ ET_NODISCARD Error get_broadcast_target_size(
 
 void delinearize_index(
     size_t linear_index,
-    exec_aten::ArrayRef<Tensor::SizesType> shape,
+    executorch::aten::ArrayRef<Tensor::SizesType> shape,
     size_t* out_indexes,
     const size_t out_indexes_len) {
   ET_CHECK(shape.size() <= out_indexes_len);
@@ -283,8 +283,8 @@ void delinearize_index(
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
     ssize_t broadcast_to_ndim,
-    exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    exec_aten::ArrayRef<Tensor::StridesType> broadcast_from_strides) {
+    executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    executorch::aten::ArrayRef<Tensor::StridesType> broadcast_from_strides) {
   size_t num_skip_dims = broadcast_to_ndim - broadcast_from_shape.size();
   ArrayRef<size_t> indexes_broadcast_from = indexes_broadcast_to.slice(
       num_skip_dims, broadcast_to_ndim - num_skip_dims);

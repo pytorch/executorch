@@ -6,9 +6,11 @@
 
 import logging
 import warnings
-from typing import Callable, List, Optional
+from functools import partial
+from typing import Any, Callable, List, Optional
 
 import torch
+from executorch.exir._warnings import deprecated
 from executorch.exir.error import internal_assert
 from executorch.exir.memory import alloc
 from executorch.exir.memory_planning import (
@@ -22,6 +24,17 @@ from executorch.exir.operator.convert import get_out_args_from_opoverload
 from executorch.exir.pass_base import PassBase, PassResult
 from executorch.exir.tensor import ALIGNMENT
 from torch.export.exported_program import ExportGraphSignature
+
+
+# copied from https://stackoverflow.com/questions/75582932/python-how-can-i-print-the-function-name-of-a-partial-function
+def _callable_name(any_callable: Callable[..., Any]) -> str:
+    if isinstance(any_callable, partial):
+        return any_callable.func.__name__
+
+    try:
+        return any_callable.__name__
+    except AttributeError:
+        return str(any_callable)
 
 
 class MemoryPlanningPass(PassBase):
@@ -83,6 +96,11 @@ class MemoryPlanningPass(PassBase):
                         )
                         out_alloc_node.meta["spec"] = specs[i]
 
+    @deprecated(
+        "MemoryPlanningPass.call() is deprecated as it does not handle graphs \
+        with mutation, please use MemoryPlanningPass.run() instead",
+        category=FutureWarning,
+    )
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         return self.run(graph_module)
 
@@ -127,4 +145,12 @@ class MemoryPlanningPass(PassBase):
                 f"The {getattr(self.memory_planning_algo, '__name__', repr(self.memory_planning_algo))} algorithm reuses storage for {num_reuse_pairs} pair of tensors"
             )
         verifier.verify_graph_input_output()
+        if (
+            callable(self.memory_planning_algo)
+            and _callable_name(self.memory_planning_algo) == "greedy"
+        ):
+            # Only verify storage reuse for greedy algorithm
+            # At the moment cadence backends memory planning fails this
+            # I dont know if that is a valid thing but if it is we should adjust verify_storage_reuse function
+            verifier.verify_storage_reuse()
         return PassResult(graph_module, True)

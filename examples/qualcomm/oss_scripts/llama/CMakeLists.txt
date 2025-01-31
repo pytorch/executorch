@@ -28,8 +28,8 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/qnn_llama_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.h
-  ${CMAKE_CURRENT_LIST_DIR}/runner/io_memory.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/runner/io_memory.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/io_manager.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/io_manager.h
 )
 
 list(
