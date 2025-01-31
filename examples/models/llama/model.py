@@ -156,7 +156,7 @@ the checkpoint format to avoid generating faulty models.
             model_args.n_layers,
             model_args.max_batch_size,
             model_args.n_kv_heads,
-            model_args.max_seq_len,
+            model_args.max_seq_len - self.static_seq_length,
             model_args.head_dim,
         )
         self._cache_pos_mask_shape = (
@@ -315,12 +315,14 @@ the checkpoint format to avoid generating faulty models.
                     [0], dtype=torch.long
                 ),  # start_pos, what token of output are we on.
             )
-            
+
         if self.decode_kv_cache_as_io:
+            attn_mask_shape = (self.static_seq_length, self.max_seq_len)
             args = args + (
                 # (n_layers, max_batch_size, n_heads, max_seq_length, head_dim)
                 torch.zeros(self._cache_shape, dtype=torch.float16),  # k-cache
                 torch.zeros(self._cache_shape, dtype=torch.float16),  # v-cache
+                torch.zeros(attn_mask_shape, dtype=torch.bool),  # attn_mask
             )
 
         if self.use_additive_kv_cache_update:

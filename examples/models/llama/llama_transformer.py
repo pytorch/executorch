@@ -702,6 +702,7 @@ class Transformer(nn.Module):
         ] = None,  # Scalar tensor indicating size of window of the caches
         k_cache: Optional[torch.FloatTensor] = None,
         v_cache: Optional[torch.FloatTensor] = None,
+        attn_mask: Optional[torch.FloatTensor] = None,
         cache_pos_mask: Optional[torch.FloatTensor] = None,
     ) -> torch.Tensor:
         h = self.tok_embeddings(tokens)
@@ -716,7 +717,10 @@ class Transformer(nn.Module):
         torch._check(input_pos_item + seqlen <= self.max_seq_len)
 
         freqs_cos, freqs_sin = self.rope.get_freqs(input_pos_item, seqlen)
-        attn_mask = self.mask.narrow(0, input_pos_item, seqlen)
+        if self.decode_kv_cache_as_io:
+            assert attn_mask is not None
+        else:
+            attn_mask = self.mask.narrow(0, input_pos_item, seqlen)
 
         # for layer in self.layers:
         #     h = layer(h, freqs_cos, freqs_sin, input_pos_item, attn_mask)
