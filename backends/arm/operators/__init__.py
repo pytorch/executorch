@@ -12,6 +12,7 @@ from . import (  # noqa
     op_batch_norm,
     op_bmm,
     op_cat,
+    op_clamp,
     op_conv2d,
     op_eq,
     op_exp,
