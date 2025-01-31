@@ -819,7 +819,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
             logging.info(f"Results[{idx}]:\n{output}")
 
 
-def main():
+def _build_parser():
     parser = setup_common_args_and_variables()
     parser.add_argument(
         "-a",
@@ -944,7 +944,13 @@ def main():
         type=str,
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+def main(args) -> None:
+    parser = _build_parser()
+
+    args = parser.parse_args(args)
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")
 
@@ -1035,4 +1041,4 @@ def main():
 
 # flake8: noqa: C901
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
