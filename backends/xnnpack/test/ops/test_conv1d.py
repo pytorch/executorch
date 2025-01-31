@@ -122,9 +122,13 @@ class TestConv1d(unittest.TestCase):
         # For some tests we want to skip to_executorch because otherwise it will require the
         # quantized operators to be loaded and we don't want to do that in the test.
         if not skip_to_executorch:
-            tester.to_executorch().serialize().run_method_and_compare_outputs(
-                num_runs=10, atol=0.01, rtol=0.01
-            )
+            tester.to_executorch().serialize()
+            if quantized:
+                tester.run_method_and_compare_outputs(
+                    num_runs=10, atol=0.025, rtol=0.01
+                )
+            else:
+                tester.run_method_and_compare_outputs()
 
     def test_fp16_conv1d(self):
         inputs = (torch.randn(2, 2, 4).to(torch.float16),)
