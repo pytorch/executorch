@@ -23,9 +23,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from torch.fx.passes.tools_common import NodeList
-from torch.fx.passes.utils.fuser_utils import topo_sort
-
 logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
 
@@ -220,9 +217,7 @@ class TagMemoryMetaPass(ExportPass):
 
     # noqa
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        sorted_nodes: NodeList = topo_sort(list(graph_module.graph.nodes))
-
-        for node in sorted_nodes:
+        for node in graph_module.graph.nodes:
             if not self.should_annotate(node) or self.should_delay_annotation(node):
                 continue
 
