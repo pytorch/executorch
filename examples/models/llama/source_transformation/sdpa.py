@@ -268,14 +268,14 @@ class KVCacheCoreML(torch.nn.Module):
     def __init__(
         self,
         max_batch_size: int,
-        max_seq_length: int,
+        max_context_length: int,
         n_heads: int,
         head_dim: int,
         dtype=torch.float32,
     ):
         super().__init__()
-        self.max_seq_length = max_seq_length
-        cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
+        self.max_context_length = max_context_length
+        cache_shape = (max_batch_size, n_heads, max_context_length, head_dim)
 
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
@@ -303,7 +303,7 @@ def replace_kv_cache_with_coreml_kv_cache(module: torch.nn.Module):
                 name,
                 KVCacheCoreML(
                     child.max_batch_size,
-                    child.max_seq_length,
+                    child.max_context_length,
                     child.n_heads,
                     child.head_dim,
                     child.k_cache.dtype,
@@ -318,13 +318,13 @@ class KVCacheSimple(torch.nn.Module):
     def __init__(
         self,
         max_batch_size: int,
-        max_seq_length: int,
+        max_context_length: int,
         n_heads: int,
         head_dim: int,
         dtype=torch.float32,
     ):
         super().__init__()
-        cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
+        cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
         self.register_buffer(
             "past_k_caches",
             torch.zeros(cache_shape, dtype=dtype, device="cpu"),
@@ -358,7 +358,7 @@ def replace_kv_cache_with_simple_kv_cache(module: torch.nn.Module):
                 name,
                 KVCacheSimple(
                     child.max_batch_size,
-                    child.max_seq_length,
+                    child.max_context_length,
                     child.n_heads,
                     child.head_dim,
                     child.k_cache.dtype,
@@ -373,9 +373,9 @@ def replace_causal_mask(module: torch.nn.Module):
     for buffer_fqn_name, buffer in module.named_buffers():
         buffer_name = buffer_fqn_name.split(".")[-1]
         if buffer_name == "mask":
-            max_seq_len = buffer.shape[-1]
+            max_context_len = buffer.shape[-1]
             mask = torch.full(
-                (max_seq_len, max_seq_len),
+                (max_context_len, max_context_len),
                 float("-inf"),
                 device="cpu",
             )

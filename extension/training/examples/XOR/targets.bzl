@@ -17,6 +17,7 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/kernels/portable:generated_lib",
+            "//executorch/extension/flat_tensor/serialize:serialize_cpp"
         ],
         external_deps = ["gflags"],
         define_static_target = True,

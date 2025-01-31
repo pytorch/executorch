@@ -16,9 +16,10 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
-using OptionalIntArrayRef = exec_aten::OptionalArrayRef<int64_t>;
-using DimOrderArrayRef = exec_aten::ArrayRef<executorch::aten::DimOrderType>;
+using executorch::aten::Tensor;
+using OptionalIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
 
 namespace {
 

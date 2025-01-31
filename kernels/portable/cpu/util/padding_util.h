@@ -16,14 +16,14 @@ namespace executor {
 bool check_padding_args(
     int64_t n,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> padding,
+    executorch::aten::ArrayRef<int64_t> padding,
     Tensor& out,
     bool reflection = false);
 
 void get_padding_out_target_size(
     int64_t n,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> padding,
+    executorch::aten::ArrayRef<int64_t> padding,
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
@@ -42,7 +42,7 @@ void pad1d(
     const PaddingIx& padding_ix,
     const Tensor& in,
     Tensor& out,
-    exec_aten::ArrayRef<int64_t> padding) {
+    executorch::aten::ArrayRef<int64_t> padding) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -67,7 +67,7 @@ void pad2d(
     const PaddingIx& padding_ix,
     const Tensor& in,
     Tensor& out,
-    exec_aten::ArrayRef<int64_t> padding) {
+    executorch::aten::ArrayRef<int64_t> padding) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -100,7 +100,7 @@ void pad3d(
     const PaddingIx& padding_ix,
     const Tensor& in,
     Tensor& out,
-    exec_aten::ArrayRef<int64_t> padding) {
+    executorch::aten::ArrayRef<int64_t> padding) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 

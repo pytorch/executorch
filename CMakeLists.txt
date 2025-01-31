@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -146,10 +147,9 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
 endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
-# they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
-# disables exceptions and runtime type.
+# they can be properly gc'd. -s: strip symbol.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti ${CMAKE_CXX_FLAGS_RELEASE}"
+    "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
 )
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
@@ -163,8 +163,6 @@ else()
   # -O2: Moderate opt.
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
-
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 
@@ -820,6 +818,14 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Generate lib to register quantized ops
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
+  endif()
+
+  if(EXECUTORCH_ENABLE_EVENT_TRACER)
+    if(EXECUTORCH_BUILD_DEVTOOLS)
+      list(APPEND _executor_runner_libs etdump flatccrt)
+    else()
+      message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
+    endif()
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
