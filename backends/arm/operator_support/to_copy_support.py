@@ -75,9 +75,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     ) -> bool:
         assert node.target in self.targets
 
-        if tosa_spec not in self.tosa_specs:
-            return False
-
         assert tosa_spec.support_integer()
         supported_dtypes = (
             self.ALL_SUPPORTED_TYPES
@@ -97,9 +94,9 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         assert isinstance(input_val, torch._subclasses.FakeTensor)
         input_dtype = input_val.dtype
         if input_dtype not in supported_dtypes:
-            logger.info(
-                f"Input dtype {input_val.dtype} is not supported in "
-                f"{node.target.name()}."  # type: ignore[union-attr]  # pyre-ignore[16]
+            self.reporter.report_reject(
+                node,
+                f"Input dtype {input_val.dtype} is not supported in {node.target}.",
             )
             return False
 
@@ -107,20 +104,22 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         output_val = node.meta["val"]
         assert isinstance(output_val, torch._subclasses.FakeTensor)
         if output_val.dtype not in supported_dtypes[input_dtype]:
-            logger.info(
+            self.reporter.report_reject(
+                node,
                 f"Output dtype {output_val.dtype} is not supported in "
-                f"{node.target.name()} for input dtype {input_dtype}. "  # type: ignore[union-attr]  # pyre-ignore[16]
+                f"{node.target} for input dtype {input_dtype}. "
                 f"Supported output types: "
-                f"{''.join(str(t) for t in supported_dtypes[input_dtype])}"
+                f"{''.join(str(t) for t in supported_dtypes[input_dtype])}",
             )
             return False
 
         # Check memory format (to_copy)
         if "memory_format" in node.kwargs:
             if node.kwargs["memory_format"] in (torch.preserve_format,):
-                logger.info(
+                self.reporter.report_reject(
+                    node,
                     f"Argument 'memory_format' is not supported for "
-                    f"{node.target.name()} right now."  # type: ignore[union-attr]  # pyre-ignore[16]
+                    f"{node.target} right now.",
                 )
                 return False
 
@@ -129,9 +128,10 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             dim_order = node.kwargs["dim_order"]
             # pyre-ignore[6]
             if dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
-                logger.info(
+                self.reporter.report_reject(
+                    node,
                     f"Argument {dim_order=} is not supported for "
-                    f"{node.target.name()} right now."  # type: ignore[union-attr]  # pyre-ignore[16]
+                    f"{node.target} right now.",
                 )
                 return False
 
