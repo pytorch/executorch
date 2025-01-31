@@ -214,15 +214,17 @@ ET_NODISCARD Error get_broadcast_target_size(
     const size_t out_sizes_len,
     size_t* out_dim) {
   if (!tensors_are_broadcastable_between(a_size, b_size)) {
-    char a_shape_str[executorch::runtime::kTensorShapeStringSizeLimit];
-    char b_shape_str[executorch::runtime::kTensorShapeStringSizeLimit];
-    tensor_shape_to_c_string(a_shape_str, a_size);
-    tensor_shape_to_c_string(b_shape_str, b_size);
+    const auto a_shape_str = tensor_shape_to_c_string(
+        executorch::runtime::Span<const Tensor::SizesType>(
+            a_size.data(), a_size.size()));
+    const auto b_shape_str = tensor_shape_to_c_string(
+        executorch::runtime::Span<const Tensor::SizesType>(
+            b_size.data(), b_size.size()));
     ET_LOG(
         Error,
         "Two input tensors should be broadcastable but got shapes %s and %s.",
-        a_shape_str,
-        b_shape_str);
+        a_shape_str.data(),
+        b_shape_str.data());
     return executorch::runtime::Error::InvalidArgument;
   }
 
