@@ -132,6 +132,7 @@ _one_to_one = [
     torch.ops.aten.sigmoid.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
+    torch.ops.aten.hardsigmoid.default,
 ]
 
 _one_to_one_shared_input_qspec = [
