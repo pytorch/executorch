@@ -45,7 +45,7 @@ void quantized_relu_(
   }
 }
 
-void quantized_relu_out(
+void quantized_relu_per_tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& in_zero_point,
