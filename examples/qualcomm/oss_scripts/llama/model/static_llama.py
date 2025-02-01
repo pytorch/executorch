@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.llama_transformer import (
     ModelArgs,
-    precompute_freqs_cis,
+    Rope,
 )
 
 
@@ -309,9 +309,11 @@ class LlamaModel(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.n_layers = config.n_layers
         self.vocab_size = config.vocab_size
-        self.rope_freq_base = config.rope_freq_base
         self.use_kv_cache = config.use_kv_cache
         self.output_new_cache_only = output_new_cache_only
+        rope = Rope(config)
+        pos_ids = torch.zeros((self.max_batch_size, 1), dtype=torch.int32)
+        self.freqs_cos, self.freqs_sin = rope.get_freqs(pos_ids, self.max_seq_len)
 
         self.layers = nn.ModuleList(
             [
@@ -322,13 +324,7 @@ class LlamaModel(nn.Module):
         self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
-        freqs_cos, freqs_sin = precompute_freqs_cis(
-            config.dim // config.n_heads,
-            config.max_seq_len,
-            config.rope_freq_base,
-        )
-        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
-        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
+   
 
     def prepare_output_conv(self):
         def forward_output_conv(x):
@@ -350,20 +346,14 @@ class LlamaModel(nn.Module):
         self,
         tokens: torch.Tensor,
         atten_mask: torch.Tensor,
-        input_pos: Optional[torch.Tensor] = None,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
         *args,
     ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
 
         output_k_cache = []
         output_v_cache = []
-        # following tensors should be invariant across batches
-        freqs_cos = (
-            self.freqs_cos[input_pos][0] if self.use_kv_cache else self.freqs_cos[:-1]
-        )
-        freqs_sin = (
-            self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin[:-1]
-        )
-
+        
         hidden_states = self.tok_embeddings(tokens)
         for ind, decoder_layer in enumerate(self.layers):
             k_caches = None
@@ -389,12 +379,13 @@ class LlamaModel(nn.Module):
 
         return logits, output_k_cache, output_v_cache
 
-    def get_example_inputs(self, use_kv_cache=True):
+    def get_example_inputs(self, llama_meta, input_len):
+        use_kv_cache=llama_meta["get_use_kv_cache"]
         if use_kv_cache:
             tokens = torch.randint(
                 self.vocab_size, (self.max_batch_size, 1), dtype=torch.int32
             )
-            pos_ids = torch.zeros((self.max_batch_size, 1), dtype=torch.int32)
+
             k_cache, v_cache = [], []
             atten_mask = torch.full((self.max_batch_size, self.max_seq_len), -255.0)
             atten_mask[:, -1] = 0
@@ -418,7 +409,8 @@ class LlamaModel(nn.Module):
             return (
                 tokens,
                 atten_mask,
-                pos_ids,
+                self.freqs_cos[:input_len],
+                self.freqs_sin[:input_len],
                 k_cache,
                 v_cache,
             )
