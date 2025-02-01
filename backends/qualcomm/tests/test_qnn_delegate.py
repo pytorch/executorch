@@ -37,8 +37,9 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
     update_spill_fill_size,
 )
+from executorch.examples.models.llama.llama_transformer import MOEFeedForward
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs, MOEFeedForward
+from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
