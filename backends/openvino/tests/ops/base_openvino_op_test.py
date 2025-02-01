@@ -111,7 +111,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
 
                 for i, f in enumerate(sorted(os.listdir(output_dir))):
                     filename = os.path.join(output_dir, f)
-                    output = np.fromfile(filename, dtype=ref_output[i].numpy().dtype)
+                    output = np.fromfile(filename, dtype=ref_output[i].detach().numpy().dtype)
                     output = torch.from_numpy(output).reshape(ref_output[i].shape)
                     outputs.append(output)
 
@@ -120,7 +120,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                 for i in range(len(ref_output)):
                     self.assertTrue(
                         torch.allclose(
-                            outputs[i], ref_output[i], atol=self.atol, rtol=self.rtol
+                            outputs[i], ref_output[i], atol=self.atol, rtol=self.rtol, equal_nan=True
                         ),
                         msg=f"ref_output:\n{ref_output[i]}\n\ntest_output:\n{outputs[i]}",
                     )

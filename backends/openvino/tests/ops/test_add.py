@@ -15,5 +15,5 @@ class TestAddOperator(BaseOpenvinoOpTest):
 
     def test_add(self):
         module = self.create_model()
-        sample_input = (torch.rand(2, 5, 1, 3), torch.rand(2, 5, 1, 3))
+        sample_input = (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3))
         self.execute_layer_test(module, sample_input)
