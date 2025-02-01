@@ -41,7 +41,6 @@ def define_common_targets():
             "defines.h",
             "error.h",
             "freeable_buffer.h",
-            "named_data_map.h",
             "result.h",
             "span.h",
         ],
@@ -133,6 +132,20 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_library(
+        name = "named_data_map",
+        exported_headers = [
+            "named_data_map.h",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            ":tensor_layout",
+        ],
+    )
+    
     runtime.cxx_library(
         name = "tensor_layout",
         srcs = ["tensor_layout.cpp"],
