@@ -12,7 +12,7 @@ import math
 from typing import List, Optional, Tuple
 
 import torch
-from executorch.examples.models.llama.llama_transformer import Attention
+from executorch.examples.models.llama.attention import Attention
 from torch import nn
 
 
