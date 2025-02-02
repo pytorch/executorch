@@ -1062,8 +1062,11 @@ bool extract_scalar_tensor(executorch::aten::Tensor tensor, INT_T* out_val) {
  */
 template <
     typename FLOAT_T,
-    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
-        type = true>
+    typename std::enable_if<
+        std::is_floating_point_v<FLOAT_T> ||
+            std::is_same_v<FLOAT_T, executorch::aten::BFloat16> ||
+            std::is_same_v<FLOAT_T, executorch::aten::Half>,
+        bool>::type = true>
 bool extract_scalar_tensor(executorch::aten::Tensor tensor, FLOAT_T* out_val) {
   if (tensor.numel() != 1) {
     return false;
@@ -1083,7 +1086,7 @@ bool extract_scalar_tensor(executorch::aten::Tensor tensor, FLOAT_T* out_val) {
   }
 
   switch (tensor.scalar_type()) {
-    ET_FORALL_REAL_TYPES(CASE_REAL_DTYPE);
+    ET_FORALL_REALHBF16_TYPES(CASE_REAL_DTYPE);
     default:
       return false;
   }
