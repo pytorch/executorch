@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -12,10 +12,9 @@ import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
-    get_node_arg,
     insert_q_dq_pair,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op, register_passable_op
+from executorch.backends.arm.tosa_quant_utils import dq_op, q_op
 from executorch.backends.arm.tosa_utils import is_consumer_node_depthwise_conv2d
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -26,9 +25,8 @@ from torch.library import impl, Library
 # when lowering to TOSA, e.g. a passthrough_to_tosa._transpose will not affect
 # the edge IR graph but will be lowered to a TOSA-TRANSPOSE.
 lib = Library("passthrough_to_tosa", "DEF")
-# For operators that change the rank of the input, such as unsqueeze and squeeze, we may need
-# to switch dim_order before the opertation. Changing tosa_dim_order is not sufficient
-# as we also need transpose the data into the correct data format.
+# For certain operators we need the data in a specific data format. Changing tosa_dim_order
+# is not sufficient as we also need transpose the data.
 # By utilizing an edge IR passthrough operator we can keep the edge program in
 # channels-first/contiguous and get the desired behavior in the TOSA lowering.
 lib.define("_transpose(Tensor self, int[] dim_order) -> Tensor")
@@ -41,9 +39,6 @@ def _transpose_impl(*args, **kwargs):
     assert len(dim) <= 4
     # Pass-through in edge-IR
     return args[0]
-
-
-register_passable_op(torch.ops.passthrough_to_tosa._transpose)
 
 
 class AnnotateChannelsLastDimOrder(ExportPass):
@@ -121,7 +116,7 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         with graph_module.graph.inserting_before(node):
             permute_node = create_node(
                 graph_module.graph,
-                torch.ops.passthrough_to_tosa._transpose,
+                torch.ops.passthrough_to_tosa._transpose.default,
                 args=(
                     input_node,
                     list(AnnotateChannelsLastDimOrder.NHWC_inverse_order),
@@ -134,16 +129,20 @@ class AnnotateChannelsLastDimOrder(ExportPass):
             permute_node.meta["tosa_dim_order"] = tuple(
                 range(len(input_node.meta["val"].size()))
             )
+            permute_node.meta["val"] = input_node.meta["val"]
 
     @staticmethod
     def insert_output_transpose(node, graph_module):
         with graph_module.graph.inserting_after(node):
             permute_node = create_node(
                 graph_module.graph,
-                torch.ops.passthrough_to_tosa._transpose,
+                torch.ops.passthrough_to_tosa._transpose.default,
                 args=(node, list(AnnotateChannelsLastDimOrder.NHWC_order)),
             )
             permute_node.meta["tosa_dim_order"] = (
+                AnnotateChannelsLastDimOrder.NHWC_order
+            )
+            permute_node.meta["val"] = node.meta["val"].permute(
                 AnnotateChannelsLastDimOrder.NHWC_order
             )
             node.meta["tosa_dim_order"] = (0, 1, 2, 3)
@@ -155,27 +154,6 @@ class AnnotateChannelsLastDimOrder(ExportPass):
             if quantize:
                 q_params = node.args[0].args[1:]
                 insert_q_dq_pair(graph_module.graph, node, q_params)
-
-    @staticmethod
-    def _insert_squeeze_transpose(
-        input_shape, output_shape, node, input_node, graph_module
-    ):
-        nhwc_to_nhwc = len(input_shape) == 4 and len(output_shape) <= 3
-
-        if nhwc_to_nhwc and AnnotateChannelsLastDimOrder.memory_format_differs(
-            input_shape
-        ):
-            AnnotateChannelsLastDimOrder.insert_input_transpose(
-                node, input_node, graph_module
-            )
-
-    @staticmethod
-    def _insert_unsqueeze_transpose(input_shape, output_shape, node, graph_module):
-        nchw_to_nhwc = len(input_shape) == 3 and len(output_shape) == 4
-        if nchw_to_nhwc and AnnotateChannelsLastDimOrder.memory_format_differs(
-            output_shape
-        ):
-            AnnotateChannelsLastDimOrder.insert_output_transpose(node, graph_module)
 
     @staticmethod
     def _insert_view_transpose(
@@ -202,8 +180,6 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         """
         Transposes are needed for operators transforming the input to a different rank, as 4D-tensors are assumed to be in NHWC-format, whereas all other are in NCHW format.
         This is relevant for the following cases:
-        - squeeze:     4D -> <4D
-        - unsqueeze:   3D ->  4D
         - view:       <4D ->  4D
         - view:        4D -> <4D
         Additionally, a 4D->4D view operation acting on the channel dimension currently needs to be performed in NCHW format, leadning to one extra input and output transpose for this case.
@@ -216,27 +192,6 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-
-            if node.target == exir_ops.edge.aten.squeeze_copy.dims:
-                input_node = node.args[0]
-                input_shape = input_node.meta["val"].shape
-                output_shape = node.meta["val"].shape
-
-                self._insert_squeeze_transpose(
-                    input_shape, output_shape, node, input_node, graph_module
-                )
-
-            elif node.target == exir_ops.edge.aten.unsqueeze_copy.default:
-                input_node = get_node_arg(node.args, 0, default_value=False)
-                if input_node:
-                    input_shape = input_node.meta["val"].shape
-                else:
-                    input_shape = ()
-                output_shape = node.meta["val"].shape
-
-                self._insert_unsqueeze_transpose(
-                    input_shape, output_shape, node, graph_module
-                )
 
             elif node.target == exir_ops.edge.aten.view_copy.default:
                 input_node = node.args[0]
@@ -258,7 +213,7 @@ class AnnotateChannelsLastDimOrder(ExportPass):
                     # dim_order = (2, 3, 0, 1) (https://www.mlplatform.org/tosa/tosa_spec.html#_depthwise_conv2d).
                     dim_order = self.HWCM_order
             else:
-                dim_order = tuple(range(node_data.dim()))
+                dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]
             node.meta["tosa_dim_order"] = dim_order
         # Take care of cases when:
         # 4D (NHWC) -> >4D (NCH)

@@ -12,15 +12,12 @@ from typing import Optional
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import (
-    Attention,
-    KVCache,
-    ModelArgs,
-    Rope,
-)
+from executorch.examples.models.llama.attention import AttentionMHA, KVCache
+from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import (
     apply_rotary_emb_to_k,
     hf_apply_rotary_emb_to_k,
+    Rope,
 )
 from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
 
@@ -44,8 +41,8 @@ class RopeWithAttentionSink(Rope):
             self.apply_rotary_emb_to_k = hf_apply_rotary_emb_to_k
         else:
             self.apply_rotary_emb_to_k = apply_rotary_emb_to_k
-        self.max_seq_length = window_size + sink_size
-        assert self.max_seq_length == self.params.max_seq_len
+        self.max_context_length = window_size + sink_size
+        assert self.max_context_length == self.params.max_context_len
         self.eviction_batch_size = eviction_batch_size
         self.position_shift = 0
 
@@ -54,11 +51,14 @@ class RopeWithAttentionSink(Rope):
 
         input_pos_item = input_pos.item()
         torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_seq_length:
+        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
             # There are not enough spaces in the cache to store the new tokens.
             # We need to evict some old tokens and shift some recent tokens.
             num_to_evict = max(
-                input_pos_item + self.position_shift - self.max_seq_length + seq_len,
+                input_pos_item
+                + self.position_shift
+                - self.max_context_length
+                + seq_len,
                 self.eviction_batch_size,
             )
             self.position_shift -= num_to_evict  # pyre-ignore [8]
@@ -111,7 +111,6 @@ class KVCacheWithAttentionSink(KVCache):
         self,
         n_heads: int,
         head_dim: int,
-        transpose_cache: bool,
         enable_dynamic_shape: bool,
         rope: RopeWithAttentionSink,
         window_size: int,
@@ -122,10 +121,9 @@ class KVCacheWithAttentionSink(KVCache):
     ):
         super().__init__(
             max_batch_size=max_batch_size,
-            max_seq_length=window_size + sink_size,
+            max_context_length=window_size + sink_size,
             n_heads=n_heads,
             head_dim=head_dim,
-            transpose_cache=transpose_cache,
             enable_dynamic_shape=enable_dynamic_shape,
             dtype=dtype,
         )
@@ -150,39 +148,31 @@ class KVCacheWithAttentionSink(KVCache):
         """
         input_pos_item = input_pos.item()
         torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_seq_length:
+        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
             # There are not enough spaces in the cache to store the new tokens.
             # We need to evict some old tokens and shift some recent tokens.
             num_to_evict = max(
-                input_pos_item + self.position_shift - self.max_seq_length + seq_len,
+                input_pos_item
+                + self.position_shift
+                - self.max_context_length
+                + seq_len,
                 self.eviction_batch_size,
             )
             num_to_keep = (
                 input_pos_item + self.position_shift - self.sink_size - num_to_evict
             )
             num_empty_space = self.window_size - num_to_keep
-            dim_to_slice = 2 if self.transpose_cache else 1
+            dim_to_slice = 2
             k_to_keep = self.k_cache.narrow(
                 dim_to_slice,
                 self.sink_size + num_to_evict,  # pyre-ignore [6]
                 num_to_keep,  # pyre-ignore [6]
             )
-            if self.transpose_cache:
-                k_to_keep = self.rope.rerotate_k(
-                    k=k_to_keep.transpose(1, 2),
-                    original_position=(  # pyre-ignore [6]
-                        self.sink_size + num_to_evict
-                    ),
-                    new_position=self.sink_size,
-                ).transpose(1, 2)
-            else:
-                k_to_keep = self.rope.rerotate_k(
-                    k=k_to_keep,
-                    original_position=(  # pyre-ignore [6]
-                        self.sink_size + num_to_evict
-                    ),
-                    new_position=self.sink_size,
-                )
+            k_to_keep = self.rope.rerotate_k(
+                k=k_to_keep.transpose(1, 2),
+                original_position=(self.sink_size + num_to_evict),  # pyre-ignore [6]
+                new_position=self.sink_size,
+            ).transpose(1, 2)
             self.k_cache = torch.cat(
                 [
                     self.k_cache.narrow(dim_to_slice, 0, self.sink_size),
@@ -273,12 +263,11 @@ def _replace_attention(
                 eviction_batch_size=eviction_batch_size,
             )
 
-        if isinstance(child_module, Attention):
+        if isinstance(child_module, AttentionMHA):
             kv_cache = child_module.kv_cache
             kv_cache_with_attention_sink = KVCacheWithAttentionSink(
                 n_heads=kv_cache.n_heads,
                 head_dim=kv_cache.head_dim,
-                transpose_cache=kv_cache.transpose_cache,
                 enable_dynamic_shape=kv_cache.enable_dynamic_shape,
                 rope=rope_with_attention_sink,
                 max_batch_size=kv_cache.max_batch_size,
@@ -288,7 +277,6 @@ def _replace_attention(
                 dtype=kv_cache.k_cache.dtype,
             )
             child_module.kv_cache = kv_cache_with_attention_sink
-            child_module.SDPA.kv_cache = kv_cache_with_attention_sink
             child_module.forward = types.MethodType(  # pyre-ignore
                 attention_sink_forward, child_module
             )

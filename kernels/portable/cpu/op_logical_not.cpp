@@ -14,7 +14,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 Tensor&
 logical_not_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
@@ -33,10 +33,10 @@ logical_not_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, tensors_have_same_shape(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "logical_not.out", CTYPE_IN, [&] {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, out.scalar_type(), ctx, "logical_not.out", CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(
+      in.scalar_type(), ctx, "logical_not.out", CTYPE_IN, [&] {
+        ET_SWITCH_REALHBBF16_TYPES(
+            out.scalar_type(), ctx, "logical_not.out", CTYPE_OUT, [&] {
               apply_unary_map_fn(
                   [](const CTYPE_IN val_in) {
                     return static_cast<CTYPE_OUT>(!static_cast<bool>(val_in));

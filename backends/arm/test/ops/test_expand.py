@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -22,6 +22,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
@@ -34,16 +35,19 @@ class TestSimpleExpand(unittest.TestCase):
     class Expand(torch.nn.Module):
         # (input tensor, multiples)
         test_parameters = [
-            (torch.ones(1), (2,)),
-            (torch.ones(1, 4), (1, -1)),
-            (torch.ones(1, 1, 2, 2), (4, 3, -1, 2)),
-            (torch.ones(1), (2, 2, 4)),
-            (torch.ones(3, 2, 4, 1), (-1, -1, -1, 3)),
-            (torch.ones(1, 1, 192), (1, -1, -1)),
+            (torch.rand(1), (2,)),
+            (torch.randn(1, 4), (1, -1)),
+            (torch.randn(1), (2, 2, 4)),
+            (torch.randn(1, 1, 1, 5), (1, 4, -1, -1)),
+            (torch.randn(1, 1, 192), (1, -1, -1)),
+            (torch.randn(1, 1), (1, 2, 2, 4)),
+            (torch.randn(1, 1), (2, 2, 2, 4)),
+            (torch.randn(10, 1, 1, 97), (-1, 4, -1, -1)),
+            (torch.rand(1, 1, 2, 2), (4, 3, -1, 2)),
         ]
 
-        def forward(self, x: torch.Tensor, multiples: Sequence):
-            return x.expand(multiples)
+        def forward(self, x: torch.Tensor, m: Sequence):
+            return x.expand(m)
 
     def _test_expand_tosa_MI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
         (
@@ -63,13 +67,11 @@ class TestSimpleExpand(unittest.TestCase):
         )
 
     def _test_expand_tosa_BI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        compile_spec = common.get_tosa_compile_spec(tosa_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.expand.default": 1})
@@ -84,7 +86,8 @@ class TestSimpleExpand(unittest.TestCase):
     def _test_expand_ethosu_BI_pipeline(
         self, compile_spec: CompileSpec, module: torch.nn.Module, test_data: Tuple
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         tester = (
             ArmTester(
                 module,
@@ -112,20 +115,34 @@ class TestSimpleExpand(unittest.TestCase):
     def test_expand_tosa_BI(self, test_input, multiples):
         self._test_expand_tosa_BI_pipeline(self.Expand(), (test_input, multiples))
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
-    @parameterized.expand(Expand.test_parameters)
+    @parameterized.expand(Expand.test_parameters[:-3])
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
     def test_expand_u55_BI(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
         )
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
-    @parameterized.expand(Expand.test_parameters)
+    # MLETORCH-629: Expand does not work on FVP with batch>1
+    @parameterized.expand(Expand.test_parameters[-3:])
     @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP
+    def test_expand_u55_BI_xfails(self, test_input, multiples):
+        self._test_expand_ethosu_BI_pipeline(
+            common.get_u55_compile_spec(), self.Expand(), (test_input, multiples)
+        )
+
+    @parameterized.expand(Expand.test_parameters[:-3])
+    @pytest.mark.corstone_fvp
     def test_expand_u85_BI(self, test_input, multiples):
+        self._test_expand_ethosu_BI_pipeline(
+            common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
+        )
+
+    # MLETORCH-629: Expand does not work on FVP with batch>1
+    @parameterized.expand(Expand.test_parameters[-3:])
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    def test_expand_u85_BI_xfails(self, test_input, multiples):
         self._test_expand_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.Expand(), (test_input, multiples)
         )

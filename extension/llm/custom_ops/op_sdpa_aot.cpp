@@ -95,7 +95,7 @@ Tensor& custom_sdpa_out_no_context(
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const optional<double> scale,
     Tensor& output) {
-  exec_aten::RuntimeContext context{};
+  executorch::aten::RuntimeContext context{};
   return torch::executor::native::custom_sdpa_out(
       context,
       q,
@@ -121,7 +121,7 @@ at::Tensor custom_sdpa_aten(
     const bool is_causal,
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
     const std::optional<double> scale) {
-  auto output = at::empty_like(q);
+  auto output = at::empty(q.sizes());
   WRAP_TO_ATEN(custom_sdpa_out_no_context, 8)
   (q, k, v, start_pos, attn_mask, dropout_p, is_causal, scale, output);
   return output;
@@ -132,7 +132,7 @@ Tensor& update_cache_out_no_context(
     Tensor& cache,
     const int64_t start_pos,
     Tensor& output) {
-  exec_aten::RuntimeContext context{};
+  executorch::aten::RuntimeContext context{};
   return torch::executor::native::update_cache_out(
       context, value, cache, start_pos, output);
 }

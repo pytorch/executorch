@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,8 +9,10 @@
 from dataclasses import dataclass
 
 import torch
+from torch.ao.quantization import ObserverOrFakeQuantize
 
 from torch.ao.quantization.quantizer import (
+    DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
 )
@@ -53,8 +55,42 @@ class QuantizationConfig:
         ], f"Unsupported quantization_spec {self.weight} for weight"
         return self.weight
 
-    def get_bias_qspec(self) -> QuantizationSpec | None:
+    def get_bias_qspec(self, node: torch.fx.Node) -> QuantizationSpec | None:
         """Returns QuantizationSpec 'bias' after asserting that bias.dtype is torch.float."""
+
+        def _derive_qparams_fn(
+            obs_or_fqs: list[ObserverOrFakeQuantize],
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            assert (
+                len(obs_or_fqs) == 2
+            ), "Expecting two obs/fqs, one for activation and one for weight, got: {}".format(
+                len(obs_or_fqs)
+            )
+            act_obs_or_fq = obs_or_fqs[0]
+            weight_obs_or_fq = obs_or_fqs[1]
+            act_scale, act_zp = act_obs_or_fq.calculate_qparams()
+            weight_scale, weight_zp = weight_obs_or_fq.calculate_qparams()
+            return torch.tensor([act_scale * weight_scale]).to(
+                torch.float32
+            ), torch.tensor([0]).to(torch.int32)
+
+        if node.target in [
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.linear.default,
+        ]:
+            input_act = node.args[0]
+            weight = node.args[1]
+            quantization_spec = DerivedQuantizationSpec(
+                derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]
+                derive_qparams_fn=_derive_qparams_fn,
+                dtype=torch.int32,
+                quant_min=torch.iinfo(torch.int32).min,
+                quant_max=torch.iinfo(torch.int32).max - 1,
+                qscheme=torch.per_tensor_symmetric,
+            )
+            return quantization_spec  # type: ignore[return-value]
+
         if self.bias is None:
             return None
         assert (

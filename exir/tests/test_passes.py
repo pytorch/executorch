@@ -17,6 +17,13 @@ import executorch.exir as exir
 import executorch.exir.memory_planning  # noqa
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+)
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, memory, to_edge
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -67,11 +74,6 @@ from torch import nn
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import QuantizationSpec
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -1289,36 +1291,41 @@ class TestPasses(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.register_buffer("state", torch.zeros(1))
+                self.register_buffer("direct_copy_from_input", torch.zeros(1))
 
             def forward(self, x):
                 y = x + self.state
                 self.state.add_(1)
+                self.direct_copy_from_input.copy_(x)
                 return y
 
         model = to_edge(export(MutableStateModule(), (torch.zeros(1),), strict=True))
         self.assertEqual(count_copies(model.exported_program().graph_module), 0)
         # Before
         # graph():
-        #     %arg0_1 : [num_users=2] = placeholder[target=arg0_1]
-        #     %_lifted_tensor_constant1 : [num_users=1] = placeholder[target=_lifted_tensor_constant1]
-        #     %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
-        #     %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg1_1, %arg0_1), kwargs = {})
-        #     %aten__to_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%_lifted_tensor_constant1,), kwargs = {dtype: torch.float32})
-        #     %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg0_1, %aten__to_copy_default), kwargs = {})
-        #     return (aten_add_tensor_1, aten_add_tensor)
+        #     %b_state : [num_users=2] = placeholder[target=b_state]
+        #     %b_direct_copy_from_input : [num_users=0] = placeholder[target=b_direct_copy_from_input]
+        #     %_lifted_tensor_constant2 : [num_users=1] = placeholder[target=_lifted_tensor_constant2]
+        #     %x : [num_users=2] = placeholder[target=x]
+        #     %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%x, %b_state), kwargs = {})
+        #     %dim_order_ops__to_dim_order_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.dim_order_ops._to_dim_order_copy.default](args = (%_lifted_tensor_constant2,), kwargs = {dtype: torch.float32, dim_order: []})
+        #     %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%b_state, %dim_order_ops__to_dim_order_copy_default), kwargs = {})
+        #     return (aten_add_tensor_1, x, aten_add_tensor)
         gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
 
         # After
         # graph():
-        #     %arg0_1 : [num_users=3] = placeholder[target=arg0_1]
-        #     %_lifted_tensor_constant1 : [num_users=1] = placeholder[target=_lifted_tensor_constant1]
-        #     %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
-        #     %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg1_1, %arg0_1), kwargs = {})
-        #     %aten__to_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%_lifted_tensor_constant1,), kwargs = {dtype: torch.float32})
-        #     %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg0_1, %aten__to_copy_default), kwargs = {})
-        #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%arg0_1, %aten_add_tensor_1), kwargs = {})
-        #     return (copy__default, aten_add_tensor)
-        self.assertEqual(count_copies(gm), 1)
+        #     %b_state : [num_users=3] = placeholder[target=b_state]
+        #     %b_direct_copy_from_input : [num_users=1] = placeholder[target=b_direct_copy_from_input]
+        #     %_lifted_tensor_constant2 : [num_users=1] = placeholder[target=_lifted_tensor_constant2]
+        #     %x : [num_users=2] = placeholder[target=x]
+        #     %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%x, %b_state), kwargs = {})
+        #     %dim_order_ops__to_dim_order_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.dim_order_ops._to_dim_order_copy.default](args = (%_lifted_tensor_constant2,), kwargs = {dtype: torch.float32, dim_order: []})
+        #     %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%b_state, %dim_order_ops__to_dim_order_copy_default), kwargs = {})
+        #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%b_state, %aten_add_tensor_1), kwargs = {})
+        #     %copy__default_1 : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%b_direct_copy_from_input, %x), kwargs = {})
+        #     return (copy__default, copy__default_1, aten_add_tensor)
+        self.assertEqual(count_copies(gm), 2)
 
     def test_remove_quantized_op_noop_pass(self) -> None:
         class TestAddSliceNoop(torch.nn.Module):
@@ -1593,6 +1600,34 @@ class TestPasses(unittest.TestCase):
         FileCheck().check_count("executorch_exir_memory_view", 2, exactly=True).run(
             gm.code
         )
+
+    def test_constant_prop_pass_for_mutable_buffers(self) -> None:
+        def count_adds(gm: torch.fx.GraphModule) -> int:
+            return len(
+                gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.add.Tensor
+                )
+            )
+
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                x = x + self.state
+                # Add 1 (constant) to state.
+                self.state.add_(1)
+                return x
+
+        edge_manager = to_edge(
+            export(MutableStateModule(), (torch.zeros(1),), strict=True)
+        )
+        self.assertEqual(count_adds(edge_manager.exported_program().graph_module), 2)
+        edge_manager._edge_programs["forward"] = constant_prop_pass(
+            edge_manager._edge_programs["forward"]
+        )
+        self.assertEqual(count_adds(edge_manager.exported_program().graph_module), 2)
 
     def test_constant_prop_pass_for_no_grad(self) -> None:
         class LSTM(torch.nn.Module):

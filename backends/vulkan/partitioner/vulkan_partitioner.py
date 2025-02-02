@@ -83,6 +83,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 return False, "no operator implementation"
             features = get_op_features(target)
 
+        # Check for high dimensional tensors
+        if utils.is_tensor_node(node) and utils.tensor_node_is_high_dim(node):
+            return False, "contains high dim tensor"
+
         valid_texture_layouts = utils.possible_node_memory_layouts(
             node, self.texture_limits
         )
@@ -94,6 +98,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 and utils.is_tensor_node(arg)
                 and i not in features.skip_limits_check
             ):
+                # Check for high dimensional tensors
+                if utils.is_tensor_node(arg) and utils.tensor_node_is_high_dim(arg):
+                    return False, "contains high dim tensor"
+
                 arg_texture_layouts = utils.possible_node_memory_layouts(
                     arg, self.texture_limits
                 )
@@ -242,11 +250,19 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "local scalar dense of incompatible op node")
             return False
 
+        features = None
         if target not in vulkan_supported_ops:
-            self.log_skip(node, "no operator implementation")
-            return False
+            # For some ops, i.e. custom ops the name is registered instead of the
+            # OpOverload object.
+            if not isinstance(target, str) and target.name() in vulkan_supported_ops:
+                features = vulkan_supported_ops[target.name()]
+            else:
+                self.log_skip(node, "no operator implementation")
+                return False
+        else:
+            features = vulkan_supported_ops[target]
 
-        features = vulkan_supported_ops[target]
+        assert features is not None
 
         if not features.check_node_fn(node):
             self.log_skip(node, "op args not supported")

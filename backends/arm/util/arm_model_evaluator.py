@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -17,7 +17,7 @@ from typing import Any, Optional, Tuple
 import torch
 from torch.nn.modules import Module
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
+from torchvision import datasets, transforms  # type: ignore[import-untyped]
 
 
 # Logger for outputting progress for longer running evaluation
@@ -59,7 +59,7 @@ class GenericModelEvaluator:
         if tosa_output_path:
             self.tosa_output_path = tosa_output_path
         else:
-            self.tosa_output_path = None
+            self.tosa_output_path = ""
 
     def get_model_error(self) -> defaultdict:
         """
@@ -104,7 +104,7 @@ class GenericModelEvaluator:
 
         return compression_ratio
 
-    def evaluate(self) -> dict[Any]:
+    def evaluate(self) -> dict[str, Any]:
         model_error_dict = self.get_model_error()
 
         output_metrics = {"name": self.model_name, "metrics": dict(model_error_dict)}
@@ -112,7 +112,7 @@ class GenericModelEvaluator:
         if self.tosa_output_path:
             # We know output_metrics["metrics"] is list since we just defined it, safe to ignore.
             # pyre-ignore[16]
-            output_metrics["metrics"][
+            output_metrics["metrics"][  # type: ignore[index]
                 "compression_ratio"
             ] = self.get_compression_ratio()
 

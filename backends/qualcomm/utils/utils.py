@@ -6,6 +6,7 @@
 
 import operator
 import re
+import time
 import warnings
 from collections import OrderedDict
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
@@ -89,7 +90,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture import ExecutorchBackendConfig
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import _get_updated_graph_signature
-from torch._decomp import core_aten_decompositions as torch_core_aten_decompositions
+from torch._decomp import core_aten_decompositions, remove_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -268,21 +269,24 @@ def update_spill_fill_size(
             options.backend_options.htp_options.max_sf_buf_size = max_sf_buf_size
             set_spec(module, options)
 
+    max_sf_size, modules_map = 0, {}
     if isinstance(exported_program, list):
-        max_sf_size, modules_map = 0, {}
         for prog in exported_program:
             max_sf_buf_size, module_map = get_program_info(prog)
             max_sf_size = max(max_sf_size, max_sf_buf_size)
             modules_map.update(module_map)
-        update_program(max_sf_size, modules_map)
     else:
-        update_program(*get_program_info(exported_program))
+        max_sf_size, module_map = get_program_info(exported_program)
+    update_program(max_sf_size, module_map)
+
+    return max_sf_size
 
 
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
-    source_decompositions = torch_core_aten_decompositions()
+    source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
-    remove_decompositions = [
+    skip_decompositions = [
+        torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.hardsigmoid.default,
@@ -290,8 +294,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
         torch.ops.aten._safe_softmax.default,
     ]
 
-    for key in remove_decompositions:
-        source_decompositions.pop(key)
+    remove_decompositions(source_decompositions, skip_decompositions)
 
     return source_decompositions
 
@@ -740,7 +743,7 @@ def from_context_binary(  # noqa: C901
         for k, v in type_map.items():
             dtype_map.setdefault(v, k)
 
-    qnn_in_order, executorch_in_order, executorch_out_order = [], [], []
+    qnn_in_order, executorch_in_order, executorch_out_order = None, None, None
     if custom_info is not None:
         # since some context binaries might fail to open on host
         # if they are compiled with special flags:
@@ -748,9 +751,9 @@ def from_context_binary(  # noqa: C901
         # use custom information here instead
         inputs = build_tensor(custom_info["graph_inputs"], dtype_map)
         outputs = build_tensor(custom_info["graph_outputs"], dtype_map)
-        qnn_in_order = custom_info["qnn_in_order"]
-        executorch_in_order = custom_info["executorch_in_order"]
-        executorch_out_order = custom_info["executorch_out_order"]
+        qnn_in_order = custom_info.get("qnn_in_order", None)
+        executorch_in_order = custom_info.get("executorch_in_order", None)
+        executorch_out_order = custom_info.get("executorch_out_order", None)
         graph_name = custom_info["graph_name"]
     else:
         # get context-binary io tensor info through qnn manager
@@ -800,7 +803,9 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
 
 def generate_multi_graph_program(
     compiler_specs: List[CompileSpec],
-    exported_programs: List[ExportedProgram] = None,
+    processed_bytes: List[bytes],
+    input_nodes_dict: List[torch.fx.Node] = None,
+    output_nodes_dict: List[torch.fx.Node] = None,
     backend_config: ExecutorchBackendConfig = None,
     constant_methods: Optional[Dict[str, Any]] = None,
 ) -> ExecutorchProgramManager:
@@ -813,10 +818,6 @@ def generate_multi_graph_program(
         executorch_in_order,
         executorch_out_order,
     ) = ({}, {}, {}, {}, {})
-
-    processed_bytes = [
-        prog.graph_module.lowered_module_0.processed_bytes for prog in exported_programs
-    ]
     qnn_mgr = PyQnnManagerAdaptor.QnnManager(
         generate_qnn_executorch_option(compiler_specs), processed_bytes
     )
@@ -829,38 +830,36 @@ def generate_multi_graph_program(
         graph_outputs[graph_name] = qnn_mgr.GetGraphOutputs(graph_name)
 
     # We need to obtain the order of the IOs to correctly map QNN with nn.module
-    for i, graph_name in enumerate(graph_names):
-        # input
-        input_names = [
-            node.name
-            for node in exported_programs[i].graph_module.graph.nodes
-            if node.op == "placeholder"
-        ]
-        qnn_input_names = [wrapper.GetName() for wrapper in graph_inputs[graph_name]]
-        input_order_list = []
-        for input_name in input_names:
-            # e.g., input_0_tokens_0
-            pattern = rf"^input_(\d+)_({input_name})_(\d+)$"
-            for j in range(len(qnn_input_names)):
-                if re.match(pattern, qnn_input_names[j]):
-                    input_order_list.append(j)
-                    break
-        assert (
-            len(input_order_list) == len(input_names) == len(qnn_input_names)
-        ), "Order list length is different from names"
-        executorch_in_order[graph_name] = input_order_list
-        qnn_in_order[graph_name] = sorted(
-            range(len(input_order_list)), key=lambda k: input_order_list[k]
-        )
-
-        # output
-        get_item_list = [
-            node
-            for node in exported_programs[i].graph_module.graph.nodes
-            if node.op == "output"
-        ][0].args[0]
-        output_order_list = [item.args[1] for item in get_item_list]
-        executorch_out_order[graph_name] = output_order_list
+    for graph_name in graph_names:
+        if input_nodes_dict:
+            # input
+            input_names = [node.name for node in input_nodes_dict[graph_name]]
+            qnn_input_names = [
+                wrapper.GetName() for wrapper in graph_inputs[graph_name]
+            ]
+            # The input of intermideate module including call_function node
+            # could not be reorder by node name
+            if len(input_names) == len(qnn_input_names):
+                input_order_list = []
+                for input_name in input_names:
+                    # e.g., input_0_tokens_0
+                    pattern = rf"^input_(\d+)_({input_name})_(\d+)$"
+                    for j in range(len(qnn_input_names)):
+                        if re.match(pattern, qnn_input_names[j]):
+                            input_order_list.append(j)
+                            break
+                assert len(input_order_list) == len(
+                    input_names
+                ), "Order list length is different from names"
+                executorch_in_order[graph_name] = input_order_list
+                qnn_in_order[graph_name] = sorted(
+                    range(len(input_order_list)), key=lambda k: input_order_list[k]
+                )
+        if output_nodes_dict:
+            # output
+            get_item_list = output_nodes_dict[graph_name][0].args[0]
+            output_order_list = [item.args[1] for item in get_item_list]
+            executorch_out_order[graph_name] = output_order_list
 
     qnn_mgr.Destroy()
 
@@ -869,15 +868,15 @@ def generate_multi_graph_program(
     bundle_progs = [
         from_context_binary(
             ctx_path=binary_info,
-            op_name=f"loader_{graph_name}",
+            op_name=f"loader_{graph_name}_{int(time.time())}",
             soc_model=compiler_options.soc_info.soc_model,
             custom_info={
                 "graph_inputs": graph_inputs[graph_name],
                 "graph_outputs": graph_outputs[graph_name],
                 "graph_name": graph_name,
-                "qnn_in_order": qnn_in_order[graph_name],
-                "executorch_in_order": executorch_in_order[graph_name],
-                "executorch_out_order": executorch_out_order[graph_name],
+                "qnn_in_order": qnn_in_order.get(graph_name, None),
+                "executorch_in_order": executorch_in_order.get(graph_name, None),
+                "executorch_out_order": executorch_out_order.get(graph_name, None),
             },
         )
         for graph_name in graph_names
@@ -900,9 +899,101 @@ def generate_multi_graph_program(
                 break
 
     edge_prog_mgr = edge_prog_mgr.to_backend(QnnPartitioner(compiler_specs))
-    return edge_prog_mgr.to_executorch(
+    exec_prog = edge_prog_mgr.to_executorch(
         config=backend_config or ExecutorchBackendConfig()
     )
+    return exec_prog, bundle_progs
+
+
+def generate_composite_llama_program(
+    graph_names: List[str],
+    sample_inputs_list: List[Tuple[Any]],
+    lower_module_dict: Dict[str, List[LoweredBackendModule]],
+    call_delegate_node_name_dict: Dict[str, List[str]],
+    call_delegate_inputs_dict: Dict[str, List[Tuple[str, int | None]]],
+    outputs_dict: Dict[str, List[Tuple[str, int]]],
+    backend_config: ExecutorchBackendConfig = None,
+    constant_methods: Optional[Dict[str, Any]] = None,
+) -> ExecutorchProgramManager:
+    class CompositeLlamaModule(torch.nn.Module):
+        def __init__(
+            self,
+            lower_module_list,
+            call_delegate_node_name_list,
+            call_delegate_inputs_list,
+            outputs_list,
+        ) -> None:
+            super().__init__()
+            self.lower_module_list = lower_module_list
+            self.call_delegate_node_name_list = call_delegate_node_name_list
+            self.call_delegate_inputs_list = call_delegate_inputs_list
+            self.outputs_list = outputs_list
+
+        def reorder(
+            self,
+            call_delegate_inputs: List[Tuple[str, int | None]],
+            module_inputs: dict[str, torch.Tensor],
+            all_ret: dict[str, torch.Tensor],
+        ) -> Tuple[torch.Tensor]:
+            ret = []
+            for name, index in call_delegate_inputs:
+                if index is not None:
+                    # Get tensor from previous results
+                    ret.append(all_ret[name][index])
+                else:
+                    # Get tensor from the inputs of module
+                    ret.append(module_inputs[name])
+            return tuple(ret)
+
+        def forward(
+            self,
+            tokens: torch.Tensor,
+            atten_mask: torch.Tensor,
+            input_pos: Optional[torch.Tensor] = None,
+            *args,
+        ) -> Tuple[torch.Tensor]:
+            all_ret = {}
+            module_input_dict = {
+                "tokens": tokens,
+                "atten_mask": atten_mask,
+                "input_pos": input_pos,
+            }
+            for num, arg in enumerate(args):
+                module_input_dict[f"args_{num}"] = arg
+            for lower_module, call_delegate_node_name, call_delegate_inputs in zip(
+                self.lower_module_list,
+                self.call_delegate_node_name_list,
+                self.call_delegate_inputs_list,
+            ):
+                inp = self.reorder(call_delegate_inputs, module_input_dict, all_ret)
+                ret = lower_module(*inp)
+                all_ret[call_delegate_node_name] = ret
+            llama_outputs = []
+            for output_src_name, index in self.outputs_list:
+                llama_outputs.append(all_ret[output_src_name][index])
+            return tuple(llama_outputs)
+
+    progs_dict = {}
+    for graph_name, sample_inputs in zip(graph_names, sample_inputs_list):
+        composite_llama_module = CompositeLlamaModule(
+            lower_module_dict[graph_name],
+            call_delegate_node_name_dict[graph_name],
+            call_delegate_inputs_dict[graph_name],
+            outputs_dict[graph_name],
+        )
+        prog = torch.export.export(composite_llama_module, sample_inputs)
+        progs_dict[graph_name] = prog
+    # leverage ExecutorchProgramManager for generating pte with multi-methods
+    edge_prog_mgr = to_edge(
+        progs_dict,
+        constant_methods=constant_methods,
+        # do not alter name for custom op
+        compile_config=EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=False),
+    )
+    exec_prog = edge_prog_mgr.to_executorch(
+        config=backend_config or ExecutorchBackendConfig()
+    )
+    return exec_prog
 
 
 def generate_htp_compiler_spec(
@@ -968,6 +1059,7 @@ def generate_qnn_executorch_compiler_spec(
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
             SM8650(Snapdragon 8 Gen 3)
+            SM8750(Snapdragon 8 Elite)
         backend_options: Options required by different backends.
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
@@ -1057,6 +1149,7 @@ def generate_qnn_executorch_compiler_spec(
 def get_soc_to_arch_map():
     return {
         "SSG2115P": HtpArch.V73,
+        "SM8750": HtpArch.V79,
         "SM8650": HtpArch.V75,
         "SM8550": HtpArch.V73,
         "SM8475": HtpArch.V69,
@@ -1068,6 +1161,7 @@ def get_soc_to_arch_map():
 def get_soc_to_chipset_map():
     return {
         "SSG2115P": QcomChipset.SSG2115P,
+        "SM8750": QcomChipset.SM8750,
         "SM8650": QcomChipset.SM8650,
         "SM8550": QcomChipset.SM8550,
         "SM8475": QcomChipset.SM8475,

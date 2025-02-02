@@ -4,9 +4,9 @@ Welcome to the ExecuTorch Documentation
 =======================================
 
 .. important::
-   v0.4.0 is a beta release of ExecuTorch. As of this release, the API will
-   follow the `API Lifecycle and Deprecation Policy <api-life-cycle.html>`__,
-   and the ``.pte`` binary format will comply with the `Runtime Compatibility
+   v0.4.0 was the beta release of ExecuTorch. Starting from v0.4.0, the API
+   follows the `API Lifecycle and Deprecation Policy <api-life-cycle.html>`__,
+   and the ``.pte`` binary format complies with the `Runtime Compatibility
    Policy
    <https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md>`__.
    This helps ensure that application developers can update to the latest
@@ -87,7 +87,7 @@ Topics in this section will help you get started with ExecuTorch.
    getting-started-setup
    export-overview
    runtime-build-and-cross-compilation
-
+   getting-started-faqs
 
 .. toctree::
    :glob:

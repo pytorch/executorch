@@ -17,21 +17,27 @@ namespace executor {
 
 bool check_upsample_2d_common_args(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out);
 
 bool check_upsample_bilinear2d_args(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
     const bool align_corners,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
+    Tensor& out);
+
+bool check_upsample_nearest2d_args(
+    const Tensor& in,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out);
 
 Error resize_upsample_2d(
     const Tensor& in,
-    const exec_aten::OptionalArrayRef<int64_t>& output_size,
-    const exec_aten::OptionalArrayRef<double>& scale_factors,
+    const executorch::aten::OptionalArrayRef<int64_t>& output_size,
+    const executorch::aten::OptionalArrayRef<double>& scale_factors,
     double& scale_h_out,
     double& scale_w_out,
     Tensor& out);
@@ -39,7 +45,7 @@ Error resize_upsample_2d(
 // Ported from aten/src/ATen/native/UpSample.h
 template <typename scalar_t>
 inline scalar_t compute_scales_value(
-    const exec_aten::optional<double>& scale,
+    const executorch::aten::optional<double>& scale,
     int64_t input_size,
     int64_t output_size) {
   return scale.has_value() ? static_cast<scalar_t>(1.0 / scale.value())
@@ -52,7 +58,7 @@ inline scalar_t area_pixel_compute_scale(
     int64_t input_size,
     int64_t output_size,
     bool align_corners,
-    const exec_aten::optional<double>& scale) {
+    const executorch::aten::optional<double>& scale) {
   // see Note [area_pixel_compute_scale]
   if (align_corners) {
     if (output_size > 1) {
@@ -125,6 +131,18 @@ inline void compute_source_index_and_lambda(
     input_index1 = input_index0 + offset;
     lambda0 = static_cast<scalar_t>(1.) - lambda1;
   }
+}
+
+// Ported from aten/src/ATen/native/UpSample.h
+inline int64_t nearest_neighbor_compute_source_index(
+    const float scale,
+    int64_t dst_index,
+    int64_t input_size) {
+  // Index computation matching OpenCV INTER_NEAREST
+  // which is buggy and kept for BC
+  const int64_t src_index =
+      std::min(static_cast<int64_t>(floorf(dst_index * scale)), input_size - 1);
+  return src_index;
 }
 
 } // namespace executor
