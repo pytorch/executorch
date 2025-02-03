@@ -169,7 +169,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
         return run_tosa_graph(tosa_buffer, tosa_version, inputs)
 
     def __torch_function__(self, func, types, args=..., kwargs=None):
-        if isinstance(func, torch._higher_order_ops.executorch_call_delegate.ExecutorchCallDelegate):  # type: ignore
+        if func is torch._higher_order_ops.executorch_call_delegate:
             lowered_backend_module = cast(LoweredBackendModule, args[0])
             if lowered_backend_module.backend_id == "ArmBackend":
                 return self._tosa_dispatch(lowered_backend_module, args[1:])
