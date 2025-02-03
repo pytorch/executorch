@@ -17,9 +17,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using SizesType = exec_aten::SizesType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using SizesType = executorch::aten::SizesType;
 
 namespace {
 
@@ -56,7 +56,8 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
       static_cast<SizesType>(num_nonzero), static_cast<SizesType>(input.dim())};
   ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(output, ArrayRef<exec_aten::SizesType>(out_shape, 2)) ==
+      resize_tensor(
+          output, ArrayRef<executorch::aten::SizesType>(out_shape, 2)) ==
           Error::Ok,
       InvalidArgument, );
 
@@ -88,10 +89,9 @@ Tensor& nonzero_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, check_nonzero_args(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
-        nonzero<CTYPE>(ctx, in, out);
-      });
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
+    nonzero<CTYPE>(ctx, in, out);
+  });
 
   return out;
 }

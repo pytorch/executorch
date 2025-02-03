@@ -12,7 +12,6 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
@@ -38,10 +37,6 @@ class TestMinimum(unittest.TestCase):
         def forward(self, x, y):
             return torch.minimum(x, y)
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
-
     def _test_minimum_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
@@ -54,7 +49,7 @@ class TestMinimum(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.minimum.default": 1})
             .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -74,7 +69,7 @@ class TestMinimum(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.minimum.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -114,16 +109,13 @@ class TestMinimum(unittest.TestCase):
         self._test_minimum_tosa_BI_pipeline(self.Minimum(), test_data)
 
     @parameterized.expand(Minimum.test_parameters)
-    @unittest.expectedFailure  # Bug in Vela, disabled until pin changes, bug MLETORCH-513
     def test_minimum_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         tester = self._test_minimum_ethos_BI_pipeline(
             self.Minimum(), common.get_u55_compile_spec(), test_data
         )
         if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1, inputs=test_data, target_board="corstone-300"
-            )
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
     @parameterized.expand(Minimum.test_parameters)
     def test_minimum_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
@@ -133,5 +125,6 @@ class TestMinimum(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                qtol=1, inputs=test_data, target_board="corstone-320"
+                qtol=1,
+                inputs=test_data,
             )

@@ -90,7 +90,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture import ExecutorchBackendConfig
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import _get_updated_graph_signature
-from torch._decomp import core_aten_decompositions as torch_core_aten_decompositions
+from torch._decomp import core_aten_decompositions, remove_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -283,9 +283,10 @@ def update_spill_fill_size(
 
 
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
-    source_decompositions = torch_core_aten_decompositions()
+    source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
-    remove_decompositions = [
+    skip_decompositions = [
+        torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.hardsigmoid.default,
@@ -293,8 +294,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
         torch.ops.aten._safe_softmax.default,
     ]
 
-    for key in remove_decompositions:
-        source_decompositions.pop(key)
+    remove_decompositions(source_decompositions, skip_decompositions)
 
     return source_decompositions
 
@@ -1059,6 +1059,7 @@ def generate_qnn_executorch_compiler_spec(
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
             SM8650(Snapdragon 8 Gen 3)
+            SM8750(Snapdragon 8 Elite)
         backend_options: Options required by different backends.
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
@@ -1148,6 +1149,7 @@ def generate_qnn_executorch_compiler_spec(
 def get_soc_to_arch_map():
     return {
         "SSG2115P": HtpArch.V73,
+        "SM8750": HtpArch.V79,
         "SM8650": HtpArch.V75,
         "SM8550": HtpArch.V73,
         "SM8475": HtpArch.V69,
@@ -1159,6 +1161,7 @@ def get_soc_to_arch_map():
 def get_soc_to_chipset_map():
     return {
         "SSG2115P": QcomChipset.SSG2115P,
+        "SM8750": QcomChipset.SM8750,
         "SM8650": QcomChipset.SM8650,
         "SM8550": QcomChipset.SM8550,
         "SM8475": QcomChipset.SM8475,

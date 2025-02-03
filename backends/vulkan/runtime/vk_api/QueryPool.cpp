@@ -176,22 +176,31 @@ std::string stringize(const VkExtent3D& extents) {
      << "}";
   return ss.str();
 }
-std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
-QueryPool::get_shader_timestamp_data() {
+
+std::vector<ShaderResult> QueryPool::get_shader_timestamp_data() {
   if (querypool_ == VK_NULL_HANDLE) {
     return {};
   }
   std::lock_guard<std::mutex> lock(mutex_);
-  std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
-      shader_timestamp_data;
+  std::vector<ShaderResult> shader_result;
   for (ShaderDuration& entry : shader_durations_) {
-    shader_timestamp_data.emplace_back(std::make_tuple(
-        entry.kernel_name,
-        entry.dispatch_id,
-        entry.start_time_ns,
-        entry.end_time_ns));
+    shader_result.push_back(ShaderResult{
+        .kernel_name = entry.kernel_name,
+        .dispatch_id = entry.dispatch_id,
+        .start_time_ns = entry.start_time_ns,
+        .end_time_ns = entry.end_time_ns,
+        .metadata = ShaderMetadata{
+            .global_workgroup_size =
+                {entry.global_workgroup_size.width,
+                 entry.global_workgroup_size.height,
+                 entry.global_workgroup_size.depth},
+            .local_workgroup_size =
+                {entry.local_workgroup_size.width,
+                 entry.local_workgroup_size.height,
+                 entry.local_workgroup_size.depth},
+        }});
   }
-  return shader_timestamp_data;
+  return shader_result;
 }
 
 std::string QueryPool::generate_string_report() {
@@ -233,9 +242,44 @@ std::string QueryPool::generate_string_report() {
   return ss.str();
 }
 
-void QueryPool::print_results() {
+std::string QueryPool::generate_tsv_string_report() {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  std::stringstream ss;
+
+  ss << "Kernel Name\t";
+  ss << "Global Workgroup Size\t";
+  ss << "Local Workgroup Size\t";
+  ss << "Duration (ns)\t";
+  ss << std::endl;
+
+  ss << "===========\t";
+  ss << "=====================\t";
+  ss << "====================\t";
+  ss << "=============\t";
+  ss << std::endl;
+
+  for (ShaderDuration& entry : shader_durations_) {
+    std::chrono::duration<size_t, std::nano> exec_duration_ns(
+        entry.execution_duration_ns);
+
+    ss << entry.kernel_name << "\t";
+    ss << stringize(entry.global_workgroup_size) << "\t";
+    ss << stringize(entry.local_workgroup_size) << "\t";
+    ss << exec_duration_ns.count() << "\t";
+    ss << std::endl;
+  }
+
+  return ss.str();
+}
+
+void QueryPool::print_results(const bool tsv_format) {
   EARLY_RETURN_IF_UNINITIALIZED();
-  std::cout << generate_string_report() << std::endl;
+  if (tsv_format) {
+    std::cout << generate_tsv_string_report() << std::endl;
+  } else {
+    std::cout << generate_string_report() << std::endl;
+  }
 }
 
 unsigned long QueryPool::get_total_shader_ns(std::string kernel_name) {

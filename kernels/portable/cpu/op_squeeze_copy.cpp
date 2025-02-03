@@ -17,7 +17,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& squeeze_copy_dim_out(
     KernelRuntimeContext& ctx,
@@ -60,7 +60,7 @@ Tensor& squeeze_copy_dim_out(
 Tensor& squeeze_copy_dims_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> dims,
+    executorch::aten::ArrayRef<int64_t> dims,
     Tensor& out) {
   (void)ctx;
 

@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@
 
 from typing import Dict, List
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -44,7 +44,7 @@ class NodeVisitor:
 
 
 # container for all node visitors
-_node_visitor_dicts = {
+_node_visitor_dicts: Dict[TosaSpecification, Dict] = {
     TosaSpecification.create_from_string("TOSA-0.80+BI"): {},
     TosaSpecification.create_from_string("TOSA-0.80+MI"): {},
 }

@@ -16,8 +16,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& amin_out(
     KernelRuntimeContext& ctx,
@@ -42,19 +42,18 @@ Tensor& amin_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "amin.out", CTYPE, [&]() {
-        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-        for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
-          out_data[out_ix] = reduce_over_dim_list<CTYPE>(
-              [](CTYPE v, CTYPE min_v) {
-                return std::isnan(v) || v < min_v ? v : min_v;
-              },
-              in,
-              dim_list,
-              out_ix);
-        }
-      });
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "amin.out", CTYPE, [&]() {
+    CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+      out_data[out_ix] = reduce_over_dim_list<CTYPE>(
+          [](CTYPE v, CTYPE min_v) {
+            return std::isnan(v) || v < min_v ? v : min_v;
+          },
+          in,
+          dim_list,
+          out_ix);
+    }
+  });
 
   return out;
 }

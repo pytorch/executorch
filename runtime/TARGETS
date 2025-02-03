@@ -11,5 +11,6 @@ runtime.python_library(
     visibility = [
         "//executorch/runtime/...",
         "//executorch/exir/emit/test/...",
+        "@EXECUTORCH_CLIENTS",
     ],
 )

@@ -15,7 +15,7 @@ import logging
 import os
 from typing import cast, final, List, Optional
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
@@ -50,6 +50,7 @@ class ArmCompileSpecBuilder:
         self.output_format = None
         self.path_for_intermediates = None
         self.tosa_version = None
+        self.tosa_spec = None
         self.input_order = None
 
     def ethosu_compile_spec(
@@ -229,7 +230,7 @@ class ArmBackend(BackendDetails):
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(artifact_path)
-        graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(
+        graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(  # type: ignore
             exported_program=edge_program
         )
 

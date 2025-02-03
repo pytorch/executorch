@@ -9,8 +9,7 @@ import logging
 import os
 from typing import Any
 
-import numpy as np
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -72,51 +71,8 @@ def dbg_fail(node, tosa_graph, path):
     raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
 
 
-# Helper function to match TOSA's broadcasting rank requirement
-# Ref: TOSA 0.80 specification - 1.9.3. Data Layouts from
-# https://www.mlplatform.org/tosa/tosa_spec.html
-def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
-    assert np.prod(arg.shape) == np.prod(promoted_shape), "Incompatible promoted shape"
-    reshape_res = tosa_fb.addIntermediate(promoted_shape, out_dtype)
-    attr = ts.TosaSerializerAttribute()
-    attr.ReshapeAttribute(promoted_shape)
-    tosa_fb.addOperator(TosaOp.Op().RESHAPE, [arg.name], [reshape_res.name], attr)
-    return reshape_res
-
-
-# Helper transpose function to match TOSA's shape requirements
-# E.g., TOSA 0.80 specification - 2.3.3 CONV2D shapes:
-# https://www.mlplatform.org/tosa/tosa_spec.html#_conv2d
-def transpose_helper(tosa_fb, input, new_order, out_dtype):
-    # Check new_order's length is equal to input rank
-    assert len(input.shape) == len(new_order), "Wrong shape order length"
-
-    # Check no duplications
-    assert len(set(new_order)) == len(new_order), "Contain duplicated dim numbers"
-
-    # Check all dims are valid
-    for idx in new_order:
-        if idx < 0:
-            assert True, "Negative dim number"
-        elif idx >= len(input.shape):
-            assert True, "Dim is greater than input rank"
-
-    input_shape_transpoed = [input.shape[i] for i in new_order]
-    attr = ts.TosaSerializerAttribute()
-    attr.TransposeAttribute(new_order)
-    input_transposed = tosa_fb.addIntermediate(input_shape_transpoed, out_dtype)
-    tosa_fb.addOperator(
-        TosaOp.Op().TRANSPOSE, [input.name], [input_transposed.name], attr
-    )
-    return input_transposed
-
-
 def getNodeArgs(node: Node) -> list[TosaArg]:
     return [TosaArg(arg) for arg in node.args]
-
-
-def get_input_tensor(node: Node) -> TosaArg:
-    return TosaArg(node.args[0])
 
 
 def get_output_node(node: Node) -> Node:
@@ -144,30 +100,6 @@ def is_consumer_node_depthwise_conv2d(node):
             return True
 
     return False
-
-
-def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
-    """Returns two input nodes to 'node' in order. If 'node' only has one input,
-    it is returned twice.
-
-    Fails if there are no input nodes.
-    Fails if there are >2 input nodes and 'check' is True,
-    """
-
-    num_inputs = len(node.all_input_nodes)
-    assert num_inputs > 0, f"Node '{node.name}' requires >0 input, got {num_inputs}."
-
-    input1 = node.all_input_nodes[0]
-    if num_inputs == 1:
-        input2 = node.all_input_nodes[0]
-    else:
-        input2 = node.all_input_nodes[1]
-    if check:
-        assert (
-            num_inputs <= 2
-        ), f"Node '{node.name}' requires <=2 inputs, got {num_inputs}."
-
-    return input1, input2
 
 
 def tosa_shape(shape, dim_order):

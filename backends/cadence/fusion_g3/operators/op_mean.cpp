@@ -44,15 +44,16 @@ int prepare_data(
   for (int i = 0; i < num_out_dims; i++) {
     out_shape[i] = out.size(i);
   }
-
   int num_axis_dims = 0;
-  for (const auto& d : dim_list.value()) {
-    if (d < 0) {
-      p_axis[num_axis_dims] = num_inp_dims + d;
-      num_axis_dims++;
-    } else {
-      p_axis[num_axis_dims] = d;
-      num_axis_dims++;
+  if (dim_list.has_value()) {
+    for (const auto& d : dim_list.value()) {
+      if (d < 0) {
+        p_axis[num_axis_dims] = num_inp_dims + d;
+        num_axis_dims++;
+      } else {
+        p_axis[num_axis_dims] = d;
+        num_axis_dims++;
+      }
     }
   }
 
@@ -69,12 +70,6 @@ Tensor& mean_out(
   (void)ctx;
 
 #ifdef OP_ARG_CHECK
-  ET_KERNEL_CHECK(
-      ctx,
-      torch::executor::check_mean_dim_args(in, dim_list, keepdim, dtype, out),
-      InvalidArgument,
-      out);
-
   ET_KERNEL_CHECK(
       ctx,
       executorch::runtime::tensors_have_same_dim_order(in, out),
@@ -97,13 +92,14 @@ Tensor& mean_out(
 
   constexpr int kNnlibMaxDim = 5;
 
-  bool optimized = 1;
+  bool optimized = true;
 
-  if (out.scalar_type() != ScalarType::Float)
-    optimized = 0;
+  if (!((out.scalar_type() == ScalarType::Float) &&
+        (in.scalar_type() == ScalarType::Float)))
+    optimized = false;
 
   if (in.dim() > kNnlibMaxDim)
-    optimized = 0;
+    optimized = false;
 
   if (optimized) {
     float* __restrict__ p_out = out.mutable_data_ptr<float>();
@@ -135,9 +131,8 @@ Tensor& mean_out(
         num_inp_dims,
         num_out_dims);
 
-    if (num_axis_dims == num_inp_dims) {
+    if ((num_axis_dims == num_inp_dims) || (!dim_list.has_value())) {
       num_out_dims = 1;
-      out_shape[0] = 1;
     }
 
     int inp_shape_max = inp_shape[p_axis[0]];
@@ -168,29 +163,38 @@ Tensor& mean_out(
         num_axis_dims,
         p_scratch_in);
   } else {
-    ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "mean.out", CTYPE_IN, [&] {
-      ET_SWITCH_FLOATH_TYPES(
-          out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {
-            CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-            const size_t num =
-                torch::executor::get_reduced_dim_product(in, dim_list);
-            for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
-              CTYPE_OUT sum = 0;
-              if (in.numel() > 0) {
-                sum = torch::executor::
-                    map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
-                        [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-                        [](CTYPE_OUT outv, CTYPE_OUT acc) {
-                          return acc + outv;
-                        },
-                        in,
-                        dim_list,
-                        out_ix);
-              }
-              out_data[out_ix] = sum / static_cast<float>(num);
-            }
-          });
-    });
+    ET_KERNEL_CHECK(
+        ctx,
+        torch::executor::check_mean_dim_args(in, dim_list, keepdim, dtype, out),
+        InvalidArgument,
+        out);
+
+    ET_SWITCH_REALHBBF16_TYPES(
+        in.scalar_type(), ctx, "mean.out", CTYPE_IN, [&] {
+          ET_SWITCH_FLOATHBF16_TYPES(
+              out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {
+                CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+                const size_t num =
+                    torch::executor::get_reduced_dim_product(in, dim_list);
+                for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+                  CTYPE_OUT sum = 0;
+                  if (in.numel() > 0) {
+                    sum = torch::executor::
+                        map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
+                            [](CTYPE_IN v) {
+                              return static_cast<CTYPE_OUT>(v);
+                            },
+                            [](CTYPE_OUT outv, CTYPE_OUT acc) {
+                              return acc + outv;
+                            },
+                            in,
+                            dim_list,
+                            out_ix);
+                  }
+                  out_data[out_ix] = sum / static_cast<float>(num);
+                }
+              });
+        });
   }
 
   return out;

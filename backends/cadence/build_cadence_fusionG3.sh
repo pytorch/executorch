@@ -12,6 +12,7 @@ unset XTENSA_CORE
 export XTENSA_CORE=FCV_FG3GP
 git submodule sync
 git submodule update --init
+./backends/cadence/install_requirements.sh
 ./install_executorch.sh
 
 rm -rf cmake-out
@@ -20,7 +21,7 @@ STEPWISE_BUILD=false
 
 if $STEPWISE_BUILD; then
     echo "Building ExecuTorch"
-    cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+    CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_TOOLCHAIN_FILE=./backends/cadence/cadence.cmake  \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF \
@@ -36,7 +37,7 @@ if $STEPWISE_BUILD; then
         -Bcmake-out .
 
     echo "Building any Cadence-specific binaries on top"
-    cmake -DBUCK2="$BUCK" \
+    CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DBUCK2="$BUCK" \
         -DCMAKE_TOOLCHAIN_FILE=/home/zonglinpeng/ws/zonglinpeng/executorch/backends/cadence/cadence.cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
@@ -60,7 +61,7 @@ if $STEPWISE_BUILD; then
 else
     echo "Building Cadence toolchain with ExecuTorch packages"
     cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
-    cmake -DBUCK2="$BUCK" \
+    CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DBUCK2="$BUCK" \
         -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
         -DHAVE_SYS_STAT_H=ON \
         -DCMAKE_TOOLCHAIN_FILE=./backends/cadence/cadence.cmake \

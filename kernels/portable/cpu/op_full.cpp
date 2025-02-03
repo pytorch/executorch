@@ -13,8 +13,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& full_out(
     KernelRuntimeContext& ctx,
@@ -40,7 +40,7 @@ Tensor& full_out(
     CTYPE_VAL val;
     utils::extract_scalar(fill_value, &val);
 
-    ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       for (size_t i = 0; i < out.numel(); ++i) {

@@ -74,19 +74,27 @@ jobs:
           CRON_DEFAULT_DEVICES: samsung_galaxy_s22
         run: |
           set -eux
+
+          ARGS="--os android"
+
           MODELS="${{ inputs.models }}"
           if [ -z "$MODELS" ]; then
             MODELS="$CRON_DEFAULT_MODELS"
           fi
+          ARGS="$ARGS --models $MODELS"
+
           DEVICES="${{ inputs.devices }}"
           if [ -z "$DEVICES" ]; then
             DEVICES="$CRON_DEFAULT_DEVICES"
           fi
+          ARGS="$ARGS --devices $DEVICES"
 
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py \
-            --os "android" \
-            --models $MODELS \
-            --devices $DEVICES
+          BENCHMARK_CONFIGS="${{ inputs.benchmark_configs }}"
+          if [ -n "$BENCHMARK_CONFIGS" ]; then
+            ARGS="$ARGS --configs $BENCHMARK_CONFIGS"
+          fi
+
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py $ARGS
 
   prepare-test-specs:
     runs-on: linux.2xlarge
@@ -147,7 +155,10 @@ jobs:
 
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     needs: set-parameters
     secrets: inherit
     strategy:
@@ -324,7 +335,10 @@ jobs:
 
   build-benchmark-app:
     name: build-benchmark-app
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     needs: set-parameters
     with:
       runner: linux.2xlarge

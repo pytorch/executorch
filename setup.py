@@ -611,9 +611,19 @@ class CustomBuild(build):
         # for multi-config generators.
         build_args += ["--config", cfg]
 
-        # Share the cmake-out directory with any other cmake builds the user/developer
-        # might do, rather than hiding it under build_temp.
-        cmake_cache_dir = os.path.join(repo_root, "cmake-out")
+        if ShouldBuild._is_env_enabled("EXECUTORCH_USE_SHARED_CMAKE_OUT_FOR_SETUP"):
+            # Share the cmake-out directory with any other cmake builds the
+            # user/developer might do, rather than hiding it under build_temp.
+            #
+            # Opt-in because there is a risk of accidentally mixing built artifacts from
+            # different build configurations, which could lead to painful debugging
+            # sessions. The upside is faster incremental cmake builds after running
+            # install_executorch.sh.
+            cmake_cache_dir = os.path.join(repo_root, "cmake-out")
+        else:
+            # Put the cmake cache under the temp directory, like
+            # "pip-out/temp.<plat>/cmake-out".
+            cmake_cache_dir = os.path.join(repo_root, self.build_temp, "cmake-out")
         self.mkpath(cmake_cache_dir)
 
         # Generate the cmake cache from scratch to ensure that the cache state

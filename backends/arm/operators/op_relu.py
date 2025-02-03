@@ -1,12 +1,11 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
 
-import executorch.backends.arm.tosa_quant_utils as tqutils
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch.fx
 
 # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
@@ -43,9 +42,8 @@ class ReluVisitor(NodeVisitor):
         clamp_max_qs = 0
         if inputs[0].dtype == ts.DType.INT8:
             out_qargs = get_output_qparams(node)  # pyre-ignore[16]
-            clamp_min_qs = tqutils.quantize_value(0, out_qargs[0])
-            clamp_max_qs = tqutils.quantize_value(float("inf"), out_qargs[0])
-
+            clamp_min_qs = out_qargs[0].quantize_value(0).item()
+            clamp_max_qs = out_qargs[0].quantize_value(float("inf")).item()
         else:
             clamp_min_fp = 0
             clamp_max_fp = float("inf")

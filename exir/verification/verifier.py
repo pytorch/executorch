@@ -16,6 +16,8 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.passes.dim_order_ops_registry import DimOrderOpsMap
+from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
+from executorch.exir.passes.replace_aten_with_edge_pass import DISALLOW_LIST
 from executorch.exir.verification.arg_validator import (
     EdgeOpArgValidator,
     RunHigherOrderOperatorError,
@@ -99,16 +101,20 @@ def EXIRATenDialectVerifier(  # noqa: C901
             self._exception_list = exception_list if exception_list else []
 
         def _get_exception_list(self) -> List[torch._ops.OpOverload]:
-            exception_list = [
-                torch.ops.aten.mkldnn_rnn_layer.default,
-                torch.ops.aten._upsample_bilinear2d_aa.default,
-                torch.ops.aten.quantize_per_tensor.default,
-                torch.ops.aten.dequantize.self,
-                torch.ops.aten.max.default,  # TODO(T188268054)
-                torch.ops.aten.min.default,  # TODO(T188268054)
-                torch.ops.aten.full_like.default,  # TODO(T183507359)
-            ]
-            exception_list += self._exception_list
+            exception_list = (
+                [
+                    torch.ops.aten.mkldnn_rnn_layer.default,
+                    torch.ops.aten._upsample_bilinear2d_aa.default,
+                    torch.ops.aten.quantize_per_tensor.default,
+                    torch.ops.aten.dequantize.self,
+                    torch.ops.aten.max.default,  # TODO(T188268054)
+                    torch.ops.aten.min.default,  # TODO(T188268054)
+                    torch.ops.aten.full_like.default,  # TODO(T183507359)
+                ]
+                + list(_EXECUTORCH_SYM_OPS)
+                + DISALLOW_LIST
+                + self._exception_list
+            )
 
             return exception_list
 
@@ -129,7 +135,7 @@ There are a few things to try:
 
 2. Sometimes inference and training gives slightly different op set. Try adding `with torch.no_grad():` context manager if you are export for inference only.
 
-3. If the error persists after 2, this is likely caused by torch.export() + core ATen decomposition producing unexpected operators for your model. 
+3. If the error persists after 2, this is likely caused by torch.export() + core ATen decomposition producing unexpected operators for your model.
    If you believe this operator should be included into core ATen opset, please create an issue in https://github.com/pytorch/pytorch/issues and add `module: core aten` tag.
                         """
                     )
@@ -189,9 +195,15 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
         return
 
     if validator.violating_ops:
+        error_msg = ""
+        for op, node in validator.violating_ops.items():
+            # error_msg += f"#####################################################\n"
+            error_msg += f"\nOperator: {op} with args: {node[0]}\n"
+            error_msg += f"stack trace: {node[1].stack_trace}\n"
+            # error_msg += f"#####################################################\n"
         raise SpecViolationError(
-            f"These operators are taking Tensor inputs with mismatched dtypes: {validator.violating_ops}"
-            "Please make sure the dtypes of the Tensor inputs are the same as the dtypes of the corresponding "
+            f"These operators are taking Tensor inputs with mismatched dtypes:\n{error_msg}"
+            "Please make sure the dtypes of the Tensor inputs are the same as the dtypes of the corresponding outputs."
         )
 
 
@@ -243,13 +255,9 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 return
             if (
                 op
-                in [
-                    operator.getitem,
-                    torch.ops.aten.sym_size.int,
-                    torch.ops.aten.scalar_tensor.default,
-                    torch.ops.aten._assert_async.msg,
-                    torch.ops.aten._assert_scalar.default,
-                ]
+                in [operator.getitem]
+                + DISALLOW_LIST
+                + list(_EXECUTORCH_SYM_OPS)
                 + self._exception_list
             ):
                 return
@@ -273,31 +281,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             if self.check_edge_ops:
                 _check_tensors_are_contiguous(gm)
                 _check_tensor_args_matching_op_allowed_dtype(gm)
-
-        def check_valid_op(self, op):
-            if isinstance(op, OpOverload):
-                # TODO These special ops should be removable easily.
-                if op.namespace in (
-                    "quantized_decomposed",
-                    "boltnn_nimble",
-                    "nimble",
-                    "quantized",
-                    "dim_order_ops",
-                ) or op in (
-                    torch.ops.aten.mkldnn_rnn_layer.default,
-                    torch.ops.aten._upsample_bilinear2d_aa.default,
-                    torch.ops.aten.quantize_per_tensor.default,
-                    torch.ops.aten.dequantize.self,
-                    torch.ops.aten.max.default,
-                    torch.ops.aten.full_like.default,  # TODO(T183507359)
-                ):
-                    return
-                if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
-                    # NOTE(qihan): whether view_copy operators are marked as canonical is still under
-                    #            discussion.
-                    raise SpecViolationError(
-                        f"Operator {op.__module__}.{op.__name__} is not Aten Canonical."
-                    )
 
         def is_valid(self, gm: GraphModule) -> bool:
             try:

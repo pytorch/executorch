@@ -17,10 +17,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using exec_aten::TensorList;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorList;
 using torch::executor::testing::TensorFactory;
 
 class OpCatOutTest : public OperatorTest {
@@ -29,7 +29,7 @@ class OpCatOutTest : public OperatorTest {
     return torch::executor::aten::cat_outf(context_, tensors, dim, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -51,6 +51,26 @@ class OpCatOutTest : public OperatorTest {
         });
     // clang-format on
 
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+
+  template <ScalarType DTYPE>
+  void test_16bit_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor x = tf.make({2, 3}, {1.5, -2.0, 3.25, 4.0, -5.5, 6.5});
+    Tensor y = tf.make({2, 1}, {10.0, 20.0});
+
+    std::vector<Tensor> inputs = {x, y};
+
+    Tensor out = tf.zeros({2, 4});
+
+    // Concatenate along dim[1].
+    Tensor ret = op_cat_out(
+        ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+
+    Tensor expected =
+        tf.make({2, 4}, {1.5, -2.0, 3.25, 10.0, 4.0, -5.5, 6.5, 20.0});
     EXPECT_TENSOR_EQ(out, expected);
   }
 };
@@ -105,26 +125,12 @@ TEST_F(OpCatOutTest, SmokeDim1) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpCatOutTest, HalfSupport) {
+TEST_F(OpCatOutTest, SixteenBitFloatSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+    GTEST_SKIP() << "Test Half/BF16 support only for ExecuTorch mode";
   }
-  TensorFactory<ScalarType::Half> tf;
-
-  Tensor x = tf.make({2, 3}, {1.5, -2.0, 3.25, 4.0, -5.5, 6.5});
-  Tensor y = tf.make({2, 1}, {10.0, 20.0});
-
-  std::vector<Tensor> inputs = {x, y};
-
-  Tensor out = tf.zeros({2, 4});
-
-  // Concatenate along dim[1].
-  Tensor ret = op_cat_out(
-      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
-
-  Tensor expected =
-      tf.make({2, 4}, {1.5, -2.0, 3.25, 10.0, 4.0, -5.5, 6.5, 20.0});
-  EXPECT_TENSOR_EQ(out, expected);
+  test_16bit_dtype<ScalarType::Half>();
+  test_16bit_dtype<ScalarType::BFloat16>();
 }
 
 TEST_F(OpCatOutTest, NegativeDims) {

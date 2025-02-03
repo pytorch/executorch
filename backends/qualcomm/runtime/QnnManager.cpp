@@ -154,8 +154,9 @@ Error QnnManager::RegisterMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
   SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
   // Not enable shared buffer
-  if (!options_->shared_buffer())
+  if (!options_->shared_buffer()) {
     return Error::Internal;
+  }
 
   if (backend_params_ptr_->qnn_mem_manager_ptr_ == nullptr) {
     QNN_EXECUTORCH_LOG_WARN(

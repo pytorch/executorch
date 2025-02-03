@@ -32,10 +32,16 @@ def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
     Raises a ValueError if the node doesn't have any parameters set.
     """
     if "input_qparams" not in node.meta.keys():
-        raise ValueError(f"No input quantization parameter found in node {node}")
+        raise ValueError(
+            f"No input quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
     input_qparams = cast(dict[int, QuantArgs], node.meta["input_qparams"])
     if len(input_qparams) == 0:
-        raise ValueError(f"No input quantization parameter found in node {node}")
+        raise ValueError(
+            f"No input quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
     return input_qparams
 
 
@@ -45,11 +51,17 @@ def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
     Raises a ValueError if the node doesn't have any parameters set.
     """
     if "output_qparams" not in node.meta.keys():
-        raise ValueError(f"No output quantization parameter found in node {node}")
-    input_qparams = cast(dict[int, QuantArgs], node.meta["output_qparams"])
-    if len(input_qparams) == 0:
-        raise ValueError(f"No output quantization parameter found in node {node}")
-    return input_qparams
+        raise ValueError(
+            f"No output quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
+    output_qparams = cast(dict[int, QuantArgs], node.meta["output_qparams"])
+    if len(output_qparams) == 0:
+        raise ValueError(
+            f"No output quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
+    return output_qparams
 
 
 class FoldAndAnnotateQParamsPass(ExportPass):
@@ -93,21 +105,6 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         for arg in arg_list:
             if not isinstance(arg, Node):
                 return
-            """
-             Make sure arg has requires_grad set to False
-             For parameters that are not quantized, sometimes (i.e. convolution)
-             the Parameter(FakeTensor(...)) has requires_grad set to True, which
-             causes the retracing of the graph to fail with:
-
-             E       RuntimeError: isDifferentiableType(variable.scalar_type()) INTERNAL ASSERT FAILED at "/Users/runner/work/pytorch/pytorch/pytorch/torch/csrc/autograd/functions/utils.h":74, please report a bug to PyTorch.
-             E
-             E       While executing %aten_convolution_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%quantized_decomposed_quantize_per_tensor_default, %b__frozen_param0, %p__param_constant1, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
-             E       Original traceback:
-             E         File "/Users/perast01/src/executorch/backends/arm/test/ops/test_conv2d.py", line 110, in forward
-             E           x = conv(x)
-            """
-            if arg.op == "placeholder":
-                arg.meta["val"].requires_grad = False
 
             arg_quant_params = None
             if arg.target == dq_op:
@@ -122,7 +119,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             node.meta["input_qparams"][i] = input_qparams
             for n in nodes_to_remove:
                 assert n.target == dq_op
-                n.replace_all_uses_with(n.args[0])
+                n.replace_all_uses_with(n.args[0])  # type: ignore[arg-type]
                 graph_module.graph.erase_node(n)
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -170,11 +167,14 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         return PassResult(graph_module, True)
 
 
-class QuantizeFullArgument(ExportPass):
+class QuantizeOperatorArguments(ExportPass):
     """
-    Make sure the fill_value for full.default is quantized. This pass needs to be run before
-    the folding pass above to make sure that the retraced output of the full.default op is
-    the right dtype.
+    This pass makes sure that the arguments to full.default and clamp.default are quantized correctly.
+    More specifically, this pass:
+        - Makes sure the fill_value for full.default is quantized. This pass needs to be run before
+        the folding pass above to make sure that the retraced output of the full.default op is
+        the right dtype.
+        - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -182,7 +182,10 @@ class QuantizeFullArgument(ExportPass):
         # Loop over the graph nodes and find full.default nodes.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
-            if n.target != exir_ops.edge.aten.full.default:
+            if n.target not in {
+                exir_ops.edge.aten.clamp.default,
+                exir_ops.edge.aten.full.default,
+            }:
                 continue
 
             # Make sure we have a quantized operator
@@ -191,13 +194,29 @@ class QuantizeFullArgument(ExportPass):
                 continue
 
             qargs = QuantArgs.from_operator(user.target, user.args)
-            if "dtype" not in n.kwargs.keys() or n.kwargs["dtype"] != qargs.dtype:
-                # replace the node arg with a quantized dito and also set dtype
-                # to get the right output according to the Edge IR specification:
-                # exir/dialects/edge/edge.yaml:3596
-                quantized_full_value = qargs.quantize_value(n.args[1]).item()
-                n.update_arg(1, quantized_full_value)
-                n.update_kwarg("dtype", qargs.dtype)
+
+            if n.target == exir_ops.edge.aten.full.default:
+                if "dtype" not in n.kwargs.keys() or n.kwargs["dtype"] != qargs.dtype:
+                    # replace the node arg with a quantized dito and also set dtype
+                    # to get the right output according to the Edge IR specification:
+                    # exir/dialects/edge/edge.yaml:3596
+                    quantized_full_value = qargs.quantize_value(n.args[1]).item()
+                    n.update_arg(1, quantized_full_value)
+                    n.update_kwarg("dtype", qargs.dtype)
+                    modified = True
+            elif n.target == exir_ops.edge.aten.clamp.default:
+                # Quantize the min and max arguments of clamp, if they are not None
+                min_val = n.args[1]
+                max_val = None if len(n.args) <= 2 else n.args[2]
+
+                if min_val is not None:
+                    quantized_min_val = qargs.quantize_value(min_val).item()
+                    n.update_arg(1, quantized_min_val)
+
+                if max_val is not None:
+                    quantized_max_val = qargs.quantize_value(max_val).item()
+                    n.update_arg(2, quantized_max_val)
+
                 modified = True
 
         return PassResult(graph_module, modified)
