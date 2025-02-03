@@ -971,7 +971,7 @@ def _build_parser():
         default="smart_mask",
         type=str,
     )
-    
+
     parser.add_argument(
         "-E",
         "--embedding-quantize",
