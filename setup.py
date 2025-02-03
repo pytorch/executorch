@@ -51,6 +51,7 @@ import os
 import platform
 import re
 import sys
+import logging
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
@@ -88,7 +89,7 @@ class ShouldBuild:
 
     @classmethod
     def training(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_TRAINING", default=True)
+        return cls._is_env_enabled("EXECUTORCH_BUILD_TRAINING", default=False)
 
     @classmethod
     def llama_custom_ops(cls) -> bool:
@@ -580,6 +581,7 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             if ShouldBuild.training():
+                logging.info("Building training foobar")
                 cmake_args += [
                     "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON",
                 ]
@@ -686,7 +688,6 @@ def get_ext_modules() -> List[Extension]:
             )
         )
         if ShouldBuild.training():
-
             ext_modules.append(
                 # Install the prebuilt pybindings extension wrapper for training
                 BuiltExtension(

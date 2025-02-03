@@ -812,13 +812,11 @@ if(EXECUTORCH_BUILD_PYBIND)
     # pybind training
     pybind11_add_module(_training_lib SHARED extension/training/pybindings/_training_lib.cpp)
 
-    target_compile_definitions(
-      _training_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_training_lib
-    )
     target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
     target_compile_options(_training_lib PUBLIC ${_pybind_compile_options})
     target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
 
+    message(STATUS "Installing Training Lib")
     install(TARGETS _training_lib
             LIBRARY DESTINATION executorch/extension/training/pybindings
     )
