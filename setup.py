@@ -585,6 +585,7 @@ class CustomBuild(build):
                 cmake_args += [
                     "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON",
                 ]
+                build_args += ["--target", "_training_lib"]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
