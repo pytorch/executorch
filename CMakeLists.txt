@@ -240,10 +240,6 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
-if(EXECUTORCH_BUILD_PYBIND)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-  set(EXECUTORCH_BUILD_DEVTOOLS ON)
-endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
@@ -723,6 +719,14 @@ endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
+
+  if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  endif()
+
+  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
+  endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package(Torch CONFIG REQUIRED)
