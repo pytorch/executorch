@@ -84,7 +84,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Getting Started
    :hidden:
 
-   getting-started-setup
+   getting-started
    export-overview
    runtime-build-and-cross-compilation
    getting-started-faqs
