@@ -122,6 +122,18 @@ The you can run the tests with
 pytest -c /dev/null -v -n auto backends/arm/test --arm_run_corstoneFVP
 ```
 
+## Passes
+
+With the default passes in the Arm Ethos-U backend, assuming the model lowers fully to the
+Ethos-U, the exported program is composed of a Quantize node, Ethos-U custom delegate
+and a Dequantize node. In some circumstances, you may want to feed quantized input to the Neural
+Network straight away, e.g. if you have a camera sensor outputting (u)int8 data and keep all the
+arithmetic of the application in the int8 domain. For these cases, you can apply the
+`exir/passes/quantize_io_pass.py`. See the unit test in `executorch/backends/arm/
+test/passes/test_ioquantization_pass.py`for an example how to feed quantized inputs and
+obtain quantized outputs.
+
+
 ### Code coverage
 
 To get code coverage:
