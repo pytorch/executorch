@@ -796,14 +796,18 @@ if(EXECUTORCH_BUILD_PYBIND)
 
     set(_pybind_training_dep_libs
         ${TORCH_PYTHON_LIBRARY}
-        bundled_program
         etdump
         executorch
-        extension_data_loader
         util
         torch
         extension_training
     )
+
+    if(EXECUTORCH_BUILD_XNNPACK)
+      # need to explicitly specify XNNPACK and microkernels-prod
+      # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+      list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK microkernels-prod)
+    endif()
 
     # pybind training
     pybind11_add_module(_training_lib SHARED extension/training/pybindings/_training_lib.cpp)
@@ -816,7 +820,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
 
     install(TARGETS _training_lib
-            LIBRARY DESTINATION extension/training/pybindings
+            LIBRARY DESTINATION executorch/extension/training/pybindings
     )
   endif()
 endif()

@@ -32,7 +32,7 @@ def clean():
     print("Done cleaning build artifacts.")
 
 
-VALID_PYBINDS = ["coreml", "mps", "xnnpack"]
+VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
 
 
 def main(args):
@@ -78,8 +78,11 @@ def main(args):
                     raise Exception(
                         f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
                     )
-                EXECUTORCH_BUILD_PYBIND = "ON"
-                CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
+                if pybind_arg == "training":
+                    CMAKE_ARGS += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
+                else: 
+                    EXECUTORCH_BUILD_PYBIND = "ON"
+                    CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
 
     if args.clean:
         clean()
