@@ -126,18 +126,32 @@ def _kv_calibrate(
     else:
         raise RuntimeError("Unkown tokenizer")
 
+
     with torch.no_grad():
         while token_list[-1] != tokenizer.eos_id and pos < max_cache_len:
             logits, new_k_caches, new_v_caches = module(
                 torch.full((1, 1), token_list[pos], dtype=torch.int32),
                 atten_mask,
-                torch.full((1, 1), pos),
+                freq_cos,
+                freq_sin,
                 *k_caches,
                 *v_caches,
             )
             atten_mask, pos, k_caches, v_caches = updator(
                 atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
             )
+            k_caches = [
+                torch.cat([k_cache[:, :, 1:], new_k_caches[i]], dim=-1)
+                for i, k_cache in enumerate(k_caches)
+            ]
+            v_caches = [
+                torch.cat([v_cache[:, 1:, :], new_v_caches[i]], dim=1)
+                for i, v_cache in enumerate(v_caches)
+            ]
+
+            pos += 1
+            atten_mask[0][-pos - 1] = 0
+            print("pos", pos)
             if pos >= len(token_list):
                 token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
 
@@ -206,7 +220,7 @@ def calibrate(
             tokenizer,
             max_seq_len,
         )
-    elif len(example_inputs) == 5:
+    elif len(example_inputs) == 6:
         _kv_calibrate(
             example_inputs,
             user_prompts,
@@ -220,18 +234,17 @@ def calibrate(
 
 
 class SingleLlama:
-    def __init__(self, llama_model, pte_filename) -> None:
+    def __init__(self, llama_model, pte_filename, input_len) -> None:
         super().__init__()
         self.llama_model = llama_model
         self.quant_dtype = None
         self.llama_meta = self.llama_model.get_metadata()
         self.has_quant_io = False
         self.pte_filename = pte_filename
+        self.input_len = input_len
         if self.llama_meta["get_use_kv_cache"]:
-            tokens, atten_mask, pos_ids, k_caches, v_caches = self.get_example_inputs(
-                use_kv_cache=True
-            )
-            self.inputs = (tokens, atten_mask, pos_ids, *k_caches, *v_caches)
+            tokens, atten_mask, freq_cos, freq_sin, k_caches, v_caches = self.get_example_inputs(self.input_len)
+            self.inputs = (tokens, atten_mask,freq_cos ,freq_sin, *k_caches, *v_caches)
         else:
             tokens, atten_mask = self.get_example_inputs(use_kv_cache=False)
             self.inputs = (tokens, atten_mask)
@@ -346,7 +359,7 @@ class SingleLlama:
 
         logging.info("Quantizing the model...")
         calibrate(
-            self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
+            self.get_example_inputs(self.input_len),
             args.prompt,
             fx_graph_module,
             tokenizer=tokenizer,
@@ -417,8 +430,8 @@ class SingleLlama:
             with open(f"{work_space}/{self.pte_filename}.pte", "wb") as file:
                 exec_prog_mgr.write_to_file(file)
 
-    def get_example_inputs(self, use_kv_cache=True):
-        return self.llama_model.get_example_inputs(use_kv_cache)
+    def get_example_inputs(self, input_len):
+        return self.llama_model.get_example_inputs(self.llama_meta, input_len)
 
     def get_quant_attrs(self):
         return self.quant_attrs
@@ -437,7 +450,7 @@ def compile(args, pte_filename, tokenizer):
 
         prefill_config = copy.copy(kv_config)
         prefill_config.max_seq_len = args.prefill_seq_len
-        prefill_config.use_kv_cache = False
+        prefill_config.use_kv_cache = True
 
     state_dict = torch.load(
         args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -451,14 +464,14 @@ def compile(args, pte_filename, tokenizer):
             )
         elif args.model_mode == "prefill":
             llama_instance_list.append(
-                LlamaModel(prefill_config, output_new_cache_only=False)
+                LlamaModel(prefill_config, output_new_cache_only=True)
             )
         elif args.model_mode == "hybrid":
             llama_instance_list.append(
                 LlamaModel(kv_config, output_new_cache_only=True)
             )
             llama_instance_list.append(
-                LlamaModel(prefill_config, output_new_cache_only=False)
+                LlamaModel(prefill_config, output_new_cache_only=True)
             )
         else:
             raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
@@ -506,11 +519,13 @@ def compile(args, pte_filename, tokenizer):
             llama_instance_list[i] = llama_instance_list[i].to(
                 dtype_override.to_torch_dtype()
             )
-
+ 
     for i in range(len(llama_instance_list)):
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
+        print(llama_instance_list[i].output_new_cache_only)
+        seq_len = 1 if i==0 else args.prefill_seq_len
         llama_instance_list[i] = SingleLlama(
-            llama_instance_list[i].eval(), pte_filename
+            llama_instance_list[i].eval(), pte_filename, seq_len
         )
 
     if args.ptq:
@@ -523,6 +538,7 @@ def compile(args, pte_filename, tokenizer):
         if args.ptq != None:
             kv_quant_attrs = {}
             for i, llama_instance in enumerate(llama_instance_list):
+                print(f"Quantizing {i}th model")
                 llama_instance.quantize(
                     quant_dtype=quant_dtype,
                     args=args,
