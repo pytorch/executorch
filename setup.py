@@ -51,7 +51,6 @@ import os
 import platform
 import re
 import sys
-import logging
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
@@ -581,7 +580,6 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             if ShouldBuild.training():
-                logging.info("Building training foobar")
                 cmake_args += [
                     "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON",
                 ]
