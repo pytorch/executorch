@@ -54,7 +54,10 @@ std::vector<Tensor> IoMgrBase::get_output_tensors(
 
 ShiftPointerIoMgr::ShiftPointerIoMgr(
     std::vector<std::shared_ptr<Module>>& modules,
+    int32_t context_len,
+    int32_t prefill_ar_len,
     int32_t prefill_cache_len,
+    int32_t kv_ar_len,
     int32_t kv_cache_len,
     int32_t vocab_size,
     int32_t num_layers,
@@ -66,7 +69,10 @@ ShiftPointerIoMgr::ShiftPointerIoMgr(
     const bool use_int64_token)
     : IoMgrBase(modules),
       shard_layers_({num_layers}),
+      context_len_(context_len),
+      kv_ar_len_(kv_ar_len),
       kv_cache_len_(kv_cache_len),
+      prefill_ar_len_(prefill_ar_len),
       prefill_cache_len_(prefill_cache_len),
       vocab_size_(vocab_size),
       num_layers_(num_layers),
@@ -75,7 +81,8 @@ ShiftPointerIoMgr::ShiftPointerIoMgr(
       eval_mode_(eval_mode),
       prefill_forward_name_(prefill_forward_name),
       kv_forward_name_(kv_forward_name),
-      use_int64_token_(use_int64_token) {
+      use_int64_token_(use_int64_token),
+      is_bert_(prefill_cache_len_ == 0) {
   if (!prefill_forward_name_.empty()) {
     input_tensors_[prefill_forward_name_] =
         std::vector<std::vector<executorch::aten::TensorImpl*>>(modules.size());
@@ -113,15 +120,14 @@ void ShiftPointerIoMgr::init_io() {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   std::memset(ptr, 0, sizeof(IO));
 
-  int32_t max_cache_len = std::max(kv_cache_len_, prefill_cache_len_);
-  int32_t k_in_size = (head_dim_ + 1) * max_cache_len;
-  int32_t v_cache_size = (num_heads_ + 1) * max_cache_len * head_dim_;
-  int32_t k_cache_out_size = num_heads_ * head_dim_;
-  if (eval_mode_ == EvalMode::kHybrid || eval_mode_ == EvalMode::kPrefill) {
-    k_cache_out_size *= prefill_cache_len_;
-  }
+  int32_t max_ar_len = std::max(kv_ar_len_, prefill_ar_len_);
+  int32_t k_in_size = (head_dim_ + 1) * kv_cache_len_;
+  // Use context length to prevent exceeding the range when the AR-N model
+  // updates the last block in hybrid mode.
+  int32_t v_cache_size = (num_heads_ + 1) * context_len_ * head_dim_;
+  int32_t k_cache_out_size = num_heads_ * max_ar_len * head_dim_;
 
-  // Init kv vector shape, general enough to be shared across all 3 modes.
+  // Init kv vector shape, general enough to be shared across all modes.
   ptr->k_cache_out.reserve(num_layers_);
   ptr->v_cache.reserve(num_layers_);
   for (int layer = 0; layer < num_layers_; layer++) {
@@ -130,14 +136,15 @@ void ShiftPointerIoMgr::init_io() {
   }
 
   auto init_prefill = [&]() {
-    ptr->prefill_input_toks.resize(prefill_cache_len_);
-    ptr->prefill_atten_mask.resize(prefill_cache_len_ * prefill_cache_len_);
-    ptr->prefill_logits.resize(prefill_cache_len_ * vocab_size_);
+    ptr->prefill_input_toks.resize(prefill_ar_len_, 0);
+    ptr->prefill_input_pos.resize(prefill_ar_len_, 0);
+    ptr->prefill_attention_mask.resize((prefill_ar_len_ * context_len_), 0);
+    ptr->prefill_logits.resize(prefill_ar_len_ * vocab_size_);
   };
 
   auto init_kv = [&]() {
-    ptr->kv_logits.resize(vocab_size_);
-    ptr->kv_attention_mask.resize((kv_cache_len_ + 1), 0);
+    ptr->kv_logits.resize(kv_ar_len_ * vocab_size_);
+    ptr->kv_attention_mask.resize((kv_ar_len_ * context_len_), 0);
     ptr->k_cache.reserve(num_layers_);
     for (int layer = 0; layer < num_layers_; layer++) {
       ptr->k_cache.emplace_back();
@@ -149,9 +156,6 @@ void ShiftPointerIoMgr::init_io() {
   };
 
   switch (eval_mode_) {
-    case EvalMode::kPrefill:
-      init_prefill();
-      break;
     case EvalMode::kKVCached:
       init_kv();
       break;
@@ -177,37 +181,38 @@ void ShiftPointerIoMgr::prepare_kv_io(
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
   // [I]: input_tokens
-  Result<TensorInfo> input_tok = methods_meta[0]->input_tensor_meta(0);
-  input_tok_ = std::make_unique<TensorImpl>(
-      input_tok->scalar_type(),
-      input_tok->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(input_tok->sizes().data()),
-      &ptr->input_tok,
-      const_cast<TensorImpl::DimOrderType*>(input_tok->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(input_tok_.get());
+  Result<TensorInfo> kv_input_toks = methods_meta[0]->input_tensor_meta(0);
+  kv_input_toks_ = std::make_unique<TensorImpl>(
+      kv_input_toks->scalar_type(),
+      kv_input_toks->sizes().size(),
+      const_cast<TensorImpl::SizesType*>(kv_input_toks->sizes().data()),
+      &ptr->kv_input_toks,
+      const_cast<TensorImpl::DimOrderType*>(kv_input_toks->dim_order().data()));
+  input_tensors_[kv_forward_name_][0].push_back(kv_input_toks_.get());
 
   // [I]: atten_mask
-  Result<TensorInfo> atten_mask = methods_meta[0]->input_tensor_meta(1);
-  attention_mask_ = std::make_unique<TensorImpl>(
-      atten_mask->scalar_type(),
-      atten_mask->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(atten_mask->sizes().data()),
+  Result<TensorInfo> kv_attention_mask = methods_meta[0]->input_tensor_meta(1);
+  kv_attention_mask_ = std::make_unique<TensorImpl>(
+      kv_attention_mask->scalar_type(),
+      kv_attention_mask->sizes().size(),
+      const_cast<TensorImpl::SizesType*>(kv_attention_mask->sizes().data()),
       ptr->kv_attention_mask.data(),
-      const_cast<TensorImpl::DimOrderType*>(atten_mask->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(attention_mask_.get());
+      const_cast<TensorImpl::DimOrderType*>(
+          kv_attention_mask->dim_order().data()));
+  input_tensors_[kv_forward_name_][0].push_back(kv_attention_mask_.get());
 
   // [I]: input_pos
-  Result<TensorInfo> input_pos = methods_meta[0]->input_tensor_meta(2);
-  input_pos_ = std::make_unique<TensorImpl>(
-      input_pos->scalar_type(),
-      input_pos->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(input_pos->sizes().data()),
-      &ptr->input_pos,
-      const_cast<TensorImpl::DimOrderType*>(input_pos->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(input_pos_.get());
+  Result<TensorInfo> kv_input_pos = methods_meta[0]->input_tensor_meta(2);
+  kv_input_pos_ = std::make_unique<TensorImpl>(
+      kv_input_pos->scalar_type(),
+      kv_input_pos->sizes().size(),
+      const_cast<TensorImpl::SizesType*>(kv_input_pos->sizes().data()),
+      &ptr->kv_input_pos,
+      const_cast<TensorImpl::DimOrderType*>(kv_input_pos->dim_order().data()));
+  input_tensors_[kv_forward_name_][0].push_back(kv_input_pos_.get());
 
   // [I] kv_cache
-  int index = 3; // bypass input_tokens, input_pos, atten_mask
+  int index = 3; // bypass input_tokens, atten_mask, input_pos
   for (int offset = 0, shard_index = 0, v_stride = kv_cache_len_ * head_dim_;
        shard_index < modules_.size();
        offset += shard_layers_[shard_index], shard_index++) {
@@ -304,7 +309,7 @@ void ShiftPointerIoMgr::prepare_prefill_io(
 
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
-  // [I]: pre_input_tokens
+  // [I]: prefill_input_tokens
   Result<TensorInfo> prefill_input_toks = methods_meta[0]->input_tensor_meta(0);
   prefill_input_toks_ = std::make_unique<TensorImpl>(
       prefill_input_toks->scalar_type(),
@@ -314,25 +319,81 @@ void ShiftPointerIoMgr::prepare_prefill_io(
       const_cast<TensorImpl::DimOrderType*>(
           prefill_input_toks->dim_order().data()));
   input_tensors_[prefill_forward_name_][0].push_back(prefill_input_toks_.get());
-  // [I]: prefill_attn_mask
-  for (int i = 0; i < prefill_cache_len_; ++i) {
-    for (int j = 0; j < prefill_cache_len_; ++j) {
-      if (i < j) {
-        ptr->prefill_atten_mask[i * prefill_cache_len_ + j] = 0;
-      } else {
-        ptr->prefill_atten_mask[i * prefill_cache_len_ + j] = 65535;
+  // [I]: prefill_attention_mask
+  for (int i = 0; i < prefill_ar_len_; ++i) {
+    for (int j = 0,
+             offset = i * context_len_ + (context_len_ - prefill_ar_len_);
+         j < prefill_ar_len_;
+         ++j) {
+      if (i >= j) {
+        ptr->prefill_attention_mask[j + offset] = 65535;
       }
     }
   }
-  Result<TensorInfo> prefill_atten_mask = methods_meta[0]->input_tensor_meta(1);
-  prefill_attn_mask_ = std::make_unique<TensorImpl>(
-      prefill_atten_mask->scalar_type(),
-      prefill_atten_mask->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(prefill_atten_mask->sizes().data()),
-      ptr->prefill_atten_mask.data(),
+  Result<TensorInfo> prefill_attention_mask =
+      methods_meta[0]->input_tensor_meta(1);
+  prefill_attention_mask_ = std::make_unique<TensorImpl>(
+      prefill_attention_mask->scalar_type(),
+      prefill_attention_mask->sizes().size(),
+      const_cast<TensorImpl::SizesType*>(
+          prefill_attention_mask->sizes().data()),
+      ptr->prefill_attention_mask.data(),
       const_cast<TensorImpl::DimOrderType*>(
-          prefill_atten_mask->dim_order().data()));
-  input_tensors_[prefill_forward_name_][0].push_back(prefill_attn_mask_.get());
+          prefill_attention_mask->dim_order().data()));
+  input_tensors_[prefill_forward_name_][0].push_back(
+      prefill_attention_mask_.get());
+
+  if (!is_bert_) {
+    // [I]: prefill_input_pos
+    Result<TensorInfo> prefill_input_pos =
+        methods_meta[0]->input_tensor_meta(2);
+    prefill_input_pos_ = std::make_unique<TensorImpl>(
+        prefill_input_pos->scalar_type(),
+        prefill_input_pos->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(prefill_input_pos->sizes().data()),
+        ptr->prefill_input_pos.data(),
+        const_cast<TensorImpl::DimOrderType*>(
+            prefill_input_pos->dim_order().data()));
+    input_tensors_[prefill_forward_name_][0].push_back(
+        prefill_input_pos_.get());
+
+    // [I] kv_cache
+    int index = 3; // bypass input_tokens, atten_mask, input_pos
+    // Add prefill offset to align the v_out pointer with the decode model.
+    for (int offset = 0,
+             shard_index = 0,
+             v_stride = kv_cache_len_ * head_dim_,
+             prefill_offset = (kv_cache_len_ - prefill_cache_len_) * head_dim_;
+         shard_index < modules_.size();
+         offset += shard_layers_[shard_index], shard_index++) {
+      for (int cache_group = 0; cache_group < 2; ++cache_group) {
+        for (int layer = 0; layer < shard_layers_[shard_index]; ++layer) {
+          for (int head = 0; head < num_heads_; ++head, ++index) {
+            Result<TensorInfo> kv_cache =
+                methods_meta[shard_index]->input_tensor_meta(index);
+            std::vector<std::unique_ptr<TensorImpl>>& cache =
+                (cache_group == 0 ? k_cache_in_[prefill_forward_name_]
+                                  : v_cache_in_[prefill_forward_name_]);
+            void* cache_ptr = (cache_group == 0)
+                ? static_cast<void*>(ptr->k_cache[layer + offset][head].data())
+                : static_cast<void*>(
+                      ptr->v_cache[layer + offset].data() + head * v_stride +
+                      prefill_offset);
+
+            cache.emplace_back(std::make_unique<TensorImpl>(
+                kv_cache->scalar_type(),
+                kv_cache->sizes().size(),
+                const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
+                cache_ptr,
+                const_cast<TensorImpl::DimOrderType*>(
+                    kv_cache->dim_order().data())));
+            input_tensors_[prefill_forward_name_][shard_index].push_back(
+                cache.back().get());
+          }
+        }
+      }
+    }
+  }
   // [O]: logits
   int logit_index = 0;
   Result<TensorInfo> logits =
@@ -348,18 +409,11 @@ void ShiftPointerIoMgr::prepare_prefill_io(
 
   // [O] kv_cache
   int index = 1;
-  // prefill_k_stride should be equal to prefill_v_stride in prefill mode.
   // In hybrid mode, we use kv mode cache len for v stride since we want to
   // update prefill's result onto kv modes input.
-  int32_t prefill_k_stride = prefill_cache_len_ * head_dim_;
-  int32_t prefill_v_stride =
-      std::max(prefill_cache_len_, kv_cache_len_) * head_dim_;
+  int32_t prefill_k_stride = prefill_ar_len_ * head_dim_;
+  int32_t prefill_v_stride = kv_cache_len_ * head_dim_;
 
-  if (eval_mode_ == EvalMode::kPrefill) {
-    ET_CHECK_MSG(
-        prefill_k_stride == prefill_v_stride,
-        "prefill_k_stride should be equal to prefill_v_stride");
-  }
   for (int offset = 0, shard_index = 0; shard_index < modules_.size();
        offset += shard_layers_[shard_index], shard_index++) {
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
@@ -397,13 +451,11 @@ void ShiftPointerIoMgr::update_prefill_to_kv_io(
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
   ET_CHECK_MSG(kv_cache_len_ != 0, "k_cache_len_ should not equal to 0");
-  ET_CHECK_MSG(
-      prefill_cache_len_ != 0, "prefill_cache_len_ should not equal to 0");
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
-  ptr->input_tok =
+  ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
-  ptr->input_pos = static_cast<int32_t>(pos);
+  ptr->kv_input_pos = static_cast<int32_t>(pos);
   // If prompt len is 30, prefill will handle to pos = 30.
   // At this point, pos should be 31.
   for (int i = 0; i < pos + 1; i++) {
@@ -435,17 +487,29 @@ void ShiftPointerIoMgr::update_prefill_to_kv_io(
     }
   }
 
+  // Update k_cache
   std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& k_cache_in =
       k_cache_in_[kv_forward_name_];
   std::vector<std::unique_ptr<executorch::aten::TensorImpl>>& k_cache_out =
       k_cache_out_[prefill_forward_name_];
+  // copy from last to prevent from overwriting values
+  size_t copied_size = pos * sizeof(uint8_t);
   for (int i = 0; i < k_cache_in.size(); ++i) {
     uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
-    const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
-    for (size_t j = 0, offset = kv_cache_len_; j < head_dim_;
-         ++j, offset += kv_cache_len_) {
-      for (int k = 0, k_stride = j * prefill_cache_len_; k < pos; k++) {
-        ptr_in[offset + k] = ptr_out[k_stride + k];
+    if (is_bert_) {
+      const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
+      for (size_t j = 0, offset = kv_cache_len_; j < head_dim_;
+           ++j, offset += kv_cache_len_) {
+        for (int k = 0, k_stride = j * prefill_ar_len_; k < pos; k++) {
+          ptr_in[offset + k] = ptr_out[k_stride + k];
+        }
+      }
+    } else {
+      for (int j = head_dim_; j > -1; --j) {
+        memcpy(
+            ptr_in + j * kv_cache_len_,
+            ptr_in + j * prefill_cache_len_,
+            copied_size);
       }
     }
     k_cache_in[i]->set_data(ptr_in + pos);
@@ -458,10 +522,10 @@ void ShiftPointerIoMgr::update_kv_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   // update input_tok
-  ptr->input_tok =
+  ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   // update position_ids
-  ptr->input_pos = static_cast<int32_t>(pos);
+  ptr->kv_input_pos = static_cast<int32_t>(pos);
   // update causal mask for next token
   ptr->kv_attention_mask[kv_cache_len_ - pos] = 65535;
 
@@ -505,47 +569,102 @@ void ShiftPointerIoMgr::update_prefill_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
+  (void)cur_token;
   (void)output_tensors;
   IO* ptr = static_cast<IO*>(data_ptr_.get());
-  // Support CPU 4-bit embedding, which requires int64 input.
-  // However, for QNN embedding, only int32 input is needed.
-  // Therefore, we need to cast to the correct type to write the data.
-  if (use_int64_token_) {
-    ptr->prefill_input_toks[pos] = cur_token;
-  } else {
-    int32_t* prefill_input_toks_ptr =
-        reinterpret_cast<int32_t*>(ptr->prefill_input_toks.data());
-    prefill_input_toks_ptr[pos] = static_cast<int32_t>(cur_token);
+
+  if (!is_bert_) {
+    // update v_cache
+    auto& v_cache_in = v_cache_in_[prefill_forward_name_];
+    auto& v_cache_out = v_cache_out_[prefill_forward_name_];
+    for (int i = 0; i < v_cache_in.size(); i++) {
+      v_cache_in[i]->set_data(
+          v_cache_in[i]->mutable_data<uint8_t>() + prefill_ar_len_ * head_dim_);
+      v_cache_out[i]->set_data(
+          v_cache_out[i]->mutable_data<uint8_t>() +
+          prefill_ar_len_ * head_dim_);
+    }
+
+    for (int shard = 0; shard < output_tensors.size(); shard++) {
+      for (int index = 0; index < output_tensors[shard].size(); index++) {
+        ET_CHECK_MSG(
+            modules_[shard]->set_output(
+                prefill_forward_name_, output_tensors[shard][index], index) ==
+                Error::Ok,
+            "failed to set output tensor for module %d's %d'th output "
+            "while updating kv_cache output tensors",
+            shard,
+            index);
+      }
+    }
+
+    auto& k_cache_in = k_cache_in_[prefill_forward_name_];
+    auto& k_cache_out = k_cache_out_[prefill_forward_name_];
+    // update k_cache by single thread, this part is cpu cache sensitive
+    for (int i = 0; i < k_cache_in.size(); ++i) {
+      uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
+      const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
+      for (size_t j = 0, offset = prefill_cache_len_; j < head_dim_;
+           ++j, offset += prefill_cache_len_) {
+        for (int k = 0, k_stride = j * prefill_ar_len_; k < prefill_ar_len_;
+             k++) {
+          ptr_in[offset + k] = ptr_out[k_stride + k];
+        }
+      }
+      k_cache_in[i]->set_data(ptr_in + prefill_ar_len_);
+    }
   }
 }
 
 void ShiftPointerIoMgr::fill_prefill_toks(
+    int64_t start_pos,
     std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
-  for (int i = 0; i < prompt_tokens.size(); i++) {
-    // Support CPU 4-bit embedding, which requires int64 input.
-    // However, for QNN embedding, only int32 input is needed.
-    // Therefore, we need to cast to the correct type to write the data.
-    if (use_int64_token_) {
-      ptr->prefill_input_toks[i] = prompt_tokens[i];
-    } else {
-      int32_t* prefill_input_toks_ptr =
-          reinterpret_cast<int32_t*>(ptr->prefill_input_toks.data());
-      prefill_input_toks_ptr[i] = static_cast<int32_t>(prompt_tokens[i]);
+  for (int i = 0; i < prefill_ar_len_; i++) {
+    if (!is_bert_) {
+      ptr->prefill_input_pos[i] = start_pos + i;
+    }
+
+    if (start_pos + i < prompt_tokens.size()) {
+      // Support CPU 4-bit embedding, which requires int64 input.
+      // However, for QNN embedding, only int32 input is needed.
+      // Therefore, we need to cast to the correct type to write the data.
+      if (use_int64_token_) {
+        ptr->prefill_input_toks[i] = prompt_tokens[start_pos + i];
+      } else {
+        int32_t* prefill_input_toks_ptr =
+            reinterpret_cast<int32_t*>(ptr->prefill_input_toks.data());
+        prefill_input_toks_ptr[i] =
+            static_cast<int32_t>(prompt_tokens[start_pos + i]);
+      }
+    }
+    if (start_pos >= prefill_ar_len_) {
+      for (int j = 0,
+               offset = i * context_len_ +
+               (context_len_ - prefill_ar_len_ - start_pos);
+           j < prefill_ar_len_;
+           ++j) {
+        ptr->prefill_attention_mask[offset + j] = 65535;
+      }
     }
   }
 }
 
 void ShiftPointerIoMgr::fill_kv_tok_mask(int64_t pos, int64_t cur_token) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
-  ptr->input_tok =
+  ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
+  ptr->kv_input_pos = static_cast<int32_t>(pos);
+  ;
   ptr->kv_attention_mask[kv_cache_len_] = 65535;
 }
 
 SmartMaskIoMgr::SmartMaskIoMgr(
     std::vector<std::shared_ptr<Module>>& modules,
+    int32_t context_len,
+    int32_t prefill_ar_len,
     int32_t prefill_cache_len,
+    int32_t kv_ar_len,
     int32_t kv_cache_len,
     int32_t vocab_size,
     int32_t num_layers,
@@ -557,7 +676,10 @@ SmartMaskIoMgr::SmartMaskIoMgr(
     const bool use_int64_token)
     : IoMgrBase(modules),
       shard_layers_({num_layers}),
+      context_len_(context_len),
+      kv_ar_len_(kv_ar_len),
       kv_cache_len_(kv_cache_len),
+      prefill_ar_len_(prefill_ar_len),
       prefill_cache_len_(prefill_cache_len),
       vocab_size_(vocab_size),
       num_layers_(num_layers),
@@ -566,12 +688,17 @@ SmartMaskIoMgr::SmartMaskIoMgr(
       eval_mode_(eval_mode),
       prefill_forward_name_(prefill_forward_name),
       kv_forward_name_(kv_forward_name),
-      use_int64_token_(use_int64_token) {
+      use_int64_token_(use_int64_token),
+      is_bert_(prefill_cache_len == 0) {
   if (!prefill_forward_name_.empty()) {
     input_tensors_[prefill_forward_name_] =
         std::vector<std::vector<executorch::aten::TensorImpl*>>(modules.size());
     output_tensors_[prefill_forward_name_] =
         std::vector<std::vector<executorch::aten::TensorImpl*>>(modules.size());
+    k_cache_in_[prefill_forward_name_] =
+        std::vector<std::unique_ptr<executorch::aten::TensorImpl>>();
+    v_cache_in_[prefill_forward_name_] =
+        std::vector<std::unique_ptr<executorch::aten::TensorImpl>>();
     k_cache_out_[prefill_forward_name_] =
         std::vector<std::unique_ptr<executorch::aten::TensorImpl>>();
     v_cache_out_[prefill_forward_name_] =
@@ -597,20 +724,20 @@ SmartMaskIoMgr::SmartMaskIoMgr(
 }
 
 std::unordered_map<std::string, size_t> SmartMaskIoMgr::get_io_elements() {
-  size_t cache_len = std::max(kv_cache_len_, prefill_cache_len_);
-  size_t cache_in_ele = num_layers_ * num_heads_ * head_dim_ * cache_len;
-  size_t cache_out_ele = num_layers_ * num_heads_ * head_dim_;
+  int32_t max_ar_len = std::max(kv_ar_len_, prefill_ar_len_);
+  size_t cache_in_ele = num_layers_ * num_heads_ * head_dim_ * kv_cache_len_;
+  size_t cache_out_ele = num_layers_ * num_heads_ * head_dim_ * max_ar_len;
   return std::unordered_map<std::string, size_t>{
-      {"input_tok_ele", 1},
-      {"input_pos_ele", 1},
+      {"kv_input_toks_ele", kv_ar_len_},
+      {"kv_input_pos_ele", kv_ar_len_},
       {"cache_in_ele", cache_in_ele},
       {"cache_out_ele", cache_out_ele},
-      // 1 for the input prompt
-      {"atten_mask_ele", cache_len + 1},
-      {"kv_logits_ele", vocab_size_},
-      {"prefill_input_toks_ele", prefill_cache_len_},
-      {"prefill_atten_mask_ele", prefill_cache_len_ * prefill_cache_len_},
-      {"prefill_logits_ele", prefill_cache_len_ * vocab_size_}};
+      {"kv_attention_mask_ele", kv_ar_len_ * context_len_},
+      {"kv_logits_ele", kv_ar_len_ * vocab_size_},
+      {"prefill_input_toks_ele", prefill_ar_len_},
+      {"prefill_input_pos_ele", prefill_ar_len_},
+      {"prefill_attention_mask_ele", prefill_ar_len_ * context_len_},
+      {"prefill_logits_ele", prefill_ar_len_ * vocab_size_}};
 }
 
 std::unordered_map<std::string, size_t> SmartMaskIoMgr::get_io_bytes() {
@@ -623,21 +750,23 @@ std::unordered_map<std::string, size_t> SmartMaskIoMgr::get_io_bytes() {
              byte % static_cast<intptr_t>(alignment));
   };
   return std::unordered_map<std::string, size_t>{
-      {"input_tok_bytes",
-       align(element_map["input_tok_ele"] * sizeof(int32_t))},
-      {"input_pos_bytes",
-       align(element_map["input_pos_ele"] * sizeof(int32_t))},
+      {"kv_input_toks_bytes",
+       align(element_map["kv_input_toks_ele"] * sizeof(int32_t))},
+      {"kv_input_pos_bytes",
+       align(element_map["kv_input_pos_ele"] * sizeof(int32_t))},
       {"cache_in_bytes", align(element_map["cache_in_ele"] * sizeof(uint8_t))},
       {"cache_out_bytes",
        align(element_map["cache_out_ele"] * sizeof(uint8_t))},
-      {"atten_mask_bytes",
-       align(element_map["atten_mask_ele"] * sizeof(uint16_t))},
+      {"kv_attention_mask_bytes",
+       align(element_map["kv_attention_mask_ele"] * sizeof(uint16_t))},
       {"kv_logits_bytes",
        align(element_map["kv_logits_ele"] * sizeof(uint16_t))},
       {"prefill_input_toks_bytes",
        align(element_map["prefill_input_toks_ele"] * sizeof(int32_t))},
-      {"prefill_atten_mask_bytes",
-       align(element_map["prefill_atten_mask_ele"] * sizeof(uint16_t))},
+      {"prefill_input_pos_bytes",
+       align(element_map["prefill_input_pos_ele"] * sizeof(int32_t))},
+      {"prefill_attention_mask_bytes",
+       align(element_map["prefill_attention_mask_ele"] * sizeof(uint16_t))},
       {"prefill_logits_bytes",
        align(element_map["prefill_logits_ele"] * sizeof(uint16_t))}};
 }
@@ -654,10 +783,10 @@ void SmartMaskIoMgr::IO::init_io_ptrs(
   for (const auto& iter : io_bytes_map) {
     std::string key = iter.first;
     size_t size = iter.second;
-    if (key == "input_tok_bytes") {
-      input_tok = reinterpret_cast<int64_t*>(cur_ptr);
-    } else if (key == "input_pos_bytes") {
-      input_pos = reinterpret_cast<int32_t*>(cur_ptr);
+    if (key == "kv_input_toks_bytes") {
+      kv_input_toks = reinterpret_cast<int64_t*>(cur_ptr);
+    } else if (key == "kv_input_pos_bytes") {
+      kv_input_pos = reinterpret_cast<int32_t*>(cur_ptr);
     } else if (key == "cache_in_bytes" || key == "cache_out_bytes") {
       auto& k_cache_ref = (key == "cache_in_bytes") ? k_cache : k_cache_out;
       auto& v_cache_ref = (key == "cache_in_bytes") ? v_cache : v_cache_out;
@@ -679,14 +808,16 @@ void SmartMaskIoMgr::IO::init_io_ptrs(
         }
       }
       continue;
-    } else if (key == "atten_mask_bytes") {
+    } else if (key == "kv_attention_mask_bytes") {
       kv_attention_mask = reinterpret_cast<uint16_t*>(cur_ptr);
     } else if (key == "kv_logits_bytes") {
       kv_logits = reinterpret_cast<uint16_t*>(cur_ptr);
     } else if (key == "prefill_input_toks_bytes") {
       prefill_input_toks = reinterpret_cast<int64_t*>(cur_ptr);
-    } else if (key == "prefill_atten_mask_bytes") {
-      prefill_atten_mask = reinterpret_cast<uint16_t*>(cur_ptr);
+    } else if (key == "prefill_input_pos_bytes") {
+      prefill_input_pos = reinterpret_cast<int32_t*>(cur_ptr);
+    } else if (key == "prefill_attention_mask_bytes") {
+      prefill_attention_mask = reinterpret_cast<uint16_t*>(cur_ptr);
     } else if (key == "prefill_logits_bytes") {
       prefill_logits = reinterpret_cast<uint16_t*>(cur_ptr);
     } else {
@@ -720,15 +851,10 @@ void SmartMaskIoMgr::init_io() {
   std::unordered_map<std::string, size_t> io_bytes_map = get_io_bytes();
 
   switch (eval_mode_) {
-    case EvalMode::kPrefill:
-      io_bytes_map.erase("input_tok_bytes");
-      io_bytes_map.erase("input_pos_bytes");
-      io_bytes_map.erase("atten_mask_bytes");
-      io_bytes_map.erase("kv_logits_bytes");
-      break;
     case EvalMode::kKVCached:
       io_bytes_map.erase("prefill_input_toks_bytes");
-      io_bytes_map.erase("prefill_atten_mask_bytes");
+      io_bytes_map.erase("prefill_input_pos_bytes");
+      io_bytes_map.erase("prefill_attention_mask_bytes");
       io_bytes_map.erase("prefill_logits_bytes");
       break;
     case EvalMode::kHybrid:
@@ -774,53 +900,55 @@ void SmartMaskIoMgr::prepare_kv_io(
   std::unordered_map<std::string, size_t> io_bytes_map = get_io_bytes();
 
   // [I]: input_tokens
-  Result<TensorInfo> input_tok = methods_meta[0]->input_tensor_meta(0);
-  input_tok_ = std::make_unique<TensorImpl>(
-      input_tok->scalar_type(),
-      input_tok->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(input_tok->sizes().data()),
-      ptr->input_tok,
-      const_cast<TensorImpl::DimOrderType*>(input_tok->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(input_tok_.get());
+  Result<TensorInfo> kv_input_toks = methods_meta[0]->input_tensor_meta(0);
+  kv_input_toks_ = std::make_unique<TensorImpl>(
+      kv_input_toks->scalar_type(),
+      kv_input_toks->sizes().size(),
+      const_cast<TensorImpl::SizesType*>(kv_input_toks->sizes().data()),
+      ptr->kv_input_toks,
+      const_cast<TensorImpl::DimOrderType*>(kv_input_toks->dim_order().data()));
+  input_tensors_[kv_forward_name_][0].push_back(kv_input_toks_.get());
   ptr->add_custom_mem_info(
-      ptr->input_tok,
-      io_bytes_map["input_tok_bytes"],
-      input_tok->scalar_type(),
-      input_tok.get());
+      ptr->kv_input_toks,
+      io_bytes_map["kv_input_toks_bytes"],
+      kv_input_toks->scalar_type(),
+      kv_input_toks.get());
 
   // [I]: atten_mask
-  Result<TensorInfo> atten_mask = methods_meta[0]->input_tensor_meta(1);
-  attention_mask_ = std::make_unique<TensorImpl>(
-      atten_mask->scalar_type(),
-      atten_mask->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(atten_mask->sizes().data()),
+  std::fill_n(ptr->kv_attention_mask, kv_ar_len_ * context_len_, 0);
+  Result<TensorInfo> kv_attention_mask = methods_meta[0]->input_tensor_meta(1);
+  kv_attention_mask_ = std::make_unique<TensorImpl>(
+      kv_attention_mask->scalar_type(),
+      kv_attention_mask->sizes().size(),
+      const_cast<TensorImpl::SizesType*>(kv_attention_mask->sizes().data()),
       ptr->kv_attention_mask,
-      const_cast<TensorImpl::DimOrderType*>(atten_mask->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(attention_mask_.get());
+      const_cast<TensorImpl::DimOrderType*>(
+          kv_attention_mask->dim_order().data()));
+  input_tensors_[kv_forward_name_][0].push_back(kv_attention_mask_.get());
   ptr->add_custom_mem_info(
       ptr->kv_attention_mask,
-      io_bytes_map["atten_mask_bytes"],
-      atten_mask->scalar_type(),
-      atten_mask.get());
+      io_bytes_map["kv_attention_mask_bytes"],
+      kv_attention_mask->scalar_type(),
+      kv_attention_mask.get());
 
   // [I]: input_pos
-  Result<TensorInfo> input_pos = methods_meta[0]->input_tensor_meta(2);
-  input_pos_ = std::make_unique<TensorImpl>(
-      input_pos->scalar_type(),
-      input_pos->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(input_pos->sizes().data()),
-      ptr->input_pos,
-      const_cast<TensorImpl::DimOrderType*>(input_pos->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(input_pos_.get());
+  Result<TensorInfo> kv_input_pos = methods_meta[0]->input_tensor_meta(2);
+  kv_input_pos_ = std::make_unique<TensorImpl>(
+      kv_input_pos->scalar_type(),
+      kv_input_pos->sizes().size(),
+      const_cast<TensorImpl::SizesType*>(kv_input_pos->sizes().data()),
+      ptr->kv_input_pos,
+      const_cast<TensorImpl::DimOrderType*>(kv_input_pos->dim_order().data()));
+  input_tensors_[kv_forward_name_][0].push_back(kv_input_pos_.get());
   ptr->add_custom_mem_info(
-      ptr->input_pos,
-      io_bytes_map["input_pos_bytes"],
-      input_pos->scalar_type(),
-      input_pos.get());
+      ptr->kv_input_pos,
+      io_bytes_map["kv_input_pos_bytes"],
+      kv_input_pos->scalar_type(),
+      kv_input_pos.get());
 
   // [I] kv_cache
   size_t layered_head_count = num_layers_ * num_heads_;
-  int index = 3; // bypass input_tokens, input_pos, atten_mask
+  int index = 3; // bypass input_tokens, atten_mask, input_pos
   for (int offset = 0, shard_index = 0; shard_index < modules_.size();
        offset += shard_layers_[shard_index], shard_index++) {
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
@@ -915,10 +1043,10 @@ void SmartMaskIoMgr::update_kv_io(
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   size_t cache_len = std::max(kv_cache_len_, prefill_cache_len_);
   // update input_tok
-  *ptr->input_tok =
+  *ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   // update position_ids
-  *ptr->input_pos = static_cast<int32_t>(pos);
+  *ptr->kv_input_pos = static_cast<int32_t>(pos);
   // update smart mask for previous cache
   ptr->kv_attention_mask[pos] = 65535;
 
@@ -975,30 +1103,92 @@ void SmartMaskIoMgr::prepare_prefill_io(
       executorch::aten::ScalarType::Int,
       prefill_input_toks.get());
 
-  // [I]: prefill_attn_mask
-  for (int i = 0; i < cache_len; ++i) {
-    for (int j = 0; j < cache_len; ++j) {
+  // [I]: prefill_attention_mask
+  for (int i = 0; i < prefill_ar_len_; ++i) {
+    for (int j = 0,
+             offset = i * context_len_ + (context_len_ - prefill_ar_len_);
+         j < prefill_ar_len_;
+         ++j) {
       if (i < j) {
-        ptr->prefill_atten_mask[i * cache_len + j] = 0;
+        ptr->prefill_attention_mask[j + offset] = 0;
       } else {
-        ptr->prefill_atten_mask[i * cache_len + j] = 65535;
+        ptr->prefill_attention_mask[j + offset] = 65535;
       }
     }
   }
-  Result<TensorInfo> prefill_atten_mask = methods_meta[0]->input_tensor_meta(1);
-  prefill_attn_mask_ = std::make_unique<TensorImpl>(
-      prefill_atten_mask->scalar_type(),
-      prefill_atten_mask->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(prefill_atten_mask->sizes().data()),
-      ptr->prefill_atten_mask,
+  Result<TensorInfo> prefill_attention_mask =
+      methods_meta[0]->input_tensor_meta(1);
+  prefill_attention_mask_ = std::make_unique<TensorImpl>(
+      prefill_attention_mask->scalar_type(),
+      prefill_attention_mask->sizes().size(),
+      const_cast<TensorImpl::SizesType*>(
+          prefill_attention_mask->sizes().data()),
+      ptr->prefill_attention_mask,
       const_cast<TensorImpl::DimOrderType*>(
-          prefill_atten_mask->dim_order().data()));
-  input_tensors_[prefill_forward_name_][0].push_back(prefill_attn_mask_.get());
+          prefill_attention_mask->dim_order().data()));
+  input_tensors_[prefill_forward_name_][0].push_back(
+      prefill_attention_mask_.get());
   ptr->add_custom_mem_info(
-      ptr->prefill_atten_mask,
-      io_bytes_map["prefill_atten_mask_bytes"],
+      ptr->prefill_attention_mask,
+      io_bytes_map["prefill_attention_mask_bytes"],
       executorch::aten::ScalarType::Bits16,
-      prefill_atten_mask.get());
+      prefill_attention_mask.get());
+
+  if (!is_bert_) {
+    // [I]: prefill_input_pos
+    Result<TensorInfo> prefill_input_pos =
+        methods_meta[0]->input_tensor_meta(2);
+    prefill_input_pos_ = std::make_unique<TensorImpl>(
+        prefill_input_pos->scalar_type(),
+        prefill_input_pos->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(prefill_input_pos->sizes().data()),
+        ptr->prefill_input_pos,
+        const_cast<TensorImpl::DimOrderType*>(
+            prefill_input_pos->dim_order().data()));
+    input_tensors_[prefill_forward_name_][0].push_back(
+        prefill_input_pos_.get());
+    ptr->add_custom_mem_info(
+        ptr->prefill_input_pos,
+        io_bytes_map["prefill_input_pos_bytes"],
+        prefill_input_pos->scalar_type(),
+        prefill_input_pos.get());
+
+    // [I] kv_cache
+    size_t layered_head_count = num_layers_ * num_heads_;
+    int index = 3; // bypass input_tokens, atten_mask, input_pos
+    for (int offset = 0, shard_index = 0; shard_index < modules_.size();
+         offset += shard_layers_[shard_index], shard_index++) {
+      for (int cache_group = 0; cache_group < 2; ++cache_group) {
+        for (int layer = 0; layer < shard_layers_[shard_index]; ++layer) {
+          for (int head = 0; head < num_heads_; ++head, ++index) {
+            Result<TensorInfo> kv_cache =
+                methods_meta[shard_index]->input_tensor_meta(index);
+            std::vector<std::unique_ptr<TensorImpl>>& cache =
+                (cache_group == 0 ? k_cache_in_[prefill_forward_name_]
+                                  : v_cache_in_[prefill_forward_name_]);
+            uint8_t* cache_ptr = (cache_group == 0)
+                ? ptr->k_cache[layer + offset][head]
+                : ptr->v_cache[layer + offset][head];
+
+            cache.emplace_back(std::make_unique<TensorImpl>(
+                kv_cache->scalar_type(),
+                kv_cache->sizes().size(),
+                const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
+                cache_ptr,
+                const_cast<TensorImpl::DimOrderType*>(
+                    kv_cache->dim_order().data())));
+            ptr->add_custom_mem_info(
+                cache_ptr,
+                io_bytes_map["cache_in_bytes"] / layered_head_count,
+                kv_cache->scalar_type(),
+                kv_cache.get());
+            input_tensors_[prefill_forward_name_][shard_index].push_back(
+                cache.back().get());
+          }
+        }
+      }
+    }
+  }
 
   // [O]: logits
   int logit_index = 0;
@@ -1031,8 +1221,8 @@ void SmartMaskIoMgr::prepare_prefill_io(
               (cache_group == 0 ? k_cache_out_[prefill_forward_name_]
                                 : v_cache_out_[prefill_forward_name_]);
           void* cache_ptr = (cache_group == 0)
-              ? ptr->k_cache[layer + offset][head]
-              : ptr->v_cache[layer + offset][head];
+              ? ptr->k_cache_out[layer + offset][head]
+              : ptr->v_cache_out[layer + offset][head];
           cache.emplace_back(std::make_unique<TensorImpl>(
               kv_cache->scalar_type(),
               kv_cache->sizes().size(),
@@ -1042,7 +1232,7 @@ void SmartMaskIoMgr::prepare_prefill_io(
                   kv_cache->dim_order().data())));
           ptr->add_custom_mem_info(
               cache_ptr,
-              io_bytes_map["cache_in_bytes"] / layered_head_count,
+              io_bytes_map["cache_out_bytes"] / layered_head_count,
               executorch::aten::ScalarType::Byte,
               kv_cache.get());
           output_tensors_[prefill_forward_name_][shard_index].push_back(
@@ -1059,24 +1249,50 @@ void SmartMaskIoMgr::update_prefill_to_kv_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
-  *ptr->input_tok =
+  *ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
-  *ptr->input_pos = static_cast<int32_t>(pos);
+  *ptr->kv_input_pos = static_cast<int32_t>(pos);
   // pos means the cur_token pos
   for (int i = 0; i < pos; i++) {
     ptr->kv_attention_mask[i] = 65535;
   }
 
-  // Update K is enough, copy from last to prevent from overwriting values
-  size_t copied_size = prefill_cache_len_ * sizeof(uint8_t);
-  for (int l = 0; l < num_layers_; l++) {
-    for (int h = 0; h < num_heads_; h++) {
-      uint8_t* k_cache = ptr->k_cache[l][h];
-      for (int hd = head_dim_ - 1; hd > -1; hd--) {
-        memcpy(
-            k_cache + (kv_cache_len_ * hd),
-            k_cache + (prefill_cache_len_ * hd),
-            copied_size);
+  if (is_bert_) {
+    // update v_cache
+    auto& v_cache_in = v_cache_in_[kv_forward_name_];
+    auto& v_cache_out = v_cache_out_[prefill_forward_name_];
+    // update v_cache by single thread, this part is cpu cache sensitive
+    size_t copied_size = kv_cache_len_ * head_dim_ * sizeof(uint8_t);
+    for (int i = 0; i < v_cache_in.size(); ++i) {
+      uint8_t* ptr_in = v_cache_in[i]->mutable_data<uint8_t>();
+      const uint8_t* ptr_out = v_cache_out[i]->data<uint8_t>();
+      memcpy(ptr_in, ptr_out, copied_size);
+    }
+
+    auto& k_cache_in = k_cache_in_[kv_forward_name_];
+    auto& k_cache_out = k_cache_out_[prefill_forward_name_];
+    for (int i = 0; i < k_cache_in.size(); ++i) {
+      uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
+      const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
+      for (size_t j = 0, offset = 0; j < head_dim_;
+           ++j, offset += kv_cache_len_) {
+        for (size_t k = 0, k_stride = j * prefill_ar_len_; k < pos; k++) {
+          ptr_in[offset + k] = ptr_out[k_stride + k];
+        }
+      }
+    }
+  } else {
+    // Update K is enough, copy from last to prevent from overwriting values
+    size_t copied_size = pos * sizeof(uint8_t);
+    for (int l = 0; l < num_layers_; l++) {
+      for (int h = 0; h < num_heads_; h++) {
+        uint8_t* k_cache = ptr->k_cache[l][h];
+        for (int hd = head_dim_ - 1; hd > -1; hd--) {
+          memcpy(
+              k_cache + (kv_cache_len_ * hd),
+              k_cache + (prefill_cache_len_ * hd),
+              copied_size);
+        }
       }
     }
   }
@@ -1088,37 +1304,71 @@ void SmartMaskIoMgr::update_prefill_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   (void)output_tensors;
   IO* ptr = static_cast<IO*>(data_ptr_.get());
-  // Support CPU 4-bit embedding, which requires int64 input.
-  // However, for QNN embedding, only int32 input is needed.
-  // Therefore, we need to cast to the correct type to write the data.
-  if (use_int64_token_) {
-    ptr->prefill_input_toks[pos] = cur_token;
-  } else {
-    int32_t* prefill_input_toks_ptr =
-        reinterpret_cast<int32_t*>(ptr->prefill_input_toks);
-    prefill_input_toks_ptr[pos] = static_cast<int32_t>(cur_token);
+
+  if (!is_bert_) {
+    // update v_cache
+    auto& v_cache_in = v_cache_in_[prefill_forward_name_];
+    auto& v_cache_out = v_cache_out_[prefill_forward_name_];
+    // update v_cache by single thread, this part is cpu cache sensitive
+    size_t copied_size = prefill_ar_len_ * head_dim_ * sizeof(uint8_t);
+    for (int i = 0; i < v_cache_in.size(); ++i) {
+      uint8_t* ptr_in =
+          v_cache_in[i]->mutable_data<uint8_t>() + pos * head_dim_;
+      const uint8_t* ptr_out = v_cache_out[i]->data<uint8_t>();
+      memcpy(ptr_in, ptr_out, copied_size);
+    }
+
+    auto& k_cache_in = k_cache_in_[prefill_forward_name_];
+    auto& k_cache_out = k_cache_out_[prefill_forward_name_];
+    for (int i = 0; i < k_cache_in.size(); ++i) {
+      uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
+      const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
+      for (size_t j = 0, offset = pos; j < head_dim_;
+           ++j, offset += prefill_cache_len_) {
+        for (size_t k = 0, k_stride = j * prefill_ar_len_; k < prefill_ar_len_;
+             k++) {
+          ptr_in[offset + k] = ptr_out[k_stride + k];
+        }
+      }
+    }
   }
 }
 
-void SmartMaskIoMgr::fill_prefill_toks(std::vector<uint64_t>& prompt_tokens) {
+void SmartMaskIoMgr::fill_prefill_toks(
+    int64_t start_pos,
+    std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
-  for (int i = 0; i < prompt_tokens.size(); i++) {
-    // Support CPU 4-bit embedding, which requires int64 input.
-    // However, for QNN embedding, only int32 input is needed.
-    // Therefore, we need to cast to the correct type to write the data.
-    if (use_int64_token_) {
-      ptr->prefill_input_toks[i] = prompt_tokens[i];
-    } else {
-      int32_t* prefill_input_toks_ptr =
-          reinterpret_cast<int32_t*>(ptr->prefill_input_toks);
-      prefill_input_toks_ptr[i] = static_cast<int32_t>(prompt_tokens[i]);
+  for (int i = 0; i < prefill_ar_len_; i++) {
+    if (!is_bert_) {
+      ptr->prefill_input_pos[i] = start_pos + i;
+    }
+
+    if (start_pos + i < prompt_tokens.size()) {
+      // Support CPU 4-bit embedding, which requires int64 input.
+      // However, for QNN embedding, only int32 input is needed.
+      // Therefore, we need to cast to the correct type to write the data.
+      if (use_int64_token_) {
+        ptr->prefill_input_toks[i] = prompt_tokens[start_pos + i];
+      } else {
+        int32_t* prefill_input_toks_ptr =
+            reinterpret_cast<int32_t*>(ptr->prefill_input_toks);
+        prefill_input_toks_ptr[i] =
+            static_cast<int32_t>(prompt_tokens[start_pos + i]);
+      }
+    }
+    if (start_pos >= prefill_ar_len_) {
+      for (int j = 0, offset = i * context_len_ + (start_pos - prefill_ar_len_);
+           j < prefill_ar_len_;
+           ++j) {
+        ptr->prefill_attention_mask[offset + j] = 65535;
+      }
     }
   }
 }
 
 void SmartMaskIoMgr::fill_kv_tok_mask(int64_t pos, int64_t cur_token) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
-  *ptr->input_tok =
+  *ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   ptr->kv_attention_mask[kv_cache_len_] = 65535;
 }
