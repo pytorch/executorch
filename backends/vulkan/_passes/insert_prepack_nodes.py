@@ -60,6 +60,12 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
             )
             # This pass assumes that the SpecPropPass() has already been applied
             assert "spec" in node.meta
+            # Mutable buffers will not be marked as constant, but it might as well be
+            # for the purposes of memory planning. Mark it as a constant tensor so that
+            # it is handled correctly by the memory planning pass.
+            if not node.meta["spec"].const:
+                assert is_param_node(program, node)
+                node.meta["spec"].const = True
             # Validate that the original node is marked as a constant. Constant tensors
             # do not participate in memory planning.
             assert node.meta["spec"].const
@@ -68,7 +74,9 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
             # Set the mem_obj_id to -1 to indicate that this node requires a dedicated
             # memory object.
             prepack_node.meta["spec"].mem_obj_id = -1
-            node.replace_all_uses_with(prepack_node, lambda x, y=prepack_node: x != y)
+            node.replace_all_uses_with(
+                prepack_node, lambda x, y=prepack_node: (x != y and x.op != "output")
+            )
 
     program.graph.eliminate_dead_code()
     return program

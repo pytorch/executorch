@@ -13,7 +13,7 @@ from typing import Tuple
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import KVCache, SDPA
+from executorch.examples.models.llama.attention import KVCache, SDPA
 
 
 class SDPACustom(torch.nn.Module):
