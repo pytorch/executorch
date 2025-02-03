@@ -795,7 +795,7 @@ if(EXECUTORCH_BUILD_PYBIND)
           LIBRARY DESTINATION executorch/extension/pybindings
   )
 
-  if (EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
 
     set(_pybind_training_dep_libs
         ${TORCH_PYTHON_LIBRARY}
