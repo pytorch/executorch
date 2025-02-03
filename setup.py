@@ -237,11 +237,11 @@ class _BaseExtension(Extension):
         srcs = tuple(cmake_cache_dir.glob(self.src))
         if len(srcs) != 1:
             raise ValueError(
-                f"""Expected exactly one file matching '{self.src}'; found {repr(srcs)}. 
+                f"""Expected exactly one file matching '{self.src}'; found {repr(srcs)}.
 
 If that file is a CMake-built extension module file, and we are installing in editable mode, please disable the corresponding build option since it's not supported yet.
 
-Try: 
+Try:
 
 EXECUTORCH_BUILD_FLATC=OFF EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=OFF pip install -e .
 """
@@ -611,9 +611,19 @@ class CustomBuild(build):
         # for multi-config generators.
         build_args += ["--config", cfg]
 
-        # Put the cmake cache under the temp directory, like
-        # "pip-out/temp.<plat>/cmake-out".
-        cmake_cache_dir = os.path.join(repo_root, self.build_temp, "cmake-out")
+        if ShouldBuild._is_env_enabled("EXECUTORCH_USE_SHARED_CMAKE_OUT_FOR_SETUP"):
+            # Share the cmake-out directory with any other cmake builds the
+            # user/developer might do, rather than hiding it under build_temp.
+            #
+            # Opt-in because there is a risk of accidentally mixing built artifacts from
+            # different build configurations, which could lead to painful debugging
+            # sessions. The upside is faster incremental cmake builds after running
+            # install_executorch.sh.
+            cmake_cache_dir = os.path.join(repo_root, "cmake-out")
+        else:
+            # Put the cmake cache under the temp directory, like
+            # "pip-out/temp.<plat>/cmake-out".
+            cmake_cache_dir = os.path.join(repo_root, self.build_temp, "cmake-out")
         self.mkpath(cmake_cache_dir)
 
         # Generate the cmake cache from scratch to ensure that the cache state

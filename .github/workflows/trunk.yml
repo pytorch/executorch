@@ -149,8 +149,9 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        source .ci/scripts/utils.sh
-        install_executorch "use-pt-pinned-commit"
+        # Intentionally avoiding utils.sh install_executorch because
+        # it opts into shared cmake-out, which breaks these builds.
+        ./install_executorch.py --pybind xnnpack --use-pt-pinned-commit
 
         .ci/scripts/setup-arm-baremetal-tools.sh
 
@@ -179,8 +180,9 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        source .ci/scripts/utils.sh
-        install_executorch "use-pt-pinned-commit"
+        # Intentionally avoiding utils.sh install_executorch because
+        # it opts into shared cmake-out, which breaks these builds.
+        ./install_executorch.py --pybind xnnpack --use-pt-pinned-commit
 
         .ci/scripts/setup-arm-baremetal-tools.sh
 
