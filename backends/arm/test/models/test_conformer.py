@@ -27,7 +27,6 @@ class TestConformer(unittest.TestCase):
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
         "executorch_exir_dialects_edge__ops_aten_arange_start_step": 1,
-        "executorch_exir_dialects_edge__ops_aten_full_like_default": 4,
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
         "executorch_exir_dialects_edge__ops_aten_mul_Scalar": 4,
         "executorch_exir_dialects_edge__ops_aten_eq_Scalar": 2,
