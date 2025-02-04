@@ -133,20 +133,6 @@ class Llama3_2Decoder(EagerModelBase):
                 print(unexpected)
                 print("============= /unexpected ================")
 
-        # Prune the output layer if output_prune_map is provided.
-        output_prune_map = None
-        if self.output_prune_map_path is not None:
-            from executorch.examples.models.llama2.source_transformation.prune_output import (
-                prune_output_vocab,
-            )
-
-            with open(self.output_prune_map_path, "r") as f:
-                output_prune_map = json.load(f)
-            # Change keys from string to int (json only supports string keys)
-            output_prune_map = {int(k): v for (k, v) in output_prune_map.items()}
-
-            self.model_ = prune_output_vocab(self.model_, output_prune_map)
-
         if self.use_kv_cache:
             print("Setting up KV cache on the model...")
             self.model_.setup_caches(
