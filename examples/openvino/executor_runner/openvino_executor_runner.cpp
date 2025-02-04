@@ -21,10 +21,7 @@ DEFINE_string(
     model_path,
     "",
     "Path to the model serialized in flatbuffer format (required).");
-DEFINE_int32(
-    num_iter,
-    1,
-    "Number of inference iterations (default is 1).");
+DEFINE_int32(num_iter, 1, "Number of inference iterations (default is 1).");
 
 using executorch::extension::FileDataLoader;
 using executorch::extension::prepare_input_tensors;
@@ -50,7 +47,8 @@ int main(int argc, char** argv) {
   if (FLAGS_model_path.empty()) {
     std::cerr << "Error: --model_path is required." << std::endl;
     std::cerr << "Usage: " << argv[0]
-              << " --model_path=<path_to_model> --num_iter=<iterations>" << std::endl;
+              << " --model_path=<path_to_model> --num_iter=<iterations>"
+              << std::endl;
     return 1;
   }
 
@@ -75,7 +73,8 @@ int main(int argc, char** argv) {
   }
   ET_LOG(Info, "Model file %s is loaded.", model_path);
 
-  // Retrieve the method name from the program (assumes the first method is used)
+  // Retrieve the method name from the program (assumes the first method is
+  // used)
   const char* method_name = nullptr;
   {
     const auto method_name_result = program->get_method_name(0);
@@ -139,7 +138,8 @@ int main(int argc, char** argv) {
   auto after_exec = std::chrono::high_resolution_clock::now();
   double elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(
                             after_exec - before_exec)
-                            .count() / 1000.0;
+                            .count() /
+      1000.0;
 
   // Log execution time and average time per iteration
   ET_LOG(
@@ -163,4 +163,3 @@ int main(int argc, char** argv) {
 
   return 0;
 }
-

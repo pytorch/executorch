@@ -1,15 +1,18 @@
+import argparse
+
 import executorch
 import timm
 import torch
 import torchvision.models as torchvision_models
-from transformers import AutoModel
-from executorch.exir.backend.backend_details import CompileSpec
-from executorch.backends.openvino.preprocess import OpenvinoBackend
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+from executorch.backends.openvino.preprocess import OpenvinoBackend
 from executorch.exir import EdgeProgramManager, to_edge
+from executorch.exir.backend.backend_details import CompileSpec
 from torch.export import export, ExportedProgram
+
 from torch.export.exported_program import ExportedProgram
-import argparse
+from transformers import AutoModel
+
 
 # Function to load a model based on the selected suite
 def load_model(suite: str, model_name: str):
@@ -24,6 +27,7 @@ def load_model(suite: str, model_name: str):
     else:
         raise ValueError(f"Unsupported model suite: {suite}")
 
+
 def main(suite: str, model_name: str, input_shape, device: str):
     # Ensure input_shape is a tuple
     if isinstance(input_shape, list):
@@ -36,7 +40,7 @@ def main(suite: str, model_name: str, input_shape, device: str):
     model = model.eval()
 
     # Provide input
-    example_args = (torch.randn(*input_shape), )
+    example_args = (torch.randn(*input_shape),)
 
     # Export to aten dialect using torch.export
     aten_dialect: ExportedProgram = export(model, example_args)
@@ -50,23 +54,41 @@ def main(suite: str, model_name: str, input_shape, device: str):
     lowered_module = edge_program.to_backend(OpenvinoPartitioner(compile_spec))
 
     # Apply backend-specific passes
-    exec_prog = lowered_module.to_executorch(config=executorch.exir.ExecutorchBackendConfig())
+    exec_prog = lowered_module.to_executorch(
+        config=executorch.exir.ExecutorchBackendConfig()
+    )
 
     # Serialize and save it to a file
     with open(f"{model_name}.pte", "wb") as file:
         exec_prog.write_to_file(file)
     print(f"Model exported and saved as {model_name}.pte on {device}.")
 
+
 if __name__ == "__main__":
     # Argument parser for dynamic inputs
     parser = argparse.ArgumentParser(description="Export models with executorch.")
-    parser.add_argument("--suite", type=str, required=True, choices=["timm", "torchvision", "huggingface"],
-                        help="Select the model suite (timm, torchvision, huggingface).")
-    parser.add_argument("--model", type=str, required=True, help="Model name to be loaded.")
-    parser.add_argument("--input_shape", type=eval, required=True,
-                        help="Input shape for the model as a list or tuple (e.g., [1, 3, 224, 224] or (1, 3, 224, 224)).")
-    parser.add_argument("--device", type=str, default="CPU",
-                        help="Target device for compiling the model (e.g., CPU, GPU). Default is CPU.")
+    parser.add_argument(
+        "--suite",
+        type=str,
+        required=True,
+        choices=["timm", "torchvision", "huggingface"],
+        help="Select the model suite (timm, torchvision, huggingface).",
+    )
+    parser.add_argument(
+        "--model", type=str, required=True, help="Model name to be loaded."
+    )
+    parser.add_argument(
+        "--input_shape",
+        type=eval,
+        required=True,
+        help="Input shape for the model as a list or tuple (e.g., [1, 3, 224, 224] or (1, 3, 224, 224)).",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="CPU",
+        help="Target device for compiling the model (e.g., CPU, GPU). Default is CPU.",
+    )
 
     args = parser.parse_args()
 
