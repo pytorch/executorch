@@ -7,7 +7,10 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import export_to_edge, quantize_pt2
-from executorch.backends.cadence.aot.graph_builder import single_op_builder
+from executorch.backends.cadence.aot.graph_builder import (
+    GraphBuilder,
+    single_op_builder,
+)
 from executorch.backends.cadence.aot.pass_utils import count_node
 from executorch.backends.cadence.aot.replace_ops import (
     ForceChannelLastForConvPass,
@@ -18,6 +21,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
     ReplaceConvWithIm2RowAndLinear,
+    ReplaceEmptyTensorsWithFullPass,
     ReplaceFunctionallyEquivalentOpTargets,
     ReplaceIm2RowWithViewPass,
     ReplaceLinearWithFullyConnectedOpPass,
@@ -1680,4 +1684,58 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         self.assertEqual(
             count_node(gm_after_pass, exir_ops.edge.aten.transpose_copy.int),
             3,
+        )
+
+
+class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
+    def _get_slice_empty_gm(self) -> torch.fx.GraphModule:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4))
+        # This is empty (numel == 0).
+        slice0 = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, (x, 0, 0, 0)
+        )
+        # Copy of x.
+        slice1 = builder.call_operator(exir_ops.edge.aten.slice_copy.Tensor, (x,))
+        cat = builder.call_operator(
+            exir_ops.edge.aten.cat.default,
+            ((slice0, slice1),),
+        )
+        builder.output([cat])
+        return builder.get_graph_module()
+
+    def test_empty_slice(self):
+        gm = self._get_slice_empty_gm()
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+                )
+            ),
+            2,
+        )
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.full.default
+                )
+            ),
+            0,
+        )
+        updated_gm = ReplaceEmptyTensorsWithFullPass()(gm).graph_module
+        self.assertEqual(
+            len(
+                updated_gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                updated_gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.full.default
+                )
+            ),
+            1,
         )
