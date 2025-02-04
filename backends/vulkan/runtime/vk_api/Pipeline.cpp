@@ -287,10 +287,16 @@ ComputePipeline::ComputePipeline(
       &specialization_info, // pSpecializationInfo
   };
 
+  VkPipelineCreateFlags flags = 0u;
+#if defined(VULKAN_DEBUG) && defined(VK_KHR_pipeline_executable_properties)
+  flags = VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
+      VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR | flags;
+#endif /* VULKAN_DEBUG && VK_KHR_pipeline_executable_properties */
+
   const VkComputePipelineCreateInfo compute_pipeline_create_info{
       VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, // sType
       nullptr, // pNext
-      0u, // flags
+      flags, // flags
       shader_stage_create_info, // stage
       descriptor.pipeline_layout, // layout
       VK_NULL_HANDLE, // basePipelineHandle
