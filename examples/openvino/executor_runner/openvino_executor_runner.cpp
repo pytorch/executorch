@@ -22,6 +22,14 @@ DEFINE_string(
     "",
     "Path to the model serialized in flatbuffer format (required).");
 DEFINE_int32(num_iter, 1, "Number of inference iterations (default is 1).");
+DEFINE_string(
+    input_list_path,
+    "",
+    "Path to the input list file which includes the list of raw input tensor files (optional).");
+DEFINE_string(
+    output_folder_path,
+    "",
+    "Path to the output folder to save raw output tensor files (optional).");
 
 using executorch::extension::FileDataLoader;
 using executorch::extension::prepare_input_tensors;
