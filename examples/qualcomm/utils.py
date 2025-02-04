@@ -564,6 +564,8 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None
         for idx, data in enumerate(inputs):
             for i, d in enumerate(data):
                 file_name = f"{dest_path}/input_{idx}_{i}.raw"
+                if not isinstance(d, torch.Tensor):
+                    d = torch.tensor(d)
                 d.detach().numpy().tofile(file_name)
                 input_files.append(file_name)
 

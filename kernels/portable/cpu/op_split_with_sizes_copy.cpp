@@ -17,13 +17,13 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using TensorList = exec_aten::TensorList;
+using Tensor = executorch::aten::Tensor;
+using TensorList = executorch::aten::TensorList;
 
 void split_with_sizes_copy_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> split_sizes,
+    executorch::aten::ArrayRef<int64_t> split_sizes,
     int64_t dim,
     TensorList out) {
   (void)ctx;
@@ -71,8 +71,8 @@ void split_with_sizes_copy_out(
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out[0].scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE_OUT, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, __func__, CTYPE_IN, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, __func__, CTYPE_OUT, [&]() {
       const CTYPE_IN* in_data = in.const_data_ptr<CTYPE_IN>();
 
       // Iterate through list of out tensors

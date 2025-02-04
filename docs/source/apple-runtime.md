@@ -25,7 +25,7 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.4.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.4.0-20241201") for a nightly build on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.5.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.5.0-20250130") for a nightly build on a specific date.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -58,7 +58,7 @@ let package = Package(
   ],
   dependencies: [
     // Use "swiftpm-<version>.<year_month_day>" branch name for a nightly build.
-    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-0.4.0")
+    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-0.5.0")
   ],
   targets: [
     .target(
@@ -109,7 +109,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 4. Install the required dependencies, including those needed for the backends like [Core ML](build-run-coreml.md) or [MPS](build-run-mps.md), if you plan to build them as well:
 
 ```bash
-./install_requirements.sh --pybind coreml mps xnnpack
+./install_executorch.sh --pybind coreml mps xnnpack
 
 # Optional dependencies for Core ML backend.
 ./backends/apple/coreml/scripts/install_requirements.sh

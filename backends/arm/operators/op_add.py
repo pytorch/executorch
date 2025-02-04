@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,7 @@ from typing import List
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import executorch.backends.arm.tosa_utils as tutils
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -38,7 +38,6 @@ class AddVisitor_080_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         # Specification (0.80) states that input and output types
         # should all be the same
@@ -76,7 +75,7 @@ class AddVisitor_080_BI(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             # Scale output back to 8 bit
             # pyre-ignore
-            tqutils.insert_rescale_op_to_int8(tosa_graph, add_output, scale_back, node)
+            tqutils.insert_rescale_op_to_int8(tosa_graph, add_output, scale_back, node)  # type: ignore[possibly-undefined]
 
 
 @register_node_visitor
@@ -96,7 +95,6 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         # Specification (0.80) states that input and output types
         # should all be the same
@@ -104,7 +102,7 @@ class AddVisitor_080_MI(AddVisitor_080_BI):
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
-            super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Add lowering
             assert inputs[0].dtype == ts.DType.FP32

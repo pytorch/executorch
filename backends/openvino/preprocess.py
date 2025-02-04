@@ -1,3 +1,9 @@
+# Copyright (c) Intel Corporation
+#
+# Licensed under the BSD License (the "License"); you may not use this file
+# except in compliance with the License. See the license file in the root
+# directory of this source tree for more details.
+
 import contextlib
 import struct
 
@@ -39,6 +45,7 @@ class OpenvinoBackend(BackendDetails):
         compiled = openvino_compile(
             edge_program.module(), *args, options=compile_options, executorch=True
         )
+
         model_bytes = compiled.export_model()
 
         return PreprocessResult(processed_bytes=model_bytes)

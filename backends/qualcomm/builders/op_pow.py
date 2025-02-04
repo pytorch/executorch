@@ -31,10 +31,10 @@ class PowTensorScalar(NodeVisitor):
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             out_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         pow_output_tensors = [output_tensor_wrapper]
 
@@ -46,10 +46,10 @@ class PowTensorScalar(NodeVisitor):
 
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             tensor_type,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         # scalar input
@@ -77,10 +77,10 @@ class PowTensorScalar(NodeVisitor):
 
         scalar_tensor_wrapper = self.define_tensor(
             scalar_node,
+            node,
             scalar_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         pow_input_tensors = [input_tensor_wrapper, scalar_tensor_wrapper]

@@ -50,6 +50,14 @@ bool get_topk_target_size(
   return true;
 }
 
+template <typename T>
+bool float_less_than(T x, T y) {
+  if constexpr (std::is_integral_v<T>) {
+    return x < y;
+  }
+  return (!std::isnan(x) && std::isnan(y)) || x < y;
+}
+
 template <typename CTYPE, typename elem_t = std::pair<CTYPE, int64_t>>
 void perform_topk(
     const Tensor& in,
@@ -101,69 +109,19 @@ void perform_topk(
       }
 
       // Perform topk on the queue
+      const auto elem_greater = [](const elem_t& x, const elem_t& y) -> bool {
+        return float_less_than(y.first, x.first);
+      };
+      const auto elem_less = [](const elem_t& x, const elem_t& y) -> bool {
+        return float_less_than(x.first, y.first);
+      };
+      const auto cmp = largest ? elem_greater : elem_less;
       if (use_partial_sort) {
-        if (largest) {
-          std::partial_sort(
-              queue,
-              queue + k,
-              queue + dim_size,
-              [](const elem_t& x, const elem_t& y) -> bool {
-                return (
-                    (std::isnan(x.first) && !std::isnan(y.first)) ||
-                    (x.first > y.first));
-              });
-        } else {
-          std::partial_sort(
-              queue,
-              queue + k,
-              queue + dim_size,
-              [](const elem_t& x, const elem_t& y) -> bool {
-                return (
-                    (!std::isnan(x.first) && std::isnan(y.first)) ||
-                    (x.first < y.first));
-              });
-        }
+        std::partial_sort(queue, queue + k, queue + dim_size, cmp);
       } else {
-        if (largest) {
-          std::nth_element(
-              queue,
-              queue + k - 1,
-              queue + dim_size,
-              [](const elem_t& x, const elem_t& y) -> bool {
-                return (
-                    (std::isnan(x.first) && !std::isnan(y.first)) ||
-                    (x.first > y.first));
-              });
-          if (sorted) {
-            std::sort(
-                queue,
-                queue + k - 1,
-                [](const elem_t& x, const elem_t& y) -> bool {
-                  return (
-                      (std::isnan(x.first) && !std::isnan(y.first)) ||
-                      (x.first > y.first));
-                });
-          }
-        } else {
-          std::nth_element(
-              queue,
-              queue + k - 1,
-              queue + dim_size,
-              [](const elem_t& x, const elem_t& y) -> bool {
-                return (
-                    (!std::isnan(x.first) && std::isnan(y.first)) ||
-                    (x.first < y.first));
-              });
-          if (sorted) {
-            std::sort(
-                queue,
-                queue + k - 1,
-                [](const elem_t& x, const elem_t& y) -> bool {
-                  return (
-                      (!std::isnan(x.first) && std::isnan(y.first)) ||
-                      (x.first < y.first));
-                });
-          }
+        std::nth_element(queue, queue + k - 1, queue + dim_size, cmp);
+        if (sorted) {
+          std::sort(queue, queue + k - 1, cmp);
         }
       }
 
@@ -228,7 +186,7 @@ std::tuple<Tensor&, Tensor&> topk_values(
 
   bool temp_mem_allocated = false;
 
-  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     using elem_t = std::pair<CTYPE, int64_t>;
     size_t temp_mem_size = nonempty_size(in, dim) * sizeof(elem_t);
 

@@ -21,15 +21,15 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::nullopt;
-using exec_aten::optional;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::nullopt;
+using executorch::aten::optional;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-using OptScalar = exec_aten::optional<Scalar>;
+using OptScalar = executorch::aten::optional<Scalar>;
 
 class OpClampOutTest : public OperatorTest {
  protected:
@@ -149,7 +149,7 @@ class OpClampOutTest : public OperatorTest {
   void run_floating_point_test_cases() {
     using ctype = typename TensorFactory<DTYPE>::ctype;
     using opt_infinity_type = std::conditional_t<
-        std::is_same<ctype, exec_aten::Half>::value,
+        std::is_same<ctype, executorch::aten::Half>::value,
         float,
         ctype>;
     constexpr auto kInfinity = std::numeric_limits<ctype>::infinity();

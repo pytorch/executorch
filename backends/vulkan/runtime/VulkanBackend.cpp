@@ -334,9 +334,6 @@ class GraphBuilder {
     }
 
     // Parse the operators
-    uint32_t last_prepack_node_ct = 0;
-    uint32_t last_execute_node_ct = 0;
-
     for (OpCallPtr op_call : *(flatbuffer_->chain())) {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
@@ -351,22 +348,6 @@ class GraphBuilder {
 
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
-      if (compute_graph_->graphconfig().enable_querypool) {
-        for (uint32_t idx_prepack = last_prepack_node_ct;
-             idx_prepack < compute_graph_->prepack_nodes().size();
-             idx_prepack++) {
-          compute_graph_->prepack_nodes()[idx_prepack]->set_node_id(
-              op_call->node_id());
-        }
-        for (uint32_t idx_execute = last_execute_node_ct;
-             idx_execute < compute_graph_->execute_nodes().size();
-             idx_execute++) {
-          compute_graph_->execute_nodes()[idx_execute]->set_node_id(
-              op_call->node_id());
-        }
-        last_prepack_node_ct = compute_graph_->prepack_nodes().size();
-        last_execute_node_ct = compute_graph_->execute_nodes().size();
-      }
     }
 
     // Parse the outputs, which will be mostly tensors.  For some reason,
@@ -377,6 +358,15 @@ class GraphBuilder {
       const ValueRef ref = get_fb_id_valueref(fb_id);
       if (compute_graph_->val_is_tensor(ref)) {
         compute_graph_->set_output_tensor(ref);
+      }
+    }
+
+    if (compute_graph_->graphconfig().enable_querypool) {
+      for (uint32_t i = 0; i < compute_graph_->prepack_nodes().size(); ++i) {
+        compute_graph_->prepack_nodes()[i]->set_node_id(i);
+      }
+      for (uint32_t i = 0; i < compute_graph_->execute_nodes().size(); ++i) {
+        compute_graph_->execute_nodes()[i]->set_node_id(i);
       }
     }
   }
@@ -427,10 +417,10 @@ bool maybe_update_scalar_tensor(
     executorch::aten::Tensor& scalar_tensor_src) {
   const int32_t cur_val = graph->read_symint(ref);
   int32_t scalar_tensor_val = 0;
-  exec_aten::ScalarType dtype = scalar_tensor_src.scalar_type();
-  if (dtype == exec_aten::ScalarType::Int) {
+  executorch::aten::ScalarType dtype = scalar_tensor_src.scalar_type();
+  if (dtype == executorch::aten::ScalarType::Int) {
     scalar_tensor_val = *scalar_tensor_src.const_data_ptr<int32_t>();
-  } else if (dtype == exec_aten::ScalarType::Long) {
+  } else if (dtype == executorch::aten::ScalarType::Long) {
     scalar_tensor_val = int32_t(*scalar_tensor_src.const_data_ptr<int64_t>());
   }
   bool was_updated = false;
@@ -603,16 +593,18 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 #ifdef ET_EVENT_TRACER_ENABLED
     runtime::EventTracer* event_tracer = context.event_tracer();
     compute_graph->context()->querypool().extract_results();
-    for (const auto& tup :
+    for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
       std::string event_name =
-          std::get<0>(tup) + "_" + std::to_string(std::get<1>(tup));
+          r.kernel_name + "_" + std::to_string(r.dispatch_id);
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),
-          -1,
-          std::get<2>(tup),
-          std::get<3>(tup));
+          /* delegate_debug_id = */ -1,
+          r.start_time_ns,
+          r.end_time_ns,
+          (void*)(&r.metadata),
+          sizeof(r.metadata));
     }
 #endif // ET_EVENT_TRACER_ENABLED
 

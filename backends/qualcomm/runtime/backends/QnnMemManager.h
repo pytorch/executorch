@@ -77,7 +77,7 @@ class QnnMemManager {
            Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_16},
           {executorch::aten::ScalarType::Byte,
            Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_8},
-          {executorch::aten::ScalarType::Bits16,
+          {executorch::aten::ScalarType::UInt16,
            Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_16},
   };
 };

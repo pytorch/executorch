@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -11,7 +12,7 @@ import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
@@ -42,15 +43,17 @@ except ImportError as e:
     logger.warning(f"{e=}")
     pass
 
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+)
 from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
@@ -143,12 +146,14 @@ class Quantize(Stage):
         quantizer: Optional[Quantizer] = None,
         quantization_config: Optional[QuantizationConfig] = None,
         calibrate: bool = True,
+        calibration_samples: Optional[Sequence[Any]] = None,
     ):
         self.quantizer = quantizer or XNNPACKQuantizer()
         self.quantization_config = (
             quantization_config or get_symmetric_quantization_config()
         )
         self.calibrate = calibrate
+        self.calibration_samples = calibration_samples
 
         self.quantizer.set_global(self.quantization_config)
 
@@ -165,7 +170,11 @@ class Quantize(Stage):
 
         if self.calibrate:
             # Calibrate prepared model to provide data to quantization observers.
-            prepared(*inputs)
+            if self.calibration_samples is not None:
+                for inp in self.calibration_samples:
+                    prepared(*inp)
+            else:
+                prepared(*inputs)
 
         converted = convert_pt2e(prepared)
         self.converted_graph = converted
@@ -557,10 +566,8 @@ class Tester:
         )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
-        # TODO(T182187531): Skip dim order for now. Support dim order and its op after alpha release.
         if not to_edge_stage:
             to_edge_stage = ToEdge()
-        to_edge_stage.edge_compile_conf._skip_dim_order = True
         res = self._run_stage(to_edge_stage)
         return res
 
@@ -627,6 +634,15 @@ class Tester:
 
         return self
 
+    def visualize(
+        self, reuse_server: bool = True, stage: Optional[str] = None, **kwargs
+    ):
+        # import here to avoid importing model_explorer when it is not needed which is most of the time.
+        from executorch.devtools.visualization import visualize
+
+        visualize(self.get_artifact(stage), reuse_server=reuse_server, **kwargs)
+        return self
+
     def run_method_and_compare_outputs(
         self,
         stage: Optional[str] = None,
@@ -679,6 +695,9 @@ class Tester:
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
+            assert (
+                ref.shape == model.shape
+            ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
             assert torch.allclose(
                 model,
                 ref,

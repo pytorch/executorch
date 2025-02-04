@@ -31,7 +31,7 @@ bool check_tile_crop_out_args(
 void get_tile_crop_out_target_size(
     const Tensor& in,
     int64_t tile_size,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim() + 1;
 

@@ -27,8 +27,8 @@ template <
     typename CTYPE_OUT,
     typename std::enable_if<
         std::is_same_v<CTYPE_IN, CTYPE_OUT> &&
-            !std::is_same_v<CTYPE_IN, exec_aten::Half> &&
-            !std::is_same_v<CTYPE_OUT, exec_aten::BFloat16>,
+            !std::is_same_v<CTYPE_IN, executorch::aten::Half> &&
+            !std::is_same_v<CTYPE_OUT, executorch::aten::BFloat16>,
         int>::type = 0>
 void exp_data(
     const CTYPE_IN* in_data,
@@ -47,10 +47,10 @@ template <
     typename CTYPE_OUT,
     typename std::enable_if<
         !std::is_same_v<CTYPE_IN, CTYPE_OUT> ||
-            std::is_same_v<CTYPE_IN, exec_aten::Half> ||
-            std::is_same_v<CTYPE_IN, exec_aten::BFloat16> ||
-            std::is_same_v<CTYPE_OUT, exec_aten::Half> ||
-            std::is_same_v<CTYPE_OUT, exec_aten::BFloat16>,
+            std::is_same_v<CTYPE_IN, executorch::aten::Half> ||
+            std::is_same_v<CTYPE_IN, executorch::aten::BFloat16> ||
+            std::is_same_v<CTYPE_OUT, executorch::aten::Half> ||
+            std::is_same_v<CTYPE_OUT, executorch::aten::BFloat16>,
         int>::type = 0>
 void exp_data(
     const CTYPE_IN* in_data,

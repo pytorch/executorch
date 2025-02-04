@@ -104,6 +104,11 @@ class XNNConv2d(XNNNodeConv):
 
 
 @dataclass
+class XNNConvTranspose2d(XNNNodeConv):
+    pass
+
+
+@dataclass
 class XNNAdd(XNNNode2x1):
     pass
 
@@ -277,6 +282,11 @@ class XNNSquareRoot(XNNNode1x1):
 
 
 @dataclass
+class XNNReciprocalSquareRoot(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNCeiling(XNNNode1x1):
     pass
 
@@ -336,6 +346,7 @@ XNodeUnion = Union[
     XNNStaticTranspose,
     XNNClamp,
     XNNConv2d,
+    XNNConvTranspose2d,
     XNNDiv,
     XNNStaticResizeBilinear2D,
     XNNStaticConstantPad,
@@ -367,6 +378,7 @@ XNodeUnion = Union[
     XNNStaticSlice,
     XNNScaledDotProductAttention,
     XNNBatchMatrixMultiply,
+    XNNReciprocalSquareRoot,
 ]
 
 

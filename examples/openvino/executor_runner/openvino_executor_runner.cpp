@@ -1,5 +1,14 @@
+/*
+ * Copyright (c) Intel Corporation
+ *
+ * Licensed under the BSD License (the "License"); you may not use this file
+ * except in compliance with the License. See the license file in the root
+ * directory of this source tree for more details.
+ */
+
 #include <chrono>
 #include <ctime>
+#include <fstream>
 #include <iostream>
 #include <memory>
 
@@ -16,12 +25,15 @@
 // Define a fixed-size memory pool for the method allocator (4 MB)
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
-// Define command-line flags for model path and the number of iterations
+// Define command-line flags for model path, the number of iterations, input list path, and output folder path
 DEFINE_string(
     model_path,
     "",
     "Path to the model serialized in flatbuffer format (required).");
-DEFINE_int32(num_iter, 1, "Number of inference iterations (default is 1).");
+DEFINE_int32(
+    num_iter,
+    1,
+    "Number of inference iterations (default is 1).");
 DEFINE_string(
     input_list_path,
     "",
@@ -43,6 +55,7 @@ using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+using executorch::runtime::TensorInfo;
 
 int main(int argc, char** argv) {
   // Initialize the runtime environment
@@ -135,6 +148,72 @@ int main(int argc, char** argv) {
       inputs.ok(),
       "Could not prepare inputs: 0x%" PRIx32,
       static_cast<uint32_t>(inputs.error()));
+
+  // If the input path list is provided, read input tensors from the files
+  if (!(FLAGS_input_list_path.empty())) {
+    const char* input_list_path = FLAGS_input_list_path.c_str();
+    ET_LOG(Info, "Loading input tensors from the list provided in %s.", input_list_path);
+    Error status = Error::Ok;
+    std::vector<EValue> inputs(method->inputs_size());
+    ET_LOG(Info, "%zu inputs: ", inputs.size());
+    status = method->get_inputs(inputs.data(), inputs.size());
+    ET_CHECK(status == Error::Ok);
+
+    auto split = [](std::string s, std::string delimiter) {
+      size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+      std::string token;
+      std::vector<std::string> res;
+
+      while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
+        token = s.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back(token);
+      }
+      res.push_back(s.substr(pos_start));
+      return res;
+    };
+
+    // Read raw input tensor file names from input list file and
+    // iterate each raw input tensor file to read values
+    std::ifstream input_list(input_list_path);
+    if (input_list.is_open()) {
+      size_t num_inputs = method->inputs_size();
+      std::string file_path;
+      while (std::getline(input_list, file_path)) {
+        auto input_files = split(file_path, " ");
+        if (input_files.size() == 0) {
+          break;
+        }
+        for (int input_index = 0; input_index < num_inputs; ++input_index) {
+            MethodMeta method_meta = method->method_meta();
+            Result<TensorInfo> tensor_meta =
+                method_meta.input_tensor_meta(input_index);
+            auto input_data_ptr = inputs[input_index].toTensor().data_ptr<char>();
+
+            std::ifstream fin(input_files[input_index], std::ios::binary);
+            fin.seekg(0, fin.end);
+            size_t file_size = fin.tellg();
+
+            ET_CHECK_MSG(
+                file_size == tensor_meta->nbytes(),
+                "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
+                input_index,
+                file_size,
+                tensor_meta->nbytes());
+
+            fin.seekg(0, fin.beg);
+            fin.read(
+                static_cast<char*>(input_data_ptr),
+                file_size);
+            fin.close();
+        }
+      }
+    } else {
+      ET_CHECK_MSG(false,
+          "Failed to read input list file: %s",
+          input_list_path);
+    }
+  }
   ET_LOG(Info, "Inputs prepared.");
 
   // Measure execution time for inference
@@ -168,6 +247,23 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "%zu Number of outputs: ", outputs.size());
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
+
+  // If output folder path is provided, save output tensors
+  // into raw tensor files.
+  if (!(FLAGS_output_folder_path.empty())) {
+    const char* output_folder_path = FLAGS_output_folder_path.c_str();
+    ET_LOG(Info, "Saving output tensors into the output folder: %s.", output_folder_path);
+    for (size_t output_index = 0; output_index < method->outputs_size();
+         output_index++) {
+      auto output_tensor = outputs[output_index].toTensor();
+      auto output_file_name = std::string(output_folder_path) + "/output_" +
+          std::to_string(output_index) + ".raw";
+      std::ofstream fout(output_file_name.c_str(), std::ios::binary);
+      fout.write(
+          output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
+      fout.close();
+    }
+  }
 
   return 0;
 }

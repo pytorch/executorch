@@ -6,17 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/fusion_g3/operators/operators.h>
+
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
 
 #include <xa_nnlib_kernels_api.h>
 
+#include <executorch/backends/cadence/fusion_g3/operators/xt_macros.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::aten::ArrayRef;
-using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
@@ -27,7 +28,7 @@ using ::executorch::runtime::KernelRuntimeContext;
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
-enum datatype { Ushort = 20, Bits4u = 21, Bits4 = 22 };
+enum datatype { Bits4u = 21, Bits4 = 22 };
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
@@ -78,9 +79,6 @@ void check_quantize_per_tensor_args(
   } else if (dtype == ScalarType::Short) {
     quant_min_lower_bound = std::numeric_limits<int16_t>::min();
     quant_max_upper_bound = std::numeric_limits<int16_t>::max();
-  } else if (dtype == (ScalarType)Ushort) {
-    quant_min_lower_bound = std::numeric_limits<uint16_t>::min();
-    quant_max_upper_bound = std::numeric_limits<uint16_t>::max();
   } else if (dtype == (ScalarType)Bits4u) {
     quant_min_lower_bound = std::numeric_limits<uint8_t>::min();
     quant_max_upper_bound = std::numeric_limits<uint8_t>::max();
@@ -137,7 +135,8 @@ T quantize_val(
 }
 
 /* Local function which calls the kernels based on the output datatype */
-void quantize_impl(
+Tensor& quantize_impl(
+    KernelRuntimeContext& ctx,
     Tensor& out,
     const Tensor& input,
     float* scale_data,
@@ -145,7 +144,8 @@ void quantize_impl(
     int* axis,
     int quant_min,
     int quant_max) {
-  const ArrayRef<Tensor::SizesType> input_size = input.sizes();
+  const ::executorch::aten::ArrayRef<Tensor::SizesType> input_size =
+      input.sizes();
 
   int kTensorDimensionLimit = 5;
 
@@ -158,6 +158,12 @@ void quantize_impl(
   const float* input_data = input.const_data_ptr<float>();
 
   bool is_asym_quant = 0;
+
+  bool optimized = true;
+
+  if (input.scalar_type() != ScalarType::Float) {
+    optimized = false;
+  }
 
   if (zero_point_data != NULL) // asymmetric quant
   {
@@ -177,9 +183,12 @@ void quantize_impl(
   }
 
   if (is_asym_quant) {
-    if (out.scalar_type() == ScalarType::Byte) {
+    if ((out.scalar_type() == ScalarType::Byte) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-      xa_nn_elm_quantize_f32_asym8u(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_asym8u,
           out_data,
           input_data,
           inp_shape,
@@ -189,9 +198,13 @@ void quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::Char) {
+    } else if ((out.scalar_type() == ScalarType::Char) && (optimized)) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
-      xa_nn_elm_quantize_f32_asym8(
+
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_asym8,
           out_data,
           input_data,
           inp_shape,
@@ -201,9 +214,12 @@ void quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Ushort) {
+    } else if ((out.scalar_type() == ScalarType::UInt16) && (optimized)) {
       uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
-      xa_nn_elm_quantize_f32_asym16u(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_asym16u,
           out_data,
           input_data,
           inp_shape,
@@ -213,9 +229,12 @@ void quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::Short) {
+    } else if ((out.scalar_type() == ScalarType::Short) && (optimized)) {
       int16_t* out_data = out.mutable_data_ptr<int16_t>();
-      xa_nn_elm_quantize_f32_asym16(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_asym16,
           out_data,
           input_data,
           inp_shape,
@@ -225,9 +244,12 @@ void quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Bits4u) {
+    } else if ((out.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-      xa_nn_elm_quantize_f32_asym4u(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_asym4u,
           out_data,
           input_data,
           inp_shape,
@@ -237,9 +259,12 @@ void quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Bits4) {
+    } else if ((out.scalar_type() == (ScalarType)Bits4) && (optimized)) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
-      xa_nn_elm_quantize_f32_asym4(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_asym4,
           out_data,
           input_data,
           inp_shape,
@@ -304,8 +329,9 @@ void quantize_impl(
           }
         }
 
-        optional<ArrayRef<int64_t>> optional_dim_list{
-            ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
+            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+                dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
 // input, out are the input and output tensors
@@ -371,9 +397,12 @@ void quantize_impl(
 #undef ASYM_QUANTIZE_IMPL_CHANNEL
     }
   } else {
-    if (out.scalar_type() == ScalarType::Byte) {
+    if ((out.scalar_type() == ScalarType::Byte) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-      xa_nn_elm_quantize_f32_sym8u(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_sym8u,
           out_data,
           input_data,
           inp_shape,
@@ -382,9 +411,12 @@ void quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::Char) {
+    } else if ((out.scalar_type() == ScalarType::Char) && (optimized)) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
-      xa_nn_elm_quantize_f32_sym8(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_sym8,
           out_data,
           input_data,
           inp_shape,
@@ -393,9 +425,12 @@ void quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Ushort) {
+    } else if ((out.scalar_type() == ScalarType::UInt16) && (optimized)) {
       uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
-      xa_nn_elm_quantize_f32_sym16u(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_sym16u,
           out_data,
           input_data,
           inp_shape,
@@ -404,9 +439,12 @@ void quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == ScalarType::Short) {
+    } else if ((out.scalar_type() == ScalarType::Short) && (optimized)) {
       int16_t* out_data = out.mutable_data_ptr<int16_t>();
-      xa_nn_elm_quantize_f32_sym16(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_sym16,
           out_data,
           input_data,
           inp_shape,
@@ -415,9 +453,12 @@ void quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Bits4u) {
+    } else if ((out.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-      xa_nn_elm_quantize_f32_sym4u(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_sym4u,
           out_data,
           input_data,
           inp_shape,
@@ -426,9 +467,12 @@ void quantize_impl(
           scale_data,
           quant_min,
           quant_max);
-    } else if (out.scalar_type() == (ScalarType)Bits4) {
+    } else if ((out.scalar_type() == (ScalarType)Bits4) && (optimized)) {
       int8_t* out_data = out.mutable_data_ptr<int8_t>();
-      xa_nn_elm_quantize_f32_sym4(
+      XT_KERNEL_CHECK(
+          ctx,
+          out,
+          xa_nn_elm_quantize_f32_sym4,
           out_data,
           input_data,
           inp_shape,
@@ -490,8 +534,9 @@ void quantize_impl(
           }
         }
 
-        optional<ArrayRef<int64_t>> optional_dim_list{
-            ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
+            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+                dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
 // input, out are the input and output tensors
@@ -556,6 +601,7 @@ void quantize_impl(
 #undef SYM_QUANTIZE_IMPL_CHANNEL
     }
   }
+  return out;
 }
 
 // Quantize the input tensor
@@ -568,16 +614,18 @@ Tensor& quantize_per_tensor_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
+#ifdef OP_ARG_CHECK
   Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
       err == Error::Ok,
       "Failed to resize out Tensor in quantize_per_tensor_out");
-
-  // check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+#endif
 
   float scale_data = (float)scale;
   int zero_point_data = (int)zero_point;
   quantize_impl(
+      context,
       out,
       input,
       &scale_data,
@@ -606,6 +654,7 @@ Tensor& quantize_per_tensor_tensor_args_out(
     context.fail(Error::InvalidArgument);
     return out;
   }
+#ifdef OP_ARG_CHECK
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
       "Expected scale to be Double tensor received: %" PRId8,
@@ -622,6 +671,7 @@ Tensor& quantize_per_tensor_tensor_args_out(
       zero_point.numel() == 1,
       "Exepcted zero_point to only have one element received: %zd",
       ssize_t(zero_point.numel()));
+#endif
 
   quantize_per_tensor_out(
       context,
@@ -652,6 +702,7 @@ Tensor& quantize_per_tensor_tensor_args_out(
 }
 
 Tensor& quantize_per_channel_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,
@@ -660,18 +711,18 @@ Tensor& quantize_per_channel_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-  Error err = resize_tensor(out, input.sizes());
+  if (axis < 0) {
+    axis += executorch::runtime::nonzero_dim(input);
+  }
 
+#ifdef OP_ARG_CHECK
+  Error err = resize_tensor(out, input.sizes());
   // normalize axis
   ET_CHECK_MSG(
       executorch::runtime::tensor_has_dim(input, axis),
       "axis %zd is not legal it should be -input.dim() <= axis < input.dim() %zd",
       ssize_t(axis),
       ssize_t(input.dim()));
-
-  if (axis < 0) {
-    axis += executorch::runtime::nonzero_dim(input);
-  }
 
   ET_CHECK_MSG(
       err == Error::Ok,
@@ -699,7 +750,8 @@ Tensor& quantize_per_channel_out(
       zero_point.numel(),
       input.size(axis));
 
-  // check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+#endif
 
   const double* scale_dt = scale.const_data_ptr<double>();
   const int64_t* zero_point_dt = zero_point.const_data_ptr<int64_t>();
@@ -715,6 +767,7 @@ Tensor& quantize_per_channel_out(
   int* axis_ptr = (int*)&axis;
 
   quantize_impl(
+      context,
       out,
       input,
       scale_data,
@@ -722,25 +775,12 @@ Tensor& quantize_per_channel_out(
       axis_ptr,
       (int)quant_min,
       (int)quant_max);
+
   return out;
 }
 
-Tensor& quantize_per_channel_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
-    const Tensor& scale,
-    const Tensor& zero_point,
-    int64_t axis,
-    int64_t quant_min,
-    int64_t quant_max,
-    ScalarType dtype,
-    Tensor& out) {
-  (void)context;
-  return quantize_per_channel_out(
-      input, scale, zero_point, axis, quant_min, quant_max, dtype, out);
-}
-
 Tensor& quantize_per_token_out(
+    KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,
@@ -761,11 +801,11 @@ Tensor& quantize_per_token_out(
   Tensor reshaped_input = at::from_blob(
       input.mutable_data_ptr(), sizes, at::TensorOptions(input.scalar_type()));
 #else
-  std::array<exec_aten::DimOrderType, 2> input_dim_order{0, 1};
-  std::array<exec_aten::SizesType, 2> input_sizes;
+  std::array<::executorch::aten::DimOrderType, 2> input_dim_order{0, 1};
+  std::array<::executorch::aten::SizesType, 2> input_sizes;
   input_sizes[0] = num_tokens;
   input_sizes[1] = input.size(input.dim() - 1);
-  std::array<exec_aten::StridesType, 2> input_strides;
+  std::array<::executorch::aten::StridesType, 2> input_strides;
   executorch::runtime::dim_order_to_stride_nocheck(
       input_sizes.data(), input_dim_order.data(), 2, input_strides.data());
   void* input_data = input.mutable_data_ptr();
@@ -786,21 +826,15 @@ Tensor& quantize_per_token_out(
 #endif
 
   return quantize_per_channel_out(
-      reshaped_input, scale, zero_point, 0, quant_min, quant_max, dtype, out);
-}
-
-Tensor& quantize_per_token_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
-    const Tensor& scale,
-    const Tensor& zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    ScalarType dtype,
-    Tensor& out) {
-  (void)context;
-  return quantize_per_token_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out);
+      context,
+      reshaped_input,
+      scale,
+      zero_point,
+      0,
+      quant_min,
+      quant_max,
+      dtype,
+      out);
 }
 
 } // namespace native
