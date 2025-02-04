@@ -11,13 +11,13 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import torch
-
-from torch.ao.quantization.quantizer import Quantizer
-from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+
+from torch.ao.quantization.quantizer import Quantizer
+from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -144,6 +144,7 @@ def get_pt2e_quantizers(
 def get_qnn_quantizer(
     pt2e_quantize: str,
     quantization_mode: Optional[str] = None,
+    is_qat: bool = False,
 ):
     try:
         from executorch.backends.qualcomm.quantizer.custom_annotation import (  # pyre-fixme[21]
@@ -152,8 +153,6 @@ def get_qnn_quantizer(
 
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
         from executorch.backends.qualcomm.quantizer.quantizer import (
-            get_16a4w_qnn_ptq_config,
-            get_default_16bit_qnn_ptq_config,
             QnnQuantizer,
             QuantDtype,
         )
@@ -175,6 +174,7 @@ def get_qnn_quantizer(
     custom_annotations = ()
     if quant_config == "8a8w":
         quant_dtype = QuantDtype.use_8a8w  # pyre-fixme[16]
+        qnn_quantizer.set_quant_config(quant_dtype, is_qat=is_qat)
     elif quant_config == "16a16w":
         quant_dtype = QuantDtype.use_16a16w  # pyre-fixme[16]
         # Due to the error with 16a16w in Qnn Htp, we need to disable per channel linear quantization when use 16a16w
@@ -184,20 +184,15 @@ def get_qnn_quantizer(
         )
         qnn_quantizer.set_per_channel_conv_quant(enable=False)
         qnn_quantizer.set_per_channel_linear_quant(enable=False)
-        qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
-        qnn_quantizer.set_bit16_op_quant_config(
-            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-            get_default_16bit_qnn_ptq_config(act_observer=MinMaxObserver)
+        qnn_quantizer.set_quant_config(
+            quant_dtype, is_qat=is_qat, act_observer=MinMaxObserver
         )
     elif quant_config == "16a4w":
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         quant_dtype = QuantDtype.use_16a4w
-        qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
-        qnn_quantizer.set_bit16_op_quant_config(
-            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-            get_16a4w_qnn_ptq_config(act_observer=MinMaxObserver)
+        qnn_quantizer.set_quant_config(
+            quant_dtype, is_qat=is_qat, act_observer=MinMaxObserver
         )
-        qnn_quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         custom_annotations = (custom_annotate_llama_matmul_16a8w,)
     else:
@@ -209,11 +204,6 @@ def get_qnn_quantizer(
         quantization_mode is None
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
-    qnn_quantizer.add_discard_ops(
-        [
-            torch.ops.aten.embedding.default,
-        ]
-    )
 
     return qnn_quantizer, quant_dtype
 
@@ -264,4 +254,23 @@ def get_coreml_quantizer(pt2e_quantize: str):
     else:
         raise ValueError(f"Unsupported Core ML quantizer specification {pt2e_quantize}")
 
+    return quantizer
+
+
+def get_vulkan_quantizer(pt2e_quantize: str):
+    from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
+        get_weight_quantization_config,
+        VulkanQuantizer,
+    )
+
+    if pt2e_quantize == "vulkan_8w":
+        config = get_weight_quantization_config(
+            is_per_channel=True,
+            weight_qmin=-128,
+            weight_qmax=127,
+        )
+    else:
+        raise ValueError(f"Unsupported Vulkan quantizer specification {pt2e_quantize}")
+
+    quantizer = VulkanQuantizer().set_global(config)
     return quantizer

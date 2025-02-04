@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <executorch/runtime/platform/compiler.h>
 #include <stdio.h>
 #include <time.h>
 #include <cctype>
@@ -18,7 +19,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-void inline safe_printf(const char* piece) {
+ET_EXPERIMENTAL void inline safe_printf(const char* piece) {
   // piece might be a raw byte token, and we only want to print printable chars
   // or whitespace because some of the other bytes can be various control codes,
   // backspace, etc.
@@ -40,7 +41,7 @@ void inline safe_printf(const char* piece) {
 // ----------------------------------------------------------------------------
 // utilities: time
 
-long inline time_in_ms() {
+ET_EXPERIMENTAL long inline time_in_ms() {
   // return time in milliseconds, for benchmarking the model speed
   struct timespec time;
   clock_gettime(CLOCK_REALTIME, &time);
@@ -54,7 +55,7 @@ long inline time_in_ms() {
 // RSS: Resident Set Size, the amount of memory currently in the RAM for this
 // process. These values are approximate, and are only used for logging
 // purposes.
-size_t inline get_rss_bytes() {
+ET_EXPERIMENTAL size_t inline get_rss_bytes() {
 #if defined(__linux__) || defined(__ANDROID__) || defined(__unix__)
   struct rusage r_usage;
   if (getrusage(RUSAGE_SELF, &r_usage) == 0) {

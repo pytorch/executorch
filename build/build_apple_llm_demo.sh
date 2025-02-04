@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ARTIFACTS_DIR_NAME="$1"
-APP_PATH="extension/apple/Benchmark/Benchmark"
+APP_PATH="extension/benchmark/apple/Benchmark/Benchmark"
 
 xcodebuild build-for-testing \
   -project "${APP_PATH}.xcodeproj" \

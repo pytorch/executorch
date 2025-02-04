@@ -43,6 +43,7 @@ from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
     create_debug_handle_to_op_node_mapping,
+    display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
     EXCLUDED_EVENTS_WHEN_PRINTING,
@@ -59,8 +60,6 @@ from executorch.devtools.inspector._inspector_utils import (
     verify_debug_data_equivalence,
 )
 from executorch.exir import ExportedProgram
-
-from tabulate import tabulate
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -967,6 +966,7 @@ class Inspector:
     def __init__(
         self,
         etdump_path: Optional[str] = None,
+        etdump_data: Optional[bytes] = None,
         etrecord: Optional[Union[ETRecord, str]] = None,
         source_time_scale: TimeScale = TimeScale.NS,
         target_time_scale: TimeScale = TimeScale.MS,
@@ -980,11 +980,12 @@ class Inspector:
         enable_module_hierarchy: bool = False,
     ) -> None:
         r"""
-        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path
+        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path or binary,
         and optional ETRecord path.
 
         Args:
-            etdump_path: Path to the ETDump file.
+            etdump_path: Path to the ETDump file. Either this parameter or etdump_data should be provided.
+            etdump_data: ETDump binary. Either this parameter or etdump_path should be provided.
             etrecord: Optional ETRecord object or path to the ETRecord file.
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
@@ -1025,8 +1026,13 @@ class Inspector:
         else:
             raise TypeError("Unsupported ETRecord type")
 
+        if (etdump_path is None) == (etdump_data is None):
+            raise ValueError(
+                "Expecting exactly one of etdump_path or etdump_data to be specified."
+            )
+
         # Create EventBlocks from ETDump
-        etdump = gen_etdump_object(etdump_path=etdump_path)
+        etdump = gen_etdump_object(etdump_path=etdump_path, etdump_data=etdump_data)
         if debug_buffer_path is not None:
             with open(debug_buffer_path, "rb") as f:
                 output_buffer = f.read()
@@ -1137,6 +1143,31 @@ class Inspector:
         ]
         return pd.concat(df_list, ignore_index=True)
 
+    def _prepare_dataframe(
+        self,
+        include_units: bool = True,
+        include_delegate_debug_data: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Args:
+            include_units: Whether headers should include units (default true)
+            include_delegate_debug_data: Whether to include delegate debug metadata (default false)
+
+        Returns:
+            Returns a pandas DataFrame of the Events in each EventBlock in the inspector, with additional filtering.
+        """
+        combined_df = self.to_dataframe(include_units, include_delegate_debug_data)
+
+        # Filter out some columns and rows for better readability when printing
+        filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
+        for filter_name in EXCLUDED_EVENTS_WHEN_PRINTING:
+            filtered_column_df = filtered_column_df[
+                ~filtered_column_df["event_name"].str.contains(filter_name)
+            ]
+        filtered_column_df.reset_index(drop=True, inplace=True)
+
+        return filtered_column_df
+
     def print_data_tabular(
         self,
         file: IO[str] = sys.stdout,
@@ -1155,35 +1186,28 @@ class Inspector:
         Returns:
             None
         """
-        combined_df = self.to_dataframe(include_units, include_delegate_debug_data)
+        df = self._prepare_dataframe(include_units, include_delegate_debug_data)
+        display_or_print_df(df, file)
 
-        # Filter out some columns and rows for better readability when printing
-        filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
-        for filter_name in EXCLUDED_EVENTS_WHEN_PRINTING:
-            filtered_column_df = filtered_column_df[
-                ~filtered_column_df["event_name"].str.contains(filter_name)
-            ]
-        filtered_column_df.reset_index(drop=True, inplace=True)
+    def save_data_to_tsv(
+        self,
+        file: IO[str],
+        include_units: bool = True,
+        include_delegate_debug_data: bool = False,
+    ) -> None:
+        """
+        Stores the underlying EventBlocks in tsv format to facilitate copy-paste into spreadsheets.
 
-        try:
-            from IPython import get_ipython
-            from IPython.display import display
+        Args:
+            file: Which IO stream to print to. Do not use stdout, as tab separator is not preserved.
+            include_units: Whether headers should include units (default true)
+            include_delegate_debug_data: Whether to include delegate debug metadata (default false)
 
-            def style_text_size(val, size=12):
-                return f"font-size: {size}px"
-
-            if get_ipython() is not None:
-                styled_df = filtered_column_df.style.applymap(style_text_size)
-                display(styled_df)
-            else:
-                raise Exception(
-                    "Environment unable to support IPython. Fall back to print()."
-                )
-        except:
-            print(
-                tabulate(filtered_column_df, headers="keys", tablefmt="fancy_grid"),
-                file=file,
-            )
+        Returns:
+            None
+        """
+        df = self._prepare_dataframe(include_units, include_delegate_debug_data)
+        df.to_csv(file, sep="\t")
 
     # TODO: write unit test
     def find_total_for_module(self, module_name: str) -> float:

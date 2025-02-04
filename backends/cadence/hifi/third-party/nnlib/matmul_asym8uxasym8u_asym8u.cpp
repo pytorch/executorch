@@ -43,6 +43,7 @@
 
 /*----------------------------Main function---------------------------------*/
 
+namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace kernels {
@@ -436,3 +437,4 @@ WORD32 matmul_asym8uxasym8u_asym8u(
 }; // namespace kernels
 }; // namespace HiFi
 }; // namespace impl
+}; // namespace cadence

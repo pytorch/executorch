@@ -13,7 +13,7 @@ namespace vkcompute {
 void bind_tensor_to_descriptor_set(
     api::vTensor& tensor,
     vkapi::PipelineBarrier& pipeline_barrier,
-    const vkapi::MemoryAccessType accessType,
+    const vkapi::MemoryAccessFlags accessType,
     vkapi::DescriptorSet& descriptor_set,
     const uint32_t idx) {
   if (tensor.buffer()) {

@@ -13,7 +13,7 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
@@ -51,7 +51,7 @@ void quantized_relu_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     Tensor& output) {
-  if (input.scalar_type() == exec_aten::ScalarType::Byte) {
+  if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
     quantized_relu_<uint8_t>(
         input,
         in_zero_point,
@@ -59,7 +59,7 @@ void quantized_relu_out(
         out_multiplier,
         out_shift,
         output);
-  } else if (input.scalar_type() == exec_aten::ScalarType::Char) {
+  } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
     quantized_relu_<int8_t>(
         input,
         in_zero_point,
@@ -68,7 +68,10 @@ void quantized_relu_out(
         out_shift,
         output);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(input.scalar_type()));
   }
 }
 

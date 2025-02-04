@@ -198,6 +198,32 @@ std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
+int64_t ComputeGraph::dim_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().dim();
+  } else if (val.isTensorRef()) {
+    return val.toConstTensorRef().sizes.size();
+  }
+  VK_THROW("Could not get dim of value with type ", val.type());
+}
+
+std::vector<int64_t> ComputeGraph::dim_order_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().dim_order();
+  }
+  VK_THROW("Could not get dim order of value with type ", val.type());
+}
+
+std::vector<int64_t> ComputeGraph::strides_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toConstTensor().strides();
+  }
+  VK_THROW("Could not get strides of value with type ", val.type());
+}
+
 vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
   const Value& val = values_.at(idx);
   if (val.isTensor()) {
@@ -259,7 +285,8 @@ ValueRef ComputeGraph::add_tensor_like(
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
     const utils::GPUMemoryLayout memory_layout) {
-  return add_tensor(sizes_of(idx), dtype_of(idx), memory_layout);
+  return add_tensor(
+      sizes_of(idx), dtype_of(idx), storage_type_of(idx), memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(
@@ -270,10 +297,22 @@ ValueRef ComputeGraph::add_tensor(
       sizes, dtype, suggested_memory_layout(sizes), shared_object_idx);
 }
 
+ValueRef ComputeGraph::add_tensor(const vkapi::VulkanImage& image) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(api::vTensor(context(), image));
+  return idx;
+}
+
 ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(api::vTensor(*t));
+  for (SharedObject& sobj : shared_objects_) {
+    if (sobj.has_user(vref)) {
+      sobj.add_user(this, idx);
+    }
+  }
   return idx;
 }
 
@@ -285,6 +324,11 @@ ValueRef ComputeGraph::add_tensor_view(
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
+  for (SharedObject& sobj : shared_objects_) {
+    if (sobj.has_user(vref)) {
+      sobj.add_user(this, idx);
+    }
+  }
   return idx;
 }
 
@@ -390,6 +434,10 @@ void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
   get_symint(idx)->set(val);
 }
 
+int32_t ComputeGraph::read_symint(const ValueRef idx) {
+  return get_symint(idx)->get();
+}
+
 SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
   if (idx >= shared_objects_.size()) {
     shared_objects_.resize(static_cast<size_t>(idx + 1));
@@ -437,24 +485,45 @@ utils::uvec3 ComputeGraph::create_local_wg_size(
     return config_.local_wg_size_override;
   }
 
-  utils::uvec3 local_group_size = {4, 4, 4};
+  // array containing axis index and global workgroup size
+  std::pair<uint32_t, uint32_t> global_wg_size_desc[] = {
+      {0u, global_wg_size[0]},
+      {1u, global_wg_size[1]},
+      {2u, global_wg_size[2]}};
 
-  if (global_wg_size[2u] == 1) {
-    if (global_wg_size[1u] == 1) {
+  // sort the global workgroup size in descending order
+  if (global_wg_size_desc[0].second < global_wg_size_desc[1].second) {
+    std::swap(global_wg_size_desc[0], global_wg_size_desc[1]);
+  }
+  if (global_wg_size_desc[1].second < global_wg_size_desc[2].second) {
+    std::swap(global_wg_size_desc[1], global_wg_size_desc[2]);
+  }
+  if (global_wg_size_desc[0].second < global_wg_size_desc[1].second) {
+    std::swap(global_wg_size_desc[0], global_wg_size_desc[1]);
+  }
+
+  utils::uvec3 local_group_size = {
+      8,
+      std::max(1u, std::min(4u, global_wg_size_desc[1].second)),
+      std::max(1u, std::min(2u, global_wg_size_desc[2].second))};
+
+  if (global_wg_size_desc[2u].second == 1) {
+    if (global_wg_size_desc[1u].second == 1) {
       local_group_size[0u] = 64;
       local_group_size[1u] = 1;
-      local_group_size[2u] = 1;
-    } else if (global_wg_size[1u] < 8) {
+    } else if (global_wg_size_desc[1u].second % 4 == 0) {
       local_group_size[0u] = 16;
       local_group_size[1u] = 4;
-      local_group_size[2u] = 1;
     } else {
-      local_group_size[0u] = 8;
-      local_group_size[1u] = 8;
-      local_group_size[2u] = 1;
+      local_group_size[0u] = 32;
+      local_group_size[1u] = 2;
     }
   }
-  return local_group_size;
+
+  return {
+      local_group_size[global_wg_size_desc[0].first],
+      local_group_size[global_wg_size_desc[1].first],
+      local_group_size[global_wg_size_desc[2].first]};
 }
 
 utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {

@@ -13,14 +13,27 @@
 #include "api/NeuronAdapter.h"
 
 #include "executorch/runtime/core/error.h"
+#include "executorch/runtime/core/exec_aten/util/dim_order_util.h"
 
 #include <algorithm>
 #include <memory>
 #include <new>
 #include <unordered_set>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
+namespace neuron {
+
+using executorch::runtime::ArrayRef;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
 
 const char kHighAddrKey[] = "HighAddr";
 const char kImportForeverKey[] = "ImportForever";
@@ -94,11 +107,19 @@ Error NeuronExecuTorchDelegate::execute(
     return Error::InvalidState;
   };
 
-  auto allocator =
-      dynamic_cast<neuron::BufferAllocator*>(context.get_temp_allocator());
+  auto allocator = dynamic_cast<torch::executor::neuron::BufferAllocator*>(
+      context.get_temp_allocator());
   size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
 
   for (int i = 0; i < inputCount; i++) {
+    auto tensor_in = args[i]->toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        runtime::is_contiguous_dim_order(
+            tensor_in.dim_order().data(), tensor_in.dim()),
+        Internal,
+        "Expecting default dim_order but got a non default dim_order tensor for external input %u",
+        i);
+
     auto data_ptr = args[i]->toTensor().data_ptr();
     auto data_size = args[i]->toTensor().nbytes();
     if (IsCached</*isInput=*/true>(i, data_ptr)) {
@@ -175,11 +196,13 @@ int NeuronExecuTorchDelegate::HintNeuronBackend(EValue** args) const {
   return NEURON_NO_ERROR;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace neuron
+} // namespace backends
+} // namespace executorch
 
 namespace {
-auto cls = torch::executor::NeuronBackend();
-torch::executor::Backend backend{"NeuropilotBackend", &cls};
-static auto success_with_compiler = register_backend(backend);
+auto cls = executorch::backends::neuron::NeuronBackend();
+executorch::runtime::Backend backend{"NeuropilotBackend", &cls};
+static auto success_with_compiler =
+    executorch::runtime::register_backend(backend);
 } // namespace

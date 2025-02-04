@@ -9,7 +9,7 @@ import os
 import subprocess
 import tempfile
 import unittest
-from typing import Callable, Dict, List, Literal, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -17,16 +17,12 @@ import torch
 from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.quantizer.quantizer import (
-    get_16a4w_qnn_ptq_config,
-    get_default_16bit_qnn_ptq_config,
-    QnnQuantizer,
-    QuantDtype,
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.utils import (
+    capture_program,
+    get_soc_to_chipset_map,
 )
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
-from executorch.backends.qualcomm.utils.utils import capture_program
 from executorch.devtools import generate_etrecord, Inspector
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
@@ -37,11 +33,14 @@ from executorch.examples.qualcomm.utils import (
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program import ExecutorchProgram, ExecutorchProgramManager
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 
 
 def generate_context_binary(
@@ -112,24 +111,19 @@ def generate_context_binary(
 class TestQNN(unittest.TestCase):
     rtol: float = 0
     atol: float = 0
-    host: Literal = ""
-    device: Literal = ""
-    build_folder: Literal = ""
+    host: str = ""
+    device: str = ""
+    build_folder: str = ""
     model: QcomChipset = None
     compiler_specs: List[CompileSpec] = None
-    arch_table = {
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
-    }
+    chipset_table = get_soc_to_chipset_map()
     error_only = False
     ip = "localhost"
     port = 8080
-    executorch_root: Literal = ""
-    artifact_dir: Literal = ""
-    image_dataset: Literal = ""
-    pretrained_weight: Literal = ""
+    executorch_root: str = ""
+    artifact_dir: str = ""
+    image_dataset: str = ""
+    pretrained_weight: str = ""
     enable_profile: bool = False
     online_prepare: bool = False
     use_8a8w: str = "8a8w"
@@ -153,7 +147,7 @@ class TestQNN(unittest.TestCase):
         module: torch.nn.Module,
         buffer: exir.ExirExportedProgram,
         inputs: Tuple[torch.Tensor],
-        dir_name: Literal,
+        dir_name: str,
     ) -> None:
         # Save the input data list to be executed
         input_list = ""
@@ -168,7 +162,7 @@ class TestQNN(unittest.TestCase):
         ref_outputs = []
         if isinstance(ref_output, collections.OrderedDict):
             ref_outputs.append(ref_output["out"].detach())
-        elif isinstance(ref_output, tuple):
+        elif isinstance(ref_output, (list, tuple)):
             for output in ref_output:
                 ref_outputs.append(output.detach())
         else:
@@ -184,26 +178,20 @@ class TestQNN(unittest.TestCase):
         self,
         module: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
-        executorch_prog: ExecutorchProgram | LoweredBackendModule,
+        executorch_prog: ExecutorchProgram | ExecutorchProgramManager,
         etrecord_path: str = "etrecord.bin",
         expected_profile_events: int = -1,
         expected_intermediate_events: int = -1,
+        method_index: int = 0,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            buffer = (
-                executorch_prog.buffer
-                if isinstance(
-                    executorch_prog, (ExecutorchProgram, ExecutorchProgramManager)
-                )
-                else executorch_prog.buffer()
-            )
             (
                 input_list,
                 ref_outputs,
                 pte_fname,
             ) = self._save_model_and_expected_output(
                 module,
-                buffer,
+                executorch_prog.buffer,
                 sample_inputs,
                 tmp_dir,
             )
@@ -256,12 +244,16 @@ class TestQNN(unittest.TestCase):
                     # qnn_executor_runner
                     f"{build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner",
                     "--model_path",
-                    f"{pte_fname}",
+                    pte_fname,
                     "--input_list_path",
                     f"{tmp_dir}/input_list.txt",
                     "--output_folder_path",
-                    f"{output_dir}",
+                    output_dir,
+                    "--method_index",
+                    str(method_index),
                 ]
+                if expected_intermediate_events != -1:
+                    cmd.append("--dump_intermediate_outputs")
 
                 env = dict(os.environ)
                 env["LD_LIBRARY_PATH"] = f"{qnn_sdk}/lib/{target}/:{build_folder}/lib"
@@ -306,7 +298,7 @@ class TestQNN(unittest.TestCase):
                     ),
                 )
                 adb.push(inputs=[sample_inputs], input_list=input_list)
-                adb.execute()
+                adb.execute(method_index=method_index)
                 adb.pull(output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
@@ -344,7 +336,6 @@ class TestQNN(unittest.TestCase):
         )
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
-                extract_delegate_segments=False,
                 # For shared buffer, user must pass the memory address
                 # which is allocated by RPC memory to executor runner.
                 # Therefore, won't want to pre-allocate
@@ -394,24 +385,13 @@ class TestQNN(unittest.TestCase):
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export(module, inputs).module()
+        m = torch.export.export(module, inputs, strict=True).module()
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
         quantizer.set_per_channel_conv_quant(is_conv_per_channel)
         quantizer.set_per_channel_linear_quant(is_linear_per_channel)
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            pass  # default setting
-        elif quant_dtype == QuantDtype.use_16a16w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
-        elif quant_dtype == QuantDtype.use_16a4w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
-            quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
-        else:
-            raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
+        quantizer.set_quant_config(quant_dtype)
 
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
@@ -425,6 +405,45 @@ class TestQNN(unittest.TestCase):
         }
         self.assertTrue(nodes.intersection(q_and_dq))
         return quantized_module
+
+    def get_prepared_qat_module(
+        self,
+        module: torch.nn.Module,
+        inputs: Tuple[torch.Tensor],
+        is_conv_per_channel: Optional[bool] = True,
+        is_linear_per_channel: Optional[bool] = False,
+        custom_quant_annotations: Tuple[Callable] = (),
+        quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+    ) -> torch.fx.GraphModule:
+        m = torch.export.export_for_training(module, inputs).module()
+
+        quantizer = QnnQuantizer()
+        quantizer.add_custom_quant_annotations(custom_quant_annotations)
+        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
+        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
+
+        if quant_dtype == QuantDtype.use_8a8w:
+            quantizer.set_quant_config(quant_dtype, is_qat=True)
+        else:
+            raise RuntimeError("Shuld not be here")
+
+        prepared = prepare_qat_pt2e(m, quantizer)
+        return torch.ao.quantization.move_exported_model_to_train(prepared)
+
+    def get_converted_sgd_trained_module(
+        self,
+        ori_module: torch.nn.Module,
+        prepared: torch.nn.Module,
+        inputs: Tuple[torch.Tensor],
+    ) -> torch.fx.GraphModule:
+        optimizer = torch.optim.SGD(prepared.parameters(), lr=0.0001)
+        criterion = torch.nn.CrossEntropyLoss()
+        output = prepared(*inputs)
+        loss = criterion(output, ori_module(*inputs))
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
 
     def split_graph(self, graph_module: torch.fx.GraphModule, division: int):
         class SplitGraph(ExportPass):

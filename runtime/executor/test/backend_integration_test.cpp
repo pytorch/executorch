@@ -28,7 +28,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
+using executorch::aten::ArrayRef;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendInterface;
@@ -55,8 +55,9 @@ class StubBackend final : public BackendInterface {
   using InitFn = std::function<Result<DelegateHandle*>(
       FreeableBuffer*,
       ArrayRef<CompileSpec>,
-      MemoryAllocator*)>;
-  using ExecuteFn = std::function<Error(DelegateHandle*, EValue**)>;
+      BackendInitContext&)>;
+  using ExecuteFn =
+      std::function<Error(BackendExecutionContext&, DelegateHandle*, EValue**)>;
   using DestroyFn = std::function<void(DelegateHandle*)>;
 
   // Default name that this backend is registered as.
@@ -83,8 +84,7 @@ class StubBackend final : public BackendInterface {
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
     if (init_fn_) {
-      return init_fn_.value()(
-          processed, compile_specs, context.get_runtime_allocator());
+      return init_fn_.value()(processed, compile_specs, context);
     }
     // Return a benign value otherwise.
     return nullptr;
@@ -95,11 +95,11 @@ class StubBackend final : public BackendInterface {
   }
 
   Error execute(
-      ET_UNUSED BackendExecutionContext& context,
+      BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     if (execute_fn_) {
-      return execute_fn_.value()(handle, args);
+      return execute_fn_.value()(context, handle, args);
     }
     // Return a benign value otherwise.
     return Error::Ok;
@@ -351,7 +351,7 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
           ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         init_called = true;
         processed_data = processed->data();
@@ -395,7 +395,7 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
           ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         init_processed = processed;
         return processed;
@@ -405,7 +405,9 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   // FreeableBuffer.
   DelegateHandle* execute_handle = nullptr;
   StubBackend::singleton().install_execute(
-      [&](DelegateHandle* handle, ET_UNUSED EValue** args) -> Error {
+      [&](ET_UNUSED BackendExecutionContext& backend_execution_context,
+          DelegateHandle* handle,
+          ET_UNUSED EValue** args) -> Error {
         execute_handle = handle;
         auto* processed = reinterpret_cast<FreeableBuffer*>(handle);
 
@@ -492,7 +494,7 @@ TEST_P(BackendIntegrationTest, SegmentInfoIsPassedIntoDataLoader) {
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
           ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         processed->Free();
@@ -526,6 +528,48 @@ TEST_P(BackendIntegrationTest, SegmentInfoIsPassedIntoDataLoader) {
 
   EXPECT_TRUE(program_load_was_called);
   EXPECT_EQ(backend_load_was_called, using_segments());
+}
+
+TEST_P(BackendIntegrationTest, GetMethodNameDuringInitSuccess) {
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  const void* processed_data = nullptr;
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& backend_init_context)
+          -> Result<DelegateHandle*> {
+        auto method_name = backend_init_context.get_method_name();
+        // Ensure that we can get the method name during init via context
+        EXPECT_STREQ(method_name, "forward");
+        processed_data = processed->data();
+        return nullptr;
+      });
+  Result<Program> program = Program::load(&loader.get());
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  EXPECT_TRUE(method.ok());
+  ASSERT_EQ(program.error(), Error::Ok);
+}
+
+TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  StubBackend::singleton().install_execute(
+      [&](BackendExecutionContext& backend_execution_context,
+          ET_UNUSED DelegateHandle* handle,
+          ET_UNUSED EValue** args) -> Error {
+        // Ensure that we can get the method name during execution via context
+        auto method_name = backend_execution_context.get_method_name();
+        EXPECT_STREQ(method_name, "forward");
+        return Error::Ok;
+      });
+  Result<Program> program = Program::load(&loader.get());
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  EXPECT_TRUE(method.ok());
+  Error err = method->execute();
+  ASSERT_EQ(err, Error::Ok);
 }
 
 // TODO: Add more tests for the runtime-to-backend interface. E.g.:
@@ -606,7 +650,7 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
           ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         return nullptr;

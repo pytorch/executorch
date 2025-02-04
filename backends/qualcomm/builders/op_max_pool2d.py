@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -31,10 +32,10 @@ class MaxPool2d(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         users = list(node.users.keys())
@@ -42,18 +43,19 @@ class MaxPool2d(NodeVisitor):
             if user.target.__name__ == "getitem":
                 getitem_index = user.args[1]
                 if getitem_index != 0:
-                    print(
-                        f"Expected second argument of getitem node for {node.target.__name__ } to be 0, got {getitem_index}"
+                    warnings.warn(
+                        f"[QNN Delegate Op Builder]: Expected second argument of getitem node for {node.target.__name__ } to be 0, got {getitem_index}",
+                        stacklevel=1,
                     )
                     return
 
         output_tensor = self.get_tensor(node, node, 0)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         # kernel info
         filter_size = cast(List[int], node.args[1])
@@ -78,8 +80,9 @@ class MaxPool2d(NodeVisitor):
         if len(node.args) > 4:
             dilation = cast(List[int], node.args[4])
             if not (dilation == 1 or dilation == [1, 1]):
-                print(
-                    f"Not support dilation argument for max pool2d, but got {dilation}"
+                warnings.warn(
+                    f"[QNN Delegate Op Builder]: Not support dilation argument for max pool2d, but got {dilation}",
+                    stacklevel=1,
                 )
                 return
 

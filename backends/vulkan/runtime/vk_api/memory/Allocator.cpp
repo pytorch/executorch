@@ -52,7 +52,7 @@ Allocator::Allocator(Allocator&& other) noexcept
 }
 
 Allocator::~Allocator() {
-  if (VK_NULL_HANDLE == allocator_) {
+  if (allocator_ == VK_NULL_HANDLE) {
     return;
   }
   vmaDestroyAllocator(allocator_);
@@ -95,9 +95,11 @@ Allocation Allocator::create_allocation(
 }
 
 VulkanImage Allocator::create_image(
+    const VkDevice device,
     const VkExtent3D& extents,
     const VkFormat image_format,
     const VkImageType image_type,
+    const VkImageTiling image_tiling,
     const VkImageViewType image_view_type,
     const VulkanImage::SamplerProperties& sampler_props,
     VkSampler sampler,
@@ -116,6 +118,7 @@ VulkanImage Allocator::create_image(
       image_type,
       image_format,
       extents,
+      image_tiling,
       usage,
   };
 
@@ -127,13 +130,14 @@ VulkanImage Allocator::create_image(
   const VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
   return VulkanImage(
+      device,
       allocator_,
       alloc_create_info,
       image_props,
       view_props,
       sampler_props,
-      initial_layout,
       sampler,
+      initial_layout,
       allocate_memory);
 }
 
@@ -147,7 +151,8 @@ VulkanBuffer Allocator::create_staging_buffer(const VkDeviceSize size) {
   // Staging buffers are accessed by both the CPU and GPU, so set the
   // appropriate flags to indicate that the host device will be accessing
   // the data from this buffer.
-  alloc_create_info.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+  alloc_create_info.flags |=
+      VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
       VMA_ALLOCATION_CREATE_MAPPED_BIT;
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
   alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;

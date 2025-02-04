@@ -17,8 +17,9 @@
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Compute the number of elements based on the sizes of a tensor.
@@ -89,28 +90,53 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   if (dim_ == 0) {
     return Error::Ok;
   }
+
   switch (shape_dynamism_) {
     case TensorShapeDynamism::STATIC:
-      ET_CHECK_OR_RETURN_ERROR(
-          std::equal(sizes_, sizes_ + dim_, new_sizes.begin()),
-          NotSupported,
-          "Attempted to resize a static tensor");
+      if (!std::equal(sizes_, sizes_ + dim_, new_sizes.begin())) {
+#ifdef ET_LOG_ENABLED
+        std::array<char, 5> old_sizes_str, new_sizes_str;
+
+        executorch::runtime::sizes_to_string(
+            old_sizes_str.data(),
+            old_sizes_str.size(),
+            sizes().data(),
+            sizes().size());
+        executorch::runtime::sizes_to_string(
+            new_sizes_str.data(),
+            new_sizes_str.size(),
+            new_sizes.data(),
+            new_sizes.size());
+#endif
+
+        ET_CHECK_OR_RETURN_ERROR(
+            false,
+            NotSupported,
+            "Attempted to resize a static tensor. Expected shape %s, but received %s.",
+            old_sizes_str.data(),
+            new_sizes_str.data())
+      }
+
       break;
     case TensorShapeDynamism::DYNAMIC_BOUND:
       // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
       // supported: treat them as upper-bounded.
     case TensorShapeDynamism::DYNAMIC_UNBOUND: {
       const auto new_numel = compute_numel(new_sizes.data(), dim_);
+
       ET_CHECK_OR_RETURN_ERROR(
           new_numel <= numel_bound_,
           NotSupported,
-          "Attempted to resize a bounded tensor with capacity of %zu elements to %zu elements.",
-          new_numel,
-          numel_bound_);
+          "Attempted to resize a bounded tensor with a maximum capacity of %zu elements to %zu elements.",
+          numel_bound_,
+          new_numel);
 
       if (strides_ && dim_order_) {
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_));
+        auto error =
+            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_);
+        if (error != Error::Ok) {
+          return error;
+        }
       }
       numel_ = new_numel;
       std::copy(new_sizes.begin(), new_sizes.end(), sizes_);
@@ -119,5 +145,6 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   return Error::Ok;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch

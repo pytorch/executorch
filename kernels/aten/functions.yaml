@@ -241,9 +241,15 @@
 
 - op: masked_fill.Scalar_out
 
+- op: masked_scatter.out
+
+- op: masked_select.out
+
 - op: max_pool2d_with_indices.out
 
 - op: max.dim_max
+
+- op: max.unary_out
 
 - op: max.unary_out
 
@@ -251,7 +257,11 @@
 
 - op: mean.out
 
+- op: mean.dtype_out
+
 - op: min.dim_min
+
+- op: min.unary_out
 
 - op: minimum.out
 
@@ -304,6 +314,8 @@
 - op: remainder.Scalar_out
 
 - op: repeat.out
+
+- op: repeat_interleave.Tensor_out
 
 - op: reflection_pad1d.out
 
@@ -395,7 +407,7 @@
 
 - op: unsqueeze_copy.out
 
-- op: upsample_nearest2d.out
+- op: upsample_bilinear2d.vec_out
 
 - op: upsample_nearest2d.vec_out
 

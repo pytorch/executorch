@@ -6,6 +6,8 @@
 
 # Example script for exporting simple models to flatbuffer
 
+# pyre-unsafe
+
 import argparse
 import logging
 
@@ -48,6 +50,15 @@ def main() -> None:
         required=False,
         help="specify segment alignment in hex. Default is 0x1000. Use 0x4000 for iOS",
     )
+
+    parser.add_argument(
+        "-e",
+        "--external_constants",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Save constants in external .ptd file. Default is False",
+    )
+
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
 
     args = parser.parse_args()
@@ -58,16 +69,14 @@ def main() -> None:
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
-    model, example_inputs, dynamic_shapes = EagerModelFactory.create_model(
+    model, example_inputs, _, dynamic_shapes = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    backend_config = ExecutorchBackendConfig()
+    backend_config = ExecutorchBackendConfig(external_constants=args.external_constants)
     if args.segment_alignment is not None:
         backend_config.segment_alignment = int(args.segment_alignment, 16)
-    if (
-        dynamic_shapes is not None
-    ):  # capture_pre_autograd_graph does not work with dynamic shapes
+    if dynamic_shapes is not None:
         edge_manager = export_to_edge(
             model,
             example_inputs,

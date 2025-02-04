@@ -16,7 +16,7 @@
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 using executorch::runtime::AllocatorID;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::ChainID;
@@ -44,14 +44,16 @@ class DummyEventTracer : public EventTracer {
       const char* name,
       ChainID chain_id = kUnsetChainId,
       DebugHandle debug_handle = kUnsetDebugHandle) override {
-    (void)name;
     (void)chain_id;
     (void)debug_handle;
+    ET_CHECK(strlen(name) + 1 < sizeof(event_name_));
+    memcpy(event_name_, name, strlen(name) + 1);
     return EventTracerEntry();
   }
 
   void end_profiling(EventTracerEntry prof_entry) override {
     (void)prof_entry;
+    memset(event_name_, 0, sizeof(event_name_));
     return;
   }
 
@@ -156,6 +158,10 @@ class DummyEventTracer : public EventTracer {
     return logged_evalue_type_;
   }
 
+  char* get_event_name() {
+    return event_name_;
+  }
+
   void reset_logged_value() {
     logged_evalue_ = EValue(false);
   }
@@ -163,6 +169,7 @@ class DummyEventTracer : public EventTracer {
  private:
   EValue logged_evalue_ = EValue(false);
   LoggedEValueType logged_evalue_type_;
+  char event_name_[1024];
 };
 
 /**
@@ -175,7 +182,7 @@ void RunSimpleTracerTest(EventTracer* event_tracer) {
   using executorch::runtime::internal::event_tracer_track_allocation;
   using executorch::runtime::internal::event_tracer_track_allocator;
   using executorch::runtime::internal::EventTracerProfileInstructionScope;
-  using executorch::runtime::internal::EventTracerProfileScope;
+  using executorch::runtime::internal::EventTracerProfileMethodScope;
 
   event_tracer_create_event_block(event_tracer, "ExampleEvent");
   event_tracer_create_event_block(event_tracer, "ExampleEvent");
@@ -183,7 +190,7 @@ void RunSimpleTracerTest(EventTracer* event_tracer) {
       event_tracer_begin_profiling_event(event_tracer, "ExampleEvent");
   event_tracer_end_profiling_event(event_tracer, event_entry);
   {
-    EventTracerProfileScope event_tracer_profile_scope(
+    EventTracerProfileMethodScope event_tracer_profile_scope(
         event_tracer, "ExampleScope");
   }
   {
@@ -282,3 +289,39 @@ TEST(TestEventTracer, SimpleEventTracerTestLogging) {
 
 // TODO(T163645377): Add more test coverage to log and verify events passed into
 // DummyTracer.
+TEST(TestEventTracer, EventTracerProfileOpControl) {
+  DummyEventTracer dummy;
+  // Op profiling is enabled by default. Test that it works.
+  {
+    {
+      executorch::runtime::internal::EventTracerProfileOpScope
+          event_tracer_op_scope(&dummy, "ExampleOpScope");
+      EXPECT_EQ(strcmp(dummy.get_event_name(), "ExampleOpScope"), 0);
+    }
+    EXPECT_EQ(strcmp(dummy.get_event_name(), ""), 0);
+
+    // Normal profiling should still work.
+    {
+      executorch::runtime::internal::EventTracerProfileMethodScope
+          event_tracer_profiler_scope(&dummy, "ExampleProfilerScope");
+      EXPECT_EQ(strcmp(dummy.get_event_name(), "ExampleProfilerScope"), 0);
+    }
+
+    dummy.set_event_tracer_profiling_level(
+        executorch::runtime::EventTracerProfilingLevel::kProfileMethodOnly);
+
+    // Op profiling should be disabled now.
+    {
+      executorch::runtime::internal::EventTracerProfileOpScope
+          event_tracer_op_scope(&dummy, "ExampleOpScope");
+      EXPECT_EQ(strcmp(dummy.get_event_name(), ""), 0);
+    }
+
+    // Normal profiling should still work.
+    {
+      executorch::runtime::internal::EventTracerProfileMethodScope
+          event_tracer_profiler_scope(&dummy, "1ExampleProfilerScope");
+      EXPECT_EQ(strcmp(dummy.get_event_name(), "1ExampleProfilerScope"), 0);
+    }
+  }
+}

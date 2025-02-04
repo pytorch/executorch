@@ -18,7 +18,7 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
-class TextTokenGenerator {
+class ET_EXPERIMENTAL TextTokenGenerator {
  public:
   TextTokenGenerator(
       Tokenizer* tokenizer,
@@ -53,7 +53,7 @@ class TextTokenGenerator {
     int64_t pos = start_pos; // position in the sequence
 
     std::vector<uint64_t> token_data; // allocate space for the tokens
-    std::vector<exec_aten::SizesType> token_shape;
+    std::vector<executorch::aten::SizesType> token_shape;
 
     // Token after prefill
     uint64_t cur_token = tokens.back();
@@ -70,10 +70,12 @@ class TextTokenGenerator {
     }
 
     // initialize tensor wrappers
-    auto tokens_managed =
-        from_blob(token_data.data(), token_shape, exec_aten::ScalarType::Long);
+    auto tokens_managed = from_blob(
+        token_data.data(), token_shape, executorch::aten::ScalarType::Long);
+    auto start_pos_managed =
+        from_blob(&pos, {1}, executorch::aten::ScalarType::Long);
 
-    auto start_pos_managed = from_blob(&pos, {1}, exec_aten::ScalarType::Long);
+    should_stop_ = false;
 
     // Generate our tokens
     while (pos < seq_len - 1) {
@@ -82,7 +84,7 @@ class TextTokenGenerator {
           text_decoder_runner_->step(tokens_managed, start_pos_managed);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
-      exec_aten::Tensor& logits_tensor = logits_res.get();
+      executorch::aten::Tensor& logits_tensor = logits_res.get();
 
       prev_token = cur_token;
 

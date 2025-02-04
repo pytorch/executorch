@@ -48,7 +48,10 @@ def define_common_targets():
             # @lint-ignore BUCKLINT link_whole, need this to register prim ops.
             link_whole = True,
             # prim ops are registered through a global table so the ctor needs to be allowed
-            compiler_flags = ["-Wno-global-constructors"],
+            compiler_flags = select({
+                "DEFAULT": ["-Wno-global-constructors"],
+                "ovr_config//os:windows": [],
+            }),
             deps = [
                 ":et_copy_index" + aten_suffix,
                 ":et_view" + aten_suffix,

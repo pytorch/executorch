@@ -7,32 +7,41 @@
 from typing import Optional
 
 
-def get_xnnpack_partitioner():
+def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
+    """
+    Returns the XNNPACK partitioner.
+
+    @arg dynamic_quant_only_partitioner:
+        This is enabled by default to keep BC.
+        If dynamic_quant_only_partitioner is True, then only dynamically quantized
+        linear layers will be partitioned.
+        Else, anything which can be will be partitioned greedily.
+    """
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
         XnnpackDynamicallyQuantizedPartitioner,
+        XnnpackPartitioner,
     )
 
-    # Following changes due to.
-    # 1. We need dynamically quantized partitioner for both pt2e_quantize options
-    #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
-    # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-    return XnnpackDynamicallyQuantizedPartitioner()
+    if dynamic_quant_only_partitioner:
+        # Following changes due to.
+        # 1. We need dynamically quantized partitioner for both pt2e_quantize options
+        #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
+        # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
+        return XnnpackDynamicallyQuantizedPartitioner()
+    return XnnpackPartitioner()
 
 
 def get_vulkan_partitioner(
-    dtype_override: Optional[str] = None, quantization_mode: Optional[str] = None
+    dtype_override: Optional[str] = None, enable_dynamic_shape: bool = False
 ):
     assert (
         dtype_override == "fp32" or dtype_override is None
     ), "Vulkan backend does not support non fp32 dtypes at the moment"
-    assert (
-        quantization_mode is None
-    ), "Vulkan backend does not support quantization at the moment"
     from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
         VulkanPartitioner,
     )
 
-    return VulkanPartitioner({"require_dynamic_shapes": True})
+    return VulkanPartitioner({"require_dynamic_shapes": enable_dynamic_shape})
 
 
 def get_mps_partitioner(use_kv_cache: bool = False):
@@ -60,6 +69,7 @@ def get_coreml_partitioner(
     embedding_quantize: Optional[str] = None,
     pt2e_quantize: Optional[str] = None,
     coreml_quantize: Optional[str] = None,
+    coreml_compute_units: Optional[str] = None,
 ):
     try:
         import coremltools as ct
@@ -72,6 +82,7 @@ def get_coreml_partitioner(
     except ImportError:
         raise ImportError(
             "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            + "; for buck users, please add example dependancies: //executorch/backends/apple/coreml:backend, and etc"
         )
 
     def _validate_ios_version() -> None:
@@ -110,6 +121,20 @@ def get_coreml_partitioner(
         17: ct.target.iOS17,
         18: ct.target.iOS18,
     }[ios]
+
+    if coreml_compute_units is None:
+        # using `ComputeUnit.ALL` can increase the model load time
+        # On iPhone 15 Pro, CPU decode model is over 8x faster than GPU for stories110M,
+        # so default to CPU_ONLY
+        coreml_compute_units = "cpu_only"
+    # pyre-ignore
+    coreml_compute_units = {
+        "cpu_only": ct.ComputeUnit.CPU_ONLY,
+        "cpu_and_ne": ct.ComputeUnit.CPU_AND_NE,
+        "cpu_and_gpu": ct.ComputeUnit.CPU_AND_GPU,
+        "all": ct.ComputeUnit.ALL,
+    }[coreml_compute_units.lower()]
+
     op_linear_quantizer_config = None
     if coreml_quantize == "b4w":
         op_linear_quantizer_config = {
@@ -119,17 +144,26 @@ def get_coreml_partitioner(
             "block_size": 32,
             "weight_threshold": 512,
         }
+    elif coreml_quantize == "c4w":
+        op_linear_quantizer_config = {
+            "mode": "linear_symmetric",
+            "dtype": "int4",
+            "granularity": "per_channel",
+        }
+
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
         compute_precision=ct.precision(ct.precision.FLOAT16.value),
-        # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
-        compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
+        compute_unit=coreml_compute_units,
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
         op_linear_quantizer_config=op_linear_quantizer_config,
     )
 
-    take_over_mutable_buffer = minimum_deployment_target >= ct.target.iOS18
-
+    # ExecuTorch does not build CoreML delegate runtime to handle state
+    # when using OSS scripts, so we define take_over_mutable_buffer = False,
+    # even when target is iOS18
+    # take_over_mutable_buffer = minimum_deployment_target >= ct.target.iOS18
+    take_over_mutable_buffer = False
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
         take_over_mutable_buffer=take_over_mutable_buffer,
@@ -151,10 +185,8 @@ def get_qnn_partitioner(
             QnnPartitioner,
         )
 
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
-        from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-            QcomChipset,
-        )
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qc_schema`
+        from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
         from executorch.backends.qualcomm.utils.utils import (
@@ -167,7 +199,7 @@ def get_qnn_partitioner(
         )
 
     use_fp16 = True
-    skip_node_op_set = {"llama.fallback.default", "aten.embedding.default"}
+    skip_node_op_set = {"llama.fallback.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
 

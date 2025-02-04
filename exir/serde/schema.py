@@ -35,7 +35,7 @@ class ScalarType(IntEnum):
     COMPLEXDOUBLE = 11
     BOOL = 12
     BFLOAT16 = 13
-
+    UINT16 = 14
 
 class Layout(IntEnum):
     Unknown = 0

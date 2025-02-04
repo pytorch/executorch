@@ -11,8 +11,8 @@
 
 #include <unordered_map>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 qcir::TensorType ToTensorType(Qnn_TensorType_t type) {
@@ -161,9 +161,7 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
       }
     } break;
     default:
-      QNN_EXECUTORCH_LOG_WARN(
-          "QNN_QUANTIZATION_ENCODING_UNDEFINED detected: %s",
-          QNN_VER_PTR(tensor)->name);
+      // encodings are not required if lowering with floating point precision
       break;
   }
   return CreateQuantizeParamDirect(
@@ -229,9 +227,7 @@ Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
           const_cast<int32_t*>(param->offsets()->data());
     } break;
     default:
-      QNN_EXECUTORCH_LOG_WARN(
-          "qcir::QuantizeType::UNDEFINED detected: %s",
-          tensor->name()->c_str());
+      // encodings are not required if lowering with floating point precision
       break;
   }
   return p;
@@ -239,11 +235,8 @@ Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
 
 flatbuffers::Offset<qcir::Tensor> ToTensor(
     const Qnn_Tensor_t& tensor,
+    const uint64_t data_offset,
     flatbuffers::FlatBufferBuilder* builder) {
-  std::vector<uint8_t> buffer(
-      static_cast<uint8_t*>(QNN_VER_PTR(tensor)->clientBuf.data),
-      static_cast<uint8_t*>(QNN_VER_PTR(tensor)->clientBuf.data) +
-          QNN_VER_PTR(tensor)->clientBuf.dataSize);
   std::vector<uint32_t> shape(
       QNN_VER_PTR(tensor)->dimensions,
       QNN_VER_PTR(tensor)->dimensions + QNN_VER_PTR(tensor)->rank);
@@ -255,10 +248,11 @@ flatbuffers::Offset<qcir::Tensor> ToTensor(
       ToTensorType(QNN_VER_PTR(tensor)->type),
       ToDataType(QNN_VER_PTR(tensor)->dataType),
       ToQuantizeParam(tensor, builder),
-      &buffer);
+      QNN_VER_PTR(tensor)->clientBuf.dataSize,
+      data_offset);
 }
 
-Qnn_Tensor_t ToTensor(const tensor_type& tensor) {
+Qnn_Tensor_t ToTensor(const tensor_type& tensor, const uint8_t* data_ptr) {
   auto is_io_tensor = [](Qnn_TensorType_t type) {
     return type < QNN_TENSOR_TYPE_STATIC;
   };
@@ -270,13 +264,13 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor) {
   QNN_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor);
   QNN_VER_PTR(t)->rank = tensor->shape()->size();
   QNN_VER_PTR(t)->dimensions = const_cast<uint32_t*>(tensor->shape()->data());
-  QNN_VER_PTR(t)->clientBuf.dataSize = tensor->data()->size();
+  QNN_VER_PTR(t)->clientBuf.dataSize = tensor->size();
   QNN_VER_PTR(t)->clientBuf.data = is_io_tensor(QNN_VER_PTR(t)->type)
       ? nullptr
-      : static_cast<void*>(const_cast<uint8_t*>(tensor->data()->Data()));
+      : static_cast<void*>(const_cast<uint8_t*>(data_ptr));
   return t;
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

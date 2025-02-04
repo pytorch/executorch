@@ -12,8 +12,9 @@
 #include <new>
 #include <utility> // std::forward and other template magic checks
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /// Used to indicate an optional type with uninitialized state.
 struct nullopt_t final {
@@ -177,5 +178,16 @@ class optional final {
   bool init_;
 };
 
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::etensor::nullopt;
+using ::executorch::runtime::etensor::nullopt_t;
+using ::executorch::runtime::etensor::optional;
 } // namespace executor
 } // namespace torch

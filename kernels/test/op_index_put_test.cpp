@@ -17,10 +17,10 @@
 #include <sys/types.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
@@ -34,7 +34,7 @@ class OpIndexPutOutTest : public OperatorTest {
       const bool accumulate,
       Tensor& out) {
 #ifdef USE_ATEN_LIB
-    c10::List<c10::optional<at::Tensor>> indices_list(indices);
+    c10::List<std::optional<at::Tensor>> indices_list(indices);
     return torch::executor::aten::index_put_outf(
         context_, input, indices_list, values, accumulate, out);
 #else
@@ -44,8 +44,8 @@ class OpIndexPutOutTest : public OperatorTest {
   }
 
   template <
-      exec_aten::ScalarType INPUT_DTYPE,
-      exec_aten::ScalarType INDICES_DTYPE>
+      executorch::aten::ScalarType INPUT_DTYPE,
+      executorch::aten::ScalarType INDICES_DTYPE>
   void test_dtype() {
     TensorFactory<INPUT_DTYPE> tf;
     TensorFactory<INDICES_DTYPE> tfl;
@@ -707,7 +707,7 @@ TEST_F(OpIndexPutOutTest, AllDtypesSupportedForInput) {
 #define TEST_ENTRY(ctype, dtype) \
   test_dtype<ScalarType::dtype, ScalarType::Long>();
 
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 
 #undef TEST_ENTRY
 }

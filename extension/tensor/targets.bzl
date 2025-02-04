@@ -13,13 +13,12 @@ def define_common_targets():
         runtime.cxx_library(
             name = "tensor" + aten_suffix,
             srcs = [
-                "tensor_impl_ptr.cpp",
                 "tensor_ptr.cpp",
                 "tensor_ptr_maker.cpp",
             ],
             exported_headers = [
                 "tensor.h",
-                "tensor_impl_ptr.h",
+                "tensor_accessor.h",
                 "tensor_ptr.h",
                 "tensor_ptr_maker.h",
             ],

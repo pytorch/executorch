@@ -68,32 +68,44 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
 }
 } // namespace
 
-ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
+ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
-    EValue* values_,
+    EValue* values,
+    size_t values_len,
     MemoryManager* memory_manager) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensorList");
 
-  auto* tensor_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->method_allocator(),
-      exec_aten::Tensor,
+  auto* tensor_list =
+      memory_manager->method_allocator()
+          ->allocateList<executorch::aten::Tensor>(tensor_indices->size());
+  if (tensor_list == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+  auto* evalp_list = memory_manager->method_allocator()->allocateList<EValue*>(
       tensor_indices->size());
-  auto* evalp_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->method_allocator(), EValue*, tensor_indices->size());
+  if (evalp_list == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
 
   // For each tensor index look up the corresponding Tensor (which has been
   // already allocated) and stick it in the list.
   size_t output_idx = 0;
   for (int32_t tensor_index : *tensor_indices) {
+    ET_CHECK_OR_RETURN_ERROR(
+        tensor_index >= 0 && tensor_index < values_len,
+        InvalidProgram,
+        "Invalid value index %" PRId32 " for TensorList",
+        tensor_index);
+
     // Placement new as the list elements are not initialized, so calling
-    // copy assignment is not defined if its non trivial.
-    new (&tensor_list[output_idx]) exec_aten::Tensor(
-        values_[static_cast<size_t>(tensor_index)].toTensor());
-    evalp_list[output_idx] = &values_[static_cast<size_t>(tensor_index)];
+    // copy assignment is not defined if it's non trivial.
+    new (&tensor_list[output_idx]) executorch::aten::Tensor(
+        values[static_cast<size_t>(tensor_index)].toTensor());
+    evalp_list[output_idx] = &values[static_cast<size_t>(tensor_index)];
     output_idx++;
   }
 
-  return BoxedEvalueList<exec_aten::Tensor>(
+  return BoxedEvalueList<executorch::aten::Tensor>(
       evalp_list, tensor_list, tensor_indices->size());
 }
 

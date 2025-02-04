@@ -18,12 +18,12 @@ namespace runtime {
 /**
  * Implementation for ExecuTorch tensor util, should only be included in
  * an target with ATen mode turned off. Explicitly taking
- * torch::executor::Tensor (instead of exec_aten::Tensor) to make sure it fails
- * at compile time if built incorrectly.
+ * torch::executor::Tensor (instead of executorch::aten::Tensor) to make sure it
+ * fails at compile time if built incorrectly.
  */
 Error get_dim_order(
     const torch::executor::Tensor& tensor,
-    exec_aten::DimOrderType* out_dim_order,
+    executorch::aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size) {
   ET_CHECK_OR_RETURN_ERROR(
       out_dim_order_size == tensor.dim_order().size(),
@@ -34,7 +34,7 @@ Error get_dim_order(
   std::memcpy(
       out_dim_order,
       tensor.dim_order().data(),
-      tensor.dim_order().size() * sizeof(exec_aten::DimOrderType));
+      tensor.dim_order().size() * sizeof(executorch::aten::DimOrderType));
   return Error::Ok;
 }
 
@@ -108,7 +108,7 @@ bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
 }
 
 bool tensors_have_same_dim_order(
-    const exec_aten::ArrayRef<exec_aten::Tensor> tensor_list) {
+    const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
   if (tensor_list.size() < 2) {
     return true;
   }
@@ -198,15 +198,15 @@ void reset_data_ptr(const torch::executor::Tensor& tensor) {
 class TensorResizerFriend final {
  public:
   ET_NODISCARD static Error resize_tensor_impl(
-      exec_aten::TensorImpl* impl,
-      exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
+      executorch::aten::TensorImpl* impl,
+      executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes) {
     return impl->internal_resize_contiguous(new_sizes);
   }
 };
 
 Error resize_tensor_impl(
     torch::executor::TensorImpl* impl,
-    torch::executor::ArrayRef<exec_aten::SizesType> new_sizes) {
+    torch::executor::ArrayRef<executorch::aten::SizesType> new_sizes) {
   return TensorResizerFriend::resize_tensor_impl(impl, new_sizes);
 }
 } // namespace internal

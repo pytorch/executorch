@@ -13,7 +13,7 @@ def define_common_targets():
         runtime.cxx_test(
             name = "test" + aten_suffix,
             srcs = [
-                "tensor_impl_ptr_test.cpp",
+                "tensor_accessor_test.cpp",
                 "tensor_ptr_maker_test.cpp",
                 "tensor_ptr_test.cpp",
             ],

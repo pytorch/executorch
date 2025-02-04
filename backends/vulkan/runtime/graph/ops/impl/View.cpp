@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
@@ -65,7 +67,7 @@ void add_view_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
@@ -74,12 +76,14 @@ void add_view_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
       // Parameter Buffers
-      {t_out->sizes_ubo(), t_in->sizes_ubo()},
+      {},
       // Specialization Constants
       {SV(t_in->packed_dim()), SV(t_out->packed_dim())},
       // Resizing Logic
       resize_view_node,
-      {sizes}));
+      {sizes},
+      // Push Constants
+      {{graph.sizes_pc_of(out), graph.sizes_pc_of(in)}}));
 }
 
 void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {

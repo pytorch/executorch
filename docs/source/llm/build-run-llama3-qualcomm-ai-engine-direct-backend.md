@@ -6,10 +6,10 @@ This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Eng
 
 - Set up your ExecuTorch repo and environment if you haven’t done so by following [the Setting up ExecuTorch](../getting-started-setup.md) to set up the repo and dev environment.
 - Read [the Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend page](../build-run-qualcomm-ai-engine-direct-backend.md) to understand how to export and run a model with Qualcomm AI Engine Direct Backend on Qualcomm device.
-- Follow [the README for executorch llama](https://github.com/pytorch/executorch/tree/main/examples/models/llama2) to know how to run a llama model on mobile via ExecuTorch.
+- Follow [the README for executorch llama](https://github.com/pytorch/executorch/tree/main/examples/models/llama) to know how to run a llama model on mobile via ExecuTorch.
 - A Qualcomm device with 16GB RAM
   - We are continuing to optimize our memory usage to ensure compatibility with lower memory devices.
-- The version of [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk) is 2.26.0 or above.
+- The version of [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk) is 2.28.0 or above.
 
 ## Instructions
 
@@ -39,7 +39,7 @@ To export Llama 3 8B instruct with the Qualcomm AI Engine Direct Backend, ensure
 
 ```bash
 # Please note that calibration_data must include the prompt template for special tokens.
-python -m examples.models.llama2.export_llama  -t <path_to_tokenizer.model>
+python -m examples.models.llama.export_llama -t <path_to_tokenizer.model>
 llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <path_to_checkpoint_for_Meta-Llama-3-8B-Instruct>  --use_kv_cache  --qnn --pt2e_quantize qnn_16a4w --disable_dynamic_shape --num_sharding 8 --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --optimized_rotation_path <path_to_optimized_matrix> --calibration_data "<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
 ```
 
@@ -49,7 +49,6 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
     cmake \
         -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
         -DANDROID_ABI=arm64-v8a \
-        -DANDROID_PLATFORM=android-23 \
         -DCMAKE_INSTALL_PREFIX=cmake-android-out \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -69,16 +68,15 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
     cmake \
         -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}"/build/cmake/android.toolchain.cmake  \
         -DANDROID_ABI=arm64-v8a \
-        -DANDROID_PLATFORM=android-23 \
         -DCMAKE_INSTALL_PREFIX=cmake-android-out \
         -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=python \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-        -Bcmake-android-out/examples/models/llama2 examples/models/llama2
+        -Bcmake-android-out/examples/models/llama examples/models/llama
 
-    cmake --build cmake-android-out/examples/models/llama2 -j16 --config Release
+    cmake --build cmake-android-out/examples/models/llama -j16 --config Release
 ```
 3. Run on Android via adb shell
 *Pre-requisite*: Make sure you enable USB debugging via developer options on your phone
@@ -105,7 +103,7 @@ adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${DEVICE_D
 adb push <model.pte> ${DEVICE_DIR}
 adb push <tokenizer.model> ${DEVICE_DIR}
 adb push cmake-android-out/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
-adb push cmake-out-android/examples/models/llama2/llama_main ${DEVICE_DIR}
+adb push cmake-out-android/examples/models/llama/llama_main ${DEVICE_DIR}
 ```
 
 **3.4 Run model**

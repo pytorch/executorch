@@ -15,6 +15,14 @@ executorch package and its dependencies.
 # will fail and the process will exit.
 from executorch.extension.pybindings import portable_lib  # usort: skip
 
+# Import custom ops. This requires portable_lib to be loaded first.
+from executorch.extension.llm.custom_ops import (  # noqa: F401, F403
+    custom_ops,
+)  # usort: skip
+
+# Import quantized ops. This requires portable_lib to be loaded first.
+from executorch.kernels import quantized  # usort: skip # noqa: F401, F403
+
 # Import this after importing the ExecuTorch pybindings. If the pybindings
 # links against a different torch.so than this uses, there will be a set of
 # symbol comflicts; the process will either exit now, or there will be issues
@@ -57,7 +65,7 @@ def export_linear_model() -> bytes:
 
     # Export the pytorch model and process for ExecuTorch.
     print("Exporting program...")
-    exported_program = export(LinearModel(), example_inputs)
+    exported_program = export(LinearModel(), example_inputs, strict=True)
     print("Lowering to edge...")
     edge_program = to_edge(exported_program)
     print("Creating ExecuTorch program...")
@@ -75,6 +83,15 @@ def main():
     assert len(ops) > 0, "Empty operator list"
     print(f"Found {len(ops)} operators; first element '{ops[0]}'")
 
+    # Make sure custom ops are registered.
+    assert (
+        "llama::sdpa_with_kv_cache.out" in ops
+    ), f"llama::sdpa_with_kv_cache.out not registered, Got ops: {ops}"
+
+    # Make sure quantized ops are registered.
+    assert (
+        "quantized_decomposed::add.out" in ops
+    ), f"quantized_decomposed::add.out not registered, Got ops: {ops}"
     # Export LinearModel to .pte data.
     pte_data: bytes = export_linear_model()
 

@@ -4,15 +4,8 @@ tokenizer:
   max_seq_len: 1024
 
 dataset:
-  _component_: torchtune.datasets.instruct_dataset
-  template: papaya.toolkit.experimental.llm_pte_finetuning.utils.DatabricksDolly
-  source: iamtarun/python_code_instructions_18k_alpaca
-  split: train
-  column_map:
-    instruction: instruction
-    prompt: prompt
-    input: input
-    output: output
+  _component_: executorch.examples.llm_pte_finetuning.training_lib.python_code_instructions_alpaca
+
 seed: null
 shuffle: True
 batch_size: 1

@@ -12,13 +12,14 @@
 
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace extension {
 namespace llm {
 
 // Assuming kv cache and parallel prefill are enabled.
-class ImagePrefiller {
+class ET_EXPERIMENTAL ImagePrefiller {
  public:
   explicit ImagePrefiller(::executorch::extension::Module* module)
       : module_(module) {}
@@ -30,7 +31,7 @@ class ImagePrefiller {
    * It's passed as reference and will be updated inside this function.
    * @return The next token of the LLM Module after prefill.
    */
-  virtual ::executorch::runtime::Result<exec_aten::Tensor> prefill(
+  virtual ::executorch::runtime::Result<executorch::aten::Tensor> prefill(
       Image& image,
       int64_t& start_pos) = 0;
 

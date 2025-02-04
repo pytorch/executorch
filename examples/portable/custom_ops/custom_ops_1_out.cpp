@@ -11,8 +11,8 @@
 namespace custom {
 namespace native {
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 
 namespace {
@@ -20,11 +20,11 @@ void check_preconditions(const Tensor& in, Tensor& out) {
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Float,
       "Expected out tensor to have dtype Float, but got %hhd instead",
-      out.scalar_type());
+      static_cast<int8_t>(out.scalar_type()));
   ET_CHECK_MSG(
       in.scalar_type() == ScalarType::Float,
       "Expected in tensor to have dtype Float, but got %hhd instead",
-      in.scalar_type());
+      static_cast<int8_t>(in.scalar_type()));
   ET_CHECK_MSG(
       out.dim() == in.dim(),
       "Number of dims of out tensor is not compatible with inputs");

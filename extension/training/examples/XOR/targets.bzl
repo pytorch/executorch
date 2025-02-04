@@ -17,6 +17,7 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/kernels/portable:generated_lib",
+            "//executorch/extension/flat_tensor/serialize:serialize_cpp"
         ],
         external_deps = ["gflags"],
         define_static_target = True,
@@ -34,7 +35,7 @@ def define_common_targets():
     runtime.python_library(
         name = "export_model_lib",
         srcs = ["export_model.py"],
-        visibility = [],
+        visibility = ["//executorch/extension/training/examples/XOR/..."],
         deps = [
             ":model",
             "//caffe2:torch",

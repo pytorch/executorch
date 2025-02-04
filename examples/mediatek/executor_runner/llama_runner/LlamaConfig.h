@@ -13,7 +13,7 @@
 
 #include "llm_helper/include/llm_types.h"
 
-namespace torch::executor {
+namespace example {
 
 using llm_helper::LLMType;
 
@@ -42,4 +42,4 @@ struct LlamaModelPaths {
   std::vector<std::string> gen_model_paths;
 };
 
-} // namespace torch::executor
+} // namespace example

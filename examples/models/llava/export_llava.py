@@ -12,15 +12,22 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.examples.models.llama2.export_llama_lib import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
 )
-from executorch.examples.models.llama2.source_transformation.quantize import (
+from executorch.examples.models.llama.source_transformation.quantize import (
     EmbeddingQuantHandler,
     get_quant_weight_transform,
 )
-from executorch.examples.models.llama2.source_transformation.sdpa import (
+from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+)
+from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.examples.models.llava.image_util import serialize_image
@@ -41,10 +48,6 @@ from executorch.exir.passes.sym_shape_eval_pass import (
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
 
@@ -53,7 +56,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 class LlavaEdgeManager(LLMEdgeManager):
-    def capture_pre_autograd_graph(self) -> "LlavaEdgeManager":
+    def export(self) -> "LlavaEdgeManager":
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
@@ -101,13 +104,14 @@ def export_text_model(llava, embeddings, dynamic_shapes):
     _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
+        source_transforms.append(replace_kv_cache_with_custom_kv_cache)
         source_transforms.append(replace_sdpa_with_custom_op)
     source_transforms.append(quant_transform)
     manager = (
         text_model_em.set_output_dir("./")
         .to_dtype(dtype_override)
         .source_transform(source_transforms)
-        .capture_pre_autograd_graph()
+        .export()
         .pt2e_quantize(quantizers)
     )
 
@@ -116,6 +120,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             manager.pre_autograd_graph_module,
             manager.example_inputs,
             dynamic_shapes=manager._get_dynamic_shape(),
+            strict=True,
         )
     return text_model_ep
 
@@ -148,7 +153,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             dynamic_shapes=dynamic_shapes,
             args=None,
         )
-        .capture_pre_autograd_graph()
+        .export()
         .pt2e_quantize([quantizer])
     )
 
@@ -158,6 +163,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
             manager.pre_autograd_graph_module,
             manager.example_inputs,
             dynamic_shapes=manager.dynamic_shapes,
+            strict=True,
         )
     return image_encoder_ep
 
@@ -176,7 +182,10 @@ def export_token_embedding(llava, prompt):
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
         token_embedding_ep = torch.export.export(
-            quantized_token_embed.embed_tokens, (prompt,), dynamic_shapes=dynamic_shapes
+            quantized_token_embed.embed_tokens,
+            (prompt,),
+            dynamic_shapes=dynamic_shapes,
+            strict=True,
         )
     return token_embedding_ep
 

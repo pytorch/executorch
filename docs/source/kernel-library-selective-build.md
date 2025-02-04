@@ -36,11 +36,16 @@ The basic flow looks like this:
 
 ## APIs
 
-We expose build macros for CMake, to allow users specifying op info:
+We expose a CMake macro `[gen_selected_ops](https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12)`, to allow users specifying op info:
 
-[gen_selected_ops](https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12)
-
-Build macros take the following inputs:
+```
+gen_selected_ops(
+  LIB_NAME         # the name of the selective build operator library to be generated
+  OPS_SCHEMA_YAML  # path to a yaml file containing operators to be selected
+  ROOT_OPS         # comma separated operator names to be selected
+  INCLUDE_ALL_OPS  # boolean flag to include all operators
+)
+```
 
 
 ### Select all ops

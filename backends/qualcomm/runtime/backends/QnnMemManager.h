@@ -13,8 +13,8 @@
 #include <unordered_map>
 #include "HTP/QnnHtpMem.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
 class QnnMemManager {
@@ -27,12 +27,12 @@ class QnnMemManager {
     DeRegisterMem();
   }
 
-  Error RegisterIonMem(
+  executorch::runtime::Error RegisterIonMem(
       const std::shared_ptr<TensorWrapper>& tensor_wrapper,
       int32_t mem_fd,
       void* mem_ptr);
 
-  Error RegisterCustomMem(
+  executorch::runtime::Error RegisterCustomMem(
       const std::shared_ptr<TensorWrapper>& tensor_wrapper,
       int32_t mem_fd,
       void* mem_ptr,
@@ -42,7 +42,7 @@ class QnnMemManager {
 
   // Pre-register custom mem handle from SharedBuffer. Bring forward the
   // memHandle creating time from execution to initialization.
-  Error PreRegisterCustomMemHandle(
+  executorch::runtime::Error PreRegisterCustomMemHandle(
       int32_t mem_fd,
       void* unaligned_custom_mem_base,
       size_t total_custom_mem_size,
@@ -53,7 +53,7 @@ class QnnMemManager {
 
   void* GetPreRegisteredHandle(const CustomMemTensorInfo& info);
 
-  Error SetMemHandle(
+  executorch::runtime::Error SetMemHandle(
       const std::shared_ptr<TensorWrapper>& tensor_wrapper,
       void* mem_ptr,
       Qnn_MemHandle_t handle);
@@ -65,15 +65,22 @@ class QnnMemManager {
   QnnContext* context_;
   std::unordered_map<Qnn_MemHandle_t, void*> registered_map_;
   std::unordered_map<CustomMemTensorInfo, void*> pre_registered_handles_;
-  std::unordered_map<ScalarType, Qnn_DataType_t> scalar_type_to_qnn_dtype_ = {
-      {ScalarType::Int, Qnn_DataType_t::QNN_DATATYPE_INT_32},
-      {ScalarType::Float, Qnn_DataType_t::QNN_DATATYPE_FLOAT_32},
-      {ScalarType::Char, Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_8},
-      {ScalarType::Short, Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_16},
-      {ScalarType::Byte, Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_8},
-      {ScalarType::Bits16, Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_16},
+  std::unordered_map<executorch::aten::ScalarType, Qnn_DataType_t>
+      scalar_type_to_qnn_dtype_ = {
+          {executorch::aten::ScalarType::Int,
+           Qnn_DataType_t::QNN_DATATYPE_INT_32},
+          {executorch::aten::ScalarType::Float,
+           Qnn_DataType_t::QNN_DATATYPE_FLOAT_32},
+          {executorch::aten::ScalarType::Char,
+           Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_8},
+          {executorch::aten::ScalarType::Short,
+           Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_16},
+          {executorch::aten::ScalarType::Byte,
+           Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_8},
+          {executorch::aten::ScalarType::UInt16,
+           Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_16},
   };
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -176,8 +176,8 @@ inline void event_tracer_log_output_delegate(
     static_assert(
         std::is_same<T, int>::value || std::is_same<T, bool>::value ||
             std::is_same<T, double>::value ||
-            std::is_same<T, exec_aten::Tensor>::value ||
-            std::is_same<T, ArrayRef<exec_aten::Tensor>>::value,
+            std::is_same<T, executorch::aten::Tensor>::value ||
+            std::is_same<T, ArrayRef<executorch::aten::Tensor>>::value,
         "Unsupported type for intermediate output");
     event_tracer->log_intermediate_output_delegate(
         name, delegate_debug_id, output);

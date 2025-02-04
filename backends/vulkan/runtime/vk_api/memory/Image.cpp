@@ -57,7 +57,7 @@ ImageSampler::ImageSampler(ImageSampler&& other) noexcept
 }
 
 ImageSampler::~ImageSampler() {
-  if (VK_NULL_HANDLE == handle_) {
+  if (handle_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroySampler(device_, handle_, nullptr);
@@ -92,12 +92,14 @@ void swap(ImageSampler& lhs, ImageSampler& rhs) noexcept {
 //
 
 VulkanImage::VulkanImage()
-    : image_properties_{},
+    : device_{VK_NULL_HANDLE},
+      image_properties_{},
       view_properties_{},
       sampler_properties_{},
       allocator_(VK_NULL_HANDLE),
       memory_{},
       owns_memory_(false),
+      owns_view_(false),
       is_copy_(false),
       handles_{
           VK_NULL_HANDLE,
@@ -107,20 +109,23 @@ VulkanImage::VulkanImage()
       layout_{} {}
 
 VulkanImage::VulkanImage(
+    VkDevice device,
     VmaAllocator vma_allocator,
     const VmaAllocationCreateInfo& allocation_create_info,
     const ImageProperties& image_props,
     const ViewProperties& view_props,
     const SamplerProperties& sampler_props,
-    const VkImageLayout layout,
     VkSampler sampler,
+    const VkImageLayout layout,
     const bool allocate_memory)
-    : image_properties_(image_props),
+    : device_{device},
+      image_properties_(image_props),
       view_properties_(view_props),
       sampler_properties_(sampler_props),
       allocator_(vma_allocator),
       memory_{},
       owns_memory_{allocate_memory},
+      owns_view_(false),
       is_copy_(false),
       handles_{
           VK_NULL_HANDLE,
@@ -151,7 +156,7 @@ VulkanImage::VulkanImage(
       1u, // mipLevels
       1u, // arrayLayers
       VK_SAMPLE_COUNT_1_BIT, // samples
-      VK_IMAGE_TILING_OPTIMAL, // tiling
+      image_properties_.image_tiling, // tiling
       image_properties_.image_usage, // usage
       VK_SHARING_MODE_EXCLUSIVE, // sharingMode
       0u, // queueFamilyIndexCount
@@ -168,6 +173,7 @@ VulkanImage::VulkanImage(
         &(memory_.allocation),
         nullptr));
     // Only create the image view if the image has been bound to memory
+    owns_view_ = true;
     create_image_view();
   } else {
     VK_CHECK(vkCreateImage(
@@ -175,24 +181,50 @@ VulkanImage::VulkanImage(
   }
 }
 
+VulkanImage::VulkanImage(
+    VkDevice device,
+    const ImageProperties& image_props,
+    VkImage image,
+    VkImageView image_view,
+    VkSampler sampler,
+    const VkImageLayout layout)
+    : device_{device},
+      image_properties_{image_props},
+      view_properties_{},
+      sampler_properties_{},
+      allocator_(VK_NULL_HANDLE),
+      memory_{},
+      owns_memory_(false),
+      is_copy_(false),
+      handles_{
+          image,
+          image_view,
+          sampler,
+      },
+      layout_{layout} {}
+
 VulkanImage::VulkanImage(const VulkanImage& other) noexcept
-    : image_properties_(other.image_properties_),
+    : device_(other.device_),
+      image_properties_(other.image_properties_),
       view_properties_(other.view_properties_),
       sampler_properties_(other.sampler_properties_),
       allocator_(other.allocator_),
       memory_(other.memory_),
       owns_memory_{false},
+      owns_view_{false},
       is_copy_(true),
       handles_(other.handles_),
       layout_(other.layout_) {}
 
 VulkanImage::VulkanImage(VulkanImage&& other) noexcept
-    : image_properties_(other.image_properties_),
+    : device_(other.device_),
+      image_properties_(other.image_properties_),
       view_properties_(other.view_properties_),
       sampler_properties_(other.sampler_properties_),
       allocator_(other.allocator_),
       memory_(std::move(other.memory_)),
       owns_memory_(other.owns_memory_),
+      owns_view_(other.owns_view_),
       is_copy_(other.is_copy_),
       handles_(other.handles_),
       layout_(other.layout_) {
@@ -207,6 +239,7 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
   VkImageView tmp_image_view = handles_.image_view;
   bool tmp_owns_memory = owns_memory_;
 
+  device_ = other.device_;
   image_properties_ = other.image_properties_;
   view_properties_ = other.view_properties_;
   sampler_properties_ = other.sampler_properties_;
@@ -225,6 +258,10 @@ VulkanImage& VulkanImage::operator=(VulkanImage&& other) noexcept {
 }
 
 VulkanImage::~VulkanImage() {
+  if (owns_view_ && handles_.image_view != VK_NULL_HANDLE) {
+    vkDestroyImageView(this->device(), handles_.image_view, nullptr);
+  }
+
   // Do not destroy any resources if this class instance is a copy of another
   // class instance, since this means that this class instance does not have
   // ownership of the underlying resource.
@@ -232,11 +269,7 @@ VulkanImage::~VulkanImage() {
     return;
   }
 
-  if (VK_NULL_HANDLE != handles_.image_view) {
-    vkDestroyImageView(this->device(), handles_.image_view, nullptr);
-  }
-
-  if (VK_NULL_HANDLE != handles_.image) {
+  if (handles_.image != VK_NULL_HANDLE) {
     if (owns_memory_) {
       vmaDestroyImage(allocator_, handles_.image, memory_.allocation);
     } else {

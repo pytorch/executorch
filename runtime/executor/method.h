@@ -62,9 +62,7 @@ class Method final {
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
         chains_(rhs.chains_),
-        init_state_(rhs.init_state_),
-        pre_allocated_input_(rhs.pre_allocated_input_),
-        pre_allocated_output_(rhs.pre_allocated_output_) {
+        init_state_(rhs.init_state_) {
     // Required: clear out fields that the dtor looks at, so that we don't free
     // anything twice.
     rhs.n_value_ = 0;
@@ -82,8 +80,6 @@ class Method final {
     rhs.event_tracer_ = nullptr;
     rhs.n_chains_ = 0;
     rhs.chains_ = nullptr;
-    rhs.pre_allocated_input_ = false;
-    rhs.pre_allocated_output_ = false;
   }
 
   /**
@@ -119,7 +115,7 @@ class Method final {
    * @returns Error::Ok on success, non-Ok on failure.
    */
   ET_NODISCARD Error
-  set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues);
+  set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues);
 
   /**
    * Sets the data buffer of the specified method output to the provided value.
@@ -288,9 +284,7 @@ class Method final {
         delegates_(nullptr),
         n_chains_(0),
         chains_(nullptr),
-        init_state_(InitializationState::Uninitialized),
-        pre_allocated_input_(false),
-        pre_allocated_output_(false) {}
+        init_state_(InitializationState::Uninitialized) {}
 
   /// Static factory used by Program.
   ET_NODISCARD static Result<Method> load(
@@ -336,8 +330,6 @@ class Method final {
   Chain* chains_;
 
   InitializationState init_state_;
-  bool pre_allocated_input_;
-  bool pre_allocated_output_;
 
   /**
    * Parses the elements of the values_ array. On error, n_value_ will be set to

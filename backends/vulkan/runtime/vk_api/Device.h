@@ -25,22 +25,31 @@ struct PhysicalDevice final {
   // Properties obtained from Vulkan
   VkPhysicalDeviceProperties properties;
   VkPhysicalDeviceMemoryProperties memory_properties;
+
   // Additional features available from extensions
+#ifdef VK_KHR_16bit_storage
   VkPhysicalDevice16BitStorageFeatures shader_16bit_storage;
+#endif /* VK_KHR_16bit_storage */
+#ifdef VK_KHR_8bit_storage
   VkPhysicalDevice8BitStorageFeatures shader_8bit_storage;
+#endif /* VK_KHR_8bit_storage */
+#ifdef VK_KHR_shader_float16_int8
   VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
+#endif /* VK_KHR_shader_float16_int8 */
+
+  // Head of the linked list of extensions to be requested
+  void* extension_features;
 
   // Available GPU queues
   std::vector<VkQueueFamilyProperties> queue_families;
 
   // Metadata
   uint32_t num_compute_queues;
+  bool supports_int16_shader_types;
   bool has_unified_memory;
   bool has_timestamps;
   float timestamp_period;
-
-  // Head of the linked list of extensions to be requested
-  void* extension_features{nullptr};
+  size_t min_ubo_alignment;
 
   explicit PhysicalDevice(VkPhysicalDevice);
 };

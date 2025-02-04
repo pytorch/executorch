@@ -1,0 +1,35 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+q_8w_linear_optimized:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+    MAT1_PACKING: W_packed
+    MAT2_PACKING: W_packed
+    BATCH_MODE: false
+    TILE_ROWS: 4
+  generate_variant_forall:
+    TILE_ROWS:
+      - VALUE: 4
+        SUFFIX: tile_row_4
+      - VALUE: 2
+        SUFFIX: tile_row_2
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: buffer
+  shader_variants:
+    - NAME: q_8w_linear_optimized_W_packed_W_packed
+    - NAME: q_8w_linear_optimized_W_packed_H_packed
+      MAT2_PACKING: H_packed
+    - NAME: batch_q_8w_linear_optimized_W_packed_W_packed
+      BATCH_MODE: true
+    - NAME: batch_q_8w_linear_optimized_W_packed_H_packed
+      MAT2_PACKING: H_packed
+      BATCH_MODE: true

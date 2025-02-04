@@ -149,7 +149,7 @@ def main() -> None:
         root_dir_path=get_root_dir_path(), conda_env_name=args.conda_environment_name
     )
 
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 

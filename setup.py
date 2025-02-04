@@ -87,6 +87,10 @@ class ShouldBuild:
         return cls._is_env_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
 
     @classmethod
+    def training(cls) -> bool:
+        return cls._is_env_enabled("EXECUTORCH_BUILD_TRAINING", default=False)
+
+    @classmethod
     def llama_custom_ops(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
 
@@ -145,7 +149,7 @@ class Version:
                     open(os.path.join(cls._root_dir(), "version.txt")).read().strip()
                 )
                 if cls.git_hash():
-                    version += "+" + cls.git_hash()[:7]
+                    version += "+" + cls.git_hash()[:7]  # type: ignore[index]
             cls.__string_attr = version
         return cls.__string_attr
 
@@ -216,8 +220,13 @@ class _BaseExtension(Extension):
                 file.
         """
         # Share the cmake-out location with CustomBuild.
-        cmake_cache_dir = Path(installer.get_finalized_command("build").cmake_cache_dir)
-
+        build_cmd = installer.get_finalized_command("build")
+        if hasattr(build_cmd, "cmake_cache_dir"):
+            cmake_cache_dir = Path(build_cmd.cmake_cache_dir)
+        else:
+            # If we're in editable mode, use a default or fallback value for cmake_cache_dir
+            # This could be a hardcoded path, or a path derived from the current working directory
+            cmake_cache_dir = Path(".")
         cfg = get_build_type(installer.debug)
 
         if os.name == "nt":
@@ -232,7 +241,14 @@ class _BaseExtension(Extension):
         srcs = tuple(cmake_cache_dir.glob(self.src))
         if len(srcs) != 1:
             raise ValueError(
-                f"Expected exactly one file matching '{self.src}'; found {repr(srcs)}"
+                f"""Expected exactly one file matching '{self.src}'; found {repr(srcs)}. 
+
+If that file is a CMake-built extension module file, and we are installing in editable mode, please disable the corresponding build option since it's not supported yet.
+
+Try: 
+
+EXECUTORCH_BUILD_FLATC=OFF EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=OFF pip install -e .
+"""
             )
         return srcs[0]
 
@@ -401,7 +417,11 @@ class CustomBuildPy(build_py):
         # package, and will look like `pip-out/lib`. It can contain multiple
         # python packages, so be sure to copy the files into the `executorch`
         # package subdirectory.
-        dst_root = os.path.join(self.build_lib, self.get_package_dir("executorch"))
+        if self.editable_mode:
+            # In editable mode, the package directory is the original source directory
+            dst_root = self.get_package_dir(".")
+        else:
+            dst_root = os.path.join(self.build_lib, self.get_package_dir("executorch"))
 
         # Create the version file.
         Version.write_to_python_file(os.path.join(dst_root, "version.py"))
@@ -423,7 +443,31 @@ class CustomBuildPy(build_py):
                 "devtools/bundled_program/schema/scalar_type.fbs",
                 "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
+            # Install executorch-wheel-config.cmake to pip package.
+            (
+                "build/executorch-wheel-config.cmake",
+                "share/cmake/executorch-config.cmake",
+            ),
         ]
+        # Copy all the necessary headers into include/executorch/ so that they can
+        # be found in the pip package. This is the subset of headers that are
+        # essential for building custom ops extensions.
+        # TODO: Use cmake to gather the headers instead of hard-coding them here.
+        # For example: https://discourse.cmake.org/t/installing-headers-the-modern-
+        # way-regurgitated-and-revisited/3238/3
+        for include_dir in [
+            "runtime/core/",
+            "runtime/kernel/",
+            "runtime/platform/",
+            "extension/kernel_util/",
+            "extension/tensor/",
+            "extension/threadpool/",
+        ]:
+            src_list = Path(include_dir).rglob("*.h")
+            for src in src_list:
+                src_to_dst.append(
+                    (str(src), os.path.join("include/executorch", str(src)))
+                )
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
 
@@ -535,6 +579,11 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
+            if ShouldBuild.training():
+                cmake_args += [
+                    "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON",
+                ]
+                build_args += ["--target", "_training_lib"]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
@@ -637,6 +686,14 @@ def get_ext_modules() -> List[Extension]:
                 "_portable_lib.*", "executorch.extension.pybindings._portable_lib"
             )
         )
+        if ShouldBuild.training():
+            ext_modules.append(
+                # Install the prebuilt pybindings extension wrapper for training
+                BuiltExtension(
+                    "_training_lib.*",
+                    "executorch.extension.training.pybindings._training_lib",
+                )
+            )
     if ShouldBuild.llama_custom_ops():
         ext_modules.append(
             BuiltFile(
@@ -670,6 +727,7 @@ setup(
     # include. See also setuptools/discovery.py for custom finders.
     package_dir={
         "executorch/backends": "backends",
+        "executorch/codegen": "codegen",
         # TODO(mnachin T180504136): Do not put examples/models
         # into core pip packages. Refactor out the necessary utils
         # or core models files into a separate package.
@@ -680,11 +738,8 @@ setup(
         "executorch/schema": "schema",
         "executorch/devtools": "devtools",
         "executorch/devtools/bundled_program": "devtools/bundled_program",
+        "executorch/runtime": "runtime",
         "executorch/util": "util",
-        # Note: This will install a top-level module called "serializer",
-        # which seems too generic and might conflict with other pip packages.
-        "serializer": "backends/arm/third-party/serialization_lib/python/serializer",
-        "tosa": "backends/arm/third-party/serialization_lib/python/tosa",
     },
     cmdclass={
         "build": CustomBuild,

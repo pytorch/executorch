@@ -10,6 +10,11 @@ import unittest
 
 import torch
 import torchvision
+
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
@@ -22,11 +27,6 @@ from torch.ao.quantization.quantize_pt2e import (
     _convert_to_reference_decomposed_fx,
     convert_pt2e,
     prepare_pt2e,
-)
-
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
 )
 from torch.export import export
 from torch.testing import FileCheck
@@ -51,9 +51,9 @@ class TestQuantization(unittest.TestCase):
             m = torchvision.models.resnet18().eval()
             m_copy = copy.deepcopy(m)
             # program capture
-            m = torch._export.capture_pre_autograd_graph(
+            m = torch.export.export_for_training(
                 m, copy.deepcopy(example_inputs)
-            )
+            ).module()
 
             quantizer = XNNPACKQuantizer()
             operator_config = get_symmetric_quantization_config(is_per_channel=True)
@@ -71,7 +71,7 @@ class TestQuantization(unittest.TestCase):
                 _check_ir_validity=False,
             )
             m = to_edge(
-                export(m, example_inputs), compile_config=compile_config
+                export(m, example_inputs, strict=True), compile_config=compile_config
             ).transform([QuantFusionPass(), SpecPropPass()])
 
             after_quant_result = m.exported_program().module()(*example_inputs)[0]

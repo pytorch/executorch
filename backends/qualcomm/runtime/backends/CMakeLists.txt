@@ -77,7 +77,9 @@ target_sources(
 target_sources(
   qnn_backend_cache
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCache.h
+         ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpBackendCache.h
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCache.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpBackendCache.cpp
 )
 
 # qnn_graph
@@ -89,6 +91,7 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraph.cpp
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.h
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.cpp
+          ${HOST_ARCHITECTURE}/HtpGraphCustomConfig.cpp
 )
 
 # qnn_backend
@@ -113,6 +116,13 @@ target_sources(
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendFactory.cpp
 )
 
+# qnn_custom_protocol
+target_sources(
+  qnn_custom_protocol
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnCustomProtocol.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnCustomProtocol.cpp
+)
+
 set(qnn_header_basenames
     QnnBackend.h
     QnnCommon.h
@@ -130,6 +140,7 @@ set(qnn_header_basenames
     HTP/QnnHtpPerfInfrastructure.h
     HTP/QnnHtpProfile.h
     HTP/QnnHtpProperty.h
+    HTP/QnnHtpSystemContext.h
     QnnInterface.h
     QnnLog.h
     QnnMem.h

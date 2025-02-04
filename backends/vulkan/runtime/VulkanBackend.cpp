@@ -7,7 +7,7 @@
  */
 
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
-#include <executorch/backends/vulkan/schema_generated.h>
+#include <executorch/backends/vulkan/serialization/schema_generated.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
@@ -30,10 +30,22 @@
 #include <type_traits>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace vulkan {
 namespace {
+
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::kTensorDimensionLimit;
+using executorch::runtime::Result;
 
 using namespace vkcompute;
 
@@ -236,6 +248,12 @@ class GraphBuilder {
     ref_mapping_[fb_id] = ref;
   }
 
+  void add_symint_to_graph(const uint32_t fb_id, VkValuePtr value) {
+    const int32_t fb_symint = value->value_as_SymInt()->value();
+    ValueRef ref = compute_graph_->add_symint(fb_symint);
+    ref_mapping_[fb_id] = ref;
+  }
+
   void add_value_to_graph(const uint32_t fb_id, VkValuePtr value) {
     ET_CHECK_MSG(
         !fb_id_exists(fb_id),
@@ -288,6 +306,9 @@ class GraphBuilder {
       case vkgraph::GraphTypes::String:
         add_string_to_graph(fb_id, value);
         break;
+      case vkgraph::GraphTypes::SymInt:
+        add_symint_to_graph(fb_id, value);
+        break;
       default:
         ET_CHECK_MSG(false, "Unsupported value type.");
     }
@@ -300,16 +321,19 @@ class GraphBuilder {
       add_value_to_graph(fb_id, value);
     }
 
-    // Parse the inputs
+    // Parse the inputs, which will be tensors most of the time but can also be
+    // symints and tensorrefs (which will be the case if the original graph had)
+    // mutable buffers.
     for (const uint32_t fb_id : *flatbuffer_->input_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      compute_graph_->set_input_tensor(ref);
+      if (compute_graph_->val_is_tensor(ref)) {
+        compute_graph_->set_input_tensor(ref);
+      } else {
+        compute_graph_->set_val_as_input(ref);
+      }
     }
 
     // Parse the operators
-    uint32_t last_prepack_node_ct = 0;
-    uint32_t last_execute_node_ct = 0;
-
     for (OpCallPtr op_call : *(flatbuffer_->chain())) {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
@@ -324,28 +348,26 @@ class GraphBuilder {
 
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
-      if (compute_graph_->graphconfig().enable_querypool) {
-        for (uint32_t idx_prepack = last_prepack_node_ct;
-             idx_prepack < compute_graph_->prepack_nodes().size();
-             idx_prepack++) {
-          compute_graph_->prepack_nodes()[idx_prepack]->set_node_id(
-              op_call->node_id());
-        }
-        for (uint32_t idx_execute = last_execute_node_ct;
-             idx_execute < compute_graph_->execute_nodes().size();
-             idx_execute++) {
-          compute_graph_->execute_nodes()[idx_execute]->set_node_id(
-              op_call->node_id());
-        }
-        last_prepack_node_ct = compute_graph_->prepack_nodes().size();
-        last_execute_node_ct = compute_graph_->execute_nodes().size();
+    }
+
+    // Parse the outputs, which will be mostly tensors.  For some reason,
+    // mutable buffers are shown to be returned in the fx.Graph but do not get
+    // returned by the delegate; this may be an implementation detail of how the
+    // executorch emitter handles mutable buffers.
+    for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
+      const ValueRef ref = get_fb_id_valueref(fb_id);
+      if (compute_graph_->val_is_tensor(ref)) {
+        compute_graph_->set_output_tensor(ref);
       }
     }
 
-    // Parse the outputs
-    for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
-      const ValueRef ref = get_fb_id_valueref(fb_id);
-      compute_graph_->set_output_tensor(ref);
+    if (compute_graph_->graphconfig().enable_querypool) {
+      for (uint32_t i = 0; i < compute_graph_->prepack_nodes().size(); ++i) {
+        compute_graph_->prepack_nodes()[i]->set_node_id(i);
+      }
+      for (uint32_t i = 0; i < compute_graph_->execute_nodes().size(); ++i) {
+        compute_graph_->execute_nodes()[i]->set_node_id(i);
+      }
     }
   }
 };
@@ -357,7 +379,7 @@ class GraphBuilder {
 bool maybe_resize_input(
     ComputeGraph* graph,
     const size_t input_i,
-    exec_aten::Tensor& et_tensor) {
+    executorch::aten::Tensor& et_tensor) {
   ValueRef in_tensor_ref = graph->inputs()[input_i].value;
   vTensorPtr in_tensor = graph->get_tensor(in_tensor_ref);
 
@@ -389,20 +411,41 @@ bool maybe_resize_input(
   return should_resize;
 }
 
+bool maybe_update_scalar_tensor(
+    ComputeGraph* graph,
+    const ValueRef ref,
+    executorch::aten::Tensor& scalar_tensor_src) {
+  const int32_t cur_val = graph->read_symint(ref);
+  int32_t scalar_tensor_val = 0;
+  executorch::aten::ScalarType dtype = scalar_tensor_src.scalar_type();
+  if (dtype == executorch::aten::ScalarType::Int) {
+    scalar_tensor_val = *scalar_tensor_src.const_data_ptr<int32_t>();
+  } else if (dtype == executorch::aten::ScalarType::Long) {
+    scalar_tensor_val = int32_t(*scalar_tensor_src.const_data_ptr<int64_t>());
+  }
+  bool was_updated = false;
+  if (scalar_tensor_val != cur_val) {
+    graph->set_symint(ref, scalar_tensor_val);
+    was_updated = true;
+  }
+  return was_updated;
+}
+
 void maybe_resize_output(
     ComputeGraph* graph,
     const size_t output_i,
-    exec_aten::Tensor& et_tensor) {
+    executorch::aten::Tensor& et_tensor) {
   ValueRef out_tensor_ref = graph->outputs()[output_i].value;
   vTensorPtr out_tensor = graph->get_tensor(out_tensor_ref);
 
-  exec_aten::SizesType new_output_size[kTensorDimensionLimit];
+  executorch::aten::SizesType new_output_size[kTensorDimensionLimit];
   size_t ndim = out_tensor->sizes().size();
   for (int i = 0; i < ndim; ++i) {
     new_output_size[i] = out_tensor->sizes()[i];
   }
 
-  exec_aten::ArrayRef<exec_aten::SizesType> output_size{new_output_size, ndim};
+  executorch::aten::ArrayRef<executorch::aten::SizesType> output_size{
+      new_output_size, ndim};
   Error err = resize_tensor(et_tensor, output_size);
 
   ET_CHECK_MSG(err == Error::Ok, "Failed to resize output tensor.");
@@ -474,7 +517,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     Error err = compileModel(processed->data(), compute_graph);
 
-    // This backend does not need its processed data after compiling the model.
+    // This backend does not need its processed data after compiling the
+    // model.
     processed->Free();
 
     if (err != Error::Ok) {
@@ -495,13 +539,31 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     const size_t num_inputs = compute_graph->inputs().size();
     bool should_propagate_resize = false;
     for (size_t i = 0; i < num_inputs; i++) {
-      bool was_resized =
-          maybe_resize_input(compute_graph, i, args[i]->toTensor());
-      should_propagate_resize = should_propagate_resize || was_resized;
-      compute_graph->copy_into_staging(
-          compute_graph->inputs()[i].staging,
-          args[i]->toTensor().const_data_ptr(),
-          args[i]->toTensor().numel());
+      const ValueRef iref = compute_graph->inputs()[i].value;
+      if (compute_graph->val_is_tensor(iref)) {
+        VK_CHECK_COND(args[i]->isTensor());
+        bool was_resized =
+            maybe_resize_input(compute_graph, i, args[i]->toTensor());
+        should_propagate_resize = should_propagate_resize || was_resized;
+        compute_graph->copy_into_staging(
+            compute_graph->inputs()[i].staging,
+            args[i]->toTensor().const_data_ptr(),
+            args[i]->toTensor().numel());
+      } else if (compute_graph->val_is_symint(iref)) {
+        VK_CHECK_COND(
+            args[i]->isTensor(),
+            "Cannot handle symint arg to graph that is not derived from a "
+            "scalar tensor at the moment.");
+        bool was_updated = maybe_update_scalar_tensor(
+            compute_graph, iref, args[i]->toTensor());
+        // Since symint inputs may impact tensor's sizes, trigger a resize if
+        // any symbolic integer shapes are updated.
+        should_propagate_resize = should_propagate_resize || was_updated;
+      } else {
+        VK_THROW(
+            "Could not handle input with type ",
+            compute_graph->get_val_type(iref));
+      }
     }
 
     if (should_propagate_resize) {
@@ -510,28 +572,39 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
-      maybe_resize_output(compute_graph, i, args[num_inputs + i]->toTensor());
-      // args holds inputs directly followed by outputs, so the i'th output
-      // for compute_graph corresponds to the (i + num_inputs)'th arg
-      compute_graph->copy_from_staging(
-          compute_graph->outputs()[i].staging,
-          args[num_inputs + i]->toTensor().mutable_data_ptr(),
-          args[num_inputs + i]->toTensor().numel());
+      const size_t o = i + num_inputs;
+      const ValueRef oref = compute_graph->outputs()[i].value;
+      if (compute_graph->val_is_tensor(oref)) {
+        VK_CHECK_COND(args[o]->isTensor());
+        maybe_resize_output(compute_graph, i, args[o]->toTensor());
+        // args holds inputs directly followed by outputs, so the i'th output
+        // for compute_graph corresponds to the o'th arg
+        compute_graph->copy_from_staging(
+            compute_graph->outputs()[i].staging,
+            args[o]->toTensor().mutable_data_ptr(),
+            args[o]->toTensor().numel());
+      } else {
+        VK_THROW(
+            "Could not handle output with type ",
+            compute_graph->get_val_type(oref));
+      }
     }
 
 #ifdef ET_EVENT_TRACER_ENABLED
-    EventTracer* event_tracer = context.event_tracer();
+    runtime::EventTracer* event_tracer = context.event_tracer();
     compute_graph->context()->querypool().extract_results();
-    for (const auto& tup :
+    for (const auto& r :
          compute_graph->context()->querypool().get_shader_timestamp_data()) {
       std::string event_name =
-          std::get<0>(tup) + "_" + std::to_string(std::get<1>(tup));
+          r.kernel_name + "_" + std::to_string(r.dispatch_id);
       event_tracer_log_profiling_delegate(
           event_tracer,
           event_name.c_str(),
-          -1,
-          std::get<2>(tup),
-          std::get<3>(tup));
+          /* delegate_debug_id = */ -1,
+          r.start_time_ns,
+          r.end_time_ns,
+          (void*)(&r.metadata),
+          sizeof(r.metadata));
     }
 #endif // ET_EVENT_TRACER_ENABLED
 
@@ -541,6 +614,10 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
       ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
+      compute_graph->context()
+          ->adapter_ptr()
+          ->compute_pipeline_cache()
+          .save_cache();
       // ComputeGraph is not trivially destructible. Since
       // this was constructed manually in init(), we must destroy it manually
       // here.
@@ -555,5 +632,5 @@ static auto success_with_compiler = register_backend(backend);
 
 } // namespace
 } // namespace vulkan
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

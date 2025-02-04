@@ -17,12 +17,12 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::IntArrayRef;
-using exec_aten::MemoryFormat;
-using exec_aten::optional;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::IntArrayRef;
+using executorch::aten::MemoryFormat;
+using executorch::aten::optional;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpFullOutTest : public OperatorTest {
@@ -70,7 +70,7 @@ class OpFullOutTest : public OperatorTest {
     test_ones_out<ScalarType::DTYPE>({2, 3, 4}); \
   }
 
-ET_FORALL_REALH_TYPES(GENERATE_TEST)
+ET_FORALL_REALHBF16_TYPES(GENERATE_TEST)
 
 TEST_F(OpFullOutTest, ValueOverflow) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {

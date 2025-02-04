@@ -62,12 +62,12 @@ struct type_map<torch::executor::Tensor> final {
 // Optional.
 template <class T>
 struct type_map<torch::executor::optional<T>> final {
-  using type = c10::optional<typename type_map<T>::type>;
+  using type = std::optional<typename type_map<T>::type>;
 };
 
 template <class T>
 struct type_map<torch::executor::optional<T>&> final {
-  using type = c10::optional<typename type_map<T>::type>&;
+  using type = std::optional<typename type_map<T>::type>&;
 };
 
 // ArrayRef.
@@ -106,7 +106,7 @@ struct type_convert<
             torch::executor::Tensor>>>
     final {
   explicit type_convert(ATensor value)
-      : value_(value),
+      : value_(value.contiguous()),
         converted_(from_blob(
             value_.mutable_data_ptr(),
             {value_.sizes().begin(), value_.sizes().end()},
@@ -117,7 +117,7 @@ struct type_convert<
   }
 
  private:
-  ATensor value_;
+  typename remove_const_ref<ATensor>::type value_;
   TensorPtr converted_;
 };
 
@@ -150,11 +150,11 @@ struct type_convert<
 
 // Optionals: ATen to ETen.
 template <class F, class T>
-struct type_convert<c10::optional<F>, torch::executor::optional<T>> final {
+struct type_convert<std::optional<F>, torch::executor::optional<T>> final {
  public:
-  c10::optional<F> val;
+  std::optional<F> val;
   std::unique_ptr<struct type_convert<F, T>> convert_struct;
-  explicit type_convert(c10::optional<F> value) : val(value) {}
+  explicit type_convert(std::optional<F> value) : val(value) {}
   torch::executor::optional<T> call() {
     if (val.has_value()) {
       convert_struct = std::make_unique<struct type_convert<F, T>>(
@@ -168,18 +168,18 @@ struct type_convert<c10::optional<F>, torch::executor::optional<T>> final {
 
 // Optionals: ETen to ATen.
 template <class F, class T>
-struct type_convert<torch::executor::optional<F>, c10::optional<T>> final {
+struct type_convert<torch::executor::optional<F>, std::optional<T>> final {
  public:
   torch::executor::optional<F> val;
   std::unique_ptr<struct type_convert<F, T>> convert_struct;
   explicit type_convert(torch::executor::optional<F> value) : val(value) {}
-  c10::optional<T> call() {
+  std::optional<T> call() {
     if (val.has_value()) {
       convert_struct = std::make_unique<struct type_convert<F, T>>(
           type_convert<F, T>(val.value()));
-      return c10::optional<T>(convert_struct->call());
+      return std::optional<T>(convert_struct->call());
     } else {
-      return c10::optional<T>();
+      return std::optional<T>();
     }
   }
 };

@@ -8,9 +8,7 @@
 
 #include <executorch/extension/threadpool/threadpool_guard.h>
 
-namespace torch {
-namespace executorch {
-namespace threadpool {
+namespace executorch::extension::threadpool {
 
 thread_local bool NoThreadPoolGuard_enabled = false;
 
@@ -22,6 +20,4 @@ void NoThreadPoolGuard::set_enabled(bool enabled) {
   NoThreadPoolGuard_enabled = enabled;
 }
 
-} // namespace threadpool
-} // namespace executorch
-} // namespace torch
+} // namespace executorch::extension::threadpool

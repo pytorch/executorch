@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -10,11 +10,15 @@
 #
 
 import unittest
+
 from typing import Tuple
 
+import pytest
+
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
 
@@ -56,7 +60,7 @@ class TestFull(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=example_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check_count({"torch.ops.aten.full.default": 1})
@@ -72,15 +76,12 @@ class TestFull(unittest.TestCase):
         self,
         module: torch.nn.Module,
         test_data: Tuple,
-        permute_memory_to_nhwc: bool,
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    permute_memory_to_nhwc=permute_memory_to_nhwc
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -93,13 +94,11 @@ class TestFull(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_full_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
-            )
+    def _test_full_tosa_ethos_pipeline(
+        self, compile_spec: list[CompileSpec], module: torch.nn.Module, test_data: Tuple
+    ):
+        tester = (
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize()
             .export()
             .check_count({"torch.ops.aten.full.default": 1})
@@ -108,6 +107,19 @@ class TestFull(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_full_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
+        )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+
+    def _test_full_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
+        self._test_full_tosa_ethos_pipeline(
+            common.get_u55_compile_spec(), module, test_data
+        )
+
+    def _test_full_tosa_u85_pipeline(self, module: torch.nn.Module, test_data: Tuple):
+        self._test_full_tosa_ethos_pipeline(
+            common.get_u85_compile_spec(), module, test_data
         )
 
     def test_only_full_tosa_MI(self):
@@ -119,7 +131,7 @@ class TestFull(unittest.TestCase):
 
     def test_const_full_nhwc_tosa_BI(self):
         _input = torch.rand((2, 2, 3, 3)) * 10
-        self._test_full_tosa_BI_pipeline(self.AddConstFull(), (_input,), True)
+        self._test_full_tosa_BI_pipeline(self.AddConstFull(), (_input,))
 
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_tosa_MI(self, test_tensor: Tuple):
@@ -129,11 +141,20 @@ class TestFull(unittest.TestCase):
 
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_tosa_BI(self, test_tensor: Tuple):
-        self._test_full_tosa_BI_pipeline(self.AddVariableFull(), test_tensor, False)
+        self._test_full_tosa_BI_pipeline(self.AddVariableFull(), test_tensor)
 
     @parameterized.expand(AddVariableFull.test_parameters)
+    @pytest.mark.corstone_fvp
     def test_full_u55_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u55_pipeline(
+            self.AddVariableFull(),
+            test_tensor,
+        )
+
+    @parameterized.expand(AddVariableFull.test_parameters)
+    @pytest.mark.corstone_fvp
+    def test_full_u85_BI(self, test_tensor: Tuple):
+        self._test_full_tosa_u85_pipeline(
             self.AddVariableFull(),
             test_tensor,
         )

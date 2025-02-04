@@ -9,96 +9,90 @@
 import logging
 import tempfile
 
+import torch
+
 from executorch.backends.cadence.aot.ops_registrations import *  # noqa
-import os
 from typing import Any, Tuple
 
 from executorch.backends.cadence.aot.compiler import (
     convert_pt2,
-    export_to_cadence,
-    export_to_edge,
-    quantize_pt2,
+    export_to_executorch_gen_etrecord,
+    fuse_pt2,
 )
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
 from executorch.backends.cadence.runtime import runtime
 from executorch.backends.cadence.runtime.executor import BundledProgramManager
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+    QuantizationSpec,
+)
 from executorch.exir import ExecutorchProgramManager
 from torch import nn
+from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 
-from .utils import print_ops_info
+from .utils import save_bpte_program, save_pte_program
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
+act_qspec = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
+)
 
-def _save_pte_program(
-    prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
-) -> None:
-    if model_name.endswith(".pte"):
-        filename = model_name
-    else:
-        filename = os.path.join(output_dir, f"{model_name}.pte")
-
-    try:
-        with open(filename, "wb") as file:
-            prog.write_to_file(file)
-            logging.info(f"Saved exported program to {filename}")
-    except Exception as e:
-        logging.error(f"Error while saving to {filename}: {e}")
-
-
-def _save_bpte_program(
-    buffer: bytes,
-    model_name: str,
-    output_dir: str = "",
-) -> None:
-    if model_name.endswith(".bpte"):
-        filename = model_name
-    else:
-        filename = os.path.join(output_dir, f"{model_name}.bpte")
-    try:
-        with open(filename, "wb") as f:
-            f.write(buffer)
-        logging.info(f"Saved exported program to {filename}")
-    except Exception as e:
-        logging.error(f"Error while saving to {output_dir}: {e}")
+wgt_qspec = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=MinMaxObserver,
+)
 
 
 def export_model(
     model: nn.Module,
     example_inputs: Tuple[Any, ...],
     file_name: str = "CadenceDemoModel",
+    run_and_compare: bool = True,
 ):
     # create work directory for outputs and model binary
     working_dir = tempfile.mkdtemp(dir="/tmp")
     logging.debug(f"Created work directory {working_dir}")
 
-    # convert the model (also called in quantize_pt2)
-    converted_model = convert_pt2(model, example_inputs, CadenceQuantizer())
+    qconfig = QuantizationConfig(
+        act_qspec,
+        act_qspec,
+        wgt_qspec,
+        None,
+    )
 
-    # Get reference outputs from quantized_model
+    # Instantiate the quantizer
+    quantizer = CadenceDefaultQuantizer(qconfig)
+
+    # Convert the model
+    converted_model = convert_pt2(model, example_inputs, quantizer)
+
+    # Get reference outputs from converted model
     ref_outputs = converted_model(*example_inputs)
 
-    # Quantize the model
-    quantized_model = quantize_pt2(model, example_inputs)
-
-    # Get edge program (also called in export_to_cadence)
-    edge_prog_manager = export_to_edge(quantized_model, example_inputs)
+    # Quantize the model (note: quantizer needs to be the same as
+    # the one used in convert_pt2)
+    quantized_model = fuse_pt2(converted_model, quantizer)
 
     # Get edge program after Cadence specific passes
-    cadence_prog_manager = export_to_cadence(quantized_model, example_inputs)
-
-    exec_prog: ExecutorchProgramManager = cadence_prog_manager.to_executorch()
+    exec_prog: ExecutorchProgramManager = export_to_executorch_gen_etrecord(
+        quantized_model, example_inputs, output_dir=working_dir
+    )
 
     logging.info("Final exported graph:\n")
     exec_prog.exported_program().graph_module.graph.print_tabular()
-
-    # Print some information to terminal
-    print_ops_info(
-        edge_prog_manager.exported_program().graph_module,
-        cadence_prog_manager.exported_program().graph_module,
-    )
 
     forward_test_data = BundledProgramManager.bundled_program_test_data_gen(
         method="forward", inputs=example_inputs, expected_outputs=ref_outputs
@@ -110,18 +104,19 @@ def export_model(
         forward_test_data,
     )
     # Save the program as pte (default name is CadenceDemoModel.pte)
-    _save_pte_program(exec_prog, file_name, working_dir)
+    save_pte_program(exec_prog, file_name, working_dir)
     # Save the program as btpe (default name is CadenceDemoModel.bpte)
-    _save_bpte_program(buffer, file_name, working_dir)
+    save_bpte_program(buffer, file_name, working_dir)
 
     logging.debug(
         f"Executorch bundled program buffer saved to {file_name} is {len(buffer)} total bytes"
     )
 
     # TODO: move to test infra
-    runtime.run_and_compare(
-        executorch_prog=exec_prog,
-        inputs=example_inputs,
-        ref_outputs=ref_outputs,
-        working_dir=working_dir,
-    )
+    if run_and_compare:
+        runtime.run_and_compare(
+            executorch_prog=exec_prog,
+            inputs=example_inputs,
+            ref_outputs=ref_outputs,
+            working_dir=working_dir,
+        )

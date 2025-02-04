@@ -60,14 +60,17 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     set(_quantized_aot_ops
         "quantized_decomposed::add.out"
         "quantized_decomposed::choose_qparams.Tensor_out"
+        "quantized_decomposed::choose_qparams_per_token_asymmetric.out"
         "quantized_decomposed::dequantize_per_channel.out"
         "quantized_decomposed::dequantize_per_tensor.out"
         "quantized_decomposed::dequantize_per_tensor.Tensor_out"
+        "quantized_decomposed::dequantize_per_token.out"
         "quantized_decomposed::mixed_linear.out"
         "quantized_decomposed::mixed_mm.out"
         "quantized_decomposed::quantize_per_channel.out"
         "quantized_decomposed::quantize_per_tensor.out"
         "quantized_decomposed::quantize_per_tensor.Tensor_out"
+        "quantized_decomposed::quantize_per_token.out"
     )
     gen_selected_ops(
       LIB_NAME "quantized_ops_aot_lib" ROOT_OPS ${_quantized_aot_ops}
@@ -113,6 +116,26 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       )
       target_link_libraries(
         quantized_ops_aot_lib PUBLIC quantized_ops_pybind_lib
+      )
+
+      # pip wheels will need to be able to find the dependent libraries. On
+      # Linux, the .so has non-absolute dependencies on libs like
+      # "_portable_lib.so" without paths; as long as we `import torch` first,
+      # those dependencies will work. But Apple dylibs do not support
+      # non-absolute dependencies, so we need to tell the loader where to look
+      # for its libraries. The LC_LOAD_DYLIB entries for the portable_lib
+      # libraries will look like "@rpath/_portable_lib.cpython-310-darwin.so",
+      # so we can add an LC_RPATH entry to look in a directory relative to the
+      # installed location of our _portable_lib.so file. To see these LC_*
+      # values, run `otool -l libquantized_ops_lib.dylib`.
+      if(APPLE)
+        set(RPATH "@loader_path/../../extensions/pybindings")
+      else()
+        set(RPATH "$ORIGIN/../../extensions/pybindings")
+      endif()
+      set_target_properties(
+        quantized_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
+                                                              ${RPATH}
       )
     endif()
   endif()

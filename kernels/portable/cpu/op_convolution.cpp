@@ -8,6 +8,7 @@
 
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -16,12 +17,14 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using SizesArrayRef = exec_aten::ArrayRef<exec_aten::SizesType>;
-using DimOrderArrayRef = exec_aten::ArrayRef<exec_aten::DimOrderType>;
-using StridesArrayRef = exec_aten::ArrayRef<exec_aten::StridesType>;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
+using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
+using StridesArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::StridesType>;
 
 namespace {
 
@@ -32,7 +35,7 @@ namespace {
  * in_C_per_group x in_H x in_W, to compute an out channel of size 1 x out_H x
  * out_W.
  */
-template <typename CTYPE, typename CTYPE_BIAS>
+template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
 void conv2d_impl(
     const CTYPE* const in_ptr,
     SizesArrayRef in_sizes,
@@ -40,7 +43,9 @@ void conv2d_impl(
     const CTYPE* const w_ptr,
     SizesArrayRef w_sizes,
     StridesArrayRef w_strides,
-    const CTYPE_BIAS* const bias_ptr,
+    const executorch::aten::optional<Tensor>& bias,
+    const char* const bias_ptr,
+    LoadFn load_bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
@@ -69,12 +74,12 @@ void conv2d_impl(
   size_t out_C_per_group = out_C / groups;
   size_t out_c_start = group * out_C_per_group;
 
-  exec_aten::SizesType in_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType in_coord[kTensorDimensionLimit];
   in_coord[0] = batch;
-  exec_aten::SizesType out_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType out_coord[kTensorDimensionLimit];
   out_coord[0] = batch;
   out_coord[1] = out_c;
-  exec_aten::SizesType w_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType w_coord[kTensorDimensionLimit];
 
   const int64_t stride_y = val_at(stride, 0);
   const int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
@@ -128,7 +133,7 @@ void conv2d_impl(
         }
 
         if (bias_ptr != nullptr) {
-          accum += convert<CTYPE, CTYPE_BIAS>(bias_ptr[out_c]);
+          accum += load_bias(&bias_ptr[out_c * bias.value().element_size()]);
         }
         size_t out_idx =
             calculate_linear_index(out_coord, out_strides.data(), 4);
@@ -185,11 +190,12 @@ void conv2d_impl(
   }
 }
 
-template <typename CTYPE, typename CTYPE_BIAS>
+template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
 void convolution_wrapper(
     const Tensor& in,
     const Tensor& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
+    LoadFn load_bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
@@ -209,14 +215,14 @@ void convolution_wrapper(
   IntArrayRef dilation_ = dilation;
 
   // Define arrays for modified sizes, etc. which will potentially be used
-  exec_aten::SizesType in_sizes_arr[kTensorDimensionLimit];
-  exec_aten::DimOrderType in_dim_order_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType in_sizes_arr[kTensorDimensionLimit];
+  executorch::aten::DimOrderType in_dim_order_arr[kTensorDimensionLimit];
   size_t in_ndim;
-  exec_aten::SizesType weight_sizes_arr[kTensorDimensionLimit];
-  exec_aten::DimOrderType weight_dim_order_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType weight_sizes_arr[kTensorDimensionLimit];
+  executorch::aten::DimOrderType weight_dim_order_arr[kTensorDimensionLimit];
   size_t weight_ndim;
-  exec_aten::SizesType out_sizes_arr[kTensorDimensionLimit];
-  exec_aten::DimOrderType out_dim_order_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType out_sizes_arr[kTensorDimensionLimit];
+  executorch::aten::DimOrderType out_dim_order_arr[kTensorDimensionLimit];
   size_t out_ndim;
 
   int64_t stride_arr[2];
@@ -262,26 +268,27 @@ void convolution_wrapper(
     dilation_ = {dilation_arr, 2};
   }
 
-  exec_aten::StridesType in_strides[kTensorDimensionLimit];
+  executorch::aten::StridesType in_strides[kTensorDimensionLimit];
   dim_order_to_stride_nocheck(
       in_sizes.data(), in_dim_order.data(), in_sizes.size(), in_strides);
 
-  exec_aten::StridesType weight_strides[kTensorDimensionLimit];
+  executorch::aten::StridesType weight_strides[kTensorDimensionLimit];
   dim_order_to_stride_nocheck(
       weight_sizes.data(),
       weight_dim_order.data(),
       weight_sizes.size(),
       weight_strides);
 
-  exec_aten::StridesType out_strides[kTensorDimensionLimit];
+  executorch::aten::StridesType out_strides[kTensorDimensionLimit];
   dim_order_to_stride_nocheck(
       out_sizes.data(), out_dim_order.data(), out_sizes.size(), out_strides);
 
   CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
   const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
   const CTYPE* const w_ptr = weight.const_data_ptr<CTYPE>();
-  const CTYPE_BIAS* const bias_ptr =
-      bias.has_value() ? bias.value().const_data_ptr<CTYPE_BIAS>() : nullptr;
+  const char* const bias_ptr = bias.has_value()
+      ? reinterpret_cast<const char*>(bias.value().const_data_ptr())
+      : nullptr;
 
   size_t out_N = out.size(0);
   size_t out_C = out.size(1);
@@ -296,8 +303,9 @@ void convolution_wrapper(
     } else {
       // If bias is present, we initialize the output to the bias value
       for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
-        out_ptr[out_ix] = convert<CTYPE, CTYPE_BIAS>(
-            bias_ptr[(out_ix / out_strides[1]) % out_C]);
+        out_ptr[out_ix] = load_bias(&bias_ptr
+                                        [((out_ix / out_strides[1]) % out_C) *
+                                         bias.value().element_size()]);
       }
     }
   }
@@ -316,7 +324,9 @@ void convolution_wrapper(
             w_ptr,
             weight_sizes,
             {weight_strides, 4},
+            bias,
             bias_ptr,
+            load_bias,
             stride_,
             padding_,
             dilation_,
@@ -339,7 +349,7 @@ Tensor& convolution_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
@@ -369,7 +379,7 @@ Tensor& convolution_out(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   size_t output_ndim = 0;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   get_convolution_out_target_size(
       in,
       weight,
@@ -398,19 +408,25 @@ Tensor& convolution_out(
     return out;
   }
 
-  ScalarType in_type = in.scalar_type();
-  ScalarType bias_type = in_type;
-  if (bias.has_value()) {
-    bias_type = bias.value().scalar_type();
-  }
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char name[] = "convolution.out";
 
-  constexpr auto name = "convolution.out";
-
-  ET_SWITCH_REALH_TYPES(in_type, ctx, name, CTYPE, [&]() {
-    ET_SWITCH_REALHB_TYPES(bias_type, ctx, name, CTYPE_BIAS, [&]() {
-      convolution_wrapper<CTYPE, CTYPE_BIAS>(
-          in, weight, bias, stride, padding, dilation, transposed, groups, out);
-    });
+  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+    const auto load_bias = bias.has_value()
+        ? utils::internal::get_load_to_common_fn<CTYPE, name>(
+              bias.value(), utils::SupportedTensorDtypes::REALHBF16)
+        : nullptr;
+    convolution_wrapper<CTYPE>(
+        in,
+        weight,
+        bias,
+        load_bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        groups,
+        out);
   });
 
   return out;

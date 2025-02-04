@@ -26,7 +26,7 @@
 #include "llm_helper/include/mask_builder.h"
 #include "llm_helper/include/rotary_embedding.h"
 
-namespace torch::executor {
+namespace example {
 
 inline std::vector<size_t> getIndexRange(
     const size_t startIndex,
@@ -343,4 +343,4 @@ void LlamaModelChunk::InitCache() {
   }
 }
 
-} // namespace torch::executor
+} // namespace example

@@ -7,12 +7,12 @@
 from typing import cast, Dict, List
 
 import torch
+from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
+    ChannelsLastTaggedReshapePass,
+)
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
-)
-from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import (
-    ChannelsLastTaggedReshapePass,
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNGraph,

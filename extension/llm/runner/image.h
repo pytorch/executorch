@@ -9,15 +9,15 @@
 // A simple image struct.
 
 #pragma once
+#include <executorch/runtime/platform/compiler.h>
 #include <cstdint>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <vector>
 
 namespace executorch {
 namespace extension {
 namespace llm {
 
-struct Image {
+struct ET_EXPERIMENTAL Image {
   // Assuming NCHW format
   std::vector<uint8_t> data;
   int32_t width;

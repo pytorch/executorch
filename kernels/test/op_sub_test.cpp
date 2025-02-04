@@ -16,11 +16,12 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::testing::TensorFactory;
 using torch::executor::testing::SupportedFeatures;
-using torch::executor::testing::TensorFactory;
+namespace etrt = executorch::runtime;
 
 class OpSubOutTest : public OperatorTest {
  protected:
@@ -60,7 +61,8 @@ class OpSubOutTest : public OperatorTest {
     test_sub<DTYPE_A, DTYPE_B, ScalarType::Float>();
     test_sub<DTYPE_A, DTYPE_B, ScalarType::Double>();
     // Integral out type is only allowed if both inputs are integral types
-    if (isIntegralType(DTYPE_A, false) && isIntegralType(DTYPE_B, false)) {
+    if (etrt::isIntegralType(DTYPE_A, false) &&
+        etrt::isIntegralType(DTYPE_B, false)) {
       test_sub<DTYPE_A, DTYPE_B, ScalarType::Int>();
       test_sub<DTYPE_A, DTYPE_B, ScalarType::Long>();
     }
@@ -104,6 +106,27 @@ class OpSubOutTest : public OperatorTest {
     ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_rank1_scalar() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor a = tf.make({2, 1, 3}, {2, 3, 4, 5, 6, 7});
+    Tensor b = tf.make({1}, {2});
+
+    // Destination for the broadcasting div. Follow the broadcasting rules in
+    // https://fburl.com/n9wl4d0o
+    Tensor out = tf.zeros({2, 1, 3});
+
+    op_sub_out(a, b, 1, out);
+
+    Tensor ret = tf.make({2, 1, 3}, {0, 1, 2, 3, 4, 5});
+    EXPECT_TENSOR_EQ(out, ret);
+
+    op_sub_out(b, a, 1, out);
+    ret = tf.make({2, 1, 3}, {0, -1, -2, -3, -4, -5});
+    EXPECT_TENSOR_EQ(out, ret);
   }
 };
 
@@ -169,19 +192,8 @@ TEST_F(OpSubOutTest, BroadcastSupported2) {
 }
 
 TEST_F(OpSubOutTest, BroadcastScalarSupported1) {
-  TensorFactory<ScalarType::Float> tf;
-
-  Tensor a = tf.make({2, 1, 3}, {2, 3, 4, 5, 6, 7});
-  Tensor b = tf.make({1}, {2});
-
-  // Destination for the broadcasting div. Follow the broadcasting rules in
-  // https://fburl.com/n9wl4d0o
-  Tensor out = tf.zeros({2, 1, 3});
-
-  op_sub_out(a, b, 1, out);
-
-  Tensor ret = tf.make({2, 1, 3}, {0, 1, 2, 3, 4, 5});
-  EXPECT_TENSOR_EQ(out, ret);
+  test_broadcast_rank1_scalar<ScalarType::Float>();
+  test_broadcast_rank1_scalar<ScalarType::Half>();
 }
 
 TEST_F(OpSubOutTest, BroadcastScalarSupported2) {
@@ -563,13 +575,14 @@ TEST_F(OpSubScalarOutTest, OptimizedSanityCheck) {
 }
 
 TEST_F(OpSubScalarOutTest, DtypeTest_float16_float_int_float16) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Half> tfHalf;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Half>
+      tfHalf;
 
-  exec_aten::Tensor self = tfHalf.ones({2, 2});
-  exec_aten::Scalar other = exec_aten::Scalar(-1.0);
-  exec_aten::Scalar alpha = exec_aten::Scalar(1);
-  exec_aten::Tensor out = tfHalf.zeros({2, 2});
-  exec_aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
+  executorch::aten::Tensor self = tfHalf.ones({2, 2});
+  executorch::aten::Scalar other = executorch::aten::Scalar(-1.0);
+  executorch::aten::Scalar alpha = executorch::aten::Scalar(1);
+  executorch::aten::Tensor out = tfHalf.zeros({2, 2});
+  executorch::aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
   op_sub_scalar_out(self, other, alpha, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }

@@ -31,39 +31,33 @@ void add_copy_offset_node(
   std::string kernel_name = "copy_offset";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
-
-  const struct Block final {
-    ivec3 range;
-    int32_t unused0;
-    ivec3 src_offset;
-    int32_t unused1;
-    ivec3 dst_offset;
-    int32_t unused2;
-  } offset_params{
-      range,
-      0,
-      src_offset,
-      0,
-      dst_offset,
-      0,
-  };
+  add_storage_type_suffix(kernel_name, *t_out);
 
   auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {
-          {out, vkapi::MemoryAccessType::WRITE},
-          {in, vkapi::MemoryAccessType::READ},
+          {out, vkapi::kWrite},
+          {in, vkapi::kRead},
       },
       // Parameter buffers
-      {graph.create_params_buffer(offset_params)},
+      {},
       // Specialization Constants
-      {}));
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      nullptr,
+      {},
+      {
+          PushConstantDataInfo(&range, sizeof(range), sizeof(utils::ivec4)),
+          PushConstantDataInfo(
+              &src_offset, sizeof(src_offset), sizeof(utils::ivec4)),
+          PushConstantDataInfo(
+              &dst_offset, sizeof(dst_offset), sizeof(utils::ivec4)),
+      }));
 }
 
 void add_copy_channel_offset_node(
@@ -131,43 +125,27 @@ void add_copy_channel_offset_node(
     // The shader combines the global invocation id and the dst_offset to get
     // the actual coordinate.
 
-    ivec3 dst_offset{
+    const ivec3 dst_offset{
         0, 0, dst_first_z + batch_idx * utils::div_up_4(out_channels)};
 
-    uvec3 global_size{
+    const uvec3 global_size{
         utils::safe_downcast<uint32_t>(dim_at<kWidth4D>(in_sizes)),
         utils::safe_downcast<uint32_t>(dim_at<kHeight4D>(in_sizes)),
         utils::safe_downcast<uint32_t>(dst_last_z - dst_first_z + 1)};
-    uvec3 local_size = adaptive_work_group_size(global_size);
+    const uvec3 local_size = graph.create_local_wg_size(global_size);
 
-    const struct Block final {
-      utils::ivec4 out_sizes;
-      utils::ivec4 in_sizes;
-      int32_t channel_range;
-      int32_t src_channel_offset;
-      int32_t dst_channel_offset;
-      int32_t unused;
-      ivec3 range;
-      int32_t unused1;
-      ivec3 dst_offset;
-      int32_t unused2;
+    const utils::ivec4 range_params = {
+        static_cast<int>(global_size[0]),
+        static_cast<int>(global_size[1]),
+        static_cast<int>(global_size[2]),
+        channel_range};
 
-    } channel_offset_params{
-        utils::make_whcn_ivec4(out_sizes),
-        utils::make_whcn_ivec4(in_sizes),
-        channel_range,
-        src_channel_offset,
-        dst_channel_offset,
-        0,
-        utils::make_ivec3(global_size),
-        0,
-        dst_offset,
-        0,
-    };
+    const utils::ivec4 offset_params = {
+        dst_offset[0], dst_offset[1], dst_offset[2], dst_channel_offset};
 
     auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-    graph.execute_nodes().emplace_back(new ExecuteNode(
+    graph.execute_nodes().emplace_back(new DispatchNode(
         graph,
         VK_KERNEL_FROM_STR(kernel_name),
         global_size,
@@ -179,9 +157,17 @@ void add_copy_channel_offset_node(
             {in, vkapi::MemoryAccessType::READ},
         },
         // Parameter buffers
-        {graph.create_params_buffer(channel_offset_params)},
+        {},
         // Specialization Constants
-        {}));
+        {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+        nullptr,
+        {},
+        {graph.sizes_pc_of(out),
+         graph.sizes_pc_of(in),
+         PushConstantDataInfo(&range_params, sizeof(range_params)),
+         PushConstantDataInfo(&offset_params, sizeof(offset_params)),
+         PushConstantDataInfo(
+             &src_channel_offset, sizeof(src_channel_offset))}));
   }
 }
 

@@ -19,6 +19,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+// This could be:
+// 1. qnn_context_binary
+// 2. QnnQcirCustomProtocol
+// 3. QnnContextCustomProtocol
+// To check if it is custom protocol, users can deserialize the binary using
+// QnnCustomProtocol and check the status
 typedef struct {
   /// qnn_context_binary_blob
   void* buffer;
@@ -44,7 +51,7 @@ struct CustomMemTensorInfo {
   size_t tensor_bytes;
   uint32_t* shape;
   uint32_t rank;
-  exec_aten::ScalarType dtype;
+  executorch::aten::ScalarType dtype;
 };
 
 /// Allocate specific tensors (usually graph inputs and outputs) on shared

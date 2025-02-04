@@ -122,22 +122,22 @@
   })
 
 /// Asserts that all tensors have the same dtype.
-#define ET_CHECK_SAME_DTYPE2(a__, b__)                               \
-  ({                                                                 \
-    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type();    \
-    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type();    \
-    ET_CHECK_MSG(                                                    \
-        a_type__ == b_type__,                                        \
-        ET_TENSOR_CHECK_PREFIX__ ": dtype={%" PRId8 ", %" PRId8 "}", \
-        static_cast<int8_t>(a_type__),                               \
-        static_cast<int8_t>(b_type__));                              \
+#define ET_CHECK_SAME_DTYPE2(a__, b__)                                   \
+  ({                                                                     \
+    const ::executorch::aten::ScalarType a_type__ = (a__).scalar_type(); \
+    const ::executorch::aten::ScalarType b_type__ = (b__).scalar_type(); \
+    ET_CHECK_MSG(                                                        \
+        a_type__ == b_type__,                                            \
+        ET_TENSOR_CHECK_PREFIX__ ": dtype={%" PRId8 ", %" PRId8 "}",     \
+        static_cast<int8_t>(a_type__),                                   \
+        static_cast<int8_t>(b_type__));                                  \
   })
 
 #define ET_CHECK_SAME_DTYPE3(a__, b__, c__)                                 \
   ({                                                                        \
-    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type();           \
-    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type();           \
-    const ::exec_aten::ScalarType c_type__ = (c__).scalar_type();           \
+    const ::executorch::aten::ScalarType a_type__ = (a__).scalar_type();    \
+    const ::executorch::aten::ScalarType b_type__ = (b__).scalar_type();    \
+    const ::executorch::aten::ScalarType c_type__ = (c__).scalar_type();    \
     ET_CHECK_MSG(                                                           \
         a_type__ == b_type__ && b_type__ == c_type__,                       \
         ET_TENSOR_CHECK_PREFIX__ ": dtype={%" PRId8 ", %" PRId8 ", %" PRId8 \
@@ -159,8 +159,8 @@
     const size_t b_numel__ = (b__).numel();                                   \
     const size_t a_dim__ = (a__).dim();                                       \
     const size_t b_dim__ = (b__).dim();                                       \
-    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type();             \
-    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type();             \
+    const ::executorch::aten::ScalarType a_type__ = (a__).scalar_type();      \
+    const ::executorch::aten::ScalarType b_type__ = (b__).scalar_type();      \
                                                                               \
     ET_CHECK_MSG(                                                             \
         a_numel__ == b_numel__ &&                                             \
@@ -186,48 +186,48 @@
     }                                                                         \
   })
 
-#define ET_CHECK_SAME_SHAPE_AND_DTYPE3(a__, b__, c__)                  \
-  ({                                                                   \
-    const size_t a_numel__ = (a__).numel();                            \
-    const size_t b_numel__ = (b__).numel();                            \
-    const size_t c_numel__ = (c__).numel();                            \
-    const size_t a_dim__ = (a__).dim();                                \
-    const size_t b_dim__ = (b__).dim();                                \
-    const size_t c_dim__ = (c__).dim();                                \
-    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type();      \
-    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type();      \
-    const ::exec_aten::ScalarType c_type__ = (c__).scalar_type();      \
-                                                                       \
-    ET_CHECK_MSG(                                                      \
-        a_numel__ == b_numel__ && b_numel__ == c_numel__ &&            \
-            ((a_numel__ == 1 && b_numel__ == 1 && c_numel__ == 1) ||   \
-             (a_dim__ == b_dim__ && b_dim__ == c_dim__)) &&            \
-            a_type__ == b_type__ && b_type__ == c_type__,              \
-        ET_TENSOR_CHECK_PREFIX__                                       \
-        ": numel={%zu, %zu, %zu}, dim={%zu, %zu, %zu}, "               \
-        "dtype={%" PRId8 ", %" PRId8 ", %" PRId8 "}",                  \
-        a_numel__,                                                     \
-        b_numel__,                                                     \
-        c_numel__,                                                     \
-        a_dim__,                                                       \
-        b_dim__,                                                       \
-        c_dim__,                                                       \
-        static_cast<int8_t>(a_type__),                                 \
-        static_cast<int8_t>(b_type__),                                 \
-        static_cast<int8_t>(c_type__));                                \
-    for (size_t dim__ = 0; dim__ < ET_MIN3(a_dim__, b_dim__, c_dim__); \
-         ++dim__) {                                                    \
-      size_t a_size__ = (a__).size(dim__);                             \
-      size_t b_size__ = (b__).size(dim__);                             \
-      size_t c_size__ = (c__).size(dim__);                             \
-      ET_CHECK_MSG(                                                    \
-          a_size__ == b_size__ && b_size__ == c_size__,                \
-          ET_TENSOR_CHECK_PREFIX__ " at size(%zu): {%zu, %zu, %zu}",   \
-          dim__,                                                       \
-          a_size__,                                                    \
-          b_size__,                                                    \
-          c_size__);                                                   \
-    }                                                                  \
+#define ET_CHECK_SAME_SHAPE_AND_DTYPE3(a__, b__, c__)                    \
+  ({                                                                     \
+    const size_t a_numel__ = (a__).numel();                              \
+    const size_t b_numel__ = (b__).numel();                              \
+    const size_t c_numel__ = (c__).numel();                              \
+    const size_t a_dim__ = (a__).dim();                                  \
+    const size_t b_dim__ = (b__).dim();                                  \
+    const size_t c_dim__ = (c__).dim();                                  \
+    const ::executorch::aten::ScalarType a_type__ = (a__).scalar_type(); \
+    const ::executorch::aten::ScalarType b_type__ = (b__).scalar_type(); \
+    const ::executorch::aten::ScalarType c_type__ = (c__).scalar_type(); \
+                                                                         \
+    ET_CHECK_MSG(                                                        \
+        a_numel__ == b_numel__ && b_numel__ == c_numel__ &&              \
+            ((a_numel__ == 1 && b_numel__ == 1 && c_numel__ == 1) ||     \
+             (a_dim__ == b_dim__ && b_dim__ == c_dim__)) &&              \
+            a_type__ == b_type__ && b_type__ == c_type__,                \
+        ET_TENSOR_CHECK_PREFIX__                                         \
+        ": numel={%zu, %zu, %zu}, dim={%zu, %zu, %zu}, "                 \
+        "dtype={%" PRId8 ", %" PRId8 ", %" PRId8 "}",                    \
+        a_numel__,                                                       \
+        b_numel__,                                                       \
+        c_numel__,                                                       \
+        a_dim__,                                                         \
+        b_dim__,                                                         \
+        c_dim__,                                                         \
+        static_cast<int8_t>(a_type__),                                   \
+        static_cast<int8_t>(b_type__),                                   \
+        static_cast<int8_t>(c_type__));                                  \
+    for (size_t dim__ = 0; dim__ < ET_MIN3(a_dim__, b_dim__, c_dim__);   \
+         ++dim__) {                                                      \
+      size_t a_size__ = (a__).size(dim__);                               \
+      size_t b_size__ = (b__).size(dim__);                               \
+      size_t c_size__ = (c__).size(dim__);                               \
+      ET_CHECK_MSG(                                                      \
+          a_size__ == b_size__ && b_size__ == c_size__,                  \
+          ET_TENSOR_CHECK_PREFIX__ " at size(%zu): {%zu, %zu, %zu}",     \
+          dim__,                                                         \
+          a_size__,                                                      \
+          b_size__,                                                      \
+          c_size__);                                                     \
+    }                                                                    \
   })
 
 /**
@@ -235,9 +235,10 @@
  */
 #define ET_CHECK_CONTIGUOUS(a__)                                              \
   ({                                                                          \
-    const ::exec_aten::ArrayRef<exec_aten::StridesType> strides =             \
-        a__.strides();                                                        \
-    const ::exec_aten::ArrayRef<exec_aten::StridesType> sizes = a__.sizes();  \
+    const ::executorch::aten::ArrayRef<executorch::aten::StridesType>         \
+        strides = a__.strides();                                              \
+    const ::executorch::aten::ArrayRef<executorch::aten::StridesType> sizes = \
+        a__.sizes();                                                          \
     ET_CHECK_MSG(                                                             \
         strides[strides.size() - 1] == 1,                                     \
         "The stride of the last dimension shall be 1 for contiguous tensor, " \
@@ -268,10 +269,10 @@
         "Two tensors shall have same number of strides, but not %zu and %zu.", \
         a__.dim(),                                                             \
         b__.dim());                                                            \
-    const ::exec_aten::ArrayRef<exec_aten::StridesType> a_strides =            \
-        a__.strides();                                                         \
-    const ::exec_aten::ArrayRef<exec_aten::StridesType> b_strides =            \
-        b__.strides();                                                         \
+    const ::executorch::aten::ArrayRef<executorch::aten::StridesType>          \
+        a_strides = a__.strides();                                             \
+    const ::executorch::aten::ArrayRef<executorch::aten::StridesType>          \
+        b_strides = b__.strides();                                             \
     for (size_t i = 0; i < a__.dim(); i++) {                                   \
       ET_CHECK_MSG(                                                            \
           a_strides[i] == b_strides[i],                                        \
@@ -298,12 +299,12 @@
         a__.dim(),                                                      \
         b__.dim(),                                                      \
         c__.dim());                                                     \
-    const ::exec_aten::ArrayRef<exec_aten::StridesType> a_strides =     \
-        a__.strides();                                                  \
-    const ::exec_aten::ArrayRef<exec_aten::StridesType> b_strides =     \
-        b__.strides();                                                  \
-    const ::exec_aten::ArrayRef<exec_aten::StridesType> c_strides =     \
-        c__.strides();                                                  \
+    const ::executorch::aten::ArrayRef<executorch::aten::StridesType>   \
+        a_strides = a__.strides();                                      \
+    const ::executorch::aten::ArrayRef<executorch::aten::StridesType>   \
+        b_strides = b__.strides();                                      \
+    const ::executorch::aten::ArrayRef<executorch::aten::StridesType>   \
+        c_strides = c__.strides();                                      \
     for (size_t i = 0; i < a__.dim(); i++) {                            \
       ET_CHECK_MSG(                                                     \
           a_strides[i] == b_strides[i] && b_strides[i] == c_strides[i], \
@@ -434,7 +435,7 @@ inline bool dim_is_valid(int64_t dim, int64_t upper_bound) {
  * the zero dimensional tensors in some kernels, that treat them as 1D tensors
  * with a single element.
  */
-inline ssize_t nonzero_dim(const exec_aten::Tensor& tensor) {
+inline ssize_t nonzero_dim(const executorch::aten::Tensor& tensor) {
   return tensor.dim() == 0 ? 1 : tensor.dim();
 }
 
@@ -444,13 +445,15 @@ inline ssize_t nonzero_dim(const exec_aten::Tensor& tensor) {
  * the zero dimensional tensors in some kernels, that treat them as 1D tensors
  * with a single element.
  */
-inline ssize_t nonempty_size(const exec_aten::Tensor& tensor, ssize_t dim) {
+inline ssize_t nonempty_size(
+    const executorch::aten::Tensor& tensor,
+    ssize_t dim) {
   return tensor.dim() == 0 ? 1 : tensor.size(dim);
 }
 
 inline bool tensor_can_cast_to(
-    exec_aten::Tensor a,
-    exec_aten::ScalarType dtype) {
+    executorch::aten::Tensor a,
+    executorch::aten::ScalarType dtype) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::canCast(a.scalar_type(), dtype),
       "Tensor of dtype %s cannot cast to dtype %s",
@@ -460,17 +463,29 @@ inline bool tensor_can_cast_to(
   return true;
 }
 
-inline bool tensor_is_bool_type(exec_aten::Tensor t) {
+inline bool tensor_is_bool_type(executorch::aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      t.scalar_type() == exec_aten::ScalarType::Bool,
+      t.scalar_type() == executorch::aten::ScalarType::Bool,
       "Expected to find bool type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
 
   return true;
 }
 
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    executorch::aten::ScalarType dtype) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype,
+      "Expected to find %s type, but tensor has type %s",
+      torch::executor::toString(dtype),
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
 inline bool tensor_is_integral_type(
-    exec_aten::Tensor t,
+    executorch::aten::Tensor t,
     bool includeBool = false) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::isIntegralType(t.scalar_type(), includeBool),
@@ -480,7 +495,7 @@ inline bool tensor_is_integral_type(
   return true;
 }
 
-inline bool tensor_is_floating_type(exec_aten::Tensor t) {
+inline bool tensor_is_floating_type(executorch::aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::isFloatingType(t.scalar_type()),
       "Expected to find a floating type, but tensor has type %s",
@@ -489,7 +504,7 @@ inline bool tensor_is_floating_type(exec_aten::Tensor t) {
   return true;
 }
 
-inline bool tensor_is_real_type(exec_aten::Tensor t) {
+inline bool tensor_is_real_type(executorch::aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::isRealType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
@@ -498,7 +513,7 @@ inline bool tensor_is_real_type(exec_aten::Tensor t) {
   return true;
 }
 
-inline bool tensor_is_realh_type(exec_aten::Tensor t) {
+inline bool tensor_is_realh_type(executorch::aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::isRealHType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
@@ -507,7 +522,16 @@ inline bool tensor_is_realh_type(exec_aten::Tensor t) {
   return true;
 }
 
-inline bool tensor_is_realhb_type(exec_aten::Tensor t) {
+inline bool tensor_is_realhbf16_type(executorch::aten::Tensor t) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      executorch::runtime::isRealHBF16Type(t.scalar_type()),
+      "Expected to find a real type, but tensor has type %s",
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_realhb_type(executorch::aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::isRealHBType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
@@ -516,7 +540,7 @@ inline bool tensor_is_realhb_type(exec_aten::Tensor t) {
   return true;
 }
 
-inline bool tensor_is_realhbbf16_type(exec_aten::Tensor t) {
+inline bool tensor_is_realhbbf16_type(executorch::aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       executorch::runtime::isRealHBBF16Type(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
@@ -525,7 +549,7 @@ inline bool tensor_is_realhbbf16_type(exec_aten::Tensor t) {
   return true;
 }
 
-inline bool tensor_is_complex_type(exec_aten::Tensor t) {
+inline bool tensor_is_complex_type(executorch::aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::isComplexType(t.scalar_type()),
       "Expected to find a complex type, but tensor has type %s",
@@ -534,7 +558,7 @@ inline bool tensor_is_complex_type(exec_aten::Tensor t) {
   return true;
 }
 
-inline bool tensor_is_bits_type(exec_aten::Tensor t) {
+inline bool tensor_is_bits_type(executorch::aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::isBitsType(t.scalar_type()),
       "Expected to find a bits type, but tensor has type %s",
@@ -543,7 +567,9 @@ inline bool tensor_is_bits_type(exec_aten::Tensor t) {
   return true;
 }
 
-inline bool tensors_have_same_dtype(exec_aten::Tensor a, exec_aten::Tensor b) {
+inline bool tensors_have_same_dtype(
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       a.scalar_type() == b.scalar_type(),
       ET_TENSOR_CHECK_PREFIX__ ": dtype={%s, %s}",
@@ -553,9 +579,9 @@ inline bool tensors_have_same_dtype(exec_aten::Tensor a, exec_aten::Tensor b) {
 }
 
 inline bool tensors_have_same_dtype(
-    exec_aten::Tensor a,
-    exec_aten::Tensor b,
-    exec_aten::Tensor c) {
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b,
+    executorch::aten::Tensor c) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       a.scalar_type() == b.scalar_type() && b.scalar_type() == c.scalar_type(),
       ET_TENSOR_CHECK_PREFIX__ ": dtype={%s, %s, %s}",
@@ -565,7 +591,7 @@ inline bool tensors_have_same_dtype(
   return true;
 }
 
-inline bool tensor_is_rank(exec_aten::Tensor t, size_t rank) {
+inline bool tensor_is_rank(executorch::aten::Tensor t, size_t rank) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       t.dim() == rank,
       "Expected tensor.dim() to be %zu, but got %zu",
@@ -576,7 +602,7 @@ inline bool tensor_is_rank(exec_aten::Tensor t, size_t rank) {
 }
 
 inline bool tensor_has_rank_greater_or_equal_to(
-    exec_aten::Tensor t,
+    executorch::aten::Tensor t,
     size_t rank) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       t.dim() >= rank,
@@ -588,7 +614,7 @@ inline bool tensor_has_rank_greater_or_equal_to(
 }
 
 inline bool tensor_has_rank_smaller_or_equal_to(
-    exec_aten::Tensor t,
+    executorch::aten::Tensor t,
     size_t rank) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       t.dim() <= rank,
@@ -599,7 +625,7 @@ inline bool tensor_has_rank_smaller_or_equal_to(
   return true;
 }
 
-inline bool tensor_has_dim(exec_aten::Tensor t, int64_t d) {
+inline bool tensor_has_dim(executorch::aten::Tensor t, int64_t d) {
   if (t.dim() == 0) {
     ET_LOG_MSG_AND_RETURN_IF_FALSE(
         d == 0 || d == -1,
@@ -615,14 +641,15 @@ inline bool tensor_has_dim(exec_aten::Tensor t, int64_t d) {
   return true;
 }
 
-inline bool tensor_has_non_empty_dim(exec_aten::Tensor t, int64_t d) {
+inline bool tensor_has_non_empty_dim(executorch::aten::Tensor t, int64_t d) {
   const size_t udim = ET_NORMALIZE_IX(d, t.dim());
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(t, d));
   ET_LOG_AND_RETURN_IF_FALSE(t.size(udim) != 0);
   return true;
 }
 
-inline bool tensor_dim_has_index(exec_aten::Tensor t, int64_t d, int64_t ix) {
+inline bool
+tensor_dim_has_index(executorch::aten::Tensor t, int64_t d, int64_t ix) {
   // Indexing ops don't support zero-dim tensors
   ET_CHECK(t.dim() != 0);
   if (d < 0) {
@@ -642,9 +669,9 @@ inline bool tensor_dim_has_index(exec_aten::Tensor t, int64_t d, int64_t ix) {
 }
 
 inline bool tensors_have_same_size_at_dims(
-    exec_aten::Tensor a,
+    executorch::aten::Tensor a,
     size_t dim_a,
-    exec_aten::Tensor b,
+    executorch::aten::Tensor b,
     size_t dim_b) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       dim_a < a.dim(),
@@ -668,7 +695,9 @@ inline bool tensors_have_same_size_at_dims(
   return true;
 }
 
-inline bool tensors_have_same_shape(exec_aten::Tensor a, exec_aten::Tensor b) {
+inline bool tensors_have_same_shape(
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b) {
   if (a.numel() == 1 && b.numel() == 1) {
     // PyTorch operators treat all scalar tensors as the same shape even if
     // they have different dims.
@@ -698,9 +727,9 @@ inline bool tensors_have_same_shape(exec_aten::Tensor a, exec_aten::Tensor b) {
 }
 
 inline bool tensors_have_same_shape(
-    exec_aten::Tensor a,
-    exec_aten::Tensor b,
-    exec_aten::Tensor c) {
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b,
+    executorch::aten::Tensor c) {
   if (a.numel() == 1 && b.numel() == 1 && c.numel() == 1) {
     // PyTorch operators treat all scalar tensors as the same shape even if
     // they have different dims.
@@ -736,21 +765,21 @@ inline bool tensors_have_same_shape(
 }
 
 inline bool tensors_have_same_shape_and_dtype(
-    exec_aten::Tensor a,
-    exec_aten::Tensor b) {
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b) {
   return tensors_have_same_shape(a, b) && tensors_have_same_dtype(a, b);
 }
 
 inline bool tensors_have_same_shape_and_dtype(
-    exec_aten::Tensor a,
-    exec_aten::Tensor b,
-    exec_aten::Tensor c) {
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b,
+    executorch::aten::Tensor c) {
   return tensors_have_same_shape(a, b, c) && tensors_have_same_dtype(a, b, c);
 }
 
 inline bool tensor_has_expected_size(
-    exec_aten::Tensor a,
-    exec_aten::ArrayRef<exec_aten::SizesType> expected_sizes) {
+    executorch::aten::Tensor a,
+    executorch::aten::ArrayRef<executorch::aten::SizesType> expected_sizes) {
   if (!(a.sizes() == expected_sizes)) {
     ET_LOG(
         Error,
@@ -774,8 +803,8 @@ inline bool tensor_has_expected_size(
 }
 
 inline bool tensors_have_same_strides(
-    exec_aten::Tensor a,
-    exec_aten::Tensor b) {
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b) {
   if (a.strides() != b.strides()) {
     ET_LOG(
         Error,
@@ -797,9 +826,9 @@ inline bool tensors_have_same_strides(
 }
 
 inline bool tensors_have_same_strides(
-    exec_aten::Tensor a,
-    exec_aten::Tensor b,
-    exec_aten::Tensor c) {
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b,
+    executorch::aten::Tensor c) {
   if (!(a.strides() == b.strides() && b.strides() == c.strides())) {
     ET_LOG(
         Error,
@@ -822,7 +851,7 @@ inline bool tensors_have_same_strides(
   return true;
 }
 
-inline bool tensor_is_contiguous(exec_aten::Tensor t) {
+inline bool tensor_is_contiguous(executorch::aten::Tensor t) {
   const auto strides = t.strides();
   const auto sizes = t.sizes();
   // If tensor is 0-dim (i.e. a scalar tensor) it is contiguous
@@ -848,7 +877,9 @@ inline bool tensor_is_contiguous(exec_aten::Tensor t) {
   return true;
 }
 
-inline bool tensors_have_same_rank(exec_aten::Tensor a, exec_aten::Tensor b) {
+inline bool tensors_have_same_rank(
+    executorch::aten::Tensor a,
+    executorch::aten::Tensor b) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       a.dim() == b.dim(),
       ET_TENSOR_CHECK_PREFIX__ ": rank={%zd, %zd}",
@@ -857,7 +888,7 @@ inline bool tensors_have_same_rank(exec_aten::Tensor a, exec_aten::Tensor b) {
   return true;
 }
 
-inline bool tensor_is_scalar(exec_aten::Tensor t) {
+inline bool tensor_is_scalar(executorch::aten::Tensor t) {
   return t.dim() == 0 && t.numel() == 1;
 }
 
@@ -872,7 +903,9 @@ inline bool tensor_is_scalar(exec_aten::Tensor t) {
 constexpr size_t kTensorDimensionLimit = 16;
 
 /// Returns the product of dim[0:dim), not including dim.
-inline size_t getLeadingDims(const exec_aten::Tensor& tensor, int64_t dim) {
+inline size_t getLeadingDims(
+    const executorch::aten::Tensor& tensor,
+    int64_t dim) {
   ET_CHECK_MSG(
       dim >= 0 && dim <= tensor.dim(),
       "Ending dimension %" PRId64
@@ -887,7 +920,9 @@ inline size_t getLeadingDims(const exec_aten::Tensor& tensor, int64_t dim) {
 }
 
 /// Returns the product of dim[dim+1:].
-inline size_t getTrailingDims(const exec_aten::Tensor& tensor, int64_t dim) {
+inline size_t getTrailingDims(
+    const executorch::aten::Tensor& tensor,
+    int64_t dim) {
   ET_CHECK_MSG(
       dim >= -1 && dim < tensor.dim(),
       "Starting dimension %" PRId64
@@ -912,7 +947,7 @@ inline size_t getTrailingDims(const exec_aten::Tensor& tensor, int64_t dim) {
  * in the tensor.
  */
 inline size_t coordinateToIndex(
-    const exec_aten::Tensor& tensor,
+    const executorch::aten::Tensor& tensor,
     const size_t* const coordinate) {
   size_t index = 0;
   for (int d = 0; d < tensor.dim(); ++d) {
@@ -927,7 +962,7 @@ inline size_t coordinateToIndex(
  * repeated calls to coordinateToIndex.
  */
 inline void memoizeTrailingDims(
-    const exec_aten::Tensor& tensor,
+    const executorch::aten::Tensor& tensor,
     size_t trailing_dims_memo[kTensorDimensionLimit]) {
   const auto tensorDim = tensor.dim();
   size_t dims = 1;
@@ -943,7 +978,7 @@ inline void memoizeTrailingDims(
  * memoizeTrailingDims.
  */
 inline size_t coordinateToIndexWithTrailingDimsMemo(
-    const exec_aten::Tensor& tensor,
+    const executorch::aten::Tensor& tensor,
     const size_t* const coordinate,
     const size_t trailing_dims_memo[kTensorDimensionLimit]) {
   size_t index = 0;
@@ -965,7 +1000,7 @@ inline size_t coordinateToIndexWithTrailingDimsMemo(
  * @returns void
  */
 inline void indexToCoordinate(
-    const exec_aten::Tensor& tensor,
+    const executorch::aten::Tensor& tensor,
     size_t index,
     size_t* coordinate) {
   ET_CHECK(index < tensor.numel());
@@ -992,12 +1027,12 @@ template <
     typename std::enable_if<
         std::is_integral<INT_T>::value && !std::is_same<INT_T, bool>::value,
         bool>::type = true>
-bool extract_scalar_tensor(exec_aten::Tensor tensor, INT_T* out_val) {
+bool extract_scalar_tensor(executorch::aten::Tensor tensor, INT_T* out_val) {
   if (tensor.numel() != 1) {
     return false;
   }
 #define CASE_INT_DTYPE(TENSOR_CTYPE, TENSOR_DTYPE)                     \
-  case exec_aten::ScalarType::TENSOR_DTYPE: {                          \
+  case executorch::aten::ScalarType::TENSOR_DTYPE: {                   \
     const TENSOR_CTYPE val = tensor.const_data_ptr<TENSOR_CTYPE>()[0]; \
     if (val < std::numeric_limits<INT_T>::lowest() ||                  \
         val > std::numeric_limits<INT_T>::max()) {                     \
@@ -1027,14 +1062,17 @@ bool extract_scalar_tensor(exec_aten::Tensor tensor, INT_T* out_val) {
  */
 template <
     typename FLOAT_T,
-    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
-        type = true>
-bool extract_scalar_tensor(exec_aten::Tensor tensor, FLOAT_T* out_val) {
+    typename std::enable_if<
+        std::is_floating_point_v<FLOAT_T> ||
+            std::is_same_v<FLOAT_T, executorch::aten::BFloat16> ||
+            std::is_same_v<FLOAT_T, executorch::aten::Half>,
+        bool>::type = true>
+bool extract_scalar_tensor(executorch::aten::Tensor tensor, FLOAT_T* out_val) {
   if (tensor.numel() != 1) {
     return false;
   }
 #define CASE_REAL_DTYPE(TENSOR_CTYPE, TENSOR_DTYPE)                    \
-  case exec_aten::ScalarType::TENSOR_DTYPE: {                          \
+  case executorch::aten::ScalarType::TENSOR_DTYPE: {                   \
     /* ET_FORALL_REAL_TYPES guarantees TENSOR_CTYPE is a real type. */ \
     double val =                                                       \
         static_cast<double>(tensor.const_data_ptr<TENSOR_CTYPE>()[0]); \
@@ -1048,7 +1086,7 @@ bool extract_scalar_tensor(exec_aten::Tensor tensor, FLOAT_T* out_val) {
   }
 
   switch (tensor.scalar_type()) {
-    ET_FORALL_REAL_TYPES(CASE_REAL_DTYPE);
+    ET_FORALL_REALHBF16_TYPES(CASE_REAL_DTYPE);
     default:
       return false;
   }
@@ -1067,8 +1105,8 @@ template <
     typename BOOL_T,
     typename std::enable_if<std::is_same<BOOL_T, bool>::value, bool>::type =
         true>
-bool extract_scalar_tensor(exec_aten::Tensor tensor, BOOL_T* out_val) {
-  if (tensor.scalar_type() != exec_aten::ScalarType::Bool) {
+bool extract_scalar_tensor(executorch::aten::Tensor tensor, BOOL_T* out_val) {
+  if (tensor.scalar_type() != executorch::aten::ScalarType::Bool) {
     return false;
   }
   if (tensor.numel() != 1) {
@@ -1088,33 +1126,35 @@ namespace internal {
  * Share t_src's data_ptr with t_dst.
  */
 ET_NODISCARD Error share_tensor_data(
-    const exec_aten::Tensor& t_dst,
-    const exec_aten::Tensor& t_src);
+    const executorch::aten::Tensor& t_dst,
+    const executorch::aten::Tensor& t_src);
 
 /**
  * Copy t_src's data_ptr to t_dst.
  */
 ET_NODISCARD Error copy_tensor_data(
-    const exec_aten::Tensor& t_dst,
-    const exec_aten::Tensor& t_src);
+    const executorch::aten::Tensor& t_dst,
+    const executorch::aten::Tensor& t_src);
 
 /**
  * Set the data_ptr of t to buffer.
  */
-ET_NODISCARD Error
-set_tensor_data(const exec_aten::Tensor& t, void* buffer, size_t buffer_size);
+ET_NODISCARD Error set_tensor_data(
+    const executorch::aten::Tensor& t,
+    void* buffer,
+    size_t buffer_size);
 
 /**
  * Reset tensor's data_ptr, clear all the storage for at::Tensor.
  */
-void reset_data_ptr(const exec_aten::Tensor& tensor);
+void reset_data_ptr(const executorch::aten::Tensor& tensor);
 
 /**
  * Resize tensor impl
  */
 ET_NODISCARD Error resize_tensor_impl(
-    exec_aten::TensorImpl* impl,
-    exec_aten::ArrayRef<exec_aten::SizesType> new_sizes);
+    executorch::aten::TensorImpl* impl,
+    executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes);
 
 } // namespace internal
 
@@ -1128,8 +1168,8 @@ ET_NODISCARD Error resize_tensor_impl(
  * passed in through runtimeContext.
  */
 ET_NODISCARD inline Error resize_tensor(
-    exec_aten::Tensor t,
-    exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
+    executorch::aten::Tensor t,
+    executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes) {
   return internal::resize_tensor_impl(t.unsafeGetTensorImpl(), new_sizes);
 }
 
@@ -1144,16 +1184,19 @@ ET_NODISCARD inline Error resize_tensor(
  */
 template <
     typename T,
-    typename std::
-        enable_if<!std::is_same<exec_aten::SizesType, T>::value, int>::type = 0>
+    typename std::enable_if<
+        !std::is_same<executorch::aten::SizesType, T>::value,
+        int>::type = 0>
 ET_NODISCARD inline Error resize_tensor(
-    exec_aten::Tensor t,
-    exec_aten::ArrayRef<T> new_sizes) {
+    executorch::aten::Tensor t,
+    executorch::aten::ArrayRef<T> new_sizes) {
   // Need to cast the input array to an array of Tensor::SizesType
-  std::array<exec_aten::SizesType, kTensorDimensionLimit> new_sizes_casted{};
+  std::array<executorch::aten::SizesType, kTensorDimensionLimit>
+      new_sizes_casted{};
   size_t new_sizes_ndim = new_sizes.size();
   for (size_t i = 0; i < new_sizes_ndim; ++i) {
-    new_sizes_casted[i] = static_cast<exec_aten::SizesType>(new_sizes[i]);
+    new_sizes_casted[i] =
+        static_cast<executorch::aten::SizesType>(new_sizes[i]);
   }
 
   return internal::resize_tensor_impl(
@@ -1162,8 +1205,8 @@ ET_NODISCARD inline Error resize_tensor(
 
 /// DEPRECATED: Use `resize_tensor()` instead, which can fail non-fatally.
 ET_DEPRECATED inline void resize(
-    exec_aten::Tensor t,
-    exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
+    executorch::aten::Tensor t,
+    executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes) {
   Error err = resize_tensor(t, new_sizes);
   ET_CHECK_MSG(
       err == Error::Ok, "Could not resize Tensor; see logs for details");
@@ -1176,22 +1219,22 @@ ET_DEPRECATED inline void resize(
  * @param out_dim_order_size Size of the DimOrderType array.
  */
 ET_NODISCARD Error get_dim_order(
-    const exec_aten::Tensor& tensor,
-    exec_aten::DimOrderType* out_dim_order,
+    const executorch::aten::Tensor& tensor,
+    executorch::aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size);
 
 /**
  * Checks whether a tensor has a valid dim order. If the dim order could not
  * be determined, then this function returns false by default.
  */
-bool tensor_has_valid_dim_order(exec_aten::Tensor t);
+bool tensor_has_valid_dim_order(executorch::aten::Tensor t);
 
 /**
  * Checks whether a tensor has either the default of channels last dim order.
  * If the dim order could not be determined, then this function returns false
  * by default.
  */
-bool tensor_is_default_or_channels_last_dim_order(exec_aten::Tensor t);
+bool tensor_is_default_or_channels_last_dim_order(executorch::aten::Tensor t);
 
 /**
  * Checks whether a tensor has the default dimension order.
@@ -1200,7 +1243,7 @@ bool tensor_is_default_or_channels_last_dim_order(exec_aten::Tensor t);
  * @param t The tensor to check the dimension order of.
  * @return True if the tensor has the default dimension order, false otherwise.
  */
-bool tensor_is_default_dim_order(exec_aten::Tensor t);
+bool tensor_is_default_dim_order(executorch::aten::Tensor t);
 
 /**
  * Checks whether a tensor has the channels last dimension order.
@@ -1210,7 +1253,7 @@ bool tensor_is_default_dim_order(exec_aten::Tensor t);
  * @return True if the tensor has the channels last dimension order, false
  * otherwise.
  */
-bool tensor_is_channels_last_dim_order(exec_aten::Tensor t);
+bool tensor_is_channels_last_dim_order(executorch::aten::Tensor t);
 
 /**
  * Asserts that four tensors have the same dim_order
@@ -1220,7 +1263,7 @@ bool tensor_is_channels_last_dim_order(exec_aten::Tensor t);
  *
  */
 bool tensors_have_same_dim_order(
-    const exec_aten::ArrayRef<exec_aten::Tensor> tensor_list);
+    const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list);
 
 /**
  * Asserts that two tensors have the same dim_order
@@ -1230,9 +1273,9 @@ bool tensors_have_same_dim_order(
  */
 
 inline bool tensors_have_same_dim_order(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b) {
-  exec_aten::Tensor tensor_list[2] = {a, b};
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b) {
+  executorch::aten::Tensor tensor_list[2] = {a, b};
   return tensors_have_same_dim_order(tensor_list);
 }
 
@@ -1245,10 +1288,10 @@ inline bool tensors_have_same_dim_order(
  */
 
 inline bool tensors_have_same_dim_order(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b,
-    const exec_aten::Tensor& c) {
-  exec_aten::Tensor tensor_list[3] = {a, b, c};
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b,
+    const executorch::aten::Tensor& c) {
+  executorch::aten::Tensor tensor_list[3] = {a, b, c};
   return tensors_have_same_dim_order(tensor_list);
 }
 
@@ -1261,11 +1304,11 @@ inline bool tensors_have_same_dim_order(
  */
 
 inline bool tensors_have_same_dim_order(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b,
-    const exec_aten::Tensor& c,
-    const exec_aten::Tensor& d) {
-  exec_aten::Tensor tensor_list[4] = {a, b, c, d};
+    const executorch::aten::Tensor& a,
+    const executorch::aten::Tensor& b,
+    const executorch::aten::Tensor& c,
+    const executorch::aten::Tensor& d) {
+  executorch::aten::Tensor tensor_list[4] = {a, b, c, d};
   return tensors_have_same_dim_order(tensor_list);
 }
 
@@ -1278,8 +1321,8 @@ inline bool tensors_have_same_dim_order(
  * @param ndim Number of dimensions in the tensor.
  */
 inline size_t calculate_linear_index(
-    const exec_aten::SizesType* coordinate,
-    const exec_aten::StridesType* strides,
+    const executorch::aten::SizesType* coordinate,
+    const executorch::aten::StridesType* strides,
     const size_t ndim) {
   size_t index = 0;
   for (size_t i = 0; i < ndim; i++) {

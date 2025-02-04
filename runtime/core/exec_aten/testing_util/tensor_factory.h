@@ -14,10 +14,8 @@
 #ifdef USE_ATEN_LIB
 #include <ATen/ATen.h>
 #else // !USE_ATEN_LIB
-#include <numeric>
-// @nolint PATTERNLINT Ok to use stdlib for this test framework
 #include <memory>
-// @nolint PATTERNLINT Ok to use stdlib for this test framework
+#include <numeric>
 #include <vector>
 #endif // !USE_ATEN_LIB
 
@@ -56,7 +54,7 @@ inline size_t sizes_to_numel(const std::vector<int32_t>& sizes) {
 
 inline bool check_strides(
     const std::vector<int32_t> sizes,
-    const std::vector<exec_aten::StridesType> strides) {
+    const std::vector<executorch::aten::StridesType> strides) {
   if (sizes.size() != strides.size()) {
     // The length of stride vector shall equal to size vector.
     return false;
@@ -149,14 +147,14 @@ inline bool check_dim_order(
   return true;
 }
 
-inline std::vector<exec_aten::StridesType> strides_from_dim_order(
+inline std::vector<executorch::aten::StridesType> strides_from_dim_order(
     const std::vector<int32_t>& sizes,
     const std::vector<uint8_t>& dim_order) {
   bool legal = check_dim_order(sizes, dim_order);
   ET_CHECK_MSG(legal, "The input dim_order variable is illegal.");
 
   size_t ndim = sizes.size();
-  std::vector<exec_aten::StridesType> strides(ndim);
+  std::vector<executorch::aten::StridesType> strides(ndim);
   strides[dim_order[ndim - 1]] = 1;
   for (int i = ndim - 2; i >= 0; --i) {
     uint8_t cur_dim = dim_order[i];
@@ -191,7 +189,7 @@ inline std::vector<uint8_t> channels_last_dim_order(size_t dims) {
 
 // Note that this USE_ATEN_LIB section uses ATen-specific namespaces instead of
 // exec_aten because we know that we're working with ATen, and many of these
-// names aren't mapped into exec_aten::.
+// names aren't mapped into executorch::aten::.
 
 namespace internal {
 
@@ -260,7 +258,7 @@ class TensorFactory {
   at::Tensor make(
       const std::vector<int32_t>& sizes,
       const std::vector<ctype>& data,
-      const std::vector<exec_aten::StridesType> strides = {},
+      const std::vector<executorch::aten::StridesType> strides = {},
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto expected_numel = internal::sizes_to_numel(sizes);
@@ -281,7 +279,10 @@ class TensorFactory {
       t = empty_strided(sizes, strides);
     }
     if (t.nbytes() > 0) {
-      memcpy(t.template data<true_ctype>(), data.data(), t.nbytes());
+      std::transform(
+          data.begin(), data.end(), t.template data<true_ctype>(), [](auto x) {
+            return static_cast<true_ctype>(x);
+          });
     }
     return t;
   }
@@ -321,7 +322,10 @@ class TensorFactory {
       t = empty_strided(sizes, strides);
     }
     if (t.nbytes() > 0) {
-      memcpy(t.template data<true_ctype>(), data.data(), t.nbytes());
+      std::transform(
+          data.begin(), data.end(), t.template data<true_ctype>(), [](auto x) {
+            return static_cast<true_ctype>(x);
+          });
     }
     return t;
   }
@@ -371,7 +375,7 @@ class TensorFactory {
     for (uint8_t i = 0; i < sizes.size(); i++) {
       contiguous_dim_order[i] = i;
     }
-    std::vector<exec_aten::StridesType> contiguous_strides =
+    std::vector<executorch::aten::StridesType> contiguous_strides =
         internal::strides_from_dim_order(sizes, contiguous_dim_order);
 
     for (int32_t i = 0; i < input.dim(); i++) {
@@ -527,7 +531,7 @@ class TensorFactory {
    */
   at::Tensor empty_strided(
       const std::vector<int32_t>& sizes,
-      const std::vector<exec_aten::StridesType>& strides,
+      const std::vector<executorch::aten::StridesType>& strides,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto sizes64 = vec_32_to_64(sizes);
@@ -623,7 +627,7 @@ inline void validate_strides(
 
 // Note that this !USE_ATEN_LIB section uses ExecuTorch-specific namespaces
 // instead of exec_aten to make it clear that we're dealing with ETensor, and
-// because many of these names aren't mapped into exec_aten::.
+// because many of these names aren't mapped into executorch::aten::.
 
 namespace internal {
 
@@ -643,6 +647,20 @@ struct ScalarTypeToCppTypeWrapper {
 template <>
 struct ScalarTypeToCppTypeWrapper<torch::executor::ScalarType::Bool> {
   using ctype = uint8_t;
+};
+
+// Use a C type of `uint16_t` instead of `Bits16` to simplify code reuse when
+// testing multiple integer types.
+template <>
+struct ScalarTypeToCppTypeWrapper<torch::executor::ScalarType::Bits16> {
+  using ctype = uint16_t;
+};
+
+// Use a C type of `uint16_t` instead of `UInt16` to simplify code reuse when
+// testing multiple integer types.
+template <>
+struct ScalarTypeToCppTypeWrapper<torch::executor::ScalarType::UInt16> {
+  using ctype = uint16_t;
 };
 
 // To allow implicit conversion between simple types to `ctype`
@@ -709,6 +727,13 @@ class TensorFactory {
    */
   using ctype = typename internal::ScalarTypeToCppTypeWrapper<DTYPE>::ctype;
 
+  /**
+   * The official C type for the scalar type. Used when accessing elements
+   * of a constructed Tensor.
+   */
+  using true_ctype =
+      typename executorch::runtime::ScalarTypeToCppType<DTYPE>::type;
+
   TensorFactory() = default;
 
   /**
@@ -733,7 +758,7 @@ class TensorFactory {
   torch::executor::Tensor make(
       const std::vector<int32_t>& sizes,
       const std::vector<ctype>& data,
-      const std::vector<exec_aten::StridesType> strides = {},
+      const std::vector<executorch::aten::StridesType> strides = {},
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
     std::vector<int32_t> default_strides;
     // Generate strides from the tensor dimensions, assuming contiguous data if
@@ -1007,12 +1032,19 @@ class TensorFactory {
               data_.data(),
               dim_order_.data(),
               strides_.data(),
-              dynamism) {}
+              dynamism) {
+      // The only valid values for bool are 0 and 1; coerce!
+      if constexpr (std::is_same_v<true_ctype, bool>) {
+        for (auto& x : data_) {
+          x = static_cast<true_ctype>(x);
+        }
+      }
+    }
 
     std::vector<int32_t> sizes_;
     std::vector<ctype> data_;
     std::vector<uint8_t> dim_order_;
-    std::vector<exec_aten::StridesType> strides_;
+    std::vector<executorch::aten::StridesType> strides_;
     torch::executor::TensorImpl impl_;
   };
 
@@ -1033,7 +1065,7 @@ class TensorFactory {
  * (and Tensors they contain), and must live longer than those TensorLists and
  * Tensors.
  */
-template <exec_aten::ScalarType DTYPE>
+template <executorch::aten::ScalarType DTYPE>
 class TensorListFactory final {
  public:
   TensorListFactory() = default;
@@ -1044,15 +1076,18 @@ class TensorListFactory final {
    * provided Tensors, but filled with zero elements. The dtypes of the template
    * entries are ignored.
    */
-  exec_aten::TensorList zeros_like(
-      const std::vector<exec_aten::Tensor>& templates) {
-    memory_.emplace_back(std::make_unique<std::vector<exec_aten::Tensor>>());
+  executorch::aten::TensorList zeros_like(
+      const std::vector<executorch::aten::Tensor>& templates) {
+    memory_.emplace_back(
+        std::make_unique<std::vector<executorch::aten::Tensor>>());
     auto& vec = memory_.back();
     std::for_each(
-        templates.begin(), templates.end(), [&](const exec_aten::Tensor& t) {
+        templates.begin(),
+        templates.end(),
+        [&](const executorch::aten::Tensor& t) {
           vec->push_back(tf_.zeros_like(t));
         });
-    return exec_aten::TensorList(vec->data(), vec->size());
+    return executorch::aten::TensorList(vec->data(), vec->size());
   }
 
  private:
@@ -1062,7 +1097,7 @@ class TensorListFactory final {
    * vector of pointers so that the elements won't move if the vector needs to
    * resize/realloc.
    */
-  std::vector<std::unique_ptr<std::vector<exec_aten::Tensor>>> memory_;
+  std::vector<std::unique_ptr<std::vector<executorch::aten::Tensor>>> memory_;
 };
 
 } // namespace testing

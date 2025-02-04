@@ -28,9 +28,49 @@
             android:translationY="5dp" />
 
         <LinearLayout
+            android:id="@+id/backendLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="40dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/backendLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:text="Backend"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:translationX="5dp" />
+
+            <TextView
+                android:id="@+id/backendTextView"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical|end"
+                android:text="no backend selected"
+                android:textColor="#FFFFFF" />
+
+            <ImageButton
+                android:id="@+id/backendImageButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:background="#00FFFFFF"
+                android:scaleType="center"
+                android:scaleX="0.7"
+                android:scaleY="0.7"
+                android:src="@drawable/expand_circle_down" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/modelLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
             android:orientation="horizontal">
 
             <TextView
@@ -66,6 +106,7 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/tokenizerLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -103,6 +144,7 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/modelTypeLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -152,7 +194,7 @@
             android:theme="@style/DefaultButton" />
 
         <TextView
-            android:id="@+id/textView4"
+            android:id="@+id/parametersView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -164,6 +206,7 @@
             android:translationX="5dp" />
 
         <LinearLayout
+            android:id="@+id/temperatureLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="10dp"

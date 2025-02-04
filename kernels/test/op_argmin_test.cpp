@@ -16,10 +16,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpArgminTest : public OperatorTest {
@@ -31,57 +31,39 @@ class OpArgminTest : public OperatorTest {
       Tensor& out) {
     return torch::executor::aten::argmin_outf(context_, in, dim, keepdim, out);
   }
+
+  template <ScalarType dtype>
+  void test_argmin_dtype() {
+    TensorFactory<ScalarType::Long> tfl;
+    TensorFactory<dtype> tf_dtype;
+
+    // clang-format off
+    Tensor in = tf_dtype.make(
+        { 2, 3, 4 },
+        { 1, 4, 1, 6,
+          5, 8, 5, 6,
+          5, 3, 9, 2,
+
+          3, 9, 1, 4,
+          9, 7, 5, 5,
+          7, 7, 6, 3 });
+
+    Tensor out = tfl.zeros({2, 4});
+    Tensor expected = tfl.make({2, 4}, {
+        0, 2, 0, 2,
+        0, 1, 0, 2 });
+    Tensor ret = op_argmin_out(in, 1, false, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, expected);
+    // clang-format on
+  }
 };
 
-TEST_F(OpArgminTest, SanityCheckLong) {
-  TensorFactory<ScalarType::Long> tf;
-
-  // clang-format off
-  Tensor in = tf.make(
-    { 2, 3, 4 },
-    { 1, 4, 1, 6,
-      5, 8, 5, 6,
-      5, 3, 9, 2,
-
-      3, 9, 1, 4,
-      9, 7, 5, 5,
-      7, 7, 6, 3 });
-
-  Tensor out = tf.zeros({2, 4});
-  Tensor expected = tf.make({2, 4}, {
-    0, 2, 0, 2,
-    0, 1, 0, 2 });
-  Tensor ret = op_argmin_out(in, 1, false, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
-  // clang-format on
-}
-
-TEST_F(OpArgminTest, SanityCheckShort) {
-  TensorFactory<ScalarType::Long> tfl;
-  TensorFactory<ScalarType::Short> tfs;
-
-  // clang-format off
-  Tensor in = tfs.make(
-    { 2, 3, 4 },
-    { 1, 4, 1, 6,
-      5, 8, 5, 6,
-      5, 3, 9, 2,
-
-      3, 9, 1, 4,
-      9, 7, 5, 5,
-      7, 7, 6, 3 });
-
-  Tensor out = tfl.zeros({2, 4});
-  Tensor expected = tfl.make({2, 4}, {
-    0, 2, 0, 2,
-    0, 1, 0, 2 });
-  Tensor ret = op_argmin_out(in, 1, false, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
-  // clang-format on
+TEST_F(OpArgminTest, SanityCheck) {
+#define TEST_ENTRY(ctype, dtype) test_argmin_dtype<ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
 TEST_F(OpArgminTest, SanityCheckNullDim) {

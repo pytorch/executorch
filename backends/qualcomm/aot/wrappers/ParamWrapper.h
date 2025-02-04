@@ -13,14 +13,17 @@
 #include <utility>
 
 #include "QnnTypes.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 class ParamWrapper {
  public:
   // Populate Qnn_Param_t. Return an error code Error::Ok if succeeded,
   // Error::Internal if failed
-  virtual Error PopulateQnnParam() = 0;
+  virtual executorch::runtime::Error PopulateQnnParam() = 0;
   virtual ~ParamWrapper() = default;
 
   ParamWrapper(const ParamWrapper& rhs) = default;
@@ -50,5 +53,5 @@ class ParamWrapper {
   std::string name_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

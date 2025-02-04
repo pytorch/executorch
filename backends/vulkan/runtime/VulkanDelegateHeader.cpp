@@ -15,9 +15,12 @@
 
 #pragma clang diagnostic ignored "-Wdeprecated"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace vulkan {
+
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 namespace {
 
@@ -101,5 +104,5 @@ Result<VulkanDelegateHeader> VulkanDelegateHeader::parse(const void* data) {
 }
 
 } // namespace vulkan
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

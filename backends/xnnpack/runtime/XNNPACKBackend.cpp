@@ -17,8 +17,19 @@
 
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
+
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
 
 class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -64,6 +75,13 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         context.get_runtime_allocator(), xnnpack::delegate::XNNExecutor);
+
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
+    // This is needed to serialize access to xnn_create_runtime which is not
+    // thread safe. This can heppen when multiple threads call init() on
+    // the same backend instance.
+    const std::lock_guard<std::mutex> lock(workspace_mutex_);
+#endif
 
     // Executor has been allocated but not constructed, ensure that runtime_ is
     // nullptr by constructing it in place here. NOTE: Since we use placement
@@ -121,6 +139,12 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
 
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
+      // This is needed to serialize access to xnn_delete_runtime which is not
+      // thread safe. This can heppen when multiple threads call destroy() on
+      // the same backend instance.
+      const std::lock_guard<std::mutex> lock(workspace_mutex_);
+#endif
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
@@ -145,5 +169,5 @@ Backend backend{"XnnpackBackend", &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
 
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

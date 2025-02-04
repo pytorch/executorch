@@ -13,15 +13,15 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-from executorch.exir import to_edge
-from torch._export import capture_pre_autograd_graph
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
+from executorch.exir import to_edge
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.export import export_for_training
 
 from transformers import Phi3ForCausalLM
 
@@ -64,9 +64,9 @@ def export(args) -> None:
         xnnpack_quantizer = XNNPACKQuantizer()
         xnnpack_quantizer.set_global(xnnpack_quant_config)
 
-        model = capture_pre_autograd_graph(
+        model = export_for_training(
             model, example_inputs, dynamic_shapes=dynamic_shapes
-        )
+        ).module()
         model = prepare_pt2e(model, xnnpack_quantizer)  # pyre-fixme[6]
         model(*example_inputs)
         model = convert_pt2e(model)

@@ -122,6 +122,21 @@ void CommandBuffer::bind_descriptors(VkDescriptorSet descriptors) {
   state_ = CommandBuffer::State::DESCRIPTORS_BOUND;
 }
 
+void CommandBuffer::set_push_constants(
+    VkPipelineLayout pipeline_layout,
+    const void* push_constants_data,
+    uint32_t push_constants_size) {
+  if (push_constants_data != nullptr && push_constants_size > 0) {
+    vkCmdPushConstants(
+        handle_,
+        pipeline_layout,
+        VK_SHADER_STAGE_COMPUTE_BIT,
+        0,
+        push_constants_size,
+        push_constants_data);
+  }
+}
+
 void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::DESCRIPTORS_BOUND ||
@@ -175,6 +190,45 @@ void CommandBuffer::dispatch(const utils::uvec3& global_workgroup_size) {
       utils::div_up(global_workgroup_size[1u], bound_.local_workgroup_size[1u]),
       utils::div_up(
           global_workgroup_size[2u], bound_.local_workgroup_size[2u]));
+
+  state_ = CommandBuffer::State::RECORDING;
+}
+
+void CommandBuffer::blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst) {
+  VK_CHECK_COND(
+      state_ == CommandBuffer::State::BARRIERS_INSERTED,
+      "Vulkan CommandBuffer: called blit() on a command buffer whose state "
+      "is not BARRIERS_INSERTED.");
+
+  auto src_extents = src.extents();
+  auto dst_extents = dst.extents();
+
+  VkImageBlit blit{};
+  blit.srcOffsets[0] = {0, 0, 0},
+  blit.srcOffsets[1] =
+      {static_cast<int32_t>(src_extents.width),
+       static_cast<int32_t>(src_extents.height),
+       static_cast<int32_t>(src_extents.depth)},
+  blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  blit.srcSubresource.mipLevel = 0, blit.srcSubresource.baseArrayLayer = 0,
+  blit.srcSubresource.layerCount = 1, blit.dstOffsets[0] = {0, 0, 0},
+  blit.dstOffsets[1] =
+      {static_cast<int32_t>(dst_extents.width),
+       static_cast<int32_t>(dst_extents.height),
+       static_cast<int32_t>(dst_extents.depth)},
+  blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  blit.dstSubresource.mipLevel = 0, blit.dstSubresource.baseArrayLayer = 0,
+  blit.dstSubresource.layerCount = 1,
+
+  vkCmdBlitImage(
+      handle_,
+      src.handle(),
+      src.layout(),
+      dst.handle(),
+      dst.layout(),
+      1,
+      &blit,
+      VK_FILTER_NEAREST);
 
   state_ = CommandBuffer::State::RECORDING;
 }
@@ -247,7 +301,7 @@ CommandPool::CommandPool(
 }
 
 CommandPool::~CommandPool() {
-  if (VK_NULL_HANDLE == pool_) {
+  if (pool_ == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyCommandPool(device_, pool_, nullptr);

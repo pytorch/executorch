@@ -32,7 +32,7 @@ Tensor& unary_ufunc_realhb_to_bool(
 
   ET_KERNEL_CHECK_MSG(
       ctx,
-      out.scalar_type() == exec_aten::ScalarType::Bool,
+      out.scalar_type() == executorch::aten::ScalarType::Bool,
       InvalidArgument,
       out,
       "Expected out tensor to have dtype Bool, but got %" PRId8 " instead.",
@@ -43,7 +43,7 @@ Tensor& unary_ufunc_realhb_to_bool(
 
   const auto in_type = in.scalar_type();
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
     apply_unary_map_fn(
         [fn](const CTYPE_IN val_in) { return fn(val_in); },
         in.const_data_ptr<CTYPE_IN>(),

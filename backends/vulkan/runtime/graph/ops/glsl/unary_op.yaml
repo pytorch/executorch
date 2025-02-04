@@ -32,6 +32,8 @@ unary_op:
       OPERATOR: sin(X)
     - NAME: sqrt
       OPERATOR: sqrt(X)
+    - NAME: rsqrt
+      OPERATOR: (1 / sqrt(X))
     - NAME: tanh
       OPERATOR: tanh(clamp(X, -15.0, 15.0))
     - NAME: hardshrink
@@ -40,3 +42,5 @@ unary_op:
       OPERATOR: hardswish(X)
     - NAME: hardsigmoid
       OPERATOR: hardsigmoid(X)
+    - NAME: leaky_relu
+      OPERATOR: leaky_relu(X, A)

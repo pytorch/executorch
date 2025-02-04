@@ -20,14 +20,14 @@ buck_targets = [
   "//runtime/executor:program",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 filters = [
   ".cpp$",
 ]
 
 
-[targets.executorch_no_prim_ops]
+[targets.executorch_core]
 buck_targets = [
   "//runtime/executor:program_no_prim_ops",
 ]
@@ -55,7 +55,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.optimized_kernels]
@@ -72,7 +72,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "extension_threadpool",
   "portable_kernels",
 ]
@@ -91,7 +91,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
 ]
 
@@ -113,7 +113,7 @@ filters = [
 excludes = [
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 
@@ -127,7 +127,7 @@ filters = [
 excludes = [
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
   "portable_kernels",
 ]
@@ -144,7 +144,7 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 
@@ -157,7 +157,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "extension_data_loader",
 ]
 
@@ -170,7 +170,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.extension_llm_runner]
@@ -182,7 +182,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "extension_module",
   "extension_runner_util",
 ]
@@ -196,7 +196,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.extension_threadpool]
@@ -208,7 +208,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.extension_training]
@@ -220,7 +220,7 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.train_xor]
@@ -235,7 +235,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
 ]
 # ---------------------------------- extension end ----------------------------------
@@ -253,7 +253,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
   "quantized_kernels",
 ]
@@ -269,7 +269,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 # ---------------------------------- binary end ----------------------------------
@@ -286,7 +286,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
 ]
 
@@ -299,7 +299,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.mps_schema]
@@ -325,7 +325,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -339,7 +339,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.xnnpack_schema]
@@ -353,7 +353,7 @@ filters = [
 # ---------------------------------- Vulkan start ---------------------------------
 [targets.vulkan_schema]
 buck_targets = [
-  "//backends/vulkan:vk_delegate_schema",
+  "//backends/vulkan/serialization:vk_delegate_schema",
 ]
 filters = [
   ".fbs$",
@@ -375,7 +375,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "optimized_kernels",
   "extension_threadpool",
   "xnnpack_backend",
@@ -383,7 +383,7 @@ deps = [
 
 [targets.llama_runner]
 buck_targets = [
-  "//examples/models/llama2/runner:runner",
+  "//examples/models/llama/runner:runner",
 ]
 filters = [
   ".cpp$",
@@ -394,7 +394,7 @@ excludes = [
 deps = [
   "custom_ops",
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "extension_data_loader",
   "extension_module",
   "portable_kernels",

@@ -18,11 +18,12 @@
 #include <iostream>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::testing::TensorFactory;
 using torch::executor::testing::SupportedFeatures;
-using torch::executor::testing::TensorFactory;
+namespace etrt = executorch::runtime;
 
 class OpAddOutKernelTest : public OperatorTest {
  protected:
@@ -63,7 +64,8 @@ class OpAddOutKernelTest : public OperatorTest {
     test_add<DTYPE_A, DTYPE_B, ScalarType::Float>();
     test_add<DTYPE_A, DTYPE_B, ScalarType::Double>();
     // Integral out type is only allowed if both inputs are integral types
-    if (isIntegralType(DTYPE_A, false) && isIntegralType(DTYPE_B, false)) {
+    if (etrt::isIntegralType(DTYPE_A, false) &&
+        etrt::isIntegralType(DTYPE_B, false)) {
       test_add<DTYPE_A, DTYPE_B, ScalarType::Int>();
       test_add<DTYPE_A, DTYPE_B, ScalarType::Long>();
     }
@@ -645,13 +647,14 @@ TEST_F(OpAddScalarOutKernelTest, OptimizedSanityCheck) {
 }
 
 TEST_F(OpAddScalarOutKernelTest, DtypeTest_float16_bool_int_float16) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Half> tfHalf;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Half>
+      tfHalf;
 
-  exec_aten::Tensor self = tfHalf.ones({2, 2});
-  exec_aten::Scalar other = exec_aten::Scalar(true);
-  exec_aten::Scalar alpha = exec_aten::Scalar(1);
-  exec_aten::Tensor out = tfHalf.zeros({2, 2});
-  exec_aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
+  executorch::aten::Tensor self = tfHalf.ones({2, 2});
+  executorch::aten::Scalar other = executorch::aten::Scalar(true);
+  executorch::aten::Scalar alpha = executorch::aten::Scalar(1);
+  executorch::aten::Tensor out = tfHalf.zeros({2, 2});
+  executorch::aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
   op_add_scalar_out(self, other, alpha, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }

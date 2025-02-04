@@ -14,7 +14,10 @@ def define_common_targets():
         exported_headers = [
             "copy_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+                "DEFAULT": ["-Wno-missing-prototypes"],
+                "ovr_config//os:windows": [],
+            }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes_aten",
             "//executorch/runtime/core/exec_aten/util:tensor_util_aten",

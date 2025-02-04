@@ -9,12 +9,12 @@ import operator
 from typing import List, Optional
 
 import torch
+from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
+)
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
-)
-from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (

@@ -30,6 +30,8 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:select_copy_util",
             "//executorch/kernels/portable/cpu/util:advanced_index_util",
             "//executorch/kernels/portable/cpu/util:slice_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:upsample_util",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -73,6 +75,34 @@ def define_common_targets():
             ":repeat_util",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+    )
+
+    runtime.cxx_library(
+        name = "dtype_util",
+        srcs = ["dtype_util.cpp"],
+        exported_headers = [
+            "dtype_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
+    )
+
+    runtime.cxx_library(
+        name = "elementwise_util",
+        exported_headers = [
+            "elementwise_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            ":broadcast_util",
+            ":dtype_util",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -205,7 +235,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":broadcast_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/...", "@EXECUTORCH_CLIENTS"],
     )
 
     runtime.cxx_library(
@@ -237,6 +267,16 @@ def define_common_targets():
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
+    runtime.cxx_library(
+        name = "upsample_util",
+        srcs = ["upsample_util.cpp"],
+        exported_headers = ["upsample_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
     # Utility functions that can be used by operators that perform reduction
     for aten_mode in [True, False]:
         suffix = "_aten" if aten_mode else ""
@@ -253,5 +293,6 @@ def define_common_targets():
                 "//executorch/extension/llm/custom_ops/...",
                 "//executorch/kernels/portable/cpu/...",
                 "//executorch/kernels/quantized/...",
+                "@EXECUTORCH_CLIENTS",
             ],
         )

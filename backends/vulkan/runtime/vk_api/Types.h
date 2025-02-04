@@ -84,6 +84,7 @@ inline ScalarType element_scalartype(const VkFormat vkformat) {
     case VK_FORMAT_R8G8B8A8_SINT:
       return kChar;
     case VK_FORMAT_R8G8B8A8_UINT:
+    case VK_FORMAT_R8G8B8A8_UNORM:
       return kByte;
     case VK_FORMAT_R32G32B32A32_SINT:
       return kInt;

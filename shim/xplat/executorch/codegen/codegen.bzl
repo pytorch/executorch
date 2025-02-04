@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "is_xplat", "runtime", "struct_to_json")
+load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load("@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl", "portable_header_list", "portable_source_list")
 
 # Headers that declare the function signatures of the C++ functions that
@@ -49,32 +50,43 @@ def et_operator_library(
         model = None,
         include_all_operators = False,
         ops_schema_yaml_target = None,
+        server_generated_yaml_target = None,
         **kwargs):
-    genrule_cmd = [
-        "$(exe //executorch/codegen/tools:gen_oplist)",
-        "--output_path=${OUT}",
-    ]
-    if ops_schema_yaml_target:
-        genrule_cmd.append(
-            "--ops_schema_yaml_path=$(location {})".format(ops_schema_yaml_target),
-        )
-    if ops:
-        genrule_cmd.append(
-            "--root_ops=" + ",".join(ops),
-        )
-    if ops_dict:
-        ops_dict_json = struct_to_json(ops_dict)
-        genrule_cmd.append(
-            "--ops_dict='{}'".format(ops_dict_json),
-        )
-    if model:
-        genrule_cmd.append(
-            "--model_file_path=$(location {})".format(model),
-        )
-    if include_all_operators:
-        genrule_cmd.append(
-            "--include_all_operators",
-        )
+    # do a dummy copy if server_generated_yaml_target is set
+    if server_generated_yaml_target:
+        if include_all_operators or ops_schema_yaml_target or model or ops or ops_dict:
+            fail("Since server_generated_yaml_target is set, ops, ops_dict, include_all_operators and ops_schema_yaml_target shouldn't be set.")
+        genrule_cmd = [
+            "cp",
+            "$(location {})".format(server_generated_yaml_target),
+            "$OUT",
+        ]
+    else:
+        genrule_cmd = [
+            "$(exe //executorch/codegen/tools:gen_oplist)",
+            "--output_path=${OUT}",
+        ]
+        if ops_schema_yaml_target:
+            genrule_cmd.append(
+                "--ops_schema_yaml_path=$(location {})".format(ops_schema_yaml_target),
+            )
+        if ops:
+            genrule_cmd.append(
+                "--root_ops=" + ",".join(ops),
+            )
+        if ops_dict:
+            ops_dict_json = struct_to_json(ops_dict)
+            genrule_cmd.append(
+                "--ops_dict='{}'".format(ops_dict_json),
+            )
+        if model:
+            genrule_cmd.append(
+                "--model_file_path=$(location {})".format(model),
+            )
+        if include_all_operators:
+            genrule_cmd.append(
+                "--include_all_operators",
+            )
 
     # TODO(larryliu0820): Remove usages of this flag.
     if "define_static_targets" in kwargs:
@@ -250,8 +262,13 @@ def _prepare_custom_ops_genrule_and_lib(
             "headers": [],
             "srcs": custom_ops_sources,
         }
+        my_cmd = ""
+        for rule_substr in genrule_cmd:
+            if my_cmd != "":
+                my_cmd += " "
+            my_cmd += rule_substr
         genrules[genrule_name] = {
-            "cmd": " ".join(genrule_cmd),
+            "cmd": my_cmd,
             "outs": {out: [out] for out in CUSTOM_OPS_NATIVE_FUNCTION_HEADER + custom_ops_sources},
         }
     return genrules, libs
@@ -283,7 +300,7 @@ def exir_custom_ops_aot_lib(
     """
     genrules, libs = _prepare_custom_ops_genrule_and_lib(
         name = name,
-        custom_ops_yaml_path = "$(location {})".format(yaml_target),
+        custom_ops_yaml_path = selects.apply(yaml_target, lambda y: "$(location {})".format(y)),
         kernels = kernels,
         deps = deps,
     )
@@ -350,7 +367,7 @@ def copy_portable_header_files(name):
         default_outs = ["."],
     )
 
-def build_portable_lib(name, oplist_header_name, feature = None):
+def build_portable_lib(name, oplist_header_name, feature = None, expose_operator_symbols = False):
     """Build portable lib from source. We build from source so that the generated header file, 
     selected_op_variants.h, can be used to selectively build the lib for different dtypes.
     """
@@ -372,6 +389,20 @@ def build_portable_lib(name, oplist_header_name, feature = None):
     # Include dtype header.
     portable_header_files["selected_op_variants.h"] = ":{}[selected_op_variants]".format(oplist_header_name)
 
+    # For shared library build, we don't want to expose symbols of
+    # kernel implementation (ex torch::executor::native::tanh_out)
+    # to library users. They should use kernels through registry only.
+    # With visibility=hidden, linker won't expose kernel impl symbols
+    # so it can prune unregistered kernels.
+    # Currently fbcode links all dependent libraries through shared
+    # library, and it blocks users like unit tests to use kernel
+    # implementation directly. So we enable this for xplat only.
+    compiler_flags = ["-Wno-missing-prototypes"]
+    if not expose_operator_symbols:
+        # Removing '-fvisibility=hidden' exposes operator symbols.
+        # This allows operators to be called outside of the kernel registry.
+        compiler_flags += ["-fvisibility=hidden"]
+
     # Build portable lib.
     runtime.cxx_library(
         name = name,
@@ -381,16 +412,7 @@ def build_portable_lib(name, oplist_header_name, feature = None):
         deps = ["//executorch/kernels/portable/cpu/pattern:all_deps", "//executorch/kernels/portable/cpu/util:all_deps"],
         # header_namespace is only available in xplat. See https://fburl.com/code/we2gvopk
         header_namespace = "executorch/kernels/portable/cpu",
-        compiler_flags = ["-Wno-missing-prototypes"] +
-                         # For shared library build, we don't want to expose symbols of
-                         # kernel implementation (ex torch::executor::native::tanh_out)
-                         # to library users. They should use kernels through registry only.
-                         # With visibility=hidden, linker won't expose kernel impl symbols
-                         # so it can prune unregistered kernels.
-                         # Currently fbcode links all dependent libraries through shared
-                         # library, and it blocks users like unit tests to use kernel
-                         # implementation directly. So we enable this for xplat only.
-                         ["-fvisibility=hidden"],
+        compiler_flags = compiler_flags,
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
         # it to depend on other so libraries because that way we have to
@@ -423,7 +445,8 @@ def executorch_generated_lib(
         compiler_flags = [],
         kernel_deps = [],
         dtype_selective_build = False,
-        feature = None):
+        feature = None,
+        expose_operator_symbols = False):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -484,9 +507,8 @@ def executorch_generated_lib(
     # merge functions.yaml with fallback yaml
     if functions_yaml_target:
         merge_yaml_name = name + "_merge_yaml"
-        cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:merge_yaml) " +
-               "--functions_yaml_path=$(location {}) ".format(functions_yaml_target) +
-               "--output_dir=$OUT ")
+        cmd = selects.apply(functions_yaml_target, lambda value: "$(exe fbsource//xplat/executorch/codegen/tools:merge_yaml) " +
+                                                                 "--functions_yaml_path=$(location {}) --output_dir=$OUT ".format(value))
         if fallback_yaml_target:
             cmd = cmd + "--fallback_yaml_path=$(location {}) ".format(fallback_yaml_target)
         runtime.genrule(
@@ -501,7 +523,7 @@ def executorch_generated_lib(
     else:
         functions_yaml_path = None
     if custom_ops_yaml_target:
-        custom_ops_yaml_path = "$(location {})".format(custom_ops_yaml_target)
+        custom_ops_yaml_path = selects.apply(custom_ops_yaml_target, lambda value: "$(location {})".format(value))
     else:
         custom_ops_yaml_path = None
 
@@ -515,12 +537,12 @@ def executorch_generated_lib(
     )
 
     # genrule for selective build from static operator list
-    oplist_dir_name = name + "_pt_oplist"
+    oplist_dir_name = name + "_et_oplist"
     runtime.genrule(
         name = oplist_dir_name,
         macros_only = False,
         cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:gen_all_oplist) " +
-               "--model_file_list_path $(@query_outputs 'attrfilter(labels, et_operator_library, deps(set({deps})))') " +
+               "--model_file_list_path $(@query_outputs \'attrfilter(labels, et_operator_library, deps(set({deps})))\') " +
                "--allow_include_all_overloads " +
                "--output_dir $OUT ").format(deps = " ".join(["\"{}\"".format(d) for d in deps])),
         outs = {"selected_operators.yaml": ["selected_operators.yaml"]},
@@ -548,9 +570,14 @@ def executorch_generated_lib(
         genrules[genrule_name]["cmd"].append(
             "--op_selection_yaml_path=$(location :{}[selected_operators.yaml])".format(oplist_dir_name),
         )
+        my_cmd = ""
+        for rule_substr in genrules[genrule_name]["cmd"]:
+            if my_cmd != "":
+                my_cmd += " "
+            my_cmd += rule_substr
         runtime.genrule(
             name = genrule_name,
-            cmd = " ".join(genrules[genrule_name]["cmd"]),
+            cmd = my_cmd,
             outs = {f: [f] for f in genrules[genrule_name]["outs"]},
             default_outs = ["."],
             platforms = platforms,
@@ -563,7 +590,7 @@ def executorch_generated_lib(
 
         # Build portable lib.
         portable_lib_name = name + "_portable_lib"
-        build_portable_lib(portable_lib_name, oplist_header_name, feature)
+        build_portable_lib(portable_lib_name, oplist_header_name, feature, expose_operator_symbols)
         portable_lib = [":{}".format(portable_lib_name)]
 
     # Exports headers that declare the function signatures of the C++ functions
@@ -609,7 +636,10 @@ def executorch_generated_lib(
             link_whole = True,
             visibility = visibility,
             # Operator Registration is done through static tables
-            compiler_flags = ["-Wno-global-constructors"] + compiler_flags,
+            compiler_flags = select({
+                "DEFAULT": ["-Wno-global-constructors"],
+                "ovr_config//os:windows": [],
+            }) + compiler_flags,
             deps = [
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
@@ -641,3 +671,31 @@ def executorch_generated_lib(
             define_static_target = define_static_targets,
             platforms = platforms,
         )
+
+# Util macro that takes in a binary or a shared library, find targets ending with `_et_oplist` in the transitive closure of deps, 
+# get the `selected_operators.yaml` from those targets, try to merge them into a single yaml. This target will fail to build, if
+# there are intersections of all `selected_operators.yaml` the `target` is depending on.
+#
+# An example failure case: a binary `bin` is depending on 2 `executorch_generated_lib`s and they both register `aten::add.out`
+# with either the same or different kernels associated to it.
+#
+# If build successfully, all of the `selected_operators.yaml` will be merged into 1 `selected_operators.yaml` for debugging purpose.
+def executorch_ops_check(
+    name,
+    deps,
+    **kwargs,
+):
+    runtime.genrule(
+        name = name,
+        macros_only = False,
+        cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:gen_all_oplist) " +
+               "--model_file_list_path $(@query_outputs \"filter('.*_et_oplist', deps(set({deps})))\") " +
+               "--allow_include_all_overloads " +
+               "--check_ops_not_overlapping " +
+               "--output_dir $OUT ").format(deps = " ".join(["\'{}\'".format(d) for d in deps])),
+        define_static_target = False,
+        platforms = kwargs.pop("platforms", get_default_executorch_platforms()),
+        outs = {"selected_operators.yaml": ["selected_operators.yaml"]},
+        default_outs = ["."],
+        **kwargs,
+    )

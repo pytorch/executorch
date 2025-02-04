@@ -19,66 +19,38 @@ class RunnerHolder: ObservableObject {
 extension UIImage {
   func resized(to newSize: CGSize) -> UIImage {
     let format = UIGraphicsImageRendererFormat.default()
-    let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
-    let image = renderer.image { _ in
-      draw(in: CGRect(origin: .zero, size: newSize))
+    format.scale = 1
+    return UIGraphicsImageRenderer(size: newSize, format: format).image {
+      _ in draw(in: CGRect(origin: .zero, size: newSize))
     }
-    return image
   }
 
   func toRGBArray() -> [UInt8]? {
-    guard let cgImage = self.cgImage else {
-      NSLog("Failed to get CGImage from UIImage")
-      return nil
-    }
+    guard let cgImage = self.cgImage else { return nil }
 
-    let width = cgImage.width
-    let height = cgImage.height
-    let colorSpace = CGColorSpaceCreateDeviceRGB()
-    let bytesPerPixel = 4
-    let bytesPerRow = bytesPerPixel * width
-    let bitsPerComponent = 8
-    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+    let width = Int(cgImage.width), height = Int(cgImage.height)
+    let totalPixels = width * height, bytesPerPixel = 4, bytesPerRow = bytesPerPixel * width
+    var rgbValues = [UInt8](repeating: 0, count: totalPixels * 3)
+    var pixelData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
 
     guard let context = CGContext(
-      data: nil,
-      width: width,
-      height: height,
-      bitsPerComponent: bitsPerComponent,
-      bytesPerRow: bytesPerRow,
-      space: colorSpace,
-      bitmapInfo: bitmapInfo
-    ) else {
-      NSLog("Failed to create CGContext")
-      return nil
-    }
+      data: &pixelData, width: width, height: height, bitsPerComponent: 8,
+      bytesPerRow: bytesPerRow, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+    ) else { return nil }
 
     context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-    guard let pixelBuffer = context.data else {
-      NSLog("Failed to get pixel data from CGContext")
-      return nil
-    }
-
-    let pixelData = pixelBuffer.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
-
-    var rgbArray = [UInt8](repeating: 0, count: width * height * 3)
 
     for y in 0..<height {
       for x in 0..<width {
         let pixelIndex = (y * width + x) * bytesPerPixel
-        let r = UInt8(pixelData[pixelIndex])
-        let g = UInt8(pixelData[pixelIndex + 1])
-        let b = UInt8(pixelData[pixelIndex + 2])
-
-        let rgbIndex = (y * width + x)
-        rgbArray[rgbIndex] = r
-        rgbArray[rgbIndex + height * width] = g
-        rgbArray[rgbIndex + 2 * height * width] = b
+        let rgbIndex = y * width + x
+        rgbValues[rgbIndex] = pixelData[pixelIndex]
+        rgbValues[rgbIndex + totalPixels] = pixelData[pixelIndex + 1]
+        rgbValues[rgbIndex + totalPixels * 2] = pixelData[pixelIndex + 2]
       }
     }
-
-    return rgbArray
+    return rgbValues
   }
 }
 
@@ -101,6 +73,7 @@ struct ContentView: View {
   @State private var imagePickerSourceType: UIImagePickerController.SourceType = .photoLibrary
 
   @State private var showingSettings = false
+  @FocusState private var textFieldFocused: Bool
 
   enum PickerType {
     case model
@@ -130,29 +103,46 @@ struct ContentView: View {
       VStack {
         if showingSettings {
           VStack(spacing: 20) {
-            Form {
-              Section(header: Text("Model and Tokenizer")
-                        .font(.headline)
-                        .foregroundColor(.primary)) {
+            HStack {
+              VStack(spacing: 10) {
                 Button(action: { pickerType = .model }) {
-                  Label(resourceManager.modelName == "" ? modelTitle : resourceManager.modelName, systemImage: "doc")
+                  Label(modelTitle, systemImage: "doc")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 300, alignment: .leading)
                 }
                 Button(action: { pickerType = .tokenizer }) {
-                  Label(resourceManager.tokenizerName == "" ? tokenizerTitle : resourceManager.tokenizerName, systemImage: "doc")
+                  Label(tokenizerTitle, systemImage: "doc")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 300, alignment: .leading)
                 }
               }
+              .padding()
+              .background(Color.gray.opacity(0.1))
+              .cornerRadius(10)
+              .fixedSize(horizontal: true, vertical: false)
+              Spacer()
             }
+            .padding()
           }
         }
 
         MessageListView(messages: $messages)
-          .gesture(
+          .simultaneousGesture(
             DragGesture().onChanged { value in
               if value.translation.height > 10 {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                hideKeyboard()
               }
+              showingSettings = false
+              textFieldFocused = false
             }
           )
+          .onTapGesture {
+            showingSettings = false
+            textFieldFocused = false
+          }
+
         HStack {
           Button(action: {
             imagePickerSourceType = .photoLibrary
@@ -192,6 +182,11 @@ struct ContentView: View {
                 .stroke(isInputEnabled ? Color.blue : Color.gray, lineWidth: 1)
             )
             .disabled(!isInputEnabled)
+            .focused($textFieldFocused)
+            .onAppear { textFieldFocused = false }
+            .onTapGesture {
+              showingSettings = false
+            }
 
           Button(action: isGenerating ? stop : generate) {
             Image(systemName: isGenerating ? "stop.circle" : "arrowshape.up.circle.fill")
@@ -204,36 +199,38 @@ struct ContentView: View {
         .padding([.leading, .trailing, .bottom], 10)
         .sheet(isPresented: $isImagePickerPresented, onDismiss: addSelectedImageMessage) {
           ImagePicker(selectedImage: $selectedImage, sourceType: imagePickerSourceType)
+            .id(imagePickerSourceType.rawValue)
         }
       }
       .navigationBarTitle(title, displayMode: .inline)
-      .navigationBarItems(leading:
-                            Button(action: {
-                              showingSettings.toggle()
-                            }) {
-                              Image(systemName: "gearshape")
-                                .imageScale(.large)
-                            })
-      .navigationBarItems(trailing:
-                            HStack {
-                              Menu {
-                                Section(header: Text("Memory")) {
-                                  Text("Used: \(resourceMonitor.usedMemory) Mb")
-                                  Text("Available: \(resourceMonitor.availableMemory) Mb")
-                                }
-                              } label: {
-                                Text("\(resourceMonitor.usedMemory) Mb")
-                              }
-                              .onAppear {
-                                resourceMonitor.start()
-                              }
-                              .onDisappear {
-                                resourceMonitor.stop()
-                              }
-                              Button(action: { showingLogs = true }) {
-                                Image(systemName: "list.bullet.rectangle")
-                              }
-                            }
+      .navigationBarItems(
+        leading:
+          Button(action: {
+            showingSettings.toggle()
+          }) {
+            Image(systemName: "folder")
+              .imageScale(.large)
+          },
+        trailing:
+          HStack {
+            Menu {
+              Section(header: Text("Memory")) {
+                Text("Used: \(resourceMonitor.usedMemory) Mb")
+                Text("Available: \(resourceMonitor.usedMemory) Mb")
+              }
+            } label: {
+              Text("\(resourceMonitor.usedMemory) Mb")
+            }
+            .onAppear {
+              resourceMonitor.start()
+            }
+            .onDisappear {
+              resourceMonitor.stop()
+            }
+            Button(action: { showingLogs = true }) {
+              Image(systemName: "list.bullet.rectangle")
+            }
+          }
       )
       .sheet(isPresented: $showingLogs) {
         NavigationView {
@@ -274,20 +271,24 @@ struct ContentView: View {
     isGenerating = true
     shouldStopGenerating = false
     shouldStopShowingToken = false
-    let text = prompt
+    let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     let seq_len = 768 // text: 256, vision: 768
     let modelPath = resourceManager.modelPath
     let tokenizerPath = resourceManager.tokenizerPath
-    let useLlama = modelPath.range(of: "llama", options: .caseInsensitive) != nil
+    let useLlama = modelPath.lowercased().contains("llama")
 
     prompt = ""
     hideKeyboard()
     showingSettings = false
 
+    messages.append(Message(text: text))
+    messages.append(Message(type: useLlama ? .llamagenerated : .llavagenerated))
+
     runnerQueue.async {
       defer {
         DispatchQueue.main.async {
           isGenerating = false
+          selectedImage = nil
         }
       }
 
@@ -299,10 +300,7 @@ struct ContentView: View {
 
       guard !shouldStopGenerating else { return }
       if useLlama {
-        messages.append(Message(text: text))
-        messages.append(Message(type: .llamagenerated))
-
-        if let runner = runnerHolder.runner, !runner.isloaded() {
+        if let runner = runnerHolder.runner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
           do {
@@ -332,10 +330,7 @@ struct ContentView: View {
           }
         }
       } else {
-        messages.append(Message(text: text))
-        messages.append(Message(type: .llavagenerated))
-
-        if let runner = runnerHolder.llavaRunner, !runner.isloaded() {
+        if let runner = runnerHolder.llavaRunner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
           do {
@@ -394,7 +389,7 @@ struct ContentView: View {
             if token != llava_prompt {
               if token == "</s>" {
                 shouldStopGenerating = true
-                runnerHolder.runner?.stop()
+                runnerHolder.llavaRunner?.stop()
               } else {
                 tokens.append(token)
                 if tokens.count > 2 {
@@ -402,17 +397,15 @@ struct ContentView: View {
                   let count = tokens.count
                   tokens = []
                   DispatchQueue.main.async {
-                    withAnimation {
-                      var message = messages.removeLast()
-                      message.text += text
-                      message.tokenCount += count
-                      message.dateUpdated = Date()
-                      messages.append(message)
-                    }
+                    var message = messages.removeLast()
+                    message.text += text
+                    message.tokenCount += count
+                    message.dateUpdated = Date()
+                    messages.append(message)
                   }
                 }
                 if shouldStopGenerating {
-                  runnerHolder.runner?.stop()
+                  runnerHolder.llavaRunner?.stop()
                 }
               }
             }
@@ -423,7 +416,7 @@ struct ContentView: View {
           try runnerHolder.runner?.generate(llama3_prompt, sequenceLength: seq_len) { token in
 
             NSLog(">>> token={\(token)}")
-            if token != llama3_prompt && !shouldStopShowingToken {
+            if token != llama3_prompt {
               // hack to fix the issue that extension/llm/runner/text_token_generator.h
               // keeps generating after <|eot_id|>
               if token == "<|eot_id|>" {
@@ -435,13 +428,11 @@ struct ContentView: View {
                   let count = tokens.count
                   tokens = []
                   DispatchQueue.main.async {
-                    withAnimation {
-                      var message = messages.removeLast()
-                      message.text += text
-                      message.tokenCount += count
-                      message.dateUpdated = Date()
-                      messages.append(message)
-                    }
+                    var message = messages.removeLast()
+                    message.text += text
+                    message.tokenCount += count
+                    message.dateUpdated = Date()
+                    messages.append(message)
                   }
                 }
                 if shouldStopGenerating {
@@ -489,12 +480,17 @@ struct ContentView: View {
       }
       runnerQueue.async {
         runnerHolder.runner = nil
+        runnerHolder.llavaRunner = nil
       }
       switch pickerType {
       case .model:
         resourceManager.modelPath = url.path
       case .tokenizer:
         resourceManager.tokenizerPath = url.path
+      }
+      if resourceManager.isModelValid && resourceManager.isTokenizerValid {
+        showingSettings = false
+        textFieldFocused = true
       }
     case .failure(let error):
       withAnimation {

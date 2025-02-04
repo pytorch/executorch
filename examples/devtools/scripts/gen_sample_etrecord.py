@@ -31,10 +31,7 @@ DEFAULT_OUTPUT_PATH = "/tmp/etrecord.bin"
 
 def gen_etrecord(model: torch.nn.Module, inputs: Any, output_path=None):
     f = model
-    aten_dialect: ExportedProgram = export(
-        f,
-        inputs,
-    )
+    aten_dialect: ExportedProgram = export(f, inputs, strict=True)
     edge_program: EdgeProgramManager = to_edge(
         aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=True)
     )
@@ -74,7 +71,7 @@ def main() -> None:
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 

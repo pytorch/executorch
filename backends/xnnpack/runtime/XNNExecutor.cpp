@@ -8,14 +8,19 @@
 
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace xnnpack {
 namespace delegate {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using SizesType = exec_aten::SizesType;
+using executorch::aten::ScalarType;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::is_contiguous_dim_order;
+using executorch::runtime::kTensorDimensionLimit;
 
 /**
  * Initializes the XNNExecutor with the runtime and given number of
@@ -204,7 +209,7 @@ ET_NODISCARD Error XNNExecutor::resize_outputs(EValue** args) const {
       expected_output_size[d] = static_cast<SizesType>(dims[d]);
     }
 
-    exec_aten::ArrayRef<SizesType> output_size{
+    executorch::aten::ArrayRef<SizesType> output_size{
         expected_output_size, static_cast<size_t>(num_dim)};
 
     ET_LOG(Debug, "Resizing output tensor to a new shape");
@@ -231,5 +236,5 @@ ET_NODISCARD Error XNNExecutor::resize_outputs(EValue** args) const {
 
 } // namespace delegate
 } // namespace xnnpack
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

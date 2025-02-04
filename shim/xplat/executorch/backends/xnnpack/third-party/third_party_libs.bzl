@@ -4,7 +4,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 # the values of the dictionary are lists where the first element is the internal dep and the
 # second element is the OSS dep
 _THIRD_PARTY_LIBS = {
-    "FP16": ["//xplat/third-party/FP16:FP16", "//backends/xnnpack/third-party:FP16"],
+    "FP16": ["fbsource//xplat/third-party/FP16:FP16Fbcode", "//backends/xnnpack/third-party:FP16"],
     "FXdiv": ["//xplat/third-party/FXdiv:FXdiv", "//backends/xnnpack/third-party:FXdiv"],
     "XNNPACK": ["//xplat/third-party/XNNPACK:XNNPACK", "//backends/xnnpack/third-party:XNNPACK"],
     "clog": ["//xplat/third-party/clog:clog", "//backends/xnnpack/third-party:clog"],

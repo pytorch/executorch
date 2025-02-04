@@ -31,6 +31,7 @@ struct SharedObject {
   std::vector<ValueRef> users;
   vkapi::Allocation allocation;
 
+  bool has_user(const ValueRef idx) const;
   void add_user(ComputeGraph* const graph, const ValueRef idx);
   void allocate(ComputeGraph* const graph);
   void bind_users(ComputeGraph* const graph);

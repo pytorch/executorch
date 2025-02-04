@@ -23,10 +23,15 @@
 
 #define MPS_UNUSED(x) ( (void)(x) )
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
+
+using executorch::runtime::ArrayRef;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::Error;
+using executorch::runtime::MemoryAllocator;
 
 /*
 Builds the mps runtime object using the buffer pointer. The buffer pointer
@@ -66,5 +71,5 @@ ET_NODISCARD Error MPSCompiler::compileModel(
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -202,6 +202,8 @@ def _struct_to_json(object):
 
 env = struct(
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
+    command_alias = native.command_alias,
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     cxx_binary = native.cxx_binary,
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     cxx_library = native.cxx_library,

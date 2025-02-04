@@ -9,14 +9,14 @@ import os
 from multiprocessing.connection import Client
 
 import torch
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (  # noqa: F401
-    QcomChipset,
-)
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 
 from executorch.backends.qualcomm.utils.utils import (
+    ExecutorchBackendConfig,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    get_soc_to_chipset_map,
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import (
     gen_pte_from_ctx_bin,
@@ -26,6 +26,7 @@ from executorch.examples.qualcomm.utils import (
     setup_common_args_and_variables,
     SimpleADB,
 )
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
 
 def main(args):
@@ -58,22 +59,34 @@ def main(args):
         pte_name = "qaihub_llama3_8b_prompt"
         last_shard_num_inputs = 4
         last_shard_num_outputs = 65
-        custom_spill_fill = 128974848
     else:
         pte_name = "qaihub_llama3_8b_token"
         last_shard_num_inputs = 68
         last_shard_num_outputs = 65
-        custom_spill_fill = 3932160
 
     if args.pre_gen_pte is None:
         # create custom operators as context loader
+        soc_model = get_soc_to_chipset_map()[args.model]
         bundle_programs = [
-            from_context_binary(f"{args.context_binaries}/{target}", f"ctx_loader_{i}")
+            from_context_binary(
+                ctx_path=f"{args.context_binaries}/{target}",
+                op_name=f"ctx_loader_{i}",
+                soc_model=soc_model,
+            )
             for i, target in enumerate(target_names)
         ]
         pte_names = [f"{pte_name}_{i}" for i in range(len(target_names))]
+        memory_planning_pass = MemoryPlanningPass(
+            alloc_graph_input=False,
+            alloc_graph_output=False,
+        )
         pte_files = gen_pte_from_ctx_bin(
-            args.artifact, pte_names, compiler_specs, bundle_programs, custom_spill_fill
+            artifact=args.artifact,
+            pte_names=pte_names,
+            bundle_programs=bundle_programs,
+            backend_config=ExecutorchBackendConfig(
+                memory_planning_pass=memory_planning_pass
+            ),
         )
     else:
         pte_files = [f"{args.pre_gen_pte}/{pte_name}_{i}.pte" for i in range(5)]

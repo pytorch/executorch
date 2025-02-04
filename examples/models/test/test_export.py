@@ -69,7 +69,7 @@ class ExportTest(unittest.TestCase):
         return self.assertTrue(result)
 
     def test_mv3_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["mv3"]
         )
         eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
@@ -81,7 +81,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_mv2_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["mv2"]
         )
         eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
@@ -90,7 +90,7 @@ class ExportTest(unittest.TestCase):
         self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_vit_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["vit"]
         )
         eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
@@ -102,7 +102,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_w2l_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["w2l"]
         )
         eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
@@ -111,7 +111,7 @@ class ExportTest(unittest.TestCase):
         self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_ic3_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["ic3"]
         )
         eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
@@ -123,7 +123,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_resnet18_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["resnet18"]
         )
         eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
@@ -132,7 +132,7 @@ class ExportTest(unittest.TestCase):
         self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_resnet50_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["resnet50"]
         )
         eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
@@ -141,10 +141,21 @@ class ExportTest(unittest.TestCase):
         self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_dl3_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["dl3"]
         )
         eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
             eager_model, example_inputs
         )
         self.validate_tensor_allclose(list(eager_output.values()), executorch_output)
+
+    def test_efficient_sam_export_to_executorch(self):
+        eager_model, example_inputs, _, _ = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["efficient_sam"]
+        )
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
+        )
+        self.validate_tensor_allclose(
+            list(eager_output), executorch_output, rtol=1e-2, atol=1e-2
+        )

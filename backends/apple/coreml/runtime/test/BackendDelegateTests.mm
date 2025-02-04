@@ -60,7 +60,7 @@ std::vector<MultiArray> to_multiarrays(NSArray<MLMultiArray *> *ml_multiarrays) 
 }
 
 + (void)setUp {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 }
 
 - (void)setUp {

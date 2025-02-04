@@ -45,6 +45,8 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     _reset_profile_results,  # noqa: F401
     BundledModule,  # noqa: F401
     ExecuTorchModule,  # noqa: F401
+    MethodMeta,  # noqa: F401
+    Verification,  # noqa: F401
 )
 
 # Clean up so that `dir(portable_lib)` is the same as `dir(_portable_lib)`

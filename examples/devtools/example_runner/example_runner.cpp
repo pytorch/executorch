@@ -75,7 +75,20 @@ DEFINE_int32(
     262144, // 256 KB
     "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
 
-using namespace torch::executor;
+using executorch::etdump::ETDumpGen;
+using executorch::etdump::ETDumpResult;
+using executorch::extension::BufferDataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::EventTracerDebugLogLevel;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 std::vector<uint8_t> load_file_or_die(const char* path) {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -90,7 +103,7 @@ std::vector<uint8_t> load_file_or_die(const char* path) {
 }
 
 int main(int argc, char** argv) {
-  runtime_init();
+  executorch::runtime::runtime_init();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
@@ -109,19 +122,18 @@ int main(int argc, char** argv) {
   // Find the offset to the embedded Program.
   const void* program_data;
   size_t program_data_len;
-  Error status = torch::executor::bundled_program::GetProgramData(
+  Error status = executorch::bundled_program::get_program_data(
       reinterpret_cast<void*>(file_data.data()),
       file_data.size(),
       &program_data,
       &program_data_len);
   ET_CHECK_MSG(
       status == Error::Ok,
-      "GetProgramData() failed on file '%s': 0x%x",
+      "get_program_data() failed on file '%s': 0x%x",
       bundled_program_path,
       (unsigned int)status);
 
-  auto buffer_data_loader =
-      util::BufferDataLoader(program_data, program_data_len);
+  auto buffer_data_loader = BufferDataLoader(program_data, program_data_len);
 
   // Parse the program file. This is immutable, and can also be reused
   // between multiple execution invocations across multiple threads.
@@ -202,14 +214,14 @@ int main(int argc, char** argv) {
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
-  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+  ETDumpGen etdump_gen;
   Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
-      method.error());
+      static_cast<int>(method.error()));
   ET_LOG(Info, "Method loaded.");
 
   void* debug_buffer = malloc(FLAGS_debug_buffer_size);
@@ -225,12 +237,12 @@ int main(int argc, char** argv) {
         EventTracerDebugLogLevel::kProgramOutputs);
   }
   // Use the inputs embedded in the bundled program.
-  status = torch::executor::bundled_program::LoadBundledInput(
+  status = executorch::bundled_program::load_bundled_input(
       *method, file_data.data(), FLAGS_testset_idx);
   ET_CHECK_MSG(
       status == Error::Ok,
       "LoadBundledInput failed with status 0x%" PRIx32,
-      status);
+      static_cast<int>(status));
 
   ET_LOG(Info, "Inputs prepared.");
 
@@ -240,7 +252,7 @@ int main(int argc, char** argv) {
       status == Error::Ok,
       "Execution of method %s failed with status 0x%" PRIx32,
       method_name,
-      status);
+      static_cast<int>(status));
   ET_LOG(Info, "Model executed successfully.");
 
   // Print the outputs.
@@ -262,7 +274,7 @@ int main(int argc, char** argv) {
 
   // Dump the etdump data containing profiling/debugging data to the specified
   // file.
-  etdump_result result = etdump_gen.get_etdump_data();
+  ETDumpResult result = etdump_gen.get_etdump_data();
   if (result.buf != nullptr && result.size > 0) {
     FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
     fwrite((uint8_t*)result.buf, 1, result.size, f);
@@ -272,18 +284,17 @@ int main(int argc, char** argv) {
 
   if (FLAGS_output_verification) {
     // Verify the outputs.
-    status =
-        torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
-            *method,
-            file_data.data(),
-            FLAGS_testset_idx,
-            1e-3, // rtol
-            1e-5 // atol
-        );
+    status = executorch::bundled_program::verify_method_outputs(
+        *method,
+        file_data.data(),
+        FLAGS_testset_idx,
+        1e-3, // rtol
+        1e-5 // atol
+    );
     ET_CHECK_MSG(
         status == Error::Ok,
         "Bundle verification failed with status 0x%" PRIx32,
-        status);
+        static_cast<int>(status));
     ET_LOG(Info, "Model verified successfully.");
   }
 

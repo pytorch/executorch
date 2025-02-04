@@ -16,12 +16,6 @@
 
 #include <array>
 
-namespace torch {
-namespace executor {
-struct BFloat16;
-} // namespace executor
-} // namespace torch
-
 namespace executorch {
 namespace cpublas {
 

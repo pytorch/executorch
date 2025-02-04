@@ -35,13 +35,19 @@ enum MemoryAccessType : MemoryAccessFlags {
   WRITE = 1u << 1u,
 };
 
+static constexpr MemoryAccessFlags kReadWrite =
+    MemoryAccessType::WRITE | MemoryAccessType::READ;
+
+static constexpr MemoryAccessFlags kRead = MemoryAccessType::READ;
+
+static constexpr MemoryAccessFlags kWrite = MemoryAccessType::WRITE;
+
 class VulkanBuffer final {
  public:
   struct BufferProperties final {
     VkDeviceSize size;
     VkDeviceSize mem_offset;
     VkDeviceSize mem_range;
-    VkBufferUsageFlags buffer_usage;
   };
 
   explicit VulkanBuffer();
@@ -154,7 +160,9 @@ class VulkanBuffer final {
 
   inline void bind_allocation(const Allocation& memory) {
     VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
-    VK_CHECK(vmaBindBufferMemory(allocator_, memory.allocation, handle_));
+    if (!is_copy_) {
+      VK_CHECK(vmaBindBufferMemory(allocator_, memory.allocation, handle_));
+    }
     memory_.allocation = memory.allocation;
   }
 
@@ -186,8 +194,8 @@ class MemoryMap final {
 
  public:
   template <typename T>
-  T* data() {
-    return reinterpret_cast<T*>(data_);
+  T* data(const uint32_t offset = 0) {
+    return reinterpret_cast<T*>(static_cast<uint8_t*>(data_) + offset);
   }
 
   inline size_t nbytes() {

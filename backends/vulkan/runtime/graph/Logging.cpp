@@ -156,7 +156,7 @@ void ComputeGraph::print_readable() {
   size_t node_idx = 0;
   for (const std::unique_ptr<ExecuteNode>& node : execute_nodes()) {
     std::cout << std::setw(6) << node_idx;
-    std::cout << std::setw(32) << node->shader_.kernel_name;
+    std::cout << std::setw(32) << node->name();
 
     std::stringstream read_s;
     for (const ArgGroup& arg_group : node->args_) {

@@ -12,14 +12,15 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace my_custom_kernel {
+namespace my_custom_kernels {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using executor::Error;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::Error;
 using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::resize_tensor;
+using executorch::runtime::tensors_have_same_shape_and_dtype;
 
 namespace {
 
@@ -67,7 +68,7 @@ my_relu_out(KernelRuntimeContext& context, const Tensor& input, Tensor& out) {
   resize(out, input.sizes());
   ET_KERNEL_CHECK(
       context,
-      executor::tensors_have_same_shape_and_dtype(input, out),
+      tensors_have_same_shape_and_dtype(input, out),
       InvalidArgument,
       out);
 
@@ -78,7 +79,7 @@ my_relu_out(KernelRuntimeContext& context, const Tensor& input, Tensor& out) {
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_REAL_TYPES(RELU)
+    ET_FORALL_REALHBF16_TYPES(RELU)
     default:
       ET_KERNEL_CHECK_MSG(
           context,
@@ -86,7 +87,7 @@ my_relu_out(KernelRuntimeContext& context, const Tensor& input, Tensor& out) {
           InvalidArgument,
           out,
           "Unhandled dtype %hhd",
-          input.scalar_type());
+          static_cast<int8_t>(input.scalar_type()));
   }
 #undef RELU
 
@@ -94,5 +95,4 @@ my_relu_out(KernelRuntimeContext& context, const Tensor& input, Tensor& out) {
 }
 
 } // namespace native
-} // namespace my_custom_kernel
-} // namespace torch
+} // namespace my_custom_kernels

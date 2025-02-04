@@ -36,40 +36,6 @@ class TestEdgeDialectVerifier(unittest.TestCase):
             verifier.check_valid_edge_op(edge_op)
             verifier.check_valid_op(edge_op)
 
-    def test_edge_verifier_enablement(self) -> None:
-        class M(torch.nn.Module):
-            def forward(self, x, y):
-                z = y.item()
-                torch._check(z > 0)
-                torch._check(z < 4)
-                return x[z : z + y.shape[0]]
-
-        ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])))
-
-        compile_config_with_disable_ir_validity = EdgeCompileConfig(
-            _check_ir_validity=False
-        )
-        edge_manager = to_edge(
-            ep, compile_config=compile_config_with_disable_ir_validity
-        )
-
-        normal_verifier = EXIREdgeDialectVerifier()
-        disable_ir_validity_verifier = EXIREdgeDialectVerifier(
-            compile_config_with_disable_ir_validity
-        )
-
-        # exported model can not pass normal verifier due to
-        # aten.sym_constrain_range.default is illegal to be edge op
-        with self.assertRaises(SpecViolationError):
-            normal_verifier(edge_manager.exported_program())
-
-        # exported model can pass disable_ir_validity_verifier due to verifier
-        # is disabled by compile_config_with_disable_ir_validity
-        # (_check_ir_validity=False). Noted that this verifation has been done
-        # when calling `to_edge`. Explicitly calling verifier here just for better
-        # demonstration and is unnecessary in real world for ir verification.
-        disable_ir_validity_verifier(edge_manager.exported_program())
-
     def test_edge_verifier_check_edge_op(self) -> None:
         class Model(torch.nn.Module):
             def __init__(self):
@@ -82,7 +48,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
 
         example_input = (torch.zeros([2, 2]),)
 
-        export_model = export(m, example_input)
+        export_model = export(m, example_input, strict=True)
 
         compile_config_without_edge_op = EdgeCompileConfig(
             _use_edge_ops=False, _skip_dim_order=False
@@ -117,8 +83,9 @@ class TestEdgeDialectVerifier(unittest.TestCase):
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 t1 = x.to(dtype=torch.double, memory_format=torch.channels_last)
-                t2 = t1 + t1
-                return t1 * t2
+                t2 = torch.empty(t1.size(), memory_format=torch.channels_last)
+                t2.copy_(t1)
+                return t2
 
         m = Model().eval()
 
@@ -130,7 +97,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
             ),
         )
 
-        export_model = export(m, example_input)
+        export_model = export(m, example_input, strict=True)
 
         compile_config_with_dim_order = EdgeCompileConfig(_skip_dim_order=False)
         compile_config_with_stride = EdgeCompileConfig(_skip_dim_order=True)

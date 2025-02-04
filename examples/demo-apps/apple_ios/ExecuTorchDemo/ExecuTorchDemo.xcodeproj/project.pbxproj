@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		031B92F72ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
+		031B92F72ACF2A5400D4EBE0 /* mv3_mps_float16.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps_float16.pte */; };
 		032C01A52AC22B16002955E1 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C018B2AC22B16002955E1 /* App.swift */; };
 		032C01A72AC22B16002955E1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C018D2AC22B16002955E1 /* ContentView.swift */; };
 		032C01B72AC329B6002955E1 /* CustomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B62AC329B6002955E1 /* CustomViews.swift */; };
@@ -32,7 +32,7 @@
 		03C818482AC7BF470084CC29 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
 		03C8184A2AC7BF470084CC29 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
 		03C8DC7C2AE2533C0064384A /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
-		03D494E22B5B7AE900FCF524 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
+		03D494E22B5B7AE900FCF524 /* mv3_mps_float16.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps_float16.pte */; };
 		03D76BF12BAD297E0040FD82 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF02BAD297E0040FD82 /* backend_coreml */; };
 		03D76BF32BAD297E0040FD82 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF22BAD297E0040FD82 /* executorch */; };
 		03D76BF52BAD297E0040FD82 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF42BAD297E0040FD82 /* backend_mps */; };
@@ -90,7 +90,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3_mps.pte; sourceTree = "<group>"; };
+		031B92F62ACF2A5400D4EBE0 /* mv3_mps_float16.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3_mps_float16.pte; sourceTree = "<group>"; };
 		032C016F2AC228E6002955E1 /* ExecuTorchDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ExecuTorchDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		032C018A2AC22B16002955E1 /* MobileNetClassifier.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MobileNetClassifier.swift; sourceTree = "<group>"; };
 		032C018B2AC22B16002955E1 /* App.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
@@ -245,7 +245,7 @@
 			children = (
 				032C02012AC47CFB002955E1 /* imagenet_classes.txt */,
 				036834D72ACB893700BA100F /* mv3_coreml_all.pte */,
-				031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */,
+				031B92F62ACF2A5400D4EBE0 /* mv3_mps_float16.pte */,
 				032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */,
 				036834D42ACB710D00BA100F /* mv3.pte */,
 			);
@@ -419,7 +419,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				031B92F72ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */,
+				031B92F72ACF2A5400D4EBE0 /* mv3_mps_float16.pte in Resources */,
 				036834D82ACB893700BA100F /* mv3_coreml_all.pte in Resources */,
 				036834D52ACB710D00BA100F /* mv3.pte in Resources */,
 				032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */,
@@ -438,7 +438,7 @@
 				03C818192AC671980084CC29 /* Samoyed.jpg in Resources */,
 				03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */,
 				03C8DC7C2AE2533C0064384A /* mv3_coreml_all.pte in Resources */,
-				03D494E22B5B7AE900FCF524 /* mv3_mps.pte in Resources */,
+				03D494E22B5B7AE900FCF524 /* mv3_mps_float16.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -806,7 +806,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = latest;
+				branch = "swiftpm-0.5.0.20250130";
 				kind = branch;
 			};
 		};

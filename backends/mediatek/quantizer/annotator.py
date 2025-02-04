@@ -7,8 +7,6 @@
 from typing import Callable, List
 
 import torch
-
-from torch._export import capture_pre_autograd_graph
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 
@@ -17,6 +15,8 @@ from torch.ao.quantization.quantizer.utils import (
     _annotate_input_qspec_map,
     _annotate_output_qspec,
 )
+
+from torch.export import export_for_training
 from torch.fx import Graph, Node
 from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
     SubgraphMatcherWithNameNodeMap,
@@ -159,7 +159,7 @@ def _annotate_rmsnorm_pattern(graph: Graph, quant_config: QuantizationConfig) ->
             return norm, {}
 
     for pattern_cls in (ExecuTorchPattern, MTKPattern):
-        pattern_gm = capture_pre_autograd_graph(pattern_cls(), (torch.randn(3, 3),))
+        pattern_gm = export_for_training(pattern_cls(), (torch.randn(3, 3),)).module()
         matcher = SubgraphMatcherWithNameNodeMap(
             pattern_gm, ignore_literals=True, remove_overlapping_matches=False
         )

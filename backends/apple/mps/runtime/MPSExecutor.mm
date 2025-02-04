@@ -17,10 +17,13 @@
 @end
 
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
+
+using executorch::runtime::Error;
+using executorch::aten::Tensor;
 
 MPSExecutor::MPSExecutor() {
   _use_shared_mem = true;
@@ -239,5 +242,5 @@ MPSExecutor::syncOutputBuffers(
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

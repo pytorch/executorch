@@ -14,8 +14,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 namespace py = pybind11;
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class PyQnnOpWrapper {
  public:
@@ -183,5 +183,5 @@ class PyQnnTensorWrapper {
   std::shared_ptr<TensorWrapper> tensor_wrapper_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

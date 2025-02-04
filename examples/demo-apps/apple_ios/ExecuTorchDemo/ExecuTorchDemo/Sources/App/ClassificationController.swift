@@ -64,7 +64,7 @@ class ClassificationController: ObservableObject {
     case .coreML:
       modelFileName = "mv3_coreml_all"
     case .mps:
-      modelFileName = "mv3_mps"
+      modelFileName = "mv3_mps_float16"
     case .xnnpack:
       modelFileName = "mv3_xnnpack_fp32"
     }

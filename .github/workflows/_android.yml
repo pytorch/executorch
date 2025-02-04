@@ -1,0 +1,114 @@
+name: Android
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  build-llm-demo:
+    name: build-llm-demo
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12-android
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      upload-artifact: android-apps
+      upload-artifact-to-s3: true
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+
+        # Build LLM Demo for Android
+        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+
+  # Running Android emulator directly on the runner and not using Docker
+  run-emulator:
+    needs: build-llm-demo
+    # NB: Use metal install for KVM support to run the emulator faster
+    runs-on: linux.24xl.spr-metal
+    env:
+      ANDROID_NDK_VERSION: r27b
+      API_LEVEL: 34
+    steps:
+      - name: Setup SSH (Click me for login details)
+        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+        with:
+          github-secret: ${{ secrets.GITHUB_TOKEN }}
+          instructions: |
+            This is used to run Android emulators, ANDROID_HOME is installed at /opt/android/sdk
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: false
+
+      - name: Setup conda
+        uses: pytorch/test-infra/.github/actions/setup-miniconda@main
+        with:
+          python-version: '3.10'
+
+      - name: Install Android dependencies
+        shell: bash
+        run: |
+          set -eux
+
+          # Reuse the script that install Android on ET Docker image
+          sudo -E bash .ci/docker/common/install_android.sh
+
+          # After https://github.com/ReactiveCircus/android-emulator-runner/releases/tag/v2.33.0 release,
+          # it seems that we need to chown the Android setup to the current user instead of root to
+          # avoid permission issue
+          sudo chown -R "${USER}" /opt/android
+
+      - name: Download Artifacts
+        shell: bash
+        run: |
+          set -eux
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug-androidTest.apk
+          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/fp32-xnnpack-custom/model.zip
+          curl -o android-test-debug.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/library_test_dir/executorch-debug.apk
+          curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/library_test_dir/executorch-debug-androidTest.apk
+          unzip model.zip
+          mv *.pte model.pte
+
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ env.API_LEVEL }}
+
+      # NB: It takes about 10m to cold boot the emulator here
+      - name: Run Android emulator
+        env:
+          ANDROID_HOME: /opt/android/sdk
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          arch: x86_64
+          script: ./build/run_android_emulator.sh
+          # NB: This is to boot the emulator faster following the instructions on
+          # https://github.com/ReactiveCircus/android-emulator-runner. The max number
+          # of cores we can set is 6, any higher number will be reduced to 6.
+          cores: 6
+          ram-size: 12288M
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # This is to make sure that the job doesn't fail flakily
+          emulator-boot-timeout: 900

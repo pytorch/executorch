@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -37,10 +38,10 @@ class LinearVisitor(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         linear_input_tensors.append(input_tensor_wrapper)
 
@@ -58,10 +59,10 @@ class LinearVisitor(NodeVisitor):
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
+            node,
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         linear_input_tensors.append(weight_tensor_wrapper)
 
@@ -70,26 +71,34 @@ class LinearVisitor(NodeVisitor):
 
             # TODO remove this when qnn sdk support
             if QCOM_SCALES in bias_node.meta.get(QCOM_QUANT_ATTRS, {}):
-                print(
-                    f"[WARNING] Fallback linear bias, {bias_node}. per channel bias quantization is not support yet."
+                warnings.warn(
+                    f"[QNN Delegate Op Builder]: Fallback linear bias, {bias_node}. per channel bias quantization is not support yet.",
+                    stacklevel=1,
                 )
+
+            bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
             bias_tensor = get_parameter(bias_node, self.edge_program)
+            # if bias_node is getitem
+            if bias_tensor is None:
+                bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+                bias_tensor = bias_node.meta["val"]
+
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
+                node,
                 bias_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                bias_tensor_type,
                 nodes_to_wrappers,
-                is_input_tensor=False,
             )
             linear_input_tensors.append(bias_tensor_wrapper)
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         linear_op = PyQnnWrapper.PyQnnOpWrapper(

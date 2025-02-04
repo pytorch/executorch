@@ -12,6 +12,16 @@ from typing import cast, List, Optional, Union
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
 import torch
+
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    VkMemoryLayout,
+    VkStorageType,
+)
+from executorch.backends.vulkan.utils import (
+    is_constant,
+    is_get_attr_node,
+    is_param_node,
+)
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
 from executorch.exir.tensor import TensorSpec
@@ -68,34 +78,12 @@ class VkGraphBuilder:
         else:
             raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
 
-    def is_constant(self, node: Node):
-        return (
-            node.name in self.program.graph_signature.inputs_to_lifted_tensor_constants
-        )
-
-    def is_get_attr_node(self, node: Node) -> bool:
-        """
-        Returns true if the given node is a get attr node for a tensor of the model
-        """
-        return isinstance(node, Node) and node.op == "get_attr"
-
-    def is_param_node(self, node: Node) -> bool:
-        """
-        Check if the given node is a parameter within the exported program
-        """
-        return (
-            self.is_get_attr_node(node)
-            or is_param(self.program, node)
-            or is_buffer(self.program, node)
-            or self.is_constant(node)
-        )
-
     def get_constant(self, node: Node) -> Optional[torch.Tensor]:
         """
         Returns the constant associated with the given node in the exported program.
         Returns None if the node is not a constant within the exported program
         """
-        if self.is_constant(node):
+        if is_constant(self.program, node):
             constant_name = (
                 self.program.graph_signature.inputs_to_lifted_tensor_constants[
                     node.name
@@ -116,9 +104,9 @@ class VkGraphBuilder:
             tensor = get_param(self.program, node)
         elif is_buffer(self.program, node):
             tensor = get_buffer(self.program, node)
-        elif self.is_constant(node):
+        elif is_constant(self.program, node):
             tensor = self.get_constant(node)
-        elif self.is_get_attr_node(node):
+        elif is_get_attr_node(node):
             # This is a hack to support both lifted and unlifted graph
             try:
                 tensor = getattr(node.graph.owning_module, node.target)
@@ -132,13 +120,19 @@ class VkGraphBuilder:
 
     def maybe_add_constant_tensor(self, node: Node) -> int:
         constant_id = -1
-        if self.is_param_node(node):
+        if is_param_node(self.program, node):
             constant_id = len(self.const_tensors)
             self.const_tensors.append(self.get_param_tensor(node))
 
         return constant_id
 
     def create_node_value(self, node: Node) -> int:
+        # If the node has been marked as a scalar tensor, create a SymInt instead of a tensor
+        if node.meta.get("vkdg_is_scalar_tensor", False):
+            new_id = self.create_symint_value()
+            self.node_to_value_ids[node] = new_id
+            return new_id
+
         spec = node.meta.get("spec")
         if isinstance(spec, TensorSpec):
             constant_id = self.maybe_add_constant_tensor(node)
@@ -169,11 +163,25 @@ class VkGraphBuilder:
             self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Double(scalar)))
         return new_id
 
+    def create_symint_value(self) -> int:
+        new_id = len(self.values)
+        self.values.append(vk_graph_schema.VkValue(vk_graph_schema.SymInt(0)))
+        return new_id
+
     def create_tensor_value(self, spec: TensorSpec, constant_id: int = -1) -> int:
         # Negative id indicates that this tensor will have its own dedicated memory.
         mem_obj_id = -1
         if spec.mem_obj_id is not None:
             mem_obj_id = spec.mem_obj_id
+
+        storage_type = VkStorageType.DEFAULT_STORAGE
+        memory_layout = VkMemoryLayout.DEFAULT_LAYOUT
+        if hasattr(spec, "vk_storage_type"):
+            # pyre-ignore[16]
+            storage_type = spec.vk_storage_type
+        if hasattr(spec, "vk_memory_layout"):
+            # pyre-ignore[16]
+            memory_layout = spec.vk_memory_layout
 
         new_id = len(self.values)
         self.values.append(
@@ -183,6 +191,8 @@ class VkGraphBuilder:
                     dims=spec.shape,
                     constant_id=constant_id,
                     mem_obj_id=mem_obj_id,
+                    storage_type=storage_type,
+                    memory_layout=memory_layout,
                 )
             )
         )
@@ -269,7 +279,7 @@ class VkGraphBuilder:
         if len(node.users) == 0:
             return None
         ids = self.create_node_value(node)
-        if not self.is_param_node(node):
+        if not is_param_node(self.program, node):
             if isinstance(ids, int):
                 self.input_ids.append(ids)
             else:

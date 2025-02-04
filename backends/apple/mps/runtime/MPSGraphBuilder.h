@@ -24,11 +24,12 @@
 #include <unordered_map>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
+using Error = executorch::runtime::Error;
 using DataType = mpsgraph::MPSDataType;
 using TensorPtr = const mpsgraph::MPSTensor *;
 using NodePtr = const mpsgraph::MPSNode *;
@@ -197,5 +198,5 @@ private:
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

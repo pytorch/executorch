@@ -12,17 +12,12 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(kernels_test)
-
-# Use C++17 for test.
-set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_kernels portable optimized)
-
+set(_kernels portable optimized quantized)
 foreach(kernel ${_kernels})
   set(_wrapper_dir
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/test"
@@ -33,6 +28,10 @@ foreach(kernel ${_kernels})
     COMMAND mkdir -p ${_wrapper_dir}
     COMMAND echo "#include <executorch/kernels/${kernel}/Functions.h>" >
             "${_wrapper_path}"
+    DEPENDS
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/RegisterKernels.h"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     COMMENT "Generating ${_wrapper_path}"
     VERBATIM
@@ -54,6 +53,21 @@ foreach(kernel ${_kernels})
     COMMENT "Generating ${_wrapper_dir}/supported_features.cpp and header"
     VERBATIM
   )
+
+  add_custom_command(
+    OUTPUT
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/RegisterKernels.h"
+    COMMAND
+      mkdir -p
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
+    COMMAND
+      cp
+      "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/*.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
+      DEPENDS "${kernel}_ops_lib"
+  )
 endforeach()
 
 add_custom_target(
@@ -65,9 +79,13 @@ add_custom_target(
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/FunctionHeaderWrapper.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.cpp"
 )
 
 set(all_test_sources
+    "BinaryLogicalOpTest.cpp"
     "op__to_dim_order_copy_test.cpp"
     "op_abs_test.cpp"
     "op_acos_test.cpp"
@@ -99,6 +117,7 @@ set(all_test_sources
     "op_clamp_test.cpp"
     "op_clone_test.cpp"
     "op_constant_pad_nd_test.cpp"
+    "op_convolution_backward_test.cpp"
     "op_convolution_test.cpp"
     "op_copy_test.cpp"
     "op_cos_test.cpp"
@@ -121,6 +140,7 @@ set(all_test_sources
     "op_fmod_test.cpp"
     "op_full_like_test.cpp"
     "op_full_test.cpp"
+    "op_gather_test.cpp"
     "op_ge_test.cpp"
     "op_gelu_test.cpp"
     "op_glu_test.cpp"
@@ -181,6 +201,7 @@ set(all_test_sources
     "op_rsqrt_test.cpp"
     "op_rsub_test.cpp"
     "op_scalar_tensor_test.cpp"
+    "op_scatter_test.cpp"
     "op_scatter_add_test.cpp"
     "op_select_scatter_test.cpp"
     "op_select_copy_test.cpp"
@@ -202,20 +223,32 @@ set(all_test_sources
     "op_tan_test.cpp"
     "op_tanh_test.cpp"
     "op_to_copy_test.cpp"
+    "op_topk_test.cpp"
     "op_transpose_copy_test.cpp"
     "op_tril_test.cpp"
     "op_trunc_test.cpp"
     "op_unbind_copy_test.cpp"
     "op_unsqueeze_copy_test.cpp"
+    "op_upsample_bilinear2d_test.cpp"
+    "op_upsample_nearest2d_test.cpp"
     "op_var_test.cpp"
     "op_view_copy_test.cpp"
     "op_where_test.cpp"
     "op_zeros_test.cpp"
+    "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
+)
+
+# These requires rtti and not working so far.
+list(REMOVE_ITEM all_test_sources "op_to_copy_test.cpp"
+     "op__to_dim_order_copy_test.cpp"
 )
 
 set(_portable_kernels_test_sources
     ${all_test_sources}
     ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
+    "${EXECUTORCH_ROOT}/kernels/portable/test/op_div_test.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/test/op_gelu_test.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/test/op_mul_test.cpp"
 )
 
 et_cxx_test(
@@ -225,7 +258,6 @@ et_cxx_test(
 add_dependencies(portable_kernels_test generate_wrapper)
 target_include_directories(
   portable_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
-                                "${CMAKE_INSTALL_PREFIX}/include"
 )
 
 set(_optimized_kernels_test_sources
@@ -240,6 +272,7 @@ set(_optimized_kernels_test_sources
     "op_native_layer_norm_test.cpp"
     "op_neg_test.cpp"
     "op_sub_test.cpp"
+    "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
     ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
 )
 
@@ -266,3 +299,37 @@ target_include_directories(
   optimized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
                                  "${CMAKE_INSTALL_PREFIX}/include"
 )
+
+if(TARGET quantized_kernels)
+  set(_quantized_kernels_test_sources
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_add_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_choose_qparams_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding2b_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding4b_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_mixed_linear_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_mixed_mm_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_quantize_test.cpp"
+  )
+
+  et_cxx_test(
+    quantized_kernels_test
+    SOURCES
+    ${_quantized_kernels_test_sources}
+    EXTRA_LIBS
+    cpuinfo
+    extension_threadpool
+    quantized_kernels
+    quantized_ops_lib
+    portable_kernels
+    portable_ops_lib
+    pthreadpool
+    eigen_blas
+  )
+  add_dependencies(quantized_kernels_test generate_wrapper)
+  target_include_directories(
+    quantized_kernels_test
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/quantized"
+            "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
+  )
+endif()

@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import array
 import codecs
@@ -42,6 +44,10 @@ DEFAULT_ENV: Dict[str, Any] = {
     # layout binding index when declaring layout bindings. Note that a container
     # type is used because integers are immutable in Python.
     "B": [0],
+    # C is shorthand for "constant_id". This is used to automatically increment the
+    # constant_id index for specialization constants.
+    # Note that it starts at 3, as 0-2 are reserved for local workgroup size ids.
+    "C": [3],
 }
 
 # Establishes relationships between different tensor types and different GLSL types
@@ -300,8 +306,26 @@ def layout_declare_ubo(
 layout(set = 0, binding = {get_slot_val(slot)}) uniform {precision} restrict readonly {ubo_name}UBO {{
 """
     for type_name, var_name in var_list:
-        out_str += f"{type_name} {var_name};\n"
+        out_str += f"  {type_name} {var_name};\n"
     out_str += "};"
+
+    if isinstance(slot, list):
+        slot[0] = slot[0] + 1
+    return out_str
+
+
+def layout_declare_spec_const(
+    slot: Union[int, List[int]],
+    type_name: str,
+    var_name: str,
+    initial_val: Optional[str] = None,
+) -> str:
+    assert type_name in ["int", "uint", "float", "bool"]
+
+    out_str = f"layout(constant_id = {get_slot_val(slot)}) const {type_name} {var_name}"
+    if initial_val is not None:
+        out_str += f" = {initial_val}"
+    out_str += ";"
 
     if isinstance(slot, list):
         slot[0] = slot[0] + 1
@@ -319,21 +343,26 @@ def define_active_storage_type(storage_type: str):
         raise AssertionError(f"Invalid storage type: {storage_type}")
 
 
-def define_required_extensions(dtype: str):
+def define_required_extensions(dtypes: Union[str, List[str]]):
     out_str = "\n"
-    nbit = None
-    glsl_type = None
+    dtype_list = dtypes if isinstance(dtypes, list) else [dtypes]
 
-    if dtype == "half":
-        nbit = "16bit"
-        glsl_type = "float16"
-    if dtype == "int8":
-        nbit = "8bit"
-        glsl_type = "int8"
+    for dtype in dtype_list:
+        nbit = None
+        glsl_type = None
+        if dtype == "half":
+            nbit = "16bit"
+            glsl_type = "float16"
+        elif dtype == "int16" or dtype == "uint16":
+            nbit = "16bit"
+            glsl_type = "int16"
+        elif dtype == "int8" or dtype == "uint8":
+            nbit = "8bit"
+            glsl_type = "int8"
 
-    if nbit is not None and glsl_type is not None:
-        out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
-        out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
+        if nbit is not None and glsl_type is not None:
+            out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+            out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
     return out_str
 
@@ -356,6 +385,7 @@ UTILITY_FNS: Dict[str, Any] = {
     "layout_declare_sampler": layout_declare_sampler,
     "layout_declare_tensor": layout_declare_tensor,
     "layout_declare_ubo": layout_declare_ubo,
+    "layout_declare_spec_const": layout_declare_spec_const,
     "define_active_storage_type": define_active_storage_type,
     "define_required_extensions": define_required_extensions,
 }
@@ -510,6 +540,7 @@ class SPVGenerator:
         env: Dict[Any, Any],
         glslc_path: Optional[str],
         glslc_flags: str = "",
+        replace_u16vecn: bool = False,
     ) -> None:
         if isinstance(src_dir_paths, str):
             self.src_dir_paths = [src_dir_paths]
@@ -519,6 +550,7 @@ class SPVGenerator:
         self.env = env
         self.glslc_path = glslc_path
         self.glslc_flags = glslc_flags
+        self.replace_u16vecn = replace_u16vecn
 
         self.glsl_src_files: Dict[str, str] = {}
         self.template_yaml_files: List[str] = []
@@ -675,6 +707,27 @@ class SPVGenerator:
                     self.create_shader_params(),
                 )
 
+    def maybe_replace_u16vecn(self, input_text: str) -> str:
+        """
+        There is a latency benefit to using u16vecn variables to store texture position
+        variables instead of ivecn, likely due to reduced register pressure. However,
+        SwiftShader does not support 16 bit integer types in shaders, so this is a crude
+        way to fallback to using ivecn to store texture positions so that testing with
+        SwiftShader is still possible.
+        """
+        if not self.replace_u16vecn:
+            return input_text
+        if "codegen-nosub" in input_text:
+            return input_text
+
+        # Remove extension requirement so that generated ShaderInfo does not mark it
+        input_text = input_text.replace(
+            "#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require", ""
+        )
+        input_text = input_text.replace("u16vec", "ivec")
+        input_text = input_text.replace("uint16_t", "int")
+        return input_text
+
     def generateSPV(self, output_dir: str) -> Dict[str, str]:
         output_file_map = {}
 
@@ -686,6 +739,7 @@ class SPVGenerator:
 
             with codecs.open(source_glsl, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
+                input_text = self.maybe_replace_u16vecn(input_text)
                 output_text = preprocess(input_text, shader_params)
 
             glsl_out_path = os.path.join(output_dir, f"{shader_name}.glsl")
@@ -741,6 +795,9 @@ class ShaderInfo:
     weight_storage_type: str = ""
     bias_storage_type: str = ""
     register_for: Optional[Tuple[str, List[str]]] = None
+    requires_shader_int16_ext: bool = False
+    requires_16bit_storage_ext: bool = False
+    requires_8bit_storage_ext: bool = False
 
 
 def getName(filePath: str) -> str:
@@ -808,6 +865,11 @@ def findRegisterFor(lineStr: str) -> Tuple[str, List[str]]:
     return (matches_list[0], matches_list[1:])
 
 
+def isExtensionRequireLine(lineStr: str) -> bool:
+    extension_require_id = r"^#extension ([A-Za-z0-9_]+)\s*:\s*require"
+    return re.search(extension_require_id, lineStr) is not None
+
+
 typeIdMapping = {
     r"image[123]D\b": "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE",
     r"sampler[123]D\b": "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER",
@@ -839,6 +901,13 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:
                 shader_info.bias_storage_type = getBiasStorageType(line)
             if isRegisterForLine(line):
                 shader_info.register_for = findRegisterFor(line)
+            if isExtensionRequireLine(line):
+                if "GL_EXT_shader_explicit_arithmetic_types_int16" in line:
+                    shader_info.requires_shader_int16_ext = True
+                if "GL_EXT_shader_16bit_storage" in line:
+                    shader_info.requires_16bit_storage_ext = True
+                if "GL_EXT_shader_8bit_storage" in line:
+                    shader_info.requires_8bit_storage_ext = True
 
     return shader_info
 
@@ -902,12 +971,18 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
 
     shader_info_layouts = "{{{}}}".format(",\n ".join(shader_info.layouts))
 
+    def to_cpp_str(val: bool):
+        return "true" if val else "false"
+
     shader_info_args = [
         f'"{name}"',
         f"{name}_bin",
         str(sizeBytes),
         shader_info_layouts,
         tile_size,
+        to_cpp_str(shader_info.requires_shader_int16_ext),
+        to_cpp_str(shader_info.requires_16bit_storage_ext),
+        to_cpp_str(shader_info.requires_8bit_storage_ext),
     ]
 
     shader_info_str = textwrap.indent(
@@ -999,8 +1074,10 @@ def main(argv: List[str]) -> int:
     parser.add_argument("-c", "--glslc-path", required=True, help="")
     parser.add_argument("-t", "--tmp-dir-path", required=True, help="/tmp")
     parser.add_argument("-o", "--output-path", required=True, help="")
+    parser.add_argument("--replace-u16vecn", action="store_true", default=False)
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
+    parser.add_argument("--spv_debug", action="store_true", default=False)
     parser.add_argument(
         "--env", metavar="KEY=VALUE", nargs="*", help="Set a number of key-value pairs"
     )
@@ -1019,14 +1096,23 @@ def main(argv: List[str]) -> int:
     if not os.path.exists(options.tmp_dir_path):
         os.makedirs(options.tmp_dir_path)
 
-    glslc_flags = ""
+    glslc_flags = []
     if options.optimize_size:
-        glslc_flags += "-Os"
+        glslc_flags.append("-Os")
     elif options.optimize:
-        glslc_flags += "-O"
+        glslc_flags.append("-O")
+
+    if options.spv_debug:
+        glslc_flags.append("-g")
+
+    glslc_flags_str = " ".join(glslc_flags)
 
     shader_generator = SPVGenerator(
-        options.glsl_paths, env, options.glslc_path, glslc_flags
+        options.glsl_paths,
+        env,
+        options.glslc_path,
+        glslc_flags=glslc_flags_str,
+        replace_u16vecn=options.replace_u16vecn,
     )
     output_spv_files = shader_generator.generateSPV(options.tmp_dir_path)
 

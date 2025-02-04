@@ -42,6 +42,7 @@ inline const char* et_pal_get_shared_library_name(const void* addr) {
     return DYNAMIC_LIBRARY_NOT_FOUND;
   }
 #endif
+  (void)addr;
   return DYNAMIC_LIBRARY_NOT_SUPPORTED;
 }
 

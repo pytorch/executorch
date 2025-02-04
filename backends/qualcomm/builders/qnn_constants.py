@@ -76,6 +76,11 @@ class OpDequantize:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAbs:
+    op_name: str = "ElementWiseAbs"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseAdd:
     op_name: str = "ElementWiseAdd"
 
@@ -86,8 +91,53 @@ class OpElementWiseCeil:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseCos:
+    op_name: str = "ElementWiseCos"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseDivide:
     op_name: str = "ElementWiseDivide"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseEqual:
+    op_name: str = "ElementWiseEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseGreater:
+    op_name: str = "ElementWiseGreater"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseGreaterEqual:
+    op_name: str = "ElementWiseGreaterEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLess:
+    op_name: str = "ElementWiseLess"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLessEqual:
+    op_name: str = "ElementWiseLessEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLog:
+    op_name: str = "ElementWiseLog"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseMaximum:
+    op_name: str = "ElementWiseMaximum"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseMinimum:
+    op_name: str = "ElementWiseMinimum"
 
 
 @dataclass(init=False, frozen=True)
@@ -111,6 +161,11 @@ class OpElementWisePower:
 @dataclass(init=False, frozen=True)
 class OpElementWiseRsqrt:
     op_name: str = "ElementWiseRsqrt"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseSin:
+    op_name: str = "ElementWiseSin"
 
 
 @dataclass(init=False, frozen=True)
@@ -145,6 +200,12 @@ class OpGatherND:
 @dataclass(init=False, frozen=True)
 class OpGelu:
     op_name: str = "Gelu"
+
+
+class OpGroupNorm:
+    op_name: str = "GroupNorm"
+    param_epsilon = "epsilon"
+    param_group = "group"
 
 
 @dataclass(init=False, frozen=True)
@@ -353,6 +414,22 @@ class OpTile:
 
 
 @dataclass(init=False, frozen=True)
+class OpTopK:
+    op_name: str = "TopK"
+    param_k: str = "k"
+    param_largest: str = "largest"
+
+
+@dataclass(init=False, frozen=True)
 class OpTranspose:
     op_name: str = "Transpose"
     param_perm: str = "perm"
+
+
+@dataclass(init=False, frozen=True)
+class OpTransposeConv2d:
+    op_name: str = "TransposeConv2d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_group: str = "group"
+    param_output_padding: str = "output_padding"

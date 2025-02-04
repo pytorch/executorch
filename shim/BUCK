@@ -8,7 +8,7 @@ load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "sy
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//toolchains:rust.bzl", "system_rust_toolchain")
 
-oncall("open_source")
+oncall("executorch")
 
 system_cxx_toolchain(
     name = "cxx",

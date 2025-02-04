@@ -14,6 +14,7 @@ fb_android_library(
     name = "app_lib",
     srcs = [
         "java/com/example/executorchllamademo/AppLog.java",
+        "java/com/example/executorchllamademo/BackendType.java",
         "java/com/example/executorchllamademo/DemoSharedPreferences.java",
         "java/com/example/executorchllamademo/ETImage.java",
         "java/com/example/executorchllamademo/ETLogging.java",

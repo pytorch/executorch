@@ -106,9 +106,9 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo(), t->axis_map_ubo()},
+      {t->sizes_ubo()},
       // Specialization constants
-      {SV(t->packed_dim())}));
+      {t->hashed_layout()}));
 
   return v;
 }
@@ -126,13 +126,17 @@ vkapi::ShaderInfo get_conv2d_shader(
     const bool prepack_weights,
     const Conv2dMethod method,
     const ValueRef weight,
-    const bool clamp_out = false) {
+    const bool clamp_out = false,
+    const bool stride_equals_dilation = false) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
   switch (method) {
     case Conv2dMethod::Depthwise:
       kernel_name = "conv2d_dw";
       if (!prepack_weights) {
+        if (!stride_equals_dilation) {
+          kernel_name += "_sned";
+        }
         const auto& weight_sizes = graph.get_tref(weight)->sizes;
         if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
           kernel_name += "_output_tile_3x3";
@@ -286,16 +290,37 @@ Conv2dMethod get_conv2d_method(
   return Conv2dMethod::SlidingWindow;
 }
 
+utils::uvec2 get_conv2d_dw_dispatch_divisor(
+    const std::vector<int64_t>& weight_sizes) {
+  if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
+    return {4u, 2u};
+  }
+  if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
+    return {4u, 2u};
+  }
+  return {4u, 2u};
+}
+
 utils::uvec3 create_conv2d_global_wg_size(
     ComputeGraph& graph,
     const Conv2dMethod method,
-    const ValueRef out) {
+    const ValueRef out,
+    const ValueRef weight_data,
+    const bool stride_equals_dilation) {
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.logical_limits_of(out);
     return {
         utils::div_up(image_extents[0u], 2u),
         utils::div_up(image_extents[1u], 2u),
         image_extents[2u]};
+  } else if (method == Conv2dMethod::Depthwise && stride_equals_dilation) {
+    const utils::uvec3 image_extents = graph.create_global_wg_size(out);
+    const utils::uvec2 div =
+        get_conv2d_dw_dispatch_divisor(graph.get_tref(weight_data)->sizes);
+    return {
+        utils::div_up(image_extents[0], div[0]),
+        utils::div_up(image_extents[1], div[1]),
+        image_extents[2]};
   } else {
     return graph.create_global_wg_size(out);
   }
@@ -304,7 +329,7 @@ utils::uvec3 create_conv2d_global_wg_size(
 void add_conv2d_node(
     ComputeGraph& graph,
     const ValueRef in,
-    const ValueRef weight,
+    const ValueRef weight_data,
     const ValueRef bias,
     const ValueRef stride,
     const ValueRef padding,
@@ -330,19 +355,18 @@ void add_conv2d_node(
   const int64_t groups_val = graph.get_int(groups);
 
   const Conv2dMethod method =
-      get_conv2d_method(graph, weight, groups_val, transposed_val);
+      get_conv2d_method(graph, weight_data, groups_val, transposed_val);
 
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight = prepack_weights(graph, weight, method);
+  ValueRef arg_weight = prepack_weights(graph, weight_data, method);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
-      weight,
+      weight_data,
       transposed_val,
       /* storage_type = */ utils::kTexture2D,
       /* memory_layout = */ utils::kWidthPacked);
 
-  vTensorPtr t_in = graph.get_tensor(arg_in);
+  vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
   if (t_in->sizes().at(0) > 1) {
     VK_THROW("conv2d: input batch size > 1 is not supported yet!");
@@ -351,42 +375,90 @@ void add_conv2d_node(
 
   Kernel2dParams kernel_params = create_kernel2d_params(
       graph,
-      weight,
+      weight_data,
       /*kernel_size_only = */ false,
       stride,
       padding,
       dilation);
   Conv2dParams extra_params =
-      create_conv2d_params(graph, weight, kernel_params, transposed_val);
+      create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
+
+  const bool stride_equals_dilation =
+      (kernel_params.stride[0] == kernel_params.dilation[0] &&
+       kernel_params.stride[1] == kernel_params.dilation[1]);
 
   OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
 
   vkapi::ShaderInfo shader = get_conv2d_shader(
-      graph, *t_out, /*prepack_weights = */ false, method, weight, clamp_out);
+      graph,
+      *t_out,
+      /*prepack_weights = */ false,
+      method,
+      weight_data,
+      clamp_out,
+      stride_equals_dilation);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  utils::uvec3 wg_size = create_conv2d_global_wg_size(
+      graph, method, out, weight_data, stride_equals_dilation);
+
+  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
+    wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
+  }
+
+  vkapi::ParamsBindList param_buffers;
+  std::vector<PushConstantDataInfo> push_constants;
+  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
+    const utils::ivec4 kernel_param_size_stride = {
+        kernel_params.kernel_size[0],
+        kernel_params.kernel_size[1],
+        kernel_params.stride[0],
+        kernel_params.stride[1]};
+
+    const utils::ivec4 kernel_param_pad_dial = {
+        kernel_params.padding[0],
+        kernel_params.padding[1],
+        kernel_params.dilation[0],
+        kernel_params.dilation[1]};
+
+    push_constants = {
+        graph.logical_limits_pc_of(out),
+        graph.sizes_pc_of(in),
+        PushConstantDataInfo(
+            &kernel_param_size_stride, sizeof(kernel_param_size_stride)),
+        PushConstantDataInfo(
+            &kernel_param_pad_dial, sizeof(kernel_param_pad_dial)),
+        PushConstantDataInfo(
+            &extra_params, sizeof(extra_params), sizeof(utils::ivec4)),
+        PushConstantDataInfo(&out_params, sizeof(out_params)),
+    };
+  } else {
+    param_buffers = {
+        t_out->logical_limits_ubo(),
+        t_in->sizes_ubo(),
+        graph.create_params_buffer(kernel_params),
+        graph.create_params_buffer(extra_params),
+        graph.create_params_buffer(out_params),
+    };
+  }
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       shader,
-      create_conv2d_global_wg_size(graph, method, out),
-      graph.create_local_wg_size(out),
+      wg_size,
+      graph.create_local_wg_size(wg_size),
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {
-          t_out->logical_limits_ubo(),
-          t_in->sizes_ubo(),
-          graph.create_params_buffer(kernel_params),
-          graph.create_params_buffer(extra_params),
-          graph.create_params_buffer(out_params),
-      },
+      param_buffers,
       // Specialization Constants
       {},
       // Resizing Logic
       resize_conv2d_node,
-      {weight, stride, padding, dilation, transposed, output_padding}));
+      {weight_data, stride, padding, dilation, transposed, output_padding},
+      push_constants));
 }
 
 void add_conv1d_node(
@@ -402,9 +474,8 @@ void add_conv1d_node(
     const ValueRef out_max,
     const ValueRef out,
     const bool clamp_out) {
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight, utils::kWidthPacked);
+  ValueRef arg_weight = prepack_standard(
+      graph, weight, graph.storage_type_of(out), utils::kChannelsPacked);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
@@ -422,7 +493,7 @@ void add_conv1d_node(
     out_max_val = graph.extract_scalar<float>(out_max);
   }
 
-  vTensorPtr t_in = graph.get_tensor(arg_in);
+  vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_weight = graph.get_tensor(arg_weight);
   vTensorPtr t_bias = graph.get_tensor(arg_bias);
   vTensorPtr t_out = graph.get_tensor(out);
@@ -444,7 +515,7 @@ void add_conv1d_node(
   int32_t out_group_size = static_cast<int64_t>(out_channels / groups_val);
 
   utils::uvec3 global_size = {1, static_cast<uint32_t>(out_channels), 1};
-  utils::uvec3 local_size = {1, 1, 1};
+  utils::uvec3 local_size = {1, 64, 1};
 
   Kernel1dParams kernel_params = {
       kernel_size,
@@ -464,14 +535,14 @@ void add_conv1d_node(
 
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
+       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
           t_out->logical_limits_ubo(),
@@ -480,7 +551,10 @@ void add_conv1d_node(
           graph.create_params_buffer(out_params),
       },
       // Specialization Constants
-      {},
+      {t_out->hashed_layout(),
+       t_in->hashed_layout(),
+       t_weight->hashed_layout(),
+       t_bias->hashed_layout()},
       // Resizing Logic
       resize_conv1d_node,
       {weight, stride, padding, dilation}));

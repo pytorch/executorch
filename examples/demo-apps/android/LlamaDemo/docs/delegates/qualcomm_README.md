@@ -6,13 +6,13 @@ More specifically, it covers:
 2. Building and linking libraries that are required to inference on-device for Android platform using Qualcomm AI accelerators.
 3. Building the Android demo app itself.
 
-Verified on Linux CentOS, QNN SDK [v2.26](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip), python 3.10, Android SDK r27 and r26b.
+Verified on Linux CentOS, QNN SDK [v2.26](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip), python 3.10, Android SDK r27b.
 
 Phone verified: OnePlus 12, Samsung 24+, Samsung 23
 
 ## Prerequisites
 * Download and unzip QNN SDK [v2.26](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip)
-* Download and unzip Android SDK [r27](https://developer.android.com/ndk/downloads)
+* Download and unzip Android SDK [r27b](https://developer.android.com/ndk/downloads)
 * Android phone with Snapdragon8 Gen3 (SM8650) or Gen2 (SM8550). Gen 1 and lower SoC might be supported but not fully validated.
 * Desired Llama model weights in .PTH format. You can download them on HuggingFace ([Example](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct)).
 
@@ -34,13 +34,13 @@ git submodule update --init
 ```
 Install dependencies
 ```
-./install_requirements.sh
+./install_executorch.sh
 ```
 
 ## Setup QNN
 ```
 # Set these variables correctly for your environment
-export ANDROID_NDK_ROOT=$HOME/android-ndk-r27 # Download android SDK and unzip to home directory
+export ANDROID_NDK_ROOT=$HOME/android-ndk-r27b # Download android SDK and unzip to home directory
 export QNN_SDK_ROOT=$HOME/Your-SDK-Root #Folder contains lib
 export EXECUTORCH_ROOT=$HOME/repos/executorch
 export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH
@@ -72,9 +72,9 @@ cmake --build cmake-out -j16 --target install --config Release
 
 
 ### Setup Llama Runner
-Next we need to build and compile the Llama runner. This is similar to the requirements for running Llama with XNNPack.
+Next we need to build and compile the Llama runner. This is similar to the requirements for running Llama with XNNPACK.
 ```
-sh examples/models/llama2/install_requirements.sh
+sh examples/models/llama/install_requirements.sh
 
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -84,9 +84,9 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_QNN=ON \
-    -Bcmake-out/examples/models/llama2 \
-    examples/models/llama2
-cmake --build cmake-out/examples/models/llama2 -j16 --config Release
+    -Bcmake-out/examples/models/llama \
+    examples/models/llama
+cmake --build cmake-out/examples/models/llama -j16 --config Release
 ```
 
 ## Export Llama Model
@@ -101,12 +101,12 @@ We support PTQ by default. The entire export may take ~20 minutes (Llama 3.1 8B)
 Examples:
 ```
 # 4 bits weight only quantize
-python -m examples.models.llama2.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_16a4w -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
+python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_16a4w -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
 ```
 If the model is really big, it may require model sharding because the Qualcomm DSP is a 32bit system and has a 4GB size limit . For example for Llama 3 8B models, we need to shard the model into 4, but ExecuTorch still packages it into one PTE file. Here is an example:
 ```
 # 8 bits quantization with 4 shards
-python -m examples.models.llama2.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_8a8w -d fp32 --num_sharding 4 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
+python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_8a8w -d fp32 --num_sharding 4 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
 ```
 Note: if you encountered issues below
 ```
@@ -130,9 +130,9 @@ You may also wonder what the "--metadata" flag is doing. This flag helps export 
 
 Convert tokenizer for Llama 2
 ```
-python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
+python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
-Convert tokenizer for Llama 3 - Rename tokenizer.model to tokenizer.bin.
+Rename tokenizer for Llama 3 with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
 
 
 ### Export with Spinquant (Llama 3 8B only)
@@ -158,7 +158,7 @@ To export Llama 3 8B instruct with the Qualcomm AI Engine Direct Backend, ensure
 * 8B models might need 16GB RAM on the device to run.
 ```
 # Please note that calibration_data must include the prompt template for special tokens.
-python -m examples.models.llama2.export_llama  -t <path_to_tokenizer.model> -p <path_to_params.json> -c <path_to_checkpoint_for_Meta-Llama-3-8B-Instruct>  --use_kv_cache  --qnn --pt2e_quantize qnn_16a4w --disable_dynamic_shape --num_sharding 8 --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --optimized_rotation_path <path_to_optimized_matrix> --calibration_data "<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+python -m examples.models.llama.export_llama -t <path_to_tokenizer.model> -p <path_to_params.json> -c <path_to_checkpoint_for_Meta-Llama-3-8B-Instruct>  --use_kv_cache  --qnn --pt2e_quantize qnn_16a4w --disable_dynamic_shape --num_sharding 8 --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --optimized_rotation_path <path_to_optimized_matrix> --calibration_data "<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
 ```
 
 ## Pushing Model and Tokenizer
@@ -221,7 +221,7 @@ popd
 If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/screenshots/opening_the_app_details.png" width=800>
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/opening_the_app_details.png" style="width:800px">
 </p>
 
 ## Reporting Issues

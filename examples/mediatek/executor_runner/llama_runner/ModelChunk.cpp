@@ -23,9 +23,21 @@
 #define ENSURE_INIT \
   ET_CHECK_MSG(Initialized(), "Error: Model chunk not initialized.");
 
-namespace torch::executor {
+namespace example {
 
-using util::FileDataLoader;
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
+using executorch::extension::FileDataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+using executorch::runtime::Tag;
 
 static constexpr size_t kMethodAllocatorPoolSize = 4 * 1024U * 1024U; // 4MB
 
@@ -572,4 +584,4 @@ void ModelChunk::ReleaseModelInstance(void* modelInstance) {
   }
 }
 
-} // namespace torch::executor
+} // namespace example

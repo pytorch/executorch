@@ -17,32 +17,32 @@
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_mean;
-layout(set = 0, binding = 2, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_rstd;
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "w", "t_mean", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "w", "t_rstd", DTYPE, STORAGE)}
 
-layout(set = 0, binding = 3) uniform PRECISION sampler3D image_in;
-layout(set = 0, binding = 4) uniform PRECISION sampler3D weight_in;
-layout(set = 0, binding = 5) uniform PRECISION sampler3D bias_in;
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_weight", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_bias", DTYPE, STORAGE)}
 
-layout(set = 0, binding = 6) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 7) uniform PRECISION restrict Sizes {
-  ivec4 sizes;
-};
-
-layout(set = 0, binding = 8) uniform PRECISION restrict Epsilon {
-  float epsilon;
-};
+${layout_declare_ubo(B, "ivec3", "out_limits")}
+${layout_declare_ubo(B, "ivec4", "sizes")}
+${layout_declare_ubo(B, "float", "epsilon")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
+const lowp int in_packed_dim = unhash_packed_dim(in_layout);
 
-  if (any(greaterThanEqual(pos, out_limits))) {
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+const lowp int out_packed_dim = unhash_packed_dim(out_layout);
+
+void main() {
+  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
+
+  if (any(greaterThanEqual(lpos, out_limits))) {
     return;
   }
 
@@ -55,8 +55,10 @@ void main() {
 
   // Use Welford's online algorithm to compute mean and variance in one pass
   // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
+  ivec3 in_pos = lpos_to_pos(lpos, in_axis_map);
   for (int w = 0; w < width; ++w) {
-    VEC4_T v = texelFetch(image_in, ivec3(w, pos.y, pos.z), 0);
+    in_pos[in_axis_map.x] = w;
+    VEC4_T v = load_texel(t_in, in_pos);
     delta = v - mean;
     mean += delta / (w + 1);
     delta2 = v - mean;
@@ -68,14 +70,15 @@ void main() {
   VEC4_T offset = -rstd * mean;
 
   for (int w = 0; w < width; ++w) {
-    VEC4_T v = texelFetch(image_in, ivec3(w, pos.y, pos.z), 0);
+    in_pos[in_axis_map.x] = w;
+    VEC4_T v = load_texel(t_in, in_pos);
     // broadcasting
-    VEC4_T weight = texelFetch(weight_in, ivec3(w, 0, 0), 0).xxxx;
-    VEC4_T bias = texelFetch(bias_in, ivec3(w, 0, 0), 0).xxxx;
+    VEC4_T weight = load_texel(t_weight, ivec3(w, 0, 0)).xxxx;
+    VEC4_T bias = load_texel(t_bias, ivec3(w, 0, 0)).xxxx;
     VEC4_T outtex = (v * rstd + offset) * weight + bias;
-    imageStore(image_out, ivec3(w, pos.y, pos.z), outtex);
+    write_texel_lpos(t_out, ivec3(w, lpos.y, lpos.z), outtex, out_axis_map);
   }
 
-  imageStore(image_mean, pos, mean);
-  imageStore(image_rstd, pos, rstd);
+  write_texel(t_mean, lpos, mean);
+  write_texel(t_rstd, lpos, rstd);
 }

@@ -6,16 +6,13 @@
 
 import json
 import os
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
 
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-    QcomChipset,
-)
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -295,14 +292,14 @@ def main(args):
         )
         # lower all graph again, the skipped operators will be left in CPU
         exec_prog = to_edge(
-            torch.export.export(graph_module, inputs[0]),
+            torch.export.export(graph_module, inputs[0], strict=True),
         ).to_executorch()
 
         with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
             file.write(exec_prog.buffer)
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),

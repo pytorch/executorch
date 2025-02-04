@@ -95,6 +95,8 @@ class vTensorStorage final {
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
 
+  vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
+
  protected:
   /*
    * This allows for creation of tensors that use the same underlying storage
@@ -104,7 +106,7 @@ class vTensorStorage final {
    * because this behaviour is unsafe, since the original tensor may be
    * destroyed before the copy is destroyed.
    */
-  vTensorStorage(const vTensorStorage& other, const int64_t buffer_offset = 0);
+  vTensorStorage(vTensorStorage& other, const int64_t buffer_offset = 0);
 
  public:
   // To discourage creating copies, the assignment operator is still deleted.
@@ -134,6 +136,8 @@ class vTensorStorage final {
 
   // Last Access - used to insert memory barriers
   LastAccess last_access_;
+  // Indicates whether copies of this vTensorStorage have been made
+  bool has_copies_;
 
  private:
   // Registers underlying memory for cleanup
@@ -152,6 +156,11 @@ class vTensorStorage final {
   inline VkFormat texture_format() {
     return image_.format();
   }
+
+  /*
+   * Check if the underlying resource is a copy of another resource
+   */
+  bool is_copy() const;
 
   /*
    * Used for checking if this vTensorStorage is a copy of another instance
@@ -176,6 +185,13 @@ class vTensor final {
       const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
       const bool allocate_memory = true);
 
+  vTensor(const vTensor& other) = delete;
+
+  explicit vTensor(
+      Context* context,
+      const vkapi::VulkanImage& image,
+      const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked);
+
   /*
    * This constructor allows for the creation of a vTensor that references the
    * same buffer resource of another vTensor, with the same sizes and strides
@@ -185,7 +201,7 @@ class vTensor final {
    * Once created, the sizes and strides of the aliased vTensor can be changed
    * using the `virtual_reconfigure` member function.
    */
-  vTensor(const vTensor& other);
+  vTensor(vTensor& other);
 
   /*
    * This constructor allows for the creation of a vTensor that references the
@@ -202,7 +218,7 @@ class vTensor final {
    * buffer.
    */
   vTensor(
-      const vTensor& other,
+      vTensor& other,
       const std::vector<int64_t>& sizes,
       const std::vector<int64_t>& dim_order,
       const int64_t offset_numel = 0);
@@ -212,6 +228,46 @@ class vTensor final {
 
   vTensor(vTensor&& other) = default;
   vTensor& operator=(vTensor&& other) = default;
+
+  enum class Attribute : uint8_t {
+    SIZES,
+    STRIDES,
+    LOGICAL_LIMITS,
+    NUMEL,
+  };
+
+  class UniformData {
+    utils::ivec4 sizes_v;
+    utils::ivec4 strides_v;
+    // See the comments documenting logical_limits() for more context.
+    TextureLimits logical_limits;
+    // Contains the number of elements in the tensor according to the canonical
+    // sizes.
+    size_t numel;
+
+    friend class vTensor;
+
+    UniformData(
+        const std::vector<int64_t>& sizes,
+        const std::vector<int64_t>& strides,
+        const TextureLimits& logical_limits,
+        const size_t numel)
+        : sizes_v(utils::make_whcn_ivec4(sizes)),
+          strides_v(utils::make_whcn_ivec4(strides)),
+          logical_limits(logical_limits),
+          numel(numel) {}
+
+   public:
+    /*
+     * Write tensor's metadata into dst, at the given dst_offset. max_dst_size
+     * is the size of dst and is used to avoid out of bounds writes.
+     */
+    uint32_t write_attribute(
+        void* dst,
+        const uint32_t dst_offset,
+        const uint32_t max_dst_size,
+        const Attribute attr);
+  };
 
  private:
   /*
@@ -258,9 +314,6 @@ class vTensor final {
 
   // strides of the tensor in NCHW dimension order
   std::vector<int64_t> strides_;
-  // Contains the number of elements in the tensor according to the canonical
-  // sizes.
-  size_t numel_;
 
   /*
    * The below metadata members are derived from the above, and are typically
@@ -277,25 +330,35 @@ class vTensor final {
   // Contains the number of elements in the tensor according to the padded
   // sizes.
   size_t padded_numel_;
-  // See the comments documenting logical_limits() for more context.
-  TextureLimits logical_limits_;
 
   /*
-   * Utility GPU buffers that can be passed to shaders in order to convey tensor
-   * metadata. These buffers will be initialized the first time they are
-   * accessed via the corresponding *_ubo() function, and their contents will be
-   * updated whenever virtual_resize() is called.
+   * Utility GPU buffer that can be passed to shaders in order to convey tensor
+   * metadata. Uniform buffer will be initialized only the first time a ubo is
+   * requested. Buffer offsets will be initialized the first time they are
+   * accessed via the corresponding *_ubo() function. Uniform buffer's contents
+   * will be updated whenever virtual_resize() is called.
    *
    * Refer to the comments for the corresponding *_ubo() functions for more
    * context about the data contained in each buffer.
    */
-  ParamsBuffer sizes_uniform_;
-  ParamsBuffer strides_uniform_;
-  ParamsBuffer numel_uniform_;
-  ParamsBuffer axis_map_uniform_;
-  ParamsBuffer logical_limits_uniform_;
+  ParamsBuffer uniforms_;
+  uint32_t uniforms_size_;
+  uint32_t sizes_uniform_offset_;
+  uint32_t unsqueezed_strides_offset_;
+  uint32_t numel_uniform_offset_;
+  uint32_t logical_limits_uniform_offset_;
+
+  // Maximum number of metadata fields that can be stored in the metadata UBO.
+  // This is used to calculate the size of the UBO that should be allocated.
+  constexpr static size_t kMaxMetadataFieldCount = 4;
+
+  // Initial value of uniform buffer offsets. 1 is selected as it is essentially
+  // impossible for a ubo to have an offset of 1.
+  constexpr static uint32_t kUniformOffsetUnset = 1;
 
   vTensorStorage storage_;
+
+  std::shared_ptr<UniformData> uniform_data_;
 
  public:
   /*
@@ -362,7 +425,7 @@ class vTensor final {
    * instead of the original sizes.
    */
   inline const utils::ivec3& logical_limits() const {
-    return logical_limits_.limits;
+    return uniform_data_->logical_limits.limits;
   }
 
   /*
@@ -386,6 +449,14 @@ class vTensor final {
     return packed_dim_;
   }
 
+  /*
+   * Returns the WHCN index of the dimension that is used to concatenate batches
+   * as an int32_t.
+   */
+  inline int32_t concat_dim() const {
+    return utils::safe_downcast<int32_t>(axis_map_.at(3));
+  }
+
   inline const std::vector<int64_t>& sizes() const {
     return sizes_;
   }
@@ -404,6 +475,29 @@ class vTensor final {
 
   inline const std::vector<int64_t>& axis_map() const {
     return axis_map_;
+  }
+
+  /*
+   * Returns a single int32_t that contains the values of the axis map and the
+   * packed dimension packed into a single int32_t, such that it can be used as
+   * a specialization constant in a compute shader. This allows for the SPIR-V
+   * to bytecode compilation to perform compile-time unfolding on the axis map.
+   * Each element of the axis map and the value of the packed dimension take up
+   * 4 bits in the packed int32_t.
+   */
+  inline int32_t hashed_layout() const {
+    return axis_map_.at(0) + (axis_map_.at(1) << 4) + (axis_map_.at(2) << 8) +
+        (axis_map_.at(3) << 12) + (packed_dim_ << 16);
+  }
+
+  /*
+   * Return true if the tensor's axis map is {0, 1, 2, concat_dim}. This means
+   * that the width dim is mapped to the width axis of the texture, the height
+   * dim is mapped to the height axis of the texture, the channels dim is mapped
+   * to the depth axis of the texture.
+   */
+  inline bool has_standard_axis_map() const {
+    return axis_map_.at(0) == 0 && axis_map_.at(1) == 1 && axis_map_.at(2) == 2;
   }
 
   inline const std::vector<int64_t>& strides() const {
@@ -430,12 +524,6 @@ class vTensor final {
   const vkapi::BufferBindInfo strides_ubo();
 
   /*
-   * Returns a GPU buffer containing the texture axis mapping for each dimension
-   * of the tensor, in WHCN dimension order.
-   */
-  const vkapi::BufferBindInfo axis_map_ubo();
-
-  /*
    * Returns a GPU buffer containing the logical limits of the tensor. See the
    * comments for logical_limits() for more context.
    */
@@ -447,7 +535,7 @@ class vTensor final {
   const vkapi::BufferBindInfo numel_ubo();
 
   inline size_t numel() const {
-    return numel_;
+    return uniform_data_->numel;
   }
 
   inline size_t nbytes() const {
@@ -512,6 +600,11 @@ class vTensor final {
       const std::vector<int64_t>& new_dim_order);
 
   /*
+   * Set all metadata of this tensor to match the metadata of another tensor.
+   */
+  void virtual_clone(const vTensor& other);
+
+  /*
    * Perform a virtual resize of the vTensor by modifying the size metadata that
    * gets used in compute shaders. This allows the shader to treat the
    * underlying resource as if it were a different size. The new sizes cannot
@@ -530,7 +623,18 @@ class vTensor final {
   inline bool is_view_of(const vTensor& other) const {
     return storage_.is_copy_of(other.storage_);
   }
+
+  const std::shared_ptr<UniformData>& get_uniform_data() const {
+    return uniform_data_;
+  }
 };
+
+static constexpr vTensor::Attribute kTensorSizes = vTensor::Attribute::SIZES;
+static constexpr vTensor::Attribute kTensorStrides =
+    vTensor::Attribute::STRIDES;
+static constexpr vTensor::Attribute kTensorLogicalLimits =
+    vTensor::Attribute::LOGICAL_LIMITS;
+static constexpr vTensor::Attribute kTensorNumel = vTensor::Attribute::NUMEL;
 
 } // namespace api
 } // namespace vkcompute

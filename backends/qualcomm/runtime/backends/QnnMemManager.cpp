@@ -7,9 +7,11 @@
  */
 #include <executorch/backends/qualcomm/runtime/backends/QnnMemManager.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
 
 bool QnnMemManager::IsRegistered(Qnn_MemHandle_t handle, void* mem_ptr) {
   auto it = registered_map_.find(handle);
@@ -169,5 +171,5 @@ void QnnMemManager::DeRegisterMem() {
 }
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

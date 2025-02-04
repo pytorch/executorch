@@ -45,8 +45,8 @@ Use `-h` (or `--help`) to see all the supported models.
 
 ```bash
 # Build the tool from the top-level `executorch` directory.
-(rm -rf cmake-out \
-    && mkdir cmake-out \
+./install_executorch.sh --clean
+(mkdir cmake-out \
     && cd cmake-out \
     && cmake -DEXECUTORCH_PAL_DEFAULT=posix ..) \
   && cmake --build cmake-out -j32 --target executor_runner

@@ -50,7 +50,7 @@ class TensorInfo final {
   /**
    * Returns the scalar type of the input/output.
    */
-  exec_aten::ScalarType scalar_type() const;
+  executorch::aten::ScalarType scalar_type() const;
 
   /**
    * Returns whether the tensor's memory was planned during export.
@@ -69,7 +69,7 @@ class TensorInfo final {
   TensorInfo(
       Span<const int32_t> sizes,
       Span<const uint8_t> dim_order,
-      exec_aten::ScalarType scalar_type,
+      executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned);
 
   /**
@@ -89,7 +89,7 @@ class TensorInfo final {
   Span<const uint8_t> dim_order_;
 
   /// The scalar type of the tensor.
-  exec_aten::ScalarType scalar_type_;
+  executorch::aten::ScalarType scalar_type_;
 
   /// Whether the tensor's memory was planned during export.
   bool is_memory_planned_;
@@ -184,6 +184,13 @@ class MethodMeta final {
    * @returns The size in bytes on success, or an error on failure.
    */
   Result<int64_t> memory_planned_buffer_size(size_t index) const;
+
+  /**
+   * Get the number of instructions in this method.
+   *
+   * @returns The number of instructions.
+   */
+  ET_EXPERIMENTAL size_t num_instructions() const;
 
   /**
    * DEPRECATED: Use num_memory_planned_buffers() instead.

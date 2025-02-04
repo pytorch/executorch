@@ -26,6 +26,7 @@ import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -107,10 +108,6 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
   }
 
   private void setLocalModel(String modelPath, String tokenizerPath, float temperature) {
-    if (mModule != null) {
-      mModule.resetNative();
-      mModule = null;
-    }
     Message modelLoadingMessage = new Message("Loading model...", false, MessageType.SYSTEM, 0);
     ETLogging.getInstance().log("Loading model " + modelPath + " with tokenizer " + tokenizerPath);
     runOnUiThread(
@@ -119,10 +116,17 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
           mMessageAdapter.add(modelLoadingMessage);
           mMessageAdapter.notifyDataSetChanged();
         });
+    if (mModule != null) {
+      ETLogging.getInstance().log("Start deallocating existing module instance");
+      mModule.resetNative();
+      mModule = null;
+      ETLogging.getInstance().log("Completed deallocating existing module instance");
+    }
     long runStartTime = System.currentTimeMillis();
     mModule =
         new LlamaModule(
-            ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
+            ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
             modelPath,
             tokenizerPath,
             temperature);
@@ -171,6 +175,11 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
             + modelPath
             + "\nTokenizer path: "
             + tokenizerPath
+            + "\nBackend: "
+            + mCurrentSettingsFields.getBackendType().toString()
+            + "\nModelType: "
+            + ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
             + "\nTemperature: "
             + temperature
             + "\nModel loaded time: "
@@ -226,6 +235,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
 
     try {
       Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+      Os.setenv("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
     } catch (ErrnoException e) {
       finish();
     }
@@ -282,6 +292,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
       }
       boolean isUpdated = !mCurrentSettingsFields.equals(updatedSettingsFields);
       boolean isLoadModel = updatedSettingsFields.getIsLoadModel();
+      setBackendMode(updatedSettingsFields.getBackendType());
       if (isUpdated) {
         if (isLoadModel) {
           // If users change the model file, but not pressing loadModelButton, we won't load the new
@@ -290,6 +301,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
         } else {
           askUserToSelectModel();
         }
+
         checkForClearChatHistory(updatedSettingsFields);
         // Update current to point to the latest
         mCurrentSettingsFields = new SettingsFields(updatedSettingsFields);
@@ -297,6 +309,22 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     } else {
       askUserToSelectModel();
     }
+  }
+
+  private void setBackendMode(BackendType backendType) {
+    if (backendType.equals(BackendType.XNNPACK) || backendType.equals(BackendType.QUALCOMM)) {
+      setXNNPACKMode();
+    } else if (backendType.equals(BackendType.MEDIATEK)) {
+      setMediaTekMode();
+    }
+  }
+
+  private void setXNNPACKMode() {
+    requireViewById(R.id.addMediaButton).setVisibility(View.VISIBLE);
+  }
+
+  private void setMediaTekMode() {
+    requireViewById(R.id.addMediaButton).setVisibility(View.GONE);
   }
 
   private void checkForClearChatHistory(SettingsFields updatedSettingsFields) {
@@ -660,8 +688,22 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     mSendButton.setImageResource(R.drawable.baseline_send_24);
     mSendButton.setOnClickListener(
         view -> {
+          try {
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            imm.hideSoftInputFromWindow(getCurrentFocus().getWindowToken(), 0);
+          } catch (Exception e) {
+            ETLogging.getInstance().log("Keyboard dismissal error: " + e.getMessage());
+          }
           addSelectedImagesToChatThread(mSelectedImageUri);
+          String finalPrompt;
           String rawPrompt = mEditTextMessage.getText().toString();
+          if (ModelUtils.getModelCategory(
+                  mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType())
+              == ModelUtils.VISION_MODEL) {
+            finalPrompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
+          } else {
+            finalPrompt = getTotalFormattedPrompt(getConversationHistory(), rawPrompt);
+          }
           // We store raw prompt into message adapter, because we don't want to show the extra
           // tokens from system prompt
           mMessageAdapter.add(new Message(rawPrompt, true, MessageType.TEXT, promptID));
@@ -689,17 +731,27 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                         }
                       });
                   long generateStartTime = System.currentTimeMillis();
-                  if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
+                  if (ModelUtils.getModelCategory(
+                          mCurrentSettingsFields.getModelType(),
+                          mCurrentSettingsFields.getBackendType())
                       == ModelUtils.VISION_MODEL) {
                     mModule.generateFromPos(
-                        mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt),
+                        finalPrompt,
                         ModelUtils.VISION_MODEL_SEQ_LEN,
                         startPos,
                         MainActivity.this,
                         false);
+                  } else if (mCurrentSettingsFields.getModelType() == ModelType.LLAMA_GUARD_3) {
+                    String llamaGuardPromptForClassification =
+                        PromptFormat.getFormattedLlamaGuardPrompt(rawPrompt);
+                    ETLogging.getInstance()
+                        .log("Running inference.. prompt=" + llamaGuardPromptForClassification);
+                    mModule.generate(
+                        llamaGuardPromptForClassification,
+                        llamaGuardPromptForClassification.length() + 64,
+                        MainActivity.this,
+                        false);
                   } else {
-                    String finalPrompt =
-                        getTotalFormattedPrompt(getConversationHistory(), rawPrompt);
                     ETLogging.getInstance().log("Running inference.. prompt=" + finalPrompt);
                     mModule.generate(
                         finalPrompt,

@@ -13,7 +13,8 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
+using executorch::runtime::getLeadingDims;
 using executorch::runtime::KernelRuntimeContext;
 
 // The quantized matmul. The quantized matmul accumulates in a wider register,
@@ -48,7 +49,7 @@ __attribute__((noinline)) void qmatmul(
           sum += (X[i * n + k] - X_zero_point) * (y[k * p + j] - Y_zero_point);
         }
       }
-      Z[i * p + j] = kernels::quantize<uint8_t>(sum, Z_scale, Z_zero_point);
+      Z[i * p + j] = kernels::quantize<TZ>(sum, Z_scale, Z_zero_point);
     }
   }
 }
@@ -59,7 +60,7 @@ void inline _typed_quantized_matmul(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
@@ -113,13 +114,13 @@ void quantized_matmul_out(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
     bool transposed,
     Tensor& out) {
-  if (out.scalar_type() == exec_aten::ScalarType::Byte) {
+  if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
     _typed_quantized_matmul<uint8_t>(
         X,
         X_zero_point,
@@ -131,7 +132,7 @@ void quantized_matmul_out(
         out_zero_point,
         transposed,
         out);
-  } else if (out.scalar_type() == exec_aten::ScalarType::Char) {
+  } else if (out.scalar_type() == executorch::aten::ScalarType::Char) {
     _typed_quantized_matmul<int8_t>(
         X,
         X_zero_point,
@@ -143,6 +144,11 @@ void quantized_matmul_out(
         out_zero_point,
         transposed,
         out);
+  } else {
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(X.scalar_type()));
   }
 }
 

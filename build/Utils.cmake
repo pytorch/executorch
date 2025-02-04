@@ -46,12 +46,20 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_ARM_BAREMETAL         : "
                  "${EXECUTORCH_BUILD_ARM_BAREMETAL}"
   )
+  message(STATUS "  EXECUTORCH_BUILD_CADENCE               : "
+                 "${EXECUTORCH_BUILD_CADENCE}"
+  )
   message(
     STATUS
       "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
-                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_DEVTOOLS              : ${EXECUTORCH_BUILD_DEVTOOLS}"
   )
   message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
                  "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
@@ -68,7 +76,7 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TENSOR      : "
                  "${EXECUTORCH_BUILD_EXTENSION_TENSOR}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING      : "
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING    : "
                  "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
   )
   message(
@@ -79,22 +87,14 @@ function(executorch_print_configuration_summary)
     STATUS
       "  EXECUTORCH_BUILD_GFLAGS                : ${EXECUTORCH_BUILD_GFLAGS}"
   )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_GTESTS                : ${EXECUTORCH_BUILD_GTESTS}"
-  )
   message(STATUS "  EXECUTORCH_BUILD_HOST_TARGETS          : "
                  "${EXECUTORCH_BUILD_HOST_TARGETS}"
   )
-  message(
-    STATUS "  EXECUTORCH_BUILD_MPS                   : ${EXECUTORCH_BUILD_MPS}"
+  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
+                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
   )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_PYBIND                : ${EXECUTORCH_BUILD_PYBIND}"
-  )
-  message(
-    STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}"
+  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT    : "
+                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT}"
   )
   message(STATUS "  EXECUTORCH_BUILD_KERNELS_OPTIMIZED     : "
                  "${EXECUTORCH_BUILD_KERNELS_OPTIMIZED}"
@@ -103,19 +103,11 @@ function(executorch_print_configuration_summary)
                  "${EXECUTORCH_BUILD_KERNELS_QUANTIZED}"
   )
   message(
-    STATUS "  EXECUTORCH_BUILD_DEVTOOLS              : ${EXECUTORCH_BUILD_DEVTOOLS}"
+    STATUS "  EXECUTORCH_BUILD_MPS                   : ${EXECUTORCH_BUILD_MPS}"
   )
   message(
     STATUS
-      "  EXECUTORCH_BUILD_SIZE_TEST             : ${EXECUTORCH_BUILD_SIZE_TEST}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_XNNPACK               : ${EXECUTORCH_BUILD_XNNPACK}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_VULKAN                : ${EXECUTORCH_BUILD_VULKAN}"
+      "  EXECUTORCH_BUILD_NEURON                : ${EXECUTORCH_BUILD_NEURON}"
   )
   message(
     STATUS
@@ -123,7 +115,26 @@ function(executorch_print_configuration_summary)
   )
   message(
     STATUS
-      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
+      "  EXECUTORCH_BUILD_PYBIND                : ${EXECUTORCH_BUILD_PYBIND}"
+  )
+  message(
+    STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_SIZE_TEST             : ${EXECUTORCH_BUILD_SIZE_TEST}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_TESTS                 : ${EXECUTORCH_BUILD_TESTS}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_VULKAN                : ${EXECUTORCH_BUILD_VULKAN}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_XNNPACK               : ${EXECUTORCH_BUILD_XNNPACK}"
   )
 
 endfunction()
@@ -193,7 +204,10 @@ function(extract_sources sources_file)
       elseif("${ANDROID_ABI}" STREQUAL "x86_64")
         set(target_platforms_arg "--target-platforms=shim//:android-x86_64")
       else()
-        message(FATAL_ERROR "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!")
+        message(
+          FATAL_ERROR
+            "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!"
+        )
       endif()
     endif()
     execute_process(
@@ -235,7 +249,7 @@ function(resolve_buck2)
 
   set(resolve_buck2_command
       ${PYTHON_EXECUTABLE} ${executorch_root}/build/resolve_buck.py
-      --cache_dir=${CMAKE_CURRENT_BINARY_DIR}/buck2-bin
+      --cache_dir=buck2-bin
   )
 
   if(NOT ${BUCK2} STREQUAL "")
@@ -247,15 +261,14 @@ function(resolve_buck2)
     OUTPUT_VARIABLE resolve_buck2_output
     ERROR_VARIABLE resolve_buck2_error
     RESULT_VARIABLE resolve_buck2_exit_code
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WORKING_DIRECTORY ${executorch_root}
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
 
+  # $BUCK2 is a copy of the var from the parent scope. This block will set
+  # $buck2 to the value we want to return.
   if(resolve_buck2_exit_code EQUAL 0)
-    set(BUCK2
-        ${resolve_buck2_output}
-        PARENT_SCOPE
-    )
+    set(buck2 ${resolve_buck2_output})
     message(STATUS "Resolved buck2 as ${resolve_buck2_output}.")
   elseif(resolve_buck2_exit_code EQUAL 2)
     # Wrong buck version used. Stop here to ensure that the user sees the error.
@@ -266,17 +279,24 @@ function(resolve_buck2)
     message(WARNING "${resolve_buck2_error}")
 
     if("${BUCK2}" STREQUAL "")
-      set(BUCK2
-          "buck2"
-          PARENT_SCOPE
-      )
+      set(buck2 "buck2")
     endif()
   endif()
+
+  # Update the var in the parent scope. Note that this does not modify our local
+  # $BUCK2 value.
+  set(BUCK2
+      "${buck2}"
+      PARENT_SCOPE
+  )
 
   # The buck2 daemon can get stuck. Killing it can help.
   message(STATUS "Killing buck2 daemon")
   execute_process(
-    COMMAND "${BUCK2} kill" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    # Note that we need to use the local buck2 variable. BUCK2 is only set in
+    # the parent scope, and can still be empty in this scope.
+    COMMAND "${buck2} killall"
+    WORKING_DIRECTORY ${executorch_root} COMMAND_ECHO STDOUT
   )
 endfunction()
 

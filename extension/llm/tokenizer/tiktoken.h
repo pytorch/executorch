@@ -22,7 +22,7 @@ using Encoder = std::unordered_map<std::string, uint64_t>;
 using Decoder = std::unordered_map<uint64_t, std::string>;
 using Re2UPtr = std::unique_ptr<re2::RE2>;
 
-class Tiktoken : public Tokenizer {
+class ET_EXPERIMENTAL Tiktoken : public Tokenizer {
  public:
   /**
    * @param[in] special_tokens List of special tokens including bos, eos;

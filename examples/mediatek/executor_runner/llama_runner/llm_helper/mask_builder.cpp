@@ -11,7 +11,7 @@
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch::executor {
+namespace example {
 namespace llm_helper {
 
 // Define mask values for different types
@@ -260,4 +260,4 @@ bool MaskBuilder::adjustMaskForPadding(const size_t tokenBatchSize) {
 }
 
 } // namespace llm_helper
-} // namespace torch::executor
+} // namespace example

@@ -37,7 +37,7 @@ TextDecoderRunner::TextDecoderRunner(
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The
 // outer loop (call site) is responsible for managing state.
-::executorch::runtime::Result<exec_aten::Tensor> TextDecoderRunner::step(
+::executorch::runtime::Result<executorch::aten::Tensor> TextDecoderRunner::step(
     TensorPtr& tokens,
     TensorPtr& start_pos) {
   // ET_LOG(Info, "Input token %" PRIu64, input_token);

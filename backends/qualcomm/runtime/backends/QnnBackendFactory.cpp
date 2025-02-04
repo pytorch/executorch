@@ -7,9 +7,12 @@
  */
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     const QnnImplementation& implementation,
     QnnLogger* logger,
@@ -56,11 +59,15 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       backend_params->qnn_device_ptr_ = std::make_unique<HtpDevice>(
           implementation, logger, options->soc_info(), htp_options);
 
+      backend_params->qnn_backend_cache_ptr_ =
+          std::make_unique<HtpBackendCache>(
+              qnn_context_blob, options->graph_name()->str());
+
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation,
           backend_params->qnn_backend_ptr_.get(),
           backend_params->qnn_device_ptr_.get(),
-          qnn_context_blob,
+          backend_params->qnn_backend_cache_ptr_.get(),
           htp_options);
 
       backend_params->qnn_graph_ptr_ = std::make_unique<HtpGraph>(
@@ -68,7 +75,6 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           backend_params->qnn_backend_ptr_.get(),
           backend_params->qnn_context_ptr_.get(),
           options->profile_level(),
-          options->graph_name()->str(),
           options->soc_info(),
           htp_options);
       backend_params->qnn_mem_manager_ptr_ = std::make_unique<QnnMemManager>(
@@ -90,5 +96,5 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
   return nullptr;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

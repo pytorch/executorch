@@ -1,5 +1,7 @@
 # ExecuTorch Llama iOS Demo App
 
+**[UPDATE - 10/24]** We have added support for running quantized Llama 3.2 1B/3B models in demo apps on the [XNNPACK backend](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/docs/delegates/xnnpack_README.md). We currently support inference with SpinQuant and QAT+LoRA quantization methods.
+
 We’re excited to share that the newly revamped iOS demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an iOS demo app and how to exercise the many features ExecuTorch and Llama models have to offer.
 
 This app serves as a valuable resource to inspire your creativity and provide foundational code that you can customize and adapt for your particular use case.
@@ -17,6 +19,8 @@ The goal is for you to see the type of support ExecuTorch provides and feel comf
 ## Supported Models
 
 As a whole, the models that this app supports are (varies by delegate):
+* Llama 3.2 Quantized 1B/3B
+* Llama 3.2 1B/3B in BF16
 * Llama 3.1 8B
 * Llama 3 8B
 * Llama 2 7B
@@ -59,11 +63,11 @@ For more details integrating and Running ExecuTorch on Apple Platforms, checkout
 * Ensure that the ExecuTorch package dependencies are installed correctly, then select which ExecuTorch framework should link against which target.
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_swift_pm.png" alt="iOS LLaMA App Swift PM" style="width:600px">
 </p>
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" width="600">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_choosing_package.png" alt="iOS LLaMA App Choosing package" style="width:600px">
 </p>
 
 * Run the app. This builds and launches the app on the phone.
@@ -83,13 +87,13 @@ For more details integrating and Running ExecuTorch on Apple Platforms, checkout
 If the app successfully run on your device, you should see something like below:
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app.jpg" alt="iOS LLaMA App" style="width:300px">
 </p>
 
 For Llava 1.5 models, you can select and image (via image/camera selector button) before typing prompt and send button.
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" width="300">
+<img src="https://raw.githubusercontent.com/pytorch/executorch/refs/heads/main/docs/source/_static/img/ios_demo_app_llava.jpg" alt="iOS LLaMA App" style="width:300px">
 </p>
 
 ## Reporting Issues

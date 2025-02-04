@@ -20,32 +20,48 @@ endif()
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_add.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_atan2.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_cat.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_clamp.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_div.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_full.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_maximum.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_mean.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_minimum.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_mul.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_permute_copy.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_pow.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_remainder.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_rsqrt.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_softmax.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sigmoid.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_sub.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_tanh.cpp"
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_where.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gt.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_hardtanh.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_slice_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_split_with_sizes_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/activation_ops_util.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/copy_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/copy_ops_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/index_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/kernel_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/matmul_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/reduce_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_add.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_cat.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_full.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mul.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_permute_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sigmoid.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_slice_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_softmax.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_split_with_sizes_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sub.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_where.cpp"
-)
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/slice_util.cpp"
+    )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
@@ -61,7 +77,7 @@ target_include_directories(
 # Custom ops that are needed to run the test model.
 add_library(
   custom_ops "quantized_linear_out.cpp" "quantized_layer_norm.cpp"
-             "quantize_per_tensor.cpp" "dequantize_per_tensor.cpp"
+             "quantize_per_tensor.cpp" "quantized_relu_out.cpp" "dequantize_per_tensor.cpp"
 )
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}

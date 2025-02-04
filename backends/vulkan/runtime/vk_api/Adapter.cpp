@@ -70,9 +70,21 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_portability_subset
       VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
 #endif /* VK_KHR_portability_subset */
+#ifdef VK_ANDROID_external_memory_android_hardware_buffer
+      VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME,
+#endif /* VK_ANDROID_external_memory_android_hardware_buffer */
+#ifdef VK_KHR_16bit_storage
       VK_KHR_16BIT_STORAGE_EXTENSION_NAME,
+#endif /* VK_KHR_16bit_storage */
+#ifdef VK_KHR_8bit_storage
       VK_KHR_8BIT_STORAGE_EXTENSION_NAME,
+#endif /* VK_KHR_8bit_storage */
+#ifdef VK_KHR_shader_float16_int8
       VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME,
+#endif /* VK_KHR_shader_float16_int8 */
+#if defined(VK_KHR_pipeline_executable_properties) && defined(VULKAN_DEBUG)
+      VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
+#endif /* VK_KHR_pipeline_executable_properties */
   };
 
   std::vector<const char*> enabled_device_extensions;
@@ -147,7 +159,39 @@ Adapter::Adapter(
       pipeline_layout_cache_(device_.handle),
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
-      vma_(instance_, physical_device_.handle, device_.handle) {}
+      vma_(instance_, physical_device_.handle, device_.handle),
+      linear_tiling_3d_enabled_{true} {
+  // Test creating a 3D image with linear tiling to see if it is supported.
+  // According to the Vulkan spec, linear tiling may not be supported for 3D
+  // images.
+  VkExtent3D image_extents{1u, 1u, 1u};
+  const VkImageCreateInfo image_create_info{
+      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, // sType
+      nullptr, // pNext
+      0u, // flags
+      VK_IMAGE_TYPE_3D, // imageType
+      VK_FORMAT_R32G32B32A32_SFLOAT, // format
+      image_extents, // extents
+      1u, // mipLevels
+      1u, // arrayLayers
+      VK_SAMPLE_COUNT_1_BIT, // samples
+      VK_IMAGE_TILING_LINEAR, // tiling
+      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, // usage
+      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
+      0u, // queueFamilyIndexCount
+      nullptr, // pQueueFamilyIndices
+      VK_IMAGE_LAYOUT_UNDEFINED, // initialLayout
+  };
+  VkImage image = VK_NULL_HANDLE;
+  VkResult res =
+      vkCreateImage(device_.handle, &image_create_info, nullptr, &image);
+  if (res != VK_SUCCESS) {
+    linear_tiling_3d_enabled_ = false;
+  } else {
+    vkDestroyImage(device_.handle, image, nullptr);
+  }
+  return;
+}
 
 Adapter::Queue Adapter::request_queue() {
   // Lock the mutex as multiple threads can request a queue at the same time
@@ -215,6 +259,9 @@ std::string Adapter::stringize() const {
   ss << "    deviceType:    " << device_type << std::endl;
   ss << "    deviceName:    " << properties.deviceName << std::endl;
 
+#define PRINT_BOOL(value, name) \
+  ss << "      " << std::left << std::setw(36) << #name << value << std::endl;
+
 #define PRINT_PROP(struct, name)                                       \
   ss << "      " << std::left << std::setw(36) << #name << struct.name \
      << std::endl;
@@ -237,6 +284,7 @@ std::string Adapter::stringize() const {
   PRINT_PROP_VEC3(limits, maxComputeWorkGroupSize);
   ss << "    }" << std::endl;
 
+#ifdef VK_KHR_16bit_storage
   ss << "    16bit Storage Features {" << std::endl;
   PRINT_PROP(physical_device_.shader_16bit_storage, storageBuffer16BitAccess);
   PRINT_PROP(
@@ -245,17 +293,23 @@ std::string Adapter::stringize() const {
   PRINT_PROP(physical_device_.shader_16bit_storage, storagePushConstant16);
   PRINT_PROP(physical_device_.shader_16bit_storage, storageInputOutput16);
   ss << "    }" << std::endl;
+#endif /* VK_KHR_16bit_storage */
 
+#ifdef VK_KHR_8bit_storage
   ss << "    8bit Storage Features {" << std::endl;
   PRINT_PROP(physical_device_.shader_8bit_storage, storageBuffer8BitAccess);
   PRINT_PROP(
       physical_device_.shader_8bit_storage, uniformAndStorageBuffer8BitAccess);
   PRINT_PROP(physical_device_.shader_8bit_storage, storagePushConstant8);
   ss << "    }" << std::endl;
+#endif /* VK_KHR_8bit_storage */
 
   ss << "    Shader 16bit and 8bit Features {" << std::endl;
+  PRINT_BOOL(physical_device_.supports_int16_shader_types, shaderInt16)
+#ifdef VK_KHR_shader_float16_int8
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderFloat16);
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderInt8);
+#endif /* VK_KHR_shader_float16_int8 */
   ss << "    }" << std::endl;
 
   const VkPhysicalDeviceMemoryProperties& mem_props =

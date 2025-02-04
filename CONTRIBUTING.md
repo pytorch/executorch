@@ -44,6 +44,38 @@ Meta has a [bounty program](https://www.facebook.com/whitehat/) for the safe
 disclosure of security bugs. In those cases, please go through the process
 outlined on that page and do not file a public issue.
 
+### Issue Labels
+
+#### Module/Partner Labels
+
+[Labels beginning with `module:`](https://github.com/pytorch/executorch/labels?q=%22module%3A+%22)
+indicate the area that the issue relates to. The ExecuTorch oncall will
+typically add this label.
+
+[Labels beginning with `partner:`](https://github.com/pytorch/executorch/labels?q=%22partner%3A+%22)
+indicate the ExecuTorch partner who owns the issue. The ExecuTorch oncall will
+typically add this label.
+
+#### Lifecycle Labels
+
+The ExecuTorch oncall will triage new issues. If the issue requires more
+information from the issue's author, oncall will add the `need-user-input` label
+and wait for the author to respond.
+
+Once the issue contains enough information, the oncall will:
+- Ensure that the title is descriptive
+- Add one of the labels:
+  - `bug`: The issue describes an unexpected problem
+  - `feature`: The issue describes a request for new functionality
+  - `rfc`: The issue describes a proposed change to functionality
+- Add one `module:` label or one `partner:` label, as described above
+- Add the `triaged` label
+
+After this point, the oncall has finished the triage process, and the
+module owner or partner is responsible for resolving the issue. (See
+https://github.com/pytorch/executorch/issues/7679 for the mapping of labels to
+owners.)
+
 ### Claiming Issues
 We'd love your help closing out [open
 issues](https://github.com/pytorch/executorch/issues?q=sort%3Aupdated-desc+is%3Aissue+is%3Aopen)
@@ -80,8 +112,8 @@ We use [`lintrunner`](https://pypi.org/project/lintrunner/) to help make sure th
 code follows our standards. Set it up with:
 
 ```
-pip install lintrunner==0.11.0
-pip install lintrunner-adapters==0.11.0
+pip install lintrunner==0.12.7
+pip install lintrunner-adapters==0.12.4
 lintrunner init
 ```
 
@@ -197,7 +229,7 @@ If it's not clear how to add a test for your PR, take a look at the blame for
 the code you're modifying and find an author who has more context. Ask them
 for their help in the PR comments.
 
-TODO: Explain how to run tests locally without needing to push and wait for CI.
+The `test/run_oss_cpp_tests.sh` script will build and run C++ tests locally.
 
 ### Continuous Integration
 See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of
@@ -242,14 +274,27 @@ for basics.
    - Give the PR a clear and thorough description. Don't just describe what the PR
      does: the diff will do that. Explain *why* you are making this change, in a
      way that will make sense to someone years from now.
-   - Add the line `Test Plan:` (with that spelling, capitalization, and trailing
-     colon character), followed by lines containing repeatable instructions for
+   - Explain how you have tested your changes by including repeatable instructions for
      testing the PR.
      - If you added tests, this can be as simple as the command you used to run the
        tests.
      - If you tested the PR manually, include the steps and the outputs. Help a
        future editor understand how to test the code that you're modifying
        today.
+   - If your PR contains or is representative of a feature/bug fix that should be
+     called out in the release notes, please add a label for "Release notes: \<area\>",
+	 where \<area\> describes which part of ExecuTorch the change pertains to, e.g.
+	 "Release notes: runtime". Here are all of the categories:
+     - `Release notes: runtime`: changes related to the core runtime which loads the program methods, initializes delegates, and runs the lowered graph.
+     - `Release notes: exir`: changes to any internal representations, such as any edge-related dialects. Also any changes to passes that may modify the exir, such as memory planning.
+     - `Release notes: quantization`: changes to quantization.
+     - `Release notes: ops & kernels`: changes to the opset and any new / changed kernel implementations.
+     - `Release notes: api`: changes to public facing apis (any interfaces, pybinded runtime methods, etc.).
+     - `Release notes: backends`: changes to any of the backend delegates.
+     - `Release notes: build`: changes related to the build system, including major dependency upgrades, notable build flags, optimizations, etc.
+     - `Release notes: devtools`: changes to any of ExecuTorch's developer tools, for example the debugger & profiler.
+     - `Release notes: examples`: changes to any code under `examples/`.
+     - `Release notes: misc`: anything notable that doesn't belong in the above categories.
    - See https://github.com/pytorch/executorch/pull/3612 for an example PR that
      follows this advice.
 1. Before asking for a review, ensure that all [CI (continuous integration)
@@ -270,10 +315,15 @@ for basics.
    - If the reviewers have requests or questions, follow up with them.
    - The goal of the reviewer is to ensure that the code in the `main` branch of
      the repo is consistent, maintainable, and of high quality.
-1. Once approved, your reviewer will import the PR into Meta's internal system
-   and merge it from there.
-   - If the PR is approved and not merged within a few business days, please
-     comment on the PR to ask about its status.
+1. Once the PR has been approved,
+   - If you have the "write permission" in this repo, you can merge it yourself
+     by clicking the "Squash and merge" button once it is green and all CI
+     signals are passing.
+   - If you don't have "write permission" in this repo, the reviewer will take
+     care of the PR. The reviewer may import the PR into Meta's internal system
+     to validate it against internal CI.
+   - If the PR is approved but not merged within 5 business days, please comment
+     on the PR to ask about its status.
    - Note that if the `main` [CI](#continuous-integration) jobs are broken, we
      will only merge PRs that fix the broken jobs until all critical jobs are
      fixed.

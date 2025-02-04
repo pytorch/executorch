@@ -9,12 +9,13 @@
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-#include <algorithm>
 #include <cmath>
-#include <tuple>
 
-using Tensor = exec_aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::getLeadingDims;
+using ::executorch::runtime::KernelRuntimeContext;
 
 namespace impl {
 namespace reference {
@@ -23,7 +24,7 @@ namespace native {
 // Compute quantized layer_norm. The current implementation assumes that the
 // input is per-tensor quantized.
 template <typename T>
-void quantized_layer_norm_(
+void quantized_layer_norm_per_tensor_(
     const Tensor& input,
     double input_scale,
     int64_t input_zero_point,
@@ -99,7 +100,7 @@ void quantized_layer_norm_(
   int64_t input_zero_point = in_zero_point.const_data_ptr<int64_t>()[0];
 
   // Call other overload
-  quantized_layer_norm_<T>(
+  quantized_layer_norm_per_tensor_<T>(
       input,
       input_scale,
       input_zero_point,
@@ -112,18 +113,18 @@ void quantized_layer_norm_(
 }
 
 void quantized_layer_norm_out(
-    KernelRuntimeContext& ctx,
+    __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& in_scale,
     const Tensor& in_zero_point,
-    const exec_aten::IntArrayRef normalized_shape,
+    __ET_UNUSED const executorch::aten::IntArrayRef normalized_shape,
     const Tensor& weight,
     const Tensor& bias,
     double eps,
     double output_scale,
     int64_t output_zero_point,
     Tensor& out) {
-  if (input.scalar_type() == exec_aten::ScalarType::Byte) {
+  if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
     quantized_layer_norm_<uint8_t>(
         input,
         in_scale,
@@ -134,7 +135,7 @@ void quantized_layer_norm_out(
         output_scale,
         output_zero_point,
         out);
-  } else if (input.scalar_type() == exec_aten::ScalarType::Char) {
+  } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
     quantized_layer_norm_<int8_t>(
         input,
         in_scale,
@@ -146,7 +147,52 @@ void quantized_layer_norm_out(
         output_zero_point,
         out);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(input.scalar_type()));
+  }
+}
+
+void quantized_layer_norm_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    double in_scale,
+    int64_t in_zero_point,
+    __ET_UNUSED const executorch::aten::IntArrayRef normalized_shape,
+    const Tensor& weight,
+    const Tensor& bias,
+    double eps,
+    double output_scale,
+    int64_t output_zero_point,
+    Tensor& out) {
+  if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
+    quantized_layer_norm_per_tensor_<uint8_t>(
+        input,
+        in_scale,
+        in_zero_point,
+        weight,
+        bias,
+        eps,
+        output_scale,
+        output_zero_point,
+        out);
+  } else if (input.scalar_type() == executorch::aten::ScalarType::Char) {
+    quantized_layer_norm_per_tensor_<int8_t>(
+        input,
+        in_scale,
+        in_zero_point,
+        weight,
+        bias,
+        eps,
+        output_scale,
+        output_zero_point,
+        out);
+  } else {
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(input.scalar_type()));
   }
 }
 

@@ -23,8 +23,6 @@ add_subdirectory(
   ${CMAKE_BINARY_DIR}/executorch
 )
 
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
-
 add_executable(nanogpt_runner main.cpp)
 target_link_libraries(
   nanogpt_runner
@@ -33,5 +31,5 @@ target_link_libraries(
           extension_tensor # Provides the TensorPtr class
           optimized_native_cpu_ops_lib # Provides baseline cross-platform
                                        # kernels
-          xnnpack_backend
-) # Provides the XNNPACK CPU acceleration backend
+          xnnpack_backend # Provides the XNNPACK CPU acceleration backend
+)

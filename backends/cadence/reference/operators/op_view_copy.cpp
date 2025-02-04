@@ -12,7 +12,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 
 Tensor& view_copy_out(

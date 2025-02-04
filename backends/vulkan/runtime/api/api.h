@@ -24,6 +24,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocation.h>
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>

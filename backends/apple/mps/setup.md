@@ -97,7 +97,7 @@ I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successf
 ### [Optional] Run the generated model directly using pybind
 1. Make sure `pybind` MPS support was installed:
 ```bash
-./install_requirements.sh --pybind mps
+./install_executorch.sh --pybind mps
 ```
 2. Run the `mps_example` script to trace the model and run it directly from python:
 ```bash
@@ -111,12 +111,12 @@ python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --no-use_fp
 ```
 
 ### Profiling:
-1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) while you're exporting your model.
+1. [Optional] Generate an [ETRecord](./etrecord.rst) while you're exporting your model.
 ```bash
 cd executorch
 python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_etrecord -b
 ```
-2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./sdk-etdump.md).
+2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./etdump.md).
 ```
 ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program --dump-outputs
 ```

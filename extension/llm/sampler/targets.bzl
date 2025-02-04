@@ -23,5 +23,6 @@ def define_common_targets():
             ] if aten else [],
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/platform:compiler",
             ],
         )

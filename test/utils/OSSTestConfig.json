@@ -31,18 +31,6 @@
         ]
     },
     {
-        "directory": "extension/module/test",
-        "sources": [
-            "module_test.cpp"
-        ],
-        "additional_libs": [
-            "extension_data_loader",
-            "extension_module",
-            "portable_kernels",
-            "portable_ops_lib"
-        ]
-    },
-    {
         "directory": "extension/pytree/test",
         "sources": [
             "function_ref_test.cpp",
@@ -50,21 +38,8 @@
         ]
     },
     {
-        "directory": "extension/runner_util/test",
-        "sources": [
-            "inputs_test.cpp"
-        ],
-        "additional_libs": [
-            "extension_data_loader",
-            "extension_runner_util",
-            "portable_kernels",
-            "portable_ops_lib"
-        ]
-    },
-    {
         "directory": "extension/tensor/test",
         "sources": [
-            "tensor_impl_ptr_test.cpp",
             "tensor_ptr_maker_test.cpp",
             "tensor_ptr_test.cpp"
         ],
@@ -90,7 +65,8 @@
             "tensor_test.cpp",
             "half_test.cpp",
             "scalar_test.cpp",
-            "tensor_impl_test.cpp"
+            "tensor_impl_test.cpp",
+            "bfloat16_test.cpp"
         ]
     },
     {

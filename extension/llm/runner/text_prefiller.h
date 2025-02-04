@@ -13,14 +13,13 @@
 
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
-// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 
 namespace executorch {
 namespace extension {
 namespace llm {
 
-class TextPrefiller {
+class ET_EXPERIMENTAL TextPrefiller {
  public:
   TextPrefiller(
       TextDecoderRunner* text_decoder_runner,

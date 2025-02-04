@@ -66,11 +66,26 @@ target_include_directories(
   full_portable_ops_lib PUBLIC ${_common_include_directories}
 )
 
+# find RE2 for tokenizer
+set(ABSL_ENABLE_INSTALL ON)
+set(ABSL_PROPAGATE_CXX_STD ON)
+set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/abseil-cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+)
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/re2
+  ${CMAKE_CURRENT_BINARY_DIR}/re2
+)
+set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
+
 # build qnn_executor_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)
 
-# build qnn_llama_runner
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama2)
+# build qnn_llama_runner for llama
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama)
 
 # build qaihub_llama2_7b_runner and qaihub_llama3_8b_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama)

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 import operator
 from collections import defaultdict
@@ -21,6 +23,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
+from torch.fx.experimental.symbolic_shapes import has_free_symbols
 from torch.fx.node import Node
 from torch.fx.passes.utils.source_matcher_utils import SourcePartition
 
@@ -415,6 +418,14 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
             # tag the data node with the same tag as the last user
             if len(user_tags) > 0:
                 node.meta["delegation_tag"] = user_tags.pop()
+
+
+def is_shape_dynamic(node: torch.fx.Node) -> bool:
+    """
+    Check if the node shape is dynamic.
+    """
+
+    return has_free_symbols(node.meta["val"].shape)
 
 
 # TODO - style: use templated types

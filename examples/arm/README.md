@@ -24,8 +24,8 @@ To run these scripts. On a Linux system, in a terminal, with a working internet 
 $ ./setup.sh --i-agree-to-the-contained-eula [optional-scratch-dir]
 
 # Step [2] - build + run ExecuTorch and executor_runner baremetal application
-# suited for Corstone300 to run a simple PyTorch model.
-$ ./run.sh [same-optional-scratch-dir-as-before]
+# suited for Corstone FVP's to run a simple PyTorch model.
+$ ./run.sh [--scratch-dir=same-optional-scratch-dir-as-before]
 ```
 ### Online Tutorial
 

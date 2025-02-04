@@ -59,9 +59,7 @@ target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
   custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
 )
-target_link_libraries(
-  custom_ops PUBLIC ${custom_ops_libs} executorch_no_prim_ops
-)
+target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
 target_compile_options(
   custom_ops PUBLIC ${_common_compile_options} -DET_USE_THREADPOOL
@@ -74,7 +72,8 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   find_package(Torch CONFIG REQUIRED)
   add_library(
     custom_ops_aot_lib SHARED
-    ${_custom_ops__srcs} ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+    ${_custom_ops__srcs}
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/op_fast_hadamard_transform_aten.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop_aot.cpp
@@ -85,6 +84,14 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   target_include_directories(
     custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
   )
+  # TODO: This only works if we install portable_lib.so to
+  # <site-packages>/executorch/extension/pybindings/.
+  if(APPLE)
+    set(RPATH "@loader_path/../../pybindings")
+  else()
+    set(RPATH "$ORIGIN/../../pybindings")
+  endif()
+  set_target_properties(custom_ops_aot_lib PROPERTIES INSTALL_RPATH ${RPATH})
   if(TARGET portable_lib)
     # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
     # the ops in PyTorch and ExecuTorch through pybind
@@ -92,7 +99,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   else()
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
-    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_no_prim_ops)
+    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core)
   endif()
 
   target_link_libraries(
@@ -110,5 +117,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
            ${_common_compile_options} -DET_USE_THREADPOOL
   )
 
-  install(TARGETS custom_ops_aot_lib DESTINATION lib)
+  install(TARGETS custom_ops_aot_lib
+          LIBRARY DESTINATION executorch/extension/llm/custom_ops
+  )
 endif()

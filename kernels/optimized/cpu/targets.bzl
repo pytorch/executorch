@@ -25,6 +25,7 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(name = "op_exp"),
+    op_target(name = "op_sigmoid"),
     op_target(
         name = "op_gelu",
         deps = select({
@@ -32,7 +33,9 @@ _OPTIMIZED_ATEN_OPS = (
             "ovr_config//cpu:arm64": [
                 "fbsource//third-party/sleef:sleef_arm",
             ],
-        }),
+        }) + [
+            "//executorch/kernels/portable/cpu/util:activation_ops_util",
+        ],
     ),
     op_target(
         name = "op_le",
@@ -72,6 +75,7 @@ _OPTIMIZED_ATEN_OPS = (
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(

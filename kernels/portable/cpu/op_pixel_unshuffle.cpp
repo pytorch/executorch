@@ -14,13 +14,14 @@ namespace executor {
 namespace native {
 namespace {
 
-template <typename CTYPE>
 void pixel_unshuffle_impl(
     const Tensor& in,
     int64_t downscale_factor,
     Tensor& out) {
-  const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
-  CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+  const char* const in_data =
+      reinterpret_cast<const char*>(in.const_data_ptr());
+  char* const out_data = reinterpret_cast<char*>(out.mutable_data_ptr());
+  const auto elem_size = in.element_size();
 
   const auto leading_dims = getLeadingDims(in, in.dim() - 3);
   const auto channels = out.size(in.dim() - 3);
@@ -48,7 +49,11 @@ void pixel_unshuffle_impl(
             for (size_t s2 = 0; s2 < S; s2++) {
               size_t output_offset = n * stride_n + c * stride_c +
                   s1 * stride_s1 + s2 * stride_s2 + h * stride_h + w;
-              out_data[output_offset] = in_data[i++];
+              std::memcpy(
+                  out_data + output_offset * elem_size,
+                  in_data + i * elem_size,
+                  elem_size);
+              i++;
             }
           }
         }
@@ -59,8 +64,8 @@ void pixel_unshuffle_impl(
 
 } // namespace
 
-using SizesType = exec_aten::SizesType;
-using Tensor = exec_aten::Tensor;
+using SizesType = executorch::aten::SizesType;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& pixel_unshuffle_out(
     KernelRuntimeContext& ctx,
@@ -88,13 +93,7 @@ Tensor& pixel_unshuffle_out(
       InvalidArgument,
       out);
 
-  constexpr auto name = "pixel_unshuffle.out";
-
-  const auto in_type = out.scalar_type();
-  // in and out must be the same dtype
-  ET_SWITCH_ALL_TYPES(in_type, ctx, name, CTYPE, [&]() {
-    pixel_unshuffle_impl<CTYPE>(in, downscale_factor, out);
-  });
+  pixel_unshuffle_impl(in, downscale_factor, out);
 
   return out;
 }

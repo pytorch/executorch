@@ -19,7 +19,7 @@
 
 namespace fs = std::filesystem;
 
-namespace torch::executor {
+namespace example {
 namespace llm_helper {
 
 TokenEmbeddingLut::TokenEmbeddingLut(
@@ -90,4 +90,4 @@ void TokenEmbeddingLut::lookupEmbedding(const std::vector<uint64_t>& tokens) {
 }
 
 } // namespace llm_helper
-} // namespace torch::executor
+} // namespace example

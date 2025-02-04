@@ -46,6 +46,18 @@
     - arg_meta: null
       kernel_name: torch::executor::quantized_embedding_byte_dtype_out
 
+- func: quantized_decomposed::embedding_2bit.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::quantized_embedding_2bit_out
+
+- func: quantized_decomposed::embedding_2bit.dtype_out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, int weight_quant_min, int weight_quant_max, Tensor indices, ScalarType? dtype=None, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::quantized_embedding_2bit_dtype_out
+
 - func: quantized_decomposed::embedding_4bit.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
@@ -81,3 +93,21 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::quantize_per_tensor_tensor_args_out
+
+- func: quantized_decomposed::choose_qparams_per_token_asymmetric.out(Tensor input, ScalarType dtype, *, Tensor(a!) scale_out, Tensor(b!) zero_point_out) -> (Tensor(a!), Tensor(b!))
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::choose_qparams_per_token_asymmetric_out
+
+- func: quantized_decomposed::quantize_per_token.out(Tensor input, Tensor scales, Tensor zero_points, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::quantize_per_token_out
+
+- func: quantized_decomposed::dequantize_per_token.out(Tensor input, Tensor scales, Tensor zero_points, int quant_min, int quant_max, ScalarType dtype, ScalarType output_dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::dequantize_per_token_out

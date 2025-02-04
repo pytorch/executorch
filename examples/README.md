@@ -31,43 +31,45 @@ examples
 
 A user's journey may commence by exploring the demos located in the [`portable/`](./portable) directory. Here, you will gain insights into the fundamental end-to-end workflow to generate a binary file from a ML model in [portable mode](../docs/source/concepts.md##portable-mode-lean-mode) and run it on the ExecuTorch runtime.
 
-## Demo of Llama 2 and Llama 3
+## Demos Apps
 
-[This page](./models/llama2/README.md) demonstrates how to run Llama 2 7B and Llama 3 8B models on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
+Explore mobile apps with ExecuTorch models integrated and deployable on [Android](./demo-apps/android) and [iOS]((./demo-apps/apple_ios)). This provides end-to-end instructions on how to export Llama models, load on device, build the app, and run it on device.
 
-## Demo of Llava1.5 7B
+For specific details related to models and backend, you can explore the various subsections.
+
+### Llama Models
+
+[This page](./models/llama/README.md) demonstrates how to run Llama 3.2 (1B, 3B), Llama 3.1 (8B), Llama 3 (8B), and Llama 2 7B models on mobile via ExecuTorch. We use XNNPACK, QNNPACK, MediaTek, and MPS to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
+
+### Llava1.5 7B
 
 [This page](./models/llava/README.md) demonstrates how to run [Llava 1.5 7B](https://github.com/haotian-liu/LLaVA) model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
 
-## Demo of Selective Build
+### Selective Build
 
 To understand how to deploy the ExecuTorch runtime with optimization for binary size, explore the demos available in the [`selective_build/`](./selective_build) directory. These demos are specifically designed to illustrate the [Selective Build](../docs/source/kernel-library-selective_build.md), offering insights into reducing the binary size while maintaining efficiency.
 
-## Demo of ExecuTorch Developer Tools
+### Developer Tools
 
 You will find demos of [ExecuTorch Developer Tools](./devtools/) in the [`devtools/`](./devtools/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
 
-## Demo Apps
-
-Explore mobile apps with ExecuTorch models integrated and deployable on Android and iOS in the [`demo-apps/android/`](./demo-apps/android) and [`demo-apps/apple_ios/`](./demo-apps/apple_ios) directories, respectively.
-
-## Demo of XNNPACK delegation
+### XNNPACK delegation
 
 The demos in the [`xnnpack/`](./xnnpack) directory provide valuable insights into the process of lowering and executing an ExecuTorch model with built-in performance enhancements. These demos specifically showcase the workflow involving [XNNPACK backend](https://github.com/pytorch/executorch/tree/main/backends/xnnpack) delegation and quantization.
 
-## Demo of ExecuTorch Apple Backend
+### Apple Backend
 
 You will find demos of [ExecuTorch Core ML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory and [MPS Backend](./apple/mps/) in the [`apple/mps/`](./apple/mps) directory.
 
-## Demo of ExecuTorch on ARM Cortex-M55 + Ethos-U55
+### ARM Cortex-M55 + Ethos-U55 Backend
 
 The [`arm/`](./arm) directory contains scripts to help you run a PyTorch model on a ARM Corstone-300 platform via ExecuTorch.
 
-## Demo of ExecuTorch QNN Backend
+### QNN Backend
 
 You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`](./qualcomm) directory.
 
-## Demo of ExecuTorch on Cadence HiFi4 DSP
+### Cadence HiFi4 DSP
 
 The [`Cadence/`](./cadence) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 

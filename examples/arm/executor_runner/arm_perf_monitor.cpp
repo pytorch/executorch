@@ -15,6 +15,7 @@
 #include <pmu_ethosu.h>
 
 static uint32_t ethosu_inference_count = 0;
+static uint64_t ethosu_ArmCycleCountStart = 0;
 static uint64_t ethosu_ArmBackendExecuteCycleCountStart = 0;
 static uint64_t ethosu_ArmBackendExecuteCycleCount = 0;
 static uint64_t ethosu_ArmWhenNPURunCycleCountStart = 0;
@@ -24,7 +25,14 @@ static std::vector<uint64_t> ethosu_pmuEventCounts(
     ETHOSU_PMU_Get_NumEventCounters(),
     0);
 
+#if defined(ETHOSU55) || defined(ETHOSU65)
 static const uint32_t ethosu_pmuCountersUsed = 4;
+#elif defined(ETHOSU85)
+static const uint32_t ethosu_pmuCountersUsed = 5;
+#else
+#error No NPU target defined
+#endif
+
 // ethosu_pmuCountersUsed should match numbers of counters setup in
 // ethosu_inference_begin() and not be more then the HW supports
 static_assert(ETHOSU_PMU_NCOUNTERS >= ethosu_pmuCountersUsed);
@@ -39,12 +47,30 @@ void ethosu_inference_begin(struct ethosu_driver* drv, void*) {
   ETHOSU_PMU_PMCCNTR_CFG_Set_Start_Event(drv, ETHOSU_PMU_NPU_ACTIVE);
 
   // Setup 4 counters
+#if defined(ETHOSU55) || defined(ETHOSU65)
   ETHOSU_PMU_Set_EVTYPER(drv, 0, ETHOSU_PMU_AXI0_RD_DATA_BEAT_RECEIVED);
   ETHOSU_PMU_Set_EVTYPER(drv, 1, ETHOSU_PMU_AXI1_RD_DATA_BEAT_RECEIVED);
   ETHOSU_PMU_Set_EVTYPER(drv, 2, ETHOSU_PMU_AXI0_WR_DATA_BEAT_WRITTEN);
   ETHOSU_PMU_Set_EVTYPER(drv, 3, ETHOSU_PMU_NPU_IDLE);
-  // Enable 4 counters
-  ETHOSU_PMU_CNTR_Enable(drv, 0xf);
+  // Enable the 4 counters
+  ETHOSU_PMU_CNTR_Enable(
+      drv,
+      ETHOSU_PMU_CNT1_Msk | ETHOSU_PMU_CNT2_Msk | ETHOSU_PMU_CNT3_Msk |
+          ETHOSU_PMU_CNT4_Msk);
+#elif defined(ETHOSU85)
+  ETHOSU_PMU_Set_EVTYPER(drv, 0, ETHOSU_PMU_SRAM_RD_DATA_BEAT_RECEIVED);
+  ETHOSU_PMU_Set_EVTYPER(drv, 1, ETHOSU_PMU_SRAM_WR_DATA_BEAT_WRITTEN);
+  ETHOSU_PMU_Set_EVTYPER(drv, 2, ETHOSU_PMU_EXT_RD_DATA_BEAT_RECEIVED);
+  ETHOSU_PMU_Set_EVTYPER(drv, 3, ETHOSU_PMU_EXT_WR_DATA_BEAT_WRITTEN);
+  ETHOSU_PMU_Set_EVTYPER(drv, 4, ETHOSU_PMU_NPU_IDLE);
+  // Enable the 5 counters
+  ETHOSU_PMU_CNTR_Enable(
+      drv,
+      ETHOSU_PMU_CNT1_Msk | ETHOSU_PMU_CNT2_Msk | ETHOSU_PMU_CNT3_Msk |
+          ETHOSU_PMU_CNT4_Msk | ETHOSU_PMU_CNT5_Msk);
+#else
+#error No NPU target defined
+#endif
 
   ETHOSU_PMU_CNTR_Enable(drv, ETHOSU_PMU_CCNT_Msk);
   ETHOSU_PMU_CYCCNT_Reset(drv);
@@ -94,17 +120,14 @@ void StartMeasurements() {
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ethosu_pmuEventCounts[i] = 0;
   }
-  ARM_PMU_Enable();
-  DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk; // Trace enable
-  ARM_PMU_CYCCNT_Reset();
-  ARM_PMU_CNTR_Enable(PMU_CNTENSET_CCNTR_ENABLE_Msk);
+  ethosu_ArmCycleCountStart = ARM_PMU_Get_CCNTR();
 }
 
 void StopMeasurements() {
   ARM_PMU_CNTR_Disable(
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);
-  uint32_t cycle_count = ARM_PMU_Get_CCNTR();
+  uint32_t cycle_count = ARM_PMU_Get_CCNTR() - ethosu_ArmCycleCountStart;
 
   // Number of comand streams handled by the NPU
   ET_LOG(Info, "NPU Inferences : %d", ethosu_inference_count);
@@ -160,9 +183,17 @@ void StopMeasurements() {
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ET_LOG(Info, "ethosu_pmu_cntr%zd : %" PRIu64, i, ethosu_pmuEventCounts[i]);
   }
+#if defined(ETHOSU55) || defined(ETHOSU65)
   ET_LOG(
       Info,
       "Ethos-U PMU Events:[ETHOSU_PMU_AXI0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_AXI1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_AXI0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]");
+#elif defined(ETHOSU85)
+  ET_LOG(
+      Info,
+      "Ethos-U PMU Events:[ETHOSU_PMU_SRAM_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_SRAM_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_EXT_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]");
+#else
+#error No NPU target defined
+#endif
 }
 
 #else

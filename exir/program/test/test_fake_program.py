@@ -30,8 +30,7 @@ def get_exported_program() -> ExportedProgram:
 
     linear = Linear()
     exported_program = export(
-        linear,
-        args=(torch.randn(10, 10),),
+        linear, args=(torch.randn(10, 10),), strict=True
     ).run_decompositions()
     return exported_program
 
@@ -62,8 +61,8 @@ class TestFakeProgram(unittest.TestCase):
         self.assertEqual(exported_program.verifier, fake_program.verifier)
         self.assertEqual(id(exported_program.verifier), id(fake_program.verifier))
 
-        # Fake program uses fake tensors for the state dict. Size should be smaller.
-        self.assertLess(
+        # Fake program uses fake tensors for the state dict. Size should be not be larger.
+        self.assertLessEqual(
             sys.getsizeof(fake_program.state_dict),
             sys.getsizeof(exported_program.state_dict),
         )

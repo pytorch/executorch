@@ -71,8 +71,7 @@ void add_max_pool2d_node(
     const ValueRef dilation,
     const ValueRef ceil_mode,
     const ValueRef out) {
-  ValueRef arg = prepack_if_tensor_ref(graph, in);
-  vTensorPtr t_in = graph.get_tensor(arg);
+  vTensorPtr t_in = graph.get_tensor(in);
 
   const auto out_val = graph.get_value_list(out);
   vTensorPtr t_out = graph.get_tensor(out_val->at(0));
@@ -93,14 +92,14 @@ void add_max_pool2d_node(
       padding,
       dilation);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{{out_val->at(0), out_val->at(1)}, vkapi::MemoryAccessType::WRITE},
-       {arg, vkapi::MemoryAccessType::READ}},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
           t_out->logical_limits_ubo(),
@@ -149,8 +148,7 @@ void add_avg_pool2d_node(
     const ValueRef count_include_pad,
     const ValueRef divisor_override,
     const ValueRef out) {
-  ValueRef arg = prepack_if_tensor_ref(graph, in);
-  vTensorPtr t_in = graph.get_tensor(arg);
+  vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
   check_pool2d_args(*t_in, *t_out);
@@ -167,14 +165,14 @@ void add_avg_pool2d_node(
   DivisorParams divisor_params =
       create_divisor_params(graph, divisor_override, count_include_pad);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
-       {arg, vkapi::MemoryAccessType::READ}},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->logical_limits_ubo(),
        t_in->sizes_ubo(),

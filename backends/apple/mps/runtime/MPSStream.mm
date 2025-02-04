@@ -11,10 +11,12 @@
 @property (readwrite, atomic) BOOL enableCommitAndContinue;
 @end
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
+
+using executorch::runtime::Error;
 
 //-----------------------------------------------------------------
 //  MPSStream
@@ -258,5 +260,5 @@ MPSStream* getDefaultMPSStream() {
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

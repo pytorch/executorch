@@ -9,8 +9,8 @@
 
 #include <executorch/backends/qualcomm/aot/wrappers/ParamWrapper.h>
 #include <executorch/runtime/core/error.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 template <typename T>
 class ScalarParamWrapper final : public ParamWrapper {
@@ -25,7 +25,7 @@ class ScalarParamWrapper final : public ParamWrapper {
 
   // Populate appropriate field in Qnn scalarParam depending on the datatype
   // of the scalar
-  Error PopulateQnnParam() override {
+  executorch::runtime::Error PopulateQnnParam() override {
     qnn_param_.scalarParam.dataType = data_type_;
     switch (data_type_) {
       case QNN_DATATYPE_BOOL_8:
@@ -57,9 +57,9 @@ class ScalarParamWrapper final : public ParamWrapper {
             "ScalarParamWrapper failed to assign scalarParam value - "
             "invalid datatype %d",
             data_type_);
-        return Error::Internal;
+        return executorch::runtime::Error::Internal;
     }
-    return Error::Ok;
+    return executorch::runtime::Error::Ok;
   }
 
   const T& GetData() const {
@@ -71,5 +71,5 @@ class ScalarParamWrapper final : public ParamWrapper {
   T data_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

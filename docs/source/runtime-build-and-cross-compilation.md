@@ -45,7 +45,8 @@ cd executorch
 
 # Clean and configure the CMake build system. It's good practice to do this
 # whenever cloning or pulling the upstream repo.
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+./install_executorch.sh --clean
+(mkdir cmake-out && cd cmake-out && cmake ..)
 ```
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.
@@ -98,21 +99,20 @@ If it worked, you should see the message "Model executed successfully" followed
 by the output values.
 
 ```
-I 00:00:00.002052 executorch:executor_runner.cpp:75] Model file add.pte is loaded.
-I 00:00:00.002086 executorch:executor_runner.cpp:85] Running method forward
-I 00:00:00.002092 executorch:executor_runner.cpp:140] Setting up non-const buffer 1, size 48.
-I 00:00:00.002149 executorch:executor_runner.cpp:181] Method loaded.
-I 00:00:00.002154 executorch:util.h:105] input already initialized, refilling.
-I 00:00:00.002157 executorch:util.h:105] input already initialized, refilling.
-I 00:00:00.002159 executorch:executor_runner.cpp:186] Inputs prepared.
-I 00:00:00.011684 executorch:executor_runner.cpp:195] Model executed successfully.
-I 00:00:00.011709 executorch:executor_runner.cpp:210] 8.000000
+I 00:00:00.000526 executorch:executor_runner.cpp:82] Model file add.pte is loaded.
+I 00:00:00.000595 executorch:executor_runner.cpp:91] Using method forward
+I 00:00:00.000612 executorch:executor_runner.cpp:138] Setting up planned buffer 0, size 48.
+I 00:00:00.000669 executorch:executor_runner.cpp:161] Method loaded.
+I 00:00:00.000685 executorch:executor_runner.cpp:171] Inputs prepared.
+I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfully.
+I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs: 
+Output 0: tensor(sizes=[1], [2.])
 ```
 
 
 ## Cross compilation
 
-Follwing are instruction on how to perform cross compilation for Android and iOS.
+Following are instruction on how to perform cross compilation for Android and iOS.
 
 ### Android
 - Prerequisite: [Android NDK](https://developer.android.com/ndk), choose one of the following:
@@ -122,7 +122,8 @@ Follwing are instruction on how to perform cross compilation for Android and iOS
 Assuming Android NDK is available, run:
 ```bash
 # Run the following lines from the `executorch/` folder
-rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
+./install_executorch.sh --clean
+mkdir cmake-android-out && cd cmake-android-out
 
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
 cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..

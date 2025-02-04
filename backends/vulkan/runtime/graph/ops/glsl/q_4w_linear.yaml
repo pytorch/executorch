@@ -7,13 +7,10 @@
 q_4w_linear:
   parameter_names_with_default_values:
     DTYPE: float
-    STORAGE: buffer
+    STORAGE: texture3d
   generate_variant_forall:
     DTYPE:
       - VALUE: float
       - VALUE: half
-    STORAGE:
-      - VALUE: buffer
-      - VALUE: texture3d
   shader_variants:
-    - NAME: q_4w_linear
+    - NAME: q_4w_linear_texture3d

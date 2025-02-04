@@ -26,7 +26,8 @@ namespace training {
  * A facade class for loading programs for on-device training and executing
  * methods within them.
  */
-class ET_EXPERIMENTAL TrainingModule final : executorch::extension::Module {
+class ET_EXPERIMENTAL TrainingModule final
+    : public executorch::extension::Module {
  public:
   explicit TrainingModule(
       std::unique_ptr<runtime::DataLoader> data_loader,
@@ -71,7 +72,8 @@ class ET_EXPERIMENTAL TrainingModule final : executorch::extension::Module {
    * parameter tensor, or an error if the method is not a joint graph.
    */
   ET_EXPERIMENTAL
-  runtime::Result<const std::map<exec_aten::string_view, exec_aten::Tensor>>
+  runtime::Result<
+      const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
   named_parameters(const std::string& method_name);
 
   /**
@@ -86,13 +88,14 @@ class ET_EXPERIMENTAL TrainingModule final : executorch::extension::Module {
    * or has not been executed yet.
    */
   ET_EXPERIMENTAL
-  runtime::Result<const std::map<exec_aten::string_view, exec_aten::Tensor>>
+  runtime::Result<
+      const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
   named_gradients(const std::string& method_name);
 
  private:
   std::unordered_map<
       std::string,
-      std::map<exec_aten::string_view, exec_aten::Tensor>>
+      std::map<executorch::aten::string_view, executorch::aten::Tensor>>
       method_named_gradients_;
 };
 

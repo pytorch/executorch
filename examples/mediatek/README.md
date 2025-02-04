@@ -23,30 +23,18 @@ examples/mediatek
 ├── mtk_build_examples.sh             # Script for building MediaTek backend and the examples
 └── README.md                         # Documentation for the examples (this file)
 ```
-# Examples
-## Build MediaTek examples
-1. Set up the environment by folllowing the instructions in `backends/mediatek/scripts`
-2. Build the backend and the examples by exedcuting the script:
+# Examples Build Instructions
+
+## Environment Setup
+- Follow the instructions of **Prerequisites** and **Setup** in `backends/mediatek/scripts/README.md`.
+
+## Build MediaTek Examples
+1. Build the backend and the examples by exedcuting the script:
 ```bash
 ./mtk_build_examples.sh
 ```
 
-# AoT
-## Environment Setup
-1. Setup ET Environment
-- Follow the instructions found in: https://pytorch.org/executorch/stable/getting-started-setup.html
-2. Setup MTK AoT Environment
-```bash
-// Ensure that you are inside executorch/examples/mediatek directory
-pip3 install -r requirements.txt
-
-// Download the two whl files from NeuroPilot Portal
-pip3 install mtk_neuron-8.2.2-py3-none-linux_x86_64.whl
-pip3 install mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-```
-
-## AoT Flow
-### llama
+## LLaMa Example Instructions
 ##### Note: Verify that localhost connection is available before running AoT Flow
 1. Exporting Models to `.pte`
 - In the `examples/mediatek directory`, run:
@@ -84,12 +72,6 @@ bash shell_scripts/export_oss.sh <model_name>
     - `model_name`: deeplabv3/edsr/inceptionv3/inceptionv4/mobilenetv2/mobilenetv3/resnet18/resnet50
 
 # Runtime
-## Supported Chips
-
-The examples provided in this repository are tested and supported on the following MediaTek chip:
-
-- MediaTek Dimensity 9300 (D9300)
-
 ## Environment Setup
 
 To set up the build environment for the `mtk_executor_runner`:

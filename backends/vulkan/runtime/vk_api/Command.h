@@ -89,9 +89,11 @@ class CommandBuffer final {
 
   void bind_pipeline(VkPipeline, VkPipelineLayout, const utils::uvec3);
   void bind_descriptors(VkDescriptorSet);
+  void set_push_constants(VkPipelineLayout, const void*, uint32_t);
 
   void insert_barrier(PipelineBarrier& pipeline_barrier);
   void dispatch(const utils::uvec3&);
+  void blit(vkapi::VulkanImage& src, vkapi::VulkanImage& dst);
 
   void write_timestamp(VkQueryPool, const uint32_t) const;
   void reset_querypool(VkQueryPool, const uint32_t, const uint32_t) const;
@@ -99,7 +101,7 @@ class CommandBuffer final {
   VkCommandBuffer get_submit_handle(const bool final_use = false);
 
   inline operator bool() const {
-    return VK_NULL_HANDLE != handle_;
+    return handle_ != VK_NULL_HANDLE;
   }
 };
 

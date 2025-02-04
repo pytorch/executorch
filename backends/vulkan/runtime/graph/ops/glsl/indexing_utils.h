@@ -54,6 +54,11 @@
 #define alignup4(x) ((x + 3) & -4)
 
 /*
+ * Fast modulo by 4 using bit masking
+ */
+#define mod4(x) (x & 3)
+
+/*
  * Find the packed dimension of a tensor given its strides. The packed dimension
  * is the "fastest moving" dimension which will have a stride of 1.
  */
@@ -77,6 +82,21 @@ ivec4 tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes, const int packed_dim) {
   ivec4 strides =
       ivec4(1, sizes.x, sizes.x * sizes.y, sizes.x * sizes.y * sizes.z);
 
+  int base_i = tidx.x * strides.x + tidx.y * strides.y + tidx.z * strides.z +
+      tidx.w * strides.w;
+
+  return base_i + ivec4(0, 1, 2, 3) * strides[packed_dim];
+}
+
+/*
+ * Get the buffer indices that contain the data of the texel that corresponds to
+ * to the provided tensor index. Since the texel have 4 elements, 4 buffer
+ * indices will be retrieved.
+ */
+ivec4 tidx_to_4bufi(
+    const ivec4 tidx,
+    const ivec4 strides,
+    const int packed_dim) {
   int base_i = tidx.x * strides.x + tidx.y * strides.y + tidx.z * strides.z +
       tidx.w * strides.w;
 
@@ -207,17 +227,40 @@ ivec3 lpos_to_pos(const ivec3 lpos, const ivec4 axis_map) {
 #define load_texel(buf, idx) buf[idx]
 #elif defined(USING_TEXTURE2D)
 #define load_texel(im, pos) texelFetch(im, pos.xy, 0)
+#define load_texel_lpos(im, lpos, axis_map) \
+  texelFetch(im, lpos_to_pos(lpos, axis_map).xy, 0)
 #else // defined(USING_TEXTURE3D)
 #define load_texel(im, pos) texelFetch(im, pos, 0)
+#define load_texel_lpos(im, lpos, axis_map) \
+  texelFetch(im, lpos_to_pos(lpos, axis_map), 0)
 #endif
 
 #ifdef USING_BUFFER
 #define write_texel(buf, idx, texel) buf[idx] = texel
 #elif defined(USING_TEXTURE2D)
 #define write_texel(im, pos, texel) imageStore(im, pos.xy, texel)
+#define write_texel_lpos(im, lpos, texel, axis_map) \
+  imageStore(im, lpos_to_pos(lpos, axis_map).xy, texel)
 #else // defined(USING_TEXTURE3D)
 #define write_texel(im, pos, texel) imageStore(im, pos, texel)
+#define write_texel_lpos(im, lpos, texel, axis_map) \
+  imageStore(im, lpos_to_pos(lpos, axis_map), texel)
 #endif
+
+/*
+ * Converts hashed layout to a ivec4 containing the axis map data and an int
+ * containing the packed dim respectively. Each value takes up 4 bits in the
+ * packed int, and values are read from least significant half byte (right-most)
+ * to most significant half byte (left-most).
+ * e.g. 0x20122, 2 -> ivec4(0, 1, 2, 2)
+ * e.g. 0x11021, 1 -> ivec4(1, 2, 0, 1)
+ */
+#define unhash_axis_map(hash) \
+  ivec4(hash & 0xf, (hash >> 4) & 0xf, (hash >> 8 & 0xf), (hash >> 12 & 0xf))
+
+#define unhash_packed_dim(hash) int(hash >> 16 & 0xf)
+
+#define DEFAULT_LAYOUT 0x02210
 
 /************************
  * Deprecated Functions *

@@ -15,10 +15,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 using namespace ::testing;
-using exec_aten::IntArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::IntArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::MemoryAllocator;
 using torch::executor::testing::TensorFactory;
 
@@ -116,23 +118,58 @@ class OpTopkValuesTest : public ::testing::Test {
     // first.
     torch::executor::runtime_init();
   }
+
+  template <ScalarType DTYPE>
+  void run_smoke_test() {
+    TensorFactory<DTYPE> tfDtype;
+    TensorFactory<ScalarType::Long> tfLong;
+
+    Tensor input =
+        tfDtype.make({3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    int64_t k = 2;
+    int64_t dim = 0;
+    bool largest = true;
+    bool sorted = true;
+    Tensor values = tfDtype.zeros({2, 2, 2});
+    Tensor indices = tfLong.zeros({2, 2, 2});
+    Tensor values_expected =
+        tfDtype.make({2, 2, 2}, {9, 10, 11, 12, 5, 6, 7, 8});
+    Tensor indices_expected = tfLong.make({2, 2, 2}, {2, 2, 2, 2, 1, 1, 1, 1});
+    op_topk_values(input, k, dim, largest, sorted, values, indices);
+    EXPECT_TENSOR_CLOSE(values, values_expected);
+    EXPECT_TENSOR_EQ(indices, indices_expected);
+
+    largest = false;
+    values_expected = tfDtype.make({2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
+    indices_expected = tfLong.make({2, 2, 2}, {0, 0, 0, 0, 1, 1, 1, 1});
+    op_topk_values(input, k, dim, largest, sorted, values, indices);
+    EXPECT_TENSOR_CLOSE(values, values_expected);
+    EXPECT_TENSOR_EQ(indices, indices_expected);
+  }
 };
 
 TEST_F(OpTopkValuesTest, SmokeTest) {
+#define RUN_SMOKE_TEST(ctype, dtype) run_smoke_test<ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(RUN_SMOKE_TEST);
+}
+
+TEST_F(OpTopkValuesTest, NonPartialSort) {
   TensorFactory<ScalarType::Float> tfFloat;
   TensorFactory<ScalarType::Long> tfLong;
 
-  Tensor input =
-      tfFloat.make({3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
-  int64_t k = 2;
-  int64_t dim = 0;
-  bool largest = true;
-  bool sorted = true;
-  Tensor values = tfFloat.zeros({2, 2, 2});
-  Tensor indices = tfLong.zeros({2, 2, 2});
-  Tensor values_expected = tfFloat.make({2, 2, 2}, {9, 10, 11, 12, 5, 6, 7, 8});
-  Tensor indices_expected = tfLong.make({2, 2, 2}, {2, 2, 2, 2, 1, 1, 1, 1});
-  op_topk_values(input, k, dim, largest, sorted, values, indices);
-  EXPECT_TENSOR_CLOSE(values, values_expected);
-  EXPECT_TENSOR_EQ(indices, indices_expected);
+  std::vector<float> data(100);
+  std::iota(data.begin(), data.end(), 0);
+
+  for (const bool largest : {true, false}) {
+    Tensor input = tfFloat.make({(int)data.size()}, data);
+    Tensor values = tfFloat.zeros({1});
+    Tensor indices = tfLong.zeros({1});
+    Tensor values_expected =
+        tfFloat.make({1}, {largest ? data.back() : data.front()});
+    Tensor indices_expected =
+        tfLong.make({1}, {largest ? (long)data.size() - 1 : 0L});
+    op_topk_values(input, 1, 0, largest, true, values, indices);
+    EXPECT_TENSOR_CLOSE(values, values_expected);
+    EXPECT_TENSOR_EQ(indices, indices_expected);
+  }
 }

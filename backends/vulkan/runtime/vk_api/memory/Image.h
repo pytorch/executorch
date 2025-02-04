@@ -74,6 +74,7 @@ class VulkanImage final {
     VkImageType image_type;
     VkFormat image_format;
     VkExtent3D image_extents;
+    VkImageTiling image_tiling;
     VkImageUsageFlags image_usage;
   };
 
@@ -93,14 +94,23 @@ class VulkanImage final {
   explicit VulkanImage();
 
   explicit VulkanImage(
+      VkDevice,
       const VmaAllocator,
       const VmaAllocationCreateInfo&,
       const ImageProperties&,
       const ViewProperties&,
       const SamplerProperties&,
-      const VkImageLayout layout,
       VkSampler,
+      const VkImageLayout,
       const bool allocate_memory = true);
+
+  explicit VulkanImage(
+      VkDevice,
+      const ImageProperties&,
+      VkImage,
+      VkImageView,
+      VkSampler,
+      const VkImageLayout);
 
  protected:
   /*
@@ -136,6 +146,7 @@ class VulkanImage final {
   friend struct ImageMemoryBarrier;
 
  private:
+  VkDevice device_;
   ImageProperties image_properties_;
   ViewProperties view_properties_;
   SamplerProperties sampler_properties_;
@@ -145,6 +156,9 @@ class VulkanImage final {
   Allocation memory_;
   // Indicates whether the underlying memory is owned by this resource
   bool owns_memory_;
+  // In some cases, a VulkanImage may be a copy of another VulkanImage but still
+  // own a unique view of the VkImage.
+  bool owns_view_;
   // Indicates whether this VulkanImage was copied from another VulkanImage,
   // thus it does not have ownership of the underlying VKBuffer
   bool is_copy_;
@@ -156,9 +170,7 @@ class VulkanImage final {
   void create_image_view();
 
   inline VkDevice device() const {
-    VmaAllocatorInfo allocator_info{};
-    vmaGetAllocatorInfo(allocator_, &allocator_info);
-    return allocator_info.device;
+    return device_;
   }
 
   inline VmaAllocator vma_allocator() const {
@@ -167,6 +179,10 @@ class VulkanImage final {
 
   inline VmaAllocation allocation() const {
     return memory_.allocation;
+  }
+
+  inline VkImageType type() const {
+    return image_properties_.image_type;
   }
 
   inline VkFormat format() const {
@@ -228,10 +244,17 @@ class VulkanImage final {
 
   inline void bind_allocation(const Allocation& memory) {
     VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
-    VK_CHECK(vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
+    // To prevent multiple instances of binding the same VkImage to a memory
+    // block, do not actually bind memory if this VulkanImage is a copy. Assume
+    // that the original VulkanImage is responsible for binding the image.
+    if (!is_copy_) {
+      VK_CHECK(
+          vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
+    }
     memory_.allocation = memory.allocation;
 
     // Only create the image view if the image has been bound to memory
+    owns_view_ = true;
     create_image_view();
   }
 

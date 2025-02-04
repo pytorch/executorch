@@ -36,7 +36,7 @@
 #error "You need C++17 to compile ExecuTorch"
 #endif
 
-#if defined(_WIN32) && (defined(min) || defined(max))
+#if defined(_MSC_VER) && (defined(min) || defined(max))
 #error \
     "Macro clash with min and max -- define NOMINMAX when compiling your program on Windows"
 #endif
@@ -75,26 +75,12 @@
 
 #endif // defined(__GNUC__)
 
-#if (__cplusplus) >= 201703L
-
 #define ET_DEPRECATED [[deprecated]]
 #define ET_EXPERIMENTAL \
   [[deprecated("This API is experimental and may change without notice.")]]
 #define ET_FALLTHROUGH [[fallthrough]]
 #define ET_NODISCARD [[nodiscard]]
 #define ET_UNUSED [[maybe_unused]]
-
-#else
-
-#define ET_DEPRECATED __attribute__((deprecated))
-#define ET_EXPERIMENTAL \
-  __attribute__((       \
-      deprecated("This API is experimental and may change without notice.")))
-#define ET_FALLTHROUGH __attribute__((fallthrough))
-#define ET_NODISCARD __attribute__((warn_unused_result))
-#define ET_UNUSED __attribute__((unused))
-
-#endif // (__cplusplus) >= 201703L
 
 // UNLIKELY Macro
 // example
@@ -114,20 +100,36 @@
 #endif // (__cplusplus) >= 202002L
 
 /// Define a C symbol with weak linkage.
+#ifdef _MSC_VER
+// There currently doesn't seem to be a great way to do this in Windows and
+// given that weak linkage is not really critical on Windows, we'll just leave
+// it as a stub.
+#define ET_WEAK
+#else
 #define ET_WEAK __attribute__((weak))
+#endif
 
 /**
  * Annotation marking a function as printf-like, providing compiler support
  * for format string argument checking.
  */
+#ifdef _MSC_VER
+#include <sal.h>
+#define ET_PRINTFLIKE(_string_index, _va_index) _Printf_format_string_
+#else
 #define ET_PRINTFLIKE(_string_index, _va_index) \
   __attribute__((format(printf, _string_index, _va_index)))
-
-/// Name of the source file without a directory string.
-#define ET_SHORT_FILENAME (__builtin_strrchr("/" __FILE__, '/') + 1)
+#endif
 
 #ifndef __has_builtin
 #define __has_builtin(x) (0)
+#endif
+
+#if __has_builtin(__builtin_strrchr)
+/// Name of the source file without a directory string.
+#define ET_SHORT_FILENAME (__builtin_strrchr("/" __FILE__, '/') + 1)
+#else
+#define ET_SHORT_FILENAME __FILE__
 #endif
 
 #if __has_builtin(__builtin_LINE)
@@ -144,6 +146,13 @@
 #define ET_FUNCTION __FUNCTION__
 #endif // __has_builtin(__builtin_FUNCTION)
 
+// As of G3 RJ-2024.3 toolchain, zu format specifier is not supported for Xtensa
+#if defined(__XTENSA__)
+#define ET_PRIsize_t "lu"
+#else
+#define ET_PRIsize_t "zu"
+#endif
+
 // Whether the compiler supports GNU statement expressions.
 // https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html
 #ifndef ET_HAVE_GNU_STATEMENT_EXPRESSIONS
@@ -155,7 +164,7 @@
 #endif // ifndef
 
 // Define size_t and ssize_t.
-#ifndef _WIN32
+#ifndef _MSC_VER
 #include <sys/types.h>
 #else
 #include <stddef.h>

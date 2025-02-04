@@ -75,9 +75,9 @@ run_portable_executor_runner() {
 test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
     # Install requirements for export_llama
-    bash examples/models/llama2/install_requirements.sh
-    # Test export_llama script: python3 -m examples.models.llama2.export_llama
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama -c examples/models/llama2/params/demo_rand_params.pth -p examples/models/llama2/params/demo_config.json
+    bash examples/models/llama/install_requirements.sh
+    # Test export_llama script: python3 -m examples.models.llama.export_llama
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
@@ -86,6 +86,10 @@ test_model() {
     # Install requirements for llava
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
+  fi
+  if [[ "$MODEL_NAME" == "llama3_2_vision_encoder" || "$MODEL_NAME" == "llama3_2_text_decoder" ]]; then
+    # Install requirements for llama vision.
+    bash examples/models/llama3_2_vision/install_requirements.sh
   fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
@@ -155,22 +159,23 @@ test_model_with_qnn() {
 
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
-    EXPORTED_MODEL_NAME=dlv3_qnn.pte
   elif [[ "${MODEL_NAME}" == "mv3" ]]; then
     EXPORT_SCRIPT=mobilenet_v3
-    EXPORTED_MODEL_NAME=mv3_qnn.pte
   elif [[ "${MODEL_NAME}" == "mv2" ]]; then
     EXPORT_SCRIPT=mobilenet_v2
-    EXPORTED_MODEL_NAME=mv2_qnn.pte
   elif [[ "${MODEL_NAME}" == "ic4" ]]; then
     EXPORT_SCRIPT=inception_v4
-    EXPORTED_MODEL_NAME=ic4_qnn.pte
   elif [[ "${MODEL_NAME}" == "ic3" ]]; then
     EXPORT_SCRIPT=inception_v3
-    EXPORTED_MODEL_NAME=ic3_qnn.pte
   elif [[ "${MODEL_NAME}" == "vit" ]]; then
     EXPORT_SCRIPT=torchvision_vit
-    EXPORTED_MODEL_NAME=vit_qnn.pte
+  elif [[ "${MODEL_NAME}" == "edsr" ]]; then
+    EXPORT_SCRIPT=edsr
+    # Additional deps for edsr
+    pip install piq
+  else
+    echo "Unsupported model $MODEL_NAME"
+    exit 1
   fi
 
   # Use SM8450 for S22, SM8550 for S23, and SM8560 for S24
@@ -178,7 +183,7 @@ test_model_with_qnn() {
   QNN_CHIPSET=SM8450
 
   "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only
-  EXPORTED_MODEL=./${EXPORT_SCRIPT}/${EXPORTED_MODEL_NAME}
+  EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
 test_model_with_coreml() {
@@ -187,26 +192,49 @@ test_model_with_coreml() {
     exit 1
   fi
 
-  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}"
+  DTYPE=float16
+
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}"
+  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
+  # TODO:
+  if [ -n "$EXPORTED_MODEL" ]; then
+    EXPORTED_MODEL_WITH_DTYPE="${EXPORTED_MODEL%.pte}_${DTYPE}.pte"
+    mv "$EXPORTED_MODEL" "$EXPORTED_MODEL_WITH_DTYPE"
+    EXPORTED_MODEL="$EXPORTED_MODEL_WITH_DTYPE"
+    echo "Renamed file path: $EXPORTED_MODEL"
+  else
+    echo "No .pte file found"
+    exit 1
+  fi
+}
+
+test_model_with_mps() {
+  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --use_fp16
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
-elif [[ "${BACKEND}" == "qnn" ]]; then
+elif [[ "${BACKEND}" == *"qnn"* ]]; then
   echo "Testing ${MODEL_NAME} with qnn..."
   test_model_with_qnn
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
-elif [[ "${BACKEND}" == "coreml" ]]; then
+elif [[ "${BACKEND}" == *"coreml"* ]]; then
   echo "Testing ${MODEL_NAME} with coreml..."
   test_model_with_coreml
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
-elif [[ "${BACKEND}" == "xnnpack" ]]; then
+elif [[ "${BACKEND}" == *"mps"* ]]; then
+  echo "Testing ${MODEL_NAME} with mps..."
+  test_model_with_mps
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
   echo "Testing ${MODEL_NAME} with xnnpack..."
   WITH_QUANTIZATION=true
   WITH_DELEGATION=true

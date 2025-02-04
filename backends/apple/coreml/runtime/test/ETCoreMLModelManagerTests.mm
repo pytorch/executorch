@@ -32,7 +32,7 @@
 }
 
 - (void)setUp {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
     @autoreleasepool {
         NSError *localError = nil;
         self.fileManager = [[NSFileManager alloc] init];

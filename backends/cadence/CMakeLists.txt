@@ -20,58 +20,47 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-set(TARGET_DIR reference)
 
-if(EXECUTORCH_NNLIB_OPT)
-  set(TARGET_DIR hifi)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
-endif()
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(EXECUTORCH_CADENCE_CPU_RUNNER)
+  include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
-# Source root directory for executorch.
-if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
-endif()
-
-if(NOT PYTHON_EXECUTABLE)
+  if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
-endif()
+  endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+  set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
-# Find prebuilt libraries. executorch package should contain portable_ops_lib,
-# etdump, bundled_program.
-find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
-target_link_options_shared_lib(portable_ops_lib)
+  # Find prebuilt libraries. executorch package should contain portable_ops_lib,
+  # etdump, bundled_program.
+  find_package(executorch CONFIG REQUIRED)
+  target_link_options_shared_lib(executorch)
+  target_link_options_shared_lib(portable_ops_lib)
 
-target_include_directories(executorch INTERFACE ${_common_include_directories})
+  target_include_directories(executorch INTERFACE ${_common_include_directories})
 
-find_package(
+  find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
-)
+  )
 
-add_executable(cadence_runner cadence_runner/cadence_runner.cpp)
-target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+  add_executable(cadence_runner
+      ${EXECUTORCH_ROOT}/examples/devtools/example_runner/example_runner.cpp
+  )
+  target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+  target_include_directories(
+  etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../devtools/include
+                  ${EXECUTORCH_ROOT}/third-party/flatcc/include
+  )
 
-target_include_directories(
-  etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../sdk/include
-                   ${EXECUTORCH_ROOT}/third-party/flatcc/include
-)
-
-target_include_directories(
+  target_include_directories(
   cadence_runner PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
-                        ${_common_include_directories}
-)
+                                      ${_common_include_directories}
+  )
 
-target_link_libraries(
+  target_link_libraries(
   cadence_runner
   executorch
   gflags
@@ -80,4 +69,18 @@ target_link_libraries(
   bundled_program
   cadence_ops_lib
   flatccrt
-)
+  )
+endif()
+
+if(EXECUTORCH_NNLIB_OPT)
+  set(TARGET_DIR hifi)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
+elseif(EXECUTORCH_FUSION_G3_OPT)
+  set(TARGET_DIR fusion_g3)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
+else()
+  set(TARGET_DIR reference)
+endif()
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators)

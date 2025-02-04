@@ -11,8 +11,8 @@
 #define PAGE_SIZE 4096
 #endif
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -250,41 +250,41 @@ MPSGraphBuilder::getMPSGraphTensor(int32_t id) {
   return _idToMPSGraphTensor[id];
 }
 
-MPSDataType getMPSScalarType(exec_aten::ScalarType scalar_type) {
+MPSDataType getMPSScalarType(executorch::aten::ScalarType scalar_type) {
   switch (scalar_type) {
     // This is an intentional fallthrough supporting Double for Scalar
     // types as they are casted to Float32 currently.
-    case exec_aten::ScalarType::Float:
+    case executorch::aten::ScalarType::Float:
       return MPSDataTypeFloat32;
-    case exec_aten::ScalarType::Half:
+    case executorch::aten::ScalarType::Half:
       return MPSDataTypeFloat16;
     default:
       ET_CHECK_MSG(false, "Unhandled ExecuTorch scalar type!");
   }
 }
 
-exec_aten::ScalarType getScalarType(MPSDataType mpsDataType) {
+executorch::aten::ScalarType getScalarType(MPSDataType mpsDataType) {
   switch (mpsDataType) {
     case MPSDataTypeFloat16:
-      return exec_aten::ScalarType::Half;
+      return executorch::aten::ScalarType::Half;
     case MPSDataTypeFloat32:
-      return exec_aten::ScalarType::Float;
+      return executorch::aten::ScalarType::Float;
     case MPSDataTypeInt8:
-      return exec_aten::ScalarType::Char;
+      return executorch::aten::ScalarType::Char;
     case MPSDataTypeInt16:
-      return exec_aten::ScalarType::Short;
+      return executorch::aten::ScalarType::Short;
     case MPSDataTypeInt32:
-      return exec_aten::ScalarType::Int;
+      return executorch::aten::ScalarType::Int;
     case MPSDataTypeInt64:
-      return exec_aten::ScalarType::Long;
+      return executorch::aten::ScalarType::Long;
     case MPSDataTypeBool:
-      return exec_aten::ScalarType::Bool;
+      return executorch::aten::ScalarType::Bool;
     default:
       ET_CHECK_MSG(false, "Unhandled MPS data type!");
   }
 }
 
-MPSGraphTensor* castMPSTensor(MPSGraph* mpsGraph, MPSGraphTensor* tensor, exec_aten::ScalarType toType) {
+MPSGraphTensor* castMPSTensor(MPSGraph* mpsGraph, MPSGraphTensor* tensor, executorch::aten::ScalarType toType) {
   return castMPSTensor(mpsGraph, tensor, getMPSScalarType(toType));
 }
 
@@ -301,7 +301,7 @@ std::vector<int64_t> getMPSShapeVec(const MPSShape* shape) {
   return shapeVec;
 }
 
-id<MTLBuffer> getMTLBufferStorage(const Tensor &tensor) {
+id<MTLBuffer> getMTLBufferStorage(const executorch::aten::Tensor &tensor) {
   uint8_t *data = tensor.mutable_data_ptr<uint8_t>();
   return [MPSDevice::getInstance()->device() newBufferWithBytesNoCopy:data
                                                                length:tensor.nbytes()
@@ -349,5 +349,5 @@ MPSGraphTensor* permuteTensor(MPSGraph* graph, MPSGraphTensor* inputTensor, NSAr
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

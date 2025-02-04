@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,41 +11,41 @@
 # the standardised TOSA representation.
 #
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
 
+UNSUPPORTED_DTYPES = (
+    torch.float64,
+    torch.double,
+    torch.complex64,
+    torch.cfloat,
+    torch.complex128,
+    torch.cdouble,
+    torch.uint8,
+    torch.int64,
+    torch.long,
+)
+
+DTYPE_MAP = {
+    torch.float32: ts.DType.FP32,
+    torch.float: ts.DType.FP32,
+    torch.float16: ts.DType.FP16,
+    torch.half: ts.DType.FP16,
+    torch.bfloat16: ts.DType.BF16,
+    torch.int8: ts.DType.INT8,
+    torch.int16: ts.DType.INT16,
+    torch.short: ts.DType.INT16,
+    torch.int32: ts.DType.INT32,
+    torch.int: ts.DType.INT32,
+    torch.bool: ts.DType.BOOL,
+}
+
+
 def map_dtype(data_type):
-    unsupported = (
-        torch.float64,
-        torch.double,
-        torch.complex64,
-        torch.cfloat,
-        torch.complex128,
-        torch.cdouble,
-        torch.uint8,
-        torch.int64,
-        torch.long,
-    )
-
-    dmap = {
-        torch.float32: ts.DType.FP32,
-        torch.float: ts.DType.FP32,
-        torch.float16: ts.DType.FP16,
-        torch.half: ts.DType.FP16,
-        torch.bfloat16: ts.DType.BF16,
-        torch.int8: ts.DType.INT8,
-        torch.int16: ts.DType.INT16,
-        torch.short: ts.DType.INT16,
-        torch.int32: ts.DType.INT32,
-        torch.int: ts.DType.INT32,
-        torch.bool: ts.DType.BOOL,
-    }
-
-    assert unsupported.count(data_type) == 0, "Unsupported type"
-    rtype = dmap.get(data_type)
-    assert rtype is not None, "Unknown type"
-    return rtype
+    assert data_type not in UNSUPPORTED_DTYPES, f"Unsupported type: {data_type}"
+    assert data_type in DTYPE_MAP, f"Unknown type: {data_type}"
+    return DTYPE_MAP[data_type]
 
 
 # Returns the shape and type of a node

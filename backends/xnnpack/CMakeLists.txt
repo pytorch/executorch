@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -32,13 +33,19 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
-# NB: Enabling this will serialize execution of delegate instances.
-# This setting may have performance implications.
+# NB: Enabling this will serialize execution of delegate instances
+# Keeping this OFF by default to maintain existing behavior, to be revisited.
 option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE
-       "Enable workspace sharing across different delegate instances" ON
-)
+  "Enable workspace sharing across different delegate instances" ON)
+# Keeping this OFF by default due to regressions in decode
+# and model load with kleidi kernels
+option(EXECUTORCH_XNNPACK_ENABLE_KLEIDI
+  "Enable Arm Kleidi kernels" OFF)
 if(EXECUTORCH_XNNPACK_SHARED_WORKSPACE)
   add_definitions(-DENABLE_XNNPACK_SHARED_WORKSPACE)
+endif()
+if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
+  add_definitions(-DENABLE_XNNPACK_KLEIDI)
 endif()
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -93,7 +100,7 @@ include(cmake/Dependencies.cmake)
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
 target_link_libraries(
-  xnnpack_backend PRIVATE ${xnnpack_third_party} executorch_no_prim_ops
+  xnnpack_backend PRIVATE ${xnnpack_third_party} executorch_core
                           xnnpack_schema
 )
 
@@ -122,8 +129,17 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   #
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
+
+  if(EXECUTORCH_ENABLE_EVENT_TRACER)
+    if(EXECUTORCH_BUILD_DEVTOOLS)
+      list(APPEND xnn_executor_runner_libs etdump)
+    else()
+      message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
+    endif()
+  endif()
+
   target_link_libraries(
-    xnn_executor_runner xnnpack_backend gflags portable_ops_lib
+    xnn_executor_runner gflags portable_ops_lib ${xnn_executor_runner_libs}
   )
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
@@ -134,3 +150,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

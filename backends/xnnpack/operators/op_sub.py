@@ -7,12 +7,12 @@
 from typing import Dict
 
 import torch
+from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
-from executorch.backends.xnnpack.passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNGraph,
     XNNSubtract,

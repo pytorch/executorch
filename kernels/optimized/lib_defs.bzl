@@ -2,6 +2,10 @@ load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFOR
 load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(
+    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
+    "get_compiler_optimization_flags",
+)
 
 # Because vec exists as a collection of header files, compile and preprocessor
 # flags applied to the vec target do not have any effect, since no compilation
@@ -11,16 +15,44 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 # functions in order to declare the required compiler flags needed in order to
 # access CPU vector intrinsics.
 
-def get_vec_android_preprocessor_flags():
-    preprocessor_flags = [
-        (
-            "^android-arm64.*$",
-            [
+def get_vec_preprocessor_flags():
+    if not runtime.is_oss:
+        # various ovr_configs are not available in oss
+        preprocessor_flags = select({
+            "ovr_config//os:linux-x86_64": [
                 "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
-            ],
-        ),
-    ]
-    return preprocessor_flags
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:iphoneos-arm64": [
+                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-arm64": [
+                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:android-arm64": [
+                "-DET_BUILD_ARM_VEC256_WITH_SLEEF",
+            ] if not runtime.is_oss else [],
+            "DEFAULT": [],
+        })
+        return preprocessor_flags
+    return []
+
+def get_vec_deps():
+    if not runtime.is_oss:
+        # various ovr_configs are not available in oss
+        deps = select({
+            "ovr_config//os:iphoneos-arm64": [
+                "fbsource//third-party/sleef:sleef_arm",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-arm64": [
+                "fbsource//third-party/sleef:sleef_arm",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:android-arm64": [
+                "fbsource//third-party/sleef:sleef_arm",
+            ] if not runtime.is_oss else [],
+            "DEFAULT": [],
+        })
+        return deps
+    return []
 
 def get_vec_cxx_preprocessor_flags():
     preprocessor_flags = [
@@ -39,12 +71,56 @@ def get_vec_fbcode_preprocessor_flags():
     ]
     return preprocessor_flags
 
+def get_apple_framework_deps_kwargs(is_fbcode):
+    # various ovr_configs are not available in oss
+    if not runtime.is_oss and not is_fbcode:
+        # Jump through few hoops since 'frameworks' is not a valid kwarg
+        # for some buck rules
+        frameworks = {'frameworks': select({
+            "DEFAULT": [],
+            "ovr_config//os:iphoneos": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+            "ovr_config//os:macos-arm64": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+            "ovr_config//os:macos-x86_64": ["$SDKROOT/System/Library/Frameworks/Accelerate.framework"],
+        })}
+        return frameworks
+    return {'fbobjc_frameworks': ["Accelerate"]}
+
+def get_preprocessor_flags():
+    # various ovr_configs are not available in oss
+    preprocessor_flags = select({
+      ":linux-x86_64": [
+          "-DET_BUILD_WITH_BLAS",
+      ] if not runtime.is_oss else [],
+      "DEFAULT": [],
+    })
+
+    if not runtime.is_oss:
+        # various ovr_configs are not available in oss
+        additional_preprocessor_flags = select({
+            "ovr_config//os:iphoneos": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-arm64": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "ovr_config//os:macos-x86_64": [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ] if not runtime.is_oss else [],
+            "DEFAULT": [],
+        })
+        preprocessor_flags = preprocessor_flags + additional_preprocessor_flags
+    return preprocessor_flags
+
+
 # Currently, having a dependency on fbsource//third-party/sleef:sleef may cause
 # duplicate symbol errors when linking fbcode targets in opt mode that also
 # depend on ATen. This is because ATen accesses sleef via the third-party folder
 # in caffe2 (caffe2/third-party//sleef:sleef).
 # TODO(ssjia): Enable -DCPU_CAPABILITY_AVX2 in fbcode, which requires sleef.
-def define_libs():
+def define_libs(is_fbcode=False):
     runtime.cxx_library(
         name = "libvec",
         srcs = [],
@@ -121,25 +197,13 @@ def define_libs():
             exported_headers = native.glob([
                 "blas/**/*.h",
             ]),
+            compiler_flags = get_compiler_optimization_flags(),
             header_namespace = "executorch/kernels/optimized",
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
             ],
-            preprocessor_flags = select({
-                ":linux-x86_64": [
-                    "-DET_BUILD_WITH_BLAS",
-                ] if not runtime.is_oss else [],
-                "DEFAULT": [],
-            }),
-            fbandroid_platform_compiler_flags = [
-                (
-                    "^android-arm64.*$",
-                    [
-                        "-march=armv8+bf16",
-                    ],
-                ),
-            ],
+            preprocessor_flags = get_preprocessor_flags(),
             fbandroid_platform_preprocessor_flags = [
                 (
                     "^android-arm64.*$",
@@ -152,22 +216,13 @@ def define_libs():
                 (
                     "^android-arm64.*$",
                     [
-                        "fbsource//third-party/openblas:openblas",
+                        "fbsource//arvr/third-party/eigen:eigen3_blas",
                     ],
-                ),
-            ],
-            fbobjc_platform_compiler_flags = [
-                (
-                    ".*arm64.*",
-                    ["-march=armv8+bf16"],
                 ),
             ],
             fbobjc_exported_preprocessor_flags = [
                 "-DET_BUILD_WITH_BLAS",
                 "-DET_BUILD_FOR_APPLE",
-            ],
-            fbobjc_frameworks = [
-                "Accelerate",
             ],
             deps = select({
                 ":linux-x86_64": [mkl_dep] if not runtime.is_oss else [],
@@ -178,4 +233,5 @@ def define_libs():
                 "//executorch/kernels/optimized:libutils",
                 "//executorch/runtime/core/exec_aten:lib",
             ],
+            **get_apple_framework_deps_kwargs(is_fbcode),
         )

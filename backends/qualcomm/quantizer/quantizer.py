@@ -4,15 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 from enum import IntEnum, unique
-from typing import Callable, Dict, Optional, Sequence, Set
+from functools import partial
+from typing import Callable, Optional, Sequence, Set
 
 import torch
-from executorch.backends.qualcomm.passes.decompose_silu import DecomposeSilu
-from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
+from executorch.backends.qualcomm._passes.decompose_einsum import DecomposeEinsum
+from executorch.backends.qualcomm._passes.decompose_silu import DecomposeSilu
+from executorch.backends.qualcomm._passes.recompose_pixel_unshuffle import (
     RecomposePixelUnshuffle,
 )
-from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
-from executorch.backends.qualcomm.passes.replace_inf_buffer import ReplaceInfBuffer
+from executorch.backends.qualcomm._passes.reduce_dynamic_range import ReduceDynamicRange
+from executorch.backends.qualcomm._passes.replace_inf_buffer import ReplaceInfBuffer
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
@@ -21,23 +23,32 @@ from torch._ops import OpOverload
 from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
 
-from .utils import (
+from .annotators import OP_ANNOTATOR
+
+from .qconfig import (
+    get_16a16w_qnn_ptq_config,
     get_16a4w_qnn_ptq_config,
+    get_16a4w_qnn_qat_config,
     get_16a8w_qnn_ptq_config,
-    get_default_16bit_qnn_ptq_config,
-    get_default_8bit_qnn_ptq_config,
-    get_ptq_per_channel_weight_config,
-    OP_ANNOTATOR,
+    get_8a8w_qnn_ptq_config,
+    get_8a8w_qnn_qat_config,
+    get_ptq_per_channel_quant_config,
+    get_qat_per_channel_quant_config,
     QuantizationConfig,
 )
+
+# To bypass the meta internal test error
+get_default_16bit_qnn_ptq_config = get_16a16w_qnn_ptq_config
 
 __all__ = [
     "QnnQuantizer",
     "QuantDtype",
     "get_16a4w_qnn_ptq_config",
     "get_16a8w_qnn_ptq_config",
-    "get_default_16bit_qnn_ptq_config",
-    "get_default_8bit_qnn_ptq_config",
+    "get_16a16w_qnn_ptq_config",
+    "get_8a8w_qnn_ptq_config",
+    "get_8a8w_qnn_qat_config",
+    "get_16a4w_qnn_qat_config",
 ]
 
 
@@ -48,8 +59,55 @@ class QuantDtype(IntEnum):
     """
 
     use_16a16w = 0
-    use_16a4w = 1
-    use_8a8w = 2
+    use_16a8w = 1
+    use_16a4w = 2
+    use_8a8w = 3
+
+
+quant_config_dict = {
+    # PTQ
+    (QuantDtype.use_16a16w, False): (
+        get_16a16w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int16,
+        ),
+    ),
+    (QuantDtype.use_16a8w, False): (
+        get_16a8w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int8,
+        ),
+    ),
+    (QuantDtype.use_16a4w, False): (
+        get_16a4w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype="int4",
+        ),
+    ),
+    (QuantDtype.use_8a8w, False): (
+        get_8a8w_qnn_ptq_config,
+        partial(get_ptq_per_channel_quant_config),
+    ),
+    # QAT,
+    (QuantDtype.use_16a4w, True): (
+        get_16a4w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype="int4",
+        ),
+    ),
+    (QuantDtype.use_8a8w, True): (
+        get_8a8w_qnn_qat_config,
+        partial(get_qat_per_channel_quant_config),
+    ),
+}
 
 
 class QnnQuantizer(Quantizer):
@@ -57,21 +115,16 @@ class QnnQuantizer(Quantizer):
 
     def __init__(self):
         super().__init__()
-        self.bit8_quant_config: QuantizationConfig = get_default_8bit_qnn_ptq_config()
-        self.bit16_quant_config: QuantizationConfig = get_default_16bit_qnn_ptq_config()
+        self.quant_ops: Set[OpOverload] = self.SUPPORTED_OPS.copy()
 
-        self.bit8_quant_ops: Set[OpOverload] = self.SUPPORTED_OPS.copy()
-        self.bit16_quant_ops: Set[OpOverload] = set()
+        self.is_qat = False
+        self.quant_dtype = QuantDtype.use_8a8w
+        self.quant_config: QuantizationConfig = get_8a8w_qnn_ptq_config()
+        self.per_channel_quant_config = get_ptq_per_channel_quant_config()
+        self.use_per_channel_weight_quant_ops: Set[OpOverload] = set()
 
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
-
-        self.use_per_channel_weight_quant_ops: Set[OpOverload] = set()
-        # the weight quantized for activation 8 bits and 16 bits
-        self.per_channel_weight_dtype: Dict = {
-            "8bit_act": torch.int8,
-            "16bit_act": torch.int16,
-        }
 
     def _annotate(self, gm: GraphModule) -> None:
         for node in gm.graph.nodes:
@@ -90,25 +143,16 @@ class QnnQuantizer(Quantizer):
         """
         Priority:
             1. is one of use_per_channel_weight_quant_ops
-            2. int8 / int16 config
+            2. quant config
         """
         if isinstance(op, str):
             return
 
         if op in self.use_per_channel_weight_quant_ops:
-            if op in self.bit16_quant_ops:
-                return get_ptq_per_channel_weight_config(
-                    torch.uint16, self.per_channel_weight_dtype["16bit_act"]
-                )
-            return get_ptq_per_channel_weight_config(
-                weight_dtype=self.per_channel_weight_dtype["8bit_act"]
-            )
+            return self.per_channel_quant_config
 
-        if op in self.bit8_quant_ops:
-            return self.bit8_quant_config
-
-        if op in self.bit16_quant_ops:
-            return self.bit16_quant_config
+        if op in self.quant_ops:
+            return self.quant_config
 
         print(f"No quant config is implemented for op, {op}")
 
@@ -117,15 +161,6 @@ class QnnQuantizer(Quantizer):
             self.use_per_channel_weight_quant_ops.update(ops)
         else:
             self.use_per_channel_weight_quant_ops.difference_update(ops)
-
-    def add_16bit_quant_ops(self, ops: Set[OpOverload]) -> None:
-        for op in ops:
-            assert (
-                op in self.SUPPORTED_OPS
-            ), f"The annotation of op {op} is not implemented"
-
-            self.bit8_quant_ops.remove(op)
-            self.bit16_quant_ops.add(op)
 
     def add_custom_quant_annotations(
         self, custom_quant_annotations: Sequence[Callable]
@@ -137,10 +172,7 @@ class QnnQuantizer(Quantizer):
 
     def add_discard_ops(self, ops: Sequence[OpOverload]) -> None:
         for op in ops:
-            if op in self.bit8_quant_ops:
-                self.bit8_quant_ops.remove(op)
-            if op in self.bit16_quant_ops:
-                self.bit16_quant_ops.remove(op)
+            self.quant_ops.remove(op)
 
     def annotate(self, model: GraphModule) -> GraphModule:
         self._annotate(model)
@@ -151,24 +183,29 @@ class QnnQuantizer(Quantizer):
     def get_supported_ops(self) -> Set[OpOverload]:
         return self.SUPPORTED_OPS
 
-    def set_bit16_op_quant_config(
-        self, quantization_config: QuantizationConfig
+    def set_quant_config(
+        self, quant_dtype: QuantDtype, is_qat=False, act_observer=None
     ) -> None:
-        self.bit16_quant_config = quantization_config
+        self.quant_dtype = quant_dtype
+        self.is_qat = is_qat
+        if (quant_dtype, is_qat) not in quant_config_dict:
+            raise RuntimeError(
+                f"the quant config, (quant_dtype: {quant_dtype}, is_qat: {is_qat}) is not support"
+            )
 
-    def set_bit8_op_quant_config(self, quantization_config: QuantizationConfig) -> None:
-        self.bit8_quant_config = quantization_config
-
-    def set_per_channel_weight_dtype(
-        self,
-        weight_dtype_for_8bit_act: Optional[str | torch.dtype] = None,
-        weight_dtype_for_16bit_act: Optional[str | torch.dtype] = None,
-    ) -> None:
-        # TODO accept temporally str type. Remove it when torch support torch.int4 dtype
-        if weight_dtype_for_8bit_act:
-            self.per_channel_weight_dtype["8bit_act"] = weight_dtype_for_8bit_act
-        if weight_dtype_for_16bit_act:
-            self.per_channel_weight_dtype["16bit_act"] = weight_dtype_for_16bit_act
+        quant_config_fuc, per_channel_quant_config_fuc = quant_config_dict[
+            (quant_dtype, is_qat)
+        ]
+        self.quant_config = (
+            quant_config_fuc(act_observer=act_observer)
+            if act_observer
+            else quant_config_fuc()
+        )
+        self.per_channel_quant_config = (
+            per_channel_quant_config_fuc(act_observer=act_observer)
+            if act_observer
+            else per_channel_quant_config_fuc()
+        )
 
     def set_per_channel_conv_quant(self, enable: bool) -> None:
         conv_ops = {torch.ops.aten.conv1d.default, torch.ops.aten.conv2d.default}
@@ -185,6 +222,7 @@ class QnnQuantizer(Quantizer):
         model = RecomposePixelUnshuffle(quantization_capture=True)(model).graph_module
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
+        model = DecomposeEinsum()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
         return model
 

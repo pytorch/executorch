@@ -29,31 +29,51 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 
 from executorch.backends.qualcomm.utils.utils import (
-    canonicalize_program,
     capture_program,
     from_context_binary,
     generate_htp_compiler_spec,
+    generate_multi_graph_program,
     generate_qnn_executorch_compiler_spec,
     skip_annotation,
+    update_spill_fill_size,
 )
+from executorch.examples.models.llama.llama_transformer import MOEFeedForward
+
+from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 
+import os
+import random
+
+from collections import defaultdict
+from typing import List
+
+from executorch.backends.qualcomm._passes.fuse_consecutive_transpose import (
+    FuseConsecutiveTranspose,
+)
+from executorch.backends.qualcomm._passes.insert_io_qdq import InsertIOQDQ
+from executorch.backends.qualcomm._passes.insert_requantize import InsertRequantize
+from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
 
-# from executorch.examples.models.llama2 import Llama2Model
+# from executorch.examples.models.llama import Llama2Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
-from executorch.examples.models.wav2letter import Wav2LetterModel
+
+# from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import disable_validation
+from executorch.exir.passes import PassManager
 
 
 class TestQNNFloatingPointOperator(TestQNN):
@@ -63,7 +83,7 @@ class TestQNNFloatingPointOperator(TestQNN):
         TestQNN.rtol = 1e-1
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -73,10 +93,24 @@ class TestQNNFloatingPointOperator(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
-    def test_qnn_backend_arange(self):
-        module = Arange(5)  # noqa: F405
-        sample_input = (torch.randn(5),)
+    def test_qnn_backend_abs(self):
+        module = Abs()  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_adaptive_avg_pool2d(self):
+        module = AdaptiveAvgPool2D()  # noqa: F405
+        sample_input = (torch.randn(1, 512, 7, 7),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_arange(self):
+        modules = [
+            Arange(start=1, end=11, step=1, dtype=torch.int32),  # noqa: F405
+        ]
+        sample_input = (torch.randn(10),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
         module = AvgPoolModule()  # noqa: F405
@@ -129,6 +163,53 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_channel_last(self):
+        modules = [
+            Conv2dSequential(channel_last=True),  # noqa: F405
+            Conv2dSequential(bias=False, channel_last=True),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv_transpose2d(self):
+        modules = [
+            ConvTranspose2dSingle(),  # noqa: F405
+            ConvTranspose2dSingle(bias=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cos(self):
+        module = Cos()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_outer_product(self):
+        module = EinsumOuterProduct()  # noqa: F405
+        x = torch.randn(5)
+        y = torch.randn(4)
+        sample_input = (
+            x,
+            y,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_bilinear(self):
+        module = EinsumBilinear()  # noqa: F405
+        bn = torch.randn(2, 5)
+        anm = torch.randn(3, 5, 4)
+        bm = torch.randn(2, 4)
+        sample_input = (
+            bn,
+            anm,
+            bm,
+        )
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_add(self):
         test_comb = [
@@ -245,15 +326,78 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.Tensor([[1, 2, 4, 5], [4, 3, 2, 9]]).to(torch.int32),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_equal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: Equal(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: EqualConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
     def test_qnn_backend_expand_copy(self):
         module = ExpandCopy()  # noqa: F405
         sample_input = (torch.randn([3, 1]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like(self):
+        module = FullLike(0.5)  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_gelu(self):
         module = Gelu()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_greater_equal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: GreaterEqual(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: GreaterEqualConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
+    def test_qnn_backend_greater_than(self):
+        test_comb = [
+            {
+                QCOM_MODULE: GreaterThan(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: GreaterThanConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
+    def test_qnn_backend_group_norm(self):
+        modules = [GroupNorm(), GroupNorm(bias=False)]  # noqa: F405
+        sample_input = (torch.randn(3, 32, 56, 56),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
@@ -294,9 +438,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
-        module = LayerNorm()  # noqa: F405
+        modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
         sample_input = (torch.randn(196, 768),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_leaky_relu(self):
         test_comb = [
@@ -318,14 +464,58 @@ class TestQNNFloatingPointOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
+    def test_qnn_backend_less_equal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: LessEqual(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: LessEqualConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
+    def test_qnn_backend_less_than(self):
+        test_comb = [
+            {
+                QCOM_MODULE: LessThan(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: LessThanConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
     def test_qnn_backend_linear(self):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_log(self):
+        module = Log()  # noqa: F405
+        sample_input = (torch.rand([1, 2, 3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_log_softmax(self):
         module = LogSoftmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_maximum(self):
+        module = Maximum()  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_max_pool2d(self):
@@ -344,6 +534,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_mha(self):
         module = MultiheadAttention()  # noqa: F405
         sample_input = (torch.randn(1, 197, 96),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_minimum(self):
+        module = Minimum()  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pad(self):
@@ -391,6 +586,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([2, 5, 1, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_repeat(self):
+        module = Repeat()  # noqa: F405
+        sample_input = (torch.randn([2, 2, 2, 2]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_reshape(self):
         module = Reshape()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
@@ -421,6 +621,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_sigmoid(self):
         module = Sigmoid()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sin(self):
+        module = Sin()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
@@ -485,7 +690,7 @@ class TestQNNFloatingPointModel(TestQNN):
         TestQNN.rtol = 1e-1
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -521,6 +726,11 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn(1, 3, 5, 5), torch.randn(1, 3, 5, 5))
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_down_up_sample(self):
+        module = Conv2dDownUpSample()  # noqa: F405
+        sample_input = (torch.randn(1, 16, 224, 224),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_max_pool2d(self):
         module = Conv2dMaxPool2d()  # noqa: F405
         sample_input = (torch.rand(1, 2, 14, 14),)
@@ -529,6 +739,34 @@ class TestQNNFloatingPointModel(TestQNN):
     def test_qnn_backend_conv2d_sum_reduce_dim(self):
         module = Conv2dSumReduceDim()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_topk(self):
+        module = Conv2dTopK()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_outer_product_relu(self):
+        module = EinsumOuterProductRelu()  # noqa: F405
+        x = torch.randn(5)
+        y = torch.randn(4)
+        sample_input = (
+            x,
+            y,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.skip("Fail because of bad accuracy")
+    def test_qnn_backend_moe_feed_forward(self):
+        args = ModelArgs()
+        args.dim = 32
+        args.n_heads = 8
+        args.n_layers = 2
+        self.head_dim = args.dim // args.n_heads
+        module = MOEFeedForward(args)  # noqa: F405
+        sample_input = (
+            torch.randint(low=0, high=100, size=(1, 32), dtype=torch.float32),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pixel_unshuffle_math_equivalent(self):
@@ -544,6 +782,11 @@ class TestQNNFloatingPointModel(TestQNN):
     def test_qnn_backend_simple_model(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_topk_and_index(self):
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_view_permute_matmul(self):
@@ -564,7 +807,8 @@ class TestQNNFloatingPointModel(TestQNN):
             MV3Model(),
             MobileBertModelExample(),
             TorchVisionViTModel(),
-            Wav2LetterModel(),
+            # Encountered undefined symbol in mainline. Reopen once resolved.
+            # Wav2LetterModel(),
         ]
         expected_partitions = [
             1,
@@ -599,7 +843,7 @@ class TestQNNQuantizedOperator(TestQNN):
         TestQNN.rtol = 1
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -618,6 +862,27 @@ class TestQNNQuantizedOperator(TestQNN):
                     module, sample_input, quant_dtype=QuantDtype.use_16a4w
                 )
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_16a4w_conv2d_qat(self):
+        modules = [Conv2dSingle(), Conv2dSingle(bias=False)]  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                prepared = self.get_prepared_qat_module(module, sample_input)
+                converted = self.get_converted_sgd_trained_module(
+                    module, prepared, sample_input
+                )
+                self.lower_module_and_test_output(converted, sample_input)
+
+    def test_qnn_backend_16a4w_layer_norm(self):
+        module = LayerNorm()  # noqa: F405
+        sample_input = (torch.randn(196, 768),)
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_16a4w,
+        )
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_16a4w_linear(self):
         module = Linear()  # noqa: F405
@@ -652,11 +917,27 @@ class TestQNNQuantizedOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
-    def test_qnn_backend_arange(self):
-        module = Arange(5)  # noqa: F405
-        sample_input = (torch.randn(5),)
+    def test_qnn_backend_abs(self):
+        module = Abs()  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_adaptive_avg_pool2d(self):
+        module = AdaptiveAvgPool2D()  # noqa: F405
+        sample_input = (torch.randn(1, 512, 7, 7),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_arange(self):
+        modules = [
+            Arange(start=1, end=6, step=0.5, dtype=torch.float32),  # noqa: F405
+        ]
+        sample_input = (torch.randn(10),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
         module = AvgPoolModule()  # noqa: F405
@@ -712,6 +993,58 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_channel_last(self):
+        modules = [
+            Conv2dSequential(channel_last=True),  # noqa: F405
+            Conv2dSequential(bias=False, channel_last=True),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv_transpose2d(self):
+        modules = [
+            ConvTranspose2dSingle(),  # noqa: F405
+            ConvTranspose2dSingle(bias=False),  # noqa: F405
+        ]  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cos(self):
+        module = Cos()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_outer_product(self):
+        module = EinsumOuterProduct()  # noqa: F405
+        x = torch.randn(5)
+        y = torch.randn(4)
+        sample_input = (
+            x,
+            y,
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_bilinear(self):
+        module = EinsumBilinear()  # noqa: F405
+        bn = torch.randn(2, 5)
+        anm = torch.randn(3, 5, 4)
+        bm = torch.randn(2, 4)
+        sample_input = (
+            bn,
+            anm,
+            bm,
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_add(self):
         test_comb = [
@@ -835,9 +1168,33 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_equal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: Equal(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: EqualConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
+
     def test_qnn_backend_expand_copy(self):
         module = ExpandCopy()  # noqa: F405
         sample_input = (torch.randn([3, 1]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full_like(self):
+        module = FullLike(0.5)  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -846,6 +1203,50 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_greater_equal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: GreaterEqual(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: GreaterEqualConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
+
+    def test_qnn_backend_greater_than(self):
+        test_comb = [
+            {
+                QCOM_MODULE: GreaterThan(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: GreaterThanConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
+
+    def test_qnn_backend_group_norm(self):
+        modules = [GroupNorm(), GroupNorm(bias=False)]  # noqa: F405
+        sample_input = (torch.randn(3, 32, 56, 56),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
@@ -893,10 +1294,12 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
-        module = LayerNorm()  # noqa: F405
+        modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
         sample_input = (torch.randn(196, 768),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_leaky_relu(self):
         test_comb = [
@@ -919,15 +1322,73 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
+    def test_qnn_backend_less_equal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: LessEqual(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: LessEqualConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
+
+    def test_qnn_backend_less_than(self):
+        test_comb = [
+            {
+                QCOM_MODULE: LessThan(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: LessThanConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
+
     def test_qnn_backend_linear(self):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_linear_qat(self):
+        """
+        Prototype to test qat model
+        """
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        prepared = self.get_prepared_qat_module(module, sample_input)
+        module = self.get_converted_sgd_trained_module(module, prepared, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_log(self):
+        module = Log()  # noqa: F405
+        sample_input = (torch.rand([1, 2, 3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_log_softmax(self):
         module = LogSoftmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_maximum(self):
+        module = Maximum()  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -948,6 +1409,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_mha(self):
         module = MultiheadAttention()  # noqa: F405
         sample_input = (torch.randn(1, 197, 96),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_minimum(self):
+        module = Minimum()  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1002,6 +1469,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_repeat(self):
+        module = Repeat()  # noqa: F405
+        sample_input = (torch.randn([2, 2, 2, 2]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_reshape(self):
         module = Reshape()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
@@ -1044,6 +1517,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_sigmoid(self):
         module = Sigmoid()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sin(self):
+        module = Sin()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1116,7 +1595,7 @@ class TestQNNQuantizedModel(TestQNN):
         TestQNN.rtol = 1
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -1157,6 +1636,12 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_down_up_sample(self):
+        module = Conv2dDownUpSample()  # noqa: F405
+        sample_input = (torch.randn(1, 16, 224, 224),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_max_pool2d(self):
         module = Conv2dMaxPool2d()  # noqa: F405
         sample_input = (torch.rand(1, 2, 14, 14),)
@@ -1166,6 +1651,37 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_conv2d_sum_reduce_dim(self):
         module = Conv2dSumReduceDim()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_topk(self):
+        module = Conv2dTopK()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_einsum_outer_product_relu(self):
+        module = EinsumOuterProductRelu()  # noqa: F405
+        x = torch.randn(5)
+        y = torch.randn(4)
+        sample_input = (
+            x,
+            y,
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.skip("UT pass before QNN 2.26, segfault during partitioner")
+    def test_qnn_backend_moe_feed_forward(self):
+        args = ModelArgs()
+        args.dim = 32
+        args.n_heads = 8
+        args.n_layers = 2
+        self.head_dim = args.dim // args.n_heads
+        module = MOEFeedForward(args)  # noqa: F405
+        sample_input = (
+            torch.randint(low=0, high=100, size=(1, 32), dtype=torch.float32),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1184,6 +1700,12 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_simple_model(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_topk_and_index(self):
+        module = TopKandIndex()  # noqa: F405
+        sample_input = (torch.randn(3, 10),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1235,11 +1757,12 @@ class TestQNNQuantizedModel(TestQNN):
                 QCOM_ANNOTATION: (),
                 QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
-            {
-                QCOM_MODULE: Wav2LetterModel(),
-                QCOM_ANNOTATION: (),
-                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
-            },
+            # Encountered undefined symbol in mainline. Reopen once resolved.
+            # {
+            #     QCOM_MODULE: Wav2LetterModel(),
+            #     QCOM_ANNOTATION: (),
+            #     QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
+            # },
         ]
         expected_partitions = [
             1,
@@ -1252,7 +1775,7 @@ class TestQNNQuantizedModel(TestQNN):
             # For MobileBertModelExample
             # 1,
             1,
-            1,
+            # 1, For Wav2LetterModel
         ]
         # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
         disable_validation()
@@ -1281,7 +1804,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         TestQNN.rtol = 1e-1
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -1290,7 +1813,7 @@ class TestQNNFloatingPointUtils(TestQNN):
     def test_qnn_backend_dump_intermediate_outputs(self):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             dump_intermediate_outputs=True,
         )
@@ -1323,6 +1846,24 @@ class TestQNNFloatingPointUtils(TestQNN):
             skip_node_op_set={"aten.add.Tensor"},
         )
 
+    def test_qnn_backend_spill_fill_buffer_size(self):
+        module = LargeTensorLinear()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 512),)
+        edge_prog = capture_program(module, sample_input)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        partitioner = QnnPartitioner(compiler_specs)
+        edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
+        max_sf_size = update_spill_fill_size(edge_prog.exported_program)
+        self.assertNotEqual(0, max_sf_size)
+
     def test_qnn_backend_multi_contexts(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -1335,12 +1876,12 @@ class TestQNNFloatingPointUtils(TestQNN):
             use_multi_contexts=True,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
         edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
-        canonicalize_program(edge_prog.exported_program)
+        update_spill_fill_size(edge_prog.exported_program)
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -1351,7 +1892,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             use_multi_contexts=True,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         module = CompositeDelegateModule(  # noqa: F405
@@ -1362,17 +1903,61 @@ class TestQNNFloatingPointUtils(TestQNN):
         )
         sample_input = module.get_random_input()
         edge_prog = to_edge(
-            torch.export.export(module, sample_input),
+            torch.export.export(module, sample_input, strict=True),
         )
-        canonicalize_program(edge_prog.exported_program())
+        update_spill_fill_size(edge_prog.exported_program())
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
+
+    def test_qnn_backend_multi_graphs(self):
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+
+        seq_conv = Conv2dSequential()  # noqa: F405
+        # weight sharing
+        modules = [seq_conv, seq_conv.second]
+        sample_inputs = [(torch.randn([1, 1, 3, 3]),), (torch.randn([1, 3, 3, 3]),)]
+        graph_names = ["seq_conv", "single_conv"]
+        edge_progs = [
+            capture_program(module, sample_input)
+            for module, sample_input in zip(modules, sample_inputs)
+        ]
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+        )
+        compiler_specs = [
+            generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.model],
+                backend_options=backend_options,
+                multiple_graphs=True,
+                graph_name=graph_name,
+            )
+            for graph_name in graph_names
+        ]
+        exported_programs = [
+            to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
+            for i, edge_prog in enumerate(edge_progs)
+        ]
+        prog_mgr, _ = generate_multi_graph_program(
+            compiler_specs=compiler_specs[0],
+            processed_bytes=[
+                prog.graph_module.lowered_module_0.processed_bytes
+                for prog in exported_programs
+            ],
+        )
+        for index, module in enumerate(modules):
+            self.verify_output(
+                module=module,
+                sample_inputs=sample_inputs[index],
+                executorch_prog=prog_mgr,
+                method_index=index,
+            )
 
     def test_qnn_backend_profile_op(self):
         TestQNN.enable_profile = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             profile=True,
         )
@@ -1391,7 +1976,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             use_fp16=True,
         )
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             shared_buffer=True,
         )
@@ -1406,7 +1991,7 @@ class TestQNNFloatingPointUtils(TestQNN):
     def test_qnn_backend_online_prepare(self):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             online_prepare=True,
         )
@@ -1414,7 +1999,6 @@ class TestQNNFloatingPointUtils(TestQNN):
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.skip("segfault happens in recent torch.export.export")
     def test_qnn_backend_context_direct(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             module = ContextBinaryExample()  # noqa: F405
@@ -1426,23 +2010,164 @@ class TestQNNFloatingPointUtils(TestQNN):
             )
             ctx_path = f"{tmp_dir}/model_ctx.bin"
             bundle_program = from_context_binary(ctx_path, "ctx_loader")
-            backend_options = generate_htp_compiler_spec(use_fp16=True)
-            compiler_specs = generate_qnn_executorch_compiler_spec(
-                soc_model=self.arch_table[TestQNN.model],
-                backend_options=backend_options,
-                is_from_context_binary=True,
-            )
-            lowered_module = to_backend(
-                "QnnBackend", bundle_program["edge_program"], compiler_specs
-            )
             self.verify_output(
                 module,
                 tuple(
                     torch.randn(size=v.shape, dtype=v.dtype)
                     for v in bundle_program["inputs"].values()
                 ),
-                lowered_module,
+                bundle_program["edge_program_manager"].to_executorch(),
             )
+
+    def test_qnn_backend_draw_graph(self):
+        golden_data = """digraph test {
+            rankdir=TB
+            input_0_x_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightgreen">name: input_0_x_0</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            p_conv2_weight_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: p_conv2_weight_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [3, 3, 32, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            p_conv2_bias_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: p_conv2_bias_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_convolution_default_1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_convolution_default_1_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_relu_default_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_relu_default_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_relu_default_1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_relu_default_1_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            output_aten_add_tensor_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightgreen">name: output_aten_add_tensor_0</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            p_conv1_weight_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: p_conv1_weight_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [3, 3, 32, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            p_conv1_bias_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: p_conv1_bias_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_convolution_default_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_convolution_default_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            input_0_x_0 -> aten_convolution_default_1_0
+            p_conv2_weight_0 -> aten_convolution_default_1_0
+            p_conv2_bias_0 -> aten_convolution_default_1_0
+            aten_convolution_default_0 -> aten_relu_default_0
+            input_0_x_0 -> aten_convolution_default_0
+            p_conv1_weight_0 -> aten_convolution_default_0
+            p_conv1_bias_0 -> aten_convolution_default_0
+            aten_convolution_default_1_0 -> aten_relu_default_1_0
+            aten_relu_default_0 -> output_aten_add_tensor_0
+            aten_relu_default_1_0 -> output_aten_add_tensor_0
+        }
+        """
+        module = DrawGraphModel()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        delegated_program = capture_program(module, sample_input)
+
+        """
+        This piece of code simulates the behavior of the final preprocessing step to obtain the op wrapper list.
+        In practice, users need to set a breakpoint in the preprocessing step and use the DrawGraph tool to visualize the graph.
+        """
+        qnn_compiler_passes = PassManager(
+            passes=[
+                InsertRequantize(delegated_program.exported_program),
+                InsertIOQDQ(delegated_program.exported_program),
+                LayoutTransform(
+                    delegated_program.exported_program, insert_permute=True
+                ),
+                FuseConsecutiveTranspose(),
+            ]
+        )
+
+        pass_result = qnn_compiler_passes(
+            delegated_program.exported_program.graph_module
+        )
+        nodes_to_wrappers = defaultdict(dict)
+        node_visitors = get_node_visitors(
+            delegated_program.exported_program, enable_tensor_dump=False
+        )
+
+        py_op_wrapper_list = []
+        for node in pass_result.graph_module.graph.nodes:
+            if node.op == "call_function":
+                if node.target.__name__ in node_visitors:
+                    py_op_wrapper = node_visitors[node.target.__name__].define_node(
+                        node, nodes_to_wrappers
+                    )
+                    if py_op_wrapper is not None:
+                        if isinstance(py_op_wrapper, List):
+                            py_op_wrapper_list.extend(py_op_wrapper)
+                        else:
+                            py_op_wrapper_list.append(py_op_wrapper)
+                elif node.op in [
+                    "get_attr",
+                    "placeholder",
+                    "output",
+                ]:
+                    continue
+        # random py_op_wrapper_list to check it's correctness
+        random.shuffle(py_op_wrapper_list)
+        DrawGraph("test", ".", py_op_wrapper_list, dot_string=True)
+        test_file = os.path.join(".", "test.dot")
+        with open(test_file, "r") as test:
+            test_data = test.read()
+        assert sorted(golden_data.split()) == sorted(
+            test_data.split()
+        ), "Generated .dot file does not match the golden file."
 
 
 class TestQNNQuantizedUtils(TestQNN):
@@ -1452,7 +2177,7 @@ class TestQNNQuantizedUtils(TestQNN):
         TestQNN.rtol = 1
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -1461,7 +2186,7 @@ class TestQNNQuantizedUtils(TestQNN):
     def test_qnn_backend_dump_intermediate_outputs(self):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             dump_intermediate_outputs=True,
         )
@@ -1495,7 +2220,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_fp16=False,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
@@ -1518,7 +2243,7 @@ class TestQNNQuantizedUtils(TestQNN):
         self.assertEqual(len(exported_progs), 1)
         # lower all graph again, the skipped operators will be left in CPU
         exec_prog = to_edge(
-            torch.export.export(graph_module, sample_input),
+            torch.export.export(graph_module, sample_input, strict=True),
         ).to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -1542,7 +2267,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_fp16=False,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
@@ -1565,9 +2290,28 @@ class TestQNNQuantizedUtils(TestQNN):
         self.assertEqual(len(exported_progs), 2)
         # lower all graph again, the skipped operators will be left in CPU
         exec_prog = exec_prog = to_edge(
-            torch.export.export(graph_module, sample_input),
+            torch.export.export(graph_module, sample_input, strict=True),
         ).to_executorch()
         self.verify_output(module, sample_input, exec_prog)
+
+    def test_qnn_backend_spill_fill_buffer_size(self):
+        module = LargeTensorLinear()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 512),)
+        module = self.get_qdq_module(module, sample_input)
+        edge_prog = capture_program(module, sample_input)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        partitioner = QnnPartitioner(compiler_specs)
+        edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
+        max_sf_size = update_spill_fill_size(edge_prog.exported_program)
+        self.assertNotEqual(0, max_sf_size)
 
     def test_qnn_backend_graph_level_mixed_precision(self):
         module = SimpleModel()  # noqa: F405
@@ -1578,7 +2322,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_fp16=False,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
@@ -1602,7 +2346,7 @@ class TestQNNQuantizedUtils(TestQNN):
         self.assertEqual(len(exported_progs), 5)
         # lower all graph again, the skipped operators will be delegated with fp16
         exec_prog = to_edge(
-            torch.export.export(graph_module, sample_input),
+            torch.export.export(graph_module, sample_input, strict=True),
         ).to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -1619,12 +2363,12 @@ class TestQNNQuantizedUtils(TestQNN):
             use_multi_contexts=True,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         partitioner = QnnPartitioner(compiler_specs)
         edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
-        canonicalize_program(edge_prog.exported_program)
+        update_spill_fill_size(edge_prog.exported_program)
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module, sample_input, exec_prog)
 
@@ -1635,7 +2379,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_multi_contexts=True,
         )
         compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
         )
         module = CompositeDelegateModule(  # noqa: F405
@@ -1647,17 +2391,61 @@ class TestQNNQuantizedUtils(TestQNN):
         )
         sample_input = module.get_random_input()
         edge_prog = to_edge(
-            torch.export.export(module, sample_input),
+            torch.export.export(module, sample_input, strict=True),
         )
-        canonicalize_program(edge_prog.exported_program())
+        update_spill_fill_size(edge_prog.exported_program())
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
+
+    def test_qnn_backend_multi_graphs(self):
+        if self.enable_x86_64:
+            self.skipTest("weight sharing is not supported on host machine")
+
+        seq_conv = Conv2dSequential()  # noqa: F405
+        # weight sharing
+        modules = [seq_conv, seq_conv.second]
+        sample_inputs = [(torch.randn([1, 1, 3, 3]),), (torch.randn([1, 3, 3, 3]),)]
+        graph_names = ["seq_conv", "single_conv"]
+        edge_progs = [
+            capture_program(self.get_qdq_module(module, sample_input), sample_input)
+            for module, sample_input in zip(modules, sample_inputs)
+        ]
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+        )
+        compiler_specs = [
+            generate_qnn_executorch_compiler_spec(
+                soc_model=self.chipset_table[TestQNN.model],
+                backend_options=backend_options,
+                multiple_graphs=True,
+                graph_name=graph_name,
+            )
+            for graph_name in graph_names
+        ]
+        exported_programs = [
+            to_backend(edge_prog.exported_program, QnnPartitioner(compiler_specs[i]))
+            for i, edge_prog in enumerate(edge_progs)
+        ]
+        prog_mgr, _ = generate_multi_graph_program(
+            compiler_specs=compiler_specs[0],
+            processed_bytes=[
+                prog.graph_module.lowered_module_0.processed_bytes
+                for prog in exported_programs
+            ],
+        )
+        for index, module in enumerate(modules):
+            self.verify_output(
+                module=module,
+                sample_inputs=sample_inputs[index],
+                executorch_prog=prog_mgr,
+                method_index=index,
+            )
 
     def test_qnn_backend_profile_op(self):
         TestQNN.enable_profile = True
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             profile=True,
         )
@@ -1677,7 +2465,7 @@ class TestQNNQuantizedUtils(TestQNN):
             use_fp16=False,
         )
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             shared_buffer=True,
         )
@@ -1693,7 +2481,7 @@ class TestQNNQuantizedUtils(TestQNN):
     def test_qnn_backend_online_prepare(self):
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            soc_model=self.arch_table[TestQNN.model],
+            soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
             online_prepare=True,
         )
@@ -1702,7 +2490,6 @@ class TestQNNQuantizedUtils(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.skip("segfault happens in recent torch.export.export")
     def test_qnn_backend_context_direct(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             module = ContextBinaryExample()  # noqa: F405
@@ -1714,23 +2501,183 @@ class TestQNNQuantizedUtils(TestQNN):
             )
             ctx_path = f"{tmp_dir}/model_ctx.bin"
             bundle_program = from_context_binary(ctx_path, "ctx_loader")
-            backend_options = generate_htp_compiler_spec(use_fp16=False)
-            compiler_specs = generate_qnn_executorch_compiler_spec(
-                soc_model=self.arch_table[TestQNN.model],
-                backend_options=backend_options,
-                is_from_context_binary=True,
-            )
-            lowered_module = to_backend(
-                "QnnBackend", bundle_program["edge_program"], compiler_specs
-            )
             self.verify_output(
                 module,
                 tuple(
                     torch.randn(size=v.shape, dtype=v.dtype)
                     for v in bundle_program["inputs"].values()
                 ),
-                lowered_module,
+                bundle_program["edge_program_manager"].to_executorch(),
             )
+
+    def test_qnn_backend_draw_graph(self):
+        golden_data = """digraph test {
+            rankdir=TB
+            aten_convolution_default_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_convolution_default_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_relu_default_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_relu_default_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            quantized_decomposed_quantize_per_tensor_default_8_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: quantized_decomposed_quantize_per_tensor_default_8_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 32, 28, 28]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            b__frozen_param2_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: b__frozen_param2_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [3, 3, 32, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            b__frozen_param3_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: b__frozen_param3_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_convolution_default_1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_convolution_default_1_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_relu_default_1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_relu_default_1_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            aten_add_tensor_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="white">name: aten_add_tensor_0</TD></TR>
+                        <TR><TD BGCOLOR="white">data_type: Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="white">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE</TD></TR>
+                        <TR><TD BGCOLOR="white">dims: [1, 28, 28, 32]</TD></TR>
+                        <TR><TD BGCOLOR="white">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            output_quantized_decomposed_dequantize_per_tensor_tensor_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightgreen">name: output_quantized_decomposed_dequantize_per_tensor_tensor_0</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 32, 28, 28]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            input_0_x_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightgreen">name: input_0_x_0</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">data_type: Qnn_DataType_t.QNN_DATATYPE_FLOAT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">dims: [1, 32, 28, 28]</TD></TR>
+                        <TR><TD BGCOLOR="lightgreen">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            b__frozen_param0_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: b__frozen_param0_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_8</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [3, 3, 32, 32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            b__frozen_param1_0 [label=<
+                        <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+                        <TR><TD BGCOLOR="lightpink">name: b__frozen_param1_0</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">data_type: Qnn_DataType_t.QNN_DATATYPE_SFIXED_POINT_32</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">tensor_type: Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">dims: [32]</TD></TR>
+                        <TR><TD BGCOLOR="lightpink">quantization_encoding: Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET</TD></TR>
+                    </TABLE>> color=black fillcolor=transparent shape=box style=rounded]
+            quantized_decomposed_quantize_per_tensor_default_8_0 -> aten_convolution_default_0
+            input_0_x_0 -> quantized_decomposed_quantize_per_tensor_default_8_0
+            b__frozen_param0_0 -> aten_convolution_default_0
+            b__frozen_param1_0 -> aten_convolution_default_0
+            aten_convolution_default_0 -> aten_relu_default_0
+            quantized_decomposed_quantize_per_tensor_default_8_0 -> aten_convolution_default_1_0
+            b__frozen_param2_0 -> aten_convolution_default_1_0
+            b__frozen_param3_0 -> aten_convolution_default_1_0
+            aten_convolution_default_1_0 -> aten_relu_default_1_0
+            aten_relu_default_0 -> aten_add_tensor_0
+            aten_relu_default_1_0 -> aten_add_tensor_0
+            aten_add_tensor_0 -> output_quantized_decomposed_dequantize_per_tensor_tensor_0
+        }
+        """
+        module = DrawGraphModel()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        module = self.get_qdq_module(module, sample_input)
+        delegated_program = capture_program(module, sample_input)
+
+        """
+        This piece of code simulates the behavior of the final preprocessing step to obtain the op wrapper list.
+        In practice, users need to set a breakpoint in the preprocessing step and use the DrawGraph tool to visualize the graph.
+        """
+        qnn_compiler_passes = PassManager(
+            passes=[
+                InsertRequantize(delegated_program.exported_program),
+                InsertIOQDQ(delegated_program.exported_program),
+                LayoutTransform(
+                    delegated_program.exported_program, insert_permute=True
+                ),
+                FuseConsecutiveTranspose(),
+            ]
+        )
+
+        pass_result = qnn_compiler_passes(
+            delegated_program.exported_program.graph_module
+        )
+        nodes_to_wrappers = defaultdict(dict)
+        node_visitors = get_node_visitors(
+            delegated_program.exported_program, enable_tensor_dump=False
+        )
+
+        py_op_wrapper_list = []
+        for node in pass_result.graph_module.graph.nodes:
+            if node.op == "call_function":
+                if node.target.__name__ in node_visitors:
+                    py_op_wrapper = node_visitors[node.target.__name__].define_node(
+                        node, nodes_to_wrappers
+                    )
+                    if py_op_wrapper is not None:
+                        if isinstance(py_op_wrapper, List):
+                            py_op_wrapper_list.extend(py_op_wrapper)
+                        else:
+                            py_op_wrapper_list.append(py_op_wrapper)
+                elif node.op in [
+                    "get_attr",
+                    "placeholder",
+                    "output",
+                ]:
+                    continue
+        # random py_op_wrapper_list to check it's correctness
+        random.shuffle(py_op_wrapper_list)
+        DrawGraph("test", ".", py_op_wrapper_list, dot_string=True)
+        test_file = os.path.join(".", "test.dot")
+        with open(test_file, "r") as test:
+            test_data = test.read()
+        assert sorted(golden_data.split()) == sorted(
+            test_data.split()
+        ), "Generated .dot file does not match the golden file."
 
 
 class TestExampleOssScript(TestQNN):
@@ -1743,6 +2690,155 @@ class TestExampleOssScript(TestQNN):
                 *conditions,
             ]
         )
+
+    def test_conv_former(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/conv_former.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
+
+    def test_dino_v2(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/dino_v2.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_5"], 85)
+
+    def test_esrgan(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/esrgan.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--default_dataset",
+            "--oss_repo",
+            self.oss_repo,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["PSNR"], 24)
+                self.assertGreaterEqual(msg["SSIM"], 0.8)
+
+    def test_fastvit(self):
+        if not self.required_envs(
+            [self.image_dataset, self.pretrained_weight, self.oss_repo]
+        ):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/fastvit.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--oss_repo",
+            self.oss_repo,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
 
     def test_fbnet(self):
         if not self.required_envs([self.image_dataset]):
@@ -1856,6 +2952,77 @@ class TestExampleOssScript(TestQNN):
                     self.assertGreaterEqual(msg["top_1"], 60)
                     self.assertGreaterEqual(msg["top_5"], 85)
 
+    def test_retinanet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/retinanet.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--dataset",
+            self.image_dataset,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["mAP"], 0.6)
+
+    def test_squeezenet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/squeezenet.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 45)
+                self.assertGreaterEqual(msg["top_5"], 70)
+
     def test_ssd300_vgg16(self):
         if not self.required_envs([self.pretrained_weight, self.oss_repo]):
             self.skipTest("missing required envs")
@@ -1893,117 +3060,8 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["mAP"], 0.70)
 
-    def test_dino_v2(self):
-        if not self.required_envs([self.image_dataset]):
-            self.skipTest("missing required envs")
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/dino_v2.py",
-            "--dataset",
-            self.image_dataset,
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["top_1"], 70)
-                self.assertGreaterEqual(msg["top_5"], 85)
-
-    def test_esrgan(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/esrgan.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--default_dataset",
-            "--oss_repo",
-            self.oss_repo,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["PSNR"], 24)
-                self.assertGreaterEqual(msg["SSIM"], 0.8)
-
-    def test_squeezenet(self):
-        if not self.required_envs([self.image_dataset]):
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/squeezenet.py",
-            "--dataset",
-            self.image_dataset,
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["top_1"], 40)
-                self.assertGreaterEqual(msg["top_5"], 70)
-
 
 class TestExampleQaihubScript(TestQNN):
-
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
         return all(
@@ -2523,7 +3581,7 @@ class TestExampleScript(TestQNN):
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama2/llama.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -2550,6 +3608,8 @@ class TestExampleScript(TestQNN):
             "16a4w",
             "--temperature",
             "0",
+            "--llama_model",
+            "stories110m",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
@@ -2648,6 +3708,45 @@ class TestExampleScript(TestQNN):
                 cpu, htp = msg["CPU"], msg["HTP"]
                 for k, v in cpu.items():
                     self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
+
+    @unittest.skip("encountered undefined symbol in mainline, reopen once resolved")
+    def test_wav2letter(self):
+        if not self.required_envs([self.pretrained_weight]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/wav2letter.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wer"], 0.5)
+                self.assertLessEqual(msg["cer"], 0.25)
 
     def test_export_example(self):
         if not self.required_envs([self.model_name]):

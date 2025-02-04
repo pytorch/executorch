@@ -7,9 +7,12 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 QnnContext::~QnnContext() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
@@ -42,11 +45,12 @@ Error QnnContext::Configure() {
   if (cache_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
     const QnnExecuTorchContextBinary& qnn_context_blob =
         cache_->GetQnnContextBlob();
+
     error = qnn_interface.qnn_context_create_from_binary(
         backend_->GetHandle(),
         device_->GetHandle(),
         temp_context_config.empty() ? nullptr : temp_context_config.data(),
-        qnn_context_blob.buffer,
+        static_cast<uint8_t*>(qnn_context_blob.buffer),
         qnn_context_blob.nbytes,
         &handle_,
         /*profile=*/nullptr);
@@ -89,9 +93,17 @@ Error QnnContext::GetContextBinary(
   Qnn_ErrorHandle_t error =
       qnn_interface.qnn_context_get_binary_size(handle_, &binary_size);
   if (error == QNN_SUCCESS) {
-    binary_buffer_.reserve(binary_size);
+    // create our own protocol here
+    qnn_context_custom_protocol_ = QnnContextCustomProtocol(binary_size);
+    qnn_context_custom_protocol_.BuildContextCustomBuffer();
+    auto [context_buffer_ptr, context_buffer_size] =
+        qnn_context_custom_protocol_.GetCustomProtocolBuffer();
     error = qnn_interface.qnn_context_get_binary(
-        handle_, binary_buffer_.data(), binary_size, &bytes_written);
+        handle_,
+        static_cast<uint8_t*>(context_buffer_ptr) +
+            qnn_context_custom_protocol_.GetContextBinaryOffset(),
+        binary_size,
+        &bytes_written);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Can't get graph binary to be saved to "
@@ -107,8 +119,9 @@ Error QnnContext::GetContextBinary(
             binary_size);
         return Error::Internal;
       }
-      qnn_executorch_context_binary.buffer = binary_buffer_.data();
-      qnn_executorch_context_binary.nbytes = bytes_written;
+
+      qnn_executorch_context_binary.buffer = context_buffer_ptr;
+      qnn_executorch_context_binary.nbytes = context_buffer_size;
     }
   } else {
     QNN_EXECUTORCH_LOG_ERROR(
@@ -120,5 +133,5 @@ Error QnnContext::GetContextBinary(
   return Error::Ok;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

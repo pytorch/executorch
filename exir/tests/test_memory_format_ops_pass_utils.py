@@ -8,10 +8,12 @@
 
 import unittest
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Any, Dict, List, Tuple
 
 import torch
-from executorch.exir import to_edge
+
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir.capture._config import EdgeCompileConfig
 
 from executorch.exir.dim_order_utils import (
@@ -24,12 +26,29 @@ from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
 
 
+MemoryFormatOps2Str: Dict[torch._ops.OpOverload, List[str]] = {
+    torch.ops.aten._to_copy.default: (
+        "torch.ops.aten._to_copy.default",
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default",
+    ),
+    torch.ops.aten.empty.memory_format: (
+        "torch.ops.aten.empty.memory_format",
+        "executorch_exir_dialects_edge__ops_dim_order_ops__empty_dim_order_default",
+    ),
+}
+
+
 @dataclass
 class MemoryFormatTestSet:
     module: torch.nn.Module
     sample_input: Tuple[Any, ...]
     target_memory_format: torch.memory_format
+    op: torch._ops.OpOverload
     _load_for_executorch_from_buffer: Any
+    op_level_check: bool = True
+    use_xnnpack: bool = False
+    rtol: float = 1e-05
+    atol: float = 1e-08
 
 
 class SimpleToCopyContiguousModule(torch.nn.Module):
@@ -48,6 +67,28 @@ class SimpleToCopyChannelsLastModule(torch.nn.Module):
         return x.to(dtype=torch.double, memory_format=torch.channels_last)
 
 
+class SimpleEmptyContiguoustModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        empty_tensor = torch.empty(x.size(), memory_format=torch.contiguous_format)
+        x = x.to(memory_format=torch.contiguous_format)
+        empty_tensor.copy_(x)
+        return empty_tensor
+
+
+class SimpleEmptyChannelLastModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        empty_tensor = torch.empty(x.size(), memory_format=torch.channels_last)
+        x = x.to(memory_format=torch.channels_last)
+        empty_tensor.copy_(x)
+        return empty_tensor
+
+
 class PropagateToCopyChannalsLastModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -63,27 +104,42 @@ class MemoryFormatOpsPassTestUtils:
     def memory_format_test_runner(
         test_class: unittest.TestCase, test_set: MemoryFormatTestSet
     ):
-        aten_op_str = "torch.ops.aten._to_copy.default"
-        edge_op_str = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+        before = export(
+            test_set.module, test_set.sample_input, strict=True
+        ).run_decompositions({})
 
-        before = export(test_set.module, test_set.sample_input)
+        if test_set.use_xnnpack:
+            epm = to_edge_transform_and_lower(
+                before,
+                compile_config=EdgeCompileConfig(
+                    _skip_dim_order=False, _check_ir_validity=False
+                ),
+                partitioner=[XnnpackPartitioner()],
+            )
+        else:
+            epm = to_edge(
+                before, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+            )
 
-        # check op strings before
-        FileCheck().check_count(aten_op_str, 1, exactly=True).check_not(
-            edge_op_str
-        ).run(before.graph_module.code)
+        # check memory format ops, if needed
+        if test_set.op_level_check:
+            aten_op_str, edge_op_str = MemoryFormatOps2Str[test_set.op]
+            # check op strings before
+            FileCheck().check_count(aten_op_str, 1, exactly=True).check_not(
+                edge_op_str
+            ).run(before.graph_module.code)
 
-        epm = to_edge(before, compile_config=EdgeCompileConfig(_skip_dim_order=False))
-
-        # check op strings
-        FileCheck().check_not(aten_op_str).check_count(
-            edge_op_str, 1, exactly=True
-        ).run(epm.exported_program().graph_module.code)
+            # check op strings
+            FileCheck().check_not(aten_op_str).check_count(
+                edge_op_str, 1, exactly=True
+            ).run(epm.exported_program().graph_module.code)
 
         # check EdgeOp and the new BackendOp should behave the same
         expected = before.module()(*test_set.sample_input)
         actual = epm.exported_program().module()(*test_set.sample_input)
-        test_class.assertTrue(torch.allclose(actual, expected))
+        test_class.assertTrue(
+            torch.allclose(actual, expected, atol=test_set.atol, rtol=test_set.rtol)
+        )
         test_class.assertEqual(
             is_channel_last_dim_order(actual),
             is_channel_last_dim_order(expected),
@@ -105,7 +161,12 @@ class MemoryFormatOpsPassTestUtils:
         runtime_output = executorch_module.run_method(
             "forward", tuple(inputs_flattened)
         )[0]
-        test_class.assertTrue(torch.allclose(runtime_output, expected))
+
+        test_class.assertTrue(
+            torch.allclose(
+                runtime_output, expected, atol=test_set.atol, rtol=test_set.rtol
+            )
+        )
         test_class.assertEqual(
             is_channel_last_dim_order(runtime_output),
             is_channel_last_dim_order(expected),

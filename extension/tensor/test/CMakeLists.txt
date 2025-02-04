@@ -14,18 +14,12 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(extension_tensor_test)
-
-# Use C++17 for test.
-set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_test_srcs tensor_impl_ptr_test.cpp tensor_ptr_maker_test.cpp
-               tensor_ptr_test.cpp
-)
+set(_test_srcs tensor_ptr_maker_test.cpp tensor_ptr_test.cpp)
 
 et_cxx_test(
   extension_tensor_test SOURCES ${_test_srcs} EXTRA_LIBS extension_tensor

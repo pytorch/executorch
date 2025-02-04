@@ -318,9 +318,9 @@ def export_to_et_ir(
         max_num_token, max_cache_size, True
     )
     print("Getting pre autograd ATen Dialect Graph")
-    pre_autograd_aten_dialect = torch._export.capture_pre_autograd_graph(
+    pre_autograd_aten_dialect = torch.export.export_for_training(
         model, example_inputs, dynamic_shapes=dynamic_shapes
-    )  # NOTE: Will be replaced with export
+    ).module()  # NOTE: Will be replaced with export
     quantizer = NeuropilotQuantizer()
     quantizer.setup_precision(getattr(Precision, precision))
     prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)
@@ -338,7 +338,7 @@ def export_to_et_ir(
         print(f"Exporting Shape {shape} to:\n{dest_path}")
         example_inputs = model.get_example_inputs(*ntok_and_cache)
         aten_dialect: exir.ExportedProgram = torch.export.export(
-            converted_graph, example_inputs
+            converted_graph, example_inputs, strict=True
         )
 
         print("Lowering to Edge Dialect Graph")
@@ -419,6 +419,9 @@ def main():
     print(f"Max Num Token: {max_num_token}")
     print(f"Max Cache Size: {max_cache_size}")
 
+    if args.dataset is not None:
+        embedding_layer = get_embedding_layer(config, weight_dir, state_dict)
+
     # Instantiate model chunks
     print("Instantiating submodels")
     models = []
@@ -437,7 +440,6 @@ def main():
     cal_dataset = None
     if args.dataset is not None:
         cal_dataset = load_dataset("text", data_files=args.dataset, split="train")
-        embedding_layer = get_embedding_layer(config, weight_dir, state_dict)
         master_rot_emb = get_master_rot_emb(config, dtype=torch.float32)
         if args.preformatter is not None:
             cal_dataset = cal_dataset.map(

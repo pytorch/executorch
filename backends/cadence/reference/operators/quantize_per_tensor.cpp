@@ -13,9 +13,9 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
-using ScalarType = exec_aten::ScalarType;
 
 // Quantize the input tensor (PT2 version). Note that quant_<min,max> are not
 // used in any computation.
@@ -39,12 +39,25 @@ void quantize_per_tensor_out(
     int8_t* out_data = out.mutable_data_ptr<int8_t>();
     impl::reference::kernels::quantize<int8_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
+  } else if (
+      out.scalar_type() == ScalarType::Bits16 ||
+      out.scalar_type() == ScalarType::UInt16) {
+    uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
+    impl::reference::kernels::quantize<uint16_t>(
+        out_data, input_data, 1. / scale, zero_point, numel);
+  } else if (out.scalar_type() == ScalarType::Short) {
+    int16_t* out_data = out.mutable_data_ptr<int16_t>();
+    impl::reference::kernels::quantize<int16_t>(
+        out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Int) {
     int32_t* out_data = out.mutable_data_ptr<int32_t>();
     impl::reference::kernels::quantize<int32_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else {
-    ET_CHECK_MSG(false, "Unhandled input dtype %hhd", out.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unhandled input dtype %hhd",
+        static_cast<int8_t>(out.scalar_type()));
   }
 }
 

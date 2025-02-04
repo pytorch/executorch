@@ -425,12 +425,15 @@ class CoreMLBackend(BackendDetails):
             CoreMLBackend.op_linear_quantizer_config_from_compile_specs(compile_specs)
         )
 
+        # Load the model if MODEL_TYPE is 'COMPILED_MODEL'. This step is necessary because
+        # get_compiled_model_path() requires a loaded model.
+        skip_model_load = model_type != CoreMLBackend.MODEL_TYPE.COMPILED_MODEL
         mlmodel = ct.convert(
             model=edge_program,
             source="pytorch",
             convert_to="mlprogram",
             pass_pipeline=ct.PassPipeline.DEFAULT,
-            skip_model_load=True,
+            skip_model_load=skip_model_load,
             compute_precision=model_compute_precision,
             minimum_deployment_target=minimum_deployment_target,
             compute_units=compute_units,

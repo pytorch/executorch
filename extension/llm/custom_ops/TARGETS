@@ -23,6 +23,19 @@ runtime.python_test(
 )
 
 runtime.python_test(
+    name = "test_update_cache",
+    srcs = [
+        "test_update_cache.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_test(
     name = "test_preprocess_custom_ops",
     srcs = [
         "test_preprocess_custom_ops.py",

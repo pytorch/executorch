@@ -2,8 +2,7 @@
 
 **Author:** [Jacob Szwejbka](https://github.com/JacobSzwejbka)
 
-In this tutorial, we will cover the APIs to load an ExecuTorch model,
-prepare the MemoryManager, set inputs, execute the model, and retrieve outputs.
+In this tutorial, we will cover how to run an ExecuTorch model in C++ using the more detailed, lower-level APIs: prepare the `MemoryManager`, set inputs, execute the model, and retrieve outputs. However, if you’re looking for a simpler interface that works out of the box, consider trying the [Module Extension Tutorial](extension-module.md).
 
 For a high level overview of the ExecuTorch Runtime please see [Runtime Overview](runtime-overview.md), and for more in-depth documentation on
 each API please see the [Runtime API Reference](executorch-runtime-api-reference.rst).
@@ -24,14 +23,25 @@ Users can define their own `DataLoader`s to fit the needs of their particular sy
 For the `FileDataLoader` all we need to do is provide a file path to the constructor.
 
 ``` cpp
-using namespace torch::executor;
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
+using executorch::extension::FileDataLoader;
+using executorch::extension::MallocMemoryAllocator;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
 
-Result<util::FileDataLoader> loader =
-        util::FileDataLoader::from("/tmp/model.pte");
+Result<FileDataLoader> loader =
+        FileDataLoader::from("/tmp/model.pte");
 assert(loader.ok());
 
-Result<Program> program =
-      torch::executor::Program::load(&loader.get());
+Result<Program> program = Program::load(&loader.get());
 assert(program.ok());
 ```
 
@@ -48,14 +58,13 @@ One of the principles of ExecuTorch is giving users control over where the memor
 For this example we will retrieve the size of the planned memory arenas dynamically from the `Program`, but for heapless environments users could retrieve this information from the `Program` ahead of time and allocate the arena statically. We will also be using a malloc based allocator for the method allocator.
 
 ``` cpp
-
-// Method names map back to Python nn.Module method names. Most users will only have the singular method "forward".
+// Method names map back to Python nn.Module method names. Most users will only
+// have the singular method "forward".
 const char* method_name = "forward";
 
 // MethodMeta is a lightweight structure that lets us gather metadata
-// information about a specific method. In this case we are looking to
-// get the required size of the memory planned buffers for the method
-// "forward".
+// information about a specific method. In this case we are looking to get the
+// required size of the memory planned buffers for the method "forward".
 Result<MethodMeta> method_meta = program->method_meta(method_name);
 assert(method_meta.ok());
 
@@ -64,7 +73,8 @@ std::vector<Span<uint8_t>> planned_arenas; // Passed to the allocator
 
 size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
 
-// It is possible to have multiple layers in our memory hierarchy; for example, SRAM and DRAM.
+// It is possible to have multiple layers in our memory hierarchy; for example,
+// SRAM and DRAM.
 for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
   // .get() will always succeed because id < num_memory_planned_buffers.
   size_t buffer_size =
@@ -75,12 +85,12 @@ for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
 HierarchicalAllocator planned_memory(
     {planned_arenas.data(), planned_arenas.size()});
 
-// Version of MemoryAllocator that uses malloc to handle allocations
-// rather then a fixed buffer.
-util::MallocMemoryAllocator method_allocator;
+// Version of MemoryAllocator that uses malloc to handle allocations rather then
+// a fixed buffer.
+MallocMemoryAllocator method_allocator;
 
-// Assemble all of the allocators into the MemoryManager that the Executor
-// will use.
+// Assemble all of the allocators into the MemoryManager that the Executor will
+// use.
 MemoryManager memory_manager(&method_allocator, &planned_memory);
 ```
 
@@ -142,5 +152,4 @@ assert(output.isTensor());
 
 ## Conclusion
 
-In this tutorial, we went over the APIs and steps required to load and perform an inference with an ExecuTorch model in C++.
-Also, check out the [Simplified Runtime APIs Tutorial](extension-module.md).
+This tutorial demonstrated how to run an ExecuTorch model using low-level runtime APIs, which offer granular control over memory management and execution. However, for most use cases, we recommend using the Module APIs, which provide a more streamlined experience without sacrificing flexibility. For more details, check out the [Module Extension Tutorial](extension-module.md).

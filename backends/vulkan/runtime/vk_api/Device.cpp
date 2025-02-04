@@ -22,32 +22,75 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
     : handle(physical_device_handle),
       properties{},
       memory_properties{},
+#ifdef VK_KHR_16bit_storage
       shader_16bit_storage{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES},
+#endif /* VK_KHR_16bit_storage */
+#ifdef VK_KHR_8bit_storage
       shader_8bit_storage{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES},
+#endif /* VK_KHR_8bit_storage */
+#ifdef VK_KHR_shader_float16_int8
       shader_float16_int8_types{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR},
+#endif /* VK_KHR_shader_float16_int8 */
+      extension_features{nullptr},
       queue_families{},
       num_compute_queues(0),
+      supports_int16_shader_types(false),
       has_unified_memory(false),
-      has_timestamps(properties.limits.timestampComputeAndGraphics),
-      timestamp_period(properties.limits.timestampPeriod),
-      extension_features(&shader_16bit_storage) {
+      has_timestamps(false),
+      timestamp_period(0),
+      min_ubo_alignment(0) {
   // Extract physical device properties
   vkGetPhysicalDeviceProperties(handle, &properties);
+
+  // Extract fields of interest
+  has_timestamps = properties.limits.timestampComputeAndGraphics;
+  timestamp_period = properties.limits.timestampPeriod;
+  min_ubo_alignment = properties.limits.minUniformBufferOffsetAlignment;
+
   vkGetPhysicalDeviceMemoryProperties(handle, &memory_properties);
 
   VkPhysicalDeviceFeatures2 features2{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 
   // Create linked list to query availability of extensions
+
+#ifdef VK_KHR_16bit_storage
+  extension_features = &shader_16bit_storage;
   features2.pNext = &shader_16bit_storage;
+#elif defined(VK_KHR_8bit_storage)
+  extension_features = &shader_8bit_storage;
+  features2.pNext = &shader_8bit_storage;
+#elif defined(VK_KHR_shader_float16_int8)
+  extension_features = &shader_float16_int8_types;
+  features2.pNext = &shader_float16_int8_types;
+#endif /* VK_KHR_16bit_storage */
+
+#if defined(VK_KHR_16bit_storage) && defined(VK_KHR_8bit_storage)
   shader_16bit_storage.pNext = &shader_8bit_storage;
+#elif defined(VK_KHR_16bit_storage) && defined(VK_KHR_shader_float16_int8)
+  shader_16bit_storage.pNext = &shader_float16_int8_types;
+#elif defined(VK_KHR_16bit_storage)
+  shader_16bit_storage.pNext = nullptr;
+#endif
+
+#if defined(VK_KHR_8bit_storage) && defined(VK_KHR_shader_float16_int8)
   shader_8bit_storage.pNext = &shader_float16_int8_types;
+#elif defined(VK_KHR_8bit_storage)
+  shader_8bit_storage.pNext = nullptr;
+#endif
+
+#ifdef VK_KHR_shader_float16_int8
   shader_float16_int8_types.pNext = nullptr;
+#endif
 
   vkGetPhysicalDeviceFeatures2(handle, &features2);
+
+  if (features2.features.shaderInt16 == VK_TRUE) {
+    supports_int16_shader_types = true;
+  }
 
   // Check if there are any memory types have both the HOST_VISIBLE and the
   // DEVICE_LOCAL property flags
@@ -84,7 +127,7 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
 DeviceHandle::DeviceHandle(VkDevice device) : handle(device) {}
 
 DeviceHandle::~DeviceHandle() {
-  if (VK_NULL_HANDLE == handle) {
+  if (handle == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyDevice(handle, nullptr);
