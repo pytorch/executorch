@@ -302,6 +302,13 @@ class OpReduceMean:
 
 
 @dataclass(init=False, frozen=True)
+class OpArgmin:
+    op_name: str = "Argmin"
+    param_axis: str = "axis"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpReduceSum:
     op_name: str = "ReduceSum"
     param_axes: str = "axes"
