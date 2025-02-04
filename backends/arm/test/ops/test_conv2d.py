@@ -6,7 +6,7 @@
 
 import unittest
 
-from typing import List, Optional, Tuple, Union
+from typing import List, Tuple, Union
 
 import pytest
 
@@ -25,7 +25,6 @@ class Conv2d(torch.nn.Module):
 
     def __init__(
         self,
-        inputs: Optional[torch.Tensor] = None,
         height=8,
         width=8,
         nbr_conv=1,  # Number of chained convs
@@ -76,13 +75,11 @@ class Conv2d(torch.nn.Module):
         if not isinstance(padding_mode, List):
             padding_mode = [padding_mode]
 
-        # Generate test data if not provided
-        if inputs is None:
-            self.inputs = (
-                torch.randn(batches, in_channels[0], height, width).to(dtype),
-            )
-        else:
-            self.inputs = (inputs,)
+        self.batches = batches
+        self.in_channels = in_channels
+        self.height = height
+        self.width = width
+        self.dtype = dtype
 
         # Build chain of convs
         for i in range(self.nbr_convs):
@@ -103,7 +100,11 @@ class Conv2d(torch.nn.Module):
             )
 
     def get_inputs(self):
-        return self.inputs
+        return (
+            torch.randn(self.batches, self.in_channels[0], self.height, self.width).to(
+                self.dtype
+            ),
+        )
 
     def forward(self, x):
         for i in range(self.nbr_convs):
