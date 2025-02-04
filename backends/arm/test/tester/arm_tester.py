@@ -8,7 +8,7 @@ import logging
 import os
 from collections import Counter
 from pprint import pformat
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Callable, Iterable, List, Optional, Tuple, Type, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
@@ -41,10 +41,18 @@ from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    ExportedProgram,
+)
+from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.pass_base import ExportPass
+from executorch.exir.program._program import _update_exported_program_graph_module
 
 from tabulate import tabulate
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
@@ -156,6 +164,44 @@ class ToExecutorch(tester.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
             return super().run_artifact(inputs)
+
+
+class RunPasses(tester.RunPasses):
+
+    def __init__(
+        self,
+        pass_list: Optional[List[Type[ExportPass]]] = None,
+        pass_functions: Optional[List[Callable]] = None,
+        passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
+    ):
+        """Passes are run in the order they are passed: first pass_list, second pass_functions,
+        and lastly passes_with_exported_program."""
+        self.pass_with_exported_program = passes_with_exported_program
+        super().__init__(pass_list, pass_functions)
+
+    def run(
+        self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
+    ) -> None:
+        if self.pass_with_exported_program is not None:
+            self.pass_functions = self.pass_functions or []  # type: ignore
+
+            # pass_function list from superclass expects functions that take in
+            # and return ExportedPrograms.
+            # Create a wrapper to fit pass_with_exported_program into this.
+            def wrap_ep_pass(ep_pass: Type[ExportPass]):
+                def wrapped_ep_pass(ep: ExportedProgram) -> ExportedProgram:
+                    pass_result = ep_pass(ep).call(ep.graph_module)
+                    with validation_disabled():
+                        return _update_exported_program_graph_module(
+                            ep, pass_result.graph_module
+                        )
+
+                return wrapped_ep_pass
+
+            self.pass_functions.extend(
+                [wrap_ep_pass(ep_pass) for ep_pass in self.pass_with_exported_program]
+            )
+        super().run(artifact, inputs)
 
 
 class InitialModel(tester.Stage):

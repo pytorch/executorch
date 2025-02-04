@@ -10,7 +10,7 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.llama.llama_transformer import KVCache
+from executorch.examples.models.llama.attention import KVCache
 
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 

@@ -44,7 +44,7 @@ class NodeVisitor:
 
 
 # container for all node visitors
-_node_visitor_dicts = {  # type: ignore[var-annotated]
+_node_visitor_dicts: Dict[TosaSpecification, Dict] = {
     TosaSpecification.create_from_string("TOSA-0.80+BI"): {},
     TosaSpecification.create_from_string("TOSA-0.80+MI"): {},
 }
