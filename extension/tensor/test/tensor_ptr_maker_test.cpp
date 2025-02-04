@@ -234,6 +234,20 @@ TEST_F(TensorPtrMakerTest, CreateFull) {
   EXPECT_EQ(tensor4->size(1), 5);
   EXPECT_EQ(tensor4->scalar_type(), executorch::aten::ScalarType::Double);
   EXPECT_EQ(tensor4->const_data_ptr<double>()[0], 11);
+
+  auto tensor5 = full({4, 5}, 13, executorch::aten::ScalarType::Half);
+  EXPECT_EQ(tensor5->dim(), 2);
+  EXPECT_EQ(tensor5->size(0), 4);
+  EXPECT_EQ(tensor5->size(1), 5);
+  EXPECT_EQ(tensor5->scalar_type(), executorch::aten::ScalarType::Half);
+  EXPECT_EQ(tensor5->const_data_ptr<executorch::aten::Half>()[0], 13);
+
+  auto tensor6 = full({4, 5}, 15, executorch::aten::ScalarType::BFloat16);
+  EXPECT_EQ(tensor6->dim(), 2);
+  EXPECT_EQ(tensor6->size(0), 4);
+  EXPECT_EQ(tensor6->size(1), 5);
+  EXPECT_EQ(tensor6->scalar_type(), executorch::aten::ScalarType::BFloat16);
+  EXPECT_EQ(tensor6->const_data_ptr<executorch::aten::BFloat16>()[0], 15);
 }
 
 TEST_F(TensorPtrMakerTest, CreateScalar) {
@@ -358,6 +372,36 @@ TEST_F(TensorPtrMakerTest, CreateRandTensorWithDoubleType) {
 
   for (auto i = 0; i < tensor->numel(); ++i) {
     auto val = tensor->const_data_ptr<double>()[i];
+    EXPECT_GE(val, 0.0);
+    EXPECT_LT(val, 1.0);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandTensorWithHalfType) {
+  auto tensor = rand({4, 5}, executorch::aten::ScalarType::Half);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Half);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<executorch::aten::Half>()[i];
+    EXPECT_GE(val, 0.0);
+    EXPECT_LT(val, 1.0);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateRandTensorWithBFloatType) {
+  auto tensor = rand({4, 5}, executorch::aten::ScalarType::BFloat16);
+
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 4);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::BFloat16);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<executorch::aten::BFloat16>()[i];
     EXPECT_GE(val, 0.0);
     EXPECT_LT(val, 1.0);
   }

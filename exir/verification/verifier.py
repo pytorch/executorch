@@ -16,6 +16,8 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.passes.dim_order_ops_registry import DimOrderOpsMap
+from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
+from executorch.exir.passes.replace_aten_with_edge_pass import DISALLOW_LIST
 from executorch.exir.verification.arg_validator import (
     EdgeOpArgValidator,
     RunHigherOrderOperatorError,
@@ -99,16 +101,20 @@ def EXIRATenDialectVerifier(  # noqa: C901
             self._exception_list = exception_list if exception_list else []
 
         def _get_exception_list(self) -> List[torch._ops.OpOverload]:
-            exception_list = [
-                torch.ops.aten.mkldnn_rnn_layer.default,
-                torch.ops.aten._upsample_bilinear2d_aa.default,
-                torch.ops.aten.quantize_per_tensor.default,
-                torch.ops.aten.dequantize.self,
-                torch.ops.aten.max.default,  # TODO(T188268054)
-                torch.ops.aten.min.default,  # TODO(T188268054)
-                torch.ops.aten.full_like.default,  # TODO(T183507359)
-            ]
-            exception_list += self._exception_list
+            exception_list = (
+                [
+                    torch.ops.aten.mkldnn_rnn_layer.default,
+                    torch.ops.aten._upsample_bilinear2d_aa.default,
+                    torch.ops.aten.quantize_per_tensor.default,
+                    torch.ops.aten.dequantize.self,
+                    torch.ops.aten.max.default,  # TODO(T188268054)
+                    torch.ops.aten.min.default,  # TODO(T188268054)
+                    torch.ops.aten.full_like.default,  # TODO(T183507359)
+                ]
+                + list(_EXECUTORCH_SYM_OPS)
+                + DISALLOW_LIST
+                + self._exception_list
+            )
 
             return exception_list
 
@@ -249,13 +255,9 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 return
             if (
                 op
-                in [
-                    operator.getitem,
-                    torch.ops.aten.sym_size.int,
-                    torch.ops.aten.scalar_tensor.default,
-                    torch.ops.aten._assert_async.msg,
-                    torch.ops.aten._assert_scalar.default,
-                ]
+                in [operator.getitem]
+                + DISALLOW_LIST
+                + list(_EXECUTORCH_SYM_OPS)
                 + self._exception_list
             ):
                 return

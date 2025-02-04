@@ -8,14 +8,13 @@
 
 #include <cmath>
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-
-#include "kernels.h"
 
 using executorch::aten::RuntimeContext;
 using executorch::aten::Scalar;
