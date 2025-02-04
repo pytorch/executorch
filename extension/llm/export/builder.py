@@ -156,7 +156,10 @@ class LLMEdgeManager:
 
         if self.verbose:
             logging.info(f"Applied source transforms: {self.applied_source_transforms}")
-        logging.info(f"Model after source transforms: {self.model}")
+        import resource
+        maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        nswap = resource.getrusage(resource.RUSAGE_SELF).ru_nswap
+        logging.info(f"Model after source transforms: {self.model} (HACK: maxrss: {maxrss} nswap: {nswap})")
         return self
 
     def _get_dynamic_shape(self) -> Any:
