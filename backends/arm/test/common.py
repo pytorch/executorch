@@ -15,13 +15,13 @@ from typing import Any
 
 import pytest
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from runner_utils import (
+from executorch.backends.arm.test.runner_utils import (
     arm_executor_runner_exists,
     corstone300_installed,
     corstone320_installed,
 )
+from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:
