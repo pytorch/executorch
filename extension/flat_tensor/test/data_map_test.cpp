@@ -7,7 +7,7 @@
  */
 
 #include <executorch/extension/data_loader/file_data_loader.h>
-#include <executorch/extension/flat_tensor/named_data_map/data_map.h>
+#include <executorch/extension/flat_tensor/data_map.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/extension/flat_tensor/serialize/schema_generated.h>
 #include <executorch/runtime/core/error.h>
@@ -39,14 +39,6 @@ class DataMapTest : public ::testing::Test {
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
 
-    Result<FreeableBuffer> header = loader->load(
-        /*offset=*/0,
-        FlatTensorHeader::kNumHeadBytes,
-        /*segment_info=*/
-        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
-
-    ASSERT_EQ(header.error(), Error::Ok);
-
     data_map_loader_ =
         std::make_unique<FileDataLoader>(std::move(loader.get()));
   }
@@ -67,7 +59,7 @@ TEST_F(DataMapTest, DataMap_GetMetadata) {
   // self.a = 3 * torch.ones(2, 2, dtype=torch.float)
   // self.b = 2 * torch.ones(2, 2, dtype=torch.float)
   Result<const TensorLayout> const_a_res = data_map->get_metadata("a");
-  assert(const_a_res.ok());
+  ASSERT_EQ(Error::Ok, const_a_res.error());
 
   const TensorLayout const_a = const_a_res.get();
   EXPECT_EQ(const_a.scalar_type(), executorch::aten::ScalarType::Float);
@@ -81,7 +73,7 @@ TEST_F(DataMapTest, DataMap_GetMetadata) {
   EXPECT_EQ(dim_order_a[1], 1);
 
   Result<const TensorLayout> const_b_res = data_map->get_metadata("b");
-  assert(const_b_res.ok());
+  ASSERT_EQ(Error::Ok, const_b_res.error());
 
   const TensorLayout const_b = const_b_res.get();
   EXPECT_EQ(const_b.scalar_type(), executorch::aten::ScalarType::Float);
@@ -96,7 +88,7 @@ TEST_F(DataMapTest, DataMap_GetMetadata) {
 
   // Check get_metadata fails when key is not found.
   Result<const TensorLayout> const_c_res = data_map->get_metadata("c");
-  EXPECT_EQ(const_c_res.error(), Error::InvalidArgument);
+  EXPECT_EQ(const_c_res.error(), Error::NotFound);
 }
 
 TEST_F(DataMapTest, DataMap_GetData) {
@@ -105,18 +97,18 @@ TEST_F(DataMapTest, DataMap_GetData) {
 
   // Check tensor data sizes are correct.
   Result<FreeableBuffer> data_a_res = data_map->get_data("a");
-  assert(data_a_res.ok());
+  ASSERT_EQ(Error::Ok, data_a_res.error());
   FreeableBuffer data_a = std::move(data_a_res.get());
   EXPECT_EQ(data_a.size(), 16);
 
   Result<FreeableBuffer> data_b_res = data_map->get_data("b");
-  assert(data_b_res.ok());
+  ASSERT_EQ(Error::Ok, data_b_res.error());
   FreeableBuffer data_b = std::move(data_b_res.get());
   EXPECT_EQ(data_b.size(), 16);
 
   // Check get_data fails when key is not found.
   Result<FreeableBuffer> data_c_res = data_map->get_data("c");
-  EXPECT_EQ(data_c_res.error(), Error::InvalidArgument);
+  EXPECT_EQ(data_c_res.error(), Error::NotFound);
 }
 
 TEST_F(DataMapTest, DataMap_Keys) {
@@ -125,16 +117,16 @@ TEST_F(DataMapTest, DataMap_Keys) {
 
   // Check num tensors is 2.
   Result<size_t> num_tensors_res = data_map->get_num_keys();
-  assert(num_tensors_res.ok());
+  ASSERT_EQ(Error::Ok, num_tensors_res.error());
   EXPECT_EQ(num_tensors_res.get(), 2);
 
   // Check get_key returns the correct keys.
   Result<const char*> key0_res = data_map->get_key(0);
-  assert(key0_res.ok());
+  ASSERT_EQ(Error::Ok, key0_res.error());
   EXPECT_EQ(strcmp(key0_res.get(), "a"), 0);
 
   Result<const char*> key1_res = data_map->get_key(1);
-  assert(key1_res.ok());
+  ASSERT_EQ(Error::Ok, key1_res.error());
   EXPECT_EQ(strcmp(key1_res.get(), "b"), 0);
 
   // Check get_key fails when out of bounds.

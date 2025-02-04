@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/flat_tensor/named_data_map/data_map.h>
+#include <executorch/extension/flat_tensor/data_map.h>
 
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/extension/flat_tensor/serialize/schema_generated.h>
@@ -38,89 +38,101 @@ namespace {
  */
 constexpr size_t kMinimumAlignment = alignof(std::max_align_t);
 
-bool IsAligned(const void* data) {
+bool is_aligned(const void* data) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(data);
   return addr % kMinimumAlignment == 0;
 }
+
+Result<const flat_tensor_flatbuffer::TensorMetadata*> get_flat_tensor_metadata(
+    const char* key,
+    const flatbuffers::Vector<
+        flatbuffers::Offset<flat_tensor_flatbuffer::TensorMetadata>>* tensors) {
+  // Linear search by name.
+  for (int i = 0; i < tensors->size(); i++) {
+    if (std::strcmp(tensors->Get(i)->fully_qualified_name()->c_str(), key) ==
+        0) {
+      // TODO(T214294528): Support multiple segments in FlatTensor.
+      if (tensors->Get(i)->segment_index() != 0) {
+        return Error::InvalidExternalData;
+      }
+      return tensors->Get(i);
+    }
+  }
+  return Error::NotFound;
+}
+
+Result<const TensorLayout> create_tensor_layout(
+    const flat_tensor_flatbuffer::TensorMetadata* tensor_metadata) {
+  ScalarType scalar_type =
+      static_cast<ScalarType>(tensor_metadata->scalar_type());
+  const int dim = tensor_metadata->sizes()->size();
+  const auto serialized_sizes = tensor_metadata->sizes()->data();
+  const auto serialized_dim_order = tensor_metadata->dim_order()->data();
+  return TensorLayout::create(
+      Span<const int32_t>(serialized_sizes, dim),
+      Span<const uint8_t>(serialized_dim_order, dim),
+      scalar_type);
+}
+
 } // namespace
 
 ET_NODISCARD Result<const TensorLayout> DataMap::get_metadata(
     const char* key) const {
-  auto tensor_metadata = _flat_tensor->tensors();
-  // Linear search by name here.
-  for (int i = 0; i < tensor_metadata->size(); i++) {
-    if (std::strcmp(
-            tensor_metadata->Get(i)->fully_qualified_name()->c_str(), key) ==
-        0) {
-      // create TensorLayout.
-      ScalarType scalar_type =
-          static_cast<ScalarType>(tensor_metadata->Get(i)->scalar_type());
-      const int dim = tensor_metadata->Get(i)->sizes()->size();
-      const auto serialized_sizes = tensor_metadata->Get(i)->sizes()->data();
-      const auto serialized_dim_order =
-          tensor_metadata->Get(i)->dim_order()->data();
-      return TensorLayout::create(
-          Span<const int32_t>(serialized_sizes, dim),
-          Span<const uint8_t>(serialized_dim_order, dim),
-          scalar_type);
-    }
+  auto tensor_metadata = flat_tensor_->tensors();
+  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata_res =
+      get_flat_tensor_metadata(key, tensor_metadata);
+  if (!metadata_res.ok()) {
+    return metadata_res.error();
   }
-  return Error::InvalidArgument;
+  Result<const TensorLayout> tensor_layout_res =
+      create_tensor_layout(metadata_res.get());
+  if (!tensor_layout_res.ok()) {
+    return tensor_layout_res.error();
+  }
+  return tensor_layout_res.get();
 }
 
 ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* key) const {
-  auto tensor_metadata = _flat_tensor->tensors();
-  // Linear search by name here.
-  int segment_index = -1;
-  int offset = -1;
-  int nbytes = 0;
-  for (int i = 0; i < tensor_metadata->size(); i++) {
-    if (std::strcmp(
-            tensor_metadata->Get(i)->fully_qualified_name()->c_str(), key) ==
-        0) {
-      // Load data.
-      segment_index = tensor_metadata->Get(i)->segment_index();
-      // Assert one segment, for now.
-      assert(segment_index == 0);
-      offset = tensor_metadata->Get(i)->offset();
+  auto tensor_metadata = flat_tensor_->tensors();
 
-      // Find nbytes.
-      ScalarType scalar_type =
-          static_cast<ScalarType>(tensor_metadata->Get(i)->scalar_type());
-      const int dim = tensor_metadata->Get(i)->sizes()->size();
-      const auto serialized_sizes = tensor_metadata->Get(i)->sizes()->data();
-      const auto serialized_dim_order =
-          tensor_metadata->Get(i)->dim_order()->data();
-      Result<const TensorLayout> tensor_layout = TensorLayout::create(
-          Span<const int32_t>(serialized_sizes, dim),
-          Span<const uint8_t>(serialized_dim_order, dim),
-          scalar_type);
-      nbytes = tensor_layout.get().nbytes();
-    }
+  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata_res =
+      get_flat_tensor_metadata(key, tensor_metadata);
+  if (!metadata_res.ok()) {
+    return metadata_res.error();
   }
-
-  if (segment_index == -1 || offset == -1) {
+  const auto metadata = metadata_res.get();
+  if (metadata->segment_index() == -1 || metadata->offset() == -1) {
     // Key doesn't exist.
-    return Error::InvalidArgument;
+    return Error::NotFound;
   }
+
+  Result<const TensorLayout> tensor_layout_res = create_tensor_layout(metadata);
+  if (!tensor_layout_res.ok()) {
+    return tensor_layout_res.error();
+  }
+
   return FreeableBuffer(
-      static_cast<const uint8_t*>(_data_ro.data()) + offset, nbytes, nullptr);
+      static_cast<const uint8_t*>(data_ro_.data()) + metadata->offset(),
+      tensor_layout_res.get().nbytes(),
+      nullptr);
 }
 
-ET_NODISCARD Result<size_t>
-DataMap::load_data_into(const char* key, void* buffer, size_t size) const {
+ET_NODISCARD Result<size_t> DataMap::load_data_into(
+    ET_UNUSED const char* key,
+    ET_UNUSED void* buffer,
+    ET_UNUSED size_t size) const {
   return Error::NotImplemented;
 }
 
 ET_NODISCARD Result<size_t> DataMap::get_num_keys() const {
-  return _flat_tensor->tensors()->size();
+  return flat_tensor_->tensors()->size();
 }
 
 ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
-  if (index < 0 || index >= _flat_tensor->tensors()->size()) {
+  if (index < 0 || index >= flat_tensor_->tensors()->size()) {
     return Error::InvalidArgument;
   }
-  return _flat_tensor->tensors()->Get(index)->fully_qualified_name()->c_str();
+  return flat_tensor_->tensors()->Get(index)->fully_qualified_name()->c_str();
 }
 
 /* static */ Result<DataMap> DataMap::load(DataLoader* loader) {
@@ -157,14 +169,6 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
     }
   }
 
-  ET_LOG(
-      Info,
-      "Flatbuffer offset %zu, size %zu, segment base offset %zu, segment size: %zu",
-      flatbuffer_offset,
-      flatbuffer_size,
-      segment_base_offset,
-      segment_data_size);
-
   // Load flatbuffer data as a segment.
   Result<FreeableBuffer> flat_tensor_data = loader->load(
       /*offset=*/0,
@@ -188,7 +192,7 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
   // The flatbuffer data must start at an aligned address to ensure internal
   // alignment of flatbuffer fields.
   ET_CHECK_OR_RETURN_ERROR(
-      IsAligned(flat_tensor_data->data()),
+      is_aligned(flat_tensor_data->data()),
       InvalidArgument,
       "FlatTensor data 0x%p must be aligned to %zu",
       flat_tensor_data->data(),
@@ -200,38 +204,51 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
 
   // Get pointer to tensor metadata.
   const auto* s_tensor_metadata = flat_tensor->tensors();
-  assert(s_tensor_metadata != nullptr);
+  if (s_tensor_metadata == nullptr) {
+    ET_LOG(Error, "FlatTensor has no tensor metadata.");
+    return Error::InvalidExternalData;
+  }
 
   // Load constant data.
   const auto* s_data_segment = flat_tensor->segments();
 
-  // Only support one segment for now.
-  assert(s_data_segment->size() == 1);
+  // TODO(T214294528): Support multiple segments in FlatTensor.
+  if (s_data_segment->size() > 1) {
+    ET_LOG(
+        Error,
+        "FlatTensor has %u segments, only 1 supported.",
+        s_data_segment->size());
+  }
   // First segment offset should be 0.
   int segment_offset = s_data_segment->Get(0)->offset();
-  assert(segment_offset == 0);
+  if (segment_offset != 0) {
+    ET_LOG(Error, "FlatTensor segment offset %d != 0", segment_offset);
+  }
   // First segment size should be <= the total segment data size.
   int segment_size = s_data_segment->Get(0)->size();
-  assert(segment_size <= segment_data_size);
+  if (segment_size > segment_data_size) {
+    ET_LOG(
+        Error,
+        "FlatTensor segment size %d > segment data size %zu",
+        segment_size,
+        segment_data_size);
+  }
 
-  Result<FreeableBuffer> _data_ro = loader->load(
+  Result<FreeableBuffer> data_ro = loader->load(
       /*offset=*/segment_base_offset + segment_offset,
       segment_size,
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
-  if (!_data_ro.ok()) {
-    return _data_ro.error();
+  if (!data_ro.ok()) {
+    return data_ro.error();
   }
 
   return DataMap(
-      loader,
-      segment_base_offset,
-      std::move(flat_tensor_data.get()),
-      flat_tensor,
-      std::move(_data_ro.get()));
+      std::move(flat_tensor_data.get()), flat_tensor, std::move(data_ro.get()));
 }
 
 DataMap::~DataMap() {
-  _data_ro.Free();
+  flat_tensor_data_.Free();
+  data_ro_.Free();
 }
 
 } // namespace extension

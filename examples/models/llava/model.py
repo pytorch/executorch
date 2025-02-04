@@ -12,7 +12,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 import torch
-from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama.llama_transformer import Transformer
+from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
     replace_kv_cache_with_custom_kv_cache,

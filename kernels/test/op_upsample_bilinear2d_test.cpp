@@ -44,6 +44,12 @@ class OpUpsampleBilinear2dTest : public OperatorTest {
   void test_upsample_bilinear2d_dtype() {
     TensorFactory<DTYPE> tf;
 
+    if (torch::executor::testing::SupportedFeatures::get()->is_aten &&
+        (DTYPE == ScalarType::Char || DTYPE == ScalarType::Short ||
+         DTYPE == ScalarType::Int || DTYPE == ScalarType::Long)) {
+      // not supported.
+      return;
+    }
     const auto input = tf.make({1, 1, 1, 2}, {1, 4});
     std::array<int64_t, 2> output_size = {1, 4};
     auto out = tf.zeros({1, 1, 1, 4});

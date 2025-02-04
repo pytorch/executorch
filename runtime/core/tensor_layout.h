@@ -33,7 +33,7 @@ class ET_EXPERIMENTAL TensorLayout final {
    * @param[in] scalar_type The scalar type of the tensor.
    * @return A Result containing the TensorLayout on success, or an error.
    */
-  static executorch::runtime::Result<const TensorLayout> create(
+  static executorch::runtime::Result<TensorLayout> create(
       Span<const int32_t> sizes,
       Span<const uint8_t> dim_order,
       executorch::aten::ScalarType scalar_type);
