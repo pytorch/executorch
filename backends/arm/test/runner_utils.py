@@ -486,6 +486,47 @@ def _tosa_refmodel_loglevel(loglevel: int) -> str:
     return loglevel_map[clamped_logging_level]
 
 
+def corstone300_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
+def corstone320_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-320", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
+def get_elf_path(target_board):
+    elf_path = os.path.join(
+        "cmake-out",
+        f"arm_semihosting_executor_runner_{target_board}",
+        "arm_executor_runner",
+    )
+    if not os.path.exists(elf_path):
+        raise RuntimeError(
+            f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+        )
+    else:
+        return elf_path
+
+
+def arm_executor_runner_exists(target_board):
+    try:
+        get_elf_path(target_board)
+    except:
+        return False
+    else:
+        return True
+
+
 def run_tosa_graph(
     graph: TosaGraph,
     tosa_version: TosaSpecification,
