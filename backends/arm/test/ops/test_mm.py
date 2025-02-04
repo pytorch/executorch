@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -7,8 +7,9 @@
 import logging
 import unittest
 
-from typing import Tuple
+from typing import Callable, Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -18,30 +19,28 @@ from parameterized import parameterized
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-torch.manual_seed(0)
-
 
 class TestMM(unittest.TestCase):
     """Tests MatMul"""
 
     class MM(torch.nn.Module):
-        test_parameters = [
-            (torch.rand(3, 5), torch.rand(5, 2)),
-            (torch.rand(1, 1), torch.rand(1, 1)),
-            (torch.ones(55, 3), torch.ones(3, 44)),
-            (10000 * torch.randn(1, 10), torch.randn(10, 5)),
-            (-10 * torch.randn(32, 64), 5 + 5 * torch.randn(64, 32)),
+        test_data_generators = [
+            lambda: (torch.rand(3, 5), torch.rand(5, 2)),
+            lambda: (torch.rand(1, 1), torch.rand(1, 1)),
+            lambda: (torch.ones(55, 3), torch.ones(3, 44)),
+            lambda: (10000 * torch.randn(1, 10), torch.randn(10, 5)),
+            lambda: (-10 * torch.randn(32, 64), 5 + 5 * torch.randn(64, 32)),
         ]
 
         def forward(self, x, y):
             return torch.mm(x, y)
 
     class MMSingleInput(torch.nn.Module):
-        test_parameters = [
-            (torch.rand(3, 3),),
-            (torch.ones(128, 128),),
-            (10000 * torch.randn(25, 25),),
-            (5 + 5 * torch.randn(64, 64),),
+        test_data_generators = [
+            lambda: (torch.rand(3, 3),),
+            lambda: (torch.ones(128, 128),),
+            lambda: (10000 * torch.randn(25, 25),),
+            lambda: (5 + 5 * torch.randn(64, 64),),
         ]
 
         def forward(self, x):
@@ -110,54 +109,55 @@ class TestMM(unittest.TestCase):
             .to_executorch()
         )
 
-    @parameterized.expand(MM.test_parameters)
-    def test_mm_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
+    @parameterized.expand(MM.test_data_generators)
+    def test_mm_tosa_MI(self, test_data_generator: Callable[[], Tuple]):
+        test_data = test_data_generator()
         self._test_mm_tosa_MI_pipeline(self.MM(), test_data)
 
-    @parameterized.expand(MMSingleInput.test_parameters)
-    def test_mm_single_input_tosa_MI(self, operand1: torch.Tensor):
-        test_data = (operand1,)
+    @parameterized.expand(MMSingleInput.test_data_generators)
+    def test_mm_single_input_tosa_MI(self, test_data_generator: Callable[[], Tuple]):
+        test_data = test_data_generator()
         self._test_mm_tosa_MI_pipeline(self.MMSingleInput(), test_data)
 
-    @parameterized.expand(MM.test_parameters)
-    def test_mm_tosa_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
+    @parameterized.expand(MM.test_data_generators)
+    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
+    def test_mm_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
+        test_data = test_data_generator()
         self._test_mm_tosa_BI_pipeline(self.MM(), test_data)
 
-    @parameterized.expand(MMSingleInput.test_parameters)
-    def test_mm_single_input_tosa_BI(self, operand1: torch.Tensor):
-        test_data = (operand1,)
+    @parameterized.expand(MMSingleInput.test_data_generators)
+    def test_mm_single_input_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
+        test_data = test_data_generator()
         self._test_mm_tosa_BI_pipeline(self.MMSingleInput(), test_data)
 
     # Expected to fail with error: CPU performance estimation for "MatMul" not implemented
-    @parameterized.expand(MM.test_parameters)
+    @parameterized.expand(MM.test_data_generators)
     @unittest.expectedFailure
-    def test_mm_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
+    def test_mm_u55_BI(self, test_data_generator: Callable[[], Tuple]):
+        test_data = test_data_generator()
         self._test_mm_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.MM(), test_data
         )
 
     # Expected to fail with error: Warning, unsupported fusing of TOSA Rescale previous operator is of type: Memcpy
-    @parameterized.expand(MMSingleInput.test_parameters)
+    @parameterized.expand(MMSingleInput.test_data_generators)
     @unittest.expectedFailure
-    def test_mm_single_input_u55_BI(self, operand1: torch.Tensor):
-        test_data = (operand1,)
+    def test_mm_single_input_u55_BI(self, test_data_generator: Callable[[], Tuple]):
+        test_data = test_data_generator()
         self._test_mm_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.MMSingleInput(), test_data
         )
 
-    @parameterized.expand(MM.test_parameters)
-    def test_mm_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
+    @parameterized.expand(MM.test_data_generators)
+    def test_mm_u85_BI(self, test_data_generator: Callable[[], Tuple]):
+        test_data = test_data_generator()
         self._test_mm_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.MM(), test_data
         )
 
-    @parameterized.expand(MMSingleInput.test_parameters)
-    def test_mm_single_input_u85_BI(self, operand1: torch.Tensor):
-        test_data = (operand1,)
+    @parameterized.expand(MMSingleInput.test_data_generators)
+    def test_mm_single_input_u85_BI(self, test_data_generator: Callable[[], Tuple]):
+        test_data = test_data_generator()
         self._test_mm_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.MMSingleInput(), test_data
         )

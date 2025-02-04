@@ -221,7 +221,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack
+        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
 
         # install Llava requirements
         bash examples/models/llama/install_requirements.sh
@@ -484,7 +484,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack
+        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
 
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
@@ -514,7 +514,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack
+        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
@@ -544,7 +544,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack
+        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
@@ -574,7 +574,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install pybind
-        bash install_executorch.sh --pybind xnnpack
+        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
