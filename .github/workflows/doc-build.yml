@@ -82,6 +82,8 @@ jobs:
 
   upload-gh-pages:
     needs: build
+    permissions:
+      contents: write
     uses: pytorch/test-infra/.github/workflows/_upload_docs.yml@main
     with:
       docs-branch: gh-pages
