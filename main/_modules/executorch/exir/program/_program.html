@@ -328,6 +328,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../getting-started-setup.html">Setting Up ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../export-overview.html">Exporting to ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../runtime-build-and-cross-compilation.html">Building with CMake</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../getting-started-faqs.html">FAQs and Common Issues</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
@@ -497,6 +498,7 @@
   <h1>Source code for executorch.exir.program._program</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) Meta Platforms, Inc. and affiliates.</span>
 <span class="c1"># All rights reserved.</span>
+<span class="c1"># Copyright 2025 Arm Limited and/or its affiliates.</span>
 <span class="c1">#</span>
 <span class="c1"># This source code is licensed under the BSD-style license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
@@ -507,7 +509,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">TextIO</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">TextIO</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch._export</span>
@@ -563,6 +565,7 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.flat_tensor.serialize.serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">FlatTensorSerializer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch._export.passes</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch._export.verifier</span><span class="w"> </span><span class="kn">import</span> <span class="n">Verifier</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportedProgram</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.export._remove_auto_functionalized_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">,</span>
@@ -710,21 +713,29 @@
     <span class="k">if</span> <span class="n">transformed_gm</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">res</span><span class="o">.</span><span class="n">modified</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span>
 
+    <span class="k">return</span> <span class="n">_update_exported_program_graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transformed_gm</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_update_exported_program_graph_module</span><span class="p">(</span>
+    <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">override_verifiers</span><span class="p">:</span> <span class="kc">None</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">Verifier</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
     <span class="n">transformed_ep</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
-        <span class="n">root</span><span class="o">=</span><span class="n">transformed_gm</span><span class="p">,</span>
-        <span class="n">graph</span><span class="o">=</span><span class="n">transformed_gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+        <span class="n">root</span><span class="o">=</span><span class="n">gm</span><span class="p">,</span>
+        <span class="n">graph</span><span class="o">=</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
         <span class="n">graph_signature</span><span class="o">=</span><span class="n">_get_updated_graph_signature</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">transformed_gm</span>
+            <span class="n">exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">gm</span>
         <span class="p">),</span>
-        <span class="n">state_dict</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
-        <span class="n">range_constraints</span><span class="o">=</span><span class="n">_get_updated_range_constraints</span><span class="p">(</span><span class="n">transformed_gm</span><span class="p">),</span>
-        <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_module_call_graph</span><span class="p">),</span>
-        <span class="n">example_inputs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
-        <span class="n">constants</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
-        <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
+        <span class="n">state_dict</span><span class="o">=</span><span class="n">exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+        <span class="n">range_constraints</span><span class="o">=</span><span class="n">_get_updated_range_constraints</span><span class="p">(</span><span class="n">gm</span><span class="p">),</span>
+        <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">exported_program</span><span class="o">.</span><span class="n">_module_call_graph</span><span class="p">),</span>
+        <span class="n">example_inputs</span><span class="o">=</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
+        <span class="n">constants</span><span class="o">=</span><span class="n">exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+        <span class="n">verifiers</span><span class="o">=</span><span class="n">override_verifiers</span> <span class="ow">or</span> <span class="p">[</span><span class="n">exported_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
     <span class="p">)</span>
-    <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
-    <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
+    <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
+    <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">gm</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">transformed_ep</span>
 
 

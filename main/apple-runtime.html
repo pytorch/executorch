@@ -330,6 +330,7 @@
 <li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-faqs.html">FAQs and Common Issues</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul class="current">
@@ -521,7 +522,7 @@
 <p>The prebuilt ExecuTorch runtime, backend, and kernels are available as a <a class="reference external" href="https://www.swift.org/documentation/package-manager/">Swift PM</a> package.</p>
 <div class="section" id="xcode">
 <h4>Xcode<a class="headerlink" href="#xcode" title="Permalink to this heading">¶</a></h4>
-<p>In Xcode, go to <code class="docutils literal notranslate"><span class="pre">File</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Package</span> <span class="pre">Dependencies</span></code>. Paste the URL of the <a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch repo</a> into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-<version>”, (e.g. “swiftpm-0.4.0”), or a branch name in format “swiftpm-<version>.&lt;year_month_date&gt;” (e.g. “swiftpm-0.4.0-20241201”) for a nightly build on a specific date.</p>
+<p>In Xcode, go to <code class="docutils literal notranslate"><span class="pre">File</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Package</span> <span class="pre">Dependencies</span></code>. Paste the URL of the <a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch repo</a> into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-<version>”, (e.g. “swiftpm-0.5.0”), or a branch name in format “swiftpm-<version>.&lt;year_month_date&gt;” (e.g. “swiftpm-0.5.0-20250130”) for a nightly build on a specific date.</p>
 <p><img alt="" src="_images/swiftpm_xcode1.png" /></p>
 <p>Then select which ExecuTorch framework should link against which target.</p>
 <p><img alt="" src="_images/swiftpm_xcode2.png" /></p>
@@ -547,7 +548,7 @@
 <span class="w">  </span><span class="p">],</span>
 <span class="w">  </span><span class="n">dependencies</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="c1">// Use &quot;swiftpm-&lt;version&gt;.&lt;year_month_day&gt;&quot; branch name for a nightly build.</span>
-<span class="w">    </span><span class="p">.</span><span class="n">package</span><span class="p">(</span><span class="n">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://github.com/pytorch/executorch.git&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">branch</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;swiftpm-0.4.0&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">package</span><span class="p">(</span><span class="n">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://github.com/pytorch/executorch.git&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">branch</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;swiftpm-0.5.0&quot;</span><span class="p">)</span>
 <span class="w">  </span><span class="p">],</span>
 <span class="w">  </span><span class="n">targets</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">.</span><span class="n">target</span><span class="p">(</span>
