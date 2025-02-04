@@ -287,6 +287,10 @@ def update_spill_fill_size(
     return max_sf_size
 
 
+def canonicalize_program(obj):
+    update_spill_fill_size(obj)
+
+
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
