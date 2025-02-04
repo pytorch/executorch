@@ -12,9 +12,6 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from openvino.frontend.pytorch.torchdynamo.compile import openvino_compile
 
-SKIP_COMPILE_SPEC_KEYS = {"ImportForever"}
-
-
 @final
 class OpenvinoBackend(BackendDetails):
 

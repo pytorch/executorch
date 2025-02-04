@@ -77,8 +77,15 @@ Result<DelegateHandle*> OpenvinoBackend::init(
     // Wrap the data in a stream
     std::istringstream compiled_stream(data_string);
 
+    auto device = "CPU";
+    // Get the device value, if provided in compile sepcs
+    for (auto& compile_spec : compile_specs) {
+      if (std::strcmp(compile_spec.key, "device") == 0)
+          device = static_cast<char*>(compile_spec.value.buffer);
+    }
+
     // Import the model
-    auto compiled_model = core.import_model(compiled_stream, "CPU");
+    auto compiled_model = core.import_model(compiled_stream, device);
 
     // Allocate an infer request
     std::shared_ptr<ov::InferRequest> infer_request = std::make_shared<ov::InferRequest>(compiled_model.create_infer_request());
