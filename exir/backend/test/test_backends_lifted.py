@@ -138,6 +138,14 @@ class TestBackends(unittest.TestCase):
 
         self.assertTrue(torch.allclose(new_res, expected_res))
 
+        # Test same flow but through edge_program_manager
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
+        loweredir_m = edgeir_m.to_backend(DelegationSpec(BackendWithCompilerDemo.__name__, []))
+        lowered_sin_module = get_lowered_submodules(loweredir_m.exported_program().graph_module)[0][1]
+
+        new_res = lowered_sin_module(*model_inputs)[0]
+
+        self.assertTrue(torch.allclose(new_res, expected_res))
         # TODO(tkaruturi): emitting single LoweredBackendModule
         # program = to_edge(export(graph_module)).to_exectorch()._emitter_output.program
 

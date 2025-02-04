@@ -11,6 +11,7 @@ from executorch.exir import to_edge
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.partitioner import DelegationSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
@@ -46,6 +47,50 @@ class TestCompatibility(unittest.TestCase):
         _ = executorch_module.forward([model_inputs])
 
         prog = lowered_sin_module.program()
+        # Rewrite the delegate version number from 0 to 1.
+        prog.backend_delegate_data[0].data = bytes(
+            "1version:1#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
+            encoding="utf8",
+        )
+
+        # Generate the .pte file with the wrong version.
+        buff = bytes(
+            _serialize_pte_binary(
+                program=prog,
+            )
+        )
+
+        # Throw runtime error with error code 0x30, meaning delegate is incompatible.
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "loading method forward failed with error 0x30",
+        ):
+            executorch_module = _load_for_executorch_from_buffer(buff)
+
+    def test_compatibility_in_runtime_edge_program_manager(self):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
+        max_value = model_inputs[0].shape[0]
+        compile_specs = [CompileSpec("max_value", bytes([max_value]))]
+        lowered_edge_irm = edgeir_m.to_backend(DelegationSpec("BackendWithCompilerDemo", compile_specs))
+        exec_prog = lowered_edge_irm.to_executorch()
+
+        buff = exec_prog.buffer
+
+        # The demo backend works well
+        executorch_module = _load_for_executorch_from_buffer(buff)
+        model_inputs = torch.ones(1)
+        _ = executorch_module.forward([model_inputs])
+
+        prog = exec_prog.executorch_program
         # Rewrite the delegate version number from 0 to 1.
         prog.backend_delegate_data[0].data = bytes(
             "1version:1#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",

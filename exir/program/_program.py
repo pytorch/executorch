@@ -20,7 +20,8 @@ from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.backend.canonical_partitioners.all_node_partitioner import AllNodePartitioner
+from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
@@ -1330,7 +1331,7 @@ class EdgeProgramManager:
 
     @et_logger("to_backend")
     def to_backend(
-        self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
+        self, partitioner: Union[DelegationSpec, Dict[str, DelegationSpec], Partitioner, Dict[str, Partitioner]]
     ) -> "EdgeProgramManager":
         """
         Returns a semantically-equivalent program to the one given as input,
@@ -1338,12 +1339,15 @@ class EdgeProgramManager:
         for delegation as determined by the partitioner.
 
         Args:
-            partitioner: The partitioner can either be a Partitioner subclass instance, or a
-                dictionary mapping method names to Partitioner subclass instance. If it is a
-                Partitioner subclass, all programs in the given EdgeProgramManager
-                will be lowered using the given partitioner. If it is a
-                dictionary, only method names specified in the dictionary will be
-                lowered with the given partitioner.
+            partitioner: The partitioner can be: 
+                - Partitioner Subclass Instance; all programs in the EdgeProgramManager are lowered with
+                  this partitioner
+                - Dictionary mapping method name to partitioner subclass instance; Only method names specified
+                  in the dictionary will be lowered by the given partitioner.
+                - DelegationSpec; All programs are completely lowered to the backend_id specified in the 
+                  DelegationSpec
+                - Dictionary mapping method name to DelegationSpec; Only method names specified in the dictionary
+                  will be lowered to the backend_id specified in the DelegationSpec
 
                 The Partitioner subclass instance is in charge with tagging portions of the
                 input program for delegation. A valid partitioner must return PartitionerResult including valid
@@ -1359,13 +1363,19 @@ class EdgeProgramManager:
         if isinstance(partitioner, dict):
             for name, program in self._edge_programs.items():
                 if name in partitioner.keys():
-                    new_edge_programs[name] = to_backend(program, partitioner[name])
+                    partitioner_to_use = partitioner[name]
+                    if isinstance(partitioner_to_use, DelegationSpec):
+                        partitioner_to_use = AllNodePartitioner(partitioner_to_use)
+                    new_edge_programs[name] = to_backend(program, partitioner_to_use)
                 else:
                     new_edge_programs[name] = program
 
         else:  # apply partitioner to every method
             for name, program in self._edge_programs.items():
-                new_edge_programs[name] = to_backend(program, partitioner)
+                partitioner_to_use = partitioner
+                if isinstance(partitioner, DelegationSpec):
+                    partitioner_to_use = AllNodePartitioner(partitioner)
+                new_edge_programs[name] = to_backend(program, partitioner_to_use)
 
         config = EdgeCompileConfig(_check_ir_validity=False)
         return EdgeProgramManager(
