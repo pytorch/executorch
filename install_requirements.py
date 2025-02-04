@@ -67,7 +67,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20250104"
+NIGHTLY_VERSION = "dev20250131"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -76,7 +76,7 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.6.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        f"torch==2.7.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
         (
             f"torchvision==0.22.0.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
