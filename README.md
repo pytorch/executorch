@@ -12,9 +12,9 @@
   <hr>
 </div>
 
-**ExecuTorch** is an end-to-end solution for on-device inference and training. It powers much of Meta's on-device AI functionality including: Facebook, Oculus, Meta Glasses, Instagram, WhatsApp and more.
+**ExecuTorch** is an end-to-end solution for on-device inference and training. It powers much of Meta's on-device AI experiences across Facebook, Instagram, Meta Quest, Ray-Ban Meta Smart Glasses, WhatsApp, and more.
 
-It covers a wide gamut of models including: LLMs (Large Language Models), CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text to Speech).
+It supports a wide range of models including LLMs (Large Language Models), CV (Computer Vision), ASR (Automatic Speech Recognition), and TTS (Text to Speech).
 
 Platform Support:
 - Operating Systems:
@@ -26,9 +26,10 @@ Platform Support:
 
 - Hardware Acceleration:
   - Apple
-  - ARM
+  - Arm
   - Cadence
   - MediaTek
+  - Qualcomm
   - Vulkan
   - XNNPACK
 

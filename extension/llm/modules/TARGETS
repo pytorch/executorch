@@ -1,0 +1,49 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "kv_cache",
+    srcs = [
+        "kv_cache.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/torchtune:lib",
+    ],
+)
+
+python_library(
+    name = "attention",
+    srcs = [
+        "attention.py",
+    ],
+    deps = [
+        ":kv_cache",
+        "//caffe2:torch",
+        "//executorch/extension/llm/custom_ops:custom_ops",
+        "//pytorch/torchtune:lib",
+    ],
+)
+
+python_library(
+    name = "position_embeddings",
+    srcs = [
+        "_position_embeddings.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "module_lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps= [
+        ":position_embeddings",
+        ":attention",
+        ":kv_cache",
+    ]
+)
