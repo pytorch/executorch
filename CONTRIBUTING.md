@@ -44,6 +44,38 @@ Meta has a [bounty program](https://www.facebook.com/whitehat/) for the safe
 disclosure of security bugs. In those cases, please go through the process
 outlined on that page and do not file a public issue.
 
+### Issue Labels
+
+#### Module/Partner Labels
+
+[Labels beginning with `module:`](https://github.com/pytorch/executorch/labels?q=%22module%3A+%22)
+indicate the area that the issue relates to. The ExecuTorch oncall will
+typically add this label.
+
+[Labels beginning with `partner:`](https://github.com/pytorch/executorch/labels?q=%22partner%3A+%22)
+indicate the ExecuTorch partner who owns the issue. The ExecuTorch oncall will
+typically add this label.
+
+#### Lifecycle Labels
+
+The ExecuTorch oncall will triage new issues. If the issue requires more
+information from the issue's author, oncall will add the `need-user-input` label
+and wait for the author to respond.
+
+Once the issue contains enough information, the oncall will:
+- Ensure that the title is descriptive
+- Add one of the labels:
+  - `bug`: The issue describes an unexpected problem
+  - `feature`: The issue describes a request for new functionality
+  - `rfc`: The issue describes a proposed change to functionality
+- Add one `module:` label or one `partner:` label, as described above
+- Add the `triaged` label
+
+After this point, the oncall has finished the triage process, and the
+module owner or partner is responsible for resolving the issue. (See
+https://github.com/pytorch/executorch/issues/7679 for the mapping of labels to
+owners.)
+
 ### Claiming Issues
 We'd love your help closing out [open
 issues](https://github.com/pytorch/executorch/issues?q=sort%3Aupdated-desc+is%3Aissue+is%3Aopen)

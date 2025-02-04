@@ -42,6 +42,7 @@ class InsertTableOpsPass(ExportPass):
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
         exir_ops.edge.aten.tanh.default: torch.tanh,
+        exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
     }
 
     def __init__(self, exported_program: ExportedProgram) -> None:
