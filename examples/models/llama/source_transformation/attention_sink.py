@@ -12,15 +12,12 @@ from typing import Optional
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import (
-    Attention,
-    KVCache,
-    ModelArgs,
-    Rope,
-)
+from executorch.examples.models.llama.attention import AttentionMHA, KVCache
+from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import (
     apply_rotary_emb_to_k,
     hf_apply_rotary_emb_to_k,
+    Rope,
 )
 from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
 
@@ -44,8 +41,8 @@ class RopeWithAttentionSink(Rope):
             self.apply_rotary_emb_to_k = hf_apply_rotary_emb_to_k
         else:
             self.apply_rotary_emb_to_k = apply_rotary_emb_to_k
-        self.max_seq_length = window_size + sink_size
-        assert self.max_seq_length == self.params.max_seq_len
+        self.max_context_length = window_size + sink_size
+        assert self.max_context_length == self.params.max_context_len
         self.eviction_batch_size = eviction_batch_size
         self.position_shift = 0
 
@@ -54,11 +51,14 @@ class RopeWithAttentionSink(Rope):
 
         input_pos_item = input_pos.item()
         torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_seq_length:
+        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
             # There are not enough spaces in the cache to store the new tokens.
             # We need to evict some old tokens and shift some recent tokens.
             num_to_evict = max(
-                input_pos_item + self.position_shift - self.max_seq_length + seq_len,
+                input_pos_item
+                + self.position_shift
+                - self.max_context_length
+                + seq_len,
                 self.eviction_batch_size,
             )
             self.position_shift -= num_to_evict  # pyre-ignore [8]
@@ -121,7 +121,7 @@ class KVCacheWithAttentionSink(KVCache):
     ):
         super().__init__(
             max_batch_size=max_batch_size,
-            max_seq_length=window_size + sink_size,
+            max_context_length=window_size + sink_size,
             n_heads=n_heads,
             head_dim=head_dim,
             enable_dynamic_shape=enable_dynamic_shape,
@@ -148,11 +148,14 @@ class KVCacheWithAttentionSink(KVCache):
         """
         input_pos_item = input_pos.item()
         torch._check_is_size(input_pos_item)
-        if input_pos_item + self.position_shift + seq_len > self.max_seq_length:
+        if input_pos_item + self.position_shift + seq_len > self.max_context_length:
             # There are not enough spaces in the cache to store the new tokens.
             # We need to evict some old tokens and shift some recent tokens.
             num_to_evict = max(
-                input_pos_item + self.position_shift - self.max_seq_length + seq_len,
+                input_pos_item
+                + self.position_shift
+                - self.max_context_length
+                + seq_len,
                 self.eviction_batch_size,
             )
             num_to_keep = (
@@ -260,7 +263,7 @@ def _replace_attention(
                 eviction_batch_size=eviction_batch_size,
             )
 
-        if isinstance(child_module, Attention):
+        if isinstance(child_module, AttentionMHA):
             kv_cache = child_module.kv_cache
             kv_cache_with_attention_sink = KVCacheWithAttentionSink(
                 n_heads=kv_cache.n_heads,

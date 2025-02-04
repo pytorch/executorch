@@ -14,6 +14,8 @@ runtime.python_library(
     srcs = [
         "llama_transformer.py",
         "rope.py",
+        "attention.py",
+        "model_args.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",

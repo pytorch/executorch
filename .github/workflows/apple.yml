@@ -37,7 +37,7 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.4.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="0.5.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-demo-ios:
