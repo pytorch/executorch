@@ -138,7 +138,8 @@ class Target:
                 "to missing git submodules or outdated CMake cache. "
                 "Please run the following before retry:\033[0m\n\n"
                 "    \033[32;1m./install_executorch.sh --clean\033[0m\n"
-                "    \033[32;1mgit submodule update --init --recursive\033[0m\n"
+                "    \033[32;1mgit submodule sync\033[0m\n"
+                "    \033[32;1mgit submodule update --init\033[0m\n"
             )
             raise e
 

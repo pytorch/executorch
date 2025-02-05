@@ -740,7 +740,8 @@ class CustomBuild(build):
                         "\033[31;1mEither CMake cache is outdated or git submodules are not synced.\n"
                         "Please run the following before retry:\033[0m\n"
                         "    \033[32;1m./install_executorch.sh --clean\033[0m\n"
-                        "    \033[32;1mgit submodule update --init --recursive\033[0m\n"
+                        "    \033[32;1mgit submodule sync\033[0m\n"
+                        "    \033[32;1mgit submodule update --init\033[0m\n"
                     )
                 raise Exception(error + "\n" + additional_log) from e
 
