@@ -66,6 +66,33 @@ class Arange(torch.nn.Module):
         )
 
 
+class Argmin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.argmin(x, dim=0, keepdim=True)
+        return x
+
+
+class ArgminViewSqueezeConv2D(torch.nn.Module):
+    def __init__(self):
+        # This model is mainly to test the PASS TensorI64toI32
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1
+        )
+
+    def forward(self, x, y):
+        argmin_out = torch.argmin(x, dim=0, keepdim=True)
+        index_out = y[argmin_out]
+        conv_out = self.conv(index_out)
+
+        view_out = argmin_out.view(-1)
+        squeeze_out = view_out.squeeze(-1)
+        return squeeze_out, conv_out
+
+
 class AvgPoolModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
