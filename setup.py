@@ -59,6 +59,7 @@ import logging
 import subprocess
 
 from distutils import log
+from distutils.errors import DistutilsExecError
 from distutils.sysconfig import get_python_lib
 from pathlib import Path
 from typing import List, Optional
@@ -89,56 +90,55 @@ logger = logging.getLogger()
 # too restrictive for users who modifies and tests the dependencies locally.
 
 # keep sorted
-REQUIRED_SUBMODULES = [
-    "ao",
-    "cpuinfo",
-    "eigen",
-    "flatbuffers",
-    "FP16",
-    "FXdiv",
-    "gflags",
-    "prelude",
-    "pthreadpool",
-    "pybind11",
-    "XNNPACK",
-]
+REQUIRED_SUBMODULES = {
+    "ao": "LICENSE",  # No CMakeLists.txt, choose a sort of stable file to check.
+    "cpuinfo": "CMakeLists.txt",
+    "eigen": "CMakeLists.txt",
+    "flatbuffers": "CMakeLists.txt",
+    "FP16": "CMakeLists.txt",
+    "FXdiv": "CMakeLists.txt",
+    "gflags": "CMakeLists.txt",
+    "prelude": "BUCK",
+    "pthreadpool": "CMakeLists.txt",
+    "pybind11": "CMakeLists.txt",
+    "XNNPACK": "CMakeLists.txt",
+}
 
 
 def get_required_submodule_paths():
-    gitsubmodule_path = os.path.join(os.getcwd(), ".gitsubmodule")
+    gitmodules_path = os.path.join(os.getcwd(), ".gitmodules")
 
-    if not os.path.isfile(gitsubmodule_path):
-        print("Error: .gitsubmodule file not found.")
+    if not os.path.isfile(gitmodules_path):
+        logger.error(".gitmodules file not found.")
         exit(1)
 
-    with open(gitsubmodule_path, "r") as file:
+    with open(gitmodules_path, "r") as file:
         lines = file.readlines()
 
     # Extract paths of required submodules
-    required_paths = []
+    required_paths = {}
     for line in lines:
         if line.strip().startswith("path ="):
             path = line.split("=")[1].strip()
-            if any(submodule in path for submodule in REQUIRED_SUBMODULES):
-                required_paths.append(path)
+            for submodule, file_name in REQUIRED_SUBMODULES.items():
+                if submodule in path:
+                    required_paths[path] = file_name
     return required_paths
 
 
 def check_and_update_submodules():
-    def check_folder(folder: str) -> bool:
-        return os.path.isdir(folder) and os.path.isfile(
-            os.path.join(folder, "CMakeLists.txt")
-        )
+    def check_folder(folder: str, file: str) -> bool:
+        return os.path.isdir(folder) and os.path.isfile(os.path.join(folder, file))
 
     # Check if the directories exist for each required submodule
-    missing_submodules = []
-    for path in get_required_submodule_paths():
-        if not check_folder(path):
-            missing_submodules.append(path)
+    missing_submodules = {}
+    for path, file in get_required_submodule_paths().items():
+        if not check_folder(path, file):
+            missing_submodules[path] = file
 
     # If any required submodule directories are missing, update them
     if missing_submodules:
-        logger.warn("Some required submodules are missing. Updating submodules...")
+        logger.warning("Some required submodules are missing. Updating submodules...")
         try:
             subprocess.check_call(
                 ["git", "submodule", "update", "--init", "--recursive"]
@@ -148,12 +148,12 @@ def check_and_update_submodules():
             exit(1)
 
         # After updating submodules, check again
-        for path in missing_submodules:
-            if not check_folder(path):
-                logger.error(f"Error: CMakeLists.txt not found in {path}.")
+        for path, file in missing_submodules.items():
+            if not check_folder(path, file):
+                logger.error(f"{file} not found in {path}.")
                 logger.error("Please run `git submodule update --init --recursive`.")
                 exit(1)
-    logger.info("All required submodules are present and contain CMakeLists.txt.")
+    logger.info("All required submodules are present.")
 
 
 class ShouldBuild:
@@ -724,7 +724,27 @@ class CustomBuild(build):
             # lists.
 
             # Generate the build system files.
-            self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
+            try:
+                subprocess.run(
+                    ["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                error = str(e.stderr)
+                # Our educated guesses from parsing the error message.
+                # Missing source file, could be related to git submodules not synced or cmake cache is outdated
+                additional_log = ""
+                if "Cannot find source file" in error:
+                    additional_log = (
+                        "\033[31;1mEither CMake cache is outdated or git submodules are not synced.\n"
+                        "Please run the following before retry:\033[0m\n"
+                        "    \033[32;1m./install_executorch.sh --clean\033[0m\n"
+                        "    \033[32;1mgit submodule update --init --recursive\033[0m\n"
+                    )
+                raise Exception(error + "\n" + additional_log) from e
 
         # Build the system.
         self.spawn(["cmake", "--build", cmake_cache_dir, *build_args])
