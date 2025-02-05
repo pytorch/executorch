@@ -55,6 +55,8 @@ import sys
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
 import setuptools  # noqa: F401 # usort: skip
+import logging
+import subprocess
 
 from distutils import log
 from distutils.sysconfig import get_python_lib
@@ -66,8 +68,90 @@ from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [ExecuTorch] %(levelname)s: %(message)s"
+)
+logger = logging.getLogger()
+
 # For information on setuptools Command subclassing see
 # https://setuptools.pypa.io/en/latest/userguide/extension.html
+
+################################################################################
+# Git submodules
+################################################################################
+# The following submodules are required to be able to build ExecuTorch. If any of
+# these folders are missing or missing CMakeLists.txt, we will run
+# `git submodule update` to try to fix it. If the command fails, we will raise an
+# error.
+# An alternative to this would be to run `git submodule status` and run
+# `git submodule update` if there's any local changes. However this is a bit
+# too restrictive for users who modifies and tests the dependencies locally.
+
+# keep sorted
+REQUIRED_SUBMODULES = {
+    "ao": "LICENSE",  # No CMakeLists.txt, choose a sort of stable file to check.
+    "cpuinfo": "CMakeLists.txt",
+    "eigen": "CMakeLists.txt",
+    "flatbuffers": "CMakeLists.txt",
+    "FP16": "CMakeLists.txt",
+    "FXdiv": "CMakeLists.txt",
+    "gflags": "CMakeLists.txt",
+    "prelude": "BUCK",
+    "pthreadpool": "CMakeLists.txt",
+    "pybind11": "CMakeLists.txt",
+    "XNNPACK": "CMakeLists.txt",
+}
+
+
+def get_required_submodule_paths():
+    gitmodules_path = os.path.join(os.getcwd(), ".gitmodules")
+
+    if not os.path.isfile(gitmodules_path):
+        logger.error(".gitmodules file not found.")
+        exit(1)
+
+    with open(gitmodules_path, "r") as file:
+        lines = file.readlines()
+
+    # Extract paths of required submodules
+    required_paths = {}
+    for line in lines:
+        if line.strip().startswith("path ="):
+            path = line.split("=")[1].strip()
+            for submodule, file_name in REQUIRED_SUBMODULES.items():
+                if submodule in path:
+                    required_paths[path] = file_name
+    return required_paths
+
+
+def check_and_update_submodules():
+    def check_folder(folder: str, file: str) -> bool:
+        return os.path.isdir(folder) and os.path.isfile(os.path.join(folder, file))
+
+    # Check if the directories exist for each required submodule
+    missing_submodules = {}
+    for path, file in get_required_submodule_paths().items():
+        if not check_folder(path, file):
+            missing_submodules[path] = file
+
+    # If any required submodule directories are missing, update them
+    if missing_submodules:
+        logger.warning("Some required submodules are missing. Updating submodules...")
+        try:
+            subprocess.check_call(["git", "submodule", "sync"])
+            subprocess.check_call(["git", "submodule", "update", "--init"])
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error updating submodules: {e}")
+            exit(1)
+
+        # After updating submodules, check again
+        for path, file in missing_submodules.items():
+            if not check_folder(path, file):
+                logger.error(f"{file} not found in {path}.")
+                logger.error("Please run `git submodule update --init`.")
+                exit(1)
+    logger.info("All required submodules are present.")
 
 
 class ShouldBuild:
@@ -638,7 +722,28 @@ class CustomBuild(build):
             # lists.
 
             # Generate the build system files.
-            self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
+            try:
+                subprocess.run(
+                    ["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                error = str(e.stderr)
+                # Our educated guesses from parsing the error message.
+                # Missing source file, could be related to git submodules not synced or cmake cache is outdated
+                additional_log = ""
+                if "Cannot find source file" in error:
+                    additional_log = (
+                        "\033[31;1mEither CMake cache is outdated or git submodules are not synced.\n"
+                        "Please run the following before retry:\033[0m\n"
+                        "    \033[32;1m./install_executorch.sh --clean\033[0m\n"
+                        "    \033[32;1mgit submodule sync\033[0m\n"
+                        "    \033[32;1mgit submodule update --init\033[0m\n"
+                    )
+                raise Exception(error + "\n" + additional_log) from e
 
         # Build the system.
         self.spawn(["cmake", "--build", cmake_cache_dir, *build_args])
@@ -720,31 +825,39 @@ def get_ext_modules() -> List[Extension]:
     return ext_modules
 
 
-setup(
-    version=Version.string(),
-    # TODO(dbort): Could use py_modules to restrict the set of modules we
-    # package, and package_data to restrict the set up non-python files we
-    # include. See also setuptools/discovery.py for custom finders.
-    package_dir={
-        "executorch/backends": "backends",
-        "executorch/codegen": "codegen",
-        # TODO(mnachin T180504136): Do not put examples/models
-        # into core pip packages. Refactor out the necessary utils
-        # or core models files into a separate package.
-        "executorch/examples/models": "examples/models",
-        "executorch/exir": "exir",
-        "executorch/extension": "extension",
-        "executorch/kernels/quantized": "kernels/quantized",
-        "executorch/schema": "schema",
-        "executorch/devtools": "devtools",
-        "executorch/devtools/bundled_program": "devtools/bundled_program",
-        "executorch/runtime": "runtime",
-        "executorch/util": "util",
-    },
-    cmdclass={
-        "build": CustomBuild,
-        "build_ext": InstallerBuildExt,
-        "build_py": CustomBuildPy,
-    },
-    ext_modules=get_ext_modules(),
-)
+def main():
+    # Check submodules
+    check_and_update_submodules()
+
+    setup(
+        version=Version.string(),
+        # TODO(dbort): Could use py_modules to restrict the set of modules we
+        # package, and package_data to restrict the set up non-python files we
+        # include. See also setuptools/discovery.py for custom finders.
+        package_dir={
+            "executorch/backends": "backends",
+            "executorch/codegen": "codegen",
+            # TODO(mnachin T180504136): Do not put examples/models
+            # into core pip packages. Refactor out the necessary utils
+            # or core models files into a separate package.
+            "executorch/examples/models": "examples/models",
+            "executorch/exir": "exir",
+            "executorch/extension": "extension",
+            "executorch/kernels/quantized": "kernels/quantized",
+            "executorch/schema": "schema",
+            "executorch/devtools": "devtools",
+            "executorch/devtools/bundled_program": "devtools/bundled_program",
+            "executorch/runtime": "runtime",
+            "executorch/util": "util",
+        },
+        cmdclass={
+            "build": CustomBuild,
+            "build_ext": InstallerBuildExt,
+            "build_py": CustomBuildPy,
+        },
+        ext_modules=get_ext_modules(),
+    )
+
+
+if __name__ == "__main__":
+    main()
