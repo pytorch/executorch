@@ -5,7 +5,6 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-
 python_library(
     name = "static_llama",
     srcs = [
@@ -16,12 +15,33 @@ python_library(
     ],
 )
 
+python_library(
+    name = "llama_lib",
+    srcs = ["llama.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
+        "//executorch/devtools:lib",
+        "//executorch/examples/models:models",
+        "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
+        "//executorch/examples/qualcomm:utils",
+        "//executorch/extension/export_util:export_util",
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+        "//executorch/extension/llm/export:export_lib",
+        "//executorch/extension/pybindings:aten_lib",
+    ],
+)
+
 python_binary(
     name = "llama",
     srcs = ["llama.py"],
-    main_function = "executorch.examples.qualcomm.oss_scripts.llama2.llama.main",
+    main_function = "executorch.examples.qualcomm.oss_scripts.llama.llama.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+    ],
     deps = [
-        ":static_llama",
+        "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
         "//caffe2:torch",
         "//executorch/extension/pybindings:aten_lib",
         "//executorch/backends/qualcomm/partition:partition",
@@ -38,6 +58,8 @@ runtime.command_alias(
     name = "llama_qnn",
     env = {
         "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_verision()),
+        # Place holder to pass the QNN_SDK_ROOT check in executorch/examples/qualcomm/utils.py
+        "QNN_SDK_ROOT": "",
     },
     exe = ":llama",
 )

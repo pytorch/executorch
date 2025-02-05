@@ -4,17 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
-from typing import List, Optional, Tuple, Union
-
-import pytest
+from typing import List, Tuple, Union
 
 import torch
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
+
+aten_op = "torch.ops.aten.conv2d.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
 
 class Conv2d(torch.nn.Module):
@@ -25,7 +28,6 @@ class Conv2d(torch.nn.Module):
 
     def __init__(
         self,
-        inputs: Optional[torch.Tensor] = None,
         height=8,
         width=8,
         nbr_conv=1,  # Number of chained convs
@@ -76,13 +78,11 @@ class Conv2d(torch.nn.Module):
         if not isinstance(padding_mode, List):
             padding_mode = [padding_mode]
 
-        # Generate test data if not provided
-        if inputs is None:
-            self.inputs = (
-                torch.randn(batches, in_channels[0], height, width).to(dtype),
-            )
-        else:
-            self.inputs = (inputs,)
+        self.batches = batches
+        self.in_channels = in_channels
+        self.height = height
+        self.width = width
+        self.dtype = dtype
 
         # Build chain of convs
         for i in range(self.nbr_convs):
@@ -103,7 +103,11 @@ class Conv2d(torch.nn.Module):
             )
 
     def get_inputs(self):
-        return self.inputs
+        return (
+            torch.randn(self.batches, self.in_channels[0], self.height, self.width).to(
+                self.dtype
+            ),
+        )
 
     def forward(self, x):
         for i in range(self.nbr_convs):
@@ -325,124 +329,80 @@ two_conv2d = Conv2d(
 
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_conv2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
-testsuite = [
-    ("2x2_3x2x40x40_nobias", conv2d_2x2_3x2x40x40_nobias),
-    ("3x3_1x3x256x256_st1", conv2d_3x3_1x3x256x256_st1),
-    ("3x3_1x3x12x12_st2_pd1", conv2d_3x3_1x3x12x12_st2_pd1),
-    ("1x1_1x2x128x128_st1", conv2d_1x1_1x2x128x128_st1),
-    ("2x2_1x1x14x13_st2_needs_adjust_pass", conv2d_2x2_1x1x14x13_st2),
-    ("5x5_1x3x14x15_st3_pd1_needs_adjust_pass", conv2d_5x5_1x3x14x15_st3_pd1),
-    ("7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass", conv2d_7x7_1x3x16x16_st2_pd1_dl2),
-    ("7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass", conv2d_7x7_1x3x15x15_st1_pd0_dl1),
-    ("5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass", conv2d_5x5_1x3x14x14_st5_pd0_dl1),
-    ("5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass", conv2d_5x5_1x3x9x9_st5_pd0_dl1),
-    ("3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass", conv2d_3x3_1x3x9x8_st3_pd0_dl1),
-    ("3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass", conv2d_3x3_1x3x8x9_st3_pd0_dl1),
-    ("3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass", conv2d_3x4_1x3x7x7_st3_pd0_dl1),
-    ("4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass", conv2d_4x3_1x3x7x7_st3_pd0_dl1),
-    ("5x5_3x2x128x128_st1", conv2d_5x5_3x2x128x128_st1),
-    ("3x3_1x3x224x224_st2_pd1", conv2d_3x3_1x3x224x224_st2_pd1),
-    ("two_conv2d_nobias", two_conv2d_nobias),
-    ("two_conv2d", two_conv2d),
-]
+test_modules = {
+    "2x2_3x2x40x40_nobias": conv2d_2x2_3x2x40x40_nobias,
+    "3x3_1x3x256x256_st1": conv2d_3x3_1x3x256x256_st1,
+    "3x3_1x3x12x12_st2_pd1": conv2d_3x3_1x3x12x12_st2_pd1,
+    "1x1_1x2x128x128_st1": conv2d_1x1_1x2x128x128_st1,
+    "2x2_1x1x14x13_st2_needs_adjust_pass": conv2d_2x2_1x1x14x13_st2,
+    "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": conv2d_5x5_1x3x14x15_st3_pd1,
+    "7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass": conv2d_7x7_1x3x16x16_st2_pd1_dl2,
+    "7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass": conv2d_7x7_1x3x15x15_st1_pd0_dl1,
+    "5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass": conv2d_5x5_1x3x14x14_st5_pd0_dl1,
+    "5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass": conv2d_5x5_1x3x9x9_st5_pd0_dl1,
+    "3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass": conv2d_3x3_1x3x9x8_st3_pd0_dl1,
+    "3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass": conv2d_3x3_1x3x8x9_st3_pd0_dl1,
+    "3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": conv2d_3x4_1x3x7x7_st3_pd0_dl1,
+    "4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": conv2d_4x3_1x3x7x7_st3_pd0_dl1,
+    "5x5_3x2x128x128_st1": conv2d_5x5_3x2x128x128_st1,
+    "3x3_1x3x224x224_st2_pd1": conv2d_3x3_1x3x224x224_st2_pd1,
+    "two_conv2d_nobias": two_conv2d_nobias,
+    "two_conv2d": two_conv2d,
+}
+
+fvp_xfails = {
+    "2x2_3x2x40x40_nobias": "MLETORCH-520: Numerical issues on FVP.",
+    "5x5_3x2x128x128_st1": "MLETORCH-520: Numerical issues on FVP.",
+}
+input_t = Tuple[torch.Tensor]
 
 
-class TestConv2D(unittest.TestCase):
-    """Tests Conv2D, both single ops and multiple Convolutions in series."""
+@common.parametrize("test_module", test_modules)
+def test_conv2d_tosa_MI(test_module):
+    pipeline = TosaPipelineMI[input_t](
+        test_module, test_module.get_inputs(), aten_op, exir_op
+    )
+    pipeline.run()
 
-    def _test_conv2d_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI",
-                ),
-            )
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_conv2d_tosa_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        test_data: Tuple[torch.Tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI",
-                ),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
+@common.parametrize("test_module", test_modules)
+def test_conv2d_tosa_BI(test_module):
+    pipeline = TosaPipelineBI[input_t](
+        test_module, test_module.get_inputs(), aten_op, exir_op
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
 
-    def _test_conv2d_ethosu_BI_pipeline(
-        self,
-        compile_spec: CompileSpec,
-        module: torch.nn.Module,
-        test_data: Tuple[torch.Tensor],
-    ):
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
-    @parameterized.expand(testsuite)
-    def test_conv2d_tosa_MI(self, test_name, model):
-        self._test_conv2d_tosa_MI_pipeline(model, model.get_inputs())
+@common.parametrize("test_module", test_modules)
+def test_conv2d_u55_BI(test_module):
+    pipeline = EthosU55PipelineBI[input_t](
+        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
+    )
+    pipeline.run()
 
-    @parameterized.expand(testsuite)
-    def test_conv2d_tosa_BI(self, test_name, model):
-        self._test_conv2d_tosa_BI_pipeline(model, model.get_inputs())
 
-    # These cases have numerical issues on FVP, MLETORCH-520
-    testsuite.remove(("2x2_3x2x40x40_nobias", conv2d_2x2_3x2x40x40_nobias))
-    testsuite.remove(("5x5_3x2x128x128_st1", conv2d_5x5_3x2x128x128_st1))
+@common.parametrize("test_module", test_modules)
+def test_conv2d_u85_BI(test_module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
+    )
+    pipeline.run()
 
-    @parameterized.expand(testsuite)
-    @pytest.mark.corstone_fvp
-    def test_conv2d_u55_BI(self, test_name, model):
-        self._test_conv2d_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(),
-            model,
-            model.get_inputs(),
-        )
 
-    @parameterized.expand(testsuite)
-    @pytest.mark.corstone_fvp
-    def test_conv2d_u85_BI(self, test_name, model):
-        self._test_conv2d_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(),
-            model,
-            model.get_inputs(),
-        )
+@common.parametrize("test_module", test_modules, fvp_xfails)
+@common.SkipIfNoCorstone300
+def test_conv2d_u55_BI_on_fvp(test_module):
+    pipeline = EthosU55PipelineBI[input_t](
+        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules, fvp_xfails)
+@common.SkipIfNoCorstone320
+def test_conv2d_u85_BI_on_fvp(test_module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
+    )
+    pipeline.run()

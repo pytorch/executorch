@@ -37,8 +37,9 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
     update_spill_fill_size,
 )
+from executorch.examples.models.llama.llama_transformer import MOEFeedForward
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs, MOEFeedForward
+from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
@@ -95,6 +96,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_abs(self):
         module = Abs()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_adaptive_avg_pool2d(self):
+        module = AdaptiveAvgPool2D()  # noqa: F405
+        sample_input = (torch.randn(1, 512, 7, 7),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_arange(self):
@@ -432,9 +438,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
-        module = LayerNorm()  # noqa: F405
+        modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
         sample_input = (torch.randn(196, 768),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_leaky_relu(self):
         test_comb = [
@@ -915,6 +923,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_adaptive_avg_pool2d(self):
+        module = AdaptiveAvgPool2D()  # noqa: F405
+        sample_input = (torch.randn(1, 512, 7, 7),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_arange(self):
         modules = [
             Arange(start=1, end=6, step=0.5, dtype=torch.float32),  # noqa: F405
@@ -1280,10 +1294,12 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
-        module = LayerNorm()  # noqa: F405
+        modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
         sample_input = (torch.randn(196, 768),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_leaky_relu(self):
         test_comb = [
@@ -2675,6 +2691,42 @@ class TestExampleOssScript(TestQNN):
             ]
         )
 
+    def test_conv_former(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/conv_former.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
+
     def test_dino_v2(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -3529,7 +3581,7 @@ class TestExampleScript(TestQNN):
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama2/llama.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -3556,6 +3608,8 @@ class TestExampleScript(TestQNN):
             "16a4w",
             "--temperature",
             "0",
+            "--llama_model",
+            "stories110m",
         ]
         if self.host:
             cmds.extend(["--host", self.host])

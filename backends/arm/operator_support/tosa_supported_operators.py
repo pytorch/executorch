@@ -76,9 +76,12 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.clamp.default,
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.permute_copy.default,
+            exir_ops.edge.aten.hardsigmoid.default,
             exir_ops.edge.aten.hardtanh.default,
+            exir_ops.edge.aten.hardswish.default,
             exir_ops.edge.aten.convolution.default,
             exir_ops.edge.aten.div.Tensor,
             exir_ops.edge.aten.eq.Tensor,
@@ -137,5 +140,5 @@ class TOSASupportedOperators(OperatorSupportBase):
     def is_node_supported_custom(self, node: fx.Node) -> bool:
         tosa_checks = get_registered_tosa_support_checks(self.tosa_spec)
         if node.target in tosa_checks.keys():
-            return tosa_checks[node.target].is_node_supported(node, self.tosa_spec)
+            return tosa_checks[node.target].is_node_supported(node, self.tosa_spec)  # type: ignore[index]
         return False

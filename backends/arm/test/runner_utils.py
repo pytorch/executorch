@@ -65,16 +65,7 @@ def get_input_names(program: ExportedProgram) -> list[str]:
     Returns:
         A list of strings with the names of the model input.
     """
-    input_names = []
-
-    # E.g. bias and weights are 'placeholders' as well. This is used to
-    # get only the use inputs.
-    usr_inputs = program.graph_signature.user_inputs
-    for node in program.graph.nodes:
-        if node.op == "placeholder" and node.name in usr_inputs:
-            input_names.append(node.name)
-
-    return input_names
+    return [spec.arg.name for spec in program.graph_signature.input_specs]
 
 
 def get_input_quantization_params(
@@ -178,7 +169,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
         return run_tosa_graph(tosa_buffer, tosa_version, inputs)
 
     def __torch_function__(self, func, types, args=..., kwargs=None):
-        if isinstance(func, torch._higher_order_ops.executorch_call_delegate.ExecutorchCallDelegate):  # type: ignore
+        if func is torch._higher_order_ops.executorch_call_delegate:
             lowered_backend_module = cast(LoweredBackendModule, args[0])
             if lowered_backend_module.backend_id == "ArmBackend":
                 return self._tosa_dispatch(lowered_backend_module, args[1:])
@@ -334,13 +325,16 @@ def run_corstone(
 
 
 def prep_data_for_save(
-    data: torch.Tensor,
+    data,
     input_name: str,
     quant_param: Optional[QuantizationParams] = None,
 ):
-    data_np = np.array(data.detach(), order="C").astype(
-        torch_to_numpy_dtype_dict[data.dtype]
-    )
+    if isinstance(data, torch.Tensor):
+        data_np = np.array(data.detach(), order="C").astype(
+            torch_to_numpy_dtype_dict[data.dtype]
+        )
+    else:
+        data_np = np.array(data)
     if quant_param is not None:
         assert quant_param.node_name in input_name, (
             f"The quantization params name '{quant_param.node_name}' does not "
@@ -490,6 +484,47 @@ def _tosa_refmodel_loglevel(loglevel: int) -> str:
     }
     clamped_logging_level = max(min(loglevel // 10 * 10, 50), 0)
     return loglevel_map[clamped_logging_level]
+
+
+def corstone300_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
+def corstone320_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-320", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
+def get_elf_path(target_board):
+    elf_path = os.path.join(
+        "cmake-out",
+        f"arm_semihosting_executor_runner_{target_board}",
+        "arm_executor_runner",
+    )
+    if not os.path.exists(elf_path):
+        raise RuntimeError(
+            f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+        )
+    else:
+        return elf_path
+
+
+def arm_executor_runner_exists(target_board):
+    try:
+        get_elf_path(target_board)
+    except:
+        return False
+    else:
+        return True
 
 
 def run_tosa_graph(

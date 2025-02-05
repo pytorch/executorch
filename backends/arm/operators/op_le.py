@@ -9,7 +9,7 @@ from typing import List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,

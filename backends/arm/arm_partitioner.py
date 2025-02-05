@@ -10,7 +10,7 @@ import os
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import (
+from executorch.backends.arm.arm_backend import (  # type: ignore[attr-defined]
     ArmBackend,
 )  # usort: skip
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
@@ -113,8 +113,41 @@ class ArmPartitioner(Partitioner):
         self,
         ep: ExportedProgram,
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        ops_to_not_decompose_if_quant_op = [
+            torch.ops.aten.hardsigmoid.default,
+            torch.ops.aten.hardswish.default,
+        ]
+
+        def filter_fn(node: torch.fx.Node) -> bool:
+            # This function filters for operators to not decompose where:
+            #   - It's target is in ops_to_not_decompose_if_quant_op list.
+            #   - All it's inputs/outputs are quantize operators.
+            dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default
+            q = torch.ops.quantized_decomposed.quantize_per_tensor.default
+
+            if node.target in ops_to_not_decompose_if_quant_op:
+                # Assume we should not decompose the operator (it is quantized)
+                should_not_decompose = True
+
+                input_nodes = node.all_input_nodes
+                ouput_nodes = node.users
+
+                for inp in input_nodes:
+                    if inp.target != dq:
+                        should_not_decompose = False
+
+                for out in ouput_nodes:
+                    if out.target != q:
+                        should_not_decompose = False
+
+                return should_not_decompose
+
+            # Be default, do not decompose the operator
+            return True
+
         ops_to_not_decompose = [
             torch.ops.aten.linear.default,
             torch.ops.aten.upsample_nearest2d.vec,
-        ]
-        return (ops_to_not_decompose, None)
+        ] + ops_to_not_decompose_if_quant_op
+
+        return (ops_to_not_decompose, filter_fn)

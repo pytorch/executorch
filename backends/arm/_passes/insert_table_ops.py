@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -31,7 +31,7 @@ class InsertTableOpsPass(ExportPass):
     """
     For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
     edge ops with a tosa._table(input: Tensor, target_str: str) where target_str == str(node.target).
-    When loweringthe _table node target_str will be used to find the corresponding torch operator
+    When lowering the _table node target_str will be used to find the corresponding torch operator
     which will be used to produce the table values in operators/op_table.py.
     """
 
@@ -42,6 +42,8 @@ class InsertTableOpsPass(ExportPass):
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
         exir_ops.edge.aten.tanh.default: torch.tanh,
+        exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
+        exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
     }
 
     def __init__(self, exported_program: ExportedProgram) -> None:
@@ -92,7 +94,7 @@ class InsertTableOpsPass(ExportPass):
             with graph_module.graph.inserting_before(node):
                 table_node = create_node(
                     graph=graph_module.graph,
-                    op_target=torch.ops.tosa._table,
+                    op_target=torch.ops.tosa._table.default,
                     args=(node.args[0],),
                 )
                 assert len(input_qparams) == 1
@@ -104,7 +106,11 @@ class InsertTableOpsPass(ExportPass):
                     out_quantargs=output_qparams[0],
                 )
                 # Register buffer in self.exported_program.state_dict
-                self.register_buffer(buffer_name=table_node.name, buffer=buffer)
+                # When the graph is retraced, the implementation _table is used and the suffix _default disappears from the node name
+                # Remove it here to make it possible to find in the node_visitor
+                self.register_buffer(
+                    buffer_name=table_node.name.replace("_default", ""), buffer=buffer
+                )
                 node.replace_all_uses_with(table_node)
             graph_module.graph.erase_node(node)
             table_node.meta["input_qparams"] = input_qparams

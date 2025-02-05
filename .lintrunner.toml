@@ -1,4 +1,4 @@
-merge_base_with = "origin/main"
+merge_base_with = "main"
 
 [[linter]]
 code = 'FLAKE8'
@@ -291,6 +291,7 @@ code = 'MYPY'
 include_patterns = [
     # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
     # 'backends/**/*.py',
+    'backends/arm/**/*.py',
     'build/**/*.py',
     'codegen/**/*.py',
     # 'devtools/**/*.py',
@@ -312,6 +313,7 @@ exclude_patterns = [
     '**/third-party/**',
     'scripts/check_binary_dependencies.py',
     'profiler/test/test_profiler_e2e.py',
+    'backends/arm/test/**',
 ]
 command = [
     'python',

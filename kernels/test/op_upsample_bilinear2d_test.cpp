@@ -15,9 +15,9 @@
 
 #include <gtest/gtest.h>
 
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
@@ -25,7 +25,7 @@ using torch::executor::testing::TensorFactory;
 template <class T>
 using OptionalArrayRef = std::optional<c10::ArrayRef<T>>;
 #else
-using exec_aten::OptionalArrayRef;
+using executorch::aten::OptionalArrayRef;
 #endif
 
 class OpUpsampleBilinear2dTest : public OperatorTest {
@@ -40,10 +40,16 @@ class OpUpsampleBilinear2dTest : public OperatorTest {
         context_, in, output_size, align_corners, scale_factors, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_upsample_bilinear2d_dtype() {
     TensorFactory<DTYPE> tf;
 
+    if (torch::executor::testing::SupportedFeatures::get()->is_aten &&
+        (DTYPE == ScalarType::Char || DTYPE == ScalarType::Short ||
+         DTYPE == ScalarType::Int || DTYPE == ScalarType::Long)) {
+      // not supported.
+      return;
+    }
     const auto input = tf.make({1, 1, 1, 2}, {1, 4});
     std::array<int64_t, 2> output_size = {1, 4};
     auto out = tf.zeros({1, 1, 1, 4});

@@ -107,7 +107,10 @@ jobs:
 
   test-demo-backend-delegation:
     name: test-demo-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         include:
@@ -147,7 +150,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch
+        install_executorch "use-pt-pinned-commit"
 
         .ci/scripts/setup-arm-baremetal-tools.sh
 
@@ -177,7 +180,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch
+        install_executorch "use-pt-pinned-commit"
 
         .ci/scripts/setup-arm-baremetal-tools.sh
 
@@ -301,7 +304,10 @@ jobs:
 
   test-qnn-model:
     name: test-qnn-model
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         dtype: [fp32]
@@ -361,7 +367,10 @@ jobs:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     secrets: inherit
     strategy:
       matrix:
@@ -445,7 +454,10 @@ jobs:
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         dtype: [fp32]

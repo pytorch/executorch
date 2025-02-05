@@ -8,7 +8,7 @@ import unittest
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import KVCache
+from executorch.examples.models.llama.attention import KVCache
 
 from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
     QuantizedCacheType,
@@ -20,7 +20,7 @@ class QuantizedKVCacheTest(unittest.TestCase):
     def _init_cache(self):
         self.kv_cache = KVCache(
             self.max_batch_size,
-            self.max_seq_len,
+            self.max_context_len,
             self.n_kv_heads,
             self.head_dim,
             self.enable_dynamic_shape,
@@ -36,7 +36,7 @@ class QuantizedKVCacheTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(42)
         self.max_batch_size = 1
-        self.max_seq_len = 5
+        self.max_context_len = 5
         self.n_kv_heads = 8
         self.head_dim = 17
         self.enable_dynamic_shape = False

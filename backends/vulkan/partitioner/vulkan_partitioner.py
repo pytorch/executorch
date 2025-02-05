@@ -250,11 +250,19 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "local scalar dense of incompatible op node")
             return False
 
+        features = None
         if target not in vulkan_supported_ops:
-            self.log_skip(node, "no operator implementation")
-            return False
+            # For some ops, i.e. custom ops the name is registered instead of the
+            # OpOverload object.
+            if not isinstance(target, str) and target.name() in vulkan_supported_ops:
+                features = vulkan_supported_ops[target.name()]
+            else:
+                self.log_skip(node, "no operator implementation")
+                return False
+        else:
+            features = vulkan_supported_ops[target]
 
-        features = vulkan_supported_ops[target]
+        assert features is not None
 
         if not features.check_node_fn(node):
             self.log_skip(node, "op args not supported")

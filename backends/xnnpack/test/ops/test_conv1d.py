@@ -13,7 +13,7 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 
-from executorch.backends.xnnpack.test.tester import RunPasses, Tester
+from executorch.backends.xnnpack.test.tester import Quantize, RunPasses, Tester
 from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 
@@ -98,9 +98,17 @@ class TestConv1d(unittest.TestCase):
         stage=None,
         skip_to_executorch=False,
     ):
+        calibration_samples = (
+            [tuple(torch.randn_like(inputs[i]) for i in range(len(inputs)))]
+            if quantized
+            else None
+        )
+
         tester = (
             (
-                Tester(module, inputs, dynamic_shape).quantize()
+                Tester(module, inputs, dynamic_shape).quantize(
+                    Quantize(calibration_samples=calibration_samples)
+                )
                 if quantized
                 else Tester(module, inputs)
             )
@@ -114,7 +122,9 @@ class TestConv1d(unittest.TestCase):
         # For some tests we want to skip to_executorch because otherwise it will require the
         # quantized operators to be loaded and we don't want to do that in the test.
         if not skip_to_executorch:
-            tester.to_executorch().serialize().run_method_and_compare_outputs()
+            tester.to_executorch().serialize().run_method_and_compare_outputs(
+                num_runs=10, atol=0.02, rtol=0.02
+            )
 
     def test_fp16_conv1d(self):
         inputs = (torch.randn(2, 2, 4).to(torch.float16),)

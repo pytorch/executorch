@@ -9,9 +9,17 @@ import os
 
 import tempfile
 from datetime import datetime
-from pathlib import Path
 
+from pathlib import Path
+from typing import Any
+
+import pytest
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.test.runner_utils import (
+    arm_executor_runner_exists,
+    corstone300_installed,
+    corstone320_installed,
+)
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
@@ -41,8 +49,8 @@ def maybe_get_tosa_collate_path() -> str | None:
     if tosa_test_base:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
         #'backends/arm/test/ops/test_mean_dim.py::TestMeanDim::test_meandim_tosa_BI_0_zeros (call)'
-        test_class = current_test.split("::")[1]
-        test_name = current_test.split("::")[-1].split(" ")[0]
+        test_class = current_test.split("::")[1]  # type: ignore[union-attr]
+        test_name = current_test.split("::")[-1].split(" ")[0]  # type: ignore[union-attr]
         if "BI" in test_name:
             tosa_test_base = os.path.join(tosa_test_base, "tosa-bi")
         elif "MI" in test_name:
@@ -100,7 +108,7 @@ def get_u85_compile_spec(
     """
     Default compile spec for Ethos-U85 tests.
     """
-    return get_u85_compile_spec_unbuilt(
+    return get_u85_compile_spec_unbuilt(  # type: ignore[attr-defined]
         custom_path=custom_path,
     ).build()
 
@@ -144,4 +152,45 @@ def get_u85_compile_spec_unbuilt(
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
-    return compile_spec
+    return compile_spec  # type: ignore[return-value]
+
+
+SkipIfNoCorstone300 = pytest.mark.skipif(
+    not corstone300_installed() or not arm_executor_runner_exists("corstone-300"),
+    reason="Did not find Corstone-300 FVP or executor_runner on path",
+)
+"""Skips a test if Corsone300 FVP is not installed, or if the executor runner is not built"""
+
+SkipIfNoCorstone320 = pytest.mark.skipif(
+    not corstone320_installed() or not arm_executor_runner_exists("corstone-320"),
+    reason="Did not find Corstone-320 FVP or executor_runner on path",
+)
+"""Skips a test if Corsone320 FVP is not installed, or if the executor runner is not built."""
+
+
+def parametrize(
+    arg_name: str, test_data: dict[str, Any], xfails: dict[str, str] = None
+):
+    """
+    Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
+        - test_data is expected as a dict of (id, test_data) pairs
+        - alllows to specifiy a dict of (id, failure_reason) pairs to mark specific tests as xfail
+    """
+    if xfails is None:
+        xfails = {}
+
+    def decorator_func(func):
+        """Test data is transformed from a dict of (id, data) pairs to a list of pytest params to work with the native pytests parametrize function"""
+        pytest_testsuite = []
+        for id, test_parameters in test_data.items():
+            if id in xfails:
+                pytest_param = pytest.param(
+                    test_parameters, id=id, marks=pytest.mark.xfail(reason=xfails[id])
+                )
+            else:
+                pytest_param = pytest.param(test_parameters, id=id)
+            pytest_testsuite.append(pytest_param)
+
+        return pytest.mark.parametrize(arg_name, pytest_testsuite)(func)
+
+    return decorator_func

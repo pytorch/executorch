@@ -17,7 +17,7 @@ namespace runtime {
 namespace {
 Result<size_t> calculate_nbytes(
     const Span<const int32_t>& sizes,
-    const exec_aten::ScalarType& scalar_type) {
+    const executorch::aten::ScalarType& scalar_type) {
   ssize_t n = 1;
   for (ssize_t i = 0; i < sizes.size(); i++) {
     if (sizes[i] < 0) {
@@ -30,7 +30,7 @@ Result<size_t> calculate_nbytes(
 }
 } // namespace
 
-Result<TensorLayout> TensorLayout::create(
+Result<const TensorLayout> TensorLayout::create(
     Span<const int32_t> sizes,
     Span<const uint8_t> dim_order,
     executorch::aten::ScalarType scalar_type) {
