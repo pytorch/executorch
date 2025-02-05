@@ -85,13 +85,13 @@ class MergeTwosOfTwoBN(torch.nn.Module):
         return x
 
 
-class MergeNoBN(torch.nn.Module):
+class MergeMultipleUsersBN(torch.nn.Module):
     ops_before_pass = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 2,
         "executorch_exir_dialects_edge__ops_aten_convolution_default": 3,
     }
     ops_after_pass = {
-        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 2,
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1,
         "executorch_exir_dialects_edge__ops_aten_convolution_default": 3,
     }
 
@@ -122,7 +122,7 @@ class MergeNoBN(torch.nn.Module):
         z = self.conv2d2(x)
         a = self.batch_norm2d(
             y
-        )  # Can't be fused since paramters of conv2d2 have multiple users.
+        )  # Can be fused despite paramters of conv2d2 having multiple users.
 
         return z, a
 
@@ -131,7 +131,7 @@ modules = {
     "merge_one_of_two_bn_affine": MergeOneOfTwoBN(True),
     "merge_one_of_two_bn": MergeOneOfTwoBN(False),
     "merge_two_of_two_bn_affine": MergeTwosOfTwoBN(True),
-    "merge_no_bn_affine": MergeNoBN(True),
+    "merge_multiple_users_bn_affine": MergeMultipleUsersBN(True),
 }
 
 
