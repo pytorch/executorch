@@ -31,9 +31,16 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
   - `[1, 3, 224, 224]` (Zsh users: wrap in quotes)
   - `(1, 3, 224, 224)`
 
+- **`--quantize`** (optional):
+  Enable model quantization: Default is False.
+
+- **`--dataset`** (optional):
+  Path to the calibration dataset. TODO: It is necessary to think in what form to support the dataset. For the experiment, tiny-imagenet is used, which can be downloaded from here http://cs231n.stanford.edu/tiny-imagenet-200.zip and specify the path to it. 
+
 - **`--device`** (optional):  
   Target device for the compiled model. Default is `CPU`.  
   Examples: `CPU`, `GPU`
+
 
 ## **Examples**
 

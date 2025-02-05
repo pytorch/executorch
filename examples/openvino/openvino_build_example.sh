@@ -34,6 +34,7 @@ main() {
     local example_dir=examples/openvino
     local example_build_dir="${build_dir}/${example_dir}"
     local cmake_prefix_path="${PWD}/${build_dir}/lib/cmake/ExecuTorch;${PWD}/${build_dir}/third-party/gflags;"
+
     rm -rf "${example_build_dir}"
 
     ## OpenVINO original
