@@ -8,8 +8,6 @@ def define_common_targets():
         ],
         exported_headers = ["flat_tensor_data_map.h"],
         deps = [
-            "//executorch/extension/flat_tensor/serialize:schema",
-            "//executorch/extension/flat_tensor/serialize:serialize",
             "//executorch/extension/flat_tensor/serialize:generated_headers",
             "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
             "//executorch/runtime/core:core",
