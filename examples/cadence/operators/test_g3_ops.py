@@ -1,3 +1,4 @@
+# pyre-unsafe
 import unittest
 from typing import Any, cast, List, OrderedDict, Tuple
 

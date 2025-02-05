@@ -1,5 +1,7 @@
 # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
+# pyre-unsafe
+
 import unittest
 from typing import Any, Callable, cast, List, Optional, Sequence, Tuple, Union
 
