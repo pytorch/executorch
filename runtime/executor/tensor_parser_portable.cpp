@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -27,7 +28,8 @@ using torch::executor::TensorImpl;
 Result<Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
-    const executorch_flatbuffer::Tensor* s_tensor) {
+    const executorch_flatbuffer::Tensor* s_tensor,
+    const NamedDataMap* named_data_map) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
   auto method_allocator = memory_manager->method_allocator();
 
@@ -146,7 +148,8 @@ Result<Tensor> parseTensor(
       s_tensor,
       program,
       tensor_impl->nbytes(),
-      memory_manager->planned_memory());
+      memory_manager->planned_memory(),
+      named_data_map);
   if (!data_ptr.ok()) {
     ET_LOG(
         Error,

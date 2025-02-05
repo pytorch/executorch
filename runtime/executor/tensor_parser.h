@@ -21,7 +21,8 @@ namespace deserialization {
 ET_NODISCARD Result<executorch::aten::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
-    const executorch_flatbuffer::Tensor* s_tensor);
+    const executorch_flatbuffer::Tensor* s_tensor,
+    const NamedDataMap* named_data_map = nullptr);
 
 ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
@@ -108,7 +109,8 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
     size_t nbytes,
-    HierarchicalAllocator* allocator);
+    HierarchicalAllocator* allocator,
+    const NamedDataMap* named_data_map = nullptr);
 
 } // namespace deserialization
 } // namespace runtime

@@ -16,6 +16,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/platform_memory_allocator.h>
@@ -414,7 +415,8 @@ Error Method::parse_values() {
         auto t = deserialization::parseTensor(
             program_,
             memory_manager_,
-            static_cast<const executorch_flatbuffer::Tensor*>(val));
+            static_cast<const executorch_flatbuffer::Tensor*>(val),
+            named_data_map_);
         if (!t.ok()) {
           ET_LOG(
               Error,
@@ -607,7 +609,8 @@ Result<Method> Method::load(
     executorch_flatbuffer::ExecutionPlan* s_plan,
     const Program* program,
     MemoryManager* memory_manager,
-    EventTracer* event_tracer) {
+    EventTracer* event_tracer,
+    const NamedDataMap* named_data_map) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -619,7 +622,8 @@ Result<Method> Method::load(
     new (platform_allocator) PlatformMemoryAllocator();
     temp_allocator = platform_allocator;
   }
-  Method method(program, memory_manager, event_tracer, temp_allocator);
+  Method method(
+      program, memory_manager, event_tracer, temp_allocator, named_data_map);
 
   Error err = method.init(s_plan);
   if (err != Error::Ok) {

@@ -240,7 +240,8 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
 Result<Method> Program::load_method(
     const char* method_name,
     MemoryManager* memory_manager,
-    EventTracer* event_tracer) const {
+    EventTracer* event_tracer,
+    const NamedDataMap* named_data_map) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -257,7 +258,8 @@ Result<Method> Program::load_method(
   if (!plan.ok()) {
     return plan.error();
   }
-  return Method::load(plan.get(), this, memory_manager, event_tracer);
+  return Method::load(
+      plan.get(), this, memory_manager, event_tracer, named_data_map);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {

@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method_meta.h>
@@ -54,6 +55,7 @@ class Method final {
         program_(rhs.program_),
         memory_manager_(rhs.memory_manager_),
         temp_allocator_(rhs.temp_allocator_),
+        named_data_map_(rhs.named_data_map_),
         serialization_plan_(rhs.serialization_plan_),
         event_tracer_(rhs.event_tracer_),
         n_value_(rhs.n_value_),
@@ -271,11 +273,13 @@ class Method final {
       const Program* program,
       MemoryManager* memory_manager,
       EventTracer* event_tracer,
-      MemoryAllocator* temp_allocator)
+      MemoryAllocator* temp_allocator,
+      const NamedDataMap* named_data_map)
       : step_state_(),
         program_(program),
         memory_manager_(memory_manager),
         temp_allocator_(temp_allocator),
+        named_data_map_(named_data_map),
         serialization_plan_(nullptr),
         event_tracer_(event_tracer),
         n_value_(0),
@@ -291,7 +295,8 @@ class Method final {
       executorch_flatbuffer::ExecutionPlan* s_plan,
       const Program* program,
       MemoryManager* memory_manager,
-      EventTracer* event_tracer);
+      EventTracer* event_tracer,
+      const NamedDataMap* named_data_map);
 
   /**
    * Initialize the method from its serialized representation.
@@ -317,6 +322,7 @@ class Method final {
   const Program* program_;
   MemoryManager* memory_manager_;
   MemoryAllocator* temp_allocator_;
+  const NamedDataMap* named_data_map_;
   executorch_flatbuffer::ExecutionPlan* serialization_plan_;
   EventTracer* event_tracer_;
 
