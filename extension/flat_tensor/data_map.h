@@ -71,7 +71,7 @@ class DataMap final : public executorch::runtime::NamedDataMap {
   DataMap& operator=(DataMap&& rhs) noexcept = delete;
   DataMap& operator=(const DataMap& rhs) = delete;
 
-  // Serialized flat_tensor data.
+  // Serialized flat_tensor flatbuffer data.
   executorch::runtime::FreeableBuffer flat_tensor_data_;
 
   // Flatbuffer representation of the flat_tensor.

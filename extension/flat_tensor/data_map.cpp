@@ -78,18 +78,12 @@ Result<const TensorLayout> create_tensor_layout(
 
 ET_NODISCARD Result<const TensorLayout> DataMap::get_metadata(
     const char* key) const {
-  auto tensor_metadata = flat_tensor_->tensors();
   Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata_res =
-      get_flat_tensor_metadata(key, tensor_metadata);
+      get_flat_tensor_metadata(key, flat_tensor_->tensors());
   if (!metadata_res.ok()) {
     return metadata_res.error();
   }
-  Result<const TensorLayout> tensor_layout_res =
-      create_tensor_layout(metadata_res.get());
-  if (!tensor_layout_res.ok()) {
-    return tensor_layout_res.error();
-  }
-  return tensor_layout_res.get();
+  return create_tensor_layout(metadata_res.get());
 }
 
 ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* key) const {
@@ -213,7 +207,7 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
   const auto* s_data_segment = flat_tensor->segments();
 
   // TODO(T214294528): Support multiple segments in FlatTensor.
-  if (s_data_segment->size() > 1) {
+  if (s_data_segment->size() != 1) {
     ET_LOG(
         Error,
         "FlatTensor has %u segments, only 1 supported.",
