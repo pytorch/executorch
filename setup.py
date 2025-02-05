@@ -87,6 +87,10 @@ class ShouldBuild:
         return cls._is_env_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
 
     @classmethod
+    def training(cls) -> bool:
+        return cls._is_env_enabled("EXECUTORCH_BUILD_TRAINING", default=False)
+
+    @classmethod
     def llama_custom_ops(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
 
@@ -575,6 +579,11 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
+            if ShouldBuild.training():
+                cmake_args += [
+                    "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON",
+                ]
+                build_args += ["--target", "_training_lib"]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
@@ -677,6 +686,14 @@ def get_ext_modules() -> List[Extension]:
                 "_portable_lib.*", "executorch.extension.pybindings._portable_lib"
             )
         )
+        if ShouldBuild.training():
+            ext_modules.append(
+                # Install the prebuilt pybindings extension wrapper for training
+                BuiltExtension(
+                    "_training_lib.*",
+                    "executorch.extension.training.pybindings._training_lib",
+                )
+            )
     if ShouldBuild.llama_custom_ops():
         ext_modules.append(
             BuiltFile(
