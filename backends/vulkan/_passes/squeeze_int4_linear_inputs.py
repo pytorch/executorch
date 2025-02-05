@@ -34,7 +34,7 @@ class SqueezeInt4LinearInputs(ExportPass):
         output_shape = meta["val"].shape
         if not _squeezable(input_shape):
             return super().call_operator(op, args, kwargs, meta)
-        
+
         # squeeze input tensor
         squeeze_shape = list(input_shape)
         while _squeezable(squeeze_shape):
@@ -43,15 +43,15 @@ class SqueezeInt4LinearInputs(ExportPass):
         squeeze_out = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (args[0], squeeze_shape),
-            kwargs, 
+            kwargs,
             meta,
         )
         # call linear on squeezed output
         new_args = (squeeze_out, *args[1:])
         linear_out = super().call_operator(
             op,
-            new_args, 
-            kwargs, 
+            new_args,
+            kwargs,
             meta,
         )
         # unsqueeze output
@@ -59,7 +59,7 @@ class SqueezeInt4LinearInputs(ExportPass):
         return super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (linear_out, unsqueeze_shape),
-            kwargs, 
+            kwargs,
             meta,
         )
     
