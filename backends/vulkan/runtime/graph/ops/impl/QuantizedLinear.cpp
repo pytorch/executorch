@@ -352,7 +352,8 @@ void add_q_4w_linear_node(
       local_wg_size,
       // Inputs and Outputs
       {{out_W_packed, vkapi::MemoryAccessType::WRITE},
-       {{mat1_W_packed, mat2, scales_and_zeros}, vkapi::MemoryAccessType::READ}},
+       {{mat1_W_packed, mat2, scales_and_zeros}, 
+       vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       ubos,
       // Specialization Constants
