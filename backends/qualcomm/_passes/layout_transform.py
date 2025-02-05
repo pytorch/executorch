@@ -75,6 +75,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.neg.default,
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.prelu.default,
         exir_ops.edge.aten.repeat.default,
