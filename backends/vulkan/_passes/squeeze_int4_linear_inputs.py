@@ -62,4 +62,3 @@ class SqueezeInt4LinearInputs(ExportPass):
             kwargs,
             meta,
         )
-    
