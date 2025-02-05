@@ -115,6 +115,7 @@ class ArmPartitioner(Partitioner):
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         ops_to_not_decompose_if_quant_op = [
             torch.ops.aten.hardsigmoid.default,
+            torch.ops.aten.hardswish.default,
         ]
 
         def filter_fn(node: torch.fx.Node) -> bool:

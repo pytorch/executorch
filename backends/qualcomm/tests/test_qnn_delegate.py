@@ -37,8 +37,9 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
     update_spill_fill_size,
 )
+from executorch.examples.models.llama.llama_transformer import MOEFeedForward
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs, MOEFeedForward
+from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
@@ -110,6 +111,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_argmin(self):
+        module = Conv2dArgmin()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
         module = AvgPoolModule()  # noqa: F405
@@ -937,6 +943,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_argmin(self):
+        module = Conv2dArgmin()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
         module = AvgPoolModule()  # noqa: F405
