@@ -89,7 +89,8 @@ class ShiftPointerIoMgr : public IoMgrBase {
       int32_t num_heads,
       EvalMode eval_mode,
       const std::string& prefill_forward_name,
-      const std::string& kv_forward_name);
+      const std::string& kv_forward_name,
+      const bool use_int64_token);
 
   void init_io() override;
   void prepare_prefill_io(
@@ -118,14 +119,14 @@ class ShiftPointerIoMgr : public IoMgrBase {
       std::vector<std::vector<executorch::aten::Tensor>>& output_tensors)
       override;
   struct IO {
-    int32_t input_tok;
+    int64_t input_tok;
     int32_t input_pos;
     std::vector<std::vector<std::vector<uint8_t>>> k_cache;
     std::vector<std::vector<uint8_t>> v_cache;
     std::vector<std::vector<uint8_t>> k_cache_out;
     std::vector<uint16_t> kv_attention_mask;
     std::vector<uint16_t> kv_logits;
-    std::vector<int32_t> prefill_input_toks;
+    std::vector<int64_t> prefill_input_toks;
     std::vector<uint16_t> prefill_atten_mask;
     std::vector<uint16_t> prefill_logits;
   };
@@ -165,6 +166,7 @@ class ShiftPointerIoMgr : public IoMgrBase {
   EvalMode eval_mode_;
   std::string prefill_forward_name_;
   std::string kv_forward_name_;
+  const bool use_int64_token_{false};
 };
 
 class SmartMaskIoMgr : public IoMgrBase {
@@ -179,7 +181,8 @@ class SmartMaskIoMgr : public IoMgrBase {
       int32_t num_heads,
       EvalMode eval_mode,
       const std::string& prefill_forward_name,
-      const std::string& kv_forward_name);
+      const std::string& kv_forward_name,
+      const bool use_int64_token);
 
   void init_io() override;
   void prepare_prefill_io(
@@ -213,7 +216,7 @@ class SmartMaskIoMgr : public IoMgrBase {
 
   struct IO {
     void* shared_buffer_base;
-    int32_t* input_tok;
+    int64_t* input_tok;
     int32_t* input_pos;
     // layer -> head -> head_dim * seq_len
     std::vector<std::vector<uint8_t*>> k_cache;
@@ -225,7 +228,7 @@ class SmartMaskIoMgr : public IoMgrBase {
     uint16_t* kv_attention_mask;
     // vocab_size
     uint16_t* kv_logits;
-    int32_t* prefill_input_toks;
+    int64_t* prefill_input_toks;
     // prefill_cache_len_ ^ 2
     uint16_t* prefill_atten_mask;
     // vocab_size * prefill_cache_len_
@@ -283,6 +286,7 @@ class SmartMaskIoMgr : public IoMgrBase {
   EvalMode eval_mode_;
   std::string prefill_forward_name_;
   std::string kv_forward_name_;
+  const bool use_int64_token_{false};
 };
 
 } // namespace example

@@ -45,6 +45,8 @@ target_include_directories(
   qnn_llama_runner PUBLIC ${_common_include_directories}
 )
 
+target_link_options_shared_lib(quantized_ops_lib)
+
 target_link_libraries(
   qnn_llama_runner
   qnn_executorch_backend
@@ -55,6 +57,8 @@ target_link_libraries(
   gflags
   re2::re2
   custom_ops
+  quantized_ops_lib
+  quantized_kernels
 )
 target_compile_options(
   qnn_llama_runner PUBLIC ${_common_compile_options}
