@@ -108,7 +108,8 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
 
   // This FreeableBuffer doesn't own the underlying data, and will not free it,
   // which is why the free function is a nullptr.
-  // TODO(T214294528)
+  // TODO(T214294528): Remove data_ro_ and instead load the data here, letting
+  // FreeableBuffer own it.
   return FreeableBuffer(
       static_cast<const uint8_t*>(data_ro_.data()) + metadata->offset(),
       tensor_layout_res.get().nbytes(),

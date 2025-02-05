@@ -57,6 +57,8 @@ class FlatTensorDataMap final : public executorch::runtime::NamedDataMap {
 
   FlatTensorDataMap(FlatTensorDataMap&&) noexcept = default;
 
+  ~FlatTensorDataMap() = default;
+
  private:
   FlatTensorDataMap(
       executorch::runtime::FreeableBuffer&& flat_tensor_data,
