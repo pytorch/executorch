@@ -692,6 +692,7 @@ def executorch_ops_check(
                "--model_file_list_path $(@query_outputs \"filter('.*_et_oplist', deps(set({deps})))\") " +
                "--allow_include_all_overloads " +
                "--check_ops_not_overlapping " +
+               "--DEBUG_ONLY_check_prim_ops $(@query_targets \"filter('prim_ops_registry(?:_static|_aten)?$', deps(set({deps})))\") " +
                "--output_dir $OUT ").format(deps = " ".join(["\'{}\'".format(d) for d in deps])),
         define_static_target = False,
         platforms = kwargs.pop("platforms", get_default_executorch_platforms()),
