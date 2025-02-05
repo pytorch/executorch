@@ -26,7 +26,7 @@ install_neuropilot() {
 setup_neuropilot() {
   pip3 install -r ${EXECUTORCH_ROOT}/backends/mediatek/requirements.txt
   pip3 install ${MEDIATEK_INSTALLATION_DIR}/mtk_neuron-8.2.13-py3-none-linux_x86_64.whl
-  pip3 install ${MEDIATEK_INSTALLATION_DIR}/mtk_converter-8.9.1_public_packages/mtk_converter-8.9.1+public-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+  pip3 install ${MEDIATEK_INSTALLATION_DIR}/mtk_converter-8.9.1_public_packages/mtk_converter-8.9.1+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 }
 
 setup_calibration_data() {
