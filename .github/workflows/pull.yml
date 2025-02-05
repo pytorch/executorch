@@ -18,11 +18,12 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: linux.2xlarge
+      runner: linux.large
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
+        set -ex
         cmake -DTOKENIZERS_BUILD_TEST=ON -DCMAKE_BUILD_TYPE=Debug . -Bbuild
         cmake --build build -j9 --config Debug
-        ctest
+        cd build && ctest

@@ -26,7 +26,7 @@ namespace tokenizers {
  * Base class for all token decoders
  */
 class TokenDecoder {
-public:
+ public:
   /* -- Types -- */
 
   /** Shared pointer type */
@@ -53,7 +53,7 @@ public:
  * Factory and config class for creating a new TokenDecoder
  */
 class TokenDecoderConfig {
-public:
+ public:
   /**
    * The Type name string matching from decoders
    * https://github.com/huggingface/tokenizers/blob/main/tokenizers/src/decoders/mod.rs#L55
@@ -77,7 +77,7 @@ public:
   /**
    * Populate from a json config file
    */
-  TokenDecoderConfig &parse_json(const nlohmann::json &json_config);
+  TokenDecoderConfig& parse_json(const nlohmann::json& json_config);
 }; // end class TokenDecoderConfig
 
 // -- ByteLevel ----------------------------------------------------------------
@@ -86,7 +86,7 @@ public:
 // https://github.com/huggingface/tokenizers/blob/main/tokenizers/src/pre_tokenizers/byte_level.rs
 
 class ByteLevelTokenDecoder : public TokenDecoder {
-public:
+ public:
   std::string decode(re2::StringPiece token) const override;
 
 }; // end class ByteLevelTokenDecoder

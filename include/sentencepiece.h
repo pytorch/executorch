@@ -9,31 +9,31 @@
 // A tokenizer that works with sentencepiece.
 #pragma once
 
-#include "sentencepiece_processor.h"
-#include "tokenizer.h"
 #include <memory>
 #include <vector>
+#include "sentencepiece_processor.h"
+#include "tokenizer.h"
 namespace tokenizers {
 
 struct TokenIndex {
-  const char *str;
+  const char* str;
   int32_t id;
 };
 
 class SPTokenizer : public Tokenizer {
-public:
+ public:
   explicit SPTokenizer();
   ~SPTokenizer() override;
 
-  Error load(const std::string &tokenizer_path) override;
+  Error load(const std::string& tokenizer_path) override;
 
-  Result<std::vector<uint64_t>> encode(const std::string &input, int8_t bos,
-                                       int8_t eos) const override;
+  Result<std::vector<uint64_t>>
+  encode(const std::string& input, int8_t bos, int8_t eos) const override;
 
-  Result<std::string> decode(uint64_t prev_token,
-                             uint64_t token) const override;
+  Result<std::string> decode(uint64_t prev_token, uint64_t token)
+      const override;
 
-private:
+ private:
   std::unique_ptr<sentencepiece::SentencePieceProcessor> _processor;
 };
 

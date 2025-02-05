@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "sentencepiece.h"
 #include "gtest/gtest.h"
+#include "sentencepiece.h"
 
 namespace tokenizers {
 

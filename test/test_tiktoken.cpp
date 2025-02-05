@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "tiktoken.h"
 #include "gtest/gtest.h"
+#include "tiktoken.h"
 
 namespace tokenizers {
 
