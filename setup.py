@@ -59,7 +59,6 @@ import logging
 import subprocess
 
 from distutils import log
-from distutils.errors import DistutilsExecError
 from distutils.sysconfig import get_python_lib
 from pathlib import Path
 from typing import List, Optional
@@ -140,9 +139,8 @@ def check_and_update_submodules():
     if missing_submodules:
         logger.warning("Some required submodules are missing. Updating submodules...")
         try:
-            subprocess.check_call(
-                ["git", "submodule", "update", "--init", "--recursive"]
-            )
+            subprocess.check_call(["git", "submodule", "sync"])
+            subprocess.check_call(["git", "submodule", "update", "--init"])
         except subprocess.CalledProcessError as e:
             logger.error(f"Error updating submodules: {e}")
             exit(1)
@@ -151,7 +149,7 @@ def check_and_update_submodules():
         for path, file in missing_submodules.items():
             if not check_folder(path, file):
                 logger.error(f"{file} not found in {path}.")
-                logger.error("Please run `git submodule update --init --recursive`.")
+                logger.error("Please run `git submodule update --init`.")
                 exit(1)
     logger.info("All required submodules are present.")
 
