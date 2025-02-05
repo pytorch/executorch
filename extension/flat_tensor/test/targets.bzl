@@ -40,13 +40,13 @@ def define_common_targets(is_fbcode=False):
         }
 
         runtime.cxx_test(
-            name = "data_map",
+            name = "flat_tensor_data_map",
             srcs = [
-                "data_map_test.cpp",
+                "flat_tensor_data_map_test.cpp",
             ],
             deps = [
                 "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/extension/flat_tensor:data_map",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
                 "//executorch/extension/flat_tensor/serialize:generated_headers",
                 "//executorch/extension/flat_tensor/serialize:schema",

@@ -2,11 +2,11 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
-        name = "data_map",
+        name = "flat_tensor_data_map",
         srcs = [
-            "data_map.cpp",
+            "flat_tensor_data_map.cpp",
         ],
-        exported_headers = ["data_map.h"],
+        exported_headers = ["flat_tensor_data_map.h"],
         deps = [
             "//executorch/extension/flat_tensor/serialize:schema",
             "//executorch/extension/flat_tensor/serialize:serialize",
