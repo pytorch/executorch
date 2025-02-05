@@ -453,13 +453,6 @@ TEST_F(OpMulOutTest, BroadcastNDTest) {
   test_broadcast_last_dim<ScalarType::BFloat16>();
 }
 
-TEST_F(OpMulOutTest, BroadcastLastDimTest) {
-  // Test broadcasting on the last dimension
-  test_broadcast_last_dim<ScalarType::Float>();
-  test_broadcast_last_dim<ScalarType::Half>();
-  test_broadcast_last_dim<ScalarType::BFloat16>();
-}
-
 // Broadcast tensor a and b's size to a new size c.
 TEST_F(OpMulOutTest, BroadcastAB2CTest) {
   TensorFactory<ScalarType::Int> tf_a;
