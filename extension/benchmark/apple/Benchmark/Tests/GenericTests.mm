@@ -77,6 +77,11 @@ using namespace ::executorch::runtime;
           ASSERT_OK_OR_RETURN(tensor_meta);
 
           const auto sizes = tensor_meta->sizes();
+            printf("input[%d]: ", index);
+            for(auto ss: sizes){
+                printf("[%d]", ss);
+            }
+            printf(" dtype %d mem %d\n", tensor_meta->scalar_type(), tensor_meta->is_memory_planned());
           tensors.emplace_back(
               rand({sizes.begin(), sizes.end()}, tensor_meta->scalar_type()));
           XCTAssertEqual(module->set_input(tensors.back(), index), Error::Ok);
