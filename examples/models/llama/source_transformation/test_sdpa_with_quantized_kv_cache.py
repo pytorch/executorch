@@ -8,7 +8,7 @@ import unittest
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import KVCache
+from executorch.examples.models.llama.attention import KVCache
 
 from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
     CustomKVCache,

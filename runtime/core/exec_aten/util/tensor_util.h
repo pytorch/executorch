@@ -1121,36 +1121,6 @@ bool extract_scalar_tensor(executorch::aten::Tensor tensor, BOOL_T* out_val) {
   return true;
 }
 
-/**
- * Maximum size of a string returned by tensor_shape_to_c_string, for
- * stack allocation.
- */
-constexpr size_t kTensorShapeStringSizeLimit = 1 + /* opening parenthesis */
-    10 * kTensorDimensionLimit + /* maximum digits we will print; update
-                                  * kMaximumPrintableTensorShapeElement
-                                  * if changing */
-    2 * kTensorDimensionLimit + /* comma and space after each item,
-                                 * overwritten with closing paren and
-                                 * NUL terminator for last element */
-    1; /* padding for temporary NUL terminator for simplicity of implementation
-        */
-
-namespace internal {
-constexpr size_t kMaximumPrintableTensorShapeElement =
-    std::is_same_v<executorch::aten::SizesType, int32_t>
-    ? std::numeric_limits<int32_t>::max()
-    : std::numeric_limits<uint32_t>::max();
-} // namespace internal
-
-/**
- * Convert a shape to a NUL-terminated C string with limited size. If
- * elements of the shape are larger than
- * kMaximumPrintableTensorShapeElement, those elements will be
- * rendered as ERR instead.
- */
-std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
-    executorch::runtime::Span<const executorch::aten::SizesType> shape);
-
 /// These APIs should not be used outside of Executor.cpp.
 namespace internal {
 /**

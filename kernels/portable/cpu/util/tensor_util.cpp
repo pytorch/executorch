@@ -23,9 +23,9 @@ std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
   char* p = out.data();
   if ET_UNLIKELY (shape.size() > kTensorDimensionLimit) {
     static constexpr char kLimitExceededError[] =
-        "(ERR: tensor ndim exceeds limit, can't happen)";
+        "(ERR: tensor ndim exceeds limit)";
     static_assert(sizeof(kLimitExceededError) <= kTensorShapeStringSizeLimit);
-    std::memcpy(p, kLimitExceededError, sizeof(kLimitExceededError));
+    std::strcpy(p, kLimitExceededError);
     return out;
   }
   *p++ = '(';
