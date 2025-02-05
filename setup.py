@@ -57,6 +57,7 @@ import sys
 import setuptools  # noqa: F401 # usort: skip
 
 from distutils import log
+from distutils.errors import DistutilsExecError
 from distutils.sysconfig import get_python_lib
 from pathlib import Path
 from typing import List, Optional
@@ -638,7 +639,22 @@ class CustomBuild(build):
             # lists.
 
             # Generate the build system files.
-            self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
+            try:
+                self.spawn(
+                    ["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args]
+                )
+            except DistutilsExecError as e:
+                error = str(e)
+                # Our educated guesses from parsing the error message.
+                additional_log = ""
+                # 1. Prelude related errors, could be related to third-party/prelude pin out of sync
+                # 2. Missing source file, could be related to git submodules not synced or cmake cache is outdated
+                if "third-party/prelude" or "Cannot find source file" in error:
+                    additional_log += "ExecuTorch: \033[31;1mEither CMake cache is outdated or git submodules are not synced.\033[0m\n"
+                    additional_log += "ExecuTorch: \033[31;1mPlease run the following before retry:\033[0m\n"
+                    additional_log += "ExecuTorch:    \033[32;1m./install_executorch.sh --clean\033[0m\n"
+                    additional_log += "ExecuTorch:    \033[32;1mgit submodule update --init --recursive\033[0m\n"
+                raise Exception(error + "\n" + additional_log) from e
 
         # Build the system.
         self.spawn(["cmake", "--build", cmake_cache_dir, *build_args])
