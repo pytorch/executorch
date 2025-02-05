@@ -130,7 +130,11 @@ Tensor& opt_mul_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    auto mul_lambda = [](auto x, auto y) { return x * y; };
+    // Reason for using alpha:
+    auto mul_lambda = [](auto x, auto y, auto alpha) {
+      (void)alpha;
+      return x * y;
+    };
     return torch::executor::handle_broadcast_elementwise(
         ctx, mul_lambda, a, b, out, selected_optimized_path);
   } else {

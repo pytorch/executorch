@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/kernels/optimized/vec/functional.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -198,7 +199,8 @@ Tensor& handle_last_dim_broadcast_elementwise(
     const Tensor& a,
     const Tensor& b,
     Tensor& out,
-    const ElementwiseOptimizedPath selected_optimized_path) {
+    const ElementwiseOptimizedPath selected_optimized_path,
+    executorch::aten::optional<Scalar>& alpha = {}) {
   ScalarType out_type = out.scalar_type();
   const Tensor* lhs;
   const Tensor* rhs;
@@ -220,8 +222,21 @@ Tensor& handle_last_dim_broadcast_elementwise(
   const size_t outer_size = getLeadingDims(out, out.dim() - 1);
   const auto broadcast_size = out.size(out.dim() - 1);
   ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-    executorch::vec::broadcasting_map_broadcast_last_dim<CTYPE, Op>(
-        vec_fun,
+    using Vec = executorch::vec::Vectorized<CTYPE>;
+    CTYPE alpha_val;
+    Vec alpha_val_vec(alpha_val);
+    if (alpha.has_value()) {
+      ET_KERNEL_CHECK(
+          ctx,
+          native::utils::extract_scalar(alpha.value(), &alpha_val),
+          InvalidArgument, );
+      alpha_val_vec = Vec(alpha_val);
+    }
+    auto vec_fun_alpha = [vec_fun, alpha_val_vec](const Vec& a, const Vec& b) {
+      return vec_fun(a, b, alpha_val_vec);
+    };
+    executorch::vec::broadcasting_map_broadcast_last_dim<CTYPE>(
+        vec_fun_alpha,
         out.mutable_data_ptr<CTYPE>(),
         lhs->const_data_ptr<CTYPE>(),
         rhs->const_data_ptr<CTYPE>(),
@@ -238,13 +253,14 @@ Tensor& handle_broadcast_elementwise(
     const Tensor& a,
     const Tensor& b,
     Tensor& out,
-    const ElementwiseOptimizedPath selected_optimized_path) {
+    const ElementwiseOptimizedPath selected_optimized_path,
+    executorch::aten::optional<Scalar> alpha = {}) {
   if ((selected_optimized_path ==
        ElementwiseOptimizedPath::kBroadcastLastDim) ||
       (selected_optimized_path ==
        ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments)) {
     return handle_last_dim_broadcast_elementwise(
-        ctx, vec_fun, a, b, out, selected_optimized_path);
+        ctx, vec_fun, a, b, out, selected_optimized_path, alpha);
   }
 
   ScalarType out_type = out.scalar_type();
@@ -291,14 +307,28 @@ Tensor& handle_broadcast_elementwise(
     inner_size = lhs->sizes()[lhs->dim() - 1];
   }
   ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-    executorch::vec::broadcasting_map_3d_and_unsqueezed_3d<CTYPE, Op>(
-        vec_fun,
-        out.mutable_data_ptr<CTYPE>(),
-        lhs->const_data_ptr<CTYPE>(),
-        rhs->const_data_ptr<CTYPE>(),
-        outer_size,
-        broadcast_size,
-        inner_size);
+    using Vec = executorch::vec::Vectorized<CTYPE>;
+    CTYPE alpha_val;
+    Vec alpha_val_vec;
+    if (alpha.has_value()) {
+      ET_KERNEL_CHECK(
+          ctx,
+          native::utils::extract_scalar(alpha.value(), &alpha_val),
+          InvalidArgument, );
+      alpha_val_vec = Vec(alpha_val);
+    }
+    auto vec_fun_alpha = [vec_fun, alpha_val_vec](const Vec& a, const Vec& b) {
+      return vec_fun(a, b, alpha_val_vec);
+    };
+    executorch::vec::
+        broadcasting_map_3d_and_unsqueezed_3d<CTYPE, decltype(vec_fun_alpha)>(
+            vec_fun_alpha,
+            out.mutable_data_ptr<CTYPE>(),
+            lhs->const_data_ptr<CTYPE>(),
+            rhs->const_data_ptr<CTYPE>(),
+            outer_size,
+            broadcast_size,
+            inner_size);
   });
   return out;
 }

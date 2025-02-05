@@ -140,41 +140,11 @@ Tensor& opt_add_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    const Tensor* lhs;
-    const Tensor* rhs;
-    if (selected_optimized_path ==
-        ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
-      lhs = &b;
-      rhs = &a;
-    } else {
-      // Catch failure to update logic when adding new broadcasting possibility.
-      ET_DCHECK(
-          selected_optimized_path ==
-          ElementwiseOptimizedPath::kBroadcast2dBy1d);
-      lhs = &a;
-      rhs = &b;
-    }
-    auto error = resize_tensor(out, lhs->sizes());
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        error == Error::Ok,
-        InvalidArgument,
-        out,
-        "Failed to resize output tensor.");
-    ET_SWITCH_REALB_TYPES(out_type, ctx, "add.out", CTYPE, [&]() {
-      CTYPE alpha_val;
-      ET_KERNEL_CHECK(
-          ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
-
-      using Vec = executorch::vec::Vectorized<CTYPE>;
-      executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
-          [alpha_val](Vec x, Vec y) { return x + Vec(alpha_val) * y; },
-          out.mutable_data_ptr<CTYPE>(),
-          lhs->const_data_ptr<CTYPE>(),
-          rhs->const_data_ptr<CTYPE>(),
-          lhs->sizes()[lhs->dim() - 2],
-          lhs->sizes()[lhs->dim() - 1]);
-    });
+    auto add_lambda = [](auto x, auto y, auto alpha_val) {
+      return x + alpha_val * y;
+    };
+    return torch::executor::handle_broadcast_elementwise(
+        ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
   } else {
     ScalarType common_type =
         promoteTypes(a_type, b_type, /*half_to_float*/ true);
