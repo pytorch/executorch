@@ -132,8 +132,7 @@ class Program final {
   Result<Method> load_method(
       const char* method_name,
       MemoryManager* memory_manager,
-      EventTracer* event_tracer = nullptr,
-      const NamedDataMap* named_data_map = nullptr) const;
+      EventTracer* event_tracer = nullptr) const;
 
   /**
    * Gathers metadata for the named method.

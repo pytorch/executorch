@@ -240,6 +240,13 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
+
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
+  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
+  set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
+endif()
+
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
   set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
@@ -791,6 +798,35 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+
+    set(_pybind_training_dep_libs
+        ${TORCH_PYTHON_LIBRARY}
+        etdump
+        executorch
+        util
+        torch
+        extension_training
+    )
+
+    if(EXECUTORCH_BUILD_XNNPACK)
+      # need to explicitly specify XNNPACK and microkernels-prod
+      # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+      list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK microkernels-prod)
+    endif()
+
+    # pybind training
+    pybind11_add_module(_training_lib SHARED extension/training/pybindings/_training_lib.cpp)
+
+    target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_options(_training_lib PUBLIC ${_pybind_compile_options})
+    target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
+
+    install(TARGETS _training_lib
+            LIBRARY DESTINATION executorch/extension/training/pybindings
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
