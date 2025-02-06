@@ -228,6 +228,36 @@ class Context final {
       const bool final_use = false);
 
   void flush();
+
+#ifdef VULKAN_DEBUG
+
+#ifdef VK_KHR_pipeline_executable_properties
+
+  VkPipeline get_shader_pipeline(
+      const vkapi::ShaderInfo& shader,
+      const vkapi::SpecVarList& spec_constants);
+
+  std::vector<VkPipelineExecutablePropertiesKHR> get_pipeline_executable_props(
+      const VkPipeline pipeline);
+
+  std::tuple<
+      std::vector<VkPipelineExecutableInternalRepresentationKHR>,
+      std::vector<std::vector<char>>>
+  get_shader_executable_irs(
+      const VkPipeline pipeline,
+      const uint32_t pipeline_exec_idx = 0u);
+
+  std::vector<VkPipelineExecutableStatisticKHR> get_shader_executable_stats(
+      const VkPipeline pipeline,
+      const uint32_t pipeline_exec_idx = 0u);
+
+  void print_shader_executable_properties(
+      const vkapi::ShaderInfo& shader,
+      const vkapi::SpecVarList& spec_constants);
+
+#endif // VK_KHR_pipeline_executable_properties
+
+#endif // VULKAN_DEBUG
 };
 
 bool available();
