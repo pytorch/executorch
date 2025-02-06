@@ -121,6 +121,7 @@ setup_macos_env_variables
 # NB: we need buck2 in all cases because cmake build also depends on calling
 # buck2 atm
 install_buck
+brew install libomp
 install_pip_dependencies
 
 # TODO(huydhn): Unlike our self-hosted runner, GitHub runner doesn't have access
@@ -136,4 +137,7 @@ install_pytorch_and_domains
 # the pinned commit from PyTorch
 install_executorch "use-pt-pinned-commit"
 build_executorch_runner "${BUILD_TOOL}"
-do_not_use_nightly_on_ci
+
+if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
+  do_not_use_nightly_on_ci
+fi
