@@ -1,7 +1,8 @@
+# pyre-unsafe
 import unittest
 from typing import Any, cast, List, OrderedDict, Tuple
 
-from executorch.examples.cadence.operators import facto_util
+from executorch.backends.cadence.utils import facto_util
 
 from parameterized import parameterized
 
