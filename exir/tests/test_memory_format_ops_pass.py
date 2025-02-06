@@ -109,6 +109,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         )
 
     def test_op_dim_order_propagation(self) -> None:
+        print("test_op_dim_order_propagation: unambiguous path")
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
             MemoryFormatTestSet(
@@ -117,6 +118,24 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 sample_input=(
                     torch.rand_like(
                         torch.zeros([2, 2, 2, 2]),
+                        dtype=torch.float32,
+                        memory_format=torch.contiguous_format,
+                    ),
+                ),
+                target_memory_format=torch.channels_last,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
+        print("test_op_dim_order_propagation: ambiguous path")
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=PropagateToCopyChannalsLastModule().eval(),
+                op=torch.ops.aten._to_copy.default,
+                sample_input=(
+                    torch.rand_like(
+                        torch.zeros([2, 1, 2, 2]),
                         dtype=torch.float32,
                         memory_format=torch.contiguous_format,
                     ),
