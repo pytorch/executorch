@@ -18,19 +18,6 @@ def define_common_targets():
     for op in TESTS_LIST:
         _define_test_target(op)
 
-    python_library(
-        name = "facto_util",
-        srcs = [
-            "facto_util.py",
-        ],
-        typing = True,
-        deps = [
-            "fbcode//caffe2:torch",
-            "fbcode//pytorch/facto:facto",
-        ],
-    )
-
-
 def _define_test_target(test_name):
     file_name = "test_{}".format(test_name)
     python_unittest(
@@ -46,6 +33,6 @@ def _define_test_target(test_name):
             "fbcode//executorch/backends/cadence/aot:ops_registrations",
             "fbcode//executorch/backends/cadence/aot:export_example",
             "fbcode//executorch/backends/cadence/aot:compiler",
-            "fbcode//executorch/examples/cadence/operators:facto_util",
+            "fbcode//executorch/backends/cadence/utils:facto_util",
         ],
     )
