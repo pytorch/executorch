@@ -131,3 +131,26 @@ class TestSum(unittest.TestCase):
             test_data,
             common.get_u85_compile_spec(),
         )
+
+    reject_inputs = [
+        ((torch.rand((65537, 1, 1)), 0, False),),
+        ((torch.rand((800, 90, 1)), 2, False),),
+        ((torch.rand((3, 2, 800, 90)), 1, False),),
+    ]
+
+    @parameterized.expand(reject_inputs)
+    def test_reject_sum_u55_BI(self, example_inputs):
+        (
+            ArmTester(
+                TestSum.Sum(),
+                example_inputs=example_inputs,
+                compile_spec=common.get_u55_compile_spec(),
+            )
+            .quantize()
+            .export()
+            .check_count({"torch.ops.aten.sum.dim_IntList": 1})
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .check(["executorch_exir_dialects_edge__ops_aten_sum_dim_IntList"])
+        )

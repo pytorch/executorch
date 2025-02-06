@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import torch
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
