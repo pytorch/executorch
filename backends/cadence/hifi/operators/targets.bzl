@@ -45,6 +45,7 @@ OPERATORS = [
     "mul",
     "permute_copy",
     "pow",
+    "quantized_fully_connected_out",
     "quantize_per_tensor",
     "quantized_layer_norm",
     "quantized_linear_out",

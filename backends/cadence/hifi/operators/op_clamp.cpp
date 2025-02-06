@@ -48,7 +48,7 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-Tensor& clamp_tensor_out(
+Tensor& clamp_Tensor_out(
     RuntimeContext& ctx,
     const Tensor& in,
     const executorch::aten::optional<Tensor>& min_opt,
