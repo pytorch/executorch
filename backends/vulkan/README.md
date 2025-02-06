@@ -1,4 +1,4 @@
-# ExecuTorch Vulkan Delegate
+# Vulkan Backend
 
 The ExecuTorch Vulkan delegate is a native GPU delegate for ExecuTorch that is
 built on top of the cross-platform Vulkan GPU API standard. It is primarily
