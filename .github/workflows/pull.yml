@@ -212,16 +212,13 @@ jobs:
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: 180
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
-
-        # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
 
         # install Llava requirements
         bash examples/models/llama/install_requirements.sh
@@ -483,9 +480,6 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
-        # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
-
         # install phi-3-mini requirements
         bash examples/models/phi-3-mini/install_requirements.sh
 
@@ -513,9 +507,6 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
-        # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
-
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
 
@@ -535,16 +526,13 @@ jobs:
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: 180
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
-
-        # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh
@@ -572,9 +560,6 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
-
-        # install pybind
-        bash install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
 
         # install llama requirements
         bash examples/models/llama/install_requirements.sh

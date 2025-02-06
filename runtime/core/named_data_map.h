@@ -7,6 +7,9 @@
  */
 
 #pragma once
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/freeable_buffer.h>
@@ -75,3 +78,5 @@ class ET_EXPERIMENTAL NamedDataMap {
 
 } // namespace runtime
 } // namespace executorch
+
+#pragma GCC diagnostic pop
