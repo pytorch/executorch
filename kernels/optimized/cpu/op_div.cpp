@@ -120,48 +120,36 @@ Tensor& opt_div_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    const Tensor* lhs;
-    const Tensor* rhs;
+    // Reason for using alpha is becasuse handle_broadcast_elementwise
+    // is used for add and sub as well:
     if (selected_optimized_path ==
-        ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
-      lhs = &b;
-      rhs = &a;
+            ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
+        selected_optimized_path ==
+            ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
+        selected_optimized_path ==
+            ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
+      // This behavior is a bit confusing.
+      // Reason we swap out args here is because handle_broadcast_elementwise
+      // handles this selected_optimized_path option a bit differently.
+      // This should really be resoled in handle_broadcast_elementwise.
+      // However, the current blocker is that handle_broadcast_elementwise tries
+      // to be agnostic of op. This should be fixed, likely by moving lambda
+      // creation to handle_broadcast_elementwise and it be aware of which op is
+      // being executed.
+      auto div_lambda = [](auto x, auto y, auto alpha) {
+        (void)alpha;
+        return y / x;
+      };
+      return torch::executor::handle_broadcast_elementwise(
+          ctx, div_lambda, a, b, out, selected_optimized_path);
     } else {
-      // Catch failure to update logic when subing new broadcasting possibility.
-      ET_DCHECK(
-          selected_optimized_path ==
-          ElementwiseOptimizedPath::kBroadcast2dBy1d);
-      lhs = &a;
-      rhs = &b;
+      auto div_lambda = [](auto x, auto y, auto alpha) {
+        (void)alpha;
+        return x / y;
+      };
+      return torch::executor::handle_broadcast_elementwise(
+          ctx, div_lambda, a, b, out, selected_optimized_path);
     }
-    auto error = resize_tensor(out, lhs->sizes());
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        error == Error::Ok,
-        InvalidArgument,
-        out,
-        "Failed to resize output tensor.");
-    ET_SWITCH_REALB_TYPES(out_type, ctx, "sub.out", CTYPE, [&]() {
-      using Vec = executorch::vec::Vectorized<CTYPE>;
-      if (selected_optimized_path ==
-          ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
-        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
-            [](Vec x, Vec y) { return y / x; },
-            out.mutable_data_ptr<CTYPE>(),
-            lhs->const_data_ptr<CTYPE>(),
-            rhs->const_data_ptr<CTYPE>(),
-            lhs->sizes()[lhs->dim() - 2],
-            lhs->sizes()[lhs->dim() - 1]);
-      } else {
-        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
-            [](Vec x, Vec y) { return x / y; },
-            out.mutable_data_ptr<CTYPE>(),
-            lhs->const_data_ptr<CTYPE>(),
-            rhs->const_data_ptr<CTYPE>(),
-            lhs->sizes()[lhs->dim() - 2],
-            lhs->sizes()[lhs->dim() - 1]);
-      }
-    });
   } else {
     ScalarType common_type = get_compute_type(a_type, b_type);
     ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
