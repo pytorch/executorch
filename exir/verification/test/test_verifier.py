@@ -14,9 +14,11 @@ import torch
 from executorch.exir import EdgeCompileConfig, to_edge
 
 from executorch.exir.dialects._ops import ops
+from torch import nn
 from torch._export.verifier import SpecViolationError
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
 from torch.export import export
+from torch.export.experimental import _export_forward_backward
 
 from ..verifier import EXIREdgeDialectVerifier
 
@@ -123,3 +125,39 @@ class TestEdgeDialectVerifier(unittest.TestCase):
             dim_order_verifier(stride_edge_model.exported_program())
         with self.assertRaises(SpecViolationError):
             stride_verifier(dim_order_edge_model.exported_program())
+
+    def test_none_return_verifier(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = nn.Conv2d(6, 6, 5)
+                self.linear = nn.Linear(6, 2)
+
+            def forward(self, x):
+                return self.linear(self.conv1(x).flatten(1))
+
+        class TrainingNet(nn.Module):
+            def __init__(self, net):
+                super().__init__()
+                self.net = net
+                self.loss = nn.CrossEntropyLoss()
+
+            def forward(self, input, label):
+                pred = self.net(input)
+                return self.loss(pred, label)
+
+        # conv returns (None, Tensor, Tensor) which is uncommon to see since
+        # the schema is (Tensor, Tensor, Tensor). This is to test that
+        # the verifier just ignores the None return value (since itll be
+        # unused in the runtime).
+        net = TrainingNet(Net())
+        inputs = (torch.randn(1, 6, 5, 5), torch.ones(1, dtype=torch.int64))
+
+        export_model = export(net, inputs)
+        export_model = _export_forward_backward(export_model)
+
+        edge = to_edge(export_model)
+
+        edge_verifier = EXIREdgeDialectVerifier()
+
+        edge_verifier(edge.exported_program())

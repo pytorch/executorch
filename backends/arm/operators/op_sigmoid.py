@@ -37,7 +37,6 @@ class SigmoidVisitor_080_MI(NodeVisitor):
     ) -> None:
 
         assert len(node.all_input_nodes) == 1
-        assert len(node.users) == 1
         assert inputs[0].dtype == output.dtype == ts.DType.FP32
 
         tosa_graph.addOperator(TosaOp.Op().SIGMOID, [inputs[0].name], [output.name])
