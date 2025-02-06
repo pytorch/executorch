@@ -267,6 +267,7 @@ set(_optimized_kernels_test_sources
     "op_exp_test.cpp"
     "op_gelu_test.cpp"
     "op_le_test.cpp"
+    "op_linear_test.cpp"
     "op_log_softmax_test.cpp"
     "op_mul_test.cpp"
     "op_native_layer_norm_test.cpp"
