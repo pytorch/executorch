@@ -146,12 +146,14 @@ ValueRef prepack_standard(
     const ValueRef tensor_data,
     const utils::StorageType storage_type,
     const utils::GPUMemoryLayout layout,
-    const bool passthrough) {
+    const bool passthrough,
+    const utils::AxisMapLayout axis_map_layout) {
   if (passthrough && graph.val_is_tensor(tensor_data)) {
     return tensor_data;
   }
   VK_CHECK_COND(graph.val_is_tref(tensor_data));
-  ValueRef tensor = graph.add_tensor_like(tensor_data, storage_type, layout);
+  ValueRef tensor =
+      graph.add_tensor_like(tensor_data, storage_type, layout, axis_map_layout);
   add_prepack_standard_node(graph, tensor_data, tensor);
   return tensor;
 }

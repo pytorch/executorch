@@ -7,7 +7,7 @@
 import unittest
 
 import torch
-from executorch.examples.models.llama.llama_transformer import ModelArgs
+from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.models.llama.source_transformation.attention_sink import (
     KVCacheWithAttentionSink,

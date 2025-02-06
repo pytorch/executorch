@@ -45,6 +45,12 @@ class OpUpsampleNearest2dTest : public OperatorTest {
   void test_upsample_nearest2d_dtype() {
     TensorFactory<DTYPE> tf;
 
+    if (torch::executor::testing::SupportedFeatures::get()->is_aten &&
+        (DTYPE == ScalarType::Char || DTYPE == ScalarType::Short ||
+         DTYPE == ScalarType::Int || DTYPE == ScalarType::Long)) {
+      // not supported.
+      return;
+    }
     const auto input = tf.make({1, 1, 2, 2}, {1, 2, 3, 4});
     std::array<int64_t, 2> output_size = {4, 4};
     auto out = tf.zeros({1, 1, 4, 4});

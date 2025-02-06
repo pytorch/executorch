@@ -328,6 +328,9 @@ TEST_F(OpVarOutTest, InvalidDTypeDies) {
 }
 
 TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "ATen supports fewer dtypes";
+  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_var_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
@@ -336,6 +339,22 @@ TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses) {
   ET_FORALL_FLOATHBF16_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+#undef TEST_KERNEL
+}
+
+TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses_Aten) {
+  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "ATen-specific variant of test case";
+  }
+  // Use a two layer switch to hanldle each possible data pair
+#define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
+  test_var_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
+
+#define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
+  ET_FORALL_FLOAT_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
+
+  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 #undef TEST_KERNEL
 }

@@ -62,14 +62,16 @@ class HierarchicalAllocator final {
     ET_CHECK_OR_RETURN_ERROR(
         memory_id < buffers_.size(),
         InvalidArgument,
-        "id %" PRIu32 " >= %zu",
+        "id %" PRIu32 " >= %" ET_PRIsize_t,
         memory_id,
         buffers_.size());
     Span<uint8_t> buffer = buffers_[memory_id];
     ET_CHECK_OR_RETURN_ERROR(
         offset_bytes + size_bytes <= buffer.size(),
         MemoryAllocationFailed,
-        "offset_bytes (%zu) + size_bytes (%zu) >= allocator size (%zu) "
+        "offset_bytes (%" ET_PRIsize_t ") + size_bytes (%" ET_PRIsize_t
+        ") >= allocator size (%" ET_PRIsize_t
+        ") "
         "for memory_id %" PRIu32,
         offset_bytes,
         size_bytes,
