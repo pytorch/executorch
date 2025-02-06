@@ -11,6 +11,8 @@
 
 #include <pocketfft_hdronly.h>
 
+#include <optional>
+
 namespace torch::executor::native {
 
 // TODO: contents of this anonymous namespace are copy/pasted from
