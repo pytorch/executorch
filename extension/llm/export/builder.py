@@ -170,7 +170,7 @@ class LLMEdgeManager:
             self.dynamic_shapes = ({1: dim},)
         elif self.enable_dynamic_shape:
             # Two input arguments: tokens and input_pos but input_pos is static shape
-            self.dynamic_shapes = ({1: dim}, {0: 1})
+            self.dynamic_shapes = ({1: dim}, {"input_pos": {0: 1}})
         else:
             # Two input arguments: tokens and input_pos but both are of static shape
             self.dynamic_shapes = None
@@ -270,7 +270,7 @@ class LLMEdgeManager:
                 while token_list[-1] != tokenizer.eos_id and pos < max_len:
                     logits = module(
                         torch.full((1, 1), token_list[pos]),
-                        torch.tensor((pos,)),
+                        {"input_pos": torch.tensor((pos,))},
                     )
                     pos += 1
                     if pos >= len(token_list):
