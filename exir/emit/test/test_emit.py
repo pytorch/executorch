@@ -856,7 +856,7 @@ class TestEmit(unittest.TestCase):
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 b = 3 + 1
-                return x + b
+                return x + torch.tensor(b)
 
         f = Add()
 
@@ -1325,7 +1325,10 @@ class TestEmit(unittest.TestCase):
 
         # Find the multiplication node in the graph that was emitted.
         for node in program_mul.exported_program().graph.nodes:
-            if node.target == torch.ops.aten.mul.out:
+            if (
+                node.target == torch.ops.aten.mul.out
+                or node.target == torch.ops.aten.mul.Scalar_out
+            ):
                 break
         self.assertIsNotNone(node)
 
