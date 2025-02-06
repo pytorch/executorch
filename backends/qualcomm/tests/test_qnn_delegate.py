@@ -546,6 +546,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_neg(self):
+        module = Neg()  # noqa: F405
+        sample_input = (torch.randn(1, 4, 16, 16),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_pad(self):
         module = Pad()  # noqa: F405
         sample_input = (torch.randn([1, 8, 128]),)
@@ -1426,6 +1431,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_minimum(self):
         module = Minimum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_neg(self):
+        module = Neg()  # noqa: F405
+        sample_input = (torch.randn(1, 4, 16, 16),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 

@@ -9,6 +9,7 @@ from typing import List, Tuple, Union
 
 import torch
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
     EthosU85PipelineBI,
@@ -406,3 +407,57 @@ def test_conv2d_u85_BI_on_fvp(test_module):
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
     )
     pipeline.run()
+
+
+reject_suite = {
+    "large_stride": Conv2d(
+        in_channels=1,
+        out_channels=1,
+        kernel_size=(2, 4),
+        stride=(2, 4),
+        padding=1,
+        width=10,
+        height=14,
+        batches=1,
+    ),
+    "large_kernel_height": Conv2d(
+        in_channels=1,
+        out_channels=1,
+        kernel_size=(2, 65),
+        stride=(1, 1),
+        padding=0,
+        width=70,
+        height=70,
+        batches=1,
+    ),
+    "large_kernel": Conv2d(
+        in_channels=1,
+        out_channels=1,
+        kernel_size=(70, 60),
+        stride=(1,),
+        padding=0,
+        width=80,
+        height=80,
+        batches=1,
+    ),
+}
+
+
+@common.parametrize("module", reject_suite)
+def test_reject_conv2d_u55_BI(
+    module: Conv2d,
+):
+    (
+        ArmTester(
+            module,
+            example_inputs=module.get_inputs(),
+            compile_spec=common.get_u55_compile_spec(),
+        )
+        .quantize()
+        .export()
+        .check_count({"torch.ops.aten.conv2d.default": 1})
+        .check(["torch.ops.quantized_decomposed"])
+        .to_edge_transform_and_lower()
+        .check(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+        .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+    )
