@@ -24,6 +24,8 @@ from executorch.kernels import quantized  # noqa # usort: skip
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+import gc
+gc.set_debug(gc.DEBUG_STATS | gc.DEBUG_COLLECTABLE)
 
 class TestLlava(unittest.TestCase):
     def setUp(self):
