@@ -77,7 +77,8 @@ class MemoryPlanningPass(PassBase):
                         out_alloc_node.meta["spec"] = node.meta["spec"]
                         continue
                     specs = get_node_tensor_specs(node)
-                    for i, out_arg in enumerate(out_arg_names):
+                    i = 0
+                    for out_arg in out_arg_names:
                         out_alloc_node = node.kwargs[out_arg]
                         if out_alloc_node is None:
                             warnings.warn(
@@ -85,6 +86,7 @@ class MemoryPlanningPass(PassBase):
                                 stacklevel=1,
                             )
                             continue
+                            # dont increment i as we dont have a spec for this node
                         internal_assert(
                             out_alloc_node.op == "call_function"
                             and out_alloc_node.target == alloc,
@@ -95,6 +97,7 @@ class MemoryPlanningPass(PassBase):
                             f"Out-var's allocation node {out_alloc_node} already has a spec assigned",
                         )
                         out_alloc_node.meta["spec"] = specs[i]
+                        i += 1
 
     @deprecated(
         "MemoryPlanningPass.call() is deprecated as it does not handle graphs \

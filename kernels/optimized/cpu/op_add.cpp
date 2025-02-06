@@ -101,7 +101,7 @@ Tensor& opt_add_out(
           CTYPE b_casted = static_cast<CTYPE>(b_val);
 
           using Vec = at::vec::Vectorized<CTYPE>;
-          at::vec::map<CTYPE>(
+          executorch::vec::map<CTYPE>(
               [alpha_val, b_casted](Vec x) {
                 return x + Vec(alpha_val * b_casted);
               },
@@ -133,7 +133,7 @@ Tensor& opt_add_out(
           ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
 
       using Vec = at::vec::Vectorized<CTYPE>;
-      at::vec::map2<CTYPE>(
+      executorch::vec::map2<CTYPE>(
           [alpha_val](Vec x, Vec y) { return x + Vec(alpha_val) * y; },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
@@ -246,7 +246,7 @@ Tensor& opt_add_scalar_out(
         ET_EXTRACT_SCALAR(alpha, alpha_val);
 
         using Vec = at::vec::Vectorized<CTYPE>;
-        at::vec::map<CTYPE>(
+        executorch::vec::map<CTYPE>(
             [alpha_val, b_casted](Vec x) {
               return x + Vec(alpha_val * b_casted);
             },

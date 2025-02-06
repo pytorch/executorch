@@ -46,7 +46,7 @@ Tensor& opt_le_tensor_out(
     ET_SWITCH_REAL_TYPES_AND(
         Bool, out_type, ctx, "le.Tensor_out", CTYPE, [&]() {
           using Vec = at::vec::Vectorized<CTYPE>;
-          at::vec::map2<CTYPE>(
+          executorch::vec::map2<CTYPE>(
               [](Vec x, Vec y) { return x.le(y); },
               out.mutable_data_ptr<CTYPE>(),
               a.const_data_ptr<CTYPE>(),
@@ -111,7 +111,7 @@ Tensor& opt_le_scalar_out(
             ET_EXTRACT_SCALAR(b, b_val);
             CTYPE b_casted = static_cast<CTYPE>(b_val);
             using Vec = at::vec::Vectorized<CTYPE>;
-            at::vec::map<CTYPE>(
+            executorch::vec::map<CTYPE>(
                 [b_casted](Vec x) { return x.le(Vec(b_casted)); },
                 out.mutable_data_ptr<CTYPE>(),
                 a.const_data_ptr<CTYPE>(),

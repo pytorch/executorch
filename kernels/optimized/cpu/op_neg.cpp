@@ -29,7 +29,7 @@ Tensor& opt_neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
     using Vec = at::vec::Vectorized<CTYPE>;
-    at::vec::map<CTYPE>(
+    executorch::vec::map<CTYPE>(
         [](Vec x) { return x.neg(); },
         out.mutable_data_ptr<CTYPE>(),
         in.const_data_ptr<CTYPE>(),

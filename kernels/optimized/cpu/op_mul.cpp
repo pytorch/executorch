@@ -205,7 +205,7 @@ Tensor& opt_mul_out(
           CTYPE b_casted = static_cast<CTYPE>(b_val);
 
           using Vec = at::vec::Vectorized<CTYPE>;
-          at::vec::map<CTYPE>(
+          executorch::vec::map<CTYPE>(
               [b_casted](Vec x) { return x * Vec(b_casted); },
               out.mutable_data_ptr<CTYPE>(),
               a.const_data_ptr<CTYPE>(),
@@ -231,7 +231,7 @@ Tensor& opt_mul_out(
 
     ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
       using Vec = at::vec::Vectorized<CTYPE>;
-      at::vec::map2<CTYPE>(
+      executorch::vec::map2<CTYPE>(
           [](Vec x, Vec y) { return x * y; },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
@@ -308,7 +308,7 @@ Tensor& opt_mul_scalar_out(
         CTYPE b_casted = static_cast<CTYPE>(b_val);
 
         using Vec = at::vec::Vectorized<CTYPE>;
-        at::vec::map<CTYPE>(
+        executorch::vec::map<CTYPE>(
             [b_casted](Vec x) { return x * Vec(b_casted); },
             out.mutable_data_ptr<CTYPE>(),
             a.const_data_ptr<CTYPE>(),

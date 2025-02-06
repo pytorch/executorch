@@ -94,7 +94,7 @@ void layer_norm(
         dst_ptr[j] = (src_ptr[j] * scale + offset) * gamma_v + beta_v;
       }
     } else {
-      at::vec::map3<CTYPE>(
+      executorch::vec::map3<CTYPE>(
           [scale, offset](Vec x, Vec gamma, Vec beta) {
             return (x * Vec(scale) + Vec(offset)) * gamma + beta;
           },
