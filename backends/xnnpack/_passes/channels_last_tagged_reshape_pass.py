@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
-from executorch.backends.xnnpack.utils.utils import is_param_node
+from executorch.backends.xnnpack.utils.utils import get_input_node, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 
@@ -77,6 +77,21 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
     # is done
     PARTNER_NODE = "XNN_CHANNELS_LAST_TAGGED_RESHAPE_PARTNER_NODE"
 
+    def is_view_dim_order_invariant(self, node: torch.fx.Node) -> bool:
+        # View must be done in NCHW dim order if channel or batch is changed,
+        # or if rank is not 4.
+        in_shape = get_input_node(node, 0).meta["val"].shape
+        out_shape = node.meta["val"].shape
+
+        if len(in_shape) != 4 or len(out_shape) != 4:
+            return False
+
+        # Are batch and channel modified? If so, return false.
+        if in_shape[0] != out_shape[0] or in_shape[1] != out_shape[1]:
+            return False
+
+        return True
+
     def mark_as_nhwc_node(self, node: torch.fx.Node) -> None:
         node.meta[ChannelsLastTaggedReshapePass.XNN_NHWC_NODE] = True
 
@@ -93,6 +108,13 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         return node.target in self.memory_sensitive_ops_nhwc
 
     def requires_nchw_inputs(self, node: torch.fx.Node) -> bool:
+        # Views depend on whether batch or channel are modified.
+        if (
+            node.target == exir_ops.edge.aten.view_copy.default
+            and not self.is_view_dim_order_invariant(node)
+        ):
+            return True
+
         return node.target in self.memory_sensitive_ops_nchw
 
     def can_be_converted_to_nhwc(self, node: torch.fx.Node) -> bool:

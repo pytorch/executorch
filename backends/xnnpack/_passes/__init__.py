@@ -12,6 +12,9 @@ from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass impor
 from executorch.backends.xnnpack._passes.conv1d_unsqueeze_pass import (
     Conv1dUnsqueezePass,
 )
+from executorch.backends.xnnpack._passes.convert_squeeze_to_view_pass import (
+    ConvertSqueezeToViewPass,
+)
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack._passes.convert_to_sdpa import ConvertToSDPAPass
 from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
@@ -67,6 +70,7 @@ class XNNPACKPassManager:
                 DecomposeConcatenate,
                 RemoveGetItemPass,
                 Conv1dUnsqueezePass,
+                ConvertSqueezeToViewPass,
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,
                 TagImplicitQDqPass,

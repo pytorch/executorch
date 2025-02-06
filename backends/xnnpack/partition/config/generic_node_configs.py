@@ -21,6 +21,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 )
 from executorch.exir.backend.utils import is_shape_dynamic, WhyNoPartition
 from torch.export import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import has_free_symbols
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
@@ -314,6 +315,31 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
         return torch.ops.aten.max_pool2d.default
 
 
+class SqueezeCopyConfig(GenericNodePartitionerConfig):
+    target_name = "squeeze_copy.dims"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.squeeze_copy.default
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_reshape only supports 1 dynamic dimension
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        new_shape = node.meta["val"].shape
+        dynamic_dim_count = sum(1 for d in new_shape if has_free_symbols(d))
+        if dynamic_dim_count > 1:
+            why(node, reason="only a single dynamic dimension is supported")
+            return False
+
+        return True
+
+
 class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
     target_name = "upsample_bilinear2d.vec"
 
@@ -334,6 +360,59 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.upsample_bilinear2d.vec
+
+
+class UnsqueezeCopyConfig(GenericNodePartitionerConfig):
+    target_name = "unsqueeze_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.unsqueeze_copy.default
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_reshape only supports 1 dynamic dimension
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        new_shape = node.meta["val"].shape
+        dynamic_dim_count = sum(
+            1 for d in new_shape if not isinstance(d, int) and has_free_symbols(d)
+        )
+        if dynamic_dim_count > 1:
+            why(node, reason="only a single dynamic dimension is supported")
+            return False
+
+        return True
+
+
+class ViewCopyConfig(GenericNodePartitionerConfig):
+    target_name = "view_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_reshape only supports 1 dynamic dimension
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        new_shape = node.args[1]
+        if not all(isinstance(n, int) for n in new_shape):
+            why(node, reason="symbolic reshape is not supported")
+            return False
+
+        dynamic_dim_count = sum(1 for d in new_shape if d == -1)
+        if dynamic_dim_count > 1:
+            why(node, reason="only a single dynamic dimension is supported")
+            return False
+
+        return True
 
 
 class FloorConfig(GenericNodePartitionerConfig):
