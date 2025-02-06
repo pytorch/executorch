@@ -34,8 +34,11 @@ bool extract_scalar(executorch::aten::Scalar scalar, INT_T* out_val) {
 
 template <
     typename FLOAT_T,
-    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
-        type = true>
+    typename std::enable_if<
+        std::is_floating_point_v<FLOAT_T> ||
+            std::is_same_v<FLOAT_T, executorch::aten::BFloat16> ||
+            std::is_same_v<FLOAT_T, executorch::aten::Half>,
+        bool>::type = true>
 bool extract_scalar(executorch::aten::Scalar scalar, FLOAT_T* out_val) {
   double val;
   if (scalar.isFloatingPoint()) {
@@ -59,7 +62,7 @@ template <
     typename std::enable_if<std::is_same<BOOL_T, bool>::value, bool>::type =
         true>
 bool extract_scalar(executorch::aten::Scalar scalar, BOOL_T* out_val) {
-  if (scalar.isIntegral(false)) {
+  if (scalar.isIntegral(/*includeBool=*/false)) {
     *out_val = static_cast<bool>(scalar.to<int64_t>());
     return true;
   }
@@ -86,7 +89,7 @@ TensorPtr random_strided(
       empty_strided(std::move(sizes), std::move(strides), type, dynamism);
   std::default_random_engine gen{std::random_device{}()};
 
-  ET_SWITCH_REALB_TYPES(type, nullptr, "random_strided", CTYPE, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(type, nullptr, "random_strided", CTYPE, [&] {
     std::generate_n(tensor->mutable_data_ptr<CTYPE>(), tensor->numel(), [&]() {
       return static_cast<CTYPE>(distribution(gen));
     });
@@ -121,7 +124,7 @@ TensorPtr full_strided(
     executorch::aten::TensorShapeDynamism dynamism) {
   auto tensor =
       empty_strided(std::move(sizes), std::move(strides), type, dynamism);
-  ET_SWITCH_REALB_TYPES(type, nullptr, "full_strided", CTYPE, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(type, nullptr, "full_strided", CTYPE, [&] {
     CTYPE value;
     ET_EXTRACT_SCALAR(fill_value, value);
     std::fill(

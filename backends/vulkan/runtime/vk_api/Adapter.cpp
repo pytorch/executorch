@@ -82,6 +82,9 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_shader_float16_int8
       VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME,
 #endif /* VK_KHR_shader_float16_int8 */
+#if defined(VK_KHR_pipeline_executable_properties) && defined(VULKAN_DEBUG)
+      VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
+#endif /* VK_KHR_pipeline_executable_properties */
   };
 
   std::vector<const char*> enabled_device_extensions;

@@ -106,6 +106,7 @@ class Runner {
   Stats stats_;
   std::unique_ptr<IoMgrBase> io_mgr_;
   EvalMode eval_mode_;
+  bool use_int64_token_{false};
   std::string prefill_forward_name_;
   std::string kv_forward_name_;
   std::vector<std::string> method_names_;

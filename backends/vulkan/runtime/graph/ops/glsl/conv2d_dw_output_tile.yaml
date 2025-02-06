@@ -12,7 +12,6 @@ conv2d_dw_output_tile:
     TILE_SIZE: 3
     BATCH_SIZE_X: 4
     BATCH_SIZE_Y: 2
-    STRIDE_EQ_DILATION: 0
   generate_variant_forall:
     DTYPE:
       - VALUE: half
@@ -26,15 +25,3 @@ conv2d_dw_output_tile:
     - NAME: conv2d_dw_output_tile_5x5_clamp
       OPERATOR: clamp(X, A, B)
       TILE_SIZE: 5
-    - NAME: conv2d_dw_sed_output_tile_3x3
-      STRIDE_EQ_DILATION: 1
-    - NAME: conv2d_dw_sed_output_tile_3x3_clamp
-      OPERATOR: clamp(X, A, B)
-      STRIDE_EQ_DILATION: 1
-    - NAME: conv2d_dw_sed_output_tile_5x5
-      TILE_SIZE: 5
-      STRIDE_EQ_DILATION: 1
-    - NAME: conv2d_dw_sed_output_tile_5x5_clamp
-      OPERATOR: clamp(X, A, B)
-      TILE_SIZE: 5
-      STRIDE_EQ_DILATION: 1
