@@ -129,7 +129,10 @@ class OpAddOutKernelTest : public OperatorTest {
 
     // Check that it matches the expected output.
     EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
-    EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+    expected = tf_a.make(
+        {2, 2, 3},
+        /*data=*/{3.5, 6, 8.5, 8, 10.5, 13, 15.5, 18, 20.5, 20, 22.5, 25});
+    EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.5, out), expected);
   }
 
   template <ScalarType DTYPE>

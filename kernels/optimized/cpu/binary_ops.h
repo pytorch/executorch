@@ -49,7 +49,37 @@ enum class ElementwiseOptimizedPath {
   kBroadcastLastDimReverseArguments,
 };
 
+enum class BinaryOpType {
+  kAdd,
+  kSub,
+  kMul,
+  kDiv,
+};
+
 namespace internal {
+
+template <BinaryOpType op_type>
+struct BinaryOpTypeName;
+
+template <>
+struct BinaryOpTypeName<BinaryOpType::kAdd> {
+  static constexpr char kName[] = "add.out";
+};
+
+template <>
+struct BinaryOpTypeName<BinaryOpType::kSub> {
+  static constexpr char kName[] = "sub.out";
+};
+
+template <>
+struct BinaryOpTypeName<BinaryOpType::kMul> {
+  static constexpr char kName[] = "mul.out";
+};
+
+template <>
+struct BinaryOpTypeName<BinaryOpType::kDiv> {
+  static constexpr char kName[] = "div.out";
+};
 
 /*
   Given two tensors, this function returns the broadcast dim if it exists.
@@ -192,7 +222,7 @@ std::array<int32_t, 3> inline get_normalized_tensor_size(
   return normalized_tensor_size;
 }
 
-template <typename Op>
+template <BinaryOpType op_type, typename Op>
 Tensor& handle_last_dim_broadcast_elementwise(
     KernelRuntimeContext& ctx,
     const Op& vec_fun,
@@ -221,7 +251,7 @@ Tensor& handle_last_dim_broadcast_elementwise(
       "Failed to resize output tensor.");
   const size_t outer_size = getLeadingDims(out, out.dim() - 1);
   const auto broadcast_size = out.size(out.dim() - 1);
-  ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+  ET_SWITCH_REALB_TYPES(out_type, ctx, internal::BinaryOpTypeName<op_type>::kName, CTYPE, [&]() {
     using Vec = executorch::vec::Vectorized<CTYPE>;
     CTYPE alpha_val;
     Vec alpha_val_vec(alpha_val);
@@ -246,7 +276,7 @@ Tensor& handle_last_dim_broadcast_elementwise(
   return out;
 }
 
-template <typename Op>
+template <BinaryOpType op_type, typename Op>
 Tensor& handle_broadcast_elementwise(
     KernelRuntimeContext& ctx,
     const Op& vec_fun,
@@ -259,7 +289,7 @@ Tensor& handle_broadcast_elementwise(
        ElementwiseOptimizedPath::kBroadcastLastDim) ||
       (selected_optimized_path ==
        ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments)) {
-    return handle_last_dim_broadcast_elementwise(
+    return handle_last_dim_broadcast_elementwise<op_type>(
         ctx, vec_fun, a, b, out, selected_optimized_path, alpha);
   }
 
@@ -306,7 +336,7 @@ Tensor& handle_broadcast_elementwise(
     broadcast_size = lhs->sizes()[lhs->dim() - 2];
     inner_size = lhs->sizes()[lhs->dim() - 1];
   }
-  ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+  ET_SWITCH_REALB_TYPES(out_type, ctx, internal::BinaryOpTypeName<op_type>::kName, CTYPE, [&]() {
     using Vec = executorch::vec::Vectorized<CTYPE>;
     CTYPE alpha_val;
     Vec alpha_val_vec;

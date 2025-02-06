@@ -135,7 +135,7 @@ Tensor& opt_mul_out(
       (void)alpha;
       return x * y;
     };
-    return torch::executor::handle_broadcast_elementwise(
+    return torch::executor::handle_broadcast_elementwise<BinaryOpType::kMul>(
         ctx, mul_lambda, a, b, out, selected_optimized_path);
   } else {
     ScalarType common_type =
