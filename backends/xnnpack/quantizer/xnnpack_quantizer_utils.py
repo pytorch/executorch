@@ -91,6 +91,16 @@ class OperatorConfig(NamedTuple):
     operators: list[OperatorPatternType]
 
 
+def is_relu_node(node: Node) -> bool:
+    """
+    Check if a given node is a relu node
+    """
+    return node.op == "call_function" and node.target in [
+        torch.ops.aten.relu.default,
+        torch.ops.aten.relu_.default,
+    ]
+
+
 def _is_annotated(nodes: list[Node]):
     """
     Given a list of nodes (that represents an operator pattern),
@@ -231,10 +241,7 @@ def _annotate_linear_relu(
     weight_qspec = get_weight_qspec(quantization_config)
     bias_qspec = get_bias_qspec(quantization_config)
     for node in gm.graph.nodes:
-        if node.op != "call_function" or node.target not in [
-            torch.ops.aten.relu.default,
-            torch.ops.aten.relu_.default,
-        ]:
+        if not is_relu_node(node):
             continue
         relu_node = node
         maybe_linear_node = node.args[0]
@@ -285,20 +292,27 @@ def _annotate_linear_relu(
     return annotated_partitions
 
 
-@register_annotator("conv")
-def _annotate_conv(
+def _do_annotate_conv(
     gm: torch.fx.GraphModule,
     quantization_config: Optional[QuantizationConfig],
     filter_fn: Optional[Callable[[Node], bool]] = None,
+    is_conv_transpose: bool = False,
 ) -> Optional[list[list[Node]]]:
     annotated_partitions = []
+    is_conv_node = _is_conv_transpose_node if is_conv_transpose else _is_conv_node
+
     for n in gm.graph.nodes:
-        if n.op != "call_function" or n.target not in [
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv2d.default,
-        ]:
+        if not is_conv_node(n):
             continue
         conv_node = n
+
+        # This is hacky!
+        # We do not want to annotate conv node independently if there is a conv + relu pattern
+        # So we skip if the conv node is consumed by a single relu node
+        if len(conv_node.users) == 1:
+            user = list(conv_node.users.keys())[0]
+            if is_relu_node(user):
+                continue
 
         input_qspec_map = {}
         input_act = conv_node.args[0]
@@ -341,10 +355,7 @@ def _do_annotate_conv_relu(
 ):
     annotated_partitions = []
     for n in gm.graph.nodes:
-        if n.op != "call_function" or n.target not in [
-            torch.ops.aten.relu.default,
-            torch.ops.aten.relu_.default,
-        ]:
+        if not is_relu_node(n):
             continue
         relu_node = n
         maybe_conv_node = n.args[0]
@@ -391,6 +402,26 @@ def _do_annotate_conv_relu(
         _mark_nodes_as_annotated(partition)
         annotated_partitions.append(partition)
     return annotated_partitions
+
+
+@register_annotator("conv")
+def _annotate_conv(
+    gm: torch.fx.GraphModule,
+    quantization_config: Optional[QuantizationConfig],
+    filter_fn: Optional[Callable[[Node], bool]] = None,
+) -> Optional[list[list[Node]]]:
+    return _do_annotate_conv(
+        gm, quantization_config, filter_fn, is_conv_transpose=False
+    )
+
+
+@register_annotator("conv_transpose")
+def _annotate_transpose_conv(
+    gm: torch.fx.GraphModule,
+    quantization_config: Optional[QuantizationConfig],
+    filter_fn: Optional[Callable[[Node], bool]] = None,
+) -> Optional[list[list[Node]]]:
+    return _do_annotate_conv(gm, quantization_config, filter_fn, is_conv_transpose=True)
 
 
 @register_annotator("conv_relu")
@@ -744,10 +775,7 @@ def _annotate_add_relu(  # noqa: C901
 ) -> Optional[list[list[Node]]]:
     annotated_partitions = []
     for node in gm.graph.nodes:
-        if node.op != "call_function" or node.target not in [
-            torch.ops.aten.relu.default,
-            torch.ops.aten.relu_.default,
-        ]:
+        if not is_relu_node(node):
             continue
         relu_node = node
         maybe_add = node.args[0]
@@ -872,10 +900,7 @@ def _annotate_mul_relu(  # noqa: C901
 ) -> Optional[list[list[Node]]]:
     annotated_partitions = []
     for node in gm.graph.nodes:
-        if node.op != "call_function" or node.target not in [
-            torch.ops.aten.relu.default,
-            torch.ops.aten.relu_.default,
-        ]:
+        if not is_relu_node(node):
             continue
         relu_node = node
         maybe_mul = node.args[0]

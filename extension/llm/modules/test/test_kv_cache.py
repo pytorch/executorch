@@ -143,6 +143,7 @@ class KVCacheTest(unittest.TestCase):
                     3: torch.export.Dim.STATIC,
                 },
             },
+            strict=True,
         )
         return exported_kv_cache
 

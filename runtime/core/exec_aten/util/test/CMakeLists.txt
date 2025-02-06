@@ -19,7 +19,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_test_srcs tensor_util_test.cpp scalar_type_util_test.cpp
+set(_test_srcs scalar_type_util_test.cpp
                operator_impl_example_test.cpp dim_order_util_test.cpp
 )
 

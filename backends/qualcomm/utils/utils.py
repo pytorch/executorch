@@ -287,6 +287,10 @@ def update_spill_fill_size(
     return max_sf_size
 
 
+def canonicalize_program(obj):
+    update_spill_fill_size(obj)
+
+
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
@@ -869,7 +873,6 @@ def generate_multi_graph_program(
     backend_config: ExecutorchBackendConfig = None,
     constant_methods: Optional[Dict[str, Any]] = None,
 ) -> ExecutorchProgramManager:
-
     # compile multiple graphs in qcir into single context binary
     (
         graph_inputs,
@@ -1056,7 +1059,7 @@ def generate_composite_llama_program(
             outputs_dict[graph_name],
             embedding_quantize,
         )
-        prog = torch.export.export(composite_llama_module, sample_inputs)
+        prog = torch.export.export(composite_llama_module, sample_inputs, strict=True)
         progs_dict[graph_name] = prog
     # leverage ExecutorchProgramManager for generating pte with multi-methods
     edge_prog_mgr = to_edge(
