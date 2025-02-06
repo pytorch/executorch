@@ -146,6 +146,11 @@ class OpElementWiseMultiply:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseNeg:
+    op_name: str = "ElementWiseNeg"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseNeuron:
     op_name: str = "ElementWiseNeuron"
     param_operation: str = "operation"
@@ -298,6 +303,13 @@ class OpQuantize:
 class OpReduceMean:
     op_name: str = "ReduceMean"
     param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
+class OpArgmin:
+    op_name: str = "Argmin"
+    param_axis: str = "axis"
     param_keep_dims: str = "keep_dims"
 
 

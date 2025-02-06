@@ -12,10 +12,11 @@ EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../")
 CADENCE_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/cadence"
 HIFI_DIR_PATH="$CADENCE_DIR_PATH/hifi/third-party/nnlib/nnlib-hifi4"
 FUSION_DIR_PATH="$CADENCE_DIR_PATH/fusion_g3/third-party/nnlib/nnlib-FusionG3"
+FACTO_DIR_PATH="$CADENCE_DIR_PATH/utils/FACTO"
 
 cd "$EXECUTORCH_ROOT_PATH"
 
-## HiFi 
+## HiFi
 
 rm -rf "$HIFI_DIR_PATH"
 mkdir -p "$HIFI_DIR_PATH"
@@ -47,3 +48,7 @@ if [ $STATUS -ne 0 ]; then
 fi
 
 git checkout 11230f47b587b074ba0881deb28beb85db566ac2
+
+
+## FACTO
+pip install -e $FACTO_DIR_PATH

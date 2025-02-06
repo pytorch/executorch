@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 import os
 import random
@@ -59,7 +61,7 @@ class GenericModelEvaluator:
         if tosa_output_path:
             self.tosa_output_path = tosa_output_path
         else:
-            self.tosa_output_path = None  # type: ignore[assignment]
+            self.tosa_output_path = ""
 
     def get_model_error(self) -> defaultdict:
         """
@@ -104,7 +106,7 @@ class GenericModelEvaluator:
 
         return compression_ratio
 
-    def evaluate(self) -> dict[Any]:  # type: ignore[type-arg]
+    def evaluate(self) -> dict[str, Any]:
         model_error_dict = self.get_model_error()
 
         output_metrics = {"name": self.model_name, "metrics": dict(model_error_dict)}

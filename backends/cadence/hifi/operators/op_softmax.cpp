@@ -8,11 +8,11 @@
 
 #include <cmath>
 
+#include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -24,7 +24,7 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-Tensor& softmax_out(
+Tensor& _softmax_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,

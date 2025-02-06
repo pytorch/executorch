@@ -292,9 +292,6 @@ class TestProgramManagers(unittest.TestCase):
         ).exported_program()
         for node in ep.graph.nodes:
             self.assertNotEqual(node.op, "get_attr")
-        self.assertEqual(
-            len([node for node in ep.graph.nodes if node.op == "placeholder"]), 2
-        )
 
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir
@@ -312,6 +309,45 @@ class TestProgramManagers(unittest.TestCase):
             ep, compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
         )
         edge_manager.to_executorch()
+
+    def test_data_dependent(self):
+        with torch.library._scoped_library("mylib", "FRAGMENT") as lib:
+            torch.library.define(
+                "mylib::foo1",
+                "(Tensor a, Tensor b) -> Tensor",
+                tags=torch.Tag.pt2_compliant_tag,
+                lib=lib,
+            )
+
+            @torch.library.impl("mylib::foo1", "cpu", lib=lib)
+            def foo_impl(a, b):
+                return a + b
+
+            @torch.library.register_fake("mylib::foo1", lib=lib)
+            def mylib_foo_default_fake(*args, **kwargs):
+                ctx = torch.library.get_ctx()
+                fake_shape = ctx.new_dynamic_size()
+                return torch.empty(fake_shape, dtype=torch.float32, device="cpu")
+
+            class M(torch.nn.Module):
+                def forward(self, a, b, c):
+                    res = torch.ops.mylib.foo1(a, b)
+
+                    c_item = c.item()
+                    torch._check_is_size(c_item)
+                    torch._check(c_item < res.shape[0])
+                    return res[:c_item]
+
+            inp = (torch.randn(10), torch.randn(10), torch.tensor(3))
+
+            ep = export(M(), inp, strict=True)
+            edge = to_edge(ep)
+            self.assertTrue(
+                torch.allclose(
+                    edge.exported_program().module()(*inp),
+                    M()(*inp),
+                )
+            )
 
     def test_edge_manager_transform(self):
         edge_manager: EdgeProgramManager = to_edge(

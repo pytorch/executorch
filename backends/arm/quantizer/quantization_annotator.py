@@ -132,6 +132,8 @@ _one_to_one = [
     torch.ops.aten.sigmoid.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
+    torch.ops.aten.hardsigmoid.default,
+    torch.ops.aten.hardswish.default,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -186,6 +188,8 @@ _parent_shared_qspec = [
     torch.ops.aten.full.default,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
+    torch.ops.aten.clamp.default,
+    torch.ops.aten.clamp.Tensor,
     operator.getitem,
 ]
 

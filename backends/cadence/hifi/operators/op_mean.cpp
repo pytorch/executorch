@@ -56,7 +56,7 @@ int prepare_data(
   return num_axis_dims;
 }
 
-Tensor& mean_dim_out(
+Tensor& mean_out(
     RuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,

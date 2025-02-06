@@ -16,6 +16,7 @@ from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
+from torch.nn.parameter import Parameter
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -112,12 +113,16 @@ class ComboConvBatchnormRelu6(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
     ]
 
-    def __init__(self):
+    def __init__(self, affine: bool):
         super().__init__()
         self.conv2d = torch.nn.Conv2d(
             in_channels=3, out_channels=3, kernel_size=3, stride=1, groups=1
         )
-        self.batch_norm2d = torch.nn.BatchNorm2d(3, affine=False)
+        self.batch_norm2d = torch.nn.BatchNorm2d(3, affine=affine)
+        self.batch_norm2d.running_mean = torch.rand(3)
+        self.batch_norm2d.running_var = torch.rand(3)
+        self.batch_norm2d.weight = Parameter(torch.rand(3))
+        self.batch_norm2d.bias = Parameter(torch.rand(3))
         self.relu6 = torch.nn.ReLU6()
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
@@ -289,24 +294,30 @@ class TestConvCombos(unittest.TestCase):
     ##############################
     ## Conv + batch norm + relu ##
     ##############################
-    def test_conv_batchnorm_relu6_tosa_MI(self):
-        model = ComboConvBatchnormRelu6()
+    affine_params = [("affine", True), ("_no_affine", False)]
+
+    @parameterized.expand(affine_params)
+    def test_conv_batchnorm_relu6_tosa_MI(self, test_suffix, affine):
+        model = ComboConvBatchnormRelu6(affine)
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
-    def test_conv_batchnorm_relu6_tosa_BI(self):
-        model = ComboConvBatchnormRelu6()
+    @parameterized.expand(affine_params)
+    def test_conv_batchnorm_relu6_tosa_BI(self, test_suffix, affine):
+        model = ComboConvBatchnormRelu6(affine)
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
+    @parameterized.expand(affine_params)
     @pytest.mark.corstone_fvp
-    def test_conv_batchnorm_relu6_u55_BI(self):
-        model = ComboConvBatchnormRelu6()
+    def test_conv_batchnorm_relu6_u55_BI(self, test_suffix, affine):
+        model = ComboConvBatchnormRelu6(affine)
         self._test_conv_combo_ethos_BI_pipeline(
             model, common.get_u55_compile_spec(), model.get_inputs()
         )
 
+    @parameterized.expand(affine_params)
     @pytest.mark.corstone_fvp
-    def test_conv_batchnorm_relu_u85_BI(self):
-        model = ComboConvBatchnormRelu6()
+    def test_conv_batchnorm_relu_u85_BI(self, test_suffix, affine):
+        model = ComboConvBatchnormRelu6(affine)
         self._test_conv_combo_ethos_BI_pipeline(
             model,
             common.get_u85_compile_spec(),
@@ -353,8 +364,7 @@ class TestConvCombos(unittest.TestCase):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
-    # TODO: Investigate flakyness (MLTORCH-307)
-    @unittest.skip(reason="Skiped due to flakyness (MLTORCH-307)")
+    @pytest.mark.flaky  # TODO: Investigate flakyness (MLTORCH-307)
     def test_block_bottleneck_residual_tosa_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())

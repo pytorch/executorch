@@ -278,7 +278,7 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
                             not isinstance(s, int) for s in concrete_stride
                         ):
                             raise RuntimeError(
-                                f"Cannot evalute the shape upper bound of a dynamic-shaped tensor to a concrete bounded integer. Got tensor spec: {spec}."
+                                f"Cannot evaluate the shape upper bound of a dynamic-shaped tensor to a concrete bounded integer. Got tensor spec: {spec}."
                                 f"The upper bound shape we get {concrete_shape}, the upper bound stride we get {concrete_stride}"
                                 "This tensor could either be from 1. a data-dependent operation such as nonzero. Or 2. an input, whose don't have a constraint for the upper bound."
                                 "Please use export's constrain_as_size() or constrain_as_value() apis and set a concrete upper bound to resolve this."
