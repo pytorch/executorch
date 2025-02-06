@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import Callable, Dict
 
 import torch
@@ -31,7 +33,7 @@ class InsertTableOpsPass(ExportPass):
     """
     For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
     edge ops with a tosa._table(input: Tensor, target_str: str) where target_str == str(node.target).
-    When loweringthe _table node target_str will be used to find the corresponding torch operator
+    When lowering the _table node target_str will be used to find the corresponding torch operator
     which will be used to produce the table values in operators/op_table.py.
     """
 
@@ -43,6 +45,7 @@ class InsertTableOpsPass(ExportPass):
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
         exir_ops.edge.aten.tanh.default: torch.tanh,
         exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
+        exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
     }
 
     def __init__(self, exported_program: ExportedProgram) -> None:
