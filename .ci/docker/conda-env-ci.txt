@@ -3,5 +3,3 @@ ninja=1.10.2
 libuv
 llvm-openmp
 pkg-config
-mkl=2021.4.0
-mkl-include=2021.4.0

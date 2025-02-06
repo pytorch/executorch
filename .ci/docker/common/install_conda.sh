@@ -31,8 +31,12 @@ install_miniconda() {
 
 install_python() {
   pushd /opt/conda
-  # Install the correct Python version
-  as_ci_user conda create -n "py_${PYTHON_VERSION}" -y --file /opt/conda/conda-env-ci.txt python="${PYTHON_VERSION}"
+  # Install the select Python version for CI jobs. Conda mkl is needed to build PyTorch
+  # from source for optimal performance on x86 CPU
+  as_ci_user conda create -n "py_${PYTHON_VERSION}" -y --file /opt/conda/conda-env-ci.txt \
+    python="${PYTHON_VERSION}" \
+    mkl=2021.4.0 \
+    mkl-include=2021.4.0
   popd
 }
 
