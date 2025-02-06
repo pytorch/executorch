@@ -76,7 +76,8 @@ uint64_t GetUInt64LE(const uint8_t* data) {
   if (size < FlatTensorHeader::kNumHeadBytes) {
     return Error::InvalidArgument;
   }
-  const uint8_t* header = reinterpret_cast<const uint8_t*>(data);
+  const uint8_t* header =
+      reinterpret_cast<const uint8_t*>(data) + kHeaderOffset;
 
   // Check magic bytes.
   if (std::memcmp(

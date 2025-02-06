@@ -3,13 +3,13 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
+import inspect
 import operator
 import re
 import time
 import warnings
 from collections import OrderedDict
-from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
@@ -46,6 +46,9 @@ from executorch.backends.qualcomm._passes.remove_redundancy import RemoveRedunda
 from executorch.backends.qualcomm._passes.replace_index_put_input import (
     ReplaceIndexPutInput,
 )
+from executorch.backends.qualcomm._passes.utils import (
+    get_passes_dependency_for_capture_program,
+)
 
 from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
@@ -74,8 +77,8 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     option_to_flatbuffer,
 )
 from executorch.backends.qualcomm.utils.constants import (
-    QCOM_PASS_EXPAND_BROADCAST_SHAPE,
-    QCOM_PASS_SKIP_ADVANCED_REQUANT,
+    QCOM_PASS_ACTIVATE_KEY,
+    QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
     QCOM_QNN_COMPILE_SPEC,
     QCOM_QUANTIZED_IO,
 )
@@ -89,10 +92,12 @@ from executorch.exir import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture import ExecutorchBackendConfig
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.passes import PassManager
 from executorch.exir.program._program import _get_updated_graph_signature
 from torch._decomp import core_aten_decompositions, remove_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
+from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
 from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.library import Library
 
@@ -282,6 +287,10 @@ def update_spill_fill_size(
     return max_sf_size
 
 
+def canonicalize_program(obj):
+    update_spill_fill_size(obj)
+
+
 def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
@@ -299,33 +308,87 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     return source_decompositions
 
 
+def get_capture_program_passes():
+    """
+    Defines and returns the default ordered passes for the capture program.
+    This function creates an OrderedDict containing a series of default passes.
+
+    Returns:
+        OrderedDict: An ordered dictionary containing all default passes along with their activation status and initialization parameters.
+    """
+
+    # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
+    # If a pass is activated, it will be executed by default.
+    default_passes_and_setting = [
+        (RemoveRedundancy, True),
+        (RecomposePixelUnshuffle, True),
+        (RecomposeRmsNorm, True),
+        (ConvertToLinear, True),
+        (ConvertPReLU, True),
+        (ConvertBmmToMatmul, True),
+        (ConvertInterpolateWithUpsample2D, True),
+        (I64toI32, True),
+        (AnnotateQuantAttrs, True),
+        (AnnotateAndQuantScalar, True),
+        (AnnotateDecomposed, True),
+        (FoldQDQ, True),
+        (ExpandBroadcastTensorShape, False),
+        (LayoutTransform, True),
+        (ReplaceIndexPutInput, True),
+    ]
+
+    passes = OrderedDict()
+    for p, act in default_passes_and_setting:
+        init_signature = inspect.signature(p.__init__)
+
+        args_kwargs_defaults = {
+            k: v.default if v.default is not inspect.Parameter.empty else None
+            for k, v in init_signature.parameters.items()
+            if k != "self"
+        }
+
+        passes[p] = {
+            QCOM_PASS_ACTIVATE_KEY: act,
+            QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: args_kwargs_defaults,
+        }
+
+    return passes
+
+
+def _topological_sort_passes(passes: OrderedDict):
+    dep_table = get_passes_dependency_for_capture_program()
+    pm = PassManager()
+    for p in passes:
+        pm.add_pass(p)
+
+    for that, these in dep_table.items():
+        for this in these:
+            pm.add_constraint(this_before_that_pass_constraint(this, that))
+
+    pm.solve_constraints()
+    sorted_passes = OrderedDict()
+    for p in pm.passes:
+        sorted_passes[p] = passes[p]
+    return sorted_passes
+
+
 def _transform(
-    edge_program: ExportedProgram, custom_pass_config: FrozenSet[str] = frozenset()
+    edge_program: ExportedProgram, passes_job: OrderedDict = None
 ) -> ExportedProgram:
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
     graph_module = edge_program.graph_module
-    RemoveRedundancy()(graph_module)
-    RecomposePixelUnshuffle()(graph_module)
-    RecomposeRmsNorm()(graph_module)
-    ConvertToLinear()(graph_module)
-    ConvertPReLU(edge_program)(graph_module)
-    ConvertBmmToMatmul()(graph_module)
-    ConvertInterpolateWithUpsample2D()(graph_module)
-    I64toI32(edge_program)(graph_module)
-    AnnotateQuantAttrs(
-        edge_program, QCOM_PASS_SKIP_ADVANCED_REQUANT in custom_pass_config
-    )(graph_module)
-    AnnotateAndQuantScalar(edge_program)(graph_module)
-    AnnotateDecomposed(edge_program)(graph_module)
-    FoldQDQ()(graph_module)
-    # this pass is not necessary for network without layout-sensitive ops
-    # enable defaultly will introduce overhead from extra view_copy nodes
-    if QCOM_PASS_EXPAND_BROADCAST_SHAPE in custom_pass_config:
-        ExpandBroadcastTensorShape()(graph_module)
-    LayoutTransform(edge_program)(graph_module)
-    ReplaceIndexPutInput(edge_program)(graph_module)
+    passes_job = passes_job if passes_job is not None else get_capture_program_passes()
+    passes_job = _topological_sort_passes(passes_job)
+    for p in passes_job:
+        if not passes_job[p][QCOM_PASS_ACTIVATE_KEY]:
+            continue
+
+        kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
+        if "edge_program" in kwargs:
+            kwargs["edge_program"] = edge_program
+        p(**kwargs)(graph_module)
 
     # Since QDQ nodes are stripped, update graph signature again to validate program
     edge_program._graph_signature = _get_updated_graph_signature(
@@ -339,7 +402,7 @@ def _transform(
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
-    custom_pass_config: FrozenSet[str] = frozenset(),
+    passes_job: OrderedDict = None,
 ) -> exir.ExirExportedProgram:
     ep = torch.export.export(module, inputs, strict=True)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
@@ -350,7 +413,8 @@ def capture_program(
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(ConvertBinaryOpsWithScalar())
     edge_ep = core_ep.to_edge(qnn_edge_config())
-    _transform(edge_ep.exported_program, custom_pass_config)
+
+    _transform(edge_ep.exported_program, passes_job)
     return edge_ep
 
 
@@ -809,7 +873,6 @@ def generate_multi_graph_program(
     backend_config: ExecutorchBackendConfig = None,
     constant_methods: Optional[Dict[str, Any]] = None,
 ) -> ExecutorchProgramManager:
-
     # compile multiple graphs in qcir into single context binary
     (
         graph_inputs,
@@ -906,28 +969,34 @@ def generate_multi_graph_program(
 
 
 def generate_composite_llama_program(
+    llama_model: torch.nn.Module,
     graph_names: List[str],
     sample_inputs_list: List[Tuple[Any]],
     lower_module_dict: Dict[str, List[LoweredBackendModule]],
     call_delegate_node_name_dict: Dict[str, List[str]],
     call_delegate_inputs_dict: Dict[str, List[Tuple[str, int | None]]],
     outputs_dict: Dict[str, List[Tuple[str, int]]],
+    embedding_quantize: str,
     backend_config: ExecutorchBackendConfig = None,
     constant_methods: Optional[Dict[str, Any]] = None,
 ) -> ExecutorchProgramManager:
     class CompositeLlamaModule(torch.nn.Module):
         def __init__(
             self,
+            llama_model,
             lower_module_list,
             call_delegate_node_name_list,
             call_delegate_inputs_list,
             outputs_list,
+            embedding_quantize,
         ) -> None:
             super().__init__()
+            self.llama_model = llama_model
             self.lower_module_list = lower_module_list
             self.call_delegate_node_name_list = call_delegate_node_name_list
             self.call_delegate_inputs_list = call_delegate_inputs_list
             self.outputs_list = outputs_list
+            self.embedding_quantize = embedding_quantize
 
         def reorder(
             self,
@@ -960,6 +1029,13 @@ def generate_composite_llama_program(
             }
             for num, arg in enumerate(args):
                 module_input_dict[f"args_{num}"] = arg
+
+            if self.embedding_quantize:
+                hidden_states = self.llama_model.tok_embeddings(tokens)
+                module_input_dict["quantized_decomposed_embedding_4bit_dtype"] = (
+                    hidden_states
+                )
+
             for lower_module, call_delegate_node_name, call_delegate_inputs in zip(
                 self.lower_module_list,
                 self.call_delegate_node_name_list,
@@ -976,12 +1052,14 @@ def generate_composite_llama_program(
     progs_dict = {}
     for graph_name, sample_inputs in zip(graph_names, sample_inputs_list):
         composite_llama_module = CompositeLlamaModule(
+            llama_model,
             lower_module_dict[graph_name],
             call_delegate_node_name_dict[graph_name],
             call_delegate_inputs_dict[graph_name],
             outputs_dict[graph_name],
+            embedding_quantize,
         )
-        prog = torch.export.export(composite_llama_module, sample_inputs)
+        prog = torch.export.export(composite_llama_module, sample_inputs, strict=True)
         progs_dict[graph_name] = prog
     # leverage ExecutorchProgramManager for generating pte with multi-methods
     edge_prog_mgr = to_edge(

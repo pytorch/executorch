@@ -70,7 +70,7 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
       ret_val);
 
   ScalarType in_type = in.scalar_type();
-  ET_SWITCH_REAL_TYPES(
+  ET_SWITCH_REALHBF16_TYPES(
       in_type, ctx, "max_pool2d_with_indices.out", CTYPE, [&]() {
         apply_kernel_2d_reduce_then_map_fn<CTYPE>(
             [](const CTYPE in_val,

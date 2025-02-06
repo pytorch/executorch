@@ -125,6 +125,8 @@ Error Runner::load() {
   int64_t head_dim = method_meta.output_tensor_meta(1)->sizes()[1]; // k_cache
   int64_t num_heads = (method_meta.num_outputs() - 1) / (num_layers * 2);
   vocab_size_ = method_meta.output_tensor_meta(0)->sizes()[2]; // logit_tensor
+  use_int64_token_ = method_meta.input_tensor_meta(0)->scalar_type() ==
+      executorch::aten::ScalarType::Long;
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
 
   if (kv_updator_ == "SmartMask") {
@@ -138,7 +140,8 @@ Error Runner::load() {
         num_heads,
         eval_mode_,
         prefill_forward_name_,
-        kv_forward_name_);
+        kv_forward_name_,
+        use_int64_token_);
   } else if (kv_updator_ == "ShiftPointer") {
     io_mgr_ = std::make_unique<ShiftPointerIoMgr>(
         modules_,
@@ -150,7 +153,8 @@ Error Runner::load() {
         num_heads,
         eval_mode_,
         prefill_forward_name_,
-        kv_forward_name_);
+        kv_forward_name_,
+        use_int64_token_);
   } else {
     ET_LOG(Error, "Using an unknown updator %s", kv_updator_.c_str());
   }

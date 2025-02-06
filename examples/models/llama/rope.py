@@ -8,9 +8,11 @@
 # Different RoPE implementations
 
 import math
+from functools import partial
 from typing import Optional, Tuple
 
 import torch
+from executorch.examples.models.llama.model_args import ModelArgs
 
 # ======================== Stock Implementation ========================
 
@@ -205,3 +207,80 @@ def hf_apply_rotary_emb_to_k(k, cos, sin, position_ids=None, unsqueeze_dim=1):
     sin = sin.unsqueeze(unsqueeze_dim)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return k_embed
+
+
+class Rope(torch.nn.Module):
+    def __init__(self, params: ModelArgs):
+        super().__init__()
+        self.params = params
+        if self.params.use_hf_rope:
+            self.precompute_freqs_cis = hf_precompute_freqs_cis
+        else:
+            self.precompute_freqs_cis = partial(
+                precompute_freqs_cis,
+                use_scaled=self.params.use_scaled_rope,
+                scale_factor=self.params.rope_scale_factor,
+            )
+        freqs_cos, freqs_sin = self.precompute_freqs_cis(
+            self.params.head_dim,
+            (
+                self.params.max_context_len  # Normal llama2.
+                if self.params.ffn_dim_multiplier is None
+                else self.params.max_context_len * 2  # Sharded checkpoint.
+            ),
+            self.params.rope_freq_base,
+        )
+        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
+        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
+        if self.params.use_hf_rope:
+            self.apply_rotary_emb = hf_apply_rotary_emb
+        else:
+            self.apply_rotary_emb = RotaryEmbedding()
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+    ):
+        return self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+
+    def get_freqs(self, input_pos: Optional[torch.Tensor], seq_len: int):
+        """
+        Get the precomputed frequencies for the given input position and sequence length.
+
+        Args:
+            input_pos (torch.Tensor): The input position tensor.
+            seq_len (int): The sequence length.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: The precomputed frequencies for the given input position and sequence length.
+        """
+        if self.params.use_kv_cache:
+            assert (
+                input_pos is not None
+            ), "input_pos must be provided when use_kv_cache is True"
+
+            if self.params.enable_dynamic_shape:
+                # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
+                input_pos_item = input_pos[-1].item()
+                torch._check_is_size(input_pos_item)
+                torch._check(input_pos_item < self.params.max_context_len)
+                # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
+                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seq_len)
+                # pyre-ignore: Incompatible parameter type [6]
+                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seq_len)
+            else:
+                # When not using dynamic shape, use of the .item results in
+                # symints, due to querying the data from tensor.
+                # this path avoids that for mps backend, although probably mps backend
+                # can support dynamic shape?
+                freqs_cos = self.freqs_cos[input_pos]
+                freqs_sin = self.freqs_sin[input_pos]
+
+        else:
+            assert input_pos is None, "input_pos is unused when use_kv_cache is False"
+            freqs_cos = self.freqs_cos[:seq_len]
+            freqs_sin = self.freqs_sin[:seq_len]
+        return freqs_cos, freqs_sin

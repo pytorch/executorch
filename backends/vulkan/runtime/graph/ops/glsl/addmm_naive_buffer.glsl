@@ -10,6 +10,9 @@
 
 #define PRECISION ${PRECISION}
 
+$if HAS_BIAS:
+  #define HAS_BIAS
+
 #define T ${buffer_scalar_type(DTYPE)}
 
 ${define_required_extensions(DTYPE)}
@@ -19,6 +22,8 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_mat1", DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_mat2", DTYPE, "buffer")}
+$if HAS_BIAS:
+  ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer")}
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
 ${layout_declare_ubo(B, "ivec4", "out_strides")}
 ${layout_declare_ubo(B, "ivec4", "mat1_sizes")}
@@ -26,6 +31,8 @@ ${layout_declare_ubo(B, "ivec4", "mat1_strides")}
 ${layout_declare_ubo(B, "ivec4", "mat2_sizes")}
 ${layout_declare_ubo(B, "ivec4", "mat2_strides")}
 ${layout_declare_ubo(B, "int", "out_numel")}
+$if HAS_BIAS:
+  ${layout_declare_ubo(B, "float", "alpha", "float", "beta")}
 
 #include "indexing_utils.h"
 
@@ -34,25 +41,25 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "mat2_is_transposed", "0")}
 
 void main() {
-  const ivec4 out_bufix = ivec4(
+  const ivec4 out_tidx = ivec4(
       gl_GlobalInvocationID.x,
       gl_GlobalInvocationID.y,
       gl_GlobalInvocationID.z % out_sizes.z,
       gl_GlobalInvocationID.z / out_sizes.z);
 
-  if (any(greaterThanEqual(out_bufix, out_sizes))) {
+  if (any(greaterThanEqual(out_tidx, out_sizes))) {
     return;
   }
 
   int mat1_bufi = tidx_to_bufi(
-      ivec4(0, out_bufix.y, out_bufix.z, out_bufix.w), mat1_strides);
+      ivec4(0, out_tidx.y, out_tidx.z, out_tidx.w), mat1_strides);
   int mat2_bufi;
   if (mat2_is_transposed > 0) {
     mat2_bufi = tidx_to_bufi(
-        ivec4(0, out_bufix.x, 0, 0), mat2_strides);
+        ivec4(0, out_tidx.x, 0, 0), mat2_strides);
   } else {
     mat2_bufi = tidx_to_bufi(
-        ivec4(out_bufix.x, 0, out_bufix.z, out_bufix.w), mat2_strides);
+        ivec4(out_tidx.x, 0, out_tidx.z, out_tidx.w), mat2_strides);
   }
 
   int mat2_stride;
@@ -70,6 +77,10 @@ void main() {
     mat2_bufi += mat2_stride;
   }
 
-  const int out_bufi = tidx_to_bufi(out_bufix, out_strides);
+  const int out_bufi = tidx_to_bufi(out_tidx, out_strides);
+#ifdef HAS_BIAS
+  t_out[out_bufi] = T(alpha) * T(sum) + T(beta) * t_bias[out_tidx.x];
+#else
   t_out[out_bufi] = T(sum);
+#endif // HAS_BIAS
 }
