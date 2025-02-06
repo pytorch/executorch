@@ -7,6 +7,9 @@
  */
 
 #pragma once
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -358,3 +361,5 @@ namespace executor {
 using ::executorch::runtime::Method;
 } // namespace executor
 } // namespace torch
+
+#pragma GCC diagnostic pop
