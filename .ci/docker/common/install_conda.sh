@@ -31,12 +31,17 @@ install_miniconda() {
 
 install_python() {
   pushd /opt/conda
-  # Install the select Python version for CI jobs. Conda mkl is needed to build PyTorch
-  # from source for optimal performance on x86 CPU
+  # Install the select Python version for CI jobs
   as_ci_user conda create -n "py_${PYTHON_VERSION}" -y --file /opt/conda/conda-env-ci.txt \
     python="${PYTHON_VERSION}" \
-    mkl=2021.4.0 \
-    mkl-include=2021.4.0
+
+  # From https://github.com/pytorch/pytorch/blob/main/.ci/docker/common/install_conda.sh
+  if [[ $(uname -m) == "aarch64" ]]; then
+    conda_install "openblas==0.3.28=*openmp*"
+  else
+    conda_install "mkl=2021.4.0 mkl-include=2021.4.0"
+  fi
+
   popd
 }
 
