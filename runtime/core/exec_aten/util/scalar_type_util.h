@@ -348,9 +348,14 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
 
 // In this context, "COMPLEX" means complex types based on primitive C types,
 // which is why ComplexHalf is not included.
-#define ET_FORALL_COMPLEX_TYPES(_)                   \
-  _(::torch::executor::complex<float>, ComplexFloat) \
-  _(::torch::executor::complex<double>, ComplexDouble)
+#define ET_FORALL_COMPLEX_TYPES(_)                    \
+  _(::executorch::aten::complex<float>, ComplexFloat) \
+  _(::executorch::aten::complex<double>, ComplexDouble)
+
+#define ET_FORALL_COMPLEXH_TYPES(_)                                     \
+  _(::executorch::aten::complex<::executorch::aten::Half>, ComplexHalf) \
+  _(::executorch::aten::complex<float>, ComplexFloat)                   \
+  _(::executorch::aten::complex<double>, ComplexDouble)
 
 //
 // Utility functions to retrieve metadata for a given ScalarType
@@ -593,7 +598,7 @@ inline bool isUnderlying(
   return type == ::executorch::runtime::toUnderlying(qtype);
 }
 
-inline ::executorch::aten::ScalarType toRealValueType(
+inline constexpr ::executorch::aten::ScalarType toRealValueType(
     ::executorch::aten::ScalarType t) {
   switch (t) {
     case ::executorch::aten::ScalarType::ComplexHalf:
@@ -607,7 +612,7 @@ inline ::executorch::aten::ScalarType toRealValueType(
   }
 }
 
-inline ::executorch::aten::ScalarType toComplexType(
+inline constexpr ::executorch::aten::ScalarType toComplexType(
     ::executorch::aten::ScalarType t) {
   switch (t) {
     case ::executorch::aten::ScalarType::BFloat16:
@@ -1060,6 +1065,14 @@ struct promote_types {
   ET_INTERNAL_SWITCH_CASE(                                                    \
       ::executorch::aten::ScalarType::ComplexDouble, CTYPE_ALIAS, __VA_ARGS__)
 
+#define ET_INTERNAL_SWITCH_CASE_COMPLEXH_TYPES(CTYPE_ALIAS, ...)              \
+  ET_INTERNAL_SWITCH_CASE(                                                    \
+      ::executorch::aten::ScalarType::ComplexHalf, CTYPE_ALIAS, __VA_ARGS__)  \
+  ET_INTERNAL_SWITCH_CASE(                                                    \
+      ::executorch::aten::ScalarType::ComplexFloat, CTYPE_ALIAS, __VA_ARGS__) \
+  ET_INTERNAL_SWITCH_CASE(                                                    \
+      ::executorch::aten::ScalarType::ComplexDouble, CTYPE_ALIAS, __VA_ARGS__)
+
 #define ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_TYPES(CTYPE_ALIAS, ...)    \
   ET_INTERNAL_SWITCH_CASE(                                            \
       ::executorch::aten::ScalarType::Bool, CTYPE_ALIAS, __VA_ARGS__) \
@@ -1277,6 +1290,13 @@ struct promote_types {
       CONTEXT,                                                         \
       NAME,                                                            \
       ET_INTERNAL_SWITCH_CASE_COMPLEX_TYPES(CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_COMPLEXH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                   \
+      TYPE,                                                             \
+      CONTEXT,                                                          \
+      NAME,                                                             \
+      ET_INTERNAL_SWITCH_CASE_COMPLEXH_TYPES(CTYPE_ALIAS, __VA_ARGS__))
 
 #define ET_SWITCH_SCALAR_OBJ_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                                     \

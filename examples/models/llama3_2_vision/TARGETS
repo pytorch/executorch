@@ -1,0 +1,14 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "multimodal_lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps = [
+        "//executorch/examples/models/llama3_2_vision/text_decoder:model",
+        "//executorch/examples/models/llama3_2_vision/vision_encoder:model",
+    ],
+)
