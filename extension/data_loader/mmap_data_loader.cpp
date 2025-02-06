@@ -140,7 +140,7 @@ void MunmapSegment(void* context, void* data, size_t size) {
     // do about it.
     ET_LOG(
         Error,
-        "munmap(0x%zx, %zu) failed: %s (ignored)",
+        "munmap(0x%zx, %zu) failed: %s (%d) (ignored)",
         (size_t)range.start,
         range.size,
         ::strerror(errno),

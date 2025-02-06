@@ -1,9 +1,37 @@
-# ExecuTorch
+<div align="center">
+  <img src="./docs/source/_static/img/et-logo.png" alt="Logo" width="200">
+  <h1 align="center">ExecuTorch: A powerful on-device AI Framework</h1>
+</div>
 
-**ExecuTorch** is an end-to-end solution for enabling on-device inference
-capabilities across mobile and edge devices including wearables, embedded
-devices and microcontrollers. It is part of the PyTorch Edge ecosystem and
-enables efficient deployment of PyTorch models to edge devices.
+
+<div align="center">
+  <a href="https://github.com/pytorch/executorch/graphs/contributors"><img src="https://img.shields.io/github/contributors/pytorch/executorch?style=for-the-badge&color=blue" alt="Contributors"></a>
+  <a href="https://github.com/pytorch/executorch/stargazers"><img src="https://img.shields.io/github/stars/pytorch/executorch?style=for-the-badge&color=blue" alt="Stargazers"></a>
+  <a href="https://discord.gg/MeacgB7A"><img src="https://img.shields.io/badge/Discord-Join%20Us-purple?logo=discord&logoColor=white&style=for-the-badge" alt="Join our Discord community"></a>
+  <a href="https://pytorch.org/executorch/stable/index.html"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Check out the documentation"></a>
+  <hr>
+</div>
+
+**ExecuTorch** is an end-to-end solution for on-device inference and training. It powers much of Meta's on-device AI experiences across Facebook, Instagram, Meta Quest, Ray-Ban Meta Smart Glasses, WhatsApp, and more.
+
+It supports a wide range of models including LLMs (Large Language Models), CV (Computer Vision), ASR (Automatic Speech Recognition), and TTS (Text to Speech).
+
+Platform Support:
+- Operating Systems:
+  - iOS
+  - Mac
+  - Android
+  - Linux
+  - Microcontrollers
+
+- Hardware Acceleration:
+  - Apple
+  - Arm
+  - Cadence
+  - MediaTek
+  - Qualcomm
+  - Vulkan
+  - XNNPACK
 
 Key value propositions of ExecuTorch are:
 
@@ -17,35 +45,21 @@ Key value propositions of ExecuTorch are:
   experience due to a lightweight runtime and utilizing full hardware
   capabilities such as CPUs, NPUs, and DSPs.
 
-For a comprehensive technical overview of ExecuTorch and step-by-step tutorials,
-please visit our documentation website [for the latest release](https://pytorch.org/executorch/stable/index.html) (or the [main branch](https://pytorch.org/executorch/main/index.html)).
+## Getting Started
+To get started you can:
 
-Check out the [Getting Started](https://pytorch.org/executorch/stable/getting-started-setup.html#quick-setup-colab-jupyter-notebook-prototype) page for a quick spin.
+- Visit the [Step by Step Tutorial](https://pytorch.org/executorch/main/index.html) on getting things running locally and deploy a model to a device
+- Use this [Colab Notebook](https://pytorch.org/executorch/stable/getting-started-setup.html#quick-setup-colab-jupyter-notebook-prototype) to start playing around right away
+- Jump straight into LLMs use cases by following specific instructions for [Llama](./examples/models/llama/README.md) and [Llava](./examples/models/llava/README.md)
 
-Check out the examples of [Llama](./examples/models/llama/README.md), [Llava](./examples/models/llava/README.md) and [other models](./examples/README.md) running on edge devices using ExecuTorch.
-
-
-**[UPDATE - 10/24]** We have added support for running [Llama 3.2 Quantized 1B/3B](./examples/models/llama/README.md) models via ExecuTorch.
-
-## Feedback
+## Feedback and Engagement
 
 We welcome any feedback, suggestions, and bug reports from the community to help
-us improve our technology. Please use the [PyTorch
-Forums](https://discuss.pytorch.org/c/executorch) for discussion and feedback
-about ExecuTorch using the **ExecuTorch** category, and our [GitHub
-repository](https://github.com/pytorch/executorch/issues) for bug reporting.
-
-We recommend using the latest release tag from the
-[Releases](https://github.com/pytorch/executorch/releases) page when developing.
+us improve our technology. Check out the [Discussion Board](https://github.com/pytorch/executorch/discussions) or chat real time with us on [Discord](https://discord.gg/MeacgB7A)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details about issues, PRs, code
-style, CI jobs, and other development topics.
-
-To connect with us and other community members, we invite you to join PyTorch Slack community by filling out this [form](https://docs.google.com/forms/d/e/1FAIpQLSeADnUNW36fjKjYzyHDOzEB_abKQE9b6gqqW9NXse6O0MWh0A/viewform). Once you've joined, you can:
-* Head to the `#executorch-general` channel for general questions, discussion, and community support.
-* Join the `#executorch-contributors` channel if you're interested in contributing directly to project development.
+We welcome contributions. To get started review the [guidelines](CONTRIBUTING.md) and chat with us on [Discord](https://discord.gg/MeacgB7A)
 
 
 ## Directory Structure

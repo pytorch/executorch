@@ -146,6 +146,13 @@
 #define ET_FUNCTION __FUNCTION__
 #endif // __has_builtin(__builtin_FUNCTION)
 
+// As of G3 RJ-2024.3 toolchain, zu format specifier is not supported for Xtensa
+#if defined(__XTENSA__)
+#define ET_PRIsize_t "lu"
+#else
+#define ET_PRIsize_t "zu"
+#endif
+
 // Whether the compiler supports GNU statement expressions.
 // https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html
 #ifndef ET_HAVE_GNU_STATEMENT_EXPRESSIONS

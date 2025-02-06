@@ -109,7 +109,6 @@ class TestMinimum(unittest.TestCase):
         self._test_minimum_tosa_BI_pipeline(self.Minimum(), test_data)
 
     @parameterized.expand(Minimum.test_parameters)
-    @unittest.expectedFailure  # Bug in Vela, disabled until pin changes, bug MLETORCH-513
     def test_minimum_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         tester = self._test_minimum_ethos_BI_pipeline(

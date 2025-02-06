@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -82,9 +82,10 @@ class DecomposeLayerNormPass(ExportPass):
             n_dims = len(normalized_shape)
             if isinstance(meta["val"], tuple):
                 shape = meta["val"][0].size()
+                dtype = meta["val"][0].dtype
             else:
                 shape = meta["val"].size()
-            dtype = meta["val"][0].dtype
+                dtype = meta["val"].dtype
             rank = len(shape)
             dims = list(range(-1, -1 * (n_dims + 1), -1))
             dims = [dim % rank for dim in dims]

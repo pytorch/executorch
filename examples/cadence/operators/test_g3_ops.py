@@ -1,7 +1,8 @@
+# pyre-unsafe
 import unittest
 from typing import Any, cast, List, OrderedDict, Tuple
 
-from executorch.examples.cadence.operators import facto_util
+from executorch.backends.cadence.utils import facto_util
 
 from parameterized import parameterized
 
@@ -258,6 +259,35 @@ class ATenOpTestCases(unittest.TestCase):
         model = nn.Softmax(dim=-1)
 
         self.run_and_verify(model, (inputs,))
+
+    # pyre-ignore[16]: Module `parameterized.parameterized` has no attribute `expand`.
+    @parameterized.expand([*facto_util.facto_testcase_gen("mean.dim")])
+    def test_g3_mean_dim_out(
+        self,
+        posargs: List[int],
+        inkwargs: OrderedDict[str, str],
+    ) -> None:
+        class Meandim(nn.Module):
+            def forward(
+                self,
+                x: torch.Tensor,
+                dim_list: Tuple[int],
+                keepdim: bool,
+                dtype: torch.dtype = torch.float32,
+            ) -> torch.Tensor:
+                return torch.ops.aten.mean.dim(
+                    x,
+                    dim_list,
+                    keepdim,
+                    dtype=dtype,
+                )
+
+        model = Meandim()
+
+        self.run_and_verify(
+            model,
+            inputs=tuple(posargs),
+        )
 
 
 if __name__ == "__main__":

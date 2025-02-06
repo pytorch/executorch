@@ -2,6 +2,8 @@
 
 This page summarizes frequently asked questions and provides guidance on issues that commonly occur when adopting ExecuTorch.
 
+If a specific issue is not covered here, consider searching for or creating an issue on GitHub under [Issues](https://github.com/pytorch/executorch/issues) or [Discussions](https://github.com/pytorch/executorch/discussions).
+
 ## Export
 
 ### Missing out variants: { _ }
@@ -10,7 +12,7 @@ The model likely contains torch custom operators. Custom ops need an Executorch 
 
 ### RuntimeError: PyTorch convert function for op _ not implemented
 
-The model likely contains an operator that is not yet supported on ExecuTorch. In this case, consider search for or creating an issue on [GitHub](https://github.com/pytorch/executorch/issues).
+The model likely contains an operator that is not yet supported on ExecuTorch. In this case, consider searching for or creating an issue on [GitHub](https://github.com/pytorch/executorch/issues).
 
 ## Runtime
 
@@ -33,7 +35,7 @@ For a deeper investgiation into model performance, ExecuTorch supports operator-
 
 ### Missing Logs
 
-ExecuTorch provides hooks to route runtime logs. By default, logs are sent to stdout/stderr, but users can override `et_pal_emit_log_message` to route logs to a custom destination. The Android and iOS extensions also provide out-of-box log routing to the appropriate platform logs. See [Runtime Platform Abstraction Layer (PAL)(https://pytorch.org/executorch/main/runtime-platform-abstraction-layer.html) for more information.
+ExecuTorch provides hooks to route runtime logs. By default, logs are sent to stdout/stderr, but users can override `et_pal_emit_log_message` to route logs to a custom destination. The Android and iOS extensions also provide out-of-box log routing to the appropriate platform logs. See [Runtime Platform Abstraction Layer (PAL)](https://pytorch.org/executorch/main/runtime-platform-abstraction-layer.html) for more information.
 
 ### Error setting input: 0x10 / Attempted to resize a bounded tensor...
 

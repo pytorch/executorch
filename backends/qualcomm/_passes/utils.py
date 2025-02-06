@@ -43,3 +43,63 @@ def get_quant_attrs(
 
     quant_attrs[QCOM_ENCODING] = quant_node.target
     return quant_attrs
+
+
+def get_passes_dependency_for_capture_program():
+    """
+    This function records the dependencies for passes used in the capture_program.
+
+    It returns a dictionary where the keys are pass classes and the values are lists of
+    dependencies required by each pass. This helps in managing and organizing the sequence
+    of passes needed for the capture_program to function correctly.
+
+    Returns:
+        dict: A dictionary mapping each pass to its corresponding list of dependencies.
+    """
+    from executorch.backends.qualcomm._passes import (
+        AnnotateAndQuantScalar,
+        AnnotateDecomposed,
+        AnnotateQuantAttrs,
+        ConvertBmmToMatmul,
+        ConvertInterpolateWithUpsample2D,
+        ConvertPReLU,
+        ConvertToLinear,
+        ExpandBroadcastTensorShape,
+        FoldQDQ,
+        I64toI32,
+        LayoutTransform,
+        RecomposePixelUnshuffle,
+        RecomposeRmsNorm,
+        RemoveRedundancy,
+        ReplaceIndexPutInput,
+    )
+
+    return {
+        RecomposePixelUnshuffle: [RemoveRedundancy],
+        RecomposeRmsNorm: [RemoveRedundancy],
+        ConvertToLinear: [RecomposePixelUnshuffle],
+        ConvertPReLU: [RemoveRedundancy],
+        ConvertBmmToMatmul: [ConvertToLinear],
+        ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
+        I64toI32: [RemoveRedundancy],
+        AnnotateQuantAttrs: [
+            RecomposePixelUnshuffle,
+            RecomposeRmsNorm,
+            ConvertToLinear,
+            ConvertPReLU,
+            ConvertBmmToMatmul,
+            ConvertInterpolateWithUpsample2D,
+        ],
+        AnnotateAndQuantScalar: [
+            AnnotateQuantAttrs,
+        ],
+        AnnotateDecomposed: [RemoveRedundancy],
+        FoldQDQ: [AnnotateQuantAttrs, AnnotateAndQuantScalar, AnnotateDecomposed],
+        ExpandBroadcastTensorShape: [RemoveRedundancy],
+        LayoutTransform: [
+            AnnotateQuantAttrs,
+            AnnotateAndQuantScalar,
+            ExpandBroadcastTensorShape,
+        ],
+        ReplaceIndexPutInput: [LayoutTransform],
+    }
