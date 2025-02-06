@@ -249,8 +249,9 @@ class XNNPACKQuantizer(Quantizer):
     STATIC_OPS = [
         "linear_relu",
         "linear",
-        "conv_relu",
         "conv",
+        "conv_transpose",
+        "conv_relu",
         "conv_transpose_relu",
         "adaptive_avg_pool2d",
         # TODO: move this to BoltNNQuantizer?
