@@ -26,7 +26,7 @@ TEST(TestTensorLayout, Ctor) {
   Span<const int32_t> sizes_span = {sizes.data(), sizes.size()};
   Span<const uint8_t> dim_order_span = {dim_order.data(), dim_order.size()};
 
-  Result<TensorLayout> layout_res =
+  Result<const TensorLayout> layout_res =
       TensorLayout::create(sizes_span, dim_order_span, ScalarType::Float);
   EXPECT_TRUE(layout_res.ok());
 
@@ -50,7 +50,7 @@ TEST(TestTensorLayout, Ctor_InvalidDimOrder) {
   Span<const int32_t> sizes_span = {sizes.data(), sizes.size()};
   Span<const uint8_t> dim_order_span = {dim_order.data(), dim_order.size()};
 
-  Result<TensorLayout> layout_res =
+  Result<const TensorLayout> layout_res =
       TensorLayout::create(sizes_span, dim_order_span, ScalarType::Float);
   EXPECT_EQ(layout_res.error(), Error::InvalidArgument);
 }
@@ -61,7 +61,7 @@ TEST(TestTensorLayout, Ctor_InvalidSizes) {
   Span<const int32_t> sizes_span = {sizes.data(), sizes.size()};
   Span<const uint8_t> dim_order_span = {dim_order.data(), dim_order.size()};
 
-  Result<TensorLayout> layout_res =
+  Result<const TensorLayout> layout_res =
       TensorLayout::create(sizes_span, dim_order_span, ScalarType::Float);
   EXPECT_EQ(layout_res.error(), Error::InvalidArgument);
 }
@@ -72,7 +72,7 @@ TEST(TestTensorLayout, Ctor_SizesDimOrderMismatch) {
   Span<const int32_t> sizes_span = {sizes.data(), sizes.size()};
   Span<const uint8_t> dim_order_span = {dim_order.data(), dim_order.size()};
 
-  Result<TensorLayout> layout_res =
+  Result<const TensorLayout> layout_res =
       TensorLayout::create(sizes_span, dim_order_span, ScalarType::Float);
   EXPECT_EQ(layout_res.error(), Error::InvalidArgument);
 }

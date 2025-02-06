@@ -24,6 +24,12 @@ struct FlatTensorHeader {
   static constexpr size_t kNumHeadBytes = 64;
 
   /**
+   * The offset into the serialized FlatTensor data where the FlatTensor
+   * header should begin.
+   */
+  static constexpr size_t kHeaderOffset = 8;
+
+  /**
    * The magic bytes that identify the header. This should be in sync with
    * the magic in executorch/extension/flat_tensor/serialize/serialize.py
    *

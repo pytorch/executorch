@@ -167,6 +167,13 @@ def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.argmin.default])
+def annotate_argmin(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.sub, torch.ops.aten.sub.Tensor])
 def annotate_sub(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
@@ -393,6 +400,11 @@ def annotate_max_pool2d(node: Node, quantization_config: QuantizationConfig) -> 
 def annotate_max_pool2d_with_indices(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.neg.default])
+def annotate_neg(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 

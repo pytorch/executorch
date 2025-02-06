@@ -96,13 +96,13 @@ def vela_compile(tosa_graph, args: List[str], shape_order=None):
                 block_name = block_name + b"\x00" * (16 - len(block_name))
 
                 # We need the acual unpadded block lengths for hw setup
-                block_length = struct.pack("<iiii", len(bin_blocks[key]), 0, 0, 0)  # type: ignore[assignment]
+                block_length_bytes = struct.pack("<iiii", len(bin_blocks[key]), 0, 0, 0)
 
                 # Pad block data to multiple of 16 bytes
                 block_data = bin_blocks[key]
                 block_data = block_data + b"\x00" * (15 - (len(block_data) - 1) % 16)
 
-                block = block_name + block_length + block_data  # type: ignore[operator]
+                block = block_name + block_length_bytes + block_data
                 blocks = blocks + block
 
         return blocks

@@ -68,7 +68,7 @@ std::vector<uint8_t> CreateExampleFlatTensorHeader() {
   memset(ret.data(), 0x55, ret.size());
   // Copy the example header into the right offset.
   memcpy(
-      ret.data(),
+      ret.data() + FlatTensorHeader::kHeaderOffset,
       kExampleHeaderData,
       sizeof(kExampleHeaderData));
   return ret;

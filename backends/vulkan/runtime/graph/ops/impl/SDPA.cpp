@@ -176,17 +176,32 @@ void resize_sdpa_out(
   graph->get_tensor(out)->virtual_resize(graph->sizes_of(q_projected));
 }
 
-void sdpa_with_kv_cache_impl(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args) {
+void update_cache_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef value = args[arg_idx++];
+  const ValueRef cache = args[arg_idx++];
+  const ValueRef input_pos_symint = args[arg_idx++];
+  const ValueRef out = args[arg_idx++];
+
+  // Unused variables
+  (void)out;
+
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, value) == 1);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, cache) == 1);
+  VK_CHECK_COND(
+      graph.size_at<int32_t>(-1, value) == graph.size_at<int32_t>(-1, cache));
+  VK_CHECK_COND(
+      graph.size_at<int32_t>(-2, value) == graph.size_at<int32_t>(-2, cache));
+
+  add_kv_cache_update_node(graph, input_pos_symint, value, cache);
+}
+
+void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int arg_idx = 0;
   const ValueRef q_projected = args[arg_idx++];
-  const ValueRef k_projected = args[arg_idx++];
-  const ValueRef v_projected = args[arg_idx++];
-  const ValueRef k_cache_data = args[arg_idx++];
-  const ValueRef v_cache_data = args[arg_idx++];
+  const ValueRef k_cache = args[arg_idx++];
+  const ValueRef v_cache = args[arg_idx++];
   const ValueRef input_pos_symint = args[arg_idx++];
-  const ValueRef sequence_len = args[arg_idx++];
   const ValueRef attn_mask = args[arg_idx++];
   const ValueRef dropout_p = args[arg_idx++];
   const ValueRef is_causal = args[arg_idx++];
@@ -195,23 +210,20 @@ void sdpa_with_kv_cache_impl(
   // Output tensors
   const ValueRef out = args[arg_idx++];
 
-  // Unused variables
-  (void)sequence_len;
-
   // Batches must be 1
   VK_CHECK_COND(graph.size_at<int32_t>(-4, q_projected) == 1);
-  VK_CHECK_COND(graph.size_at<int32_t>(-4, k_projected) == 1);
-  VK_CHECK_COND(graph.size_at<int32_t>(-4, v_projected) == 1);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, k_cache) == 1);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, v_cache) == 1);
   // k and v projected must have the same shape
-  VK_CHECK_COND(graph.sizes_of(k_projected) == graph.sizes_of(v_projected));
+  VK_CHECK_COND(graph.sizes_of(k_cache) == graph.sizes_of(v_cache));
   // head dim must match between tensors
   VK_CHECK_COND(
       graph.size_at<int32_t>(-1, q_projected) ==
-      graph.size_at<int32_t>(-1, k_projected));
+      graph.size_at<int32_t>(-1, k_cache));
   // All tensors must have the packed dim be the width (head) dimension
   VK_CHECK_COND(graph.packed_dim_of(q_projected) == WHCN::kWidthDim);
-  VK_CHECK_COND(graph.packed_dim_of(k_projected) == WHCN::kWidthDim);
-  VK_CHECK_COND(graph.packed_dim_of(v_projected) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(k_cache) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(v_cache) == WHCN::kWidthDim);
   // Some variables are not supported yet
   VK_CHECK_COND(
       graph.val_is_none(dropout_p) ||
@@ -222,15 +234,7 @@ void sdpa_with_kv_cache_impl(
       graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
   VK_CHECK_COND(graph.val_is_none(attn_mask));
 
-  const ValueRef k_cache =
-      prepack_standard_like(graph, k_cache_data, q_projected);
-  const ValueRef v_cache =
-      prepack_standard_like(graph, v_cache_data, q_projected);
-
   const int32_t max_seq_len = graph.size_at<int32_t>(1, k_cache);
-
-  add_kv_cache_update_node(graph, input_pos_symint, k_projected, k_cache);
-  add_kv_cache_update_node(graph, input_pos_symint, v_projected, v_cache);
 
   // Slice caches from 0 to input_pos + sequence_len
   const ValueRef k_cache_sliced = graph.add_tensor_view(k_cache);
@@ -257,7 +261,7 @@ void sdpa_with_kv_cache_impl(
 
   // Repeat interleave
   const int64_t num_heads = graph.size_at<int64_t>(2, q_projected);
-  const int64_t num_kv_heads = graph.size_at<int64_t>(2, k_projected);
+  const int64_t num_kv_heads = graph.size_at<int64_t>(2, k_cache);
 
   const ValueRef num_repeats =
       graph.add_scalar<int64_t>(num_heads / num_kv_heads);
@@ -331,8 +335,52 @@ void sdpa_with_kv_cache_impl(
       new ExecuteNode(resize_sdpa_out, {q_projected, out}));
 }
 
+void sdpa_with_kv_cache_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef q_projected = args[arg_idx++];
+  const ValueRef k_projected = args[arg_idx++];
+  const ValueRef v_projected = args[arg_idx++];
+  const ValueRef k_cache_data = args[arg_idx++];
+  const ValueRef v_cache_data = args[arg_idx++];
+  const ValueRef input_pos_symint = args[arg_idx++];
+  const ValueRef sequence_len = args[arg_idx++];
+  const ValueRef attn_mask = args[arg_idx++];
+  const ValueRef dropout_p = args[arg_idx++];
+  const ValueRef is_causal = args[arg_idx++];
+  const ValueRef scale = args[arg_idx++];
+
+  // Output tensors
+  const ValueRef out = args[arg_idx++];
+
+  (void)sequence_len;
+
+  const ValueRef k_cache =
+      prepack_standard_like(graph, k_cache_data, q_projected);
+  const ValueRef v_cache =
+      prepack_standard_like(graph, v_cache_data, q_projected);
+
+  update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
+  update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
+
+  sdpa_impl(
+      graph,
+      {q_projected,
+       k_cache,
+       v_cache,
+       input_pos_symint,
+       attn_mask,
+       dropout_p,
+       is_causal,
+       scale,
+       out});
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(sdpa_with_kv_cache.default, sdpa_with_kv_cache_impl);
+  VK_REGISTER_OP(update_cache.default, update_cache_impl);
+  VK_REGISTER_OP(llama.custom_sdpa.default, sdpa_impl);
 }
 
 } // namespace vkcompute

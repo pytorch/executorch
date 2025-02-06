@@ -186,6 +186,14 @@ class MethodMeta final {
   Result<int64_t> memory_planned_buffer_size(size_t index) const;
 
   /**
+   * Check to see if a backend is used in this method.
+   *
+   * @param[in] backend_name The name of the backend to search for.
+   * @returns true if a backend is used in this method, otherwise false.
+   */
+  bool uses_backend(const char* backend_name) const;
+
+  /**
    * Get the number of instructions in this method.
    *
    * @returns The number of instructions.
