@@ -265,7 +265,7 @@ class TestEmit(unittest.TestCase):
 
         m = TestModule()
         example_inputs = (torch.ones(10),)
-        ep = torch.export.export(m, example_inputs)
+        ep = torch.export.export(m, example_inputs, strict=True)
         edge = to_edge(
             ep,
             compile_config=EdgeCompileConfig(

@@ -202,14 +202,15 @@ def replace_kv_cache_with_quantized_kv_cache(module):
         torch.ops.load_library(libs[0])
         op = torch.ops.quantized_decomposed.quantize_per_token.out
         assert op is not None
+    import gc
+    import resource
+
     # This is needed to ensure that custom ops are registered
     from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
-    import resource
-    maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    nswap = resource.getrusage(resource.RUSAGE_SELF).ru_nswap
+    rusage = resource.getrusage(resource.RUSAGE_SELF)
     logging.warning(
-        f"Replacing KVCache with QuantizedKVCache. This modifies the model in place. (HACK: maxrss: {maxrss} nswap: {nswap})"
+        f"Replacing KVCache with QuantizedKVCache. This modifies the model in place. (HACK: rusage: {rusage} gc stats: {gc.get_stats()})"
     )
     for name, child in module.named_children():
         if isinstance(child, KVCache) or isinstance(child, CustomKVCache):
@@ -273,11 +274,12 @@ def replace_kv_cache_with_custom_kv_cache(module):
     This is because the custom op treats second dim as sequence dim.
     Future work: support [B, H, S, D]
     """
+    import gc
     import resource
-    maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    nswap = resource.getrusage(resource.RUSAGE_SELF).ru_nswap
+
+    rusage = resource.getrusage(resource.RUSAGE_SELF)
     logging.warning(
-        f"Replacing KVCache with CustomKVCache. This modifies the model in place. (HACK: maxrss: {maxrss} nswap: {nswap})"
+        f"Replacing KVCache with CustomKVCache. This modifies the model in place. (HACK: rusage: {rusage} gc stats: {gc.get_stats()})"
     )
     for name, child in module.named_children():
         if isinstance(child, KVCache):
