@@ -33,3 +33,6 @@
       **/.git, \
       cmake-out, \
       pip-out
+
+[buck2]
+restarter=true

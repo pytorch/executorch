@@ -275,6 +275,18 @@ class Conv1dReluLogSoftmax(torch.nn.Module):
         return x
 
 
+class Conv2dArgmin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            3, 16, 7, bias=True, stride=2, padding=3, dilation=1
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.argmin(x, dim=0, keepdim=True)
+
+
 class Conv2dAvgPool2d(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -880,6 +892,14 @@ class MultiheadAttention(torch.nn.Module):
     def forward(self, x):
         attn_output, _ = self.multi_head_attention(x, x, x, need_weights=False)
         return attn_output
+
+
+class Neg(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.neg(x)
 
 
 class Pad(torch.nn.Module):

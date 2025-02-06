@@ -7,6 +7,7 @@
 
 import argparse
 import copy
+import logging
 import os
 import re
 
@@ -18,7 +19,7 @@ from buck_util import Buck2Runner
 try:
     import tomllib  # Standard in 3.11 and later
 except ModuleNotFoundError:
-    import tomli as tomllib
+    import tomli as tomllib  # type: ignore[no-redef]
 
 """Extracts source lists from the buck2 build system and writes them to a file.
 
@@ -65,6 +66,12 @@ Example config:
     ".cpp$",
     ]
 """
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [ExecuTorch] %(levelname)s: %(message)s"
+)
+logger = logging.getLogger()
 
 
 class Target:
@@ -118,7 +125,23 @@ class Target:
         )
 
         # Get the complete list of source files that this target depends on.
-        sources: set[str] = set(runner.run(["cquery", query] + buck_args))
+        # If user doesn't setup their git submodules correctly, this will fail.
+        # If we hit here, setup.py:check_submodule() should have already run
+        # but it could be that the submodules are not synced or there's local changes.
+        try:
+            sources: set[str] = set(runner.run(["cquery", query] + buck_args))
+        except RuntimeError as e:
+            logger.error(
+                f"\033[31;1mFailed to query buck for sources. Failed command:\n\n"
+                f"   buck2 cquery {query} {' '.join(buck_args)}\n\n"
+                "This is likely due "
+                "to missing git submodules or outdated CMake cache. "
+                "Please run the following before retry:\033[0m\n\n"
+                "    \033[32;1m./install_executorch.sh --clean\033[0m\n"
+                "    \033[32;1mgit submodule sync\033[0m\n"
+                "    \033[32;1mgit submodule update --init\033[0m\n"
+            )
+            raise e
 
         # Keep entries that match all of the filters.
         filters = [re.compile(p) for p in self._config.get("filters", [])]

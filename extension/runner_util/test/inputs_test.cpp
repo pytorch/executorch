@@ -28,6 +28,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
 using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
@@ -98,6 +99,35 @@ TEST_F(InputsTest, Smoke) {
   // Although it's tough to test directly, ASAN should let us know if
   // BufferCleanup doesn't behave properly: either freeing too soon or leaking
   // the pointers.
+}
+
+TEST_F(InputsTest, ExceedingInputCountLimitFails) {
+  // The smoke test above demonstrated that we can prepare inputs with the
+  // default limits. It should fail if we lower the max below the number of
+  // actual inputs.
+  MethodMeta method_meta = method_->method_meta();
+  size_t num_inputs = method_meta.num_inputs();
+  ASSERT_GE(num_inputs, 1);
+  executorch::extension::PrepareInputTensorsOptions options;
+  options.max_inputs = num_inputs - 1;
+
+  Result<BufferCleanup> input_buffers =
+      prepare_input_tensors(*method_, options);
+  ASSERT_NE(input_buffers.error(), Error::Ok);
+}
+
+TEST_F(InputsTest, ExceedingInputAllocationLimitFails) {
+  // The smoke test above demonstrated that we can prepare inputs with the
+  // default limits. It should fail if we lower the max below the actual
+  // allocation size.
+  executorch::extension::PrepareInputTensorsOptions options;
+  // The input tensors are float32, so 1 byte will always be smaller than any
+  // non-empty input tensor.
+  options.max_total_allocation_size = 1;
+
+  Result<BufferCleanup> input_buffers =
+      prepare_input_tensors(*method_, options);
+  ASSERT_NE(input_buffers.error(), Error::Ok);
 }
 
 TEST(BufferCleanupTest, Smoke) {
