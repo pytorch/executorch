@@ -84,7 +84,7 @@ class Linear(torch.nn.Module):
 def test_visualize_manual_export(server):
     with server():
         model = Linear(20, 30)
-        exported_program = torch.export.export(model, model.get_inputs())
+        exported_program = torch.export.export(model, model.get_inputs(), strict=True)
         visualize(exported_program)
         time.sleep(3.0)
 
@@ -150,7 +150,7 @@ def test_visualize_to_executorch(server):
 def test_visualize_graph(server):
     with server():
         model = Linear(20, 30)
-        exported_program = torch.export.export(model, model.get_inputs())
+        exported_program = torch.export.export(model, model.get_inputs(), strict=True)
         exported_program = to_edge_transform_and_lower(
             exported_program
         ).exported_program()
