@@ -48,6 +48,10 @@ class DataLoader {
        * Data used for initializing mutable tensors.
        */
       Mutable,
+      /**
+       * Data used for initializing external tensors.
+       */
+      External,
     };
 
     /// Type of the segment.
