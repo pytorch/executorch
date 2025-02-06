@@ -39,8 +39,8 @@ constexpr size_t kTensorDimensionLimit = 16;
 // Corresponding graph:
 //    def forward(self, arg0_1, arg1_1):
 //        submodule_0 = self.submodule_0
-//        map_1 = torch.ops.map(submodule_0, arg0_1, arg1_1);  submodule_0 =
-//        arg0_1 = arg1_1 = None return [map_1]
+//        map_1 = torch.ops.higher_order.map_impl(submodule_0, arg0_1, arg1_1);
+//        submodule_0 = arg0_1 = arg1_1 = None return [map_1]
 //
 //    def forward(self, arg0_1, arg1_1):
 //        add_tensor = torch.ops.aten.add.Tensor(arg0_1, arg1_1);  arg0_1 =
