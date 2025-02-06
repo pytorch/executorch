@@ -156,7 +156,13 @@ class LLMEdgeManager:
 
         if self.verbose:
             logging.info(f"Applied source transforms: {self.applied_source_transforms}")
-        logging.info(f"Model after source transforms: {self.model}")
+        import gc
+        import resource
+
+        rusage = resource.getrusage(resource.RUSAGE_SELF)
+        logging.info(
+            f"Model after source transforms: {self.model} (HACK: rusage: {rusage} gc_stats: {gc.get_stats()})"
+        )
         return self
 
     def _get_dynamic_shape(self) -> Any:
