@@ -343,7 +343,7 @@ class TestProgramManagers(unittest.TestCase):
 
             inp = (torch.randn(10), torch.randn(10), torch.tensor(3))
 
-            ep = export(M(), inp)
+            ep = export(M(), inp, strict=True)
             edge = to_edge(ep)
             self.assertTrue(
                 torch.allclose(
