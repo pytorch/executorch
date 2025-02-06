@@ -10,6 +10,7 @@ import logging
 from typing import cast, List, Optional
 
 import torch
+from executorch.backends.xnnpack._passes.expand_to_view_pass import ExpandToViewPass
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
@@ -225,6 +226,29 @@ class EluConfig(GenericNodePartitionerConfig):
         return torch.ops.aten.elu.default
 
 
+class ExpandCopyConfig(GenericNodePartitionerConfig):
+    target_name = "expand_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.expand_copy.default
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Only partition expand_copy nodes that can be converted to view_copy (insertion of
+        singleton dims).
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        if not ExpandToViewPass.can_transform_expand_node(node):
+            why(node, reason="only insertion of singleton dims is supported")
+            return False
+        return True
+
+
 class SoftmaxConfig(GenericNodePartitionerConfig):
     target_name = "_softmax.default"
 
@@ -334,6 +358,36 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.upsample_bilinear2d.vec
+
+
+class ViewCopyConfig(GenericNodePartitionerConfig):
+    target_name = "view_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.view_copy.default
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's static_reshape only supports 1 dynamic dimension
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        new_shape = node.args[1]
+        # pyre-ignore[16]
+        if not all(isinstance(n, int) for n in new_shape):
+            why(node, reason="symbolic reshape is not supported")
+            return False
+
+        dynamic_dim_count = sum(1 for d in new_shape if d == -1)
+        if dynamic_dim_count > 1:
+            why(node, reason="only a single dynamic dimension is supported")
+            return False
+
+        return True
 
 
 class FloorConfig(GenericNodePartitionerConfig):

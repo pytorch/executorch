@@ -78,16 +78,6 @@ class OpTCopyDefault(OpSkipOps):
 
 
 @register_node_visitor
-class OpViewCopyDefault(OpSkipOps):
-    """
-    currently, do nothing if node is view_copy.default
-    need to handle this later on, currently view it as one of skip ops
-    """
-
-    target = "aten.view_copy.default"
-
-
-@register_node_visitor
 class OpSymSizeInt(OpSkipOps):
     """
     currently, do nothing if node is sym_size.int
