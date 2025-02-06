@@ -39,7 +39,7 @@ class TensorI64toI32(ExportPass):
         for n in core_ep.exported_program.graph.nodes:
             # Keep track of original output dtype so we ensure the dtype of the graph is consistent with nn.Module
             if is_graph_output(n):
-                if isinstance(n.meta["val"], tuple):
+                if isinstance(n.meta["val"], (tuple, list)):
                     dtype_list = [tensor.dtype for tensor in n.meta["val"]]
                     n.meta[QCOM_ORIG_DTYPE] = dtype_list
                 else:
@@ -76,7 +76,7 @@ class TensorI64toI32(ExportPass):
         copy_op = exir_ops.edge.aten._to_copy.default
         for n in graph_module.graph.nodes:
             if is_graph_output(n) and QCOM_ORIG_DTYPE in n.meta:
-                if isinstance(n.meta["val"], tuple):
+                if isinstance(n.meta["val"], (tuple, list)):
                     for i, dtype in enumerate(n.meta[QCOM_ORIG_DTYPE]):
                         # TODO: Enable this in future to support OP such as topK
                         if n.meta["val"][i].dtype != dtype:
