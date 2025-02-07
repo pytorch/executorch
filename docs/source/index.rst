@@ -84,13 +84,30 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Getting Started
+   :caption: Usage
    :hidden:
 
    getting-started
-   export-overview
-   runtime-build-and-cross-compilation
-   getting-started-faqs
+   using-executorch-export
+   using-executorch-android
+   using-executorch-ios
+   using-executorch-cpp
+   using-executorch-troubleshooting
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Backends
+   :hidden:
+
+   native-delegates-executorch-xnnpack-delegate
+   native-delegates-executorch-coreml-delegate
+   native-delegates-executorch-mps-delegate
+   native-delegates-executorch-vulkan-delegate
+   native-delegates-executorch-arm-ethos-u-delegate
+   native-delegates-executorch-qualcomm-delegate
+   native-delegates-executorch-mediatek-delegate
+   native-delegates-executorch-cadence-delegate
 
 .. toctree::
    :glob:
@@ -98,69 +115,22 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Tutorials
    :hidden:
 
-   tutorials/export-to-executorch-tutorial
-   running-a-model-cpp-tutorial
-   extension-module
-   extension-tensor
-   tutorials/devtools-integration-tutorial
-   apple-runtime
-   demo-apps-ios
-   demo-apps-android
-   examples-end-to-end-to-lower-model-to-delegate
-   tutorial-xnnpack-delegate-lowering
-   build-run-vulkan
-   ..
-      Alphabetical by backend name. Be sure to keep the same order in the
-      customcarditem entries below.
-   executorch-arm-delegate-tutorial
-   build-run-coreml
-   build-run-mediatek-backend
-   build-run-mps
-   build-run-qualcomm-ai-engine-direct-backend
-   build-run-xtensa
-
-.. toctree::
-   :glob:
-   :maxdepth: 2
-   :caption: Working with LLMs
-   :hidden:
-
-   Llama <llm/llama>
-   Llama on Android <llm/llama-demo-android>
-   Llama on iOS <llm/llama-demo-ios>
-   Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
-   Intro to LLMs in Executorch <llm/getting-started>
-
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: API Reference
+   :caption: Developer Tools
    :hidden:
 
-   export-to-executorch-api-reference
-   executorch-runtime-api-reference
-   runtime-python-api-reference
-   api-life-cycle
-
-.. toctree::
-   :glob:
-   :maxdepth: 1
-   :caption: IR Specification
-   :hidden:
-
-   ir-exir
-   ir-ops-set-definition
-
-.. toctree::
-   :glob:
-   :maxdepth: 1
-   :caption: Compiler Entry Points
-   :hidden:
-
-   compiler-delegate-and-partitioner
-   compiler-backend-dialect
-   compiler-custom-compiler-passes
-   compiler-memory-planning
+   devtools-overview
+   bundled-io
+   etrecord
+   etdump
+   runtime-profiling
+   model-debugging
+   model-inspector
+   memory-planning-inspection
+   delegate-debugging
+   devtools-tutorial
 
 .. toctree::
    :glob:
@@ -173,6 +143,17 @@ Topics in this section will help you get started with ExecuTorch.
    runtime-platform-abstraction-layer
    portable-cpp-programming
    pte-file-format
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: API Reference
+   :hidden:
+
+   export-to-executorch-api-reference
+   executorch-runtime-api-reference
+   runtime-python-api-reference
+   api-life-cycle
 
 .. toctree::
    :glob:
@@ -194,12 +175,22 @@ Topics in this section will help you get started with ExecuTorch.
 
 .. toctree::
    :glob:
-   :maxdepth: 1
-   :caption: Backend Delegates
+   :maxdepth: 2
+   :caption: Working with LLMs
    :hidden:
 
-   native-delegates-executorch-xnnpack-delegate
-   native-delegates-executorch-vulkan-delegate
+   Llama <llm/llama>
+   Llama on Android <llm/llama-demo-android>
+   Llama on iOS <llm/llama-demo-ios>
+   Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+   Intro to LLMs in Executorch <llm/getting-started>
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Backend Development
+   :hidden:
+
    backend-delegates-integration
    backend-delegates-dependencies
    debug-backend-delegate
@@ -207,19 +198,22 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Developer Tools
+   :caption: IR Specification
    :hidden:
 
-   devtools-overview
-   bundled-io
-   etrecord
-   etdump
-   runtime-profiling
-   model-debugging
-   model-inspector
-   memory-planning-inspection
-   delegate-debugging
-   devtools-tutorial
+   ir-exir
+   ir-ops-set-definition
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Compiler Entry Points
+   :hidden:
+
+   compiler-delegate-and-partitioner
+   compiler-backend-dialect
+   compiler-custom-compiler-passes
+   compiler-memory-planning
 
 .. toctree::
    :glob:
