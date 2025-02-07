@@ -7,7 +7,7 @@
  */
 
 #include <executorch/extension/data_loader/file_data_loader.h>
-#include <executorch/extension/flat_tensor/data_map.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/extension/flat_tensor/serialize/schema_generated.h>
 #include <executorch/runtime/core/error.h>
@@ -17,7 +17,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::extension::DataMap;
+using executorch::extension::FlatTensorDataMap;
 using executorch::extension::FlatTensorHeader;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
@@ -26,7 +26,7 @@ using executorch::runtime::Result;
 using executorch::runtime::TensorLayout;
 using torch::executor::util::FileDataLoader;
 
-class DataMapTest : public ::testing::Test {
+class FlatTensorDataMapTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
@@ -45,13 +45,15 @@ class DataMapTest : public ::testing::Test {
   std::unique_ptr<FileDataLoader> data_map_loader_;
 };
 
-TEST_F(DataMapTest, LoadDataMap) {
-  Result<DataMap> data_map = DataMap::load(data_map_loader_.get());
+TEST_F(FlatTensorDataMapTest, LoadFlatTensorDataMap) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 }
 
-TEST_F(DataMapTest, DataMap_GetMetadata) {
-  Result<DataMap> data_map = DataMap::load(data_map_loader_.get());
+TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // Check tensor layouts are correct.
@@ -91,8 +93,9 @@ TEST_F(DataMapTest, DataMap_GetMetadata) {
   EXPECT_EQ(const_c_res.error(), Error::NotFound);
 }
 
-TEST_F(DataMapTest, DataMap_GetData) {
-  Result<DataMap> data_map = DataMap::load(data_map_loader_.get());
+TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // Check tensor data sizes are correct.
@@ -111,8 +114,9 @@ TEST_F(DataMapTest, DataMap_GetData) {
   EXPECT_EQ(data_c_res.error(), Error::NotFound);
 }
 
-TEST_F(DataMapTest, DataMap_Keys) {
-  Result<DataMap> data_map = DataMap::load(data_map_loader_.get());
+TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // Check num tensors is 2.

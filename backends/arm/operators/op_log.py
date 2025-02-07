@@ -36,7 +36,6 @@ class LogVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         assert len(node.all_input_nodes) == 1
-        assert len(node.users) == 1
         assert inputs[0].dtype == output.dtype == ts.DType.FP32
 
         tosa_graph.addOperator(TosaOp.Op().LOG, [inputs[0].name], [output.name])

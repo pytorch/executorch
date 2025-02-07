@@ -30,14 +30,15 @@ namespace extension {
 /**
  * A NamedDataMap implementation for FlatTensor-serialized data.
  */
-class DataMap final : public executorch::runtime::NamedDataMap {
+class FlatTensorDataMap final : public executorch::runtime::NamedDataMap {
  public:
   /**
    * Creates a new DataMap that wraps FlatTensor data.
    *
    * @param[in] loader The DataLoader that wraps the FlatTensor file.
+   * Note: the loader must outlive the FlatTensorDataMap instance.
    */
-  static executorch::runtime::Result<DataMap> load(
+  static executorch::runtime::Result<FlatTensorDataMap> load(
       executorch::runtime::DataLoader* loader);
 
   ET_NODISCARD
@@ -54,24 +55,25 @@ class DataMap final : public executorch::runtime::NamedDataMap {
   ET_NODISCARD executorch::runtime::Result<const char*> get_key(
       size_t index) const override;
 
-  DataMap(DataMap&&) noexcept = default;
-  ~DataMap() override;
+  FlatTensorDataMap(FlatTensorDataMap&&) noexcept = default;
+
+  ~FlatTensorDataMap() override = default;
 
  private:
-  DataMap(
+  FlatTensorDataMap(
       executorch::runtime::FreeableBuffer&& flat_tensor_data,
       const flat_tensor_flatbuffer::FlatTensor* flat_tensor,
       executorch::runtime::FreeableBuffer&& data_ro)
       : flat_tensor_data_(std::move(flat_tensor_data)),
         flat_tensor_(flat_tensor),
-        data_ro_(std::move(data_ro)){};
+        data_ro_(std::move(data_ro)) {}
 
   // Not copyable or assignable.
-  DataMap(const DataMap& rhs) = delete;
-  DataMap& operator=(DataMap&& rhs) noexcept = delete;
-  DataMap& operator=(const DataMap& rhs) = delete;
+  FlatTensorDataMap(const FlatTensorDataMap& rhs) = delete;
+  FlatTensorDataMap& operator=(FlatTensorDataMap&& rhs) noexcept = delete;
+  FlatTensorDataMap& operator=(const FlatTensorDataMap& rhs) = delete;
 
-  // Serialized flat_tensor data.
+  // Serialized flat_tensor flatbuffer data.
   executorch::runtime::FreeableBuffer flat_tensor_data_;
 
   // Flatbuffer representation of the flat_tensor.

@@ -64,3 +64,9 @@
 [submodule "third-party/ao"]
 	path = third-party/ao
 	url = https://github.com/pytorch/ao.git
+[submodule "backends/cadence/utils/FACTO"]
+	path = backends/cadence/utils/FACTO
+	url = https://github.com/pytorch-labs/FACTO.git
+[submodule "third-party/pocketfft"]
+	path = third-party/pocketfft
+	url = https://github.com/mreineck/pocketfft
