@@ -431,6 +431,22 @@ struct arr {
     return data_.get();
   }
 
+  T* begin() {
+    return data_.get();
+  }
+
+  T* end() {
+    return begin() + size();
+  }
+
+  const T* begin() const {
+    return data_.get();
+  }
+
+  const T* end() const {
+    return begin() + size();
+  }
+
   inline size_t size() const {
     return n_;
   }

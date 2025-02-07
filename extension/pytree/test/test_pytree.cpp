@@ -11,12 +11,26 @@
 #include <gtest/gtest.h>
 #include <string>
 
+using ::executorch::extension::pytree::arr;
 using ::executorch::extension::pytree::ContainerHandle;
 using ::executorch::extension::pytree::Key;
 using ::executorch::extension::pytree::Kind;
 using ::executorch::extension::pytree::unflatten;
 
 using Leaf = int32_t;
+
+TEST(PyTreeTest, ArrBasic) {
+  arr<int> x(5);
+  ASSERT_EQ(x.size(), 5);
+  for (int ii = 0; ii < x.size(); ++ii) {
+    x[ii] = 2 * ii;
+  }
+  int idx = 0;
+  for (const auto item : x) {
+    EXPECT_EQ(item, 2 * idx);
+    ++idx;
+  }
+}
 
 TEST(PyTreeTest, List) {
   Leaf items[2] = {11, 12};

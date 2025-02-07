@@ -1,5 +1,3 @@
-#include "tensor_util.h"
-
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
@@ -8,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch::runtime {
