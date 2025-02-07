@@ -137,15 +137,13 @@ Tensor& opt_div_out(
       // to be agnostic of op. This should be fixed, likely by moving lambda
       // creation to handle_broadcast_elementwise and it be aware of which op is
       // being executed.
-      auto div_lambda = [](auto x, auto y, auto alpha) {
-        [[maybe_unused]] alpha;
+      auto div_lambda = [](auto x, auto y, [[maybe_unused]] auto alpha) {
         return y / x;
       };
       return torch::executor::handle_broadcast_elementwise<op_name>(
           ctx, div_lambda, a, b, out, selected_optimized_path);
     } else {
-      auto div_lambda = [](auto x, auto y, auto alpha) {
-        [[maybe_unused]] alpha;
+      auto div_lambda = [](auto x, auto y, [[maybe_unused]] auto alpha) {
         return x / y;
       };
       return torch::executor::handle_broadcast_elementwise<op_name>(
