@@ -31,8 +31,9 @@ class ParamsBuffer final {
         vulkan_buffer_(
             context_p_->adapter_ptr()->vma().create_params_buffer(block)) {}
 
-  template <typename Block>
-  ParamsBuffer(Context* context_p, const VkDeviceSize nbytes)
+  // The last bool argument, though unused, is required to disambiguate this
+  // constructor from the one above.
+  ParamsBuffer(Context* context_p, const VkDeviceSize nbytes, const bool unused)
       : context_p_(context_p),
         vulkan_buffer_(
             context_p_->adapter_ptr()->vma().create_uniform_buffer(nbytes)) {}

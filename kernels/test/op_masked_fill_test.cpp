@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpMaskedFillTest : public OperatorTest {
@@ -114,8 +114,11 @@ TEST_F(OpMaskedFillTest, IntTensorFloatAlphaDies) {
           tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
 }
 
-TEST_F(OpMaskedFillTest, FloatTensors) {
-  test_floating_point_masked_fill_scalar_out<ScalarType::Float>();
+TEST_F(OpMaskedFillTest, FloatingPointTensors) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_floating_point_masked_fill_scalar_out<ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
 TEST_F(OpMaskedFillTest, DoubleTensors) {

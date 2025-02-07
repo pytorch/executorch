@@ -13,9 +13,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using SizesType = exec_aten::SizesType;
-using StridesType = exec_aten::StridesType;
-using Tensor = exec_aten::Tensor;
+using SizesType = executorch::aten::SizesType;
+using StridesType = executorch::aten::StridesType;
+using Tensor = executorch::aten::Tensor;
 
 /**
  * Swaps dimension 'dim0' of 'a' with 'dim1', and copying

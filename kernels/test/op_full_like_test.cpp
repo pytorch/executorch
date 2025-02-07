@@ -17,11 +17,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::MemoryFormat;
-using exec_aten::optional;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::MemoryFormat;
+using executorch::aten::optional;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpFullLikeTest : public OperatorTest {
@@ -85,9 +85,9 @@ void OpFullLikeTest::test_full_like_out<ScalarType::Bool>() {
   EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
 }
 
-TEST_F(OpFullLikeTest, AllRealOutputPasses) {
+TEST_F(OpFullLikeTest, AllDtypeOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_full_like_out<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

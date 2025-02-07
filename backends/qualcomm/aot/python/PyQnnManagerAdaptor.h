@@ -8,11 +8,11 @@
 #pragma once
 #include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/aot/python/PyQnnWrapperAdaptor.h>
-#include <executorch/backends/qualcomm/qc_binary_info_generated.h>
 #include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -50,54 +50,92 @@ class PyQnnManager {
         qnn_executorch_options, qnn_executorch_context_binary_);
   }
 
-  // used for loading multiple graphs in qcir
+  // used during stage 2 of multi-graph mode
   explicit PyQnnManager(const py::bytes& buffer, const py::list& qcirs)
       : qnn_executorch_option_ptr_(buffer) {
     auto qnn_executorch_options = GetQnnExecuTorchOptions(
         qnn_executorch_option_ptr_.cast<std::string_view>().data());
 
     // merge multiple qcirs into one context with multiple graphs
+
+    // We start retrieving tensor from offsets = 0.
+    std::vector<uint32_t> offsets(1, 0);
+    std::vector<uint8_t> tensor_data;
+    std::vector<uint8_t*> tensor_ptr;
+    std::vector<uint64_t> tensor_size;
+    uint64_t total_tensor_size = 0;
+    for (size_t i = 0; i < qcirs.size(); ++i) {
+      py::buffer_info info(py::buffer(qcirs[i].cast<py::bytes>()).request());
+
+      uint8_t* qcir_custom_buffer_ptr = static_cast<uint8_t*>(info.ptr);
+      QnnQcirCustomProtocol qnn_qcir_custom_protocol;
+      auto [status, _, qcir_tensor_size, __, qcir_tensor_ptr] =
+          qnn_qcir_custom_protocol.DeserializeQcirCustomBuffer(
+              qcir_custom_buffer_ptr);
+
+      if (status != Error::Ok) {
+        QNN_EXECUTORCH_LOG_ERROR("Fail to verify QnnQcirCustomProtocol");
+        return;
+      }
+
+      tensor_ptr.push_back(static_cast<uint8_t*>(qcir_tensor_ptr));
+      tensor_size.push_back(qcir_tensor_size);
+      total_tensor_size += qcir_tensor_size;
+      offsets.push_back(offsets.back() + qcir_tensor_size);
+    }
+
+    tensor_data.resize(total_tensor_size);
+
+    // store multiple graphs tensor in a contiguous memory space
+    for (size_t i = 0; i < tensor_ptr.size(); ++i) {
+      std::memcpy(
+          tensor_data.data() + offsets[i], tensor_ptr[i], tensor_size[i]);
+    }
+
     std::vector<flatbuffers::Offset<qcir::Graph>> graphs;
     for (size_t i = 0; i < qcirs.size(); ++i) {
       py::buffer_info info(py::buffer(qcirs[i].cast<py::bytes>()).request());
-      flatbuffers::Verifier verifier_binary_info(
-          static_cast<const uint8_t* const>(info.ptr),
-          info.size * info.itemsize);
-      if (!qnn_delegate::VerifyBinaryInfoBuffer(verifier_binary_info)) {
-        QNN_EXECUTORCH_LOG_ERROR("Fail to verify binary info");
-        return;
-      }
-      auto binary_info = qnn_delegate::GetBinaryInfo(info.ptr);
 
-      flatbuffers::Verifier verifier_qcir(
-          binary_info->data()->data(), binary_info->data()->size());
-      if (!qcir::VerifyContextBuffer(verifier_qcir)) {
-        QNN_EXECUTORCH_LOG_ERROR("Fail to verify qcir format");
+      uint8_t* qcir_custom_buffer_ptr = static_cast<uint8_t*>(info.ptr);
+      QnnQcirCustomProtocol qnn_qcir_custom_protocol;
+      auto [status, qcir_fbs_size, _, qcir_fbs_ptr, __] =
+          qnn_qcir_custom_protocol.DeserializeQcirCustomBuffer(
+              qcir_custom_buffer_ptr);
+
+      if (status != Error::Ok) {
+        QNN_EXECUTORCH_LOG_ERROR("Fail to verify QnnQcirCustomProtocol");
         return;
       }
-      auto context = qcir::GetContext(binary_info->data()->data());
+
+      auto context = qcir::GetContext(qcir_fbs_ptr);
       for (const auto& graph : *context->graphs()) {
         std::vector<flatbuffers::Offset<qcir::Tensor>> tensors;
         for (const auto tensor : *graph->tensors()) {
           // here we need to take a detour to merge multiple qcir flatbuffers
           // outer ToTensor
           //   return: flatbuffers::Offset<Tensor>
-          //   consume: QnnTensor, flatbuffers::FlatBufferBuilder*
+          //   consume: QnnTensor, data_offset, flatbuffers::FlatBufferBuilder*
           // inner ToTensor
           //   return: QnnTensor
-          //   consume: flatbuffers::Vector<::flatbuffers::Offset<qcir::Tensor>>
-          tensors.emplace_back(ToTensor(ToTensor(tensor), &builder_));
+          //   consume:
+          //   flatbuffers::Vector<::flatbuffers::Offset<qcir::Tensor>>,
+          //   data_ptr
+          tensors.emplace_back(ToTensor(
+              ToTensor(tensor, nullptr),
+              offsets[i] + tensor->offset(),
+              &builder_));
         }
         std::vector<flatbuffers::Offset<qcir::Operator>> nodes;
         for (const auto& node : *graph->nodes()) {
-          int32_t* inputs_ptr = const_cast<int32_t*>(node->inputs()->data());
-          int32_t* outputs_ptr = const_cast<int32_t*>(node->outputs()->data());
-          int32_t* params_ptr = const_cast<int32_t*>(node->params()->data());
-          std::vector<int32_t> inputs(
+          uint32_t* inputs_ptr = const_cast<uint32_t*>(node->inputs()->data());
+          uint32_t* outputs_ptr =
+              const_cast<uint32_t*>(node->outputs()->data());
+          uint32_t* params_ptr = const_cast<uint32_t*>(node->params()->data());
+          std::vector<uint32_t> inputs(
               inputs_ptr, inputs_ptr + node->inputs()->size());
-          std::vector<int32_t> outputs(
+          std::vector<uint32_t> outputs(
               outputs_ptr, outputs_ptr + node->outputs()->size());
-          std::vector<int32_t> params(
+          std::vector<uint32_t> params(
               params_ptr, params_ptr + node->params()->size());
           nodes.emplace_back(qcir::CreateOperatorDirect(
               builder_,
@@ -118,7 +156,9 @@ class PyQnnManager {
     QnnExecuTorchContextBinary qcir_bin(
         {builder_.GetBufferPointer(), builder_.GetSize()});
 
-    qnn_executorch_context_binary_ = MakeBinaryInfo(qcir_bin);
+    // Init QnnQcirCustomProtocol binary
+    qnn_executorch_context_binary_ =
+        MakeQcirCustomBinaryInfo(qcir_bin, tensor_data);
     qnn_manager_ = std::make_shared<QnnManager>(
         qnn_executorch_options, qnn_executorch_context_binary_);
   }
@@ -132,7 +172,7 @@ class PyQnnManager {
     return qnn_manager_->IsNodeSupportedByBackend(op_wrappers);
   }
 
-  // this method is specific for compiling multi-graphs
+  // this method is specific for stage 2 of compiling multi-graphs
   py::array_t<char> Compile() {
     if (qnn_manager_->CompileQcir() != Error::Ok) {
       QNN_EXECUTORCH_LOG_ERROR("Fail to compile qcir");
@@ -157,26 +197,37 @@ class PyQnnManager {
 
     if (qnn_manager_->IsOnlinePrepare() || qnn_manager_->IsMultipleGraphs()) {
       builder_.Reset();
-      std::vector<flatbuffers::Offset<qcir::Tensor>> tensors;
+      std::vector<uint8_t> tensor_data;
+      std::vector<uint64_t> offsets;
       std::unordered_map<void*, int> tensor_map;
+      std::vector<flatbuffers::Offset<qcir::Tensor>> fb_tensors;
+      std::vector<flatbuffers::Offset<qcir::Operator>> fb_ops;
 
       auto set_tensor = [&](const std::shared_ptr<TensorWrapper>& wrapper,
-                            std::vector<int>& index) {
+                            std::vector<uint32_t>& index) {
         auto it = tensor_map.find(wrapper.get());
         if (it != tensor_map.end()) {
           index.push_back(it->second);
         } else {
-          int i = tensors.size();
-          tensor_map[wrapper.get()] = i;
-          index.push_back(i);
-          tensors.emplace_back(
-              ToTensor(wrapper->CloneTensorStruct(), &builder_));
+          tensor_map[wrapper.get()] = fb_tensors.size();
+          index.push_back(fb_tensors.size());
+          offsets.push_back(tensor_data.size());
+          Qnn_Tensor_t qnn_tensor = wrapper->CloneTensorStruct();
+          fb_tensors.emplace_back(
+              ToTensor(qnn_tensor, offsets.back(), &builder_));
+          uint8_t* data_ptr =
+              static_cast<uint8_t*>(QNN_VER_PTR(qnn_tensor)->clientBuf.data);
+          if (data_ptr != nullptr) {
+            tensor_data.insert(
+                tensor_data.end(),
+                data_ptr,
+                data_ptr + QNN_VER_PTR(qnn_tensor)->clientBuf.dataSize);
+          }
         }
       };
 
-      std::vector<flatbuffers::Offset<qcir::Operator>> operators;
       for (std::shared_ptr<OpWrapper>& op_wrapper : op_wrappers) {
-        std::vector<int> inputs, outputs, params;
+        std::vector<uint32_t> inputs, outputs, params;
 
         for (const auto& tensor_wrapper : op_wrapper->GetInputTensors()) {
           set_tensor(tensor_wrapper, inputs);
@@ -207,13 +258,22 @@ class PyQnnManager {
                 static_cast<void*>(&p.scalarParam.uint8Value);
             QNN_VER_PTR(t)->clientBuf.dataSize =
                 GetDataTypeSize(QNN_VER_PTR(t)->dataType);
-            params.push_back(tensors.size());
-            tensors.emplace_back(ToTensor(t, &builder_));
+
+            // collect tensor data
+            offsets.push_back(tensor_data.size());
+            const uint8_t* data_ptr =
+                static_cast<uint8_t*>(QNN_VER_PTR(t)->clientBuf.data);
+            tensor_data.insert(
+                tensor_data.end(),
+                data_ptr,
+                data_ptr + QNN_VER_PTR(t)->clientBuf.dataSize);
+            params.push_back(fb_tensors.size());
+            fb_tensors.emplace_back(ToTensor(t, offsets.back(), &builder_));
           }
         }
 
         Qnn_OpConfig_t op_config = op_wrapper->GetOpConfig();
-        operators.emplace_back(qcir::CreateOperatorDirect(
+        fb_ops.emplace_back(qcir::CreateOperatorDirect(
             builder_,
             QNN_VER_PTR(op_config)->name,
             QNN_VER_PTR(op_config)->packageName,
@@ -222,14 +282,22 @@ class PyQnnManager {
             &outputs,
             &params));
       }
-      auto graph = qcir::CreateGraphDirect(
-          builder_, graph_name.c_str(), &operators, &tensors);
-      std::vector<flatbuffers::Offset<qcir::Graph>> graphs({graph});
-      auto context = qcir::CreateContextDirect(builder_, &graphs);
+
+      std::vector<flatbuffers::Offset<qcir::Graph>> fb_graphs(
+          {qcir::CreateGraphDirect(
+              builder_, graph_name.c_str(), &fb_ops, &fb_tensors)});
+      auto context = qcir::CreateContextDirect(builder_, &fb_graphs);
       builder_.Finish(context);
+
       QnnExecuTorchContextBinary qcir_binary(
           {builder_.GetBufferPointer(), builder_.GetSize()});
-      binary_info = MakeBinaryInfo(qcir_binary);
+
+      custom_qcir_protocol_buffer_ =
+          QnnQcirCustomProtocol(qcir_binary.nbytes, tensor_data.size());
+      custom_qcir_protocol_buffer_.BuildQcirCustomBuffer(
+          qcir_binary, tensor_data);
+      std::tie(binary_info.buffer, binary_info.nbytes) =
+          custom_qcir_protocol_buffer_.GetCustomProtocolBuffer();
     } else {
       if (qnn_manager_->Compile(graph_name, op_wrappers) !=
           executorch::runtime::Error::Ok) {
@@ -296,41 +364,40 @@ class PyQnnManager {
     return qnn_manager_->GetSpillFillBufferSize();
   }
 
+  QnnExecuTorchContextBinary MakeQcirCustomBinaryInfo(
+      const QnnExecuTorchContextBinary& ctx_bin,
+      const std::vector<uint8_t>& tensor_data) {
+    custom_qcir_protocol_buffer_ =
+        QnnQcirCustomProtocol(ctx_bin.nbytes, tensor_data.size());
+    custom_qcir_protocol_buffer_.BuildQcirCustomBuffer(ctx_bin, tensor_data);
+    auto [ptr, size] = custom_qcir_protocol_buffer_.GetCustomProtocolBuffer();
+    return {ptr, size};
+  }
+
   py::array_t<char> MakeBinaryInfo(const py::bytes& ctx_bin) {
     py::buffer_info info(py::buffer(ctx_bin).request());
     QnnExecuTorchContextBinary binary(
         {info.ptr, static_cast<uint64_t>(info.size * info.itemsize)});
-    auto binary_info = MakeBinaryInfo(binary);
-    auto result = py::array_t<char>(binary_info.nbytes);
+
+    auto qnn_context_custom_protocol = QnnContextCustomProtocol(binary.nbytes);
+    qnn_context_custom_protocol.BuildContextCustomBuffer(binary);
+    auto [custom_buffer_ptr, custom_buffer_size] =
+        qnn_context_custom_protocol.GetCustomProtocolBuffer();
+
+    auto result = py::array_t<char>(custom_buffer_size);
     auto result_buffer = result.request();
-    std::memcpy(result_buffer.ptr, binary_info.buffer, binary_info.nbytes);
+    std::memcpy(result_buffer.ptr, custom_buffer_ptr, custom_buffer_size);
     return result;
   }
 
  private:
-  QnnExecuTorchContextBinary MakeBinaryInfo(
-      const QnnExecuTorchContextBinary& ctx_bin) {
-    auto signature = []() {
-      return std::to_string(
-          std::chrono::high_resolution_clock::now().time_since_epoch().count());
-    };
-    const uint8_t* base = static_cast<uint8_t*>(ctx_bin.buffer);
-    std::vector<uint8_t> data(base, base + ctx_bin.nbytes);
-    // add signature to binary for cache reuse in runtime
-    builder_.Reset();
-    auto binary_info = qnn_delegate::CreateBinaryInfoDirect(
-        builder_, signature().c_str(), &data);
-    builder_.Finish(binary_info);
-
-    return QnnExecuTorchContextBinary(
-        {builder_.GetBufferPointer(), builder_.GetSize()});
-  }
-
   // Store the bytes object instead of a raw pointer so that this module will
   // keep the bytes alive.
   const py::bytes qnn_executorch_option_ptr_;
   QnnExecuTorchContextBinary qnn_executorch_context_binary_;
   std::shared_ptr<QnnManager> qnn_manager_;
+  QnnQcirCustomProtocol custom_qcir_protocol_buffer_;
+  QnnContextCustomProtocol custom_context_custom_buffer_;
   flatbuffers::FlatBufferBuilder builder_;
 };
 } // namespace qnn

@@ -31,6 +31,7 @@ def _export_model():
     ep = to_edge(ep)
     # Lower the graph to executorch.
     ep = ep.to_executorch()
+    return ep
 
 
 def main() -> None:

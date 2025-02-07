@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -66,7 +66,7 @@ class KeepDimsFalseToSqueezePass(ExportPass):
             sum_node = cast(torch.fx.Node, node)
             keep_dim = get_node_arg(
                 # pyre-ignore[6]
-                sum_node.args,
+                sum_node.args,  # type: ignore[arg-type]
                 keep_dim_index,
                 False,
             )
@@ -74,7 +74,7 @@ class KeepDimsFalseToSqueezePass(ExportPass):
             if keep_dim:
                 continue
 
-            dim_list = get_node_arg(sum_node.args, 1, [0])  # pyre-ignore[6]
+            dim_list = get_node_arg(sum_node.args, 1, [0])  # type: ignore[arg-type]  # pyre-ignore[6]
 
             # Add keep_dim = True arg to sum node.
             set_node_arg(sum_node, 2, True)

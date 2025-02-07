@@ -25,6 +25,10 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(name = "op_exp"),
+    op_target(
+        name = "op_fft_r2c",
+        deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
+    ),
     op_target(name = "op_sigmoid"),
     op_target(
         name = "op_gelu",
@@ -33,7 +37,9 @@ _OPTIMIZED_ATEN_OPS = (
             "ovr_config//cpu:arm64": [
                 "fbsource//third-party/sleef:sleef_arm",
             ],
-        }),
+        }) + [
+            "//executorch/kernels/portable/cpu/util:activation_ops_util",
+        ],
     ),
     op_target(
         name = "op_le",

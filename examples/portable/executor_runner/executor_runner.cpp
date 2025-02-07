@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright 2024-2025 Arm Limited and/or its affiliates.
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -25,21 +26,32 @@
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/devtools/etdump/etdump_flatcc.h>
+#endif // ET_EVENT_TRACER_ENABLED
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
+
+static uint8_t temp_allocator_pool[1024U * 1024U];
 
 DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
+#ifdef ET_EVENT_TRACER_ENABLED
+DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
+#endif // ET_EVENT_TRACER_ENABLED
 
 using executorch::extension::FileDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
+using executorch::runtime::EventTracer;
 using executorch::runtime::HierarchicalAllocator;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
@@ -48,6 +60,56 @@ using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+
+/// Helper to manage resources for ETDump generation
+class EventTraceManager {
+ public:
+  EventTraceManager() : event_tracer_ptr_(nullptr) {
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_ptr_ = std::make_shared<executorch::etdump::ETDumpGen>();
+#endif // ET_EVENT_TRACER_ENABLED
+  }
+
+  EventTracer* get_event_tracer() const {
+    return event_tracer_ptr_.get();
+  };
+
+  Error write_etdump_to_file() const {
+    EventTracer* const event_tracer_ptr = get_event_tracer();
+    if (!event_tracer_ptr) {
+      return Error::NotSupported;
+    }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    executorch::etdump::ETDumpGen* const etdump_ptr =
+        static_cast<executorch::etdump::ETDumpGen*>(event_tracer_ptr);
+
+    const char* filename = FLAGS_etdump_path.c_str();
+
+    std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
+        fopen(filename, "w+"), fclose);
+    if (!etdump_file) {
+      ET_LOG(Error, "Failed to open ETDump file at %s.", filename);
+      return Error::AccessFailed;
+    }
+
+    executorch::etdump::ETDumpResult result = etdump_ptr->get_etdump_data();
+    if (result.buf != nullptr && result.size > 0) {
+      fwrite((uint8_t*)result.buf, 1, result.size, etdump_file.get());
+      free(result.buf);
+      ET_LOG(Info, "ETDump written to file '%s'.", filename);
+    } else {
+      ET_LOG(Error, "No ETDump data available!");
+      return Error::NotFound;
+    }
+#endif // ET_EVENT_TRACER_ENABLED
+
+    return Error::Ok;
+  }
+
+ private:
+  std::shared_ptr<EventTracer> event_tracer_ptr_;
+};
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
@@ -120,6 +182,10 @@ int main(int argc, char** argv) {
   MemoryAllocator method_allocator{
       MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
 
+  // Temporary memory required by kernels
+  MemoryAllocator temp_allocator{
+      MemoryAllocator(sizeof(temp_allocator_pool), temp_allocator_pool)};
+
   // The memory-planned buffers will back the mutable tensors used by the
   // method. The sizes of these buffers were determined ahead of time during the
   // memory-planning pasees.
@@ -144,15 +210,17 @@ int main(int argc, char** argv) {
 
   // Assemble all of the allocators into the MemoryManager that the Executor
   // will use.
-  MemoryManager memory_manager(&method_allocator, &planned_memory);
+  MemoryManager memory_manager(
+      &method_allocator, &planned_memory, &temp_allocator);
 
   //
   // Load the method from the program, using the provided allocators. Running
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
-
-  Result<Method> method = program->load_method(method_name, &memory_manager);
+  EventTraceManager tracer;
+  Result<Method> method = program->load_method(
+      method_name, &memory_manager, tracer.get_event_tracer());
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -171,23 +239,35 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Inputs prepared.");
 
   // Run the model.
-  Error status = method->execute();
-  ET_CHECK_MSG(
-      status == Error::Ok,
-      "Execution of method %s failed with status 0x%" PRIx32,
-      method_name,
-      (uint32_t)status);
-  ET_LOG(Info, "Model executed successfully.");
+  for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
+    Error status = method->execute();
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Execution of method %s failed with status 0x%" PRIx32,
+        method_name,
+        (uint32_t)status);
+  }
+  ET_LOG(
+      Info,
+      "Model executed successfully %" PRIu32 " time(s).",
+      FLAGS_num_executions);
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());
   ET_LOG(Info, "%zu outputs: ", outputs.size());
-  status = method->get_outputs(outputs.data(), outputs.size());
+  Error status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
   // Print the first and last 100 elements of long lists of scalars.
   std::cout << executorch::extension::evalue_edge_items(100);
   for (int i = 0; i < outputs.size(); ++i) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
+  }
+
+  if (tracer.get_event_tracer()) {
+    // Dump ETDump data containing profiling/debugging data to file specified in
+    // command line flag.
+    Error status = tracer.write_etdump_to_file();
+    ET_CHECK_MSG(status == Error::Ok, "Failed to save ETDump file.");
   }
 
   return 0;

@@ -1,5 +1,6 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -11,10 +12,16 @@ set -o xtrace
 build_qnn_backend() {
   echo "Start building qnn backend."
   export ANDROID_NDK_ROOT=/opt/ndk
-  export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
+  export QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-  bash backends/qualcomm/scripts/build.sh --skip_aarch64 --job_number 2 --release
+  # Workaround to avoid issues around missing flatccrt library (depending on the
+  # number of jobs used), see issue #7300:
+  # Build twice (second time with `--no_clean`) to make sure libflatccrt.a is
+  # available.
+  # TODO: Remove this workaround once the underlying issue is fixed.
+  bash backends/qualcomm/scripts/build.sh --skip_aarch64 --job_number 2 --release || \
+  bash backends/qualcomm/scripts/build.sh --skip_aarch64 --job_number 2 --release --no_clean
 }
 
 set_up_aot() {

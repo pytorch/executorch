@@ -24,7 +24,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -111,7 +111,7 @@ void bmm_kernel(const Tensor& self, const Tensor& mat2, Tensor& out) {
 }
 
 Error resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
-  exec_aten::SizesType expected_output_size[kTensorDimensionLimit];
+  executorch::aten::SizesType expected_output_size[kTensorDimensionLimit];
 
   const size_t m_dim = self.dim() - 2;
   const size_t n_dim = self.dim() - 1;
@@ -128,7 +128,7 @@ Error resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
   expected_output_size[m_dim] = self.size(m_dim);
   expected_output_size[n_dim] = mat2.size(n_dim);
 
-  ArrayRef<exec_aten::SizesType> output_size{
+  ArrayRef<executorch::aten::SizesType> output_size{
       expected_output_size, static_cast<size_t>(out.dim())};
 
   return resize_tensor(out, output_size);

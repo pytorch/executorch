@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
   // It assumes the outputs are all tensors.
   for (size_t i = 0; i < method->outputs_size(); i++) {
     auto output_tensor = output_list[i].toTensor();
-    auto data_output = output_tensor.const_data_ptr<float>();
+    [[maybe_unused]] auto data_output = output_tensor.const_data_ptr<float>();
     for (size_t j = 0; j < output_list[i].toTensor().numel(); ++j) {
       ET_LOG(Info, "%f", data_output[j]);
     }

@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
+#include <cassert>
 #include <cstring>
 
 namespace vkcompute {
@@ -99,12 +100,31 @@ std::vector<int64_t> calculate_strides(
  *
  * The axis mapping allows for permuted views of texture-backed tensors.
  */
-std::vector<int64_t> default_axis_map() {
-  // Currently, all compute shaders have an assumption that the channels dim is
-  // used to combine with the batch dim of a tensor. However, once dim mapping
-  // is integrated into the tensor indexing logic for each compute shader, we
-  // can be more flexible with mapping the batch dim to different texture axes
-  // in order to improve performance or memory footprint.
+std::vector<int64_t> calculate_axis_map(
+    const std::vector<int64_t>& sizes,
+    utils::AxisMapLayout axis_map_layout) {
+  if (axis_map_layout == utils::AxisMapLayout::OPTIMIZED) {
+    std::vector<int64_t> axis_map(sizes.size() + 1);
+    std::iota(axis_map.begin(), axis_map.end() - 1, 0);
+
+    std::stable_sort(
+        axis_map.begin(), axis_map.end() - 1, [&sizes](size_t i1, size_t i2) {
+          return sizes[i1] < sizes[i2];
+        });
+
+    assert(axis_map.size() > 0);
+    // Find the index of the channel dimension
+    for (size_t i = 0; i < axis_map.size() - 1; ++i) {
+      assert(sizes.size() > axis_map[i]);
+      if (sizes[axis_map[i]] == 2) {
+        axis_map.back() = i;
+        break;
+      }
+    }
+
+    return axis_map;
+  }
+  // default
   return {0, 1, 2, 2};
 }
 
@@ -439,13 +459,14 @@ vTensor::vTensor(
     const vkapi::ScalarType dtype,
     const utils::StorageType storage_type,
     const utils::GPUMemoryLayout memory_layout,
-    const bool allocate_memory)
+    const bool allocate_memory,
+    const utils::AxisMapLayout axis_map_layout)
     : dtype_(dtype),
       // Calculate tensor metadata
       sizes_(sizes.begin(), sizes.end()),
       packed_dim_(utils::to_packed_dim<int32_t>(memory_layout)),
       dim_order_(calculate_dim_order(sizes_.size(), packed_dim_)),
-      axis_map_(default_axis_map()),
+      axis_map_(calculate_axis_map(sizes_, axis_map_layout)),
       strides_(calculate_strides(sizes, dim_order_)),
       padded_sizes_{calculate_padded_sizes(sizes, packed_dim_)},
       unsqueezed_strides_{
@@ -478,26 +499,20 @@ vTensor::vTensor(
   if (storage_type != utils::kBuffer) {
     set_logical_limits(storage_.image_extents_);
   }
-
-  if (dtype == vkapi::kHalf) {
-    VK_CHECK_COND(
-        api::context()->adapter_ptr()->supports_16bit_storage_buffers(),
-        "Half dtype is only available if the physical device supports float16 "
-        "storage buffers!");
-  }
 }
 
 // NOLINTNEXTLINE
 vTensor::vTensor(
     Context* context,
     const vkapi::VulkanImage& image,
-    const utils::GPUMemoryLayout memory_layout)
+    const utils::GPUMemoryLayout memory_layout,
+    const utils::AxisMapLayout axis_map_layout)
     : dtype_(vkapi::element_scalartype(image.format())),
       // Calculate tensor metadata
       sizes_(calculate_sizes(image, memory_layout)),
       packed_dim_(utils::to_packed_dim<int32_t>(memory_layout)),
       dim_order_(),
-      axis_map_(default_axis_map()),
+      axis_map_(calculate_axis_map(sizes_, axis_map_layout)),
       strides_(),
       padded_sizes_(calculate_padded_sizes(sizes_, packed_dim_)),
       unsqueezed_strides_(),
@@ -554,7 +569,7 @@ vTensor::vTensor(
       sizes_(sizes.begin(), sizes.end()),
       packed_dim_(other.packed_dim_),
       dim_order_(dim_order.begin(), dim_order.end()),
-      axis_map_(default_axis_map()),
+      axis_map_(calculate_axis_map(sizes_, utils::kDefaultAxisMap)),
       strides_(calculate_strides(sizes_, dim_order_)),
       padded_sizes_{calculate_padded_sizes(sizes, packed_dim_)},
       unsqueezed_strides_{
@@ -658,66 +673,77 @@ utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
 }
 
 const vkapi::BufferBindInfo vTensor::sizes_ubo() {
+  const size_t size_per_ubo = context()->adapter_ptr()->min_ubo_alignment();
+  const size_t max_ubo_size = kMaxMetadataFieldCount * size_per_ubo;
   if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
+    uniforms_ = ParamsBuffer(storage_.context_, max_ubo_size, true);
   }
   if (sizes_uniform_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
-        (uniforms_size_ + kSizePerUniform) <= kMaxUniformBufferSize,
+        (uniforms_size_ + size_per_ubo) <= max_ubo_size,
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     sizes_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += kSizePerUniform;
+    uniforms_size_ += size_per_ubo;
     uniforms_.update(utils::make_whcn_ivec4(sizes_), sizes_uniform_offset_);
   }
-  return vkapi::BufferBindInfo(uniforms_.buffer(), sizes_uniform_offset_);
+  return vkapi::BufferBindInfo(
+      uniforms_.buffer(), sizes_uniform_offset_, size_per_ubo);
 }
 
 const vkapi::BufferBindInfo vTensor::strides_ubo() {
+  const size_t size_per_ubo = context()->adapter_ptr()->min_ubo_alignment();
+  const size_t max_ubo_size = kMaxMetadataFieldCount * size_per_ubo;
   if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
+    uniforms_ = ParamsBuffer(storage_.context_, max_ubo_size, true);
   }
   if (unsqueezed_strides_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
-        (uniforms_size_ + kSizePerUniform) <= kMaxUniformBufferSize,
+        (uniforms_size_ + size_per_ubo) <= max_ubo_size,
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     unsqueezed_strides_offset_ = uniforms_size_;
-    uniforms_size_ += kSizePerUniform;
+    uniforms_size_ += size_per_ubo;
     uniforms_.update(
         utils::make_whcn_ivec4(unsqueezed_strides_),
         unsqueezed_strides_offset_);
   }
-  return vkapi::BufferBindInfo(uniforms_.buffer(), unsqueezed_strides_offset_);
+  return vkapi::BufferBindInfo(
+      uniforms_.buffer(), unsqueezed_strides_offset_, size_per_ubo);
 }
 
 const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
+  const size_t size_per_ubo = context()->adapter_ptr()->min_ubo_alignment();
+  const size_t max_ubo_size = kMaxMetadataFieldCount * size_per_ubo;
   if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
+    uniforms_ = ParamsBuffer(storage_.context_, max_ubo_size, true);
   }
   if (logical_limits_uniform_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
-        (uniforms_size_ + kSizePerUniform) <= kMaxUniformBufferSize,
+        (uniforms_size_ + size_per_ubo) <= max_ubo_size,
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     logical_limits_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += kSizePerUniform;
+    uniforms_size_ += size_per_ubo;
     uniforms_.update(logical_limits(), logical_limits_uniform_offset_);
   }
   return vkapi::BufferBindInfo(
-      uniforms_.buffer(), logical_limits_uniform_offset_);
+      uniforms_.buffer(), logical_limits_uniform_offset_, size_per_ubo);
 }
 
 const vkapi::BufferBindInfo vTensor::numel_ubo() {
+  const size_t size_per_ubo = context()->adapter_ptr()->min_ubo_alignment();
+  const size_t max_ubo_size = kMaxMetadataFieldCount * size_per_ubo;
   if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_.context_, kMaxUniformBufferSize);
+    uniforms_ = ParamsBuffer(storage_.context_, max_ubo_size, true);
   }
   if (numel_uniform_offset_ == kUniformOffsetUnset) {
     VK_CHECK_COND(
-        (uniforms_size_ + kSizePerUniform) <= kMaxUniformBufferSize,
+        (uniforms_size_ + size_per_ubo) <= max_ubo_size,
         "Uniform data allocation has exceeded Tensor uniform buffer size");
     numel_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += kSizePerUniform;
+    uniforms_size_ += size_per_ubo;
     uniforms_.update(numel(), numel_uniform_offset_);
   }
-  return vkapi::BufferBindInfo(uniforms_.buffer(), numel_uniform_offset_);
+  return vkapi::BufferBindInfo(
+      uniforms_.buffer(), numel_uniform_offset_, size_per_ubo);
 }
 
 size_t vTensor::staging_buffer_numel() const {

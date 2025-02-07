@@ -17,7 +17,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& softmax_out(
     KernelRuntimeContext& ctx,
@@ -42,47 +42,48 @@ Tensor& softmax_out(
   // Adjust for negative dim
   dim = dim < 0 ? dim + nonzero_dim(in) : dim;
 
-  ET_SWITCH_FLOATH_TYPES(in.scalar_type(), ctx, "_softmax.out", CTYPE, [&]() {
-    const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
-    CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+  ET_SWITCH_FLOATHBF16_TYPES(
+      in.scalar_type(), ctx, "_softmax.out", CTYPE, [&]() {
+        const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
+        CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
-    apply_over_dim(
-        [in_data, out_data](
-            const size_t size, const size_t stride, const size_t base) {
-          // calculate max in softmax dim. During softmax computation each
-          // value is subtracted by the maximum in value before calling exp
-          // to preserve numerical stability.
-          const CTYPE max_in = apply_unary_reduce_fn(
-              [](const CTYPE val_in, CTYPE val_accum) {
-                return std::max(val_in, val_accum);
-              },
-              in_data + base,
-              size,
-              stride);
+        apply_over_dim(
+            [in_data, out_data](
+                const size_t size, const size_t stride, const size_t base) {
+              // calculate max in softmax dim. During softmax computation each
+              // value is subtracted by the maximum in value before calling exp
+              // to preserve numerical stability.
+              const CTYPE max_in = apply_unary_reduce_fn(
+                  [](const CTYPE val_in, CTYPE val_accum) {
+                    return std::max(val_in, val_accum);
+                  },
+                  in_data + base,
+                  size,
+                  stride);
 
-          const CTYPE temp_sum = apply_unary_map_reduce_fn<CTYPE, CTYPE>(
-              [max_in](const CTYPE val_in) {
-                return std::exp(val_in - max_in);
-              },
-              [](const CTYPE mapped_in, CTYPE val_accum) {
-                return val_accum + mapped_in;
-              },
-              in_data + base,
-              size,
-              stride);
+              const CTYPE temp_sum = apply_unary_map_reduce_fn<CTYPE, CTYPE>(
+                  [max_in](const CTYPE val_in) {
+                    return std::exp(val_in - max_in);
+                  },
+                  [](const CTYPE mapped_in, CTYPE val_accum) {
+                    return val_accum + mapped_in;
+                  },
+                  in_data + base,
+                  size,
+                  stride);
 
-          apply_unary_map_fn(
-              [max_in, temp_sum](const CTYPE val_in) {
-                return std::exp(val_in - max_in) / temp_sum;
-              },
-              in_data + base,
-              out_data + base,
-              size,
-              stride);
-        },
-        in,
-        dim);
-  });
+              apply_unary_map_fn(
+                  [max_in, temp_sum](const CTYPE val_in) {
+                    return std::exp(val_in - max_in) / temp_sum;
+                  },
+                  in_data + base,
+                  out_data + base,
+                  size,
+                  stride);
+            },
+            in,
+            dim);
+      });
 
   return out;
 }

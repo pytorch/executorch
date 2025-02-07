@@ -9,6 +9,7 @@
 import typing
 import unittest
 from contextlib import contextmanager
+from copy import deepcopy
 from typing import List, Optional, Tuple
 
 import executorch.exir as exir
@@ -26,11 +27,15 @@ from executorch.exir import (
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import (
+    ExecutorBackendPartitioner,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -56,11 +61,13 @@ from executorch.exir.tests.models import Mul
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
+from executorch.runtime import Runtime
 
 from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import Dim, export
+from torch.export import Dim, export, export_for_training
+from torch.export.experimental import _export_forward_backward
 
 
 class WrapperModule(torch.nn.Module):
@@ -242,6 +249,56 @@ class TestEmit(unittest.TestCase):
             program.execution_plan[0].values[outputs[3]].val.bool_val, True
         )
         self.assertIsInstance(program.execution_plan[0].values[outputs[6]].val, Null)
+
+    def test_initialized_mutable_buffer(self):
+        """Test that mutable buffers can hold meaningful initialized state."""
+
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Mutable buffer with non-empty initial state.
+                self.register_buffer("cache_pos", torch.arange(0, 10))
+
+            def forward(self, x):
+                self.cache_pos.add_(1)
+                return self.cache_pos
+
+        m = TestModule()
+        example_inputs = (torch.ones(10),)
+        ep = torch.export.export(m, example_inputs, strict=True)
+        edge = to_edge(
+            ep,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+            ),
+        )
+
+        # Save a copy of the edge program since to_executorch is
+        # stateful to some degree.
+        edge_copy = deepcopy(edge)
+        et_config = ExecutorchBackendConfig(
+            passes=[InitializedMutableBufferPass(["cache_pos"])],
+        )
+        et_program_init_pass = edge.to_executorch(config=et_config)
+        et_program_regular = edge_copy.to_executorch()
+
+        runtime = Runtime.get()
+        program_init_pass = runtime.load_program(et_program_init_pass.buffer)
+        method_init_pass = program_init_pass.load_method("forward")
+
+        program_regular = runtime.load_program(et_program_regular.buffer)
+        method_regular = program_regular.load_method("forward")
+
+        # Test that the mutable buffer is initialized.
+        torch.allclose(
+            method_init_pass.execute((example_inputs))[0], torch.arange(1, 11)
+        )
+        # Test that the mutable buffer is uninitialized and starts with default zeros,
+        # we test equality with torch.ones because of the mutation += 1 in the model forward.
+        torch.allclose(
+            method_regular.execute((example_inputs))[0],
+            torch.ones(10, dtype=torch.int64),
+        )
 
     def test_int_list_input(self):
         class M(torch.nn.Module):
@@ -586,7 +643,7 @@ class TestEmit(unittest.TestCase):
             def forward(self, x):
                 return torch.nn.functional.interpolate(x, scale_factor=2)
 
-        x = (torch.randn(1, 1, 2, 2),)
+        x = (torch.randn(1, 1, 2, 2, 2),)
         program = (
             to_edge(export(M(), x, strict=True)).to_executorch().executorch_program
         )
@@ -799,7 +856,7 @@ class TestEmit(unittest.TestCase):
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 b = 3 + 1
-                return x + b
+                return x + torch.tensor(b)
 
         f = Add()
 
@@ -1268,7 +1325,10 @@ class TestEmit(unittest.TestCase):
 
         # Find the multiplication node in the graph that was emitted.
         for node in program_mul.exported_program().graph.nodes:
-            if node.target == torch.ops.aten.mul.out:
+            if (
+                node.target == torch.ops.aten.mul.out
+                or node.target == torch.ops.aten.mul.Scalar_out
+            ):
                 break
         self.assertIsNotNone(node)
 
@@ -1626,3 +1686,104 @@ class TestEmit(unittest.TestCase):
         ]
         self.assertEqual(external_map["linear.weight"], 0)
         self.assertEqual(external_map["linear.bias"], 1)
+
+    def test_delegate_deduplicate(self) -> None:
+        class SharedModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        class Module1(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        class Module2(torch.nn.Module):
+            def __init__(self, shared_module):
+                super().__init__()
+                self.shared_module = shared_module
+
+            def forward(self, x):
+                return self.shared_module(x)
+
+        shared_module = SharedModule()
+        module_1 = Module1(shared_module)
+        module_2 = Module2(shared_module)
+        example_inputs = (torch.randn(2, 2),)
+        module_1(*example_inputs)
+        module_2(*example_inputs)
+
+        ep1 = export_for_training(module_1, example_inputs)
+        ep2 = export_for_training(module_2, example_inputs)
+
+        edge_program_manager = exir.to_edge(
+            {"forward1": ep1, "forward2": ep2},
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
+
+        edge_program_manager = edge_program_manager.to_backend(
+            ExecutorBackendPartitioner()
+        ).to_executorch()
+
+        # Check that there is only one delegate because two methods are exactly the same
+        self.assertEqual(
+            len(edge_program_manager.executorch_program.backend_delegate_data), 1
+        )
+
+    def test_constant_tagged_mutable_tensors(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        # On device training requires the loss to be embedded in the model (and be the first output).
+        # We wrap the original model here and add the loss calculation. This will be the model we export.
+        class TrainingNet(nn.Module):
+            def __init__(self, net):
+                super().__init__()
+                self.net = net
+                self.loss = nn.CrossEntropyLoss()
+
+            def forward(self, input, label):
+                pred = self.net(input)
+                return self.loss(pred, label), pred.detach().argmax(dim=1)
+
+        net = TrainingNet(Net())
+
+        # Captures the forward graph. The graph will look similar to the model definition now.
+        # Will move to export_for_training soon which is the api planned to be supported in the long term.
+        ep = export(
+            net, (torch.randn(1, 2), torch.ones(1, dtype=torch.int64)), strict=True
+        )
+        # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
+        ep = _export_forward_backward(ep)
+        # Lower the graph to edge dialect.
+        ep = to_edge(ep)
+        # Lower the graph to executorch.
+        ep = ep.to_executorch(
+            config=ExecutorchBackendConfig(external_mutable_weights=True)
+        )
+
+        emitter_output = ep._emitter_output
+        # Check that constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant weights are in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_mutable_weights=True, saves all constants with an associated gradient to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(external_map["net.linear.weight"], 0)
+        self.assertEqual(external_map["net.linear.bias"], 1)

@@ -42,3 +42,5 @@ unary_op:
       OPERATOR: hardswish(X)
     - NAME: hardsigmoid
       OPERATOR: hardsigmoid(X)
+    - NAME: leaky_relu
+      OPERATOR: leaky_relu(X, A)

@@ -17,7 +17,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& index_select_out(
     KernelRuntimeContext& ctx,

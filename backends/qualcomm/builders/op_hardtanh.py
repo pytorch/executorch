@@ -32,10 +32,10 @@ class HardTanhVisitor(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         # default value of output_min and output_max
@@ -51,10 +51,10 @@ class HardTanhVisitor(NodeVisitor):
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         hardtanh_op = PyQnnWrapper.PyQnnOpWrapper(

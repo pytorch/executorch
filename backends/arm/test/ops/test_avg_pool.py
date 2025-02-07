@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -18,6 +18,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -57,9 +58,7 @@ class TestAvgPool2d(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check(["torch.ops.aten.avg_pool2d.default"])
@@ -75,14 +74,14 @@ class TestAvgPool2d(unittest.TestCase):
     def _test_avgpool2d_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        compile_spec = common.get_tosa_compile_spec(tosa_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
-                ),
+                compile_spec=compile_spec,
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
@@ -102,7 +101,8 @@ class TestAvgPool2d(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.tensor],
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         tester = (
             ArmTester(
                 module,
@@ -155,7 +155,7 @@ class TestAvgPool2d(unittest.TestCase):
     ):
         self._test_avgpool2d_tosa_ethos_BI_pipeline(
             self.AvgPool2d(*model_params),
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u55_compile_spec(),
             (test_data,),
         )
 
@@ -169,6 +169,39 @@ class TestAvgPool2d(unittest.TestCase):
     ):
         self._test_avgpool2d_tosa_ethos_BI_pipeline(
             self.AvgPool2d(*model_params),
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            common.get_u85_compile_spec(),
             (test_data,),
+        )
+
+    reject_data_suite = [
+        (AvgPool2d(1, 1, 0), torch.rand(2, 5, 5, 5)),
+        (AvgPool2d((2, 9), 1, 1), torch.rand(1, 16, 5, 32)),
+        (AvgPool2d(1, 4, 0), torch.rand(1, 10, 10, 10)),
+        (AvgPool2d((1, 257), 1, 0), torch.rand(1, 16, 5, 300)),
+        (AvgPool2d((800, 90), 1, 0), torch.rand(1, 16, 850, 100)),
+    ]
+
+    @parameterized.expand(reject_data_suite)
+    def test_reject_avgpool2d_u55_BI(
+        self,
+        module: torch.nn.Module,
+        test_data: torch.tensor,
+    ):
+        compile_spec = common.get_u55_compile_spec()
+        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+
+        (
+            ArmTester(
+                module,
+                example_inputs=(test_data,),
+                compile_spec=compile_spec,
+            )
+            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .export()
+            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge_transform_and_lower()
+            .check(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
         )

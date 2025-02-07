@@ -20,8 +20,8 @@
 #include <cstring>
 #include <memory>
 
-using ::exec_aten::ScalarType;
-using ::exec_aten::Tensor;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
 using ::executorch::etdump::ETDumpGen;
 using ::executorch::etdump::ETDumpResult;
 using ::executorch::runtime::AllocatorID;
@@ -40,7 +40,7 @@ class ProfilerETDumpTest : public ::testing::Test {
   void SetUp() override {
     torch::executor::runtime_init();
     etdump_gen[0] = new ETDumpGen();
-    const size_t buf_size = 1024 * 1024;
+    const size_t buf_size = 512 * 1024;
     buf = (uint8_t*)malloc(buf_size * sizeof(uint8_t));
     etdump_gen[1] = new ETDumpGen(Span<uint8_t>(buf, buf_size));
   }
@@ -58,8 +58,11 @@ class ProfilerETDumpTest : public ::testing::Test {
 TEST_F(ProfilerETDumpTest, SingleProfileEvent) {
   for (size_t i = 0; i < 2; i++) {
     etdump_gen[i]->create_event_block("test_block");
-    EventTracerEntry entry = etdump_gen[i]->start_profiling("test_event", 0, 1);
-    etdump_gen[i]->end_profiling(entry);
+    for (size_t j = 0; j < 2048; j++) {
+      EventTracerEntry entry =
+          etdump_gen[i]->start_profiling("test_event", 0, 1);
+      etdump_gen[i]->end_profiling(entry);
+    }
 
     ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
@@ -202,12 +205,12 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
 TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
   for (size_t i = 0; i < 2; i++) {
     TensorFactory<ScalarType::Int> tf;
-    exec_aten::Tensor storage[2] = {tf.ones({3, 2}), tf.ones({3, 2})};
+    executorch::aten::Tensor storage[2] = {tf.ones({3, 2}), tf.ones({3, 2})};
     EValue evalue_1(storage[0]);
     EValue evalue_2(storage[1]);
     EValue* values_p[2] = {&evalue_1, &evalue_2};
 
-    BoxedEvalueList<exec_aten::Tensor> a_box(values_p, storage, 2);
+    BoxedEvalueList<executorch::aten::Tensor> a_box(values_p, storage, 2);
     EValue evalue(a_box);
     evalue.tag = Tag::ListTensor;
 

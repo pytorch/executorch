@@ -13,6 +13,7 @@
 
 #include <cmath>
 
+#include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -20,9 +21,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using string_view = exec_aten::string_view;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using string_view = executorch::aten::string_view;
 
 namespace {
 
@@ -68,7 +69,7 @@ void gelu(
     }
 #else
     size_t i = 0;
-    if (std::is_same<CTYPE, float>::value) {
+    if constexpr (std::is_same_v<CTYPE, float>) {
       for (; i + 4 < lim; i += 4) {
         const float32x4_t in =
             vld1q_f32(static_cast<const float*>(&in_data[i]));
@@ -116,30 +117,12 @@ Tensor& opt_gelu_out(
     Tensor& out) {
   (void)context;
   ET_KERNEL_CHECK(
-      context,
-      tensors_have_same_shape_and_dtype(input, out),
-      InvalidArgument,
-      out);
+      context, check_gelu_args(input, approximate, out), InvalidArgument, out);
 
-// helper for generating the cases for different data types
-#define GELU(ctype, dtype)                         \
-  case ScalarType::dtype:                          \
-    gelu<ctype>(context, input, approximate, out); \
-    break;
-
-  switch (input.scalar_type()) {
-    // TODO support Double as well
-    GELU(float, Float)
-    default:
-      ET_KERNEL_CHECK_MSG(
-          context,
-          false,
-          InvalidArgument,
-          out,
-          "Unhandled dtype %" PRId8,
-          static_cast<int8_t>(input.scalar_type()));
-  }
-#undef GELU
+  ET_SWITCH_FLOATHBF16_TYPES(
+      input.scalar_type(), context, "gelu.out", CTYPE, [&]() {
+        gelu<CTYPE>(context, input, approximate, out);
+      });
 
   return out;
 }

@@ -15,8 +15,8 @@
 namespace my_custom_kernels {
 namespace native {
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::Error;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::resize_tensor;
@@ -79,7 +79,7 @@ my_relu_out(KernelRuntimeContext& context, const Tensor& input, Tensor& out) {
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_REAL_TYPES(RELU)
+    ET_FORALL_REALHBF16_TYPES(RELU)
     default:
       ET_KERNEL_CHECK_MSG(
           context,

@@ -110,18 +110,6 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
   std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper =
       CreateQuantizationParamWrapper(encoding, quant_info);
 
-  if (data.size() == 0) {
-    return CreateTensorWrapper(
-        tensor_name,
-        tensor_type,
-        data_type,
-        std::move(quantize_param_wrapper),
-        rank,
-        dims.data(),
-        0,
-        nullptr,
-        copy_data);
-  }
   return CreateTensorWrapper(
       tensor_name,
       tensor_type,
@@ -130,7 +118,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
       rank,
       dims.data(),
       0,
-      data.data(),
+      data.size() == 0 ? nullptr : data.data(),
       copy_data);
 }
 

@@ -17,10 +17,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpAnyOutTest : public OperatorTest {
@@ -120,7 +120,7 @@ TEST_F(OpAnyOutTest, InvalidDtypeDies) {
 
 TEST_F(OpAnyOutTest, AllRealInputTypePasses) {
 #define TEST_ENTRY(ctype, dtype) test_any_all_out<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

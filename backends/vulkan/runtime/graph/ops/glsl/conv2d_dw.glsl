@@ -35,9 +35,13 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * output at a single output location.
  */
 void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
+  const uint div_by_x = gl_GlobalInvocationID.x / out_limits.x;
+  const ivec3 pos = ivec3(
+    gl_GlobalInvocationID.x % out_limits.x,
+    div_by_x % out_limits.y,
+    div_by_x / out_limits.y);
 
-  if (any(greaterThanEqual(pos, out_limits))) {
+  if (pos.z >= out_limits.z) {
     return;
   }
 

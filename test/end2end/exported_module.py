@@ -69,6 +69,7 @@ class ExportedModule:
         capture_config=None,
         skip_type_promotion: bool = False,
         export_joint_graph: bool = False,
+        external_constants: bool = False,
     ) -> "ExportedModule":
         """
         Creates a new ExportedModule for the specified module class.
@@ -126,9 +127,7 @@ class ExportedModule:
         trace_inputs_method = "get_upper_bound_inputs"
         get_trace_inputs = get_inputs_adapter(
             (
-                # pyre-fixme[6]: For 1st argument expected `(...) -> Any` but got
-                #  `Union[Module, Tensor]`.
-                getattr(eager_module, trace_inputs_method)
+                getattr(eager_module, trace_inputs_method)  # type: ignore[arg-type]
                 if hasattr(eager_module, trace_inputs_method)
                 else eager_module.get_random_inputs
             ),
@@ -144,18 +143,14 @@ class ExportedModule:
         if hasattr(eager_module, "get_dynamic_shapes"):
             assert capture_config is not None
             assert capture_config.enable_aot is True
-            # pyre-fixme[29]: `Union[nn.modules.module.Module,
-            #  torch._tensor.Tensor]` is not a function.
-            trace_dynamic_shapes = eager_module.get_dynamic_shapes()
+            trace_dynamic_shapes = eager_module.get_dynamic_shapes()  # type: ignore[operator]
             method_name_to_dynamic_shapes = {}
             for method in methods:
                 method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
         memory_planning_pass = MemoryPlanningPass()
         if hasattr(eager_module, "get_memory_planning_pass"):
-            # pyre-fixme[29]: `Union[nn.modules.module.Module,
-            #  torch._tensor.Tensor]` is not a function.
-            memory_planning_pass = eager_module.get_memory_planning_pass()
+            memory_planning_pass = eager_module.get_memory_planning_pass()  # type: ignore[operator]
 
         class WrapperModule(nn.Module):
             def __init__(self, method):
@@ -172,7 +167,7 @@ class ExportedModule:
                 assert method_name == "forward"
                 ep = _export(
                     eager_module,
-                    method_input,
+                    method_input,  # type: ignore[arg-type]
                     dynamic_shapes=(
                         method_name_to_dynamic_shapes[method_name]
                         if method_name_to_dynamic_shapes
@@ -184,7 +179,7 @@ class ExportedModule:
             else:
                 exported_methods[method_name] = export(
                     eager_module,
-                    method_input,
+                    method_input,  # type: ignore[arg-type]
                     dynamic_shapes=(
                         method_name_to_dynamic_shapes[method_name]
                         if method_name_to_dynamic_shapes
@@ -212,6 +207,7 @@ class ExportedModule:
                 dynamic_memory_planning_mode=dynamic_memory_planning_mode,
                 memory_planning_pass=memory_planning_pass,
                 to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
+                external_constants=external_constants,
             )
         )
 
@@ -220,9 +216,7 @@ class ExportedModule:
 
         # Get a function that creates random inputs appropriate for testing.
         get_random_inputs_fn = get_inputs_adapter(
-            # pyre-fixme[6]: For 1st argument expected `(...) -> Any` but got
-            #  `Union[Module, Tensor]`.
-            eager_module.get_random_inputs,
+            eager_module.get_random_inputs,  # type: ignore[arg-type]
             # all exported methods must have the same signature so just pick the first one.
             methods[0],
         )

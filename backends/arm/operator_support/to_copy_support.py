@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 @register_tosa_support_check
 class ToCopySupported(SupportedTOSAOperatorCheck):
-    targets = [exir_ops.edge.aten._to_copy.default]
+    targets = [
+        exir_ops.edge.aten._to_copy.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    ]
 
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-0.80+BI"),
@@ -94,7 +97,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if input_dtype not in supported_dtypes:
             logger.info(
                 f"Input dtype {input_val.dtype} is not supported in "
-                f"{node.target.name()}."  # pyre-ignore[16]
+                f"{node.target.name()}."  # type: ignore[union-attr]  # pyre-ignore[16]
             )
             return False
 
@@ -104,18 +107,29 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if output_val.dtype not in supported_dtypes[input_dtype]:
             logger.info(
                 f"Output dtype {output_val.dtype} is not supported in "
-                f"{node.target.name()} for input dtype {input_dtype}. "  # pyre-ignore[16]
+                f"{node.target.name()} for input dtype {input_dtype}. "  # type: ignore[union-attr]  # pyre-ignore[16]
                 f"Supported output types: "
                 f"{''.join(str(t) for t in supported_dtypes[input_dtype])}"
             )
             return False
 
-        # Check memory format
+        # Check memory format (to_copy)
         if "memory_format" in node.kwargs:
             if node.kwargs["memory_format"] in (torch.preserve_format,):
                 logger.info(
                     f"Argument 'memory_format' is not supported for "
-                    f"{node.target.name()} right now."  # pyre-ignore[16]
+                    f"{node.target.name()} right now."  # type: ignore[union-attr]  # pyre-ignore[16]
+                )
+                return False
+
+        # Check dim_order (to_dim_order_copy)
+        if "dim_order" in node.kwargs:
+            dim_order = node.kwargs["dim_order"]
+            # pyre-ignore[6]
+            if dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
+                logger.info(
+                    f"Argument {dim_order=} is not supported for "
+                    f"{node.target.name()} right now."  # type: ignore[union-attr]  # pyre-ignore[16]
                 )
                 return False
 

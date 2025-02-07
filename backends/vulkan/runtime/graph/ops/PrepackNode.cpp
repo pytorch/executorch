@@ -68,6 +68,8 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
 void PrepackNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();
 
+  context->check_device_capabilities(shader_);
+
   vTensorPtr packed = graph->get_tensor(packed_);
   api::StagingBuffer staging = create_staging_buffer(graph);
 
@@ -75,8 +77,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
 
   {
     vkapi::PipelineBarrier pipeline_barrier{};
-    vkapi::DescriptorSet descriptor_set =
-        context->get_descriptor_set(shader_, local_workgroup_size_, spec_vars_);
+    vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
+        shader_, local_workgroup_size_, spec_vars_, 0u);
 
     uint32_t idx = 0;
     bind_tensor_to_descriptor_set(

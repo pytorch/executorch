@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -14,9 +13,9 @@
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::ArrayRef;
 using torch::executor::Error;
 using torch::executor::optional;
@@ -57,7 +56,7 @@ int prepare_data(
   return num_axis_dims;
 }
 
-Tensor& mean_dim_out(
+Tensor& mean_out(
     RuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
@@ -126,7 +125,11 @@ Tensor& mean_dim_out(
     int scratch_size = xa_nn_reduce_getsize_nhwc(
         -3, inp_shape, num_inp_dims, p_axis, num_axis_dims, 1);
 
-    void* __restrict__ p_scratch_in = (void* __restrict__)malloc(scratch_size);
+    void* __restrict__ p_scratch_in =
+        (void* __restrict__)kernels::allocate_temp_memory(
+            ctx, scratch_size * sizeof(int));
+
+    ET_KERNEL_CHECK(ctx, p_scratch_in != nullptr, MemoryAllocationFailed, out);
 
     xa_nn_reduce_mean_4D_f32_f32(
         p_out,
@@ -142,10 +145,11 @@ Tensor& mean_dim_out(
     return out;
   }
 
-  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "mean.out", CTYPE_IN, [&] {
-    ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {
+  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
+    ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       const size_t num = torch::executor::get_reduced_dim_product(in, dim_list);
+
       for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
         CTYPE_OUT sum = 0;
         if (in.numel() > 0) {

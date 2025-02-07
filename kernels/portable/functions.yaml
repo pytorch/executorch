@@ -577,6 +577,11 @@
     - arg_meta: null
       kernel_name: torch::executor::mean_dim_out
 
+- op: mean.dtype_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mean_dtype_out
+
 - op: min.dim_min
   kernels:
     - arg_meta: null
@@ -916,6 +921,16 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::unsqueeze_copy_out
+
+- op: upsample_bilinear2d.vec_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::upsample_bilinear2d_vec_out
+
+- op: upsample_nearest2d.vec_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::upsample_nearest2d_vec_out
 
 - op: var.correction_out
   kernels:

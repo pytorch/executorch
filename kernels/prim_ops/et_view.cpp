@@ -15,8 +15,8 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/assert.h>
 
-using exec_aten::SizesType;
-using exec_aten::Tensor;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
 using torch::executor::Error;
 using torch::executor::resize_tensor;
 
@@ -28,10 +28,10 @@ constexpr size_t kTensorDimensionLimit = 16;
 
 namespace {
 bool get_view_target_size(
-    const exec_aten::Tensor self,
-    exec_aten::ArrayRef<int64_t> size,
+    const executorch::aten::Tensor self,
+    executorch::aten::ArrayRef<int64_t> size,
     int64_t dim,
-    exec_aten::SizesType* out_size) {
+    executorch::aten::SizesType* out_size) {
   ET_LOG_AND_RETURN_IF_FALSE(size.size() == dim);
   int minus1_dim = -1;
   int n_zero = 0;
@@ -48,7 +48,7 @@ bool get_view_target_size(
           size[i] >= -1, "Negative sizes are not allowed.");
 
       numel_without_minus_1 *= size[i];
-      out_size[i] = static_cast<exec_aten::SizesType>(size[i]);
+      out_size[i] = static_cast<executorch::aten::SizesType>(size[i]);
 
       if (size[i] == 0) {
         n_zero++;

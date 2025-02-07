@@ -114,6 +114,23 @@ T to_packed_dim(const GPUMemoryLayout layout) {
 
 inline std::ostream& operator<<(
     std::ostream& os,
+    const StorageType storage_type) {
+  switch (storage_type) {
+    case kBuffer:
+      os << "BUFFER";
+      break;
+    case kTexture3D:
+      os << "TEXTURE_3D";
+      break;
+    case kTexture2D:
+      os << "TEXTURE_2D";
+      break;
+  }
+  return os;
+}
+
+inline std::ostream& operator<<(
+    std::ostream& os,
     const GPUMemoryLayout layout) {
   switch (layout) {
     case kWidthPacked:
@@ -128,6 +145,15 @@ inline std::ostream& operator<<(
   }
   return os;
 }
+
+enum class AxisMapLayout : uint8_t {
+  DEFAULT = 0u,
+  OPTIMIZED = 1u,
+};
+
+constexpr AxisMapLayout kDefaultAxisMap = AxisMapLayout::DEFAULT;
+
+constexpr AxisMapLayout kOptimizedAxisMap = AxisMapLayout::OPTIMIZED;
 
 } // namespace utils
 } // namespace vkcompute

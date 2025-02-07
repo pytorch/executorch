@@ -44,6 +44,38 @@ Meta has a [bounty program](https://www.facebook.com/whitehat/) for the safe
 disclosure of security bugs. In those cases, please go through the process
 outlined on that page and do not file a public issue.
 
+### Issue Labels
+
+#### Module/Partner Labels
+
+[Labels beginning with `module:`](https://github.com/pytorch/executorch/labels?q=%22module%3A+%22)
+indicate the area that the issue relates to. The ExecuTorch oncall will
+typically add this label.
+
+[Labels beginning with `partner:`](https://github.com/pytorch/executorch/labels?q=%22partner%3A+%22)
+indicate the ExecuTorch partner who owns the issue. The ExecuTorch oncall will
+typically add this label.
+
+#### Lifecycle Labels
+
+The ExecuTorch oncall will triage new issues. If the issue requires more
+information from the issue's author, oncall will add the `need-user-input` label
+and wait for the author to respond.
+
+Once the issue contains enough information, the oncall will:
+- Ensure that the title is descriptive
+- Add one of the labels:
+  - `bug`: The issue describes an unexpected problem
+  - `feature`: The issue describes a request for new functionality
+  - `rfc`: The issue describes a proposed change to functionality
+- Add one `module:` label or one `partner:` label, as described above
+- Add the `triaged` label
+
+After this point, the oncall has finished the triage process, and the
+module owner or partner is responsible for resolving the issue. (See
+https://github.com/pytorch/executorch/issues/7679 for the mapping of labels to
+owners.)
+
 ### Claiming Issues
 We'd love your help closing out [open
 issues](https://github.com/pytorch/executorch/issues?q=sort%3Aupdated-desc+is%3Aissue+is%3Aopen)
@@ -80,8 +112,8 @@ We use [`lintrunner`](https://pypi.org/project/lintrunner/) to help make sure th
 code follows our standards. Set it up with:
 
 ```
-pip install lintrunner==0.11.0
-pip install lintrunner-adapters==0.11.0
+pip install lintrunner==0.12.7
+pip install lintrunner-adapters==0.12.4
 lintrunner init
 ```
 
@@ -197,7 +229,7 @@ If it's not clear how to add a test for your PR, take a look at the blame for
 the code you're modifying and find an author who has more context. Ask them
 for their help in the PR comments.
 
-TODO: Explain how to run tests locally without needing to push and wait for CI.
+The `test/run_oss_cpp_tests.sh` script will build and run C++ tests locally.
 
 ### Continuous Integration
 See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of

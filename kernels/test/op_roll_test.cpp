@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_roll_out(
@@ -37,18 +37,26 @@ class OpRollOutTest : public ::testing::Test {
     // first.
     torch::executor::runtime_init();
   }
+
+  template <ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor input = tf.make({4, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
+    int64_t shifts_data[2] = {2, 1};
+    ArrayRef<int64_t> shifts = ArrayRef<int64_t>(shifts_data, 2);
+    int64_t dims_data[2] = {0, 1};
+    ArrayRef<int64_t> dims = ArrayRef<int64_t>(dims_data, 2);
+    Tensor out = tf.zeros({4, 2});
+    Tensor out_expected = tf.make({4, 2}, {6, 5, 8, 7, 2, 1, 4, 3});
+    op_roll_out(input, shifts, dims, out);
+    EXPECT_TENSOR_CLOSE(out, out_expected);
+  }
 };
 
 TEST_F(OpRollOutTest, SmokeTest) {
-  TensorFactory<ScalarType::Float> tfFloat;
-
-  Tensor input = tfFloat.make({4, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
-  int64_t shifts_data[2] = {2, 1};
-  ArrayRef<int64_t> shifts = ArrayRef<int64_t>(shifts_data, 2);
-  int64_t dims_data[2] = {0, 1};
-  ArrayRef<int64_t> dims = ArrayRef<int64_t>(dims_data, 2);
-  Tensor out = tfFloat.zeros({4, 2});
-  Tensor out_expected = tfFloat.make({4, 2}, {6, 5, 8, 7, 2, 1, 4, 3});
-  op_roll_out(input, shifts, dims, out);
-  EXPECT_TENSOR_CLOSE(out, out_expected);
+#define TEST_ENTRY(ctype, dtype) test_dtype<ScalarType::dtype>();
+  // TODO: enable bool test after #7856 lands.
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }

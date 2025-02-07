@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -8,7 +8,7 @@ import unittest
 
 import torch
 from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
-    ConvertMeanDimToAveragePool,
+    ConvertMeanDimToAveragePoolPass,
 )
 
 from executorch.backends.arm.test import common
@@ -41,7 +41,7 @@ class TestMeandimToAveragePool2dPass(unittest.TestCase):
 
     def test_tosa_BI_meandim_to_averagepool(self):
         module = MeanDim()
-        test_pass_stage = RunPasses([ConvertMeanDimToAveragePool])
+        test_pass_stage = RunPasses([ConvertMeanDimToAveragePoolPass])
         (
             ArmTester(
                 module,
@@ -58,7 +58,7 @@ class TestMeandimToAveragePool2dPass(unittest.TestCase):
 
     def test_tosa_BI_meandim_no_modification(self):
         module = MeanDim2()
-        test_pass_stage = RunPasses([ConvertMeanDimToAveragePool])
+        test_pass_stage = RunPasses([ConvertMeanDimToAveragePoolPass])
         (
             ArmTester(
                 module,

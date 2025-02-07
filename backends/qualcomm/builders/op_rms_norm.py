@@ -36,10 +36,10 @@ class RmsNormVisitor(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         # should be a immutable list
@@ -60,13 +60,13 @@ class RmsNormVisitor(NodeVisitor):
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
+            node,
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
-        # Fake node, nn moudle seems to be inconsistant with document
+        # Fake node, nn module seems to be inconsistant with document
         bias_tensor = torch.zeros(weight_tensor.shape)
         bias_node = torch.fx.Node(
             node.graph,
@@ -80,10 +80,10 @@ class RmsNormVisitor(NodeVisitor):
             bias_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
+            node,
             bias_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         epsilon = node.args[3]
@@ -98,10 +98,10 @@ class RmsNormVisitor(NodeVisitor):
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         rms_nrom_op = PyQnnWrapper.PyQnnOpWrapper(

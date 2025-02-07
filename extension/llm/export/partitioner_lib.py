@@ -82,6 +82,7 @@ def get_coreml_partitioner(
     except ImportError:
         raise ImportError(
             "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            + "; for buck users, please add example dependancies: //executorch/backends/apple/coreml:backend, and etc"
         )
 
     def _validate_ios_version() -> None:

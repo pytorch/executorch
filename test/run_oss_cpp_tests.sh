@@ -69,7 +69,7 @@ report_coverage() {
 
 run_ctest() {
   pushd cmake-out/
-  ctest
+  ctest --output-on-failure
   popd
 }
 

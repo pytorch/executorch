@@ -13,7 +13,7 @@ import copy
 
 import math
 import typing
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import executorch.exir.schema as schema
 import torch
@@ -70,13 +70,34 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     for _, s in enumerate(stride):
         if s == 0:
             raise ValueError("0 in strides is not supported for ExecuTorch.")
+
+    from torch.fx.experimental.symbolic_shapes import guard_size_oblivious
+
+    class K(NamedTuple):
+        stride: int
+
+        def __lt__(self, other):
+            return guard_size_oblivious(self.stride < other.stride)
+
+        def __gt__(self, other):
+            return guard_size_oblivious(self.stride > other.stride)
+
+        def __le__(self, other):
+            return guard_size_oblivious(self.stride <= other.stride)
+
+        def __ge__(self, other):
+            return guard_size_oblivious(self.stride >= other.stride)
+
+        def __eq__(self, other):
+            return guard_size_oblivious(self.stride == other.stride)
+
     sorted_dims = [
-        i[0] for i in sorted(enumerate(stride), key=lambda x: x[1], reverse=True)
+        i[0] for i in sorted(enumerate(stride), key=lambda x: K(x[1]), reverse=True)
     ]
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
 
 
-def stride_from_dim_order(sizes: List[int], dim_order: List[bytes]) -> List[int]:
+def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
     """
     Converts dim order to stride using sizes
     e.g. if sizes = (2, 3, 4) and dim_order = (0, 1, 2) then strides = (12, 4, 1)

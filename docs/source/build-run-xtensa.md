@@ -162,7 +162,7 @@ In order to run the CMake build, you need the path to the following:
 
 ```bash
 cd executorch
-./install_requirements.sh --clean
+./install_executorch.sh --clean
 mkdir cmake-out
 # prebuild and install executorch library
 cmake -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/backends/cadence/cadence.cmake \

@@ -43,6 +43,7 @@ run_and_verify() {
 	--tasks mmlu \
 	-f 5 \
 	--max_seq_length 2048 \
+	--max_context_length 2048 \
 	--limit 5 > result.txt
 
     # Verify result.txt

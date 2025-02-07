@@ -195,6 +195,7 @@ def define_common_targets():
         deps = [
             "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
             ":duplicate_dynamic_quant_chain",
+            "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
             "//caffe2:torch",
             "//executorch/exir:lib",
         ],

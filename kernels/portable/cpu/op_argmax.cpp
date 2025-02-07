@@ -17,8 +17,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::optional;
-using exec_aten::Tensor;
+using executorch::aten::optional;
+using executorch::aten::Tensor;
 
 Tensor& argmax_out(
     KernelRuntimeContext& ctx,
@@ -43,7 +43,7 @@ Tensor& argmax_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "argmax.out", CTYPE, [&] {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "argmax.out", CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();
 
     for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {

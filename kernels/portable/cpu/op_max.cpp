@@ -26,9 +26,9 @@ constexpr CTYPE lower_bound() {
 
 } // namespace
 
-using ScalarType = exec_aten::ScalarType;
-using SizesType = exec_aten::SizesType;
-using Tensor = exec_aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using SizesType = executorch::aten::SizesType;
+using Tensor = executorch::aten::Tensor;
 
 std::tuple<Tensor&, Tensor&> max_out(
     KernelRuntimeContext& ctx,

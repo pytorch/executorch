@@ -14,17 +14,19 @@ class OpSequencesAddConv2d(torch.nn.Module):
     followed by an add to separate the sequences
     """
 
-    def __init__(self, num_sequences, ops_per_sequence):
+    def __init__(self, num_sequences, ops_per_sequence, transpose=False):
         super().__init__()
         self.num_ops = num_sequences * ops_per_sequence
         self.num_sequences = num_sequences
 
         self.op_sequence = torch.nn.ModuleList()
+
+        op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
         for _ in range(num_sequences):
             inner = torch.nn.ModuleList()
             for _ in range(ops_per_sequence):
                 inner.append(
-                    torch.nn.Conv2d(
+                    op(
                         in_channels=1,
                         out_channels=1,
                         kernel_size=(3, 3),

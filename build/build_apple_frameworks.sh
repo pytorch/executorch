@@ -187,10 +187,9 @@ echo "Exporting headers"
 
 mkdir -p "$HEADERS_PATH"
 
-# Set BUCK2 to the path of the buck2 executable in $OUTPUT/*/buck2-bin/buck2-*
-BUCK2=$(find . -type f -path '*/buck2-bin/buck2-*' | head -n 1)
+BUCK2=$(find $SOURCE_ROOT_DIR -type f -path '*/buck2-bin/buck2-*' | head -n 1)
 if [[ -z "$BUCK2" ]]; then
-  echo "Could not find buck2 executable in any buck2-bin directory under $OUTPUT"
+  echo "Could not find buck2 executable in any buck2-bin directory under $SOURCE_ROOT_DIR"
   BUCK2=$(which buck2)
 fi
 

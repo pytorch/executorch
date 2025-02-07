@@ -36,10 +36,10 @@ class Cat(NodeVisitor):
             list_of_tensor_wrappers.append(
                 self.define_tensor(
                     tensor_input,
+                    node,
                     input_tensor,
                     PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                     nodes_to_wrappers,
-                    is_input_tensor=True,
                 )
             )
 
@@ -53,10 +53,10 @@ class Cat(NodeVisitor):
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         # node args[1] might not exist

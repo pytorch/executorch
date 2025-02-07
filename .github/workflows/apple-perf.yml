@@ -74,19 +74,27 @@ jobs:
           CRON_DEFAULT_DEVICES: apple_iphone_15
         run: |
           set -eux
+
+          ARGS="--os ios"
+
           MODELS="${{ inputs.models }}"
           if [ -z "$MODELS" ]; then
             MODELS="$CRON_DEFAULT_MODELS"
           fi
+          ARGS="$ARGS --models $MODELS"
+
           DEVICES="${{ inputs.devices }}"
           if [ -z "$DEVICES" ]; then
             DEVICES="$CRON_DEFAULT_DEVICES"
           fi
+          ARGS="$ARGS --devices $DEVICES"
 
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py \
-            --os "ios" \
-            --models $MODELS \
-            --devices $DEVICES
+          BENCHMARK_CONFIGS="${{ inputs.benchmark_configs }}"
+          if [ -n "$BENCHMARK_CONFIGS" ]; then
+            ARGS="$ARGS --configs $BENCHMARK_CONFIGS"
+          fi
+
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py $ARGS
 
           echo "benchmark_configs is: ${{ steps.set-parameters.outputs.benchmark_configs }}"
 
@@ -100,20 +108,32 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Prepare the spec
+        id: prepare
         shell: bash
+        env:
+          BENCHMARK_CONFIG: ${{ toJSON(matrix) }}
         working-directory: extension/benchmark/apple/Benchmark
         run: |
           set -eux
 
-          echo "DEBUG: ${{ matrix.model }}"
           # The model will be exported in the next step to this S3 path
           MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/model.zip"
           # We could write a script to properly use jinja here, but there is only one variable,
           # so let's just sed it
           sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' default-ios-device-farm-appium-test-spec.yml.j2
+
+          BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
+          # The config for this benchmark runs, we save it in the test spec so that it can be fetched
+          # later by the upload script
+          sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' default-ios-device-farm-appium-test-spec.yml.j2
+
           cp default-ios-device-farm-appium-test-spec.yml.j2 default-ios-device-farm-appium-test-spec.yml
           # Just print the test spec for debugging
           cat default-ios-device-farm-appium-test-spec.yml
+
+          # Save the benchmark configs so that we can use it later in the dashboard
+          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_ID}.json"
+          echo "benchmark-config-id=${BENCHMARK_CONFIG_ID}" >> $GITHUB_OUTPUT
 
       - name: Upload the spec
         uses: seemethere/upload-artifact-s3@v5
@@ -124,6 +144,16 @@ jobs:
           retention-days: 1
           if-no-files-found: error
           path: extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml
+
+      - name: Update the benchmark configs
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/apple/Benchmark/${{ steps.prepare.outputs.benchmark-config-id }}.json
 
   export-models:
     name: export-models
@@ -388,7 +418,7 @@ jobs:
     runs-on: linux.2xlarge
     steps:
       - name: Download the apps from GitHub
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           # The name here needs to match the name of the upload-artifact parameter
           name: ios-apps
@@ -481,6 +511,18 @@ jobs:
 
           ls -lah artifacts
 
+      - name: Download the list of benchmark configs from S3
+        env:
+          BENCHMARK_CONFIGS_DIR: s3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+        shell: bash
+        run: |
+          set -eux
+          mkdir -p benchmark-configs
+          pushd benchmark-configs
+          ${CONDA_RUN} aws s3 sync "${BENCHMARK_CONFIGS_DIR}" .
+          popd
+          ls -lah benchmark-configs
+
       - name: Extract the benchmark results JSON
         shell: bash
         run: |
@@ -498,7 +540,8 @@ jobs:
               --head-branch ${{ github.head_ref || github.ref_name }} \
               --workflow-name "${{ github.workflow }}" \
               --workflow-run-id ${{ github.run_id }} \
-              --workflow-run-attempt ${{ github.run_attempt }}
+              --workflow-run-attempt ${{ github.run_attempt }} \
+              --benchmark-configs benchmark-configs
           done
 
           for SCHEMA in v2 v3; do

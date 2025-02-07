@@ -13,7 +13,7 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 bool check_narrow_copy_args(
     const Tensor& in,
@@ -38,7 +38,7 @@ void get_narrow_copy_out_target_size(
     const Tensor& in,
     int64_t dim,
     int64_t length,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
@@ -65,7 +65,7 @@ void get_slice_copy_out_target_size(
     const Tensor& in,
     int64_t dim,
     int64_t length,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   get_narrow_copy_out_target_size(in, dim, length, out_sizes, out_ndim);
 }

@@ -18,9 +18,9 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpAminOutTest : public OperatorTest {
@@ -189,6 +189,36 @@ class OpAminOutTest : public OperatorTest {
     op_amin_out(in, empty_dim_list, /*keepdim=*/false, out);
     EXPECT_TENSOR_CLOSE(out, tf.make({}, {2}));
   }
+
+  template <ScalarType DTYPE>
+  void test_amin_out_infinity_nan() {
+    TensorFactory<DTYPE> tf_dtype;
+    using CTYPE = typename decltype(tf_dtype)::ctype;
+    const auto infinity = std::numeric_limits<CTYPE>::infinity();
+    const auto nan = std::numeric_limits<CTYPE>::quiet_NaN();
+    // clang-format off
+    Tensor in = tf_dtype.make(
+      {2, 3, 4},
+      {
+        0,        1,         2,        infinity,
+        infinity, -infinity, 1,        0,
+        nan,      infinity, -infinity, 2,
+
+        nan, nan,      1,    0,
+        0,   infinity, nan,  4,
+        1,   nan,      3.14, 2,
+      });
+    // clang-format on
+
+    Tensor out = tf_dtype.zeros({2, 3, 1});
+    int64_t dims[1] = {-1};
+    ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
+    op_amin_out(in, dim_list, /*keepdim=*/true, out);
+    // clang-format off
+    EXPECT_TENSOR_CLOSE(
+        out, tf_dtype.make({2, 3, 1}, {0, -infinity, nan, nan, nan, nan}));
+    // clang-format on
+  }
 };
 
 template <>
@@ -280,32 +310,13 @@ TEST_F(OpAminOutTest, MismatchedDTypesDies) {
 
 TEST_F(OpAminOutTest, AllRealInputOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_amin_out_dtype<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpAminOutTest, InfinityAndNANTest) {
-  TensorFactory<ScalarType::Float> tf_float;
-  // clang-format off
-  Tensor in = tf_float.make(
-    {2, 3, 4},
-    {
-      0,        1,         2,        INFINITY,
-      INFINITY, -INFINITY, 1,        0,
-      NAN,      INFINITY, -INFINITY, 2,
-
-      NAN, NAN,      1,    0,
-      0,   INFINITY, NAN,  4,
-      1,   NAN,      3.14, 2,
-    });
-  // clang-format on
-
-  Tensor out = tf_float.zeros({2, 3, 1});
-  int64_t dims[1] = {-1};
-  ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
-  op_amin_out(in, dim_list, /*keepdim=*/true, out);
-  // clang-format off
-  EXPECT_TENSOR_CLOSE(
-      out, tf_float.make({2, 3, 1}, {0, -INFINITY, NAN, NAN, NAN, NAN}));
-  // clang-format on
+#define TEST_ENTRY(ctype, dtype) \
+  test_amin_out_infinity_nan<ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }

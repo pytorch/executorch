@@ -90,24 +90,46 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   if (dim_ == 0) {
     return Error::Ok;
   }
+
   switch (shape_dynamism_) {
     case TensorShapeDynamism::STATIC:
-      ET_CHECK_OR_RETURN_ERROR(
-          std::equal(sizes_, sizes_ + dim_, new_sizes.begin()),
-          NotSupported,
-          "Attempted to resize a static tensor");
+      if (!std::equal(sizes_, sizes_ + dim_, new_sizes.begin())) {
+#ifdef ET_LOG_ENABLED
+        std::array<char, 16> old_sizes_str, new_sizes_str;
+
+        executorch::runtime::sizes_to_string(
+            old_sizes_str.data(),
+            old_sizes_str.size(),
+            sizes().data(),
+            sizes().size());
+        executorch::runtime::sizes_to_string(
+            new_sizes_str.data(),
+            new_sizes_str.size(),
+            new_sizes.data(),
+            new_sizes.size());
+#endif
+
+        ET_CHECK_OR_RETURN_ERROR(
+            false,
+            NotSupported,
+            "Attempted to resize a static tensor. Expected shape %s, but received %s.",
+            old_sizes_str.data(),
+            new_sizes_str.data())
+      }
+
       break;
     case TensorShapeDynamism::DYNAMIC_BOUND:
       // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
       // supported: treat them as upper-bounded.
     case TensorShapeDynamism::DYNAMIC_UNBOUND: {
       const auto new_numel = compute_numel(new_sizes.data(), dim_);
+
       ET_CHECK_OR_RETURN_ERROR(
           new_numel <= numel_bound_,
           NotSupported,
-          "Attempted to resize a bounded tensor with capacity of %zu elements to %zu elements.",
-          new_numel,
-          numel_bound_);
+          "Attempted to resize a bounded tensor with a maximum capacity of %zu elements to %zu elements.",
+          numel_bound_,
+          new_numel);
 
       if (strides_ && dim_order_) {
         auto error =

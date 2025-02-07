@@ -36,6 +36,12 @@ set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_native_layer_norm.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_quantize.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_dequantize.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_sub.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_div.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_mean.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_slice_copy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_permute_copy.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_exp.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
@@ -51,6 +57,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_where.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
 )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)

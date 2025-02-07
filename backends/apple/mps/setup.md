@@ -97,7 +97,7 @@ I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successf
 ### [Optional] Run the generated model directly using pybind
 1. Make sure `pybind` MPS support was installed:
 ```bash
-./install_requirements.sh --pybind mps
+./install_executorch.sh --pybind mps
 ```
 2. Run the `mps_example` script to trace the model and run it directly from python:
 ```bash

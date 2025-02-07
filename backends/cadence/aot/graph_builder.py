@@ -6,9 +6,16 @@ import logging
 from typing import Optional, Sequence, Union
 
 import torch
-from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
+from executorch.exir.pass_base import (
+    Argument,
+    ExportPass,
+    NodeMetadata,
+    PassResult,
+    ProxyValue,
+)
+from torch._dispatch.python import enable_python_dispatcher
 from torch._subclasses import FakeTensor, FakeTensorMode
-from torch.fx.node import Argument, Target
+from torch.fx.node import Target
 from torch.utils import _pytree as pytree
 
 
@@ -79,6 +86,22 @@ class GraphBuilder(ExportPass):
         if kwargs is None:
             kwargs = {}
         return super().call_operator(op, args, kwargs, meta)
+
+    def call_submodule(
+        self, graph_module: torch.fx.GraphModule, inputs: tuple[Argument, ...]
+    ) -> PassResult:
+        return ExportPass().call(graph_module)
+
+    def _fx(
+        self,
+        kind: str,
+        target: torch.fx.node.Target,
+        args: tuple[Argument, ...],
+        kwargs: dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        with self.fake_tensor_mode, enable_python_dispatcher():
+            return super()._fx(kind, target, args, kwargs, meta)
 
 
 def single_op_builder(

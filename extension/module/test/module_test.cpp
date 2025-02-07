@@ -102,13 +102,13 @@ TEST_F(ModuleTest, TestMethodMeta) {
 
   const auto input_meta = meta->input_tensor_meta(0);
   EXPECT_EQ(input_meta.error(), Error::Ok);
-  EXPECT_EQ(input_meta->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(input_meta->scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(input_meta->sizes().size(), 1);
   EXPECT_EQ(input_meta->sizes()[0], 1);
 
   const auto output_meta = meta->output_tensor_meta(0);
   EXPECT_EQ(output_meta.error(), Error::Ok);
-  EXPECT_EQ(output_meta->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(output_meta->scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(output_meta->sizes().size(), 1);
   EXPECT_EQ(output_meta->sizes()[0], 1);
 }

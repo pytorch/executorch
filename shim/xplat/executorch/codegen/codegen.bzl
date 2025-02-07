@@ -397,11 +397,11 @@ def build_portable_lib(name, oplist_header_name, feature = None, expose_operator
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"]
-    if expose_operator_symbols:
+    compiler_flags = ["-Wno-missing-prototypes"]
+    if not expose_operator_symbols:
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
-        compiler_flags = ["-Wno-missing-prototypes"]
+        compiler_flags += ["-fvisibility=hidden"]
 
     # Build portable lib.
     runtime.cxx_library(
@@ -692,6 +692,7 @@ def executorch_ops_check(
                "--model_file_list_path $(@query_outputs \"filter('.*_et_oplist', deps(set({deps})))\") " +
                "--allow_include_all_overloads " +
                "--check_ops_not_overlapping " +
+               "--DEBUG_ONLY_check_prim_ops $(@query_targets \"filter('prim_ops_registry(?:_static|_aten)?$', deps(set({deps})))\") " +
                "--output_dir $OUT ").format(deps = " ".join(["\'{}\'".format(d) for d in deps])),
         define_static_target = False,
         platforms = kwargs.pop("platforms", get_default_executorch_platforms()),

@@ -9,12 +9,25 @@ import unittest
 from typing import Optional
 
 import torch
-from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
-from executorch.backends.xnnpack.test.tester import Quantize, Tester
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+
+try:
+    import executorch.extension.pybindings.portable_lib  # noqa[F401]
+    import executorch.kernels.quantized  # noqa[F401]
+
+    has_quantized_ops = True
+except:
+    has_quantized_ops = False
+
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+)
+from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
+from executorch.backends.xnnpack.test.tester import Quantize, Tester
+
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class Conv2d(torch.nn.Module):
@@ -33,6 +46,7 @@ class Conv2d(torch.nn.Module):
         width=8,
         height=8,
         dtype=torch.float,
+        transpose=False,
     ):
         super().__init__()
         self.batches = batches
@@ -41,7 +55,9 @@ class Conv2d(torch.nn.Module):
         self.in_channels = in_channels
         self.dtype = dtype
 
-        self.conv = torch.nn.Conv2d(
+        op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+        self.transpose = transpose
+        self.conv = op(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
@@ -65,16 +81,18 @@ class Conv2d(torch.nn.Module):
 
 
 class Conv2dSeq(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, transpose=False):
         super().__init__()
-        self.first = torch.nn.Conv2d(
+        op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+        self.transpose = transpose
+        self.first = op(
             in_channels=1,
             out_channels=3,
             kernel_size=(3, 3),
             padding=1,
             bias=False,
         )
-        self.second = torch.nn.Conv2d(
+        self.second = op(
             in_channels=3,
             out_channels=2,
             kernel_size=(3, 3),
@@ -91,9 +109,11 @@ class Conv2dSeq(torch.nn.Module):
 
 
 class Conv2dBatchNorm(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, transpose=False):
         super().__init__()
-        self.conv1 = torch.nn.Conv2d(
+        op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+        self.transpose = transpose
+        self.conv1 = op(
             2,
             2,
             (2, 2),
@@ -103,7 +123,7 @@ class Conv2dBatchNorm(torch.nn.Module):
         )
         self.bn = randomize_bn(2)
         self.hardtanh = torch.nn.Hardtanh()
-        self.conv2 = torch.nn.Conv2d(
+        self.conv2 = op(
             2,
             2,
             (2, 2),
@@ -126,9 +146,11 @@ class Conv2dBatchNorm(torch.nn.Module):
 
 
 class Conv2dPermute(torch.nn.Module):
-    def __init__(self, permute_order):
+    def __init__(self, permute_order, transpose=False):
         super().__init__()
-        self.conv = torch.nn.Conv2d(
+        op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+        self.transpose = transpose
+        self.conv = op(
             2,
             2,
             (2, 2),
@@ -154,6 +176,8 @@ class TestConv2d(unittest.TestCase):
         quant_config: Optional[QuantizationConfig] = None,
         conv_count=1,
         dtype: torch.dtype = torch.float,
+        check_quantized=True,
+        delegated=True,
     ):
         # pyre-fixme[29]: `Union[torch._tensor.Tensor,
         #  torch.nn.modules.module.Module]` is not a function.
@@ -161,55 +185,85 @@ class TestConv2d(unittest.TestCase):
 
         if quant_config is not None:
             tester = tester.quantize(Quantize(quantization_config=quant_config))
-            tester.check(["torch.ops.quantized_decomposed"])
+            if check_quantized:
+                tester.check(["torch.ops.quantized_decomposed"])
 
-        (
-            tester.export()
-            .check_count({"torch.ops.aten.conv2d": conv_count})
-            .to_edge_transform_and_lower()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .check_not(
-                [
-                    "executorch_exir_dialects_edge__ops__native_batch_norm_legit_no_training_default"
-                ]
-            )
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(qtol=1)
+        op = (
+            "torch.ops.aten.conv2d"
+            if not m.transpose
+            else "torch.ops.aten.conv_transpose2d"
         )
+
+        (tester.export().check_count({op: conv_count}).to_edge_transform_and_lower())
+
+        if delegated:
+            (
+                tester.check_not(
+                    ["executorch_exir_dialects_edge__ops_aten_convolution_default"]
+                )
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops__native_batch_norm_legit_no_training_default"
+                    ]
+                )
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(qtol=1)
+            )
+        else:
+            # need quantize ops when ops are not delegated to xnnpack
+            if has_quantized_ops:
+                (
+                    tester.to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs(qtol=1)
+                )
 
     def test_fp16_conv2d(self) -> None:
-        for has_bias in (True, False):
-            self._test(Conv2d(bias=has_bias, dtype=torch.float16))
+        for transpose in (True, False):
+            for has_bias in (True, False):
+                self._test(
+                    Conv2d(bias=has_bias, dtype=torch.float16, transpose=transpose)
+                )
 
     def test_fp32_conv2d(self) -> None:
-        for has_bias in (True, False):
-            self._test(Conv2d(bias=has_bias))
+        for transpose in (True, False):
+            for has_bias in (True, False):
+                self._test(Conv2d(bias=has_bias, transpose=transpose))
 
     def test_fp32_conv2d_permute(self) -> None:
-        for perm_order in list(itertools.permutations([0, 1, 2, 3])):
-            self._test(Conv2dPermute(perm_order))
+        for transpose in (True, False):
+            for perm_order in list(itertools.permutations([0, 1, 2, 3])):
+                self._test(Conv2dPermute(perm_order, transpose=transpose))
 
     def test_qs8_conv2d_test(self) -> None:
-        for has_bias in (True, False):
-            self._test(
-                Conv2d(bias=has_bias), quant_config=get_symmetric_quantization_config()
-            )
+        for transpose in (True, False):
+            for has_bias in (True, False):
+                self._test(
+                    Conv2d(bias=has_bias, transpose=transpose),
+                    quant_config=get_symmetric_quantization_config(),
+                )
 
     def test_qs8_conv2d_per_channel(self) -> None:
-        self._test(
-            Conv2d(),
-            quant_config=get_symmetric_quantization_config(is_per_channel=True),
-        )
+        for transpose in (True, False):
+            self._test(
+                Conv2d(transpose=transpose),
+                quant_config=get_symmetric_quantization_config(is_per_channel=True),
+                delegated=not transpose,  # XNNPACK does not support per input channel quantization for transpose convolutions with groups > 1
+            )
 
     def test_fp32_conv2d_seq(self) -> None:
-        self._test(Conv2dSeq(), conv_count=2)
+        for transpose in (True, False):
+            self._test(Conv2dSeq(transpose=transpose), conv_count=2)
 
     def test_qs8_conv2d_seq(self) -> None:
-        self._test(
-            Conv2dSeq(), conv_count=2, quant_config=get_symmetric_quantization_config()
-        )
+        for transpose in (True, False):
+            self._test(
+                Conv2dSeq(transpose=transpose),
+                conv_count=2,
+                quant_config=get_symmetric_quantization_config(),
+            )
 
     def test_fp32_conv2d_single_int_params(self):
         self._test(
@@ -225,19 +279,27 @@ class TestConv2d(unittest.TestCase):
         # Depthwise Convolution Requirements:
         # - Groups must equal In Channels
         # - Out Channels must be a positive multiple of In Channels
-        self._test(Conv2d(groups=2, in_channels=2, out_channels=6))
+        for transpose in (True, False):
+            self._test(
+                Conv2d(groups=2, in_channels=2, out_channels=6, transpose=transpose)
+            )
 
     def test_qs8_conv2d_depthwise(self):
-        self._test(
-            Conv2d(groups=2, in_channels=2, out_channels=6),
-            quant_config=get_symmetric_quantization_config(),
-        )
+        for transpose in (True, False):
+            self._test(
+                Conv2d(groups=2, in_channels=2, out_channels=6, transpose=transpose),
+                quant_config=get_symmetric_quantization_config(),
+            )
 
     def test_fp32_conv2d_bn(self):
         class Conv2dBatchNorm(torch.nn.Module):
-            def __init__(self, in_features: int, out_features: int, kernel_size):
+            def __init__(
+                self, in_features: int, out_features: int, kernel_size, transpose=False
+            ):
                 super().__init__()
-                self.conv2d = torch.nn.Conv2d(in_features, out_features, kernel_size)
+                op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+                self.transpose = transpose
+                self.conv2d = op(in_features, out_features, kernel_size)
                 self.bn = randomize_bn(out_features)
                 self.in_features = in_features
                 self.kernel_size = kernel_size
@@ -257,7 +319,15 @@ class TestConv2d(unittest.TestCase):
                     ),
                 )
 
-        self._test(Conv2dBatchNorm(in_features=2, out_features=2, kernel_size=(2, 2)))
+        for transpose in (True, False):
+            self._test(
+                Conv2dBatchNorm(
+                    in_features=2,
+                    out_features=2,
+                    kernel_size=(2, 2),
+                    transpose=transpose,
+                )
+            )
 
     def test_fp32_conv2d_bn_hardtanh_mean_sequence(self):
         """
@@ -267,9 +337,13 @@ class TestConv2d(unittest.TestCase):
         """
 
         class Conv2dBatchNormHardTanh(torch.nn.Module):
-            def __init__(self, in_channels: int, out_channels: int, kernel_size):
+            def __init__(
+                self, in_channels: int, out_channels: int, kernel_size, transpose=False
+            ):
                 super().__init__()
-                self.conv = torch.nn.Conv2d(
+                op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+                self.transpose = transpose
+                self.conv = op(
                     in_channels=in_channels,
                     out_channels=out_channels,
                     kernel_size=kernel_size,
@@ -290,22 +364,31 @@ class TestConv2d(unittest.TestCase):
             def get_inputs(self):
                 return (torch.randn(2, self.in_channels, 8, 8),)
 
-        self._test(
-            Conv2dBatchNormHardTanh(in_channels=2, out_channels=1, kernel_size=(2, 2))
-        )
+        for transpose in (True, False):
+            self._test(
+                Conv2dBatchNormHardTanh(
+                    in_channels=2,
+                    out_channels=1,
+                    kernel_size=(2, 2),
+                    transpose=transpose,
+                )
+            )
 
     def test_qs8_conv2d_bn(self):
-        self._test(
-            Conv2dBatchNorm(),
-            quant_config=get_symmetric_quantization_config(),
-            conv_count=2,
-        )
+        for transpose in (True, False):
+            self._test(
+                Conv2dBatchNorm(transpose=transpose),
+                quant_config=get_symmetric_quantization_config(),
+                conv_count=2,
+            )
 
     def test_qs8_conv2d_relu(self):
         class ConvReLU(torch.nn.Module):
-            def __init__(self):
+            def __init__(self, transpose=False):
                 super().__init__()
-                self.conv1 = torch.nn.Conv2d(
+                op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+                self.transpose = transpose
+                self.conv1 = op(
                     2,
                     2,
                     (2, 2),
@@ -323,10 +406,12 @@ class TestConv2d(unittest.TestCase):
             def get_inputs(self):
                 return (torch.randn(2, 2, 4, 4),)
 
-        self._test(
-            ConvReLU(),
-            quant_config=get_symmetric_quantization_config(),
-        )
+        for transpose in (True, False):
+            self._test(
+                ConvReLU(transpose=transpose),
+                quant_config=get_symmetric_quantization_config(is_per_channel=True),
+                delegated=not transpose,  # XNNPACK does not support per input channel quantization for transpose convolutions with groups > 1
+            )
 
     def test_qs8_conv2d_dw_relu(self):
         # Depthwise Convolution Requirements:
@@ -343,9 +428,11 @@ class TestConv2d(unittest.TestCase):
         batches = 1
 
         class ModelConvReLU(torch.nn.Module):
-            def __init__(self):
+            def __init__(self, transpose=False):
                 super().__init__()
-                self.conv1 = torch.nn.Conv2d(
+                op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+                self.transpose = transpose
+                self.conv1 = op(
                     in_channels=in_channels,
                     out_channels=out_channels,
                     kernel_size=(3, 3),
@@ -365,23 +452,30 @@ class TestConv2d(unittest.TestCase):
             def get_inputs(self):
                 return (torch.randn(batches, in_channels, height, width) * 11,)
 
-        for per_channel_quant in (False, True):
-            model = ModelConvReLU()
-            self._test(
-                model,
-                quant_config=get_symmetric_quantization_config(
-                    is_per_channel=per_channel_quant
-                ),
-            )
+        for transpose in (True, False):
+            for per_channel_quant in (False, True):
+                if transpose and per_channel_quant:
+                    continue
+                model = ModelConvReLU(transpose=transpose)
+                self._test(
+                    model,
+                    quant_config=get_symmetric_quantization_config(
+                        is_per_channel=per_channel_quant
+                    ),
+                    # XNNPACK does not support per input channel quantization for transpose convolutions with groups > 1
+                    delegated=not (transpose and per_channel_quant),
+                )
 
     def test_qs8_conv2d_relu_seq(self):
         class ConvReLUSeq(torch.nn.Module):
-            def __init__(self):
+            def __init__(self, transpose=False):
                 super().__init__()
+                op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+                self.transpose = transpose
                 self.model = torch.nn.Sequential(
-                    torch.nn.Conv2d(1, 1, 1),
+                    op(1, 1, 1),
                     torch.nn.ReLU(),
-                    torch.nn.Conv2d(1, 64, 1),
+                    op(1, 64, 1),
                     torch.nn.ReLU(),
                 )
 
@@ -391,18 +485,21 @@ class TestConv2d(unittest.TestCase):
             def get_inputs(self):
                 return (torch.randn(1, 1, 1, 1),)
 
-        self._test(
-            ConvReLUSeq(),
-            quant_config=get_symmetric_quantization_config(),
-            conv_count=2,
-        )
+        for transpose in (True, False):
+            self._test(
+                ConvReLUSeq(transpose=transpose),
+                quant_config=get_symmetric_quantization_config(),
+                conv_count=2,
+            )
 
     def test_qs8_conv2d_relu_multi_users(self):
         class Conv2dReluMultiUsers(torch.nn.Module):
-            def __init__(self):
+            def __init__(self, transpose=False):
                 super().__init__()
-                self.conv1 = torch.nn.Conv2d(1, 1, 1)
-                self.conv2 = torch.nn.Conv2d(1, 64, 1)
+                op = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
+                self.transpose = transpose
+                self.conv1 = op(1, 1, 1)
+                self.conv2 = op(1, 64, 1)
                 self.relu = torch.nn.ReLU()
 
             def forward(self, x):
@@ -414,8 +511,149 @@ class TestConv2d(unittest.TestCase):
             def get_inputs(self):
                 return (torch.randn(1, 1, 1, 1),)
 
-        self._test(
-            Conv2dReluMultiUsers(),
-            quant_config=get_symmetric_quantization_config(),
-            conv_count=2,
-        )
+        for transpose in (True, False):
+            self._test(
+                Conv2dReluMultiUsers(transpose=transpose),
+                quant_config=get_symmetric_quantization_config(),
+                conv_count=2,
+            )
+
+    def test_qs8_conv_transpose_2d_quantize_per_channel(self):
+        class PerChannelConvTranspose2d(torch.nn.Module):
+            def __init__(self, input_channels, output_channels, groups, axis):
+                super().__init__()
+                self.input_channels = input_channels
+                self.output_channels = output_channels
+                self.axis = axis
+                self.groups = groups
+                self.transpose = True
+                self.weights = torch.nn.Parameter(
+                    torch.randint(
+                        low=-127,
+                        high=127,
+                        size=(input_channels, output_channels // groups, 4, 4),
+                    ).type(dtype=torch.int8),
+                    requires_grad=False,
+                )
+
+                axis_size = self.weights.shape[axis]
+                self.scale = torch.nn.Parameter(torch.ones(axis_size) * 0.12345)
+                self.zero_point = torch.nn.Parameter(
+                    torch.zeros((axis_size,), dtype=torch.int64), requires_grad=False
+                )
+
+            def forward(self, x):
+                dequantize_weights = (
+                    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default(
+                        self.weights,
+                        self.scale,
+                        self.zero_point,
+                        self.axis,
+                        -127,
+                        127,
+                        torch.int8,
+                    )
+                )
+                dequantize_input = (
+                    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
+                        x, 0.12345, 0, -127, 127, torch.int8
+                    )
+                )
+                x = torch.nn.functional.conv_transpose2d(
+                    dequantize_input, dequantize_weights, groups=self.groups
+                )
+
+                return exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
+                    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default(
+                        x,
+                        0.12345,
+                        0,
+                        -127,
+                        127,
+                        torch.int8,
+                    ),
+                    0.12345,
+                    0,
+                    -127,
+                    127,
+                    torch.int8,
+                )
+
+            def get_inputs(self):
+                return (
+                    torch.randint(
+                        low=-127, high=127, size=(3, self.input_channels, 4, 4)
+                    ).type(dtype=torch.int8),
+                )
+
+        for groups in (1, 2):
+            for axis in (0, 1):
+                self._test(
+                    PerChannelConvTranspose2d(3 * groups, 5 * groups, groups, axis),
+                    quant_config=None,
+                    conv_count=1,
+                    delegated=axis == 1
+                    and groups
+                    == 1,  # xnnpack only support output channel axis quantization with groups == 1
+                )
+
+    def test_qs8_conv_transpose_2d_dqd_f32_weights(self):
+        class TransposeConv2dDQDf32weights(torch.nn.Module):
+            def __init__(self, input_channels, output_channels, groups, axis):
+                super().__init__()
+                self.input_channels = input_channels
+                self.output_channels = output_channels
+                self.axis = axis
+                self.groups = groups
+                self.transpose = True
+                self.weights = torch.nn.Parameter(
+                    torch.randn((input_channels, output_channels // groups, 4, 4)),
+                    requires_grad=False,
+                )
+
+                axis_size = self.weights.shape[axis]
+                self.scale = torch.nn.Parameter(torch.ones(axis_size) * 0.12345)
+                self.zero_point = torch.nn.Parameter(
+                    torch.zeros((axis_size,), dtype=torch.int64), requires_grad=False
+                )
+
+            def forward(self, x):
+                dequantize_input = (
+                    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
+                        x, 0.12345, 0, -127, 127, torch.int8
+                    )
+                )
+                x = torch.nn.functional.conv_transpose2d(
+                    dequantize_input, self.weights, groups=self.groups
+                )
+
+                return exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
+                    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default(
+                        x,
+                        0.12345,
+                        0,
+                        -127,
+                        127,
+                        torch.int8,
+                    ),
+                    0.12345,
+                    0,
+                    -127,
+                    127,
+                    torch.int8,
+                )
+
+            def get_inputs(self):
+                return (
+                    torch.randint(
+                        low=-127, high=127, size=(3, self.input_channels, 4, 4)
+                    ).type(dtype=torch.int8),
+                )
+
+        for groups in (1, 2):
+            for axis in (0, 1):
+                self._test(
+                    TransposeConv2dDQDf32weights(3 * groups, 5 * groups, groups, axis),
+                    quant_config=None,
+                    conv_count=1,
+                )

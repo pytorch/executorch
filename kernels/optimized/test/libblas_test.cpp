@@ -19,7 +19,7 @@
   _<int64_t, N>();                         \
   _<uint8_t, N>();                         \
   _<int32_t, N>();                         \
-  _<exec_aten::BFloat16, N>();
+  _<executorch::aten::BFloat16, N>();
 
 namespace {
 

@@ -32,7 +32,7 @@ Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](h
 Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.
 
 
-## Prerequsites (Hardware and Software)
+## Prerequisites (Hardware and Software)
 
 ### Host OS
 
@@ -59,7 +59,7 @@ This example is verified with SM8550 and SM8450.
    - Click the "Get Software" button to download a version of QNN SDK.
    - However, at the moment of updating this tutorial, the above website doesn't provide QNN SDK newer than 2.22.6.
    - The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.
-   - [QNN 2.26.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.26.0.240828.zip)
+   - [QNN 2.28.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.28.0.241029.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
@@ -340,7 +340,7 @@ The `<device_serial>` can be found by `adb devices` command.
 
 After the above command, pre-processed inputs and outputs are put in `$EXECUTORCH_ROOT/deeplab_v3` and `$EXECUTORCH_ROOT/deeplab_v3/outputs` folder.
 
-The command-line arguents are written in [utils.py](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/utils.py#L127).
+The command-line arguments are written in [utils.py](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/utils.py#L139).
 The model, inputs, and output location are passed to `qnn_executorch_runner` by `--model_path`, `--input_list_path`, and `--output_folder_path`.
 
 

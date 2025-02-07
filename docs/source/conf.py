@@ -22,6 +22,7 @@ import distutils.file_util
 import glob
 import os
 import sys
+from typing import Any
 
 import pytorch_sphinx_theme
 
@@ -43,6 +44,8 @@ author = "ExecuTorch Contributors"
 import os
 import sys
 
+FBCODE = "fbcode" in os.getcwd()
+
 extensions = [
     "breathe",
     "sphinx.ext.autodoc",
@@ -59,8 +62,12 @@ extensions = [
     "myst_parser",
     "sphinx_design",
     "sphinx_gallery.gen_gallery",
-    "executorch_custom_versions",
 ]
+
+if not FBCODE:
+    extensions += [
+        "executorch_custom_versions",
+    ]
 
 this_file_dir = os.path.abspath(os.path.dirname(__file__))
 doxygen_xml_dir = os.path.join(
@@ -103,7 +110,7 @@ myst_enable_extensions = [
 
 myst_heading_anchors = 4
 
-sphinx_gallery_conf = {
+sphinx_gallery_conf: dict[str, Any] = {
     "examples_dirs": ["tutorials_source"],
     "ignore_pattern": "template_tutorial.py",
     "gallery_dirs": ["tutorials"],
@@ -190,14 +197,14 @@ intersphinx_mapping = {
 
 # Custom directives defintions to create cards on main landing page
 
-from custom_directives import (
+from custom_directives import (  # type: ignore[import-not-found]
     CustomCardEnd,
     CustomCardItem,
     CustomCardStart,
     SupportedDevices,
     SupportedProperties,
 )
-from docutils.parsers import rst
+from docutils.parsers import rst  # type: ignore[import-untyped]
 
 # Register custom directives
 

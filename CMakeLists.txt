@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -146,10 +147,9 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
 endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
-# they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
-# disables exceptions and runtime type.
+# they can be properly gc'd. -s: strip symbol.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti"
+    "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
 )
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
@@ -157,14 +157,12 @@ endif()
 
 option(OPTIMIZE_SIZE "Build executorch runtime optimizing for binary size" OFF)
 if(OPTIMIZE_SIZE)
-  # -Os: Optimize for size
-  set(CMAKE_CXX_FLAGS_RELEASE "-Os ${CMAKE_CXX_FLAGS_RELEASE}")
+  # -Os: Optimize for size.
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Os")
 else()
   # -O2: Moderate opt.
-  set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
 endif()
-
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 
@@ -241,6 +239,13 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
+
+
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
+  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
+  set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
+endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
@@ -793,6 +798,35 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
   )
+
+  if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+
+    set(_pybind_training_dep_libs
+        ${TORCH_PYTHON_LIBRARY}
+        etdump
+        executorch
+        util
+        torch
+        extension_training
+    )
+
+    if(EXECUTORCH_BUILD_XNNPACK)
+      # need to explicitly specify XNNPACK and microkernels-prod
+      # here otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+      list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK microkernels-prod)
+    endif()
+
+    # pybind training
+    pybind11_add_module(_training_lib SHARED extension/training/pybindings/_training_lib.cpp)
+
+    target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_options(_training_lib PUBLIC ${_pybind_compile_options})
+    target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
+
+    install(TARGETS _training_lib
+            LIBRARY DESTINATION executorch/extension/training/pybindings
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
@@ -820,6 +854,14 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Generate lib to register quantized ops
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
+  endif()
+
+  if(EXECUTORCH_ENABLE_EVENT_TRACER)
+    if(EXECUTORCH_BUILD_DEVTOOLS)
+      list(APPEND _executor_runner_libs etdump flatccrt)
+    else()
+      message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
+    endif()
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})

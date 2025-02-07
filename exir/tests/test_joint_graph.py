@@ -84,13 +84,13 @@ class TestJointGraph(unittest.TestCase):
             et.executorch_program.execution_plan[0]
             .values[0]
             .val.allocation_info.memory_offset_low,
-            0,
+            96,
         )
         self.assertEqual(
             et.executorch_program.execution_plan[0]
             .values[1]
             .val.allocation_info.memory_offset_low,
-            48,
+            224,
         )
 
         loss = m(*example_inputs)

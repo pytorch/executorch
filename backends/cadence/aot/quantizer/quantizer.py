@@ -26,18 +26,18 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    OperatorConfig,
+    QuantizationAnnotation,
+    QuantizationConfig,
+    QuantizationSpec,
+)
 
 from torch import fx
 
 from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
-    OperatorConfig,
-    QuantizationAnnotation,
-    QuantizationConfig,
-    QuantizationSpec,
-)
 
 
 act_qspec = QuantizationSpec(
@@ -59,6 +59,13 @@ wgt_qspec = QuantizationSpec(
 )
 
 bias_qspec: Optional[QuantizationSpec] = None
+
+_default_qconfig = QuantizationConfig(
+    act_qspec,
+    act_qspec,
+    wgt_qspec,
+    None,
+)
 
 
 class CadenceAtenQuantizer(Quantizer):
@@ -140,31 +147,51 @@ class CadenceAtenQuantizer(Quantizer):
         return []
 
 
-class CadenceQuantizer(ComposableQuantizer):
-    def __init__(
-        self, quantization_config: Optional[QuantizationConfig] = None
-    ) -> None:
-        static_qconfig = (
-            QuantizationConfig(
-                act_qspec,
-                act_qspec,
-                wgt_qspec,
-                None,
-            )
-            if not quantization_config
-            else quantization_config
-        )
+def get_cadence_default_quantizer_list_with_config(
+    quantization_config: QuantizationConfig,
+) -> List[Quantizer]:
+    return [
+        CadenceAtenQuantizer(AddmmPattern(), quantization_config),
+        CadenceAtenQuantizer(BmmPattern(), quantization_config),
+        CadenceAtenQuantizer(Conv1dPattern(), quantization_config),
+        CadenceAtenQuantizer(Conv2dPattern(), quantization_config),
+        CadenceAtenQuantizer(LayerNormPattern(), quantization_config),
+        CadenceAtenQuantizer(LinearPattern(), quantization_config),
+        CadenceAtenQuantizer(MatmulPattern(), quantization_config),
+        CadenceAtenQuantizer(ReluPattern0(), quantization_config),
+        CadenceAtenQuantizer(ReluPattern1(), quantization_config),
+    ]
 
-        super().__init__(
-            [
-                CadenceAtenQuantizer(AddmmPattern(), static_qconfig),
-                CadenceAtenQuantizer(BmmPattern(), static_qconfig),
-                CadenceAtenQuantizer(Conv1dPattern(), static_qconfig),
-                CadenceAtenQuantizer(Conv2dPattern(), static_qconfig),
-                CadenceAtenQuantizer(LayerNormPattern(), static_qconfig),
-                CadenceAtenQuantizer(LinearPattern(), static_qconfig),
-                CadenceAtenQuantizer(MatmulPattern(), static_qconfig),
-                CadenceAtenQuantizer(ReluPattern0(), static_qconfig),
-                CadenceAtenQuantizer(ReluPattern1(), static_qconfig),
-            ]
-        )
+
+class CadenceQuantizer(ComposableQuantizer):
+    """
+    Generic CadenceQuantizer. Although it can be used directly, it is typically a base
+    class for explicitly defined quantizers (like CadenceDefaultQuantizer).
+    """
+
+    def __init__(self, quantizers: List[Quantizer]) -> None:
+        super().__init__(quantizers)
+
+
+class CadenceDefaultQuantizer(CadenceQuantizer):
+    """
+    Default quantizer for Cadence backend.
+    """
+
+    def __init__(self, qconfig: Optional[QuantizationConfig] = None) -> None:
+        if qconfig is None:
+            qconfig = _default_qconfig
+        quantizers = get_cadence_default_quantizer_list_with_config(qconfig)
+        super().__init__(quantizers)
+
+
+# Nop quantizer, used to run fp32 cases
+# Calls an empty list of quantizers (no quantization). Note
+# that we do not strictly need that class since we could call
+# CadenceQuantizer([]), but this is more explicit and
+# does not require knowledge of the internals of the base class.
+class CadenceNopQuantizer(CadenceQuantizer):
+    def __init__(
+        self,
+    ) -> None:
+        super().__init__([])

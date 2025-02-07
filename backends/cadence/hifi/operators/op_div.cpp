@@ -17,10 +17,10 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cmath>
 
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::Error;
 
 namespace cadence {
@@ -165,7 +165,7 @@ Tensor& div_out_mode(
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    exec_aten::optional<exec_aten::string_view> mode,
+    executorch::aten::optional<executorch::aten::string_view> mode,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,

@@ -19,18 +19,21 @@ using namespace ::testing;
 
 class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
  protected:
-  ::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&, exec_aten::Tensor&>
+  ::std::tuple<
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&>
   op_native_batch_norm_legit_no_training_out(
-      const exec_aten::Tensor& input,
-      const exec_aten::optional<exec_aten::Tensor>& weight,
-      const exec_aten::optional<exec_aten::Tensor>& bias,
-      const exec_aten::Tensor& running_mean,
-      const exec_aten::Tensor& running_var,
+      const executorch::aten::Tensor& input,
+      const executorch::aten::optional<executorch::aten::Tensor>& weight,
+      const executorch::aten::optional<executorch::aten::Tensor>& bias,
+      const executorch::aten::Tensor& running_mean,
+      const executorch::aten::Tensor& running_var,
       double momentum,
       double eps,
-      exec_aten::Tensor& out0,
-      exec_aten::Tensor& out1,
-      exec_aten::Tensor& out2) {
+      executorch::aten::Tensor& out0,
+      executorch::aten::Tensor& out1,
+      executorch::aten::Tensor& out2) {
     return torch::executor::aten::_native_batch_norm_legit_no_training_outf(
         context_,
         input,
@@ -44,23 +47,132 @@ class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
         out1,
         out2);
   }
+
+  template <executorch::aten::ScalarType DTYPE>
+  void test_2d_dtype() {
+    torch::executor::testing::TensorFactory<DTYPE> tf;
+
+    executorch::aten::Tensor input = tf.make(
+        {4, 7}, {2.876736640930176,  7.67944860458374,   5.701690196990967,
+                 9.299789428710938,  3.023690700531006,  5.315116882324219,
+                 7.185585021972656,  6.911304473876953,  7.61051082611084,
+                 1.4963287115097046, 0.7381612062454224, 8.588483810424805,
+                 6.583977699279785,  8.831110000610352,  0.8165055513381958,
+                 7.087201118469238,  5.572513580322266,  4.446897983551025,
+                 4.444573402404785,  6.254056930541992,  5.906398296356201,
+                 9.971039772033691,  3.5423521995544434, 7.452159881591797,
+                 9.93700122833252,   1.8560808897018433, 1.524025797843933,
+                 7.3222975730896});
+    executorch::aten::optional<executorch::aten::Tensor> weight =
+        executorch::aten::optional<executorch::aten::Tensor>(tf.make(
+            {7},
+            {8.287437438964844,
+             8.227645874023438,
+             6.65926456451416,
+             9.436124801635742,
+             4.119281768798828,
+             8.593960762023926,
+             2.3760855197906494}));
+    executorch::aten::optional<executorch::aten::Tensor> bias =
+        executorch::aten::optional<executorch::aten::Tensor>(tf.make(
+            {7},
+            {7.824275970458984,
+             6.84327507019043,
+             8.354326248168945,
+             8.773970603942871,
+             3.89609694480896,
+             3.0753469467163086,
+             3.1105971336364746}));
+    executorch::aten::Tensor running_mean = tf.make(
+        {7},
+        {9.700226783752441,
+         0.1234668493270874,
+         7.527220249176025,
+         8.993252754211426,
+         0.4736626148223877,
+         7.7135701179504395,
+         5.12320613861084});
+    executorch::aten::Tensor running_var = tf.make(
+        {7},
+        {3.585531234741211,
+         6.615292549133301,
+         0.24084866046905518,
+         5.175800323486328,
+         0.5886000394821167,
+         6.23909854888916,
+         1.5029621124267578});
+    double momentum = 0.1;
+    double eps = 0;
+    executorch::aten::Tensor out0 = tf.zeros({4, 7});
+    executorch::aten::Tensor out1 = tf.zeros({0});
+    executorch::aten::Tensor out2 = tf.zeros({0});
+    executorch::aten::Tensor out0_expected = tf.make(
+        {4, 7}, {-22.039867401123047, 31.014127731323242,  -16.416650772094727,
+                 10.04538631439209,   17.5877628326416,    -5.17673921585083,
+                 7.1078033447265625,  -4.381907939910889,  30.793603897094727,
+                 -73.48003387451172,  -25.46548080444336,  47.46636962890625,
+                 -0.8111140131950378, 10.29708194732666,   -31.056814193725586,
+                 29.119586944580078,  -18.16947364807129,  -10.082839965820312,
+                 25.216796875,        -1.9462348222732544, 4.628543376922607,
+                 9.00953483581543,    17.779958724975586,  7.335818767547607,
+                 12.688335418701172,  11.318607330322266,  -18.22031593322754,
+                 7.372773170471191});
+    executorch::aten::Tensor out1_expected = tf.make({0}, {});
+    executorch::aten::Tensor out2_expected = tf.make({0}, {});
+    op_native_batch_norm_legit_no_training_out(
+        input,
+        weight,
+        bias,
+        running_mean,
+        running_var,
+        momentum,
+        eps,
+        out0,
+        out1,
+        out2);
+    if (DTYPE == executorch::aten::ScalarType::Half ||
+        DTYPE == executorch::aten::ScalarType::BFloat16) {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out0,
+          out0_expected,
+          4e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out1,
+          out1_expected,
+          2e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out2,
+          out2_expected,
+          2e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+    } else {
+      EXPECT_TENSOR_CLOSE(out0, out0_expected);
+      EXPECT_TENSOR_CLOSE(out1, out1_expected);
+      EXPECT_TENSOR_CLOSE(out2, out2_expected);
+    }
+  }
 };
 
 class OpNativeBatchNormLegitOutTest : public OperatorTest {
  protected:
-  ::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&, exec_aten::Tensor&>
+  ::std::tuple<
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&>
   op_native_batch_norm_legit_out(
-      const exec_aten::Tensor& input,
-      const exec_aten::optional<exec_aten::Tensor>& weight,
-      const exec_aten::optional<exec_aten::Tensor>& bias,
-      exec_aten::Tensor& running_mean,
-      exec_aten::Tensor& running_var,
+      const executorch::aten::Tensor& input,
+      const executorch::aten::optional<executorch::aten::Tensor>& weight,
+      const executorch::aten::optional<executorch::aten::Tensor>& bias,
+      executorch::aten::Tensor& running_mean,
+      executorch::aten::Tensor& running_var,
       bool training,
       double momentum,
       double eps,
-      exec_aten::Tensor& out0,
-      exec_aten::Tensor& out1,
-      exec_aten::Tensor& out2) {
+      executorch::aten::Tensor& out0,
+      executorch::aten::Tensor& out1,
+      executorch::aten::Tensor& out2) {
     executorch::runtime::KernelRuntimeContext context{};
     return torch::executor::aten::_native_batch_norm_legit_outf(
         context,
@@ -80,17 +192,20 @@ class OpNativeBatchNormLegitOutTest : public OperatorTest {
 
 class OpNativeBatchNormLegitNoStatsOutTest : public OperatorTest {
  protected:
-  ::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&, exec_aten::Tensor&>
+  ::std::tuple<
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&,
+      executorch::aten::Tensor&>
   op_native_batch_norm_legit_no_stats_out(
-      const exec_aten::Tensor& input,
-      const exec_aten::optional<exec_aten::Tensor>& weight,
-      const exec_aten::optional<exec_aten::Tensor>& bias,
+      const executorch::aten::Tensor& input,
+      const executorch::aten::optional<executorch::aten::Tensor>& weight,
+      const executorch::aten::optional<executorch::aten::Tensor>& bias,
       bool training,
       double momentum,
       double eps,
-      exec_aten::Tensor& out0,
-      exec_aten::Tensor& out1,
-      exec_aten::Tensor& out2) {
+      executorch::aten::Tensor& out0,
+      executorch::aten::Tensor& out1,
+      executorch::aten::Tensor& out2) {
     return torch::executor::aten::_native_batch_norm_legit_outf(
         context_,
         input,
@@ -103,98 +218,80 @@ class OpNativeBatchNormLegitNoStatsOutTest : public OperatorTest {
         out1,
         out2);
   }
+
+  template <executorch::aten::ScalarType DTYPE>
+  void test_2d_dtype() {
+    torch::executor::testing::TensorFactory<DTYPE> tf;
+
+    executorch::aten::Tensor input =
+        tf.make({3, 4}, {0, 1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121});
+    executorch::aten::optional<executorch::aten::Tensor> weight =
+        executorch::aten::optional<executorch::aten::Tensor>();
+    executorch::aten::optional<executorch::aten::Tensor> bias =
+        executorch::aten::optional<executorch::aten::Tensor>();
+    bool training = true;
+    double momentum = 1e-3;
+    double eps = 1e-5;
+    executorch::aten::Tensor out0 = tf.zeros({3, 4});
+    executorch::aten::Tensor out1 = tf.zeros({4});
+    executorch::aten::Tensor out2 = tf.zeros({4});
+    executorch::aten::Tensor out0_expected = tf.make(
+        {3, 4},
+        {-0.98058063,
+         -1.03422451,
+         -1.06904495,
+         -1.09332705,
+         -0.39223224,
+         -0.31822300,
+         -0.26726127,
+         -0.23017406,
+         1.37281299,
+         1.35244739,
+         1.33630610,
+         1.32350123});
+    executorch::aten::Tensor out1_expected =
+        tf.make({4}, {26.66666603, 35.66666794, 46.66666794, 59.66666794});
+    executorch::aten::Tensor out2_expected =
+        tf.make({4}, {0.03677177, 0.02983340, 0.02505574, 0.02157882});
+    op_native_batch_norm_legit_no_stats_out(
+        input, weight, bias, training, momentum, eps, out0, out1, out2);
+    if (DTYPE == executorch::aten::ScalarType::Half ||
+        DTYPE == executorch::aten::ScalarType::BFloat16) {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out0,
+          out0_expected,
+          2e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out1,
+          out1_expected,
+          1e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out2,
+          out2_expected,
+          2e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+    } else {
+      EXPECT_TENSOR_CLOSE(out0, out0_expected);
+      EXPECT_TENSOR_CLOSE(out1, out1_expected);
+      EXPECT_TENSOR_CLOSE(out2, out2_expected);
+    }
+  }
 };
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest2D) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
-
-  exec_aten::Tensor input = tfFloat.make(
-      {4, 7}, {2.876736640930176,  7.67944860458374,   5.701690196990967,
-               9.299789428710938,  3.023690700531006,  5.315116882324219,
-               7.185585021972656,  6.911304473876953,  7.61051082611084,
-               1.4963287115097046, 0.7381612062454224, 8.588483810424805,
-               6.583977699279785,  8.831110000610352,  0.8165055513381958,
-               7.087201118469238,  5.572513580322266,  4.446897983551025,
-               4.444573402404785,  6.254056930541992,  5.906398296356201,
-               9.971039772033691,  3.5423521995544434, 7.452159881591797,
-               9.93700122833252,   1.8560808897018433, 1.524025797843933,
-               7.3222975730896});
-  exec_aten::optional<exec_aten::Tensor> weight =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
-          {7},
-          {8.287437438964844,
-           8.227645874023438,
-           6.65926456451416,
-           9.436124801635742,
-           4.119281768798828,
-           8.593960762023926,
-           2.3760855197906494}));
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
-          {7},
-          {7.824275970458984,
-           6.84327507019043,
-           8.354326248168945,
-           8.773970603942871,
-           3.89609694480896,
-           3.0753469467163086,
-           3.1105971336364746}));
-  exec_aten::Tensor running_mean = tfFloat.make(
-      {7},
-      {9.700226783752441,
-       0.1234668493270874,
-       7.527220249176025,
-       8.993252754211426,
-       0.4736626148223877,
-       7.7135701179504395,
-       5.12320613861084});
-  exec_aten::Tensor running_var = tfFloat.make(
-      {7},
-      {3.585531234741211,
-       6.615292549133301,
-       0.24084866046905518,
-       5.175800323486328,
-       0.5886000394821167,
-       6.23909854888916,
-       1.5029621124267578});
-  double momentum = 0.1;
-  double eps = 0;
-  exec_aten::Tensor out0 = tfFloat.zeros({4, 7});
-  exec_aten::Tensor out1 = tfFloat.zeros({0});
-  exec_aten::Tensor out2 = tfFloat.zeros({0});
-  exec_aten::Tensor out0_expected = tfFloat.make(
-      {4, 7}, {-22.039867401123047, 31.014127731323242,  -16.416650772094727,
-               10.04538631439209,   17.5877628326416,    -5.17673921585083,
-               7.1078033447265625,  -4.381907939910889,  30.793603897094727,
-               -73.48003387451172,  -25.46548080444336,  47.46636962890625,
-               -0.8111140131950378, 10.29708194732666,   -31.056814193725586,
-               29.119586944580078,  -18.16947364807129,  -10.082839965820312,
-               25.216796875,        -1.9462348222732544, 4.628543376922607,
-               9.00953483581543,    17.779958724975586,  7.335818767547607,
-               12.688335418701172,  11.318607330322266,  -18.22031593322754,
-               7.372773170471191});
-  exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
-  exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
-  op_native_batch_norm_legit_no_training_out(
-      input,
-      weight,
-      bias,
-      running_mean,
-      running_var,
-      momentum,
-      eps,
-      out0,
-      out1,
-      out2);
-  EXPECT_TENSOR_CLOSE(out0, out0_expected);
-  EXPECT_TENSOR_CLOSE(out1, out1_expected);
-  EXPECT_TENSOR_CLOSE(out2, out2_expected);
+#define TEST_ENTRY(ctype, dtype) \
+  test_2d_dtype<executorch::aten::ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
+#undef TEST_ENTRY
 }
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
-  exec_aten::Tensor input = tfFloat.make(
+  executorch::aten::Tensor input = tfFloat.make(
       {4, 7, 5}, {5.277339935302734,  5.94276237487793,     6.543086051940918,
                   2.411264181137085,  8.980886459350586,    2.7123653888702393,
                   9.466896057128906,  9.324702262878418,    1.9848430156707764,
@@ -242,8 +339,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
                   3.887125253677368,  9.278786659240723,    6.742891311645508,
                   5.01821756362915,   2.326876640319824,    7.939553737640381,
                   3.2622408866882324, 3.829448699951172});
-  exec_aten::optional<exec_aten::Tensor> weight =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
+  executorch::aten::optional<executorch::aten::Tensor> weight =
+      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {0.5193436145782471,
            4.531304836273193,
@@ -252,8 +349,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
            2.6848177909851074,
            7.309220314025879,
            2.2476916313171387}));
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
+  executorch::aten::optional<executorch::aten::Tensor> bias =
+      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {4.643010139465332,
            0.2791440486907959,
@@ -262,7 +359,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
            2.6499342918395996,
            5.721188545227051,
            5.901060104370117}));
-  exec_aten::Tensor running_mean = tfFloat.make(
+  executorch::aten::Tensor running_mean = tfFloat.make(
       {7},
       {5.818909645080566,
        5.325511932373047,
@@ -271,7 +368,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
        5.608961582183838,
        3.7719011306762695,
        6.7734270095825195});
-  exec_aten::Tensor running_var = tfFloat.make(
+  executorch::aten::Tensor running_var = tfFloat.make(
       {7},
       {8.8593168258667,
        3.440363883972168,
@@ -282,10 +379,10 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
        2.022289752960205});
   double momentum = 0.1;
   double eps = 0;
-  exec_aten::Tensor out0 = tfFloat.zeros({4, 7, 5});
-  exec_aten::Tensor out1 = tfFloat.zeros({0});
-  exec_aten::Tensor out2 = tfFloat.zeros({0});
-  exec_aten::Tensor out0_expected = tfFloat.make(
+  executorch::aten::Tensor out0 = tfFloat.zeros({4, 7, 5});
+  executorch::aten::Tensor out1 = tfFloat.zeros({0});
+  executorch::aten::Tensor out2 = tfFloat.zeros({0});
+  executorch::aten::Tensor out0_expected = tfFloat.make(
       {4, 7, 5}, {4.5485148429870605,  4.664620399475098,   4.76936674118042,
                   4.048431873321533,   5.194723129272461,   -6.104737281799316,
                   10.396490097045898,  10.049112319946289,  -7.8820648193359375,
@@ -333,8 +430,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
                   6.116993427276611,   24.63783073425293,   15.926804542541504,
                   3.1268203258514404,  -1.1270453929901123, 7.744210720062256,
                   0.3513677716255188,  1.2478822469711304});
-  exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
-  exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out1_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out2_expected = tfFloat.make({0}, {});
   op_native_batch_norm_legit_no_training_out(
       input,
       weight,
@@ -352,9 +449,10 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
-  exec_aten::Tensor input = tfFloat.make(
+  executorch::aten::Tensor input = tfFloat.make(
       {2, 4, 5, 5},
       {8.0573148727417,     2.2901253700256348,  2.783101797103882,
        2.095468044281006,   6.389344215393066,   6.702191352844238,
@@ -423,27 +521,27 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
        9.173870086669922,   3.781676769256592,   5.6734232902526855,
        3.301741600036621,   1.3799077272415161,  8.990988731384277,
        2.2520315647125244,  2.483280897140503});
-  exec_aten::optional<exec_aten::Tensor> weight =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
+  executorch::aten::optional<executorch::aten::Tensor> weight =
+      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
           {4},
           {1.8311285972595215,
            5.851841926574707,
            6.108979225158691,
            5.1755266189575195}));
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
+  executorch::aten::optional<executorch::aten::Tensor> bias =
+      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
           {4},
           {5.1375732421875,
            3.7950849533081055,
            2.406358242034912,
            5.785604476928711}));
-  exec_aten::Tensor running_mean = tfFloat.make(
+  executorch::aten::Tensor running_mean = tfFloat.make(
       {4},
       {2.8203158378601074,
        3.1786017417907715,
        1.9189423322677612,
        1.8829244375228882});
-  exec_aten::Tensor running_var = tfFloat.make(
+  executorch::aten::Tensor running_var = tfFloat.make(
       {4},
       {1.4411485195159912,
        7.426868438720703,
@@ -451,10 +549,10 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
        5.526189804077148});
   double momentum = 0.1;
   double eps = 0;
-  exec_aten::Tensor out0 = tfFloat.zeros({2, 4, 5, 5});
-  exec_aten::Tensor out1 = tfFloat.zeros({0});
-  exec_aten::Tensor out2 = tfFloat.zeros({0});
-  exec_aten::Tensor out0_expected = tfFloat.make(
+  executorch::aten::Tensor out0 = tfFloat.zeros({2, 4, 5, 5});
+  executorch::aten::Tensor out1 = tfFloat.zeros({0});
+  executorch::aten::Tensor out2 = tfFloat.zeros({0});
+  executorch::aten::Tensor out0_expected = tfFloat.make(
       {2, 4, 5, 5},
       {13.125737190246582,   4.328856468200684,    5.080809593200684,
        4.031939506530762,    10.581527709960938,   11.058723449707031,
@@ -523,8 +621,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
        21.83746910095215,    9.96592903137207,     14.130828857421875,
        8.909295082092285,    4.678154945373535,    21.43483543395996,
        6.598236560821533,    7.107358932495117});
-  exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
-  exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out1_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out2_expected = tfFloat.make({0}, {});
   op_native_batch_norm_legit_no_training_out(
       input,
       weight,
@@ -542,10 +640,10 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Double>
       tfDouble;
 
-  exec_aten::Tensor input = tfDouble.make(
+  executorch::aten::Tensor input = tfDouble.make(
       {3, 4, 3, 3},
       {0.09871780872344971, 5.7593607902526855,  4.542290687561035,
        9.888419151306152,   4.6276702880859375,  0.23040294647216797,
@@ -583,27 +681,27 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
        1.7936384677886963,  1.8733304738998413,  9.386192321777344,
        2.442445755004883,   2.2374587059020996,  1.6268903017044067,
        1.9272565841674805,  0.04978537559509277, 5.165012359619141});
-  exec_aten::optional<exec_aten::Tensor> weight =
-      exec_aten::optional<exec_aten::Tensor>(tfDouble.make(
+  executorch::aten::optional<executorch::aten::Tensor> weight =
+      executorch::aten::optional<executorch::aten::Tensor>(tfDouble.make(
           {4},
           {5.4100823402404785,
            3.3440847396850586,
            0.9714162349700928,
            0.6811875104904175}));
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>(tfDouble.make(
+  executorch::aten::optional<executorch::aten::Tensor> bias =
+      executorch::aten::optional<executorch::aten::Tensor>(tfDouble.make(
           {4},
           {6.839208126068115,
            6.471728801727295,
            3.077871799468994,
            4.0067667961120605}));
-  exec_aten::Tensor running_mean = tfDouble.make(
+  executorch::aten::Tensor running_mean = tfDouble.make(
       {4},
       {8.781468391418457,
        5.093882083892822,
        9.076446533203125,
        7.148240089416504});
-  exec_aten::Tensor running_var = tfDouble.make(
+  executorch::aten::Tensor running_var = tfDouble.make(
       {4},
       {1.0133814811706543,
        2.674386978149414,
@@ -611,10 +709,10 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
        9.597100257873535});
   double momentum = 0.1;
   double eps = 0;
-  exec_aten::Tensor out0 = tfDouble.zeros({3, 4, 3, 3});
-  exec_aten::Tensor out1 = tfDouble.zeros({0});
-  exec_aten::Tensor out2 = tfDouble.zeros({0});
-  exec_aten::Tensor out0_expected = tfDouble.make(
+  executorch::aten::Tensor out0 = tfDouble.zeros({3, 4, 3, 3});
+  executorch::aten::Tensor out1 = tfDouble.zeros({0});
+  executorch::aten::Tensor out2 = tfDouble.zeros({0});
+  executorch::aten::Tensor out0_expected = tfDouble.make(
       {3, 4, 3, 3},
       {-39.82401348817106,   -9.402336001242755,   -15.94316789328793,
        12.788231783114975,   -15.48431707375971,   -39.11630540562901,
@@ -652,8 +750,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
        2.829367353398184,    2.8468904728035618,   4.498860120209044,
        2.972030690911762,    2.9269570039352497,   2.792701843675069,
        2.858748044414565,    2.4459192831196264,   3.570683705559329});
-  exec_aten::Tensor out1_expected = tfDouble.make({0}, {});
-  exec_aten::Tensor out2_expected = tfDouble.make({0}, {});
+  executorch::aten::Tensor out1_expected = tfDouble.make({0}, {});
+  executorch::aten::Tensor out2_expected = tfDouble.make({0}, {});
   op_native_batch_norm_legit_no_training_out(
       input,
       weight,
@@ -671,9 +769,10 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
-  exec_aten::Tensor input = tfFloat.make(
+  executorch::aten::Tensor input = tfFloat.make(
       {4, 7, 5}, {4.1944355964660645,  3.537543296813965,  5.067144393920898,
                   9.735533714294434,   2.661299228668213,  0.43786585330963135,
                   8.926244735717773,   8.796754837036133,  2.2966713905334473,
@@ -721,9 +820,9 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
                   6.707937240600586,   0.946076512336731,  6.623589515686035,
                   5.87992000579834,    2.196932315826416,  8.085456848144531,
                   7.774395942687988,   8.86058235168457});
-  exec_aten::optional<exec_aten::Tensor> weight;
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
+  executorch::aten::optional<executorch::aten::Tensor> weight;
+  executorch::aten::optional<executorch::aten::Tensor> bias =
+      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {3.2798612117767334,
            7.070205211639404,
@@ -732,7 +831,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
            4.158933162689209,
            9.13807201385498,
            5.7105536460876465}));
-  exec_aten::Tensor running_mean = tfFloat.make(
+  executorch::aten::Tensor running_mean = tfFloat.make(
       {7},
       {8.596701622009277,
        8.133163452148438,
@@ -741,7 +840,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
        6.470483779907227,
        6.9614739418029785,
        5.237721920013428});
-  exec_aten::Tensor running_var = tfFloat.make(
+  executorch::aten::Tensor running_var = tfFloat.make(
       {7},
       {2.258641242980957,
        0.8535522222518921,
@@ -752,10 +851,10 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
        5.289167881011963});
   double momentum = 0.1;
   double eps = 0;
-  exec_aten::Tensor out0 = tfFloat.zeros({4, 7, 5});
-  exec_aten::Tensor out1 = tfFloat.zeros({0});
-  exec_aten::Tensor out2 = tfFloat.zeros({0});
-  exec_aten::Tensor out0_expected = tfFloat.make(
+  executorch::aten::Tensor out0 = tfFloat.zeros({4, 7, 5});
+  executorch::aten::Tensor out1 = tfFloat.zeros({0});
+  executorch::aten::Tensor out2 = tfFloat.zeros({0});
+  executorch::aten::Tensor out0_expected = tfFloat.make(
       {4, 7, 5}, {0.3506367802619934,  -0.08645286411046982, 0.9313285946846008,
                   4.037628650665283,   -0.669497013092041,   -1.259130597114563,
                   7.928630828857422,   7.788471698760986,    0.7528274059295654,
@@ -803,8 +902,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
                   8.805062294006348,   1.2371110916137695,   8.694275856018066,
                   5.989792346954346,   4.388367176055908,    6.94879674911499,
                   6.813542366027832,   7.285834312438965});
-  exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
-  exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out1_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out2_expected = tfFloat.make({0}, {});
   op_native_batch_norm_legit_no_training_out(
       input,
       weight,
@@ -824,9 +923,10 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
 TEST_F(
     OpNativeBatchNormLegitNoTrainingOutTest,
     SampleAtomicTestNoWeightNoBias) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
-  exec_aten::Tensor input = tfFloat.make(
+  executorch::aten::Tensor input = tfFloat.make(
       {2, 4, 2, 2},
       {2.628833770751953,   7.391754150390625,  9.153281211853027,
        2.480319023132324,   6.5120697021484375, 5.680999755859375,
@@ -839,15 +939,15 @@ TEST_F(
        0.1542043685913086,  3.606675863265991,  2.65787410736084,
        5.136600494384766,   6.950716972351074,  6.051759719848633,
        7.304986953735352,   6.186429977416992});
-  exec_aten::optional<exec_aten::Tensor> weight;
-  exec_aten::optional<exec_aten::Tensor> bias;
-  exec_aten::Tensor running_mean = tfFloat.make(
+  executorch::aten::optional<executorch::aten::Tensor> weight;
+  executorch::aten::optional<executorch::aten::Tensor> bias;
+  executorch::aten::Tensor running_mean = tfFloat.make(
       {4},
       {8.043643951416016,
        3.569627285003662,
        7.6375412940979,
        4.194377899169922});
-  exec_aten::Tensor running_var = tfFloat.make(
+  executorch::aten::Tensor running_var = tfFloat.make(
       {4},
       {7.512979507446289,
        0.0478285551071167,
@@ -855,10 +955,10 @@ TEST_F(
        1.9676220417022705});
   double momentum = 0.1;
   double eps = 0;
-  exec_aten::Tensor out0 = tfFloat.zeros({2, 4, 2, 2});
-  exec_aten::Tensor out1 = tfFloat.zeros({0});
-  exec_aten::Tensor out2 = tfFloat.zeros({0});
-  exec_aten::Tensor out0_expected = tfFloat.make(
+  executorch::aten::Tensor out0 = tfFloat.zeros({2, 4, 2, 2});
+  executorch::aten::Tensor out1 = tfFloat.zeros({0});
+  executorch::aten::Tensor out2 = tfFloat.zeros({0});
+  executorch::aten::Tensor out0_expected = tfFloat.make(
       {2, 4, 2, 2},
       {-1.975500464439392,  -0.23783083260059357, 0.40483206510543823,
        -2.0296835899353027, 13.454400062561035,   9.65431022644043,
@@ -871,8 +971,8 @@ TEST_F(
        -8.03031063079834,   -4.325490474700928,   -5.343642234802246,
        -2.6837403774261475, 1.9649964570999146,   1.3241291046142578,
        2.2175559997558594,  1.4201356172561646});
-  exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
-  exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out1_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out2_expected = tfFloat.make({0}, {});
   op_native_batch_norm_legit_no_training_out(
       input,
       weight,
@@ -890,9 +990,10 @@ TEST_F(
 }
 
 TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
-  exec_aten::Tensor input = tfFloat.make(
+  executorch::aten::Tensor input = tfFloat.make(
       {4, 7}, {2.876736640930176,  7.67944860458374,   5.701690196990967,
                9.299789428710938,  3.023690700531006,  5.315116882324219,
                7.185585021972656,  6.911304473876953,  7.61051082611084,
@@ -903,8 +1004,8 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
                9.971039772033691,  3.5423521995544434, 7.452159881591797,
                9.93700122833252,   1.8560808897018433, 1.524025797843933,
                7.3222975730896});
-  exec_aten::optional<exec_aten::Tensor> weight =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
+  executorch::aten::optional<executorch::aten::Tensor> weight =
+      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {8.287437438964844,
            8.227645874023438,
@@ -913,8 +1014,8 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
            4.119281768798828,
            8.593960762023926,
            2.3760855197906494}));
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>(tfFloat.make(
+  executorch::aten::optional<executorch::aten::Tensor> bias =
+      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {7.824275970458984,
            6.84327507019043,
@@ -923,7 +1024,7 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
            3.89609694480896,
            3.0753469467163086,
            3.1105971336364746}));
-  exec_aten::Tensor running_mean = tfFloat.make(
+  executorch::aten::Tensor running_mean = tfFloat.make(
       {7},
       {9.700226783752441,
        0.1234668493270874,
@@ -932,7 +1033,7 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
        0.4736626148223877,
        7.7135701179504395,
        5.12320613861084});
-  exec_aten::Tensor running_var = tfFloat.make(
+  executorch::aten::Tensor running_var = tfFloat.make(
       {7},
       {3.585531234741211,
        6.615292549133301,
@@ -944,10 +1045,10 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
   bool training = false;
   double momentum = 0.1;
   double eps = 0;
-  exec_aten::Tensor out0 = tfFloat.zeros({4, 7});
-  exec_aten::Tensor out1 = tfFloat.zeros({0});
-  exec_aten::Tensor out2 = tfFloat.zeros({0});
-  exec_aten::Tensor out0_expected = tfFloat.make(
+  executorch::aten::Tensor out0 = tfFloat.zeros({4, 7});
+  executorch::aten::Tensor out1 = tfFloat.zeros({0});
+  executorch::aten::Tensor out2 = tfFloat.zeros({0});
+  executorch::aten::Tensor out0_expected = tfFloat.make(
       {4, 7}, {-22.039867401123047, 31.014127731323242,  -16.416650772094727,
                10.04538631439209,   17.5877628326416,    -5.17673921585083,
                7.1078033447265625,  -4.381907939910889,  30.793603897094727,
@@ -958,8 +1059,8 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
                9.00953483581543,    17.779958724975586,  7.335818767547607,
                12.688335418701172,  11.318607330322266,  -18.22031593322754,
                7.372773170471191});
-  exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
-  exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out1_expected = tfFloat.make({0}, {});
+  executorch::aten::Tensor out2_expected = tfFloat.make({0}, {});
   op_native_batch_norm_legit_out(
       input,
       weight,
@@ -978,70 +1079,39 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest2D) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
-
-  exec_aten::Tensor input =
-      tfFloat.make({3, 4}, {0, 1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121});
-  exec_aten::optional<exec_aten::Tensor> weight =
-      exec_aten::optional<exec_aten::Tensor>();
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>();
-  bool training = true;
-  double momentum = 1e-3;
-  double eps = 1e-5;
-  exec_aten::Tensor out0 = tfFloat.zeros({3, 4});
-  exec_aten::Tensor out1 = tfFloat.zeros({4});
-  exec_aten::Tensor out2 = tfFloat.zeros({4});
-  exec_aten::Tensor out0_expected = tfFloat.make(
-      {3, 4},
-      {-0.98058063,
-       -1.03422451,
-       -1.06904495,
-       -1.09332705,
-       -0.39223224,
-       -0.31822300,
-       -0.26726127,
-       -0.23017406,
-       1.37281299,
-       1.35244739,
-       1.33630610,
-       1.32350123});
-  exec_aten::Tensor out1_expected =
-      tfFloat.make({4}, {26.66666603, 35.66666794, 46.66666794, 59.66666794});
-  exec_aten::Tensor out2_expected =
-      tfFloat.make({4}, {0.03677177, 0.02983340, 0.02505574, 0.02157882});
-  op_native_batch_norm_legit_no_stats_out(
-      input, weight, bias, training, momentum, eps, out0, out1, out2);
-  EXPECT_TENSOR_CLOSE(out0, out0_expected);
-  EXPECT_TENSOR_CLOSE(out1, out1_expected);
-  EXPECT_TENSOR_CLOSE(out2, out2_expected);
+#define TEST_ENTRY(ctype, dtype) \
+  test_2d_dtype<executorch::aten::ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
+#undef TEST_ENTRY
 }
 
 TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest3D) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
-  exec_aten::Tensor input = tfFloat.make(
+  executorch::aten::Tensor input = tfFloat.make(
       {2, 3, 4}, {0,   1,   4,   9,   16,  25,  36,  49,  64,  81,  100, 121,
                   144, 169, 196, 225, 256, 289, 324, 361, 400, 441, 484, 529});
-  exec_aten::optional<exec_aten::Tensor> weight =
-      exec_aten::optional<exec_aten::Tensor>();
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>();
+  executorch::aten::optional<executorch::aten::Tensor> weight =
+      executorch::aten::optional<executorch::aten::Tensor>();
+  executorch::aten::optional<executorch::aten::Tensor> bias =
+      executorch::aten::optional<executorch::aten::Tensor>();
   bool training = true;
   double momentum = 1e-3;
   double eps = 1e-5;
-  exec_aten::Tensor out0 = tfFloat.zeros({2, 3, 4});
-  exec_aten::Tensor out1 = tfFloat.zeros({3});
-  exec_aten::Tensor out2 = tfFloat.zeros({3});
-  exec_aten::Tensor out0_expected = tfFloat.make(
+  executorch::aten::Tensor out0 = tfFloat.zeros({2, 3, 4});
+  executorch::aten::Tensor out1 = tfFloat.zeros({3});
+  executorch::aten::Tensor out2 = tfFloat.zeros({3});
+  executorch::aten::Tensor out0_expected = tfFloat.make(
       {2, 3, 4},
       {-1.01045656, -0.99964952, -0.96722847, -0.91319335, -1.08850884,
        -1.02468753, -0.94668359, -0.85449719, -1.12558389, -1.03595889,
        -0.93578988, -0.82507670, 0.54575467,  0.81593025,  1.10771990,
        1.42112350,  0.61339414,  0.84740579,  1.09560001,  1.35797679,
        0.64582670,  0.86198103,  1.08867943,  1.32592189});
-  exec_aten::Tensor out1_expected = tfFloat.make({3}, {93.5, 169.5, 277.5});
-  exec_aten::Tensor out2_expected =
+  executorch::aten::Tensor out1_expected =
+      tfFloat.make({3}, {93.5, 169.5, 277.5});
+  executorch::aten::Tensor out2_expected =
       tfFloat.make({3}, {0.01080702, 0.00709126, 0.00527206});
   op_native_batch_norm_legit_no_stats_out(
       input, weight, bias, training, momentum, eps, out0, out1, out2);
@@ -1051,32 +1121,34 @@ TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest3D) {
 }
 
 TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest4D) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Float>
+      tfFloat;
 
-  exec_aten::Tensor input =
+  executorch::aten::Tensor input =
       tfFloat.make({2, 3, 2, 2}, {0,   1,   4,   9,   16,  25,  36,  49,
                                   64,  81,  100, 121, 144, 169, 196, 225,
                                   256, 289, 324, 361, 400, 441, 484, 529});
-  exec_aten::optional<exec_aten::Tensor> weight =
-      exec_aten::optional<exec_aten::Tensor>(
+  executorch::aten::optional<executorch::aten::Tensor> weight =
+      executorch::aten::optional<executorch::aten::Tensor>(
           tfFloat.make({3}, {1.1, 0.7, 0.3}));
-  exec_aten::optional<exec_aten::Tensor> bias =
-      exec_aten::optional<exec_aten::Tensor>(
+  executorch::aten::optional<executorch::aten::Tensor> bias =
+      executorch::aten::optional<executorch::aten::Tensor>(
           tfFloat.make({3}, {1.7, 2.2, 3.3}));
   bool training = true;
   double momentum = 1e-3;
   double eps = 1e-5;
-  exec_aten::Tensor out0 = tfFloat.zeros({2, 3, 2, 2});
-  exec_aten::Tensor out1 = tfFloat.zeros({3});
-  exec_aten::Tensor out2 = tfFloat.zeros({3});
-  exec_aten::Tensor out0_expected = tfFloat.make(
+  executorch::aten::Tensor out0 = tfFloat.zeros({2, 3, 2, 2});
+  executorch::aten::Tensor out1 = tfFloat.zeros({3});
+  executorch::aten::Tensor out2 = tfFloat.zeros({3});
+  executorch::aten::Tensor out0_expected = tfFloat.make(
       {2, 3, 2, 2},
       {0.58849782, 0.60038555, 0.63604873, 0.69548732, 1.43804383, 1.48271883,
        1.53732157, 1.60185206, 2.96232486, 2.98921227, 3.01926303, 3.05247688,
        2.30033016, 2.59752321, 2.91849184, 3.26323581, 2.62937593, 2.79318404,
        2.96691990, 3.15058374, 3.49374819, 3.55859423, 3.62660384, 3.69777656});
-  exec_aten::Tensor out1_expected = tfFloat.make({3}, {93.5, 169.5, 277.5});
-  exec_aten::Tensor out2_expected =
+  executorch::aten::Tensor out1_expected =
+      tfFloat.make({3}, {93.5, 169.5, 277.5});
+  executorch::aten::Tensor out2_expected =
       tfFloat.make({3}, {0.01080702, 0.00709126, 0.00527206});
   op_native_batch_norm_legit_no_stats_out(
       input, weight, bias, training, momentum, eps, out0, out1, out2);

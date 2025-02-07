@@ -17,7 +17,7 @@ retry () {
 }
 
 clean_executorch_install_folders() {
-  ./install_requirements.sh --clean
+  ./install_executorch.sh --clean
 }
 
 install_executorch() {
@@ -25,9 +25,9 @@ install_executorch() {
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
   if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
-    ./install_requirements.sh --pybind xnnpack --use-pt-pinned-commit
+    ./install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
   else
-    ./install_requirements.sh --pybind xnnpack
+    ./install_executorch.sh --pybind xnnpack
   fi
   # Just print out the list of packages for debugging
   pip list
@@ -38,6 +38,42 @@ install_pip_dependencies() {
   # Install all Python dependencies, including PyTorch
   pip install --progress-bar off -r requirements-ci.txt
   popd || return
+}
+
+install_domains() {
+  echo "Install torchvision and torchaudio"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+}
+
+install_pytorch_and_domains() {
+  pushd .ci/docker || return
+  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+  popd || return
+
+  git clone https://github.com/pytorch/pytorch.git
+
+  # Fetch the target commit
+  pushd pytorch || return
+  git checkout "${TORCH_VERSION}"
+  git submodule update --init --recursive
+
+  export USE_DISTRIBUTED=1
+  # Then build and install PyTorch
+  python setup.py bdist_wheel
+  pip install "$(echo dist/*.whl)"
+
+  # Grab the pinned audio and vision commits from PyTorch
+  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  export TORCHAUDIO_VERSION
+  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  export TORCHVISION_VERSION
+
+  install_domains
+
+  popd || return
+  # Print sccache stats for debugging
+  sccache --show-stats || true
 }
 
 install_flatc_from_source() {
@@ -57,17 +93,6 @@ install_flatc_from_source() {
   cp flatc "${EXEC_PATH}"
 
   popd || return
-}
-
-install_arm() {
-  # NB: This function could be used to install Arm dependencies
-  # Setup arm example environment (including TOSA tools)
-  git config --global user.email "github_executorch@arm.com"
-  git config --global user.name "Github Executorch"
-  bash examples/arm/setup.sh --i-agree-to-the-contained-eula
-
-  # Test tosa_reference flow
-  source examples/arm/ethos-u-scratch/setup_path.sh
 }
 
 build_executorch_runner_buck2() {

@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -101,7 +101,6 @@ class TestSimpleSplit(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check(["torch.ops.aten.split.Tensor"])
             .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -129,33 +128,14 @@ class TestSimpleSplit(unittest.TestCase):
     def test_split_tosa_BI(self, test_data: test_data_t):
         self._test_split_tosa_BI_pipeline(self.Split(), test_data)
 
-    @parameterized.expand(
-        [Split.test_data[0], Split.test_data[1], Split.test_data[2], Split.test_data[4]]
-    )
+    @parameterized.expand(Split.test_data)
     def test_split_u55_BI(self, test_data: test_data_t):
         self._test_split_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.Split(), test_data
         )
 
-    # TODO MLETORCH-350
-    @parameterized.expand([Split.test_data[3], Split.test_data[5]])
-    @unittest.expectedFailure
-    def test_split_u55_BI_skip(self, test_data: test_data_t):
-        self._test_split_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Split(), test_data
-        )
-
-    @parameterized.expand(
-        [Split.test_data[0], Split.test_data[1], Split.test_data[2], Split.test_data[4]]
-    )
+    @parameterized.expand(Split.test_data)
     def test_split_u85_BI(self, test_data: test_data_t):
-        self._test_split_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Split(), test_data
-        )
-
-    @parameterized.expand([Split.test_data[3], Split.test_data[5]])
-    @unittest.expectedFailure
-    def test_split_u85_BI_skip(self, test_data: test_data_t):
         self._test_split_ethosu_BI_pipeline(
             common.get_u85_compile_spec(), self.Split(), test_data
         )

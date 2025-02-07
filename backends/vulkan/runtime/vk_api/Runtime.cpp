@@ -92,28 +92,52 @@ VkInstance create_instance(const RuntimeConfig& config) {
   std::vector<const char*> enabled_layers;
   std::vector<const char*> enabled_extensions;
 
-  if (config.enable_validation_messages) {
-    std::vector<const char*> requested_layers{
-        // "VK_LAYER_LUNARG_api_dump",
-        "VK_LAYER_KHRONOS_validation",
-    };
-    std::vector<const char*> requested_extensions{
-#ifdef VK_EXT_debug_report
-        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
-#endif /* VK_EXT_debug_report */
-    };
+  std::vector<const char*> requested_layers;
+  std::vector<const char*> requested_extensions;
 
-    find_requested_layers_and_extensions(
-        enabled_layers,
-        enabled_extensions,
-        requested_layers,
-        requested_extensions);
+  if (config.enable_validation_messages) {
+    requested_layers.emplace_back("VK_LAYER_KHRONOS_validation");
+#ifdef VK_EXT_debug_report
+    requested_extensions.emplace_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+#endif /* VK_EXT_debug_report */
   }
+
+  VkInstanceCreateFlags instance_flags = 0;
+#ifdef __APPLE__
+  instance_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+  requested_extensions.emplace_back(
+      VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+#endif
+
+  find_requested_layers_and_extensions(
+      enabled_layers,
+      enabled_extensions,
+      requested_layers,
+      requested_extensions);
+
+  const void* instance_create_next = nullptr;
+  // VkConfig on Mac platforms does not expose debugPrintf settings for whatever
+  // reason so it has to be enabled manually.
+#if defined(__APPLE__) && defined(VULKAN_DEBUG)
+  std::vector<VkValidationFeatureEnableEXT> enabled_validation_features{
+      VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT,
+  };
+  VkValidationFeaturesEXT validation_features = {
+      VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT, // sType
+      nullptr, // pNext
+      static_cast<uint32_t>(
+          enabled_validation_features.size()), // enabledValidationFeatureCount
+      enabled_validation_features.data(), // pEnabledValidationFeatures
+      0,
+      nullptr, // pDisabledValidationFeatures
+  };
+  instance_create_next = &validation_features;
+#endif /* __APPLE__ && VULKAN_DEBUG */
 
   const VkInstanceCreateInfo instance_create_info{
       VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, // sType
-      nullptr, // pNext
-      0u, // flags
+      instance_create_next, // pNext
+      instance_flags, // flags
       &application_info, // pApplicationInfo
       static_cast<uint32_t>(enabled_layers.size()), // enabledLayerCount
       enabled_layers.data(), // ppEnabledLayerNames

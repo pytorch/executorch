@@ -17,12 +17,14 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using SizesArrayRef = exec_aten::ArrayRef<exec_aten::SizesType>;
-using DimOrderArrayRef = exec_aten::ArrayRef<exec_aten::DimOrderType>;
-using StridesArrayRef = exec_aten::ArrayRef<exec_aten::StridesType>;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
+using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
+using StridesArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::StridesType>;
 
 namespace {
 
@@ -41,7 +43,7 @@ void conv2d_impl(
     const CTYPE* const w_ptr,
     SizesArrayRef w_sizes,
     StridesArrayRef w_strides,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
     const char* const bias_ptr,
     LoadFn load_bias,
     IntArrayRef stride,
@@ -72,12 +74,12 @@ void conv2d_impl(
   size_t out_C_per_group = out_C / groups;
   size_t out_c_start = group * out_C_per_group;
 
-  exec_aten::SizesType in_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType in_coord[kTensorDimensionLimit];
   in_coord[0] = batch;
-  exec_aten::SizesType out_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType out_coord[kTensorDimensionLimit];
   out_coord[0] = batch;
   out_coord[1] = out_c;
-  exec_aten::SizesType w_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType w_coord[kTensorDimensionLimit];
 
   const int64_t stride_y = val_at(stride, 0);
   const int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
@@ -192,7 +194,7 @@ template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
 void convolution_wrapper(
     const Tensor& in,
     const Tensor& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
     LoadFn load_bias,
     IntArrayRef stride,
     IntArrayRef padding,
@@ -213,14 +215,14 @@ void convolution_wrapper(
   IntArrayRef dilation_ = dilation;
 
   // Define arrays for modified sizes, etc. which will potentially be used
-  exec_aten::SizesType in_sizes_arr[kTensorDimensionLimit];
-  exec_aten::DimOrderType in_dim_order_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType in_sizes_arr[kTensorDimensionLimit];
+  executorch::aten::DimOrderType in_dim_order_arr[kTensorDimensionLimit];
   size_t in_ndim;
-  exec_aten::SizesType weight_sizes_arr[kTensorDimensionLimit];
-  exec_aten::DimOrderType weight_dim_order_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType weight_sizes_arr[kTensorDimensionLimit];
+  executorch::aten::DimOrderType weight_dim_order_arr[kTensorDimensionLimit];
   size_t weight_ndim;
-  exec_aten::SizesType out_sizes_arr[kTensorDimensionLimit];
-  exec_aten::DimOrderType out_dim_order_arr[kTensorDimensionLimit];
+  executorch::aten::SizesType out_sizes_arr[kTensorDimensionLimit];
+  executorch::aten::DimOrderType out_dim_order_arr[kTensorDimensionLimit];
   size_t out_ndim;
 
   int64_t stride_arr[2];
@@ -266,18 +268,18 @@ void convolution_wrapper(
     dilation_ = {dilation_arr, 2};
   }
 
-  exec_aten::StridesType in_strides[kTensorDimensionLimit];
+  executorch::aten::StridesType in_strides[kTensorDimensionLimit];
   dim_order_to_stride_nocheck(
       in_sizes.data(), in_dim_order.data(), in_sizes.size(), in_strides);
 
-  exec_aten::StridesType weight_strides[kTensorDimensionLimit];
+  executorch::aten::StridesType weight_strides[kTensorDimensionLimit];
   dim_order_to_stride_nocheck(
       weight_sizes.data(),
       weight_dim_order.data(),
       weight_sizes.size(),
       weight_strides);
 
-  exec_aten::StridesType out_strides[kTensorDimensionLimit];
+  executorch::aten::StridesType out_strides[kTensorDimensionLimit];
   dim_order_to_stride_nocheck(
       out_sizes.data(), out_dim_order.data(), out_sizes.size(), out_strides);
 
@@ -347,7 +349,7 @@ Tensor& convolution_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
@@ -377,7 +379,7 @@ Tensor& convolution_out(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   size_t output_ndim = 0;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   get_convolution_out_target_size(
       in,
       weight,

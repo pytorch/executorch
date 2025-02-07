@@ -8,6 +8,23 @@ import torch
 
 
 # module with related operator only
+class Abs(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.abs(x)
+
+
+class AdaptiveAvgPool2D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
+        return adaptive_avg_pool(x)
+
+
 class Add(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -33,12 +50,20 @@ class AddConstantLong(torch.nn.Module):
 
 
 class Arange(torch.nn.Module):
-    def __init__(self, x):
+    def __init__(self, start, end, step, dtype):
         super().__init__()
-        self.x = x
+        self.start = start
+        self.end = end
+        self.step = step
+        self.dtype = dtype
 
     def forward(self, y):
-        return torch.arange(self.x, dtype=torch.float32) + y
+        return (
+            torch.arange(
+                start=self.start, end=self.end, step=self.step, dtype=self.dtype
+            )
+            + y
+        )
 
 
 class AvgPoolModule(torch.nn.Module):
@@ -248,6 +273,18 @@ class Conv1dReluLogSoftmax(torch.nn.Module):
         x = torch.nn.functional.relu(self.conv(x))
         x = self.logsoftmax(x)
         return x
+
+
+class Conv2dArgmin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            3, 16, 7, bias=True, stride=2, padding=3, dilation=1
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.argmin(x, dim=0, keepdim=True)
 
 
 class Conv2dAvgPool2d(torch.nn.Module):
@@ -511,12 +548,38 @@ class Embedding(torch.nn.Module):
         return self.embedding(x)
 
 
+class Equal(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return x == y
+
+
+class EqualConstant(torch.nn.Module):
+    def __init__(self, constant):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return x == self.constant
+
+
 class ExpandCopy(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
         return x.expand(3, 4)
+
+
+class FullLike(torch.nn.Module):
+    def __init__(self, fill):
+        super().__init__()
+        self.fill = fill
+
+    def forward(self, x):
+        return torch.min(x, torch.full_like(x, self.fill))
 
 
 class Gelu(torch.nn.Module):
@@ -526,6 +589,40 @@ class Gelu(torch.nn.Module):
 
     def forward(self, x):
         return self.gelu(x)
+
+
+class GreaterEqual(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return x >= y
+
+
+class GreaterThan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return x > y
+
+
+class GreaterEqualConstant(torch.nn.Module):
+    def __init__(self, constant):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return x >= self.constant
+
+
+class GreaterThanConstant(torch.nn.Module):
+    def __init__(self, constant):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return x > self.constant
 
 
 class GroupNorm(torch.nn.Module):
@@ -596,14 +693,35 @@ class IndexPut(torch.nn.Module):
         return k_out
 
 
-class LayerNorm(torch.nn.Module):
+class LargeTensorLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6)
+        hidden_dim = 4096
+        self.linear1 = torch.nn.Linear(512, hidden_dim)
+        self.linear2 = torch.nn.Linear(hidden_dim, 512)
+
+    def forward(self, x):
+        x1 = self.linear1(x) + self.linear1(x)
+        return self.linear2(x1)
+
+
+class LayerNorm(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6, bias=bias)
         self.linear = torch.nn.Linear(768, 196)
 
     def forward(self, x):
         return self.linear(self.layer_norm(x))
+
+
+class LayerNormAdd(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer_norm = torch.nn.LayerNorm([512], eps=1e-6, bias=False)
+
+    def forward(self, x, y):
+        return self.layer_norm(x) + y
 
 
 class LeakyReLUDefault(torch.nn.Module):
@@ -624,6 +742,40 @@ class LeakyReLUCustom(torch.nn.Module):
         return self.leaky_relu(x)
 
 
+class LessEqual(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return x <= y
+
+
+class LessThan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return x < y
+
+
+class LessEqualConstant(torch.nn.Module):
+    def __init__(self, constant):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return x <= self.constant
+
+
+class LessThanConstant(torch.nn.Module):
+    def __init__(self, constant):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return self.constant < x
+
+
 class Linear(torch.nn.Module):
     def __init__(self, use_bias: bool = True):
         super().__init__()
@@ -631,6 +783,14 @@ class Linear(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class Log(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.log(x)
 
 
 class LogSoftmax(torch.nn.Module):
@@ -670,6 +830,22 @@ class MeanWOKeppDim(torch.nn.Module):
 
     def forward(self, x):
         return torch.mean(x, (-1, -2))
+
+
+class Maximum(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.maximum(x, y)
+
+
+class Minimum(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.minimum(x, y)
 
 
 class Mul(torch.nn.Module):
@@ -716,6 +892,14 @@ class MultiheadAttention(torch.nn.Module):
     def forward(self, x):
         attn_output, _ = self.multi_head_attention(x, x, x, need_weights=False)
         return attn_output
+
+
+class Neg(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.neg(x)
 
 
 class Pad(torch.nn.Module):
@@ -793,6 +977,14 @@ class Relu(torch.nn.Module):
 
     def forward(self, x):
         return self.relu(x)
+
+
+class Repeat(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.repeat(1, 2, 3, 4)
 
 
 class Reshape(torch.nn.Module):

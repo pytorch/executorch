@@ -90,7 +90,7 @@ class MatchArgRanksPass(ExportPass):
                 continue
 
             # Calculate max rank of all inputs to node
-            max_rank = 1
+            max_rank = 0
             for arg in node.args:
                 if isinstance(arg, Node):
                     shape = get_first_fake_tensor(arg).shape

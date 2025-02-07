@@ -76,7 +76,7 @@ TrainingModule::execute_forward_backward(
     size_t name_index = 0;
     for (size_t grad_index = grad_start; grad_index < param_start;
          ++grad_index, ++name_index) {
-      exec_aten::string_view fqn = fqn_list.at(name_index).toString();
+      executorch::aten::string_view fqn = fqn_list.at(name_index).toString();
       gradients_map.insert({fqn, outputs.get().at(grad_index).toTensor()});
     }
   }
@@ -84,9 +84,11 @@ TrainingModule::execute_forward_backward(
   return user_outputs;
 }
 
-runtime::Result<const std::map<exec_aten::string_view, exec_aten::Tensor>>
+runtime::Result<
+    const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
 TrainingModule::named_parameters(const std::string& method_name) {
-  std::map<exec_aten::string_view, exec_aten::Tensor> named_parameters;
+  std::map<executorch::aten::string_view, executorch::aten::Tensor>
+      named_parameters;
   const std::string fqn_method_name = fqn_method_prefix + method_name;
   const std::string parameters_method_name =
       parameters_method_prefix + method_name;
@@ -117,14 +119,15 @@ TrainingModule::named_parameters(const std::string& method_name) {
   size_t name_index = 0;
   for (size_t param_index = param_start; param_index < method->outputs_size();
        ++param_index, ++name_index) {
-    exec_aten::string_view fqn = fqn_list.at(name_index).toString();
-    exec_aten::Tensor param = method->get_output(param_index).toTensor();
+    executorch::aten::string_view fqn = fqn_list.at(name_index).toString();
+    executorch::aten::Tensor param = method->get_output(param_index).toTensor();
     named_parameters.insert({fqn, param});
   }
   return named_parameters;
 }
 
-runtime::Result<const std::map<exec_aten::string_view, exec_aten::Tensor>>
+runtime::Result<
+    const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
 TrainingModule::named_gradients(const std::string& method_name) {
   if (method_named_gradients_.find(method_name) ==
       method_named_gradients_.end()) {

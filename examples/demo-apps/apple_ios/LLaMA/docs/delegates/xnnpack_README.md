@@ -32,9 +32,12 @@ git submodule update --init
 Install dependencies
 
 ```
-./install_requirements.sh
+./install_executorch.sh
 ```
-
+Optional: Use the --pybind flag to install with pybindings.
+```
+./install_executorch.sh --pybind xnnpack
+```
 ## Prepare Models
 In this demo app, we support text-only inference with up-to-date Llama models and image reasoning inference with LLaVA 1.5.
 * You can request and download model weights for Llama through Meta official [website](https://llama.meta.com/).
@@ -127,9 +130,9 @@ While we recommended using the latest prebuilt package pre-configured with the X
 
 Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependencies`, and update the package dependencies to any of the available options below:
 
-- Branch --> swiftpm-0.4.0.20241120 (amend to match the latest nightly build)
-- Branch --> 0.4.0
-- Branch --> 0.3.0
+- Branch --> swiftpm-0.5.0.20250130 (amend to match the latest nightly build)
+- Branch --> swiftpm-0.5.0
+- Branch --> swiftpm-0.4.0
 
 ### 2.2 Manually build the package locally and link them
 
@@ -138,7 +141,7 @@ Note: You should only use this step if the prebuilt package doesn't work for you
 If you need to manually build the package, run the following command in your terminal
 ```
 # Install a compatible version of Buck2
-BUCK2_RELEASE_DATE="2024-05-15"
+BUCK2_RELEASE_DATE="2024-12-16"
 BUCK2_ARCHIVE="buck2-aarch64-apple-darwin.zst"
 BUCK2=".venv/bin/buck2"
 

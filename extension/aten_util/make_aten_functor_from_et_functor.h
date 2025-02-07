@@ -106,7 +106,7 @@ struct type_convert<
             torch::executor::Tensor>>>
     final {
   explicit type_convert(ATensor value)
-      : value_(value),
+      : value_(value.contiguous()),
         converted_(from_blob(
             value_.mutable_data_ptr(),
             {value_.sizes().begin(), value_.sizes().end()},
@@ -117,7 +117,7 @@ struct type_convert<
   }
 
  private:
-  ATensor value_;
+  typename remove_const_ref<ATensor>::type value_;
   TensorPtr converted_;
 };
 

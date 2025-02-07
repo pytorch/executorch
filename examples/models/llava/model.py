@@ -12,8 +12,12 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 import torch
-from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama.llama_transformer import Transformer
+from executorch.examples.models.llama.model_args import ModelArgs
 
+from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+)
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
@@ -62,6 +66,7 @@ class Llava(torch.nn.Module):
         self.text_model = Transformer(self.text_model_args)
         # use custom op for SDPA.
         if use_sdpa_with_kv_cache_op:
+            self.text_model = replace_kv_cache_with_custom_kv_cache(self.text_model)
             self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
@@ -203,7 +208,7 @@ class Llava(torch.nn.Module):
     ) -> torch.Tensor:
         """Input is one token. Return logits for next token."""
         token_embeds = self.embed_tokens(token).unsqueeze(0)
-        return self.text_model.forward(None, input_pos, token_embeds)
+        return self.text_model.forward(None, {"input_pos": input_pos}, token_embeds)
 
     def image_embedding(self, images: torch.Tensor) -> torch.Tensor:
         preprocessed_img = self.image_preprocess(images)
@@ -231,7 +236,9 @@ class Llava(torch.nn.Module):
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
         # returns the prefilled token length too, because the text model generates one logits in each forward call.
-        return embeds.shape[1], self.text_model.forward(None, torch.tensor([0]), embeds)
+        return embeds.shape[1], self.text_model.forward(
+            None, {"input_pos": torch.tensor([0])}, embeds
+        )
 
     # reference prefill using the text model in HF
     def prefill_ref(

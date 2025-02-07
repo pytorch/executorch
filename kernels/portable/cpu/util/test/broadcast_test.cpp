@@ -18,8 +18,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::testing::TensorFactory;
 using torch::executor::broadcast_tensor;

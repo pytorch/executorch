@@ -18,8 +18,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -125,7 +125,7 @@ Tensor& scatter_src_out(
 
   constexpr auto name = "scatter.src_out";
 
-  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     scatter_src_helper<CTYPE>(in, dim, index, src, out);
   });
 
@@ -158,7 +158,7 @@ Tensor& scatter_value_out(
     CTYPE_VAL val;
     utils::extract_scalar(value, &val);
 
-    ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
       scatter_value_helper<CTYPE>(in, dim, index, val, out);
     });
   });

@@ -28,7 +28,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
+using executorch::aten::ArrayRef;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendInterface;
@@ -337,6 +337,10 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
 
   Result<Program> program = Program::load(&loader.get());
   ASSERT_EQ(program.error(), Error::Ok);
+
+  auto method_meta = program->method_meta("forward");
+  EXPECT_EQ(method_meta->uses_backend(StubBackend::kName), true);
+  EXPECT_EQ(method_meta->uses_backend("INVALID_BACKEND_NAME"), false);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method_res = program->load_method("forward", &mmm.get());

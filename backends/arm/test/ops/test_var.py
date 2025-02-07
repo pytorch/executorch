@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -15,9 +15,10 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
-
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
 
@@ -112,13 +113,11 @@ class TestVar(unittest.TestCase):
         test_data: torch.Tensor,
         target_str: str = None,
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        compile_spec = common.get_tosa_compile_spec(tosa_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
+            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .to_edge()
@@ -135,7 +134,8 @@ class TestVar(unittest.TestCase):
         test_data: torch.Tensor,
         target_str: str = None,
     ):
-        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
+        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
+        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
@@ -158,10 +158,8 @@ class TestVar(unittest.TestCase):
     def test_var_tosa_BI(self, test_tensor: torch.Tensor, keepdim, correction):
         self._test_var_tosa_BI_pipeline(self.Var(), (test_tensor, keepdim, correction))
 
-    # Expected to fail as this is not supported on u55.
     @parameterized.expand(Var.test_parameters)
-    @unittest.expectedFailure
-    def test_var_u55_BI_xfails(self, test_tensor: torch.Tensor, keepdim, correction):
+    def test_var_u55_BI(self, test_tensor: torch.Tensor, keepdim, correction):
         self._test_var_ethosu_BI_pipeline(
             self.Var(),
             common.get_u55_compile_spec(),
@@ -196,18 +194,6 @@ class TestVar(unittest.TestCase):
             (test_tensor, dim, keepdim, correction),
         )
 
-    # Expected to fail as this is not supported on u55.
-    @parameterized.expand(VarDim.test_parameters_u55_xfails)
-    @unittest.expectedFailure
-    def test_var_dim_u55_BI_xfails(
-        self, test_tensor: torch.Tensor, dim, keepdim, correction
-    ):
-        self._test_var_ethosu_BI_pipeline(
-            self.VarDim(),
-            common.get_u55_compile_spec(),
-            (test_tensor, dim, keepdim, correction),
-        )
-
     @parameterized.expand(VarDim.test_parameters)
     def test_var_dim_u85_BI(self, test_tensor: torch.Tensor, dim, keepdim, correction):
         self._test_var_ethosu_BI_pipeline(
@@ -232,10 +218,8 @@ class TestVar(unittest.TestCase):
             self.VarCorrection(), (test_tensor, dim, keepdim, correction)
         )
 
-    # Expected to fail as this is not supported on u55.
     @parameterized.expand(VarCorrection.test_parameters)
-    @unittest.expectedFailure
-    def test_var_correction_u55_BI_xfails(
+    def test_var_correction_u55_BI(
         self, test_tensor: torch.Tensor, dim, keepdim, correction
     ):
         self._test_var_ethosu_BI_pipeline(

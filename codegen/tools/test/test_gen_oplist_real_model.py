@@ -13,7 +13,7 @@ from executorch.codegen.tools.gen_oplist import (
     _get_operators,
 )
 
-from libfb.py import parutil
+from libfb.py import parutil  # type: ignore[import-not-found]
 
 MODEL_PATH: Final[str] = parutil.get_file_path("ModuleLinear.pte", pkg=__package__)
 

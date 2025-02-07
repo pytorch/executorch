@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,6 +17,10 @@ logger.setLevel(logging.WARNING)
 
 
 class CastInt64ToInt32Pass(ExportPass):
+    """
+    Cast int64 buffers to int32 if the int64 data is in int32 range.
+    """
+
     def __init__(self, exported_program: torch.export.ExportedProgram):
         super(CastInt64ToInt32Pass, self).__init__()
         self.exported_program = exported_program

@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -6,7 +6,7 @@
 
 import unittest
 
-from typing import List, Optional, Tuple, Union
+from typing import List, Tuple, Union
 
 import pytest
 
@@ -25,7 +25,6 @@ class Conv1d(torch.nn.Module):
 
     def __init__(
         self,
-        inputs: Optional[torch.Tensor] = None,
         length=8,
         nbr_conv=1,  # Number of chained convs
         in_channels: Union[List, int, None] = None,
@@ -75,11 +74,10 @@ class Conv1d(torch.nn.Module):
         if not isinstance(padding_mode, List):
             padding_mode = [padding_mode]
 
-        # Generate test data if not provided
-        if inputs is None:
-            self.inputs = (torch.randn(batches, in_channels[0], length).to(dtype),)
-        else:
-            self.inputs = (inputs,)
+        self.batches = batches
+        self.in_channels = in_channels
+        self.length = length
+        self.dtype = dtype
 
         # Build chain of convs
         for i in range(self.nbr_convs):
@@ -100,7 +98,9 @@ class Conv1d(torch.nn.Module):
             )
 
     def get_inputs(self):
-        return self.inputs
+        return (
+            torch.randn(self.batches, self.in_channels[0], self.length).to(self.dtype),
+        )
 
     def forward(self, x):
         for i in range(self.nbr_convs):
@@ -180,6 +180,47 @@ conv1d_3_1x3x224_st2_pd1 = Conv1d(
     batches=1,
 )
 
+conv1d_7_1x3x16_st2_pd1_dl2 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=7,
+    stride=2,
+    padding=1,
+    dilation=2,
+    length=16,
+    batches=1,
+)
+conv1d_7_1x3x15_st1_pd0_dl1 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=7,
+    stride=1,
+    padding=0,
+    dilation=1,
+    length=15,
+    batches=1,
+)
+conv1d_5_1x3x14_st5_pd0_dl1 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=5,
+    stride=5,
+    padding=0,
+    dilation=1,
+    length=14,
+    batches=1,
+)
+conv1d_5_1x3x9_st5_pd0_dl1 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=5,
+    stride=5,
+    padding=0,
+    dilation=1,
+    length=9,
+    batches=1,
+)
+
 two_conv1d_nobias = Conv1d(
     nbr_conv=2,
     length=256,
@@ -214,6 +255,10 @@ testsuite = [
     ("2_1x2x14_st2", conv1d_2_1x2x14_st2),
     ("5_3x2x128_st1", conv1d_5_3x2x128_st1),
     ("3_1x3x224_st2_pd1", conv1d_3_1x3x224_st2_pd1),
+    ("7_1x3x16_st2_pd1_dl2_needs_adjust_pass", conv1d_7_1x3x16_st2_pd1_dl2),
+    ("7_1x3x15_st1_pd0_dl1_needs_adjust_pass", conv1d_7_1x3x15_st1_pd0_dl1),
+    ("5_1x3x14_st5_pd0_dl1_needs_adjust_pass", conv1d_5_1x3x14_st5_pd0_dl1),
+    ("5_1x3x9_st5_pd0_dl1_needs_adjust_pass", conv1d_5_1x3x9_st5_pd0_dl1),
     ("two_conv1d_nobias", two_conv1d_nobias),
     ("two_conv1d", two_conv1d),
 ]
@@ -228,7 +273,7 @@ class TestConv1D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
@@ -250,7 +295,7 @@ class TestConv1D(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
@@ -291,17 +336,12 @@ class TestConv1D(unittest.TestCase):
     def test_conv1d_tosa_BI(self, test_name, model):
         self._test_conv1d_tosa_BI_pipeline(model, model.get_inputs())
 
-    # Expeted to fail as Conv1D requires transpoes which isn't supported on u55
     @parameterized.expand(testsuite)
     @pytest.mark.corstone_fvp
-    @unittest.expectedFailure
     def test_conv1d_u55_BI(self, test_name, model):
         self._test_conv1d_ethosu_BI_pipeline(
             model, common.get_u55_compile_spec(), model.get_inputs()
         )
-
-    # This specific test case has numerical errors on FVP, MLETORCH-520.
-    testsuite.remove(("5_3x2x128_st1", conv1d_5_3x2x128_st1))
 
     @parameterized.expand(testsuite)
     @pytest.mark.corstone_fvp

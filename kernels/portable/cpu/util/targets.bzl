@@ -31,6 +31,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:advanced_index_util",
             "//executorch/kernels/portable/cpu/util:slice_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:upsample_util",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -72,6 +73,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             ":repeat_util",
+            ":tensor_util",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -260,6 +262,27 @@ def define_common_targets():
         name = "slice_util",
         srcs = ["slice_util.cpp"],
         exported_headers = ["slice_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "tensor_util",
+        srcs = ["tensor_util.cpp"],
+        exported_headers = ["tensor_util.h"],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "upsample_util",
+        srcs = ["upsample_util.cpp"],
+        exported_headers = ["upsample_util.h"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],

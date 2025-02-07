@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -128,8 +129,17 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   #
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
+
+  if(EXECUTORCH_ENABLE_EVENT_TRACER)
+    if(EXECUTORCH_BUILD_DEVTOOLS)
+      list(APPEND xnn_executor_runner_libs etdump)
+    else()
+      message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
+    endif()
+  endif()
+
   target_link_libraries(
-    xnn_executor_runner xnnpack_backend gflags portable_ops_lib
+    xnn_executor_runner gflags portable_ops_lib ${xnn_executor_runner_libs}
   )
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()

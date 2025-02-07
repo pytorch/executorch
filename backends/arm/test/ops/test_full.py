@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -76,15 +76,12 @@ class TestFull(unittest.TestCase):
         self,
         module: torch.nn.Module,
         test_data: Tuple,
-        permute_memory_to_nhwc: bool,
     ):
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=permute_memory_to_nhwc
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -134,7 +131,7 @@ class TestFull(unittest.TestCase):
 
     def test_const_full_nhwc_tosa_BI(self):
         _input = torch.rand((2, 2, 3, 3)) * 10
-        self._test_full_tosa_BI_pipeline(self.AddConstFull(), (_input,), True)
+        self._test_full_tosa_BI_pipeline(self.AddConstFull(), (_input,))
 
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_tosa_MI(self, test_tensor: Tuple):
@@ -144,22 +141,18 @@ class TestFull(unittest.TestCase):
 
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_tosa_BI(self, test_tensor: Tuple):
-        self._test_full_tosa_BI_pipeline(self.AddVariableFull(), test_tensor, False)
+        self._test_full_tosa_BI_pipeline(self.AddVariableFull(), test_tensor)
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
     def test_full_u55_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u55_pipeline(
             self.AddVariableFull(),
             test_tensor,
         )
 
-    # Mismatch in provided number of inputs and model signature, MLETORCH 519
     @parameterized.expand(AddVariableFull.test_parameters)
     @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
     def test_full_u85_BI(self, test_tensor: Tuple):
         self._test_full_tosa_u85_pipeline(
             self.AddVariableFull(),

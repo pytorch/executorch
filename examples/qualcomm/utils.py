@@ -256,7 +256,7 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
-    custom_pass_config=frozenset(),
+    passes_job=None,
     qat_training_data=None,
 ):
     """
@@ -296,9 +296,9 @@ def build_executorch_binary(
             annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
 
         quantized_model = convert_pt2e(annotated_model)
-        edge_prog = capture_program(quantized_model, inputs, custom_pass_config)
+        edge_prog = capture_program(quantized_model, inputs, passes_job)
     else:
-        edge_prog = capture_program(model, inputs, custom_pass_config)
+        edge_prog = capture_program(model, inputs, passes_job)
 
     backend_options = generate_htp_compiler_spec(
         use_fp16=False if quant_dtype else True
@@ -564,6 +564,8 @@ def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None
         for idx, data in enumerate(inputs):
             for i, d in enumerate(data):
                 file_name = f"{dest_path}/input_{idx}_{i}.raw"
+                if not isinstance(d, torch.Tensor):
+                    d = torch.tensor(d)
                 d.detach().numpy().tofile(file_name)
                 input_files.append(file_name)
 

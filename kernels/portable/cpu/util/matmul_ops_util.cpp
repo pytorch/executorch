@@ -14,7 +14,7 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 bool check_addmm_args(
     const Tensor& in,

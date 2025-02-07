@@ -18,19 +18,19 @@
 using namespace ::testing;
 using executorch::runtime::testing::TensorFactory;
 
-exec_aten::Tensor op_sdpa_with_kv_cache(
-    const exec_aten::Tensor& query,
-    const exec_aten::Tensor& key,
-    const exec_aten::Tensor& value,
-    exec_aten::Tensor& key_cache,
-    exec_aten::Tensor& value_cache,
+executorch::aten::Tensor op_sdpa_with_kv_cache(
+    const executorch::aten::Tensor& query,
+    const executorch::aten::Tensor& key,
+    const executorch::aten::Tensor& value,
+    executorch::aten::Tensor& key_cache,
+    executorch::aten::Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
-    const exec_aten::optional<exec_aten::Tensor>& attn_mask,
+    const executorch::aten::optional<executorch::aten::Tensor>& attn_mask,
     double dropout_p,
     bool is_causal,
-    exec_aten::optional<double> scale,
-    exec_aten::Tensor& out) {
+    executorch::aten::optional<double> scale,
+    executorch::aten::Tensor& out) {
   executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::sdpa_with_kv_cache_out(
       context,
@@ -80,9 +80,9 @@ Missing tests:
 5. Different dtypes, fp16, bf16, double (or expect throw)
 */
 TEST(OpScaledDotProductAttentionTest, BasicTest) {
-  TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
-  exec_aten::Tensor query = tfFloat.make(
+  executorch::aten::Tensor query = tfFloat.make(
       {1, 1, 4, 4},
       {0.8823,
        0.9150,
@@ -100,7 +100,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
        0.5677,
        0.7411,
        0.4294});
-  exec_aten::Tensor key = tfFloat.make(
+  executorch::aten::Tensor key = tfFloat.make(
       {1, 1, 4, 4},
       {0.8854,
        0.5739,
@@ -118,7 +118,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
        0.0062,
        0.9516,
        0.0753});
-  exec_aten::Tensor value = tfFloat.make(
+  executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 4, 4},
       {0.8860,
        0.5832,
@@ -136,19 +136,19 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
        0.2814,
        0.7886,
        0.5895});
-  exec_aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor key_cache_1 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor value_cache_1 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor key_cache_2 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor value_cache_2 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::optional<exec_aten::Tensor> attn_mask;
+  executorch::aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor key_cache_1 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor value_cache_1 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor key_cache_2 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor value_cache_2 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
-  exec_aten::optional<double> scale;
+  executorch::aten::optional<double> scale;
 
   // start pos: 0 layer id 0
-  exec_aten::Tensor ret_expected_0 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_0 = tfFloat.make(
       {1, 1, 4, 4},
       {0.8860,
        0.5832,
@@ -168,8 +168,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
        0.5895});
 
   std::vector<int32_t> out_size = {1, 1, 4, 4};
-  exec_aten::Tensor out = tfFloat.zeros(out_size);
-  exec_aten::Tensor ret = op_sdpa_with_kv_cache(
+  executorch::aten::Tensor out = tfFloat.zeros(out_size);
+  executorch::aten::Tensor ret = op_sdpa_with_kv_cache(
       query,
       key,
       value,
@@ -185,7 +185,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_0, 1e-4, 1e-4);
 
   // start pos: 0 layer id 2
-  exec_aten::Tensor ret_expected_1 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_1 = tfFloat.make(
       {1, 1, 4, 4},
       {0.8860,
        0.5832,
@@ -220,7 +220,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_1, 1e-4, 1e-4);
 
   // start pos: 1 layer id 0
-  exec_aten::Tensor ret_expected_2 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_2 = tfFloat.make(
       {1, 1, 4, 4},
       {0.8860,
        0.5832,
@@ -255,7 +255,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_2, 1e-4, 1e-4);
 
   // start pos: 1 layer id 1
-  exec_aten::Tensor ret_expected_3 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_3 = tfFloat.make(
       {1, 1, 4, 4},
       {0.6486,
        0.4270,
@@ -290,7 +290,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_3, 1e-4, 1e-4);
 
   // start pos: 2 layer id 1
-  exec_aten::Tensor ret_expected_4 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_4 = tfFloat.make(
       {1, 1, 4, 4},
       {0.7490,
        0.4930,
@@ -325,7 +325,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_4, 1e-4, 1e-4);
 
   // start pos: 2 layer id 2
-  exec_aten::Tensor ret_expected_5 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_5 = tfFloat.make(
       {1, 1, 4, 4},
       {0.7490,
        0.4930,
@@ -361,44 +361,44 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
 }
 
 TEST(OpScaledDotProductAttentionTest, LargerTest) {
-  TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
-  exec_aten::Tensor query = tfFloat.make(
+  executorch::aten::Tensor query = tfFloat.make(
       {1, 1, 7, 4}, {0.8823, 0.9150, 0.3829, 0.9593, 0.3904, 0.6009, 0.2566,
                      0.7936, 0.9408, 0.1332, 0.9346, 0.5936, 0.8694, 0.5677,
                      0.7411, 0.4294, 0.8854, 0.5739, 0.2666, 0.6274, 0.2696,
                      0.4414, 0.2969, 0.8317, 0.1053, 0.2695, 0.3588, 0.1994});
-  exec_aten::Tensor key = tfFloat.make(
+  executorch::aten::Tensor key = tfFloat.make(
       {1, 1, 7, 4}, {0.5472, 0.0062, 0.9516, 0.0753, 0.8860, 0.5832, 0.3376,
                      0.8090, 0.5779, 0.9040, 0.5547, 0.3423, 0.6343, 0.3644,
                      0.7104, 0.9464, 0.7890, 0.2814, 0.7886, 0.5895, 0.7539,
                      0.1952, 0.0050, 0.3068, 0.1165, 0.9103, 0.6440, 0.7071});
-  exec_aten::Tensor value = tfFloat.make(
+  executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 7, 4}, {0.6581, 0.4913, 0.8913, 0.1447, 0.5315, 0.1587, 0.6542,
                      0.3278, 0.6532, 0.3958, 0.9147, 0.2036, 0.2018, 0.2018,
                      0.9497, 0.6666, 0.9811, 0.0874, 0.0041, 0.1088, 0.1637,
                      0.7025, 0.6790, 0.9155, 0.2418, 0.1591, 0.7653, 0.2979});
-  exec_aten::Tensor key_cache_0 = tfFloat.zeros({1, 8, 7, 4});
-  exec_aten::Tensor value_cache_0 = tfFloat.zeros({1, 8, 7, 4});
-  exec_aten::Tensor key_cache_1 = tfFloat.zeros({1, 8, 7, 4});
-  exec_aten::Tensor value_cache_1 = tfFloat.zeros({1, 8, 7, 4});
-  exec_aten::Tensor key_cache_2 = tfFloat.zeros({1, 8, 7, 4});
-  exec_aten::Tensor value_cache_2 = tfFloat.zeros({1, 8, 7, 4});
-  exec_aten::optional<exec_aten::Tensor> attn_mask;
+  executorch::aten::Tensor key_cache_0 = tfFloat.zeros({1, 8, 7, 4});
+  executorch::aten::Tensor value_cache_0 = tfFloat.zeros({1, 8, 7, 4});
+  executorch::aten::Tensor key_cache_1 = tfFloat.zeros({1, 8, 7, 4});
+  executorch::aten::Tensor value_cache_1 = tfFloat.zeros({1, 8, 7, 4});
+  executorch::aten::Tensor key_cache_2 = tfFloat.zeros({1, 8, 7, 4});
+  executorch::aten::Tensor value_cache_2 = tfFloat.zeros({1, 8, 7, 4});
+  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
-  exec_aten::optional<double> scale;
+  executorch::aten::optional<double> scale;
 
   // start pos: 0 layer id 0
-  exec_aten::Tensor ret_expected_0 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_0 = tfFloat.make(
       {1, 1, 7, 4}, {0.6581, 0.4913, 0.8913, 0.1447, 0.5315, 0.1587, 0.6542,
                      0.3278, 0.6532, 0.3958, 0.9147, 0.2036, 0.2018, 0.2018,
                      0.9497, 0.6666, 0.9811, 0.0874, 0.0041, 0.1088, 0.1637,
                      0.7025, 0.6790, 0.9155, 0.2418, 0.1591, 0.7653, 0.2979});
 
   std::vector<int32_t> out_size = {1, 1, 7, 4};
-  exec_aten::Tensor out = tfFloat.zeros(out_size);
-  exec_aten::Tensor ret = op_sdpa_with_kv_cache(
+  executorch::aten::Tensor out = tfFloat.zeros(out_size);
+  executorch::aten::Tensor ret = op_sdpa_with_kv_cache(
       query,
       key,
       value,
@@ -414,7 +414,7 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_0, 1e-4, 1e-4);
 
   // start pos: 0 layer id 2
-  exec_aten::Tensor ret_expected_1 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_1 = tfFloat.make(
       {1, 1, 7, 4}, {0.6581, 0.4913, 0.8913, 0.1447, 0.5315, 0.1587, 0.6542,
                      0.3278, 0.6532, 0.3958, 0.9147, 0.2036, 0.2018, 0.2018,
                      0.9497, 0.6666, 0.9811, 0.0874, 0.0041, 0.1088, 0.1637,
@@ -436,7 +436,7 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_1, 1e-4, 1e-4);
 
   // start pos: 1 layer id 0
-  exec_aten::Tensor ret_expected_2 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_2 = tfFloat.make(
       {1, 1, 7, 4}, {0.6581, 0.4913, 0.8913, 0.1447, 0.5315, 0.1587, 0.6542,
                      0.3278, 0.6532, 0.3958, 0.9147, 0.2036, 0.2018, 0.2018,
                      0.9497, 0.6666, 0.9811, 0.0874, 0.0041, 0.1088, 0.1637,
@@ -458,7 +458,7 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_2, 1e-4, 1e-4);
 
   // start pos: 1 layer id 1
-  exec_aten::Tensor ret_expected_3 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_3 = tfFloat.make(
       {1, 1, 7, 4}, {0.4038, 0.3015, 0.5469, 0.0888, 0.3566, 0.1065, 0.4389,
                      0.2199, 0.4354, 0.2639, 0.6097, 0.1358, 0.1412, 0.1412,
                      0.6645, 0.4664, 0.6599, 0.0588, 0.0027, 0.0732, 0.0929,
@@ -480,7 +480,7 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_3, 1e-4, 1e-4);
 
   // start pos: 2 layer id 1
-  exec_aten::Tensor ret_expected_4 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_4 = tfFloat.make(
       {1, 1, 7, 4}, {0.5005, 0.3737, 0.6779, 0.1101, 0.4268, 0.1275, 0.5254,
                      0.2633, 0.5225, 0.3166, 0.7317, 0.1629, 0.1661, 0.1661,
                      0.7819, 0.5488, 0.7891, 0.0703, 0.0033, 0.0875, 0.1185,
@@ -502,7 +502,7 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_4, 1e-4, 1e-4);
 
   // start pos: 2 layer id 2
-  exec_aten::Tensor ret_expected_5 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_5 = tfFloat.make(
       {1, 1, 7, 4}, {0.5005, 0.3737, 0.6779, 0.1101, 0.4268, 0.1275, 0.5254,
                      0.2633, 0.5225, 0.3166, 0.7317, 0.1629, 0.1661, 0.1661,
                      0.7819, 0.5488, 0.7891, 0.0703, 0.0033, 0.0875, 0.1185,
@@ -525,9 +525,9 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
 }
 
 TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
-  TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
-  exec_aten::Tensor query = tfFloat.make(
+  executorch::aten::Tensor query = tfFloat.make(
       {1, 1, 4, 4},
       {0.8823,
        0.9150,
@@ -545,7 +545,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
        0.5677,
        0.7411,
        0.4294});
-  exec_aten::Tensor key = tfFloat.make(
+  executorch::aten::Tensor key = tfFloat.make(
       {1, 1, 4, 4},
       {0.8854,
        0.5739,
@@ -563,7 +563,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
        0.0062,
        0.9516,
        0.0753});
-  exec_aten::Tensor value = tfFloat.make(
+  executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 4, 4},
       {0.8860,
        0.5832,
@@ -581,19 +581,19 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
        0.2814,
        0.7886,
        0.5895});
-  exec_aten::Tensor attn_mask = tfFloat.make({1, 1}, {0});
-  exec_aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor key_cache_1 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor value_cache_1 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor key_cache_2 = tfFloat.zeros({1, 5, 4, 4});
-  exec_aten::Tensor value_cache_2 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor attn_mask = tfFloat.make({1, 1}, {0});
+  executorch::aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor key_cache_1 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor value_cache_1 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor key_cache_2 = tfFloat.zeros({1, 5, 4, 4});
+  executorch::aten::Tensor value_cache_2 = tfFloat.zeros({1, 5, 4, 4});
   double dropout_p = 0;
   bool is_causal = false;
-  exec_aten::optional<double> scale;
+  executorch::aten::optional<double> scale;
 
   // start pos: 0 layer id 0
-  exec_aten::Tensor ret_expected_0 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_0 = tfFloat.make(
       {1, 1, 4, 4},
       {0.8860,
        0.5832,
@@ -613,8 +613,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
        0.5895});
 
   std::vector<int32_t> out_size = {1, 1, 4, 4};
-  exec_aten::Tensor out = tfFloat.zeros(out_size);
-  exec_aten::Tensor ret = op_sdpa_with_kv_cache(
+  executorch::aten::Tensor out = tfFloat.zeros(out_size);
+  executorch::aten::Tensor ret = op_sdpa_with_kv_cache(
       query,
       key,
       value,
@@ -630,7 +630,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_0, 1e-4, 1e-4);
 
   // start pos: 0 layer id 2
-  exec_aten::Tensor ret_expected_1 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_1 = tfFloat.make(
       {1, 1, 4, 4},
       {0.8860,
        0.5832,
@@ -666,7 +666,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
 
   attn_mask = tfFloat.make({1, 2}, {0, 0});
   // start pos: 1 layer id 0
-  exec_aten::Tensor ret_expected_2 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_2 = tfFloat.make(
       {1, 1, 4, 4},
       {0.8860,
        0.5832,
@@ -701,7 +701,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_2, 1e-4, 1e-4);
 
   // start pos: 1 layer id 1
-  exec_aten::Tensor ret_expected_3 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_3 = tfFloat.make(
       {1, 1, 4, 4},
       {0.6486,
        0.4270,
@@ -737,7 +737,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
 
   attn_mask = tfFloat.make({1, 3}, {0, 0, 0});
   // start pos: 2 layer id 1
-  exec_aten::Tensor ret_expected_4 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_4 = tfFloat.make(
       {1, 1, 4, 4},
       {0.7490,
        0.4930,
@@ -772,7 +772,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
   EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected_4, 1e-4, 1e-4);
 
   // start pos: 2 layer id 2
-  exec_aten::Tensor ret_expected_5 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_5 = tfFloat.make(
       {1, 1, 4, 4},
       {0.7490,
        0.4930,
@@ -808,37 +808,37 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
 }
 
 TEST(OpScaledDotProductAttentionTest, SequenceTest) {
-  TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
-  exec_aten::Tensor query = tfFloat.make(
+  executorch::aten::Tensor query = tfFloat.make(
       {1, 1, 8, 4},
       {0.1261, 0.5031, 0.1117, 0.3905, 0.3625, 0.9328, 0.6549, 0.4128,
        0.5845, 0.3557, 0.6965, 0.6978, 0.6343, 0.3051, 0.9266, 0.4278,
        0.3053, 0.8132, 0.9075, 0.9976, 0.6481, 0.3296, 0.7539, 0.9290,
        0.0096, 0.4381, 0.1590, 0.5932, 0.7068, 0.3967, 0.4582, 0.7251});
-  exec_aten::Tensor key = tfFloat.make(
+  executorch::aten::Tensor key = tfFloat.make(
       {1, 1, 8, 4},
       {0.4160, 0.0801, 0.9001, 0.2483, 0.4451, 0.5472, 0.4700, 0.0297,
        0.7294, 0.2729, 0.2407, 0.6195, 0.2391, 0.2689, 0.3315, 0.3122,
        0.2912, 0.3652, 0.6299, 0.0954, 0.1974, 0.5073, 0.5695, 0.7761,
        0.1488, 0.6596, 0.7842, 0.7776, 0.0343, 0.3092, 0.0702, 0.1836});
-  exec_aten::Tensor value = tfFloat.make(
+  executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 8, 4},
       {0.7785, 0.4253, 0.7124, 0.2065, 0.5760, 0.1976, 0.7499, 0.2813,
        0.3746, 0.0662, 0.5017, 0.9747, 0.7427, 0.2332, 0.5067, 0.4452,
        0.0975, 0.8920, 0.5081, 0.6053, 0.2981, 0.2660, 0.5824, 0.6849,
        0.6121, 0.2590, 0.9854, 0.4264, 0.1938, 0.2661, 0.9922, 0.5000});
 
-  exec_aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 8, 4});
-  exec_aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 8, 4});
+  executorch::aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 8, 4});
+  executorch::aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 8, 4});
 
-  exec_aten::optional<exec_aten::Tensor> attn_mask;
+  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
-  exec_aten::optional<double> scale;
+  executorch::aten::optional<double> scale;
 
   // start pos: 0 layer id 0
-  exec_aten::Tensor ret_expected_0 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_0 = tfFloat.make(
       {1, 1, 8, 4},
       {0.7785, 0.4253, 0.7124, 0.2065, 0.5760, 0.1976, 0.7499, 0.2813,
        0.3746, 0.0662, 0.5017, 0.9747, 0.7427, 0.2332, 0.5067, 0.4452,
@@ -846,8 +846,8 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
        0.6121, 0.2590, 0.9854, 0.4264, 0.1938, 0.2661, 0.9922, 0.5000});
 
   std::vector<int32_t> out_size = {1, 1, 8, 4};
-  exec_aten::Tensor out = tfFloat.zeros(out_size);
-  exec_aten::Tensor ret = op_sdpa_with_kv_cache(
+  executorch::aten::Tensor out = tfFloat.zeros(out_size);
+  executorch::aten::Tensor ret = op_sdpa_with_kv_cache(
       query,
       key,
       value,
@@ -881,7 +881,7 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
        0.7504, 0.6705, 0.0189, 0.9809, 0.4145, 0.0328, 0.9936, 0.2965,
        0.4646, 0.9576, 0.1534, 0.1463, 0.5813, 0.4331, 0.6152, 0.0806,
        0.5150, 0.2776, 0.2542, 0.0422, 0.7651, 0.5963, 0.0773, 0.8968});
-  exec_aten::Tensor ret_expected_1 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_1 = tfFloat.make(
       {1, 1, 8, 4},
       {0.5203, 0.2639, 0.6188, 0.2066, 0.7836, 0.0872, 0.7335, 0.7256,
        0.5940, 0.4189, 0.2199, 0.9784, 0.5461, 0.1132, 0.7983, 0.3561,
@@ -922,7 +922,7 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
        0.7425, 0.0729, 0.9303, 0.9842, 0.6361, 0.1863, 0.7433, 0.5852,
        0.6360, 0.6643, 0.8807, 0.2851, 0.3875, 0.6364, 0.5545, 0.9032,
        0.2374, 0.4818, 0.5934, 0.3672, 0.8409, 0.5547, 0.0379, 0.4458});
-  exec_aten::Tensor ret_expected_2 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_2 = tfFloat.make(
       {1, 1, 8, 4},
       {0.6350, 0.3426, 0.6582, 0.2484, 0.4391, 0.3419, 0.6962, 0.4399,
        0.6321, 0.3475, 0.3754, 0.9798, 0.5721, 0.1344, 0.7829, 0.4233,
@@ -963,7 +963,7 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
        0.1608, 0.5514, 0.5479, 0.5692, 0.0784, 0.0251, 0.7301, 0.9288,
        0.0563, 0.6852, 0.1319, 0.5313, 0.9652, 0.8793, 0.1344, 0.8093,
        0.7612, 0.4992, 0.9844, 0.3014, 0.3836, 0.2473, 0.5719, 0.6324});
-  exec_aten::Tensor ret_expected_3 = tfFloat.make(
+  executorch::aten::Tensor ret_expected_3 = tfFloat.make(
       {1, 1, 8, 4},
       {0.6441, 0.3571, 0.7319, 0.2624, 0.4506, 0.3619, 0.5749, 0.4930,
        0.4860, 0.3924, 0.4596, 0.8517, 0.4312, 0.1060, 0.7579, 0.5796,

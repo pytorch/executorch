@@ -13,9 +13,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using SizesType = exec_aten::SizesType;
-using Tensor = exec_aten::Tensor;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
+using SizesType = executorch::aten::SizesType;
+using Tensor = executorch::aten::Tensor;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 
 namespace {
 

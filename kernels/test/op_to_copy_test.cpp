@@ -21,10 +21,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::MemoryFormat;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::MemoryFormat;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 // To further emphasize the accuracy of our op_to, we test the conversion
@@ -37,8 +37,8 @@ typedef std::map<
           std::variant<
             std::vector<float>,
             std::vector<double>,
-            std::vector<exec_aten::Half>,
-            std::vector<exec_aten::BFloat16>>>
+            std::vector<executorch::aten::Half>,
+            std::vector<executorch::aten::BFloat16>>>
         FloatingTypeToDataMap;
 
 typedef std::map<
@@ -108,7 +108,7 @@ class OpToTest : public OperatorTest {
       Tensor ret = op_to_copy_out(
           /*self=*/input,
           /*non_blocking=*/false,
-          exec_aten::MemoryFormat::Contiguous,
+          executorch::aten::MemoryFormat::Contiguous,
           output);
 
       Tensor expected = tf_out.make(test_case.sizes, data_out);
@@ -135,7 +135,7 @@ class OpToTest : public OperatorTest {
     Tensor ret = op_to_copy_out(
         /*self=*/input,
         /*non_blocking=*/false,
-        exec_aten::MemoryFormat::Contiguous,
+        executorch::aten::MemoryFormat::Contiguous,
         output);
 
     Tensor expected = tf_out.make({(int)data_out.size()}, data_out);
@@ -163,7 +163,7 @@ class OpToTest : public OperatorTest {
     Tensor ret = op_to_copy_out(
         /*self=*/input,
         /*non_blocking=*/false,
-        exec_aten::MemoryFormat::Contiguous,
+        executorch::aten::MemoryFormat::Contiguous,
         output);
 
     Tensor expected = tf_out.make({(int)data_out.size()}, data_out);
@@ -205,7 +205,7 @@ class OpToTest : public OperatorTest {
     Tensor ret = op_to_copy_out(
         /*self=*/input,
         /*non_blocking=*/false,
-        exec_aten::MemoryFormat::Contiguous,
+        executorch::aten::MemoryFormat::Contiguous,
         output);
 
     Tensor expected = tf_out.make(test_case.sizes, test_case.data_out);
@@ -383,8 +383,8 @@ TEST_F(OpToTest, HardcodeFloatConvertInt) {
       -0.30919688936285893988};
   // clang-format on
 
-  std::vector<exec_aten::Half> half_data;
-  std::vector<exec_aten::BFloat16> bf16_data;
+  std::vector<executorch::aten::Half> half_data;
+  std::vector<executorch::aten::BFloat16> bf16_data;
   for (auto d : double_data) {
     half_data.emplace_back(d);
     bf16_data.emplace_back(d);
@@ -403,8 +403,8 @@ TEST_F(OpToTest, HardcodeFloatConvertInt) {
   FloatingTypeToDataMap floating_point_data;
   floating_point_data[typeid(float)] = float_data;
   floating_point_data[typeid(double)] = double_data;
-  floating_point_data[typeid(exec_aten::Half)] = half_data;
-  floating_point_data[typeid(exec_aten::BFloat16)] = bf16_data;
+  floating_point_data[typeid(executorch::aten::Half)] = half_data;
+  floating_point_data[typeid(executorch::aten::BFloat16)] = bf16_data;
 
   // Gathering all int data together for better traversial
   IntTypeToDataMap int_data;
@@ -438,7 +438,7 @@ TEST_F(OpToTest, MismatchedSizesDie) {
       op_to_copy_out(
           input,
           /*non_blocking=*/false,
-          exec_aten::MemoryFormat::Contiguous,
+          executorch::aten::MemoryFormat::Contiguous,
           out));
 }
 
@@ -460,14 +460,14 @@ TEST_F(OpToTest, MismatchedMemoryFormatDies) {
       op_to_copy_out(
           input,
           /*non_blocking=*/false,
-          static_cast<exec_aten::MemoryFormat>(55),
+          static_cast<executorch::aten::MemoryFormat>(55),
           out));
   // memory format can be null
   EXPECT_TENSOR_EQ(
       op_to_copy_out(
           input,
           /*non_blocking=*/false,
-          /*memory_format=*/exec_aten::nullopt,
+          /*memory_format=*/executorch::aten::nullopt,
           out),
       input);
 }
@@ -485,7 +485,7 @@ TEST_F(OpToTest, MismatchedBlockingDie) {
       op_to_copy_out(
           input,
           /*non_blocking=*/true,
-          exec_aten::MemoryFormat::Contiguous,
+          executorch::aten::MemoryFormat::Contiguous,
           out));
 }
 

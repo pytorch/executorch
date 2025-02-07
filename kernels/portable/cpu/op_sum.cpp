@@ -14,8 +14,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& sum_dim_out(
     KernelRuntimeContext& ctx,
@@ -43,10 +43,10 @@ Tensor& sum_dim_out(
 
   ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "sum.IntList_out", CTYPE_IN, [&] {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, out.scalar_type(), ctx, "sum.IntList_out", CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(
+      in.scalar_type(), ctx, "sum.IntList_out", CTYPE_IN, [&] {
+        ET_SWITCH_REALHBBF16_TYPES(
+            out.scalar_type(), ctx, "sum.IntList_out", CTYPE_OUT, [&] {
               CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
               for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
                 CTYPE_OUT sum = 0;

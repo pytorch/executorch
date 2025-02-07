@@ -26,6 +26,19 @@
 namespace vkcompute {
 namespace vkapi {
 
+struct ShaderMetadata final {
+  const uint32_t global_workgroup_size[3];
+  const uint32_t local_workgroup_size[3];
+};
+
+struct ShaderResult final {
+  const std::string kernel_name;
+  const uint32_t dispatch_id;
+  const uint64_t start_time_ns;
+  const uint64_t end_time_ns;
+  const ShaderMetadata metadata;
+};
+
 struct QueryPoolConfig final {
   uint32_t max_query_count = VULKAN_QUERY_POOL_SIZE;
   uint32_t initial_reserve_size = 256u;
@@ -97,16 +110,18 @@ class QueryPool final {
 
   void extract_results();
 
-  std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
-  get_shader_timestamp_data();
-  std::string generate_string_report();
-  void print_results();
+  std::vector<ShaderResult> get_shader_timestamp_data();
+  void print_results(const bool tsv_format = false);
   unsigned long get_total_shader_ns(std::string kernel_name);
   unsigned long get_mean_shader_ns(std::string kernel_name);
 
   operator bool() const {
     return querypool_ != VK_NULL_HANDLE;
   }
+
+ private:
+  std::string generate_string_report();
+  std::string generate_tsv_string_report();
 };
 
 } // namespace vkapi

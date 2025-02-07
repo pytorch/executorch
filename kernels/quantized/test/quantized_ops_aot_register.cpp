@@ -36,7 +36,7 @@ Tensor& quantize_per_token_out_no_context(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::aten::RuntimeContext context{};
   ::torch::executor::runtime_init();
   quantize_per_token_out(
       context, input, scale, zero_point, quant_min, quant_max, dtype, out);
@@ -78,7 +78,7 @@ Tensor& dequantize_per_token_out_no_context(
     ScalarType dtype,
     ScalarType out_dtype,
     Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::aten::RuntimeContext context{};
   ::torch::executor::runtime_init();
   dequantize_per_token_out(
       context,

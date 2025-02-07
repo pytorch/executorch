@@ -15,8 +15,8 @@
 #include <limits>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::extract_scalar_tensor;
 using executorch::runtime::testing::TensorFactory;
 

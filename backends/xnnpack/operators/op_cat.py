@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import cast, Dict, List
 
 import torch
@@ -17,6 +19,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNConcatenate2,
     XNNConcatenate3,
     XNNConcatenate4,
+    XNNConcatenate5,
     XNNGraph,
     XNode,
 )
@@ -71,6 +74,7 @@ class CatVisitor(NodeVisitor):
                 input2_id=vals_to_ids[list_of_tensors[1]],
                 input3_id=XNN_INVALID_VALUE_ID,
                 input4_id=XNN_INVALID_VALUE_ID,
+                input5_id=XNN_INVALID_VALUE_ID,
                 output_id=vals_to_ids[node],
                 flags=0,
             )
@@ -81,6 +85,7 @@ class CatVisitor(NodeVisitor):
                 input2_id=vals_to_ids[list_of_tensors[1]],
                 input3_id=vals_to_ids[list_of_tensors[2]],
                 input4_id=XNN_INVALID_VALUE_ID,
+                input5_id=XNN_INVALID_VALUE_ID,
                 output_id=vals_to_ids[node],
                 flags=0,
             )
@@ -91,6 +96,18 @@ class CatVisitor(NodeVisitor):
                 input2_id=vals_to_ids[list_of_tensors[1]],
                 input3_id=vals_to_ids[list_of_tensors[2]],
                 input4_id=vals_to_ids[list_of_tensors[3]],
+                input5_id=XNN_INVALID_VALUE_ID,
+                output_id=vals_to_ids[node],
+                flags=0,
+            )
+        elif num_tensors_to_cat == 5:
+            xnode = XNNConcatenate5(
+                axis=axis,
+                input1_id=vals_to_ids[list_of_tensors[0]],
+                input2_id=vals_to_ids[list_of_tensors[1]],
+                input3_id=vals_to_ids[list_of_tensors[2]],
+                input4_id=vals_to_ids[list_of_tensors[3]],
+                input5_id=vals_to_ids[list_of_tensors[4]],
                 output_id=vals_to_ids[node],
                 flags=0,
             )

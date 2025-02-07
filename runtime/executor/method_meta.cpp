@@ -54,7 +54,7 @@ Result<Tag> get_tag(
 
 size_t calculate_nbytes(
     Span<const int32_t> sizes,
-    exec_aten::ScalarType scalar_type) {
+    executorch::aten::ScalarType scalar_type) {
   ssize_t n = 1;
   for (ssize_t i = 0; i < sizes.size(); i++) {
     n *= sizes[i];
@@ -68,7 +68,7 @@ size_t calculate_nbytes(
 TensorInfo::TensorInfo(
     Span<const int32_t> sizes,
     Span<const uint8_t> dim_order,
-    exec_aten::ScalarType scalar_type,
+    executorch::aten::ScalarType scalar_type,
     const bool is_memory_planned)
     : sizes_(sizes),
       dim_order_(dim_order),
@@ -84,7 +84,7 @@ Span<const uint8_t> TensorInfo::dim_order() const {
   return dim_order_;
 }
 
-exec_aten::ScalarType TensorInfo::scalar_type() const {
+executorch::aten::ScalarType TensorInfo::scalar_type() const {
   return scalar_type_;
 }
 
@@ -116,6 +116,14 @@ Result<Tag> MethodMeta::input_tag(size_t index) const {
       index,
       num_inputs);
   auto input_index = s_plan_->inputs()->Get(index);
+  size_t num_values = s_plan_->values()->size();
+  ET_CHECK_OR_RETURN_ERROR(
+      input_index >= 0 && input_index < num_values,
+      InvalidProgram,
+      "internal value index %d out of range [0,%zu) for input %zu",
+      input_index,
+      num_values,
+      index);
   auto serialization_value = s_plan_->values()->Get(input_index);
   return get_tag(serialization_value, index);
 }
@@ -132,13 +140,14 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
       (size_t)tag.get(),
       index);
   auto input_index = s_plan_->inputs()->Get(index);
+  // input_index was already validated by input_tag().
   auto tensor_value = s_plan_->values()->Get(input_index)->val_as_Tensor();
   return TensorInfo(
       Span<const int32_t>(
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
-      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
+      static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
           tensor_value->data_buffer_idx() !=
               0); // Count constant returns as memory planned.
@@ -156,8 +165,16 @@ Result<Tag> MethodMeta::output_tag(size_t index) const {
       "index %zu out of range. num_outputs: %zu",
       index,
       num_outputs);
-  auto input_index = s_plan_->outputs()->Get(index);
-  auto serialization_value = s_plan_->values()->Get(input_index);
+  auto output_index = s_plan_->outputs()->Get(index);
+  size_t num_values = s_plan_->values()->size();
+  ET_CHECK_OR_RETURN_ERROR(
+      output_index >= 0 && output_index < num_values,
+      InvalidProgram,
+      "internal value index %d out of range [0,%zu) for output %zu",
+      output_index,
+      num_values,
+      index);
+  auto serialization_value = s_plan_->values()->Get(output_index);
   return get_tag(serialization_value, index);
 }
 
@@ -173,6 +190,7 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
       (size_t)tag.get(),
       index);
   auto output_index = s_plan_->outputs()->Get(index);
+  // output_index was already validated by output_tag().
   auto tensor_value = s_plan_->values()->Get(output_index)->val_as_Tensor();
 
   return TensorInfo(
@@ -180,7 +198,7 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
-      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
+      static_cast<executorch::aten::ScalarType>(tensor_value->scalar_type()),
       tensor_value->allocation_info() != nullptr ||
           tensor_value->data_buffer_idx() !=
               0); // Count constant returns as memory planned.
@@ -208,6 +226,17 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   // Index zero is reserved internally, and we hide it from users. Adjust the
   // provided index to point to one of the actual buffers.
   return s_plan_->non_const_buffer_sizes()->Get(index + 1);
+}
+
+bool MethodMeta::uses_backend(const char* backend_name) const {
+  const auto delegates = s_plan_->delegates();
+  for (size_t i = 0; i < delegates->size(); i++) {
+    auto delegate = delegates->Get(i);
+    if (strcmp(delegate->id()->c_str(), backend_name) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 size_t MethodMeta::num_instructions() const {

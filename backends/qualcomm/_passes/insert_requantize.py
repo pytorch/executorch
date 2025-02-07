@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from collections import defaultdict
+from typing import Dict, List
+
 import torch
 
 from executorch.backends.qualcomm.utils.constants import (
@@ -38,6 +41,42 @@ class InsertRequantize(ExportPass):
         super(InsertRequantize, self).__init__()
         self.edge_program = edge_program
 
+    def _make_hashable(self, value):
+        if isinstance(value, dict):
+            return tuple(sorted(value.items()))
+        return value
+
+    def _invert_dict(self, requantize_dict):
+        inverted_dict = defaultdict(list)
+        for user_node_name, quant_attr in requantize_dict.items():
+            hashable_quant_attr = self._make_hashable(quant_attr)
+            inverted_dict[hashable_quant_attr].append(user_node_name)
+        return inverted_dict
+
+    def _insert_to_copy(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.node,
+        quant_attr: Dict,
+        user_nodes: List[str],
+    ):
+        with graph_module.graph.inserting_after(node):
+            users = list(node.users.keys())
+            inserted_n = graph_module.graph.create_node(
+                "call_function",
+                exir_ops.edge.aten._to_copy.default,
+                (node,),
+            )
+            inserted_n.meta["val"] = node.meta["val"]
+            inserted_n.meta[QCOM_QUANT_ATTRS] = quant_attr
+
+            # create node and replace input
+            if node.meta.get(QCOM_QUANTIZED_IO):
+                inserted_n.meta[QCOM_QUANTIZED_IO] = node.meta[QCOM_QUANTIZED_IO]
+
+            for user in filter(lambda u: u.name in user_nodes, users):
+                user.replace_input_with(node, inserted_n)
+
     # TODO: Implement this function when we have an op with
     # multiple outputs that requires quant attributes.
     def _multi_output_annotation(self) -> None:
@@ -46,21 +85,14 @@ class InsertRequantize(ExportPass):
     def _single_output_annotation(
         self, gm: torch.fx.GraphModule, n: torch.fx.node
     ) -> None:
-        with gm.graph.inserting_after(n):
-            users = list(n.users.keys())
-            inserted_n = gm.graph.create_node(
-                "call_function",
-                exir_ops.edge.aten._to_copy.default,
-                (n,),
-            )
+        # {user_node_name: quant_attr}
+        requantize_dict = n.meta.pop(QCOM_REQUANTIZE)
+        # {quant_attr: user_node_name_list}
+        group_quant_attr_dict = self._invert_dict(requantize_dict)
 
-            inserted_n.meta["val"] = n.meta["val"]
-            inserted_n.meta[QCOM_QUANT_ATTRS] = n.meta.pop(QCOM_REQUANTIZE)
-            if n.meta.get(QCOM_QUANTIZED_IO):
-                inserted_n.meta[QCOM_QUANTIZED_IO] = n.meta[QCOM_QUANTIZED_IO]
-
-            for user in users:
-                user.replace_input_with(n, inserted_n)
+        for hashable_quant_attr, user_nodes in group_quant_attr_dict.items():
+            user_nodes_copy = user_nodes.copy()
+            self._insert_to_copy(gm, n, dict(hashable_quant_attr), user_nodes_copy)
 
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:

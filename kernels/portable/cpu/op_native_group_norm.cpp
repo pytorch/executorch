@@ -16,7 +16,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -115,8 +115,8 @@ void group_norm(
 std::tuple<Tensor&, Tensor&, Tensor&> native_group_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     int64_t N,
     int64_t C,
     int64_t HxW,

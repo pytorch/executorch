@@ -83,7 +83,7 @@ class DecomposeVarPass(ExportPass):
         sum = super().call_operator(sum_op, (squared_diff, dim, keepdim), {}, meta)
         full = super().call_operator(
             full_op,
-            ([1 for _ in shape], 1 / max(0, N - correction)),
+            ([], 1 / max(0, N - correction)),
             {"dtype": dtype},
             meta,
         )

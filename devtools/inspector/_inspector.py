@@ -1192,17 +1192,21 @@ class Inspector:
     def save_data_to_tsv(
         self,
         file: IO[str],
+        include_units: bool = True,
+        include_delegate_debug_data: bool = False,
     ) -> None:
         """
         Stores the underlying EventBlocks in tsv format to facilitate copy-paste into spreadsheets.
 
         Args:
             file: Which IO stream to print to. Do not use stdout, as tab separator is not preserved.
+            include_units: Whether headers should include units (default true)
+            include_delegate_debug_data: Whether to include delegate debug metadata (default false)
 
         Returns:
             None
         """
-        df = self._prepare_dataframe()
+        df = self._prepare_dataframe(include_units, include_delegate_debug_data)
         df.to_csv(file, sep="\t")
 
     # TODO: write unit test

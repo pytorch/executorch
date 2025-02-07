@@ -295,6 +295,9 @@ Result<BufferCleanup> prepare_input_tensors(
           case ScalarType::Float:
             t.mutable_data_ptr<float>()[j] = 1.;
             break;
+          case ScalarType::Char:
+            t.mutable_data_ptr<int8_t>()[j] = 1;
+            break;
         }
       }
     }
@@ -584,12 +587,18 @@ int main(int argc, const char* argv[]) {
             i,
             j,
             outputs[i].toTensor().const_data_ptr<int>()[j]);
-      } else {
+      } else if (t.scalar_type() == ScalarType::Float) {
         printf(
             "Output[%d][%d]: %f\n",
             i,
             j,
             outputs[i].toTensor().const_data_ptr<float>()[j]);
+      } else if (t.scalar_type() == ScalarType::Char) {
+        printf(
+            "Output[%d][%d]: %d\n",
+            i,
+            j,
+            outputs[i].toTensor().const_data_ptr<int8_t>()[j]);
       }
     }
 #if defined(ET_EVENT_TRACER_ENABLED)

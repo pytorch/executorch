@@ -19,9 +19,9 @@
 #include <executorch/test/utils/DeathTest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::get_op_function_from_registry;

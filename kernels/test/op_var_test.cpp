@@ -18,12 +18,25 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
+
+namespace {
+void expect_tensor_close_with_increased_tol(
+    const Tensor& actual,
+    const Tensor& expected) {
+  if (actual.scalar_type() == ScalarType::BFloat16 ||
+      actual.scalar_type() == ScalarType::Half) {
+    EXPECT_TENSOR_CLOSE_WITH_TOL(expected, actual, 1e-2, 1e-2);
+  } else {
+    EXPECT_TENSOR_CLOSE(expected, actual);
+  }
+}
+} // namespace
 
 class OpVarOutTest : public OperatorTest {
  protected:
@@ -142,7 +155,7 @@ class OpVarOutTest : public OperatorTest {
     op_var_out(
         self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
     // clang-format off
-    EXPECT_TENSOR_CLOSE(out, tf_out.make(
+    expect_tensor_close_with_increased_tol(out, tf_out.make(
       {2, 3, 1},
       {
         1.666667,
@@ -160,7 +173,7 @@ class OpVarOutTest : public OperatorTest {
     op_var_out(
         self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
     // clang-format off
-    EXPECT_TENSOR_CLOSE(out, tf_out.make(
+    expect_tensor_close_with_increased_tol(out, tf_out.make(
       {2, 3},
       {
         1.666667, 1.666667, 1.666667,
@@ -174,12 +187,14 @@ class OpVarOutTest : public OperatorTest {
     optional_dim_list = ArrayRef<int64_t>{dims_2, 2};
     op_var_out(
         self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
-    EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 4}, {56.0, 56.0, 56.0, 56.0}));
+    expect_tensor_close_with_increased_tol(
+        out, tf_out.make({1, 1, 4}, {56.0, 56.0, 56.0, 56.0}));
 
     out = tf_out.zeros({4});
     op_var_out(
         self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
-    EXPECT_TENSOR_CLOSE(out, tf_out.make({4}, {56.0, 56.0, 56.0, 56.0}));
+    expect_tensor_close_with_increased_tol(
+        out, tf_out.make({4}, {56.0, 56.0, 56.0, 56.0}));
 
     // dim list with negative dimensions should work
     out = tf_out.zeros({2, 1, 4});
@@ -188,7 +203,7 @@ class OpVarOutTest : public OperatorTest {
     op_var_out(
         self, optional_dim_list, /*unbiased=*/false, /*keepdim=*/true, out);
     // clang-format off
-    EXPECT_TENSOR_CLOSE(out, tf_out.make(
+    expect_tensor_close_with_increased_tol(out, tf_out.make(
       {2, 1, 4},
       {
         10.666667, 10.666667, 10.666667, 10.666667,
@@ -201,18 +216,19 @@ class OpVarOutTest : public OperatorTest {
     out = tf_out.zeros({1, 1, 1});
     optional<ArrayRef<int64_t>> null_dim_list;
     op_var_out(self, null_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
-    EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 1}, {50.0}));
+    expect_tensor_close_with_increased_tol(out, tf_out.make({1, 1, 1}, {50.0}));
 
     optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
     op_var_out(self, empty_dim_list, /*unbiased=*/false, /*keepdim=*/true, out);
-    EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 1}, {47.916668}));
+    expect_tensor_close_with_increased_tol(
+        out, tf_out.make({1, 1, 1}, {47.916668}));
 
     out = tf_out.zeros({});
     op_var_out(self, null_dim_list, /*unbiased=*/false, /*keepdim=*/false, out);
-    EXPECT_TENSOR_CLOSE(out, tf_out.make({}, {47.916668}));
+    expect_tensor_close_with_increased_tol(out, tf_out.make({}, {47.916668}));
 
     op_var_out(self, empty_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
-    EXPECT_TENSOR_CLOSE(out, tf_out.make({}, {50.0}));
+    expect_tensor_close_with_increased_tol(out, tf_out.make({}, {50.0}));
   }
 };
 
@@ -226,6 +242,20 @@ class OpVarCorrectionOutTest : public OperatorTest {
       Tensor& out) {
     return torch::executor::aten::var_outf(
         context_, self, dim, correction, keepdim, out);
+  }
+
+  template <ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor x = tf.make({2, 3}, {4.9, 4.0, 5.6, 3.8, 4.9, 5.6});
+    Tensor expected = tf.make({2}, {0.72693, 0.93032});
+    optional<Scalar> correction(1.23);
+    Tensor out = tf.zeros({2});
+
+    op_var_correction_out(
+        x, ArrayRef<int64_t>{1}, correction, /*keepdim=*/false, out);
+    expect_tensor_close_with_increased_tol(out, expected);
   }
 };
 
@@ -298,6 +328,25 @@ TEST_F(OpVarOutTest, InvalidDTypeDies) {
 }
 
 TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "ATen supports fewer dtypes";
+  }
+  // Use a two layer switch to hanldle each possible data pair
+#define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
+  test_var_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
+
+#define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
+  ET_FORALL_FLOATHBF16_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
+
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+#undef TEST_KERNEL
+}
+
+TEST_F(OpVarOutTest, AllFloatInputFloatOutputPasses_Aten) {
+  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "ATen-specific variant of test case";
+  }
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_var_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
@@ -387,14 +436,7 @@ TEST_F(OpVarOutTest, DynamicShapeUnbound) {
 }
 
 TEST_F(OpVarCorrectionOutTest, SmokeTest) {
-  TensorFactory<ScalarType::Float> tf;
-
-  Tensor x = tf.make({2, 3}, {4.9, 4.0, 5.6, 3.8, 4.9, 5.6});
-  Tensor expected = tf.make({2}, {0.72693, 0.93032});
-  optional<Scalar> correction(1.23);
-  Tensor out = tf.zeros({2});
-
-  op_var_correction_out(
-      x, ArrayRef<int64_t>{1}, correction, /*keepdim=*/false, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
+#define TEST_ENTRY(ctype, dtype) test_dtype<ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }

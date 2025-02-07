@@ -82,6 +82,7 @@ def define_common_targets():
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
                 "//executorch/runtime/kernel:operator_registry",

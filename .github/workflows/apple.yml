@@ -9,7 +9,7 @@ on:
     paths:
       - .ci/scripts/setup-ios.sh
       - .github/workflows/apple.yml
-      - install_requirements.sh
+      - install_executorch.sh
       - backends/apple/**
       - build/build_apple_frameworks.sh
       - build/build_apple_llm_demo.sh
@@ -37,7 +37,7 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.4.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="0.5.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-demo-ios:
@@ -53,7 +53,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
-      upload-artifact: ios-apps
+      upload-artifact: ios-demo-app
       script: |
         set -eux
 
@@ -83,10 +83,10 @@ jobs:
     runs-on: linux.2xlarge
     steps:
       - name: Download the artifacts from GitHub
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           # The name here needs to match the name of the upload-artifact parameter
-          name: ios-apps
+          name: ios-demo-app
           path: ${{ runner.temp }}/artifacts/
 
       - name: Verify the artifacts
@@ -216,7 +216,7 @@ jobs:
           role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-ios
           aws-region: us-east-1
       - name: Download the artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
@@ -291,7 +291,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      upload-artifact: ios-apps
+      upload-artifact: ios-benchmark-app
       secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
       timeout: 90
       script: |

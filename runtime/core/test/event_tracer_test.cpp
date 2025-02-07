@@ -16,7 +16,7 @@
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 using executorch::runtime::AllocatorID;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::ChainID;

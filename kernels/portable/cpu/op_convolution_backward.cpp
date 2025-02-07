@@ -16,10 +16,10 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using IntArrayRef = exec_aten::ArrayRef<int64_t>;
-using OptIntArrayRef = exec_aten::OptionalArrayRef<int64_t>;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
+using OptIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
 
 namespace {
 
@@ -34,7 +34,7 @@ bool check_convolution_backward_args(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    ET_UNUSED exec_aten::ArrayRef<bool> output_mask,
+    executorch::aten::ArrayRef<bool> output_mask,
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias) {
@@ -45,15 +45,24 @@ bool check_convolution_backward_args(
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, input));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_output, input));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_input, input));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_weight, input));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_bias, input));
+
+  if (output_mask[0]) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_input, input));
+  }
+
+  if (output_mask[1]) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_weight, input));
+  }
+
+  if (output_mask[2]) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_bias, input));
+  }
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       check_convolution_args(
           input,
           weight,
-          exec_aten::optional<Tensor>(),
+          executorch::aten::optional<Tensor>(),
           stride,
           padding,
           dilation,
@@ -64,7 +73,7 @@ bool check_convolution_backward_args(
       "Invalid convolution arguments");
 
   size_t output_ndim = 0;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   get_convolution_out_target_size(
       input,
       weight,
@@ -99,7 +108,7 @@ void conv2d_backward_impl(
     IntArrayRef padding,
     IntArrayRef dilation,
     int64_t groups,
-    exec_aten::ArrayRef<bool> output_mask,
+    executorch::aten::ArrayRef<bool> output_mask,
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias) {
@@ -147,11 +156,11 @@ void conv2d_backward_impl(
   }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  exec_aten::SizesType out_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType out_coord[kTensorDimensionLimit];
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  exec_aten::SizesType in_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType in_coord[kTensorDimensionLimit];
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  exec_aten::SizesType weight_coord[kTensorDimensionLimit];
+  executorch::aten::SizesType weight_coord[kTensorDimensionLimit];
 
   // Compute gradients
   for (int64_t b = 0; b < batch_size; ++b) { // Loop over each batch
@@ -238,7 +247,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> convolution_backward_out(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    exec_aten::ArrayRef<bool> output_mask,
+    executorch::aten::ArrayRef<bool> output_mask,
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias) {
@@ -267,19 +276,23 @@ std::tuple<Tensor&, Tensor&, Tensor&> convolution_backward_out(
       InvalidArgument,
       ret_val);
 
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(grad_input, input.sizes()) == Error::Ok,
-      InvalidArgument,
-      ret_val);
+  if (output_mask[0]) {
+    ET_KERNEL_CHECK(
+        ctx,
+        resize_tensor(grad_input, input.sizes()) == Error::Ok,
+        InvalidArgument,
+        ret_val);
+  }
 
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(grad_weight, weight.sizes()) == Error::Ok,
-      InvalidArgument,
-      ret_val);
+  if (output_mask[1]) {
+    ET_KERNEL_CHECK(
+        ctx,
+        resize_tensor(grad_weight, weight.sizes()) == Error::Ok,
+        InvalidArgument,
+        ret_val);
+  }
 
-  if (bias_sizes_opt.has_value()) {
+  if (bias_sizes_opt.has_value() && output_mask[2]) {
     ET_KERNEL_CHECK(
         ctx,
         resize_tensor(grad_bias, bias_sizes_opt.value()) == Error::Ok,
@@ -289,7 +302,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> convolution_backward_out(
 
   constexpr auto name = "convolution_backward.out";
 
-  ET_SWITCH_FLOATH_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     conv2d_backward_impl<CTYPE>(
         grad_output,
         input,

@@ -438,9 +438,9 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
                         args=(user, *node.args[1:]),
                     )
                     dequant_node.meta = user.meta.copy()
-                    # Remove meta["debug_handle"] on new node. Reassign it at the
-                    # caller level by calling generate_missing_debug_handles
-                    dequant_node.meta.pop("debug_handle")
+                    # Remove meta["debug_handle"] on new node if it exists.
+                    # Reassign it at the caller level by calling generate_missing_debug_handles
+                    dequant_node.meta.pop("debug_handle", None)
                     user.replace_all_uses_with(dequant_node)
                     dequant_node.args = (user, *node.args[1:])
 

@@ -24,7 +24,10 @@ Note that the pre-compiled context binaries could not be futher fine-tuned for o
 python -m examples.models.llama.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
 
-#### Step3: Run default examples
+#### Step3: Verify context binary's version
+Please refer to [Check context binary version](../../README.md#check-context-binary-version) for more info on why and how to verify the context binary's version
+
+#### Step4: Run default examples
 ```bash
 # AIHUB_CONTEXT_BINARIES: ${PATH_TO_AIHUB_WORKSPACE}/build/llama_v2_7b_chat_quantized
 python examples/qualcomm/qaihub_scripts/llama/llama2/qaihub_llama2_7b.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_bin tokenizer.bin --prompt "What is Python?"
@@ -44,8 +47,10 @@ Note that the pre-compiled context binaries could not be futher fine-tuned for o
 2. Follow instructions in https://huggingface.co/qualcomm/Llama-v3-8B-Chat to export context binaries (will take some time to finish)
 3. For Llama 3 tokenizer, please refer to https://github.com/meta-llama/llama-models/blob/main/README.md for further instructions on how to download tokenizer.model.
 
+#### Step3: Verify context binary's version
+Please refer to [Check context binary version](../../README.md#check-context-binary-version) for more info on why and how to verify the context binary's version
 
-#### Step3: Run default examples
+#### Step4: Run default examples
 ```bash
 # AIHUB_CONTEXT_BINARIES: ${PATH_TO_AIHUB_WORKSPACE}/build/llama_v3_8b_chat_quantized
 python examples/qualcomm/qaihub_scripts/llama/llama3/qaihub_llama3_8b.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_model tokenizer.model --prompt "What is baseball?"

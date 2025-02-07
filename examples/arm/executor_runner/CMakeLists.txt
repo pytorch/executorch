@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -42,6 +42,37 @@ set(ETHOS_SDK_PATH
 set(PYTHON_EXECUTABLE
     "python"
     CACHE PATH "Define to override python executable used"
+)
+
+# Download ethos_u dependency if needed.
+include(FetchContent)
+set(ethos_u_base_rev "24.08")
+FetchContent_Declare(
+  ethos_u
+  GIT_REPOSITORY https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
+  GIT_TAG ${ethos_u_base_rev}
+  SOURCE_DIR ${ETHOS_SDK_PATH}
+  BINARY_DIR ${ETHOS_SDK_PATH}
+  SUBBUILD_DIR ${ETHOS_SDK_PATH}/../ethos_u-subbuild
+  SOURCE_SUBDIR none
+  )
+
+FetchContent_MakeAvailable(ethos_u)
+
+# Get ethos_u externals only if core_platform folder does not already exist.
+if(NOT EXISTS "${ETHOS_SDK_PATH}/core_platform")
+  execute_process(COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c ${ethos_u_base_rev}.json fetch
+                  WORKING_DIRECTORY ${ETHOS_SDK_PATH}
+                  COMMAND_ECHO STDOUT
+  )
+endif()
+
+# Always patch the core_platform repo since this is fast enough.
+set(core_platform_base_rev "b728c774158248ba2cad8e78a515809e1eb9b77f")
+set(patch_dir "examples/arm/ethos-u-setup")
+execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
+  WORKING_DIRECTORY ${ET_DIR_PATH}
+  COMMAND_ECHO STDOUT
 )
 
 # Selects timing adapter values matching system_config.

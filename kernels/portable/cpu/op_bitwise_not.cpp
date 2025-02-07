@@ -15,7 +15,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 /**
  * Computes the bitwise NOT of the given input tensor. The input tensor must be
@@ -37,7 +37,7 @@ bitwise_not_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  if (in.scalar_type() == exec_aten::ScalarType::Bool) {
+  if (in.scalar_type() == executorch::aten::ScalarType::Bool) {
     apply_unary_map_fn(
         [](const bool val_in) { return !val_in; },
         in.const_data_ptr<bool>(),

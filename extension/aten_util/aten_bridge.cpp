@@ -15,7 +15,7 @@ namespace executorch {
 namespace extension {
 
 namespace {
-void check_tensor_meta(const at::Tensor& a, const exec_aten::Tensor& b) {
+void check_tensor_meta(const at::Tensor& a, const executorch::aten::Tensor& b) {
   // Check sizes/strides pointers
   ET_CHECK_MSG(
       b.sizes().data() != nullptr, "ETensor must have valid sizes array");

@@ -14,8 +14,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
+using executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -158,7 +158,7 @@ Tensor& tril_out(
   clear_out(out);
 
   ScalarType out_type = out.scalar_type();
-  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, __func__, CTYPE, [&]() {
     tril_kernel<CTYPE>(ctx, self, diagonal, out);
   });
 

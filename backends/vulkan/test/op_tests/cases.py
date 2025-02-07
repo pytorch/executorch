@@ -126,7 +126,8 @@ common_MKN_list = [
 ]
 
 
-def get_linear_texture_inputs():
+@register_test_suite("aten.linear.default")
+def get_linear_inputs():
     MKN_list = common_MKN_list
 
     inputs_list = [((M, K), (N, K), None) for M, K, N in MKN_list]
@@ -141,35 +142,19 @@ def get_linear_texture_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite.test_name_suffix = "texture"
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     return test_suite
-
-
-def get_linear_buffer_inputs():
-    MKN_list = common_MKN_list
-
-    inputs_list = [((M, K), (N, K), None) for M, K, N in MKN_list]
-    inputs_list += [((3, M, K), (N, K), None) for M, K, N in MKN_list]
-
-    test_suite = VkTestSuite(inputs_list)
-    test_suite.dtypes = ["at::kFloat"]
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-        "utils::kChannelsPacked",
-    ]
-    test_suite.storage_types = ["utils::kBuffer"]
-    test_suite.test_name_suffix = "buffer"
-    return test_suite
-
-
-@register_test_suite("aten.linear.default")
-def get_linear_test_suites():
-    return [get_linear_texture_inputs(), get_linear_buffer_inputs()]
 
 
 @register_test_suite("aten._weight_int8pack_mm.default")
 def get_weight_int8pack_mm_inputs():
-    MKN_list = common_MKN_list
+    MKN_list = [
+        [6, 480, 256],
+        [6, 256, 1024],
+        [6, 1024, 256],
+        [6, 256, 256],
+        [6, 256, 512],
+    ]
 
     inputs_list = [((M, K), (N, K), (N)) for M, K, N in MKN_list]
 
@@ -347,6 +332,39 @@ def get_conv_inputs():
                 False,
                 [0, 0],
                 1,
+            ),
+            (
+                (1, 4, 234, 234),
+                (4, 1, 3, 3),
+                (4,),
+                [2, 1],
+                [1, 1],
+                [1, 1],
+                False,
+                [0, 0],
+                4,
+            ),
+            (
+                (1, 4, 234, 234),
+                (4, 1, 3, 3),
+                (4,),
+                [1, 2],
+                [1, 1],
+                [1, 1],
+                False,
+                [0, 0],
+                4,
+            ),
+            (
+                (1, 4, 234, 234),
+                (4, 1, 3, 3),
+                (4,),
+                [2, 2],
+                [1, 1],
+                [1, 1],
+                False,
+                [0, 0],
+                4,
             ),
         ]
     )
@@ -1033,6 +1051,7 @@ def get_reduce_op_inputs():
         "aten.cos.default",
         "aten.hardswish.default",
         "aten.hardsigmoid.default",
+        "aten.leaky_relu.default",
     ]
 )
 def get_unary_ops_inputs():

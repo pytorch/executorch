@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -76,21 +76,26 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.clamp.default,
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.permute_copy.default,
+            exir_ops.edge.aten.hardsigmoid.default,
             exir_ops.edge.aten.hardtanh.default,
-            exir_ops.edge.aten.convolution.default,
+            exir_ops.edge.aten.hardswish.default,
             exir_ops.edge.aten.div.Tensor,
+            exir_ops.edge.aten.eq.Tensor,
             exir_ops.edge.aten.exp.default,
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
             exir_ops.edge.aten.full.default,
+            exir_ops.edge.aten.ge.Tensor,
+            exir_ops.edge.aten.gt.Tensor,
+            exir_ops.edge.aten.le.Tensor,
+            exir_ops.edge.aten.lt.Tensor,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
             exir_ops.edge.aten.native_layer_norm.default,
-            exir_ops.edge.aten.avg_pool2d.default,
-            exir_ops.edge.aten.max_pool2d_with_indices.default,
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.mm.default,
@@ -105,7 +110,6 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten._log_softmax.default,
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
-            exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.tanh.default,
             exir_ops.edge.aten.upsample_nearest2d.vec,
             exir_ops.edge.aten.var.correction,
@@ -132,5 +136,5 @@ class TOSASupportedOperators(OperatorSupportBase):
     def is_node_supported_custom(self, node: fx.Node) -> bool:
         tosa_checks = get_registered_tosa_support_checks(self.tosa_spec)
         if node.target in tosa_checks.keys():
-            return tosa_checks[node.target].is_node_supported(node, self.tosa_spec)
+            return tosa_checks[node.target].is_node_supported(node, self.tosa_spec)  # type: ignore[index]
         return False

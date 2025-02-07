@@ -8,50 +8,53 @@
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
-#include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::promoteTypes;
+using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::Error;
+using torch::executor::resize_to_broadcast_target_size;
+using torch::executor::native::utils::apply_tritensor_elementwise_fn;
+using torch::executor::native::utils::get_compute_type;
+using torch::executor::native::utils::SupportedTensorDtypes;
 
 namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
-Tensor& where_out(
+Tensor& where_self_out(
     RuntimeContext& ctx,
     const Tensor& cond,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  ScalarType cond_type = cond.scalar_type();
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType common_type = executorch::runtime::promoteTypes(a_type, b_type);
-  ScalarType out_type = out.scalar_type();
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
 
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Check Common Dtype
+  ET_KERNEL_CHECK(ctx, common_type == out.scalar_type(), InvalidArgument, out);
 
-  // Determine output size and resize for dynamic shapes
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(cond, a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
-      torch::executor::resize_to_broadcast_target_size(a, b, cond, out) ==
-          Error::Ok,
+      resize_to_broadcast_target_size(a, b, cond, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  constexpr int kNnlibMaxDim = 4; /*fallback if broadcast and dim > 4 */
-  constexpr auto name = "where.self_out";
+  // Compute Dtype
+  ScalarType compute_type = get_compute_type(common_type);
 
-  ET_CHECK_MSG(
-      cond_type == ScalarType::Bool || cond_type == ScalarType::Byte,
-      "Unhandled dtype %s for where.self_out",
-      torch::executor::toString(cond_type));
+  constexpr int kNnlibMaxDim = 4; /*fallback if broadcast and dim > 4 */
 
   int a_dim = a.dim(), b_dim = b.dim(), con_dim = cond.dim(),
       out_dim = out.dim();
@@ -66,6 +69,9 @@ Tensor& where_out(
   int max_dim = a.dim() > b.dim() ? a.dim() : b.dim();
   max_dim = cond.dim() > max_dim ? cond.dim() : max_dim;
   max_dim = out.dim() > max_dim ? out.dim() : max_dim;
+
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = b.scalar_type();
 
   if ((a_type != ScalarType::Float) || (b_type != ScalarType::Float))
     optimized = 0;
@@ -111,8 +117,13 @@ Tensor& where_out(
 
       if (con_shape[0] != out_shape[0] || con_shape[1] != out_shape[1] ||
           con_shape[2] != out_shape[2] || con_shape[3] != out_shape[3]) {
-        void* p_scratch =
-            malloc(out_shape[0] * out_shape[1] * out_shape[2] * out_shape[3]);
+        void* p_scratch = (void*)kernels::allocate_temp_memory(
+            ctx,
+            (out_shape[0] * out_shape[1] * out_shape[2] * out_shape[3]) *
+                sizeof(int));
+
+        ET_KERNEL_CHECK(ctx, p_scratch != nullptr, MemoryAllocationFailed, out);
+
         const unsigned char* p_brd_cond = (const unsigned char*)p_scratch;
         xa_nn_broadcast_8_8(
             (WORD8* __restrict__)p_brd_cond,
@@ -133,7 +144,7 @@ Tensor& where_out(
             inp2_shape,
             p_brd_cond,
             con_shape);
-        free(p_scratch);
+
       } else {
         xa_nn_elm_where_broadcast_4D_f32xf32_f32(
             out_data,
@@ -150,41 +161,26 @@ Tensor& where_out(
     }
     return out;
   }
-
-  // Compute Dtype
-  ScalarType compute_type =
-      torch::executor::native::utils::get_compute_type(common_type);
-
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "where.self_out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    torch::executor::native::utils::apply_tritensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name>(
+    apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
         [](const CTYPE_COMPUTE val_a,
            const CTYPE_COMPUTE val_b,
            const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
         ctx,
         a,
-        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+        SupportedTensorDtypes::REALHBBF16,
         b,
-        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+        SupportedTensorDtypes::REALHBBF16,
         cond,
-        torch::executor::native::utils::SupportedTensorDtypes::BOOL_OR_BYTE,
+        SupportedTensorDtypes::BOOL_OR_BYTE,
         out,
-        torch::executor::native::utils::SupportedTensorDtypes::SAME_AS_COMMON);
+        SupportedTensorDtypes::SAME_AS_COMMON);
   });
-  return out;
-}
 
-Tensor& where_self_out(
-    RuntimeContext& ctx,
-    const Tensor& cond,
-    const Tensor& a,
-    const Tensor& b,
-    Tensor& out) {
-  return cadence::impl::HiFi::native::where_out(ctx, cond, a, b, out);
+  return out;
 }
 
 } // namespace native

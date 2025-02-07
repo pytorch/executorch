@@ -11,9 +11,9 @@
 
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 
 namespace cadence {
 namespace impl {

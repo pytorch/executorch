@@ -92,3 +92,7 @@ class ExecutorchBackendConfig:
     # If set to true, all constant tensors will be stored in a separate file,
     # external to the PTE file.
     external_constants: bool = False
+
+    # If set to true, all trainable weights will be stored in a separate file,
+    # external to the PTE file.
+    external_mutable_weights: bool = False

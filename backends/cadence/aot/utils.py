@@ -20,22 +20,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from tabulate import tabulate
 
-from torch.ao.quantization.quantize_pt2e import _QUANT_OPS as quant_ops
 from torch.utils._pytree import tree_flatten
-
-
-# Check if the model is quantized, by looking at the graph and finding quant/dequant ops
-def model_is_quantized(model: torch.nn.Module) -> bool:
-    # Quantized models have to be GraphModules already, from prepare/convert calls.
-    # Return false if the model is not a GraphModule.
-    if not isinstance(model, torch.fx.GraphModule):
-        return False
-
-    # Walk through the graph and look for quant/dequant ops
-    for op in quant_ops:
-        if model.graph.find_nodes(op="call_function", target=op):
-            return True
-    return False
 
 
 # Get the output size of a 1D convolution given the input size and parameters
@@ -233,14 +218,6 @@ def print_ops_info(
                 tablefmt="outline",
             )
         )
-
-
-def model_gm_has_SDPA(model_gm: torch.fx.GraphModule) -> bool:
-    for node in model_gm.graph.nodes:
-        if node.op == "call_function":
-            if node.target == torch.ops.aten.scaled_dot_product_attention.default:
-                return True
-    return False
 
 
 def save_pte_program(

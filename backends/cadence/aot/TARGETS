@@ -65,6 +65,7 @@ python_library(
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/runtime:runtime",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/transforms:decompose_sdpa",
         "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/exir:lib",
@@ -407,5 +408,24 @@ python_library(
         "//executorch/exir:memory",
         "//executorch/exir:pass_manager",
         "//executorch/exir:tensor",
+    ],
+)
+
+
+python_unittest(
+    name = "test_memory_passes",
+    srcs = [
+        "tests/test_memory_passes.py",
+    ],
+    typing = True,
+    deps = [
+        ":compiler",
+        ":memory_planning",
+        ":ops_registrations",
+        ":pass_utils",
+        "//caffe2:torch",
+        "//executorch/exir:memory",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/tests:models",
     ],
 )
