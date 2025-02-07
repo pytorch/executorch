@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch.fx
 from torch.ao.quantization.observer import HistogramObserver
 from torch.ao.quantization.observer import PerChannelMinMaxObserver
+from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantizer.quantizer import EdgeOrNode
 from torch.ao.quantization.quantizer.quantizer import QuantizationAnnotation
 from torch.ao.quantization.quantizer.quantizer import QuantizationSpec
@@ -276,6 +277,7 @@ class OpenVINOQuantizer(Quantizer):
                 torch.per_tensor_symmetric if qconfig.mode is QuantizationScheme.SYMMETRIC else torch.per_tensor_affine
             )
         if is_weight:
+            observer = PerChannelMinMaxObserver if qconfig.per_channel else MinMaxObserver
             observer = PerChannelMinMaxObserver
             quant_min = -128
             quant_max = 127

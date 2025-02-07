@@ -65,20 +65,17 @@ def load_calibration_dataset(dataset_path: str):
     return calibration_dataset
 
 
-def quantize_model(model: torch.fx.GraphModule, calibration_dataset: torch.utils.data.DataLoader, subset_size=300):
-    quantizer = OpenVINOQuantizer()
+def quantize_model(model: torch.fx.GraphModule, example_args, subset_size=300):
+    quantizer = OpenVINOQuantizer(ignored_scope=nncf.IgnoredScope(types=["__getitem__", "layer_norm"]))
 
     print("PTQ: Annotate the model...")
     annotated_model = prepare_pt2e(model, quantizer)
     
     print("PTQ: Calibrate the model...")
-    for idx, data in enumerate(calibration_dataset):
-        if idx >= subset_size:
-            break
-        annotated_model(data[0])
+    annotated_model(*example_args)
 
     print("PTQ: Convert the quantized model...")
-    quantized_model = convert_pt2e(annotated_model)
+    quantized_model = convert_pt2e(annotated_model, fold_quantize=False)
     return quantized_model
 
 
@@ -106,7 +103,9 @@ def main(suite: str, model_name: str, input_shape, quantize: bool, dataset_path:
         calibration_dataset = load_calibration_dataset(dataset_path)
 
         captured_model = aten_dialect.module()
-        quantized_model = quantize_model(captured_model, calibration_dataset)
+        visualize_fx_model(captured_model, f"{model_name}_fp32.svg")
+        quantized_model = quantize_model(captured_model, example_args)
+        visualize_fx_model(quantized_model, f"{model_name}_int8.svg")
         aten_dialect: ExportedProgram = export(quantized_model, example_args)
 
     # Convert to edge dialect
@@ -121,9 +120,15 @@ def main(suite: str, model_name: str, input_shape, quantize: bool, dataset_path:
     exec_prog = lowered_module.to_executorch(config=executorch.exir.ExecutorchBackendConfig())
 
     # Serialize and save it to a file
-    with open(f"{model_name}.pte", "wb") as file:
+    model_name = f"{model_name}_{'int8' if quantize else 'fp32'}.pte" 
+    with open(model_name, "wb") as file:
         exec_prog.write_to_file(file)
-    print(f"Model exported and saved as {model_name}.pte on {device}.")
+    print(f"Model exported and saved as {model_name} on {device}.")
+
+from torch.fx.passes.graph_drawer import FxGraphDrawer
+def visualize_fx_model(model: torch.fx.GraphModule, output_svg_path: str):
+    g = FxGraphDrawer(model, output_svg_path)
+    g.get_dot_graph().write_svg(output_svg_path)
 
 if __name__ == "__main__":
     # Argument parser for dynamic inputs
