@@ -27,10 +27,8 @@
 #define ET_ENABLE_PROGRAM_VERIFICATION 1
 #endif
 
-#pragma clang diagnostic ignored "-Wshadow"
-
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 namespace {
 
@@ -72,8 +70,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   size_t segment_base_offset = 0;
   {
     EXECUTORCH_SCOPE_PROF("Program::check_header");
-    Result<FreeableBuffer> header =
-        loader->Load(/*offset=*/0, ExtendedHeader::kNumHeadBytes);
+    Result<FreeableBuffer> header = loader->load(
+        /*offset=*/0,
+        ExtendedHeader::kNumHeadBytes,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     if (!header.ok()) {
       return header.error();
     }
@@ -86,7 +86,11 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     } else if (eh.error() == Error::NotFound) {
       // No header; the program consumes the whole file, and there are no
       // segments.
-      program_size = ET_UNWRAP(loader->size());
+      auto result = loader->size();
+      if (!result.ok()) {
+        return result.error();
+      }
+      program_size = result.get();
     } else {
       ET_LOG(Error, "Extended header may be corrupt");
       return eh.error();
@@ -95,8 +99,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
   // Load the flatbuffer data as a segment.
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("Program::load_data");
-  Result<FreeableBuffer> program_data =
-      loader->Load(/*offset=*/0, program_size);
+  Result<FreeableBuffer> program_data = loader->load(
+      /*offset=*/0,
+      program_size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!program_data.ok()) {
     return program_data.error();
   }
@@ -146,9 +152,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
   // Constant data may live inside the flatbuffer data (constant_buffer) or in a
   // separate segment (constant_segment). It should not be in both.
+  // Check constant_segment->offsets()->size() > 1, as the offsets list will
+  // always contain a placeholder value 0 for non-const tensors. If this is the
+  // only offset, the constant segment is empty and does not need to be loaded.
   const auto* constant_segment = flatbuffer_program->constant_segment();
   if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
-      constant_segment->offsets()->size() > 0) {
+      constant_segment->offsets()->size() > 1) {
     // The constant data is inside a separate segment.
     const auto* constant_buffer = flatbuffer_program->constant_buffer();
     ET_CHECK_OR_RETURN_ERROR(
@@ -173,8 +182,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
     const executorch_flatbuffer::DataSegment* data_segment =
         segments->Get(constant_segment->segment_index());
-    Result<FreeableBuffer> constant_segment_data = loader->Load(
-        segment_base_offset + data_segment->offset(), data_segment->size());
+    Result<FreeableBuffer> constant_segment_data = loader->load(
+        segment_base_offset + data_segment->offset(),
+        data_segment->size(),
+        DataLoader::SegmentInfo(
+            DataLoader::SegmentInfo::Type::Constant,
+            constant_segment->segment_index()));
     if (!constant_segment_data.ok()) {
       return constant_segment_data.error();
     }
@@ -230,8 +243,9 @@ Result<Method> Program::load_method(
     EventTracer* event_tracer) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
-  internal::EventTracerProfileScope event_tracer_scope =
-      internal::EventTracerProfileScope(event_tracer, "Program::load_method");
+  internal::EventTracerProfileMethodScope event_tracer_scope =
+      internal::EventTracerProfileMethodScope(
+          event_tracer, "Program::load_method");
   // If we can't create a MethodMeta for the Method, the Method is corrupt;
   // Method::method_meta() assumes success, so we must fail here.
   Result<MethodMeta> meta = method_meta(method_name);
@@ -332,33 +346,6 @@ Result<const void*> Program::get_constant_buffer_data(
   }
 }
 
-Result<int64_t> Program::get_non_const_buffer_size(
-    size_t buffer_index,
-    const char* method_name) const {
-  auto plan = get_execution_plan(internal_program_, method_name);
-  if (!plan.ok()) {
-    return plan.error();
-  }
-  auto non_const_buffer_sizes = plan.get()->non_const_buffer_sizes();
-  if (buffer_index >= non_const_buffer_sizes->size()) {
-    ET_LOG(
-        Error,
-        "invalid buffer index %zu for size %zu",
-        buffer_index,
-        (size_t)non_const_buffer_sizes->size());
-    return Error::InvalidArgument;
-  }
-  return (*(plan.get()->non_const_buffer_sizes()))[buffer_index];
-}
-
-Result<size_t> Program::num_non_const_buffers(const char* method_name) const {
-  auto plan = get_execution_plan(internal_program_, method_name);
-  if (!plan.ok()) {
-    return plan.error();
-  }
-  return plan.get()->non_const_buffer_sizes()->size();
-}
-
 Result<const char*> Program::get_output_flattening_encoding(
     const char* method_name) const {
   auto plan = get_execution_plan(internal_program_, method_name);
@@ -406,8 +393,10 @@ Error Program::get_backend_delegate_data(
   return HeaderStatus::NotPresent;
 }
 
-Result<FreeableBuffer> Program::LoadSegment(size_t index) const {
+Result<FreeableBuffer> Program::LoadSegment(
+    const DataLoader::SegmentInfo& segment_info) const {
   EXECUTORCH_SCOPE_PROF("Program::LoadSegment");
+  size_t index = segment_info.segment_index;
   if (loader_ == nullptr || segment_base_offset_ == 0) {
     ET_LOG(Error, "No segments in program: requested index %zu", index);
     return Error::NotFound;
@@ -423,9 +412,94 @@ Result<FreeableBuffer> Program::LoadSegment(size_t index) const {
   // Could fail if offset and size are out of bound for the data, or if this
   // is reading from a file and fails, or for many other reasons depending on
   // the implementation of the loader.
-  return loader_->Load(
-      segment_base_offset_ + segment->offset(), segment->size());
+  return loader_->load(
+      segment_base_offset_ + segment->offset(), segment->size(), segment_info);
 }
 
-} // namespace executor
-} // namespace torch
+Error Program::load_mutable_subsegment_into(
+    size_t mutable_data_segments_index,
+    size_t offset_index,
+    size_t size,
+    void* buffer) const {
+  EXECUTORCH_SCOPE_PROF("Program::load_subsegment_into");
+  // Check that the program has segments.
+  if (loader_ == nullptr || segment_base_offset_ == 0) {
+    ET_LOG(Error, "No segments in program");
+    return Error::NotFound;
+  }
+
+  // Check that the program has mutable data segments.
+  if (internal_program_->mutable_data_segments() == nullptr) {
+    ET_LOG(Error, "No mutable data segments in program");
+    return Error::NotFound;
+  }
+  if (mutable_data_segments_index >=
+      internal_program_->mutable_data_segments()->size()) {
+    ET_LOG(
+        Error,
+        "mutable_data_segments_index %zu out of range >= %" PRIu64,
+        mutable_data_segments_index,
+        (uint64_t)internal_program_->mutable_data_segments()->size());
+    return Error::NotFound;
+  }
+
+  // Grab the mutable data segment info.
+  const auto& segment_offsets = internal_program_->mutable_data_segments()->Get(
+      mutable_data_segments_index);
+
+  // Check that the offset is valid.
+  if (segment_offsets->offsets() == nullptr) {
+    ET_LOG(Error, "No offsets in mutable data segment");
+    return Error::NotFound;
+  }
+  if (offset_index >= segment_offsets->offsets()->size()) {
+    ET_LOG(
+        Error,
+        "offset index %zu out of range >= %" PRIu64,
+        offset_index,
+        (uint64_t)segment_offsets->offsets()->size());
+    return Error::NotFound;
+  }
+
+  // Grab the offset. Note: This offset is relative to the start of the segment,
+  // so we will need to adjust when calling the loader.
+  size_t offset = segment_offsets->offsets()->Get(offset_index);
+
+  // Grab the segment index
+  size_t num_segments = internal_program_->segments()->size();
+  if (segment_offsets->segment_index() >= num_segments) {
+    ET_LOG(
+        Error,
+        "Segment index %u out of range (>= %zu)",
+        segment_offsets->segment_index(),
+        num_segments);
+    return Error::NotFound;
+  }
+
+  // Grab the segment
+  auto segment =
+      internal_program_->segments()->Get(segment_offsets->segment_index());
+
+  // Check size
+  if (offset + size > segment->size()) {
+    ET_LOG(
+        Error,
+        "offset %zu + size %zu out of range > %" PRIu64,
+        offset,
+        size,
+        segment->size());
+    return Error::InvalidArgument;
+  }
+
+  DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Mutable,
+      segment_offsets->segment_index(),
+      nullptr);
+
+  // Load the data
+  return loader_->load_into(
+      segment_base_offset_ + segment->offset() + offset, size, info, buffer);
+}
+
+} // namespace runtime
+} // namespace executorch

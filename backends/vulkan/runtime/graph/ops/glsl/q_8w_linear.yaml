@@ -1,0 +1,23 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+q_8w_linear:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+    MAT1_PACKING: W_packed
+    MAT2_PACKING: W_packed
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: buffer
+  shader_variants:
+    - NAME: q_8w_linear_W_packed_W_packed
+    - NAME: q_8w_linear_W_packed_H_packed
+      MAT2_PACKING: H_packed

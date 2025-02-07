@@ -1,0 +1,123 @@
+# @noautodeps
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "arm_partitioner",
+    srcs = [
+        "arm_partitioner.py",
+    ],
+    typing = True,
+    deps = [
+        ":arm_backend",
+        "//executorch/backends/arm/operator_support:operator_support",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_library(
+    name = "arm_backend",
+    srcs = [
+        "arm_backend.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/flatbuffers:flatbuffers",
+        "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
+        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/serialization_lib/python/tosa:tosa",
+        ":arm_vela",
+        ":process_node",
+        "//executorch/backends/arm/operators:lib",
+        "//executorch/backends/arm/operators:node_visitor",
+        "//executorch/backends/arm/_passes:passes",
+    ],
+)
+
+python_library(
+    name = "process_node",
+    srcs = ["process_node.py"],
+    typing = True,
+    deps = [
+        "fbsource//third-party/serialization_lib/python/tosa:tosa",
+        "//executorch/backends/arm/operators:node_visitor",
+        "//executorch/backends/arm:tosa_mapping",
+        "//executorch/backends/arm:tosa_quant_utils",
+        "//executorch/backends/arm:tosa_utils",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_library(
+    name = "arm_vela",
+    srcs = [
+        "arm_vela.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
+    ],
+)
+
+python_library(
+    name = "tosa_mapping",
+    srcs = [
+        "tosa_mapping.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "tosa_quant_utils",
+    srcs = [
+        "tosa_quant_utils.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/serialization_lib/python/tosa:tosa",
+        ":tosa_mapping",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "tosa_specification",
+    srcs = [
+        "tosa_specification.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/packaging:packaging",
+        "//executorch/exir/backend:compile_spec_schema",
+    ],
+)
+
+python_library(
+    name = "tosa_utils",
+    srcs = [
+        "tosa_utils.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        ":tosa_quant_utils",
+        "//executorch/backends/arm/operators:node_visitor",
+    ],
+)
+
+python_library(
+    name = "arm_model_evaluator",
+    srcs = [
+        "util/arm_model_evaluator.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+    ]
+)

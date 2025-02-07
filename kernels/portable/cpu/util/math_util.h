@@ -94,6 +94,50 @@ INT_T max_override(INT_T a, INT_T b) {
   return std::max(a, b);
 }
 
+template <
+    typename T,
+    typename std::enable_if_t<
+        std::is_same_v<T, executorch::aten::Half> ||
+            std::is_same_v<T, executorch::aten::BFloat16>,
+        bool> = true>
+T min_override(T a, T b) {
+  const auto float_a = static_cast<float>(a);
+  if (std::isnan(float_a)) {
+    return a;
+  }
+  const auto float_b = static_cast<float>(b);
+  if (std::isnan(float_b)) {
+    return b;
+  }
+
+  if (float_a < float_b) {
+    return a;
+  }
+  return b;
+}
+
+template <
+    typename T,
+    typename std::enable_if_t<
+        std::is_same_v<T, executorch::aten::Half> ||
+            std::is_same_v<T, executorch::aten::BFloat16>,
+        bool> = true>
+T max_override(T a, T b) {
+  const auto float_a = static_cast<float>(a);
+  if (std::isnan(float_a)) {
+    return a;
+  }
+  const auto float_b = static_cast<float>(b);
+  if (std::isnan(float_b)) {
+    return b;
+  }
+
+  if (float_a > float_b) {
+    return a;
+  }
+  return b;
+}
+
 /**
  * There is a slight difference in how std::fmod works compared to how ATen
  * determines remainders:

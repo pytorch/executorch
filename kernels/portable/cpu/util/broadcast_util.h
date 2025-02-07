@@ -24,8 +24,8 @@ namespace executor {
  *
  */
 bool tensor_is_broadcastable_to(
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_to_shape);
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_to_shape);
 
 /**
  * Check whether or not the broadcast_from tensor should and can be broadcasted
@@ -50,8 +50,8 @@ bool tensor_is_broadcastable_to(
  * @returns true if the tensors are broadcastable, false otherwise.
  */
 bool tensors_are_broadcastable_between(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_shape);
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_shape);
 
 /**
  * Convenience overload of the above function to accept Tensor inputs.
@@ -77,9 +77,9 @@ bool tensors_are_broadcastable_between(const Tensor& a, const Tensor& b);
  * repeated as appropriate. This tensor contains dynamically allocated memory
  * and must be freed using free_broadcast_tensor.
  */
-__ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
-    const exec_aten::Tensor& broadcast_from,
-    const exec_aten::Tensor& broadcast_to);
+ET_DEPRECATED executorch::aten::Tensor broadcast_tensor(
+    const executorch::aten::Tensor& broadcast_from,
+    const executorch::aten::Tensor& broadcast_to);
 
 /**
  * Get the size of the target tensor that two input tensors would be broadcasted
@@ -97,9 +97,9 @@ __ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
  * @param[out] out_dim The dimension of the broadcasted target
  * tensor
  */
-__ET_NODISCARD Error get_broadcast_target_size(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_size,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_size,
+ET_NODISCARD Error get_broadcast_target_size(
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim);
@@ -115,7 +115,7 @@ __ET_NODISCARD Error get_broadcast_target_size(
  * @param[out] out_dim The dimension of the broadcasted target
  * tensor
  */
-__ET_NODISCARD Error get_broadcast_target_size(
+ET_NODISCARD Error get_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     Tensor::SizesType* out_sizes,
@@ -130,7 +130,7 @@ __ET_NODISCARD Error get_broadcast_target_size(
  * @param[in] b The second tensor going to be broadcasted.
  * @param[out] out The output tensor that will be resized.
  */
-__ET_NODISCARD inline Error
+ET_NODISCARD inline Error
 resize_to_broadcast_target_size(const Tensor& a, const Tensor& b, Tensor& out) {
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   size_t expected_output_dim = 0;
@@ -156,7 +156,7 @@ resize_to_broadcast_target_size(const Tensor& a, const Tensor& b, Tensor& out) {
  * @param[in] c The third tensor going to be broadcasted.
  * @param[out] out The output tensor that will be resized.
  */
-__ET_NODISCARD inline Error resize_to_broadcast_target_size(
+ET_NODISCARD inline Error resize_to_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     const Tensor& c,
@@ -202,8 +202,8 @@ __ET_NODISCARD inline Error resize_to_broadcast_target_size(
  * broadcast_tensor.
  * @returns void
  */
-__ET_DEPRECATED void free_broadcast_tensor(
-    const exec_aten::Tensor& broadcast_tensor);
+ET_DEPRECATED void free_broadcast_tensor(
+    const executorch::aten::Tensor& broadcast_tensor);
 
 /**
  * Delinearize a flattened index to per-dimension indexes.
@@ -216,7 +216,7 @@ __ET_DEPRECATED void free_broadcast_tensor(
  */
 void delinearize_index(
     size_t linear_index,
-    exec_aten::ArrayRef<Tensor::SizesType> shape,
+    executorch::aten::ArrayRef<Tensor::SizesType> shape,
     size_t* out_indexes,
     const size_t out_indexes_len);
 
@@ -249,8 +249,8 @@ void delinearize_index(
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
     ssize_t broadcast_to_ndim,
-    exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    exec_aten::ArrayRef<Tensor::StridesType> broadcast_from_strides);
+    executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    executorch::aten::ArrayRef<Tensor::StridesType> broadcast_from_strides);
 
 /**
  * Return the linear index for broatcast_from tensor, given the indexes of

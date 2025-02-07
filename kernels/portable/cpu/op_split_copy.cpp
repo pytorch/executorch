@@ -16,8 +16,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using TensorList = exec_aten::TensorList;
+using Tensor = executorch::aten::Tensor;
+using TensorList = executorch::aten::TensorList;
 
 /**
  * Splits the tensor into chunks of size `split_size` along the specified
@@ -30,7 +30,7 @@ using TensorList = exec_aten::TensorList;
  * Tensor(a!)[] out) -> ()
  */
 void split_copy_Tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     int64_t split_size,
     int64_t dim,
@@ -46,6 +46,11 @@ void split_copy_Tensor_out(
       check_split_copy_args(input, split_size, dim, out),
       InvalidArgument, );
 
+  for (size_t i = 0; i < out.size(); ++i) {
+    ET_KERNEL_CHECK(
+        ctx, tensors_have_same_dim_order(input, out[i]), InvalidArgument, );
+  }
+
   const size_t leading_dims = getLeadingDims(input, dim);
   const size_t trailing_dims = getTrailingDims(input, dim);
   const size_t step = input.size(dim) * trailing_dims;
@@ -53,10 +58,10 @@ void split_copy_Tensor_out(
   ScalarType in_type = input.scalar_type();
   ScalarType out_type = out[0].scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "split_copy.Tensor_out", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, out_type, ctx, "split_copy.Tensor_out", CTYPE_OUT, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(
+      in_type, ctx, "split_copy.Tensor_out", CTYPE_IN, [&]() {
+        ET_SWITCH_REALHBBF16_TYPES(
+            out_type, ctx, "split_copy.Tensor_out", CTYPE_OUT, [&]() {
               const CTYPE_IN* input_data = input.const_data_ptr<CTYPE_IN>();
               for (size_t i = 0, e = out.size(); i < e; ++i) {
                 size_t out_step = out[i].size(dim) * trailing_dims;

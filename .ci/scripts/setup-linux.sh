@@ -19,7 +19,11 @@ else
 fi
 
 # As Linux job is running inside a Docker container, all of its dependencies
-# have already been installed
-install_flatc_from_source
-install_executorch
+# have already been installed, so we use PyTorch build from source here instead
+# of nightly. This allows CI to test against latest commits from PyTorch
+install_executorch "use-pt-pinned-commit"
 build_executorch_runner "${BUILD_TOOL}"
+
+if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
+  do_not_use_nightly_on_ci
+fi

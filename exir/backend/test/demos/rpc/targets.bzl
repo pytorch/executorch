@@ -27,7 +27,6 @@ def define_common_targets():
             "//executorch/kernels/portable:generated_lib",
             "//executorch/runtime/backend:interface",
             "//executorch/extension/data_loader:buffer_data_loader",
-            "//executorch/util:util",
         ] + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
         exported_deps = [
             "//executorch/runtime/core:core",

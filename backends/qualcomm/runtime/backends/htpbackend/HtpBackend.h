@@ -8,9 +8,11 @@
 #pragma once
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
+#include "HTP/QnnHtpCommon.h"
 #include "HTP/QnnHtpProfile.h"
-namespace torch {
-namespace executor {
+#include "QnnTypes.h"
+namespace executorch {
+namespace backends {
 namespace qnn {
 class HtpBackend : public QnnBackend {
  public:
@@ -24,11 +26,20 @@ class HtpBackend : public QnnBackend {
         event_type == QNN_HTP_PROFILE_EVENTTYPE_GRAPH_EXECUTE_ACCEL_TIME_CYCLE);
   }
 
+  Qnn_Version_t GetExpectedBackendVersion() const override {
+    Qnn_Version_t backend_version;
+    backend_version.major = QNN_HTP_API_VERSION_MAJOR;
+    backend_version.minor = QNN_HTP_API_VERSION_MINOR;
+    backend_version.patch = QNN_HTP_API_VERSION_PATCH;
+    return backend_version;
+  }
+
  protected:
-  Error MakeConfig(std::vector<const QnnBackend_Config_t*>& config) override {
-    return Error::Ok;
+  executorch::runtime::Error MakeConfig(
+      std::vector<const QnnBackend_Config_t*>& config) override {
+    return executorch::runtime::Error::Ok;
   }
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

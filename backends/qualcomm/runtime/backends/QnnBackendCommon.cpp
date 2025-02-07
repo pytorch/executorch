@@ -6,9 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 QnnBackend::~QnnBackend() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
@@ -53,6 +56,85 @@ Error QnnBackend::Configure() {
   }
   return Error::Ok;
 }
+
+Error QnnBackend::VerifyQNNSDKVersion(
+    const QnnExecuTorchBackendType backend_id) {
+  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+
+  Qnn_ApiVersion_t qnn_version = {QNN_VERSION_INIT};
+  Qnn_ErrorHandle_t error =
+      qnn_interface.qnn_backend_get_api_version(&qnn_version);
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR("Failed to get Qnn API version.");
+    return Error::Internal;
+  }
+
+  Qnn_ApiVersion_t expected_version = {QNN_VERSION_INIT};
+  expected_version.coreApiVersion.major = QNN_API_VERSION_MAJOR;
+  expected_version.coreApiVersion.minor = QNN_API_VERSION_MINOR;
+  expected_version.coreApiVersion.patch = QNN_API_VERSION_PATCH;
+  expected_version.backendApiVersion = GetExpectedBackendVersion();
+  const char* backend_type = EnumNameQnnExecuTorchBackendType(backend_id);
+
+  Error status = VersionChecker(
+      qnn_version.coreApiVersion, expected_version.coreApiVersion, "Qnn API");
+  if (status == Error::Ok) {
+    status = VersionChecker(
+        qnn_version.backendApiVersion,
+        expected_version.backendApiVersion,
+        backend_type);
+  }
+
+  return status;
+}
+
+Error QnnBackend::VersionChecker(
+    const Qnn_Version_t& qnn_version,
+    const Qnn_Version_t& expected,
+    const std::string& prefix) {
+  if (qnn_version.major != expected.major) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "%s version %u.%u.%u is not supported. "
+        "The minimum supported version is %u.%u.%u. Please make "
+        "sure you have the correct backend library version.",
+        prefix.c_str(),
+        qnn_version.major,
+        qnn_version.minor,
+        qnn_version.patch,
+        expected.major,
+        expected.minor,
+        expected.patch);
+    return Error::Internal;
+  }
+  if (qnn_version.major == QNN_API_VERSION_MAJOR &&
+      qnn_version.minor < expected.minor) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "%s version %u.%u.%u is mismatched. "
+        "The minimum supported version is %u.%u.%u. Please make "
+        "sure you have the correct backend library version.",
+        prefix.c_str(),
+        qnn_version.major,
+        qnn_version.minor,
+        qnn_version.patch,
+        expected.major,
+        expected.minor,
+        expected.patch);
+  }
+  if ((qnn_version.major == QNN_API_VERSION_MAJOR &&
+       qnn_version.minor > expected.minor)) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "%s version %u.%u.%u is used. "
+        "The version is tested against %u.%u.%u.",
+        prefix.c_str(),
+        qnn_version.major,
+        qnn_version.minor,
+        qnn_version.patch,
+        expected.major,
+        expected.minor,
+        expected.patch);
+  }
+  return Error::Ok;
+}
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

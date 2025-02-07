@@ -65,9 +65,7 @@ class ExecutorBackendPartitioner(Partitioner):
                 partition_tags[delegation_tag] = self.delegation_spec
 
                 # Tag the delegate submodules
-                # pyre-ignore Undefined attribute [16]: Item `None` of `typing.Union[None, typing.Dict[str, typing.Any], typing.List[typing.Any], bool, complex, float, int, range, slice, str, torch._C.device, torch._C.dtype, torch._C.layout, torch._C.memory_format, torch._tensor.Tensor, torch.fx.node.Node, typing.Tuple[typing.Any, ...]]` has no attribute `op`.Pyre
                 if node.args[0].op == "get_attr":
-                    # pyre-ignore Undefined attribute [16]: Item `None` of `typing.Union[None, typing.Dict[str, typing.Any], typing.List[typing.Any], bool, complex, float, int, range, slice, str, torch._C.device, torch._C.dtype, torch._C.layout, torch._C.memory_format, torch._tensor.Tensor, torch.fx.node.Node, typing.Tuple[typing.Any, ...]]` has no attribute `op`.Pyre
                     node.args[0].meta["delegation_tag"] = delegation_tag
 
         return PartitionResult(

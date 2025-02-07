@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 """Test helper for exporting an nn.Module to an ExecuTorch program."""
 
 import functools
@@ -22,6 +24,8 @@ from executorch.exir.passes import (
 )
 from torch import nn
 from torch.export import export
+from torch.export._trace import _export
+from torch.export.experimental import _export_forward_backward
 
 
 class ExportedModule:
@@ -63,8 +67,9 @@ class ExportedModule:
         ignore_to_out_var_failure: bool = False,
         dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
         capture_config=None,
-        extract_constant_segment: bool = True,
         skip_type_promotion: bool = False,
+        export_joint_graph: bool = False,
+        external_constants: bool = False,
     ) -> "ExportedModule":
         """
         Creates a new ExportedModule for the specified module class.
@@ -122,7 +127,7 @@ class ExportedModule:
         trace_inputs_method = "get_upper_bound_inputs"
         get_trace_inputs = get_inputs_adapter(
             (
-                getattr(eager_module, trace_inputs_method)
+                getattr(eager_module, trace_inputs_method)  # type: ignore[arg-type]
                 if hasattr(eager_module, trace_inputs_method)
                 else eager_module.get_random_inputs
             ),
@@ -138,14 +143,14 @@ class ExportedModule:
         if hasattr(eager_module, "get_dynamic_shapes"):
             assert capture_config is not None
             assert capture_config.enable_aot is True
-            trace_dynamic_shapes = eager_module.get_dynamic_shapes()
+            trace_dynamic_shapes = eager_module.get_dynamic_shapes()  # type: ignore[operator]
             method_name_to_dynamic_shapes = {}
             for method in methods:
                 method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
-        memory_planning_pass = MemoryPlanningPass("greedy")
+        memory_planning_pass = MemoryPlanningPass()
         if hasattr(eager_module, "get_memory_planning_pass"):
-            memory_planning_pass = eager_module.get_memory_planning_pass()
+            memory_planning_pass = eager_module.get_memory_planning_pass()  # type: ignore[operator]
 
         class WrapperModule(nn.Module):
             def __init__(self, method):
@@ -157,15 +162,31 @@ class ExportedModule:
         # variant, along with some other transformations.
         for method_name, method_input in method_name_to_args.items():
             # if not isinstance(eager_module, torch.nn.Module):
-            exported_methods[method_name] = export(
-                eager_module,
-                method_input,
-                dynamic_shapes=(
-                    method_name_to_dynamic_shapes[method_name]
-                    if method_name_to_dynamic_shapes
-                    else None
-                ),
-            )
+            if export_joint_graph:
+                # _export was having issues with WrapperModule.
+                assert method_name == "forward"
+                ep = _export(
+                    eager_module,
+                    method_input,  # type: ignore[arg-type]
+                    dynamic_shapes=(
+                        method_name_to_dynamic_shapes[method_name]
+                        if method_name_to_dynamic_shapes
+                        else None
+                    ),
+                    pre_dispatch=True,
+                )
+                exported_methods[method_name] = _export_forward_backward(ep)
+            else:
+                exported_methods[method_name] = export(
+                    eager_module,
+                    method_input,  # type: ignore[arg-type]
+                    dynamic_shapes=(
+                        method_name_to_dynamic_shapes[method_name]
+                        if method_name_to_dynamic_shapes
+                        else None
+                    ),
+                    strict=True,
+                )
 
         exec_prog = to_edge(
             exported_methods,
@@ -186,7 +207,7 @@ class ExportedModule:
                 dynamic_memory_planning_mode=dynamic_memory_planning_mode,
                 memory_planning_pass=memory_planning_pass,
                 to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
-                extract_constant_segment=extract_constant_segment,
+                external_constants=external_constants,
             )
         )
 
@@ -195,7 +216,7 @@ class ExportedModule:
 
         # Get a function that creates random inputs appropriate for testing.
         get_random_inputs_fn = get_inputs_adapter(
-            eager_module.get_random_inputs,
+            eager_module.get_random_inputs,  # type: ignore[arg-type]
             # all exported methods must have the same signature so just pick the first one.
             methods[0],
         )

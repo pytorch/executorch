@@ -24,7 +24,18 @@ _QUANT_OPS = (
         name = "op_embedding",
     ),
     op_target(
+        name = "op_embedding2b",
+        deps = ["//executorch/kernels/quantized/cpu:embeddingxb"],
+        _aten_mode_deps = [
+            "//executorch/kernels/quantized/cpu:embeddingxb_aten",
+        ],
+    ),
+    op_target(
         name = "op_embedding4b",
+        deps = ["//executorch/kernels/quantized/cpu:embeddingxb"],
+         _aten_mode_deps = [
+            "//executorch/kernels/quantized/cpu:embeddingxb_aten",
+        ],
     ),
     op_target(
         name = "op_mixed_mm",
@@ -58,8 +69,31 @@ def define_common_targets():
     runtime.cxx_library(
         name = "quantized_cpu",
         srcs = [],
-        visibility = ["//executorch/kernels/quantized/..."],
+        visibility = [
+            "//executorch/kernels/quantized/...",
+            "//executorch/extension/pybindings/test/...",
+        ],
         exported_deps = quant_op_targets,
+    )
+
+    runtime.cxx_library(
+        name = "embeddingxb",
+        srcs = ["embeddingxb.cpp"],
+        exported_headers = ["embeddingxb.h"],
+        visibility = [
+            "//executorch/kernels/quantized/...",
+        ],
+        deps = ["//executorch/runtime/kernel:kernel_includes"],
+    )
+
+    runtime.cxx_library(
+        name = "embeddingxb_aten",
+        srcs = ["embeddingxb.cpp"],
+        exported_headers = ["embeddingxb.h"],
+        visibility = [
+            "//executorch/kernels/quantized/...",
+        ],
+        deps = ["//executorch/runtime/kernel:kernel_includes_aten"],
     )
 
     runtime.cxx_library(

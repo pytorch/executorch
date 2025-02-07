@@ -12,8 +12,8 @@
 #include <vector>
 
 #include "QnnTypes.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class QuantizeParamsWrapper {
  public:
@@ -285,5 +285,5 @@ class AxisScaleOffsetQuantizeParamsWrapper final
 std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     const Qnn_QuantizeParams_t& quantization);
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

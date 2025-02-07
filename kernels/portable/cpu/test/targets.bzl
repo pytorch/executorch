@@ -14,6 +14,15 @@ def define_common_targets():
     #
 
     runtime.cxx_test(
+        name = "scalar_utils_test",
+        srcs = ["scalar_utils_test.cpp"],
+        deps = [
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "vec_ops_test",
         srcs = ["vec_ops_test.cpp"],
         deps = ["//executorch/kernels/portable/cpu:vec_ops"],

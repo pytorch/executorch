@@ -21,7 +21,7 @@ bool ShaderRegistry::has_dispatch(const std::string& op_name) {
   return it != registry_.end();
 }
 
-void ShaderRegistry::register_shader(ShaderInfo&& shader_info) {
+void ShaderRegistry::register_shader(vkapi::ShaderInfo&& shader_info) {
   if (has_shader(shader_info.kernel_name)) {
     VK_THROW(
         "Shader with name ", shader_info.kernel_name, "already registered");
@@ -44,7 +44,7 @@ void ShaderRegistry::register_op_dispatch(
   }
 }
 
-const ShaderInfo& ShaderRegistry::get_shader_info(
+const vkapi::ShaderInfo& ShaderRegistry::get_shader_info(
     const std::string& shader_name) {
   const ShaderListing::const_iterator it = listings_.find(shader_name);
 

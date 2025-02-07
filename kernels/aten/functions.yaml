@@ -6,6 +6,8 @@
 
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
+- op: _fft_r2c.out
+
 - op: _linalg_det.result
 
 - op: _linalg_svd.U
@@ -115,6 +117,8 @@
 
 - op: convolution.out
 
+- op: convolution_backward.out
+
 - op: copy.out
 
 - op: cos.out
@@ -173,6 +177,8 @@
 
 - op: full.out
 
+- op: gather.out
+
 - op: ge.Scalar_out
 
 - op: ge.Tensor_out
@@ -211,6 +217,8 @@
 
 - op: linalg_vector_norm.out
 
+- op: linear.out
+
 - op: log.out
 
 - op: log10.out
@@ -235,9 +243,15 @@
 
 - op: masked_fill.Scalar_out
 
+- op: masked_scatter.out
+
+- op: masked_select.out
+
 - op: max_pool2d_with_indices.out
 
 - op: max.dim_max
+
+- op: max.unary_out
 
 - op: max.unary_out
 
@@ -245,7 +259,11 @@
 
 - op: mean.out
 
+- op: mean.dtype_out
+
 - op: min.dim_min
+
+- op: min.unary_out
 
 - op: minimum.out
 
@@ -254,6 +272,8 @@
 - op: mul.out
 
 - op: mul.Scalar_out
+
+- op: narrow_copy.out
 
 - op: native_batch_norm.out
 
@@ -275,6 +295,8 @@
 
 - op: pixel_shuffle.out
 
+- op: pixel_unshuffle.out
+
 - op: pow.Scalar_out
 
 - op: pow.Tensor_Tensor_out
@@ -294,6 +316,8 @@
 - op: remainder.Scalar_out
 
 - op: repeat.out
+
+- op: repeat_interleave.Tensor_out
 
 - op: reflection_pad1d.out
 
@@ -316,6 +340,10 @@
 - op: rsub.Scalar_out
 
 - op: scalar_tensor.out
+
+- op: scatter.src_out
+
+- op: scatter.value_out
 
 - op: scatter_add.out
 
@@ -381,7 +409,7 @@
 
 - op: unsqueeze_copy.out
 
-- op: upsample_nearest2d.out
+- op: upsample_bilinear2d.vec_out
 
 - op: upsample_nearest2d.vec_out
 
@@ -396,3 +424,9 @@
 - op: zeros_like.out
 
 - op: zeros.out
+
+- op: gather.out
+
+- op: scatter.value_out
+
+- op: aten::native_dropout.out

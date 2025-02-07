@@ -14,10 +14,11 @@
 #include <gtest/gtest.h>
 #include <torch/library.h>
 
-namespace torch {
-namespace executor {
-
 using namespace ::testing;
+using ::executorch::extension::internal::type_convert;
+using ::executorch::extension::internal::type_map;
+using ::torch::executor::ScalarType;
+using ::torch::executor::Tensor;
 
 Tensor& my_op_out(const Tensor& a, Tensor& out) {
   (void)a;
@@ -137,21 +138,21 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_Optionals) {
   // Scalar.
   EXPECT_TRUE((std::is_same<
                type_map<torch::executor::optional<int64_t>>::type,
-               c10::optional<int64_t>>::value));
+               std::optional<int64_t>>::value));
   // Tensor.
   EXPECT_TRUE(
       (std::is_same<
           type_map<torch::executor::optional<torch::executor::Tensor>>::type,
-          c10::optional<at::Tensor>>::value));
+          std::optional<at::Tensor>>::value));
   // ArrayRef.
   EXPECT_TRUE((std::is_same<
                type_map<torch::executor::optional<
                    torch::executor::ArrayRef<int64_t>>>::type,
-               c10::optional<c10::ArrayRef<int64_t>>>::value));
+               std::optional<c10::ArrayRef<int64_t>>>::value));
   EXPECT_TRUE((std::is_same<
                type_map<torch::executor::optional<
                    torch::executor::ArrayRef<torch::executor::Tensor>>>::type,
-               c10::optional<c10::ArrayRef<at::Tensor>>>::value));
+               std::optional<c10::ArrayRef<at::Tensor>>>::value));
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_ArrayRef) {
@@ -168,11 +169,11 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestTypeMap_ArrayRef) {
   EXPECT_TRUE((std::is_same<
                type_map<torch::executor::ArrayRef<
                    torch::executor::optional<int64_t>>>::type,
-               c10::ArrayRef<c10::optional<int64_t>>>::value));
+               c10::ArrayRef<std::optional<int64_t>>>::value));
   EXPECT_TRUE((std::is_same<
                type_map<torch::executor::ArrayRef<
                    torch::executor::optional<torch::executor::Tensor>>>::type,
-               c10::ArrayRef<c10::optional<at::Tensor>>>::value));
+               c10::ArrayRef<std::optional<at::Tensor>>>::value));
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_Tensor) {
@@ -190,9 +191,9 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_Tensor) {
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_OptionalScalar) {
   // Convert optional at to et.
-  auto optional_at_in = c10::optional<int64_t>();
+  auto optional_at_in = std::optional<int64_t>();
   auto optional_et =
-      type_convert<c10::optional<int64_t>, torch::executor::optional<int64_t>>(
+      type_convert<std::optional<int64_t>, torch::executor::optional<int64_t>>(
           optional_at_in)
           .call();
   EXPECT_TRUE(
@@ -202,19 +203,19 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_OptionalScalar) {
   // Convert optional et to at.
   auto optional_et_in = torch::executor::optional<int64_t>();
   auto optional_at_out =
-      type_convert<torch::executor::optional<int64_t>, c10::optional<int64_t>>(
+      type_convert<torch::executor::optional<int64_t>, std::optional<int64_t>>(
           optional_et_in)
           .call();
   EXPECT_TRUE(
-      (std::is_same<decltype(optional_at_out), c10::optional<int64_t>>::value));
+      (std::is_same<decltype(optional_at_out), std::optional<int64_t>>::value));
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_OptionalTensor) {
   // Convert optional at to et.
-  auto optional_at_in = c10::optional<at::Tensor>();
+  auto optional_at_in = std::optional<at::Tensor>();
   auto optional_et =
       type_convert<
-          c10::optional<at::Tensor>,
+          std::optional<at::Tensor>,
           torch::executor::optional<torch::executor::Tensor>>(optional_at_in)
           .call();
   EXPECT_TRUE((std::is_same<
@@ -226,10 +227,10 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_OptionalTensor) {
   auto et_in = torch::executor::optional<torch::executor::Tensor>(tf.ones({3}));
   auto optional_at_out = type_convert<
                              torch::executor::optional<torch::executor::Tensor>,
-                             c10::optional<at::Tensor>>(optional_et)
+                             std::optional<at::Tensor>>(optional_et)
                              .call();
   EXPECT_TRUE(
-      (std::is_same<decltype(optional_at_out), c10::optional<at::Tensor>>::
+      (std::is_same<decltype(optional_at_out), std::optional<at::Tensor>>::
            value));
 }
 
@@ -343,8 +344,8 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_EmbeddingByte) {
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_OptionalScalarAdd) {
-  c10::optional<int64_t> a = c10::optional<int64_t>(3);
-  c10::optional<int64_t> b = c10::optional<int64_t>();
+  std::optional<int64_t> a = std::optional<int64_t>(3);
+  std::optional<int64_t> b = std::optional<int64_t>();
   at::Tensor out = torch::tensor({0});
 
   auto op = c10::Dispatcher::singleton().findSchema(
@@ -358,8 +359,8 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_OptionalScalarAdd) {
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_OptionalTensorAdd) {
-  c10::optional<at::Tensor> a = c10::optional<at::Tensor>(torch::tensor({8}));
-  c10::optional<at::Tensor> b = c10::optional<at::Tensor>();
+  std::optional<at::Tensor> a = std::optional<at::Tensor>(torch::tensor({8}));
+  std::optional<at::Tensor> b = std::optional<at::Tensor>();
   at::Tensor out = torch::tensor({0});
 
   auto op = c10::Dispatcher::singleton().findSchema(
@@ -404,10 +405,10 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_ArrayRefTensorAdd) {
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_ArrayRefOptional) {
-  std::vector<c10::optional<at::Tensor>> vec{
-      c10::optional<at::Tensor>(torch::tensor({1})),
-      c10::optional<at::Tensor>(),
-      c10::optional<at::Tensor>(torch::tensor({3}))};
+  std::vector<std::optional<at::Tensor>> vec{
+      std::optional<at::Tensor>(torch::tensor({1})),
+      std::optional<at::Tensor>(),
+      std::optional<at::Tensor>(torch::tensor({3}))};
   at::Tensor out = torch::tensor({0});
 
   at::ArrayRef arrayref = at::ArrayRef(vec.data(), vec.size());
@@ -420,6 +421,3 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_ArrayRefOptional) {
   EXPECT_EQ(stack.size(), 1);
   EXPECT_EQ(stack[0].toTensor().const_data_ptr<int64_t>()[0], 4);
 }
-
-} // namespace executor
-} // namespace torch

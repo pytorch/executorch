@@ -19,7 +19,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/exir/backend/test/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
-                "//executorch/sdk/fb/runners/...",
+                "//executorch/devtools/fb/runners/...",
                 "//executorch/test/...",
                 "//executorch/examples/...",
             ],
@@ -43,7 +43,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/exir/backend/test/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
-                "//executorch/sdk/fb/runners/...",
+                "//executorch/devtools/fb/runners/...",
                 "//executorch/test/...",
                 "//executorch/examples/...",
             ],
@@ -97,6 +97,8 @@ def define_common_targets(is_fbcode = False):
     # file in fbcode. See https://fburl.com/9esapdmd
     if not runtime.is_oss and is_fbcode:
         modules_env = {
+            # Deprecated model that still works with ExecuTorch runtime.
+            "DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH": "$(location fbcode//executorch/test/models/deprecated:ModuleLinear-no-constant-segment.pte)",
             # The tests use this var to find the program file to load. This uses
             # an fbcode target path because the authoring/export tools
             # intentionally don't work in xplat (since they're host-only tools).
@@ -104,9 +106,9 @@ def define_common_targets(is_fbcode = False):
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
             "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCatUnallocatedIO.pte])",
             "ET_MODULE_INDEX_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleIndex.pte])",
-            "ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleLinear-no-constant-segment.pte])",
-            "ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleLinear.pte])",
+            "ET_MODULE_LINEAR_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleLinear.pte])",
             "ET_MODULE_MULTI_ENTRY_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleMultipleEntry.pte])",
+            "ET_MODULE_SIMPLE_TRAIN_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleSimpleTrain.pte])",
         }
 
         runtime.cxx_test(
@@ -119,7 +121,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/executor:program",
                 "//executorch/kernels/portable:generated_lib",
                 "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/util:util",
+                "//executorch/extension/runner_util:inputs",
             ],
             env = modules_env,
         )
@@ -132,8 +134,8 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/runner_util:inputs",
                 "//executorch/kernels/portable:generated_lib",
             ],
             env = modules_env,
@@ -174,7 +176,6 @@ def define_common_targets(is_fbcode = False):
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
                 "//executorch/runtime/kernel:operator_registry",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
             ],
             env = modules_env,
@@ -188,12 +189,12 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":managed_memory_manager",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/runner_util:inputs",
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/executor:program",
                 "//executorch/runtime/kernel:kernel_runtime_context",
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/runtime/platform:platform",
-                "//executorch/util:util",
             ],
             env = modules_env,
         )
@@ -209,7 +210,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/util:util",
+                "//executorch/extension/runner_util:inputs",
             ],
             env = {
                 # The tests use these vars to find the program files to load.

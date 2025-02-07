@@ -1,23 +1,24 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
-from executorch.backends.arm.test import common
-from executorch.backends.arm.test.ops.test_conv import Conv2d
+from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test.ops.test_conv1d import Conv1d
+from executorch.backends.arm.test.ops.test_conv2d import Conv2d
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 """
 The configuration when
@@ -26,6 +27,29 @@ The configuration when
   where K is a positive integer
 is termed in literature as depthwise convolution.
 """
+
+dw_conv1d_3_1x3x14_gp3_st1 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=7,
+    stride=1,
+    groups=3,
+    length=14,
+    batches=1,
+    padding=3,
+)
+
+dw_conv1d_2_1x6x4_gp6_st1 = Conv1d(
+    in_channels=6,
+    out_channels=12,
+    kernel_size=2,
+    stride=1,
+    groups=6,
+    padding=0,
+    length=4,
+    batches=1,
+)
+
 dw_conv2d_2x2_1x6x4x4_gp6_st1 = Conv2d(
     in_channels=6,
     out_channels=12,
@@ -35,6 +59,17 @@ dw_conv2d_2x2_1x6x4x4_gp6_st1 = Conv2d(
     padding=0,
     width=4,
     height=4,
+    batches=1,
+)
+
+dw_conv1d_3_1x3x256_gp3_st1 = Conv1d(
+    in_channels=3,
+    out_channels=3,
+    kernel_size=3,
+    stride=1,
+    groups=3,
+    padding=0,
+    length=256,
     batches=1,
 )
 
@@ -86,6 +121,19 @@ dw_conv2d_3x3_1x4x256x256_gp4_nobias = Conv2d(
     batches=1,
 )
 
+two_dw_conv1d = Conv1d(
+    nbr_conv=2,
+    length=64,
+    in_channels=[4, 8],
+    out_channels=[8, 24],
+    kernel_size=[3, 3],
+    stride=[1, 1],
+    padding=[0, 0],
+    groups=[4, 8],
+    bias=[True, True],
+    batches=1,
+)
+
 two_dw_conv2d = Conv2d(
     nbr_conv=2,
     width=64,
@@ -101,87 +149,70 @@ two_dw_conv2d = Conv2d(
 )
 
 # Shenanigan to get a nicer output when test fails.
-testsuite = [
+testsuite_conv2d = [
     ("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1),
     ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1),
+    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias),
     ("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1),
     ("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3),
-    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias),
     ("two_dw_conv2d", two_dw_conv2d),
 ]
 
-# Expected fails on Ethos-U55/U65. This is a known limitation.
-# Check: https://review.mlplatform.org/plugins/gitiles/ml/ethos-u/ethos-u-vela/+/refs/heads/main/SUPPORTED_OPS.md
-#   For depth multipliers > 1, IFM channels must be 1 and OFM channels must be
-#   equal to the depth multiplier
-# and
-#   depthwise_multiplier = out_channels / in_channels
-testsuite_u55 = testsuite.copy()
-testsuite_u55.remove(("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1))
-testsuite_u55.remove(("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1))
-testsuite_u55.remove(("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3))
-testsuite_u55.remove(
-    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias)
-)
-testsuite_u55.remove(("two_dw_conv2d", two_dw_conv2d))
+testsuite_conv2d_u85 = [
+    ("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1),
+    ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1),
+    ("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1),
+    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias),
+]
+
+testsuite_conv2d_u85_xfails = [
+    ("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3),
+    ("two_dw_conv2d", two_dw_conv2d),
+]
 
 
-class TestDepthwiseConv2D(unittest.TestCase):
-    def _test_dw_conv2d_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        tester = (
-            ArmTester(
-                module,
-                inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
-            )
-            .export()
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
+testsuite_conv1d = [
+    ("2_1x6x4_gp6_st1", dw_conv1d_2_1x6x4_gp6_st1),
+    ("two_dw_conv1d", two_dw_conv1d),
+    ("3_1x3x256_gp3_st1", dw_conv1d_3_1x3x256_gp3_st1),
+    ("3_1x3x14_gp3_st1", dw_conv1d_3_1x3x14_gp3_st1),
+]
 
-    def _test_dw_conv2d_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        tester = (
-            ArmTester(
-                module,
-                inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(qtol=1)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
-    def _test_dw_conv2d_u55_BI_pipeline(
+class TestDepthwiseConv(unittest.TestCase):
+    """Tests Conv1D and Conv2D where groups == in_channels and out_channels = K * in_channels. This
+    is a special case enables depthwise convolution."""
+
+    def _test_dw_conv_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
         (
             ArmTester(
                 module,
-                inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80+MI",
+                ),
+            )
+            .export()
+            .to_edge()
+            .partition()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .run_method_and_compare_outputs(inputs=test_data)
+        )
+
+    def _test_dw_conv_tosa_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    ):
+        (
+            ArmTester(
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(
+                    "TOSA-0.80+BI",
+                ),
             )
             .quantize()
             .export()
@@ -190,20 +221,86 @@ class TestDepthwiseConv2D(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    @parameterized.expand(testsuite)
-    def test_dw_conv2d_tosa_MI(self, test_name, model):
-        self._test_dw_conv2d_tosa_MI_pipeline(model, model.get_inputs())
+    def _test_dw_conv_ethos_BI_pipeline(
+        self,
+        module: torch.nn.Module,
+        compile_spec: CompileSpec,
+        test_data: Tuple[torch.Tensor],
+    ):
+        tester = (
+            ArmTester(
+                module,
+                example_inputs=test_data,
+                compile_spec=compile_spec,
+            )
+            .quantize()
+            .export()
+            .to_edge()
+            .partition()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+        )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
-    @parameterized.expand(testsuite)
-    def test_dw_conv2d_tosa_BI(self, test_name, model):
-        self._test_dw_conv2d_tosa_BI_pipeline(model, model.get_inputs())
+    @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
+    def test_dw_conv_tosa_MI(self, test_name: str, model: torch.nn.Module):
+        self._test_dw_conv_tosa_MI_pipeline(model, model.get_inputs())
 
-    @parameterized.expand(testsuite_u55)
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
-    def test_dw_conv2d_u55_BI(self, test_name, model):
-        self._test_dw_conv2d_u55_BI_pipeline(model, model.get_inputs())
+    @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
+    @pytest.mark.flaky  # TODO: Investigate flakyness (MLTORCH-307)
+    def test_dw_conv_tosa_BI(self, test_name: str, model: torch.nn.Module):
+        self._test_dw_conv_tosa_BI_pipeline(model, model.get_inputs())
+
+    @parameterized.expand(testsuite_conv2d[:4], skip_on_empty=True)
+    @pytest.mark.corstone_fvp
+    def test_dw_conv2d_u55_BI(self, test_name: str, model: torch.nn.Module):
+        self._test_dw_conv_ethos_BI_pipeline(
+            model,
+            common.get_u55_compile_spec(),
+            model.get_inputs(),
+        )
+
+    @parameterized.expand(testsuite_conv2d[4:], skip_on_empty=True)
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-516
+    def test_dw_conv2d_u55_BI_xfails(self, test_name: str, model: torch.nn.Module):
+        self._test_dw_conv_ethos_BI_pipeline(
+            model,
+            common.get_u55_compile_spec(),
+            model.get_inputs(),
+        )
+
+    @parameterized.expand(testsuite_conv1d, skip_on_empty=True)
+    @pytest.mark.corstone_fvp
+    def test_dw_conv1d_u55_BI(self, test_name: str, model: torch.nn.Module):
+        self._test_dw_conv_ethos_BI_pipeline(
+            model,
+            common.get_u55_compile_spec(),
+            model.get_inputs(),
+        )
+
+    @parameterized.expand(testsuite_conv1d + testsuite_conv2d_u85)
+    @pytest.mark.corstone_fvp
+    def test_dw_conv_u85_BI(self, test_name: str, model: torch.nn.Module):
+        self._test_dw_conv_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(),
+            model.get_inputs(),
+        )
+
+    # All test cases except 3x3_1x3x256x256_gp3_st1 have numerical issues on FVP. MLETORCH-520
+    @parameterized.expand(testsuite_conv2d_u85_xfails)
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP
+    def test_dw_conv_u85_BI_xfails(self, test_name: str, model: torch.nn.Module):
+        self._test_dw_conv_ethos_BI_pipeline(
+            model,
+            common.get_u85_compile_spec(),
+            model.get_inputs(),
+        )

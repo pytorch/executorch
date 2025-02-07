@@ -7,52 +7,15 @@
 
 set -eu
 
-CMAKE_OUT="${CMAKE_OUT:-cmake-out-android}"
-EXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN:-OFF}"
-# Note: Set up ANDROID_NDK and ANDROID_ABI
-cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-  -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
-  -DANDROID_ABI="${ANDROID_ABI}" \
-  -DEXECUTORCH_BUILD_XNNPACK=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-  -DEXECUTORCH_BUILD_OPTIMIZED=ON \
-  -DEXECUTORCH_BUILD_QUANTIZED=ON \
-  -DEXECUTORCH_BUILD_CUSTOM=ON \
-  -DCMAKE_BUILD_TYPE=Release \
-  -B"${CMAKE_OUT}"
+BASEDIR=$(dirname "$0")
+source "$BASEDIR"/../../../../build/build_android_llm_demo.sh
 
-if [ "$(uname)" == "Darwin" ]; then
-  CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
-else
-  CMAKE_JOBS=$(( $(nproc) - 1 ))
-fi
-cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Release
+BUILD_AAR_DIR="$(mktemp -d)"
+export BUILD_AAR_DIR
 
-cmake examples/models/llama2 \
-         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-         -DANDROID_ABI="$ANDROID_ABI" \
-         -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-         -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
-         -DEXECUTORCH_BUILD_CUSTOM=ON \
-         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
-         -DEXECUTORCH_BUILD_XNNPACK=ON \
-         -DCMAKE_BUILD_TYPE=Release \
-         -B"${CMAKE_OUT}"/examples/models/llama2
-
-cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config Release
-
-cmake extension/android \
-  -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI="${ANDROID_ABI}" \
-  -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-  -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
-  -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -B"${CMAKE_OUT}"/extension/android
-
-cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config Release
-
-JNI_LIBS_PATH="examples/demo-apps/android/LlamaDemo/app/src/main/jniLibs"
-mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"
-cp "${CMAKE_OUT}"/extension/android/libexecutorch_llama_jni.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"
+build_jar
+build_android_native_library "arm64-v8a"
+build_android_native_library "x86_64"
+build_aar
+mkdir -p "$BASEDIR"/app/libs
+cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/app/libs/executorch.aar

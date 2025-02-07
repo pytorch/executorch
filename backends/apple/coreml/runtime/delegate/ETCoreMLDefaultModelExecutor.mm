@@ -29,9 +29,10 @@
     if (self.ignoreOutputBackings) {
         predictionOptions.outputBackings = @{};
     }
-    id<MLFeatureProvider> outputs = [self.model.mlModel predictionFromFeatures:inputs
-                                                                       options:predictionOptions
-                                                                         error:error];
+
+    id<MLFeatureProvider> outputs = [self.model predictionFromFeatures:inputs
+                                                               options:predictionOptions
+                                                                 error:error];
     if (!outputs) {
         return nil;
     }

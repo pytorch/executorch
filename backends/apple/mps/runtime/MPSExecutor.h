@@ -16,8 +16,8 @@
 #include <memory>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -73,20 +73,20 @@ class MPSExecutor {
     return _executable;
   }
 
-  __ET_NODISCARD Error forward(std::vector<const Tensor*>& outputs);
+  ET_NODISCARD executorch::runtime::Error forward(std::vector<const executorch::aten::Tensor*>& outputs);
 
-  __ET_NODISCARD Error
-  set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<const Tensor*>& outputs);
+  ET_NODISCARD executorch::runtime::Error
+  set_inputs_outputs(std::vector<const executorch::aten::Tensor*>& inputs, std::vector<const executorch::aten::Tensor*>& outputs);
 
-  Error initDataBuffers();
-  Error updateDataBuffers(std::vector<const Tensor*>& inputs, std::vector<const Tensor*>& outputs);
-  Error syncOutputBuffers(std::vector<const Tensor*>& outputs);
+  executorch::runtime::Error initDataBuffers();
+  executorch::runtime::Error updateDataBuffers(std::vector<const executorch::aten::Tensor*>& inputs, std::vector<const executorch::aten::Tensor*>& outputs);
+  executorch::runtime::Error syncOutputBuffers(std::vector<const executorch::aten::Tensor*>& outputs);
 
   friend class MPSCompiler;
 };
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
 // clang-format on

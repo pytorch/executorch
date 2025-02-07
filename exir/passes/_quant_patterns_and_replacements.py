@@ -15,7 +15,7 @@ from executorch.exir.passes.replace_aten_with_edge_pass import (
 )
 from torch import fx
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib
-from torch.library import impl, impl_abstract
+from torch.library import impl, register_fake
 
 
 __all__ = [
@@ -103,7 +103,7 @@ def embedding_byte(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("quantized_decomposed::embedding_byte.out")
+@register_fake("quantized_decomposed::embedding_byte.out")
 def embedding_byte_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -150,7 +150,7 @@ def embedding_byte_dtype(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("quantized_decomposed::embedding_byte.dtype_out")
+@register_fake("quantized_decomposed::embedding_byte.dtype_out")
 def embedding_byte_dtype_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -162,6 +162,152 @@ def embedding_byte_dtype_out_meta(
     out: torch.Tensor,
 ) -> torch.Tensor:
     return embedding_byte_dtype(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        indices,
+        dtype,
+    )
+
+
+quantized_decomposed_lib.define(
+    "embedding_2bit(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices) -> Tensor",
+)
+
+quantized_decomposed_lib.define(
+    "embedding_2bit.dtype(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None) -> Tensor",
+)
+
+quantized_decomposed_lib.define(
+    "embedding_2bit.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)",
+)
+
+quantized_decomposed_lib.define(
+    "embedding_2bit.dtype_out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+)
+
+
+@impl(quantized_decomposed_lib, "embedding_2bit", "CompositeExplicitAutograd")
+def embedding_2bit(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+) -> torch.Tensor:
+    assert (
+        weight_quant_min == -2
+    ), "embedding_2bit in ExecuTorch expects weight_quant_min == -2"
+    assert (
+        weight_quant_max == 1
+    ), "embedding_2bit in ExecuTorch expects weight_quant_max == 1"
+
+    embedding_weight_checks(weight, weight_scales, weight_zero_points)
+    group_size = (4 * weight.size(1)) // (
+        weight_scales.size(1) if weight_scales.dim() == 2 else 1
+    )
+    weight_0 = weight & 3
+    weight_1 = (weight & 12) >> 2
+    weight_2 = (weight & 48) >> 4
+    weight_3 = (weight & 192) >> 6
+    weight_unpacked = torch.stack((weight_0, weight_1, weight_2, weight_3), dim=-1)
+    weight = weight_unpacked.view(weight.shape[0], -1)
+    weight = weight.view(torch.int8).add(-2)
+
+    weight = torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        weight.dtype,
+        group_size,
+        weight_scales.dtype,
+    )
+    return torch.ops.aten.embedding.default(weight, indices)
+
+
+@register_fake("quantized_decomposed::embedding_2bit.out")
+def embedding_2bit_out_meta(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return embedding_2bit(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        indices,
+    )
+
+
+@impl(quantized_decomposed_lib, "embedding_2bit.dtype", "CompositeExplicitAutograd")
+def embedding_2bit_dtype(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+    dtype: Optional[torch.dtype],
+) -> torch.Tensor:
+    assert (
+        weight_quant_min == -2
+    ), "embedding_2bit_dtype in ExecuTorch expects weight_quant_min == -2"
+    assert (
+        weight_quant_max == 1
+    ), "embedding_2bit_dtype in ExecuTorch expects weight_quant_max == 1"
+
+    embedding_weight_checks(weight, weight_scales, weight_zero_points)
+    group_size = (4 * weight.size(1)) // (
+        weight_scales.size(1) if weight_scales.dim() == 2 else 1
+    )
+    weight_0 = weight & 3
+    weight_1 = (weight & 12) >> 2
+    weight_2 = (weight & 48) >> 4
+    weight_3 = (weight & 192) >> 6
+    weight_unpacked = torch.stack((weight_0, weight_1, weight_2, weight_3), dim=-1)
+    weight = weight_unpacked.view(weight.shape[0], -1)
+    weight = weight.view(torch.int8).add(-2)
+
+    weight = torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        weight.dtype,
+        group_size,
+        dtype,
+    )
+    return torch.ops.aten.embedding.default(weight, indices)
+
+
+@register_fake("quantized_decomposed::embedding_2bit.dtype_out")
+def embedding_2bit_dtype_out_meta(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+    dtype: Optional[torch.dtype],
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return embedding_2bit_dtype(
         weight,
         weight_scales,
         weight_zero_points,
@@ -202,6 +348,13 @@ def embedding_4bit(
     weight_quant_max: int,
     indices: torch.Tensor,
 ) -> torch.Tensor:
+    assert (
+        weight_quant_min == -8
+    ), "embedding_4bit in ExecuTorch expects weight_quant_min == -8"
+    assert (
+        weight_quant_max == 7
+    ), "embedding_4bit in ExecuTorch expects weight_quant_max == 7"
+
     embedding_weight_checks(weight, weight_scales, weight_zero_points)
     group_size = (2 * weight.size(1)) // (
         weight_scales.size(1) if weight_scales.dim() == 2 else 1
@@ -225,7 +378,7 @@ def embedding_4bit(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("quantized_decomposed::embedding_4bit.out")
+@register_fake("quantized_decomposed::embedding_4bit.out")
 def embedding_4bit_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -255,6 +408,13 @@ def embedding_4bit_dtype(
     indices: torch.Tensor,
     dtype: Optional[torch.dtype],
 ) -> torch.Tensor:
+    assert (
+        weight_quant_min == -8
+    ), "embedding_4bit_dtype in ExecuTorch expects weight_quant_min == -8"
+    assert (
+        weight_quant_max == 7
+    ), "embedding_4bit_dtype in ExecuTorch expects weight_quant_max == 7"
+
     embedding_weight_checks(weight, weight_scales, weight_zero_points)
     group_size = (2 * weight.size(1)) // (
         weight_scales.size(1) if weight_scales.dim() == 2 else 1
@@ -278,7 +438,7 @@ def embedding_4bit_dtype(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("quantized_decomposed::embedding_4bit.dtype_out")
+@register_fake("quantized_decomposed::embedding_4bit.dtype_out")
 def embedding_4bit_dtype_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -302,6 +462,10 @@ def embedding_4bit_dtype_out_meta(
 
 quantized_decomposed_lib.define(
     "mixed_mm(Tensor input, Tensor weight, Tensor weight_scales, Tensor? weight_zero_points) -> Tensor",
+)
+
+quantized_decomposed_lib.define(
+    "mixed_linear(Tensor input, Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, ScalarType? dtype=None) -> Tensor",
 )
 
 quantized_decomposed_lib.define(

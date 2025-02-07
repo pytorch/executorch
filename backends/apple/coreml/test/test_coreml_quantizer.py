@@ -14,13 +14,13 @@ from coremltools.optimize.torch.quantization.quantization_config import (
     QuantizationScheme,
 )
 
-from executorch.backends.apple.coreml.quantizer.coreml_quantizer import CoreMLQuantizer
-from torch._export import capture_pre_autograd_graph
+from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
 from torch.ao.quantization.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
+from torch.export import export_for_training
 
 
 class TestCoreMLQuantizer:
@@ -32,7 +32,7 @@ class TestCoreMLQuantizer:
     ) -> None:
         assert quantization_type in {"PTQ", "QAT"}
 
-        pre_autograd_aten_dialect = capture_pre_autograd_graph(model, example_inputs)
+        pre_autograd_aten_dialect = export_for_training(model, example_inputs).module()
 
         quantization_config = LinearQuantizerConfig.from_dict(
             {
@@ -51,6 +51,8 @@ class TestCoreMLQuantizer:
             prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)
         elif quantization_type == "QAT":
             prepared_graph = prepare_qat_pt2e(pre_autograd_aten_dialect, quantizer)
+        else:
+            raise ValueError("Invalid quantization type")
 
         prepared_graph(*example_inputs)
         converted_graph = convert_pt2e(prepared_graph)

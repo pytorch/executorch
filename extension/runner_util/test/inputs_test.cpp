@@ -18,22 +18,22 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::MemoryAllocator;
-using torch::executor::MemoryManager;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::Span;
-using torch::executor::Tag;
-using torch::executor::Tensor;
-using torch::executor::testing::ManagedMemoryManager;
-using torch::executor::util::BufferCleanup;
-using torch::executor::util::FileDataLoader;
-using torch::executor::util::prepare_input_tensors;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::extension::BufferCleanup;
+using executorch::extension::FileDataLoader;
+using executorch::extension::prepare_input_tensors;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+using executorch::runtime::Tag;
+using executorch::runtime::testing::ManagedMemoryManager;
 
 class InputsTest : public ::testing::Test {
  protected:
@@ -99,6 +99,35 @@ TEST_F(InputsTest, Smoke) {
   // Although it's tough to test directly, ASAN should let us know if
   // BufferCleanup doesn't behave properly: either freeing too soon or leaking
   // the pointers.
+}
+
+TEST_F(InputsTest, ExceedingInputCountLimitFails) {
+  // The smoke test above demonstrated that we can prepare inputs with the
+  // default limits. It should fail if we lower the max below the number of
+  // actual inputs.
+  MethodMeta method_meta = method_->method_meta();
+  size_t num_inputs = method_meta.num_inputs();
+  ASSERT_GE(num_inputs, 1);
+  executorch::extension::PrepareInputTensorsOptions options;
+  options.max_inputs = num_inputs - 1;
+
+  Result<BufferCleanup> input_buffers =
+      prepare_input_tensors(*method_, options);
+  ASSERT_NE(input_buffers.error(), Error::Ok);
+}
+
+TEST_F(InputsTest, ExceedingInputAllocationLimitFails) {
+  // The smoke test above demonstrated that we can prepare inputs with the
+  // default limits. It should fail if we lower the max below the actual
+  // allocation size.
+  executorch::extension::PrepareInputTensorsOptions options;
+  // The input tensors are float32, so 1 byte will always be smaller than any
+  // non-empty input tensor.
+  options.max_total_allocation_size = 1;
+
+  Result<BufferCleanup> input_buffers =
+      prepare_input_tensors(*method_, options);
+  ASSERT_NE(input_buffers.error(), Error::Ok);
 }
 
 TEST(BufferCleanupTest, Smoke) {

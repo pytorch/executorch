@@ -39,6 +39,17 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "file_descriptor_data_loader_test",
+        srcs = [
+            "file_descriptor_data_loader_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/testing_util:temp_file",
+            "//executorch/extension/data_loader:file_descriptor_data_loader",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "mmap_data_loader_test",
         srcs = [
             "mmap_data_loader_test.cpp",

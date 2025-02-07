@@ -14,12 +14,12 @@ cpp_python_extension(
         "//executorch/backends/fb/qnnpack/...",
         "//executorch/backends/vulkan/...",
         "//executorch/backends/xnnpack/...",
-        "//executorch/sdk/bundled_program/...",
-        "//executorch/sdk/etdump/...",
+        "//executorch/devtools/bundled_program/...",
+        "//executorch/devtools/etdump/...",
     ],
     deps = [
         "fbsource//third-party/flatbuffers:flatc_library",
-        "fbsource//third-party/pybind11/2.6.2:pybind11",
+        "fbsource//third-party/pybind11:pybind11",
     ],
 )
 
@@ -33,6 +33,9 @@ runtime.python_library(
         "_dataclass.py",
         "_flatbuffer.py",
         "_program.py",
+        "_serialize.py",
+        "data_serializer.py",
+        "padding.py",
     ],
     resources = {
         "//executorch/schema:program.fbs": "program.fbs",
@@ -45,6 +48,10 @@ runtime.python_library(
     visibility = [
         "//executorch/backends/...",
         "//executorch/codegen/...",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/devtools/bundled_program/tests/...",
+        "//executorch/devtools/experimental/...",
         "//executorch/examples/async_exec:emit_program_lib",
         "//executorch/exir/...",
         "//executorch/exir/tests/...",
@@ -52,10 +59,6 @@ runtime.python_library(
         "//executorch/extension/pybindings/test:test",
         "//executorch/extension/pybindings/test:test-library",
         "//executorch/profiler/...",
-        "//executorch/sdk:lib",
-        "//executorch/sdk/bundled_program/serialize:lib",
-        "//executorch/sdk/bundled_program/tests/...",
-        "//executorch/sdk/experimental/...",
         "//executorch/test/...",
         "@EXECUTORCH_CLIENTS",
     ],

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
+#include <executorch/runtime/platform/compiler.h>
 #ifdef USE_ATEN_LIB
 #include <ATen/Tensor.h> // @manual
 #include <c10/core/Device.h>
@@ -17,6 +18,7 @@
 #include <c10/core/MemoryFormat.h> // @manual
 #include <c10/core/Scalar.h> // @manual
 #include <c10/util/ArrayRef.h> // @manual
+#include <c10/util/BFloat16-math.h> // @manual
 #include <c10/util/BFloat16.h> // @manual
 #include <c10/util/Half.h> // @manual
 #include <c10/util/Optional.h> // @manual
@@ -31,6 +33,7 @@
 #else // use executor
 #include <executorch/runtime/core/array_ref.h> // @manual
 #include <executorch/runtime/core/portable_type/bfloat16.h> // @manual
+#include <executorch/runtime/core/portable_type/bfloat16_math.h> // @manual
 #include <executorch/runtime/core/portable_type/complex.h> // @manual
 #include <executorch/runtime/core/portable_type/device.h> // @manual
 #include <executorch/runtime/core/portable_type/half.h> // @manual
@@ -44,22 +47,23 @@
 
 #endif
 
-namespace exec_aten {
+namespace executorch {
+namespace aten {
 
-using TensorShapeDynamism = torch::executor::TensorShapeDynamism;
+using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
 
 #ifdef USE_ATEN_LIB
 
 using Tensor = at::Tensor;
 using TensorList = at::TensorList;
 using TensorImpl = at::TensorImpl;
-using string_view = c10::string_view;
+using string_view = std::string_view;
 template <typename T>
 using ArrayRef = c10::ArrayRef<T>;
 template <typename T>
-using optional = c10::optional<T>;
-using nullopt_t = c10::nullopt_t;
-using c10::nullopt;
+using optional = std::optional<T>;
+using nullopt_t = std::nullopt_t;
+using std::nullopt;
 using ScalarType = at::ScalarType;
 using Scalar = c10::Scalar;
 using MemoryFormat = c10::MemoryFormat;
@@ -81,6 +85,15 @@ using BFloat16 = c10::BFloat16;
 using quint4x2 = c10::quint4x2;
 using quint2x4 = c10::quint2x4;
 using IntArrayRef = at::IntArrayRef;
+
+template <typename T>
+using OptionalArrayRef = c10::OptionalArrayRef<T>;
+using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
+
+inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
+  return static_cast<ssize_t>(
+      c10::multiply_integers(c10::ArrayRef<SizesType>(sizes, dim)));
+}
 
 #else // Use executor types
 
@@ -118,12 +131,24 @@ using quint2x4 = torch::executor::quint2x4;
 
 using IntArrayRef = torch::executor::IntArrayRef;
 
-#endif // Use executor types
+template <typename T>
+using OptionalArrayRef =
+    torch::executor::optional<torch::executor::ArrayRef<T>>;
+using OptionalIntArrayRef = OptionalArrayRef<int64_t>;
 
-} // namespace exec_aten
+using torch::executor::compute_numel;
+
+#endif // Use ExecuTorch types
+
+} // namespace aten
+} // namespace executorch
+
+// DEPRECATED: The exec_aten:: namespace is deprecated. Use executorch::aten::
+// instead.
+namespace exec_aten = executorch::aten;
+
 namespace torch {
 namespace executor {
-using TensorList = exec_aten::TensorList;
-
+using TensorList = ::executorch::aten::TensorList;
 } // namespace executor
 } // namespace torch

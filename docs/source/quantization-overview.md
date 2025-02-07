@@ -14,3 +14,25 @@ Backend developers will need to implement their own ``Quantizer`` to express how
 Modeling users will use the ``Quantizer`` specific to their target backend to quantize their model, e.g. ``XNNPACKQuantizer``.
 
 For an example quantization flow with ``XNPACKQuantizer``, more documentation and tutorials, please see ``Performing Quantization`` section in [ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial).
+
+## Source Quantization: Int8DynActInt4WeightQuantizer
+
+In addition to export based quantization (described above), ExecuTorch wants to highlight source based quantizations, accomplished via [torchao](https://github.com/pytorch/ao). Unlike export based quantization, source based quantization directly modifies the model prior to export. One specific example is `Int8DynActInt4WeightQuantizer`. 
+
+This scheme represents 4-bit weight quantization with 8-bit dynamic quantization of activation during inference.
+
+Imported with ``from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer``, this class uses a quantization instance constructed with a specified dtype precision and groupsize, to mutate a provided ``nn.Module``.
+
+```
+# Source Quant
+from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+
+model = Int8DynActInt4WeightQuantizer(precision=torch_dtype, groupsize=group_size).quantize(model)
+
+# Export to ExecuTorch
+from executorch.exir import to_edge
+from torch.export import export
+
+exported_model = export(model, ...)
+et_program = to_edge(exported_model, ...).to_executorch(...)
+```

@@ -17,11 +17,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::MemoryFormat;
-using exec_aten::optional;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::MemoryFormat;
+using executorch::aten::optional;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpFullLikeTest : public OperatorTest {
@@ -53,24 +53,6 @@ class OpFullLikeTest : public OperatorTest {
     EXPECT_TENSOR_EQ(out, tf.ones(sizes));
   }
 
-  template <>
-  void test_full_like_out<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf;
-    const std::vector<int32_t> sizes = {2, 2};
-    Tensor in = tf.zeros(sizes);
-    Tensor out = tf.zeros(sizes);
-    Scalar value = true;
-    MemoryFormat memory_format = MemoryFormat::Contiguous;
-
-    // Check that it matches the expected output.
-    op_full_like_out(in, value, memory_format, out);
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
-
-    value = false;
-    op_full_like_out(in, value, memory_format, out);
-    EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
-  }
-
   template <ScalarType DTYPE>
   void test_full_like_out_mismatched_shape() {
     TensorFactory<DTYPE> tf;
@@ -85,9 +67,27 @@ class OpFullLikeTest : public OperatorTest {
   }
 };
 
-TEST_F(OpFullLikeTest, AllRealOutputPasses) {
+template <>
+void OpFullLikeTest::test_full_like_out<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf;
+  const std::vector<int32_t> sizes = {2, 2};
+  Tensor in = tf.zeros(sizes);
+  Tensor out = tf.zeros(sizes);
+  Scalar value = true;
+  MemoryFormat memory_format = MemoryFormat::Contiguous;
+
+  // Check that it matches the expected output.
+  op_full_like_out(in, value, memory_format, out);
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
+
+  value = false;
+  op_full_like_out(in, value, memory_format, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
+}
+
+TEST_F(OpFullLikeTest, AllDtypeOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_full_like_out<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

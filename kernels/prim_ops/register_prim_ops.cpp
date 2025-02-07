@@ -12,7 +12,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
-using KernelArrayRef = ::torch::executor::ArrayRef<::torch::executor::Kernel>;
+#include <cmath>
+
 using torch::executor::function::et_copy_index;
 
 namespace torch {
@@ -71,12 +72,13 @@ static Kernel prim_ops[] = {
     // aten::sym_size.int(Tensor self, int dim) -> SymInt
     Kernel(
         "aten::sym_size.int",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& dim = *stack[1];
           EValue& out = *stack[2];
-          exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
+          executorch::aten::Tensor self_tensor =
+              self.to<executorch::aten::Tensor>();
           int64_t dim_val = dim.to<int64_t>();
           int64_t size = self_tensor.size(dim_val);
           out = EValue(size);
@@ -84,12 +86,14 @@ static Kernel prim_ops[] = {
     // aten::_local_scalar_dense(Tensor self) -> Scalar
     Kernel(
         "aten::_local_scalar_dense",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& out = *stack[1];
-          exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
-          ET_SWITCH_REAL_TYPES(
+          executorch::aten::Tensor self_tensor =
+              self.to<executorch::aten::Tensor>();
+          ET_SWITCH_REAL_TYPES_AND(
+              Bool,
               self_tensor.scalar_type(),
               context,
               "_local_scalar_dense",
@@ -101,18 +105,19 @@ static Kernel prim_ops[] = {
     // aten::sym_numel(Tensor self) -> SymInt
     Kernel(
         "aten::sym_numel",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& out = *stack[1];
-          exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
+          executorch::aten::Tensor self_tensor =
+              self.to<executorch::aten::Tensor>();
           int64_t numel = self_tensor.numel();
           out = EValue(numel);
         }),
     // executorch_prim::add.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::add.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           ALGEBRA_ET_PRIM_OP(+, stack, context);
         }),
@@ -120,14 +125,14 @@ static Kernel prim_ops[] = {
     // executorch_prim::sub.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::sub.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           ALGEBRA_ET_PRIM_OP(-, stack, context);
         }),
 
     // executorch_prim::mul.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::mul.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           ALGEBRA_ET_PRIM_OP(*, stack, context);
         }),
 
@@ -142,14 +147,14 @@ static Kernel prim_ops[] = {
      */
     Kernel(
         "executorch_prim::floordiv.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
           if (a.isInt() && b.isInt()) {
             const int64_t quot = a.toInt() / b.toInt();
-            if (std::signbit(a.toInt()) == std::signbit(b.toInt())) {
+            if ((a.toInt() < 0) == (b.toInt() < 0)) {
               out = EValue(quot);
               return;
             }
@@ -171,7 +176,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::floordiv.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::truediv.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           // can't use macro because of custom casting behavior
           (void)context;
           EValue& a = *stack[0];
@@ -193,45 +198,82 @@ static Kernel prim_ops[] = {
           }
         }),
 
+    // executorch_prim::sym_float.Scalar(Scalar) -> Scalar
+    Kernel(
+        "executorch_prim::sym_float.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          // can't use macro because of custom casting behavior
+          // TODO: Now that we are reliably generating conversion operators,
+          // we can remove the mixed type handling for other operators
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isInt()) {
+            out = EValue(static_cast<double>(a.toInt()));
+          } else if (a.isDouble()) {
+            // TODO: This should be impossible
+            out = EValue(a.toDouble());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+          }
+        }),
+
     // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::eq.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(==, stack, context);
         }),
 
     // executorch_prim::gt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::gt.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(>, stack, context);
         }),
 
     // executorch_prim::lt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::lt.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(<, stack, context);
         }),
 
     // executorch_prim::ge.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::ge.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(>=, stack, context);
         }),
 
     // executorch_prim::le.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::le.Scalar",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(<=, stack, context);
+        }),
+    // executorch_prim::neg.Scalar(Scalar) -> Scalar
+    Kernel(
+        "executorch_prim::neg.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isInt()) {
+            out = EValue(-a.toInt());
+          } else if (a.isDouble()) {
+            out = EValue(-a.toDouble());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+          }
         }),
 
     // executorch_prim::floordiv.int(int, int) -> int
     Kernel(
         "executorch_prim::floordiv.int",
-        [](RuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -239,20 +281,114 @@ static Kernel prim_ops[] = {
           out = EValue(a.toInt() / b.toInt());
         }),
 
+    // executorch_prim::mod.int(int, int) -> int
+    Kernel(
+        "executorch_prim::mod.int",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          out = EValue(a.toInt() % b.toInt());
+        }),
+
+    // executorch_prim::mod.Scalar(Scalar, Scalar) -> Scalar
+    Kernel(
+        "executorch_prim::mod.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() % b.toInt());
+          } else {
+            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+          }
+        }),
+
+    // ceil.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::ceil.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            out = EValue(static_cast<int64_t>(ceil(a.toDouble())));
+          } else {
+            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+          }
+        }),
+
+    // round.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::round.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            // Round half to even to match Python round(). Need an explicit
+            // implementation as not all platforms support fenv rounding modes.
+            // See
+            // https://codeyarns.com/tech/2018-08-17-how-to-round-half-to-even.html
+            const auto val = a.toDouble();
+            const auto r = round(val);
+            const auto d = r - val;
+            auto res = 0.0;
+
+            if (std::abs(d) != 0.5) {
+              res = r;
+            } else if (fmod(r, 2.0) == 0.0) {
+              res = r;
+            } else {
+              res = val - d;
+            }
+
+            out = EValue(static_cast<int64_t>(res));
+          } else {
+            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+          }
+        }),
+
+    // trunc.Scalar(Scalar a) -> Scalar
+    Kernel(
+        "executorch_prim::trunc.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isDouble()) {
+            out = EValue(static_cast<int64_t>(trunc(a.toDouble())));
+          } else {
+            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+          }
+        }),
+
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
-    Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
+    Kernel(
+        "executorch_prim::et_copy_index.tensor",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          et_copy_index(context, stack);
+        }),
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
-    Kernel("executorch_prim::et_view.default", &et_view),
+    Kernel(
+        "executorch_prim::et_view.default",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          et_view(context, stack);
+        }),
 
 };
 
-static KernelArrayRef kernel_array_ref(
+executorch::runtime::Span<const executorch::runtime::Kernel> kernel_span(
     prim_ops,
     prim_ops + sizeof(prim_ops) / sizeof(Kernel));
 
 // Return value not used. Keep the static variable assignment to register
 // operators in static initialization time.
-static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
+auto success_with_kernel_reg =
+    executorch::runtime::register_kernels(kernel_span);
 
 } // namespace
 } // namespace function

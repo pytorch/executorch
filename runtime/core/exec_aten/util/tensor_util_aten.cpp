@@ -11,17 +11,17 @@
 #include <ATen/Tensor.h> // @manual
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 /**
  * Implementation for ATen tensor util, should only be included in
  * `<target>_aten` target and only be used in ATen mode. Explicitly taking
- * at::Tensor (instead of exec_aten::Tensor) to make sure it fails at compile
- * time if built incorrectly.
+ * at::Tensor (instead of executorch::aten::Tensor) to make sure it fails at
+ * compile time if built incorrectly.
  */
 Error get_dim_order(
     const at::Tensor& tensor,
-    exec_aten::DimOrderType* out_dim_order,
+    executorch::aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size) {
   ET_CHECK_OR_RETURN_ERROR(
       out_dim_order_size == tensor.dim(),
@@ -34,7 +34,7 @@ Error get_dim_order(
 }
 
 bool tensor_has_valid_dim_order(at::Tensor t) {
-  exec_aten::DimOrderType dim_order[kTensorDimensionLimit];
+  executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       get_dim_order(t, dim_order, t.dim()) == Error::Ok,
       "Failed to retrieve dim order from tensor!");
@@ -54,7 +54,7 @@ bool tensor_has_valid_dim_order(at::Tensor t) {
 }
 
 inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
-  exec_aten::DimOrderType dim_order[kTensorDimensionLimit];
+  executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       get_dim_order(t, dim_order, t.dim()) == Error::Ok,
       "Failed to retrieve dim order from tensor!");
@@ -77,6 +77,46 @@ inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
   return ret_val;
 }
 
+bool tensors_have_same_dim_order(
+    const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
+  if (tensor_list.size() < 2) {
+    return true;
+  }
+
+  executorch::aten::DimOrderType first_dim_order[kTensorDimensionLimit];
+  executorch::aten::DimOrderType other_dim_order[kTensorDimensionLimit];
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(tensor_list[0], first_dim_order, tensor_list[0].dim()) ==
+          Error::Ok,
+      "Failed to retrieve dim order from 1st input tensor!");
+
+  bool all_contiguous =
+      is_contiguous_dim_order(first_dim_order, tensor_list[0].dim());
+  bool all_channels_last =
+      is_channels_last_dim_order(first_dim_order, tensor_list[0].dim());
+
+  for (size_t i = 1; i < tensor_list.size(); ++i) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        get_dim_order(tensor_list[i], other_dim_order, tensor_list[i].dim()) ==
+            Error::Ok,
+        "Failed to retrieve dim order from %zd-th input tensor!",
+        i);
+
+    all_contiguous = all_contiguous &&
+        is_contiguous_dim_order(other_dim_order, tensor_list[i].dim());
+    all_channels_last = all_channels_last &&
+        is_channels_last_dim_order(other_dim_order, tensor_list[i].dim());
+  }
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      all_contiguous || all_channels_last,
+      "%zd input tensors have different dim orders",
+      tensor_list.size());
+
+  return all_contiguous || all_channels_last;
+}
+
 namespace internal {
 
 Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
@@ -95,7 +135,8 @@ Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
       InvalidArgument,
       "Source tensor should have data_ptr not being nullptr.");
   // Assign the dataptr as the input tensor dataptr
-  storage->set_data_ptr(at::DataPtr(t_src.mutable_data_ptr(), DeviceType::CPU));
+  storage->set_data_ptr(
+      at::DataPtr(t_src.mutable_data_ptr(), at::DeviceType::CPU));
   storage->set_nbytes(t_src.nbytes());
 
   return Error::Ok;
@@ -133,7 +174,7 @@ Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 set_tensor_data(const at::Tensor& t, void* buffer, size_t buffer_size) {
   ET_CHECK_OR_RETURN_ERROR(
       buffer_size >= t.nbytes(),
@@ -142,7 +183,7 @@ set_tensor_data(const at::Tensor& t, void* buffer, size_t buffer_size) {
       buffer_size,
       t.nbytes());
   t.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(
-      at::DataPtr(buffer, DeviceType::CPU));
+      at::DataPtr(buffer, at::DeviceType::CPU));
   return Error::Ok;
 }
 
@@ -155,7 +196,7 @@ void reset_data_ptr(const at::Tensor& tensor) {
 /// Most callers should use resize_tensor() instead.
 Error resize_tensor_impl(
     c10::TensorImpl* impl,
-    c10::ArrayRef<exec_aten::SizesType> new_sizes) {
+    c10::ArrayRef<executorch::aten::SizesType> new_sizes) {
   // The lean-mode Tensor will perform this check, but at::Tensor won't.
   // Although at::Tensor can be resized in this case, it's not allowed by the
   // higher-level constraints of the runtime.
@@ -174,5 +215,5 @@ Error resize_tensor_impl(
 
 } // namespace internal
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

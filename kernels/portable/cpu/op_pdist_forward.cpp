@@ -13,16 +13,21 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& _pdist_forward_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     double p,
     Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(ctx, check_pdist_args(in, p, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   Tensor::SizesType target_sizes[kTensorDimensionLimit];
   size_t target_ndim = 0;
@@ -37,7 +42,7 @@ Tensor& _pdist_forward_out(
   ScalarType in_type = in.scalar_type();
   constexpr auto name = "_pdist_forward.out";
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       in_type, ctx, name, CTYPE, [&] { pdist<CTYPE>(in, out, p); });
 
   return out;

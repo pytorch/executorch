@@ -8,12 +8,13 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraphCustomConfig.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 std::vector<QnnGraph_CustomConfig_t>
-HtpGraphCustomConfig::CreateGraphCustomConfig(
-    const SocInfo* qcom_target_soc_info) {
+HtpGraphCustomConfig::CreateGraphCustomConfigCommon(
+    const SocInfo* qcom_target_soc_info,
+    float opt_level) {
   std::vector<QnnGraph_CustomConfig_t> ret;
   QnnHtpGraph_CustomConfig_t* p_custom_config = nullptr;
 
@@ -45,8 +46,6 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
       break;
   }
 
-  float opt_level =
-      context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE ? 1 : 3;
   QNN_EXECUTORCH_LOG_INFO(
       "Running level=%d optimization.", static_cast<int>(opt_level));
 
@@ -74,5 +73,5 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
   return ret;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -15,12 +15,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 Tensor& logit_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::optional<double> eps,
+    executorch::aten::optional<double> eps,
     Tensor& out) {
   (void)ctx;
 
@@ -28,11 +28,14 @@ Tensor& logit_out(
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "logit.out", CTYPE_IN, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "logit.out", CTYPE_IN, [&] {
     ET_SWITCH_FLOAT_TYPES(out_type, ctx, "logit.out", CTYPE_OUT, [&] {
       apply_unary_map_fn(
           [eps](const CTYPE_IN val_in) {

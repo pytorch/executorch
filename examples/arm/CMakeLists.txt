@@ -6,7 +6,7 @@
 
 # Kernel library for portable kernels. Please this file formatted by running:
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 
 cmake_minimum_required(VERSION 3.19)
@@ -27,11 +27,6 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
-# Source root directory for pytorch.
-if(NOT TORCH_ROOT)
-  set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
-endif()
-
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
@@ -45,9 +40,25 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml
-gen_selected_ops("" "${EXECUTORCH_SELECT_OPS_LIST}" "")
+gen_selected_ops(
+  LIB_NAME
+  "arm_portable_ops_lib"
+  OPS_SCHEMA_YAML
+  ""
+  ROOT_OPS
+  "${EXECUTORCH_SELECT_OPS_LIST}"
+  INCLUDE_ALL_OPS
+  ""
+)
 generate_bindings_for_kernels(
-  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml)
-gen_operators_lib("arm_portable_ops_lib"
-  KERNEL_LIBS portable_kernels
-  DEPS executorch)
+  LIB_NAME "arm_portable_ops_lib" FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+)
+gen_operators_lib(
+  LIB_NAME "arm_portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
+)
+
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+  target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
+endif()

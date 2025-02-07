@@ -116,10 +116,10 @@
 void et_pal_emit_log_message(et_timestamp_t timestamp,
                              et_pal_log_level_t level,
                              const char *__nonnull filename,
-                             __ET_UNUSED const char *function,
+                             ET_UNUSED const char *function,
                              size_t line,
                              const char *__nonnull message,
-                             __ET_UNUSED size_t length) {
+                             ET_UNUSED size_t length) {
 #if ET_LOG_ENABLED
   NSTimeInterval timeInterval = timestamp / 1000000000.0;
   NSUInteger totalSeconds = (NSUInteger)timeInterval;

@@ -19,18 +19,19 @@
 #include <executorch/runtime/platform/runtime.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Result;
-using torch::executor::testing::TempFile;
-using torch::executor::util::MmapDataLoader;
+using executorch::extension::MmapDataLoader;
+using executorch::extension::testing::TempFile;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
 
 class MmapDataLoaderTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Get the page size and ensure it's a power of 2.
     long page_size = sysconf(_SC_PAGESIZE);
@@ -72,7 +73,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
 
   // Load the first page of the file.
   {
-    Result<FreeableBuffer> fb = mdl->Load(/*offset=*/0, /*size=*/page_size_);
+    Result<FreeableBuffer> fb = mdl->load(
+        /*offset=*/0,
+        /*size=*/page_size_,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), page_size_);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[0], fb->size()));
@@ -90,7 +94,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
   {
     const size_t size = page_size_ * 2;
     const size_t offset = contents_size - size;
-    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    Result<FreeableBuffer> fb = mdl->load(
+        offset,
+        size,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
@@ -98,7 +105,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
 
   // Loading all of the data succeeds.
   {
-    Result<FreeableBuffer> fb = mdl->Load(/*offset=*/0, /*size=*/contents_size);
+    Result<FreeableBuffer> fb = mdl->load(
+        /*offset=*/0,
+        /*size=*/contents_size,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), contents_size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[0], fb->size()));
@@ -108,13 +118,19 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
   {
     const size_t offset1 = 0;
     const size_t size1 = page_size_ * 3;
-    Result<FreeableBuffer> fb1 = mdl->Load(offset1, size1);
+    Result<FreeableBuffer> fb1 = mdl->load(
+        offset1,
+        size1,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb1.error(), Error::Ok);
     EXPECT_EQ(fb1->size(), size1);
 
     const size_t offset2 = (offset1 + size1) - page_size_;
     const size_t size2 = page_size_ * 3;
-    Result<FreeableBuffer> fb2 = mdl->Load(offset2, size2);
+    Result<FreeableBuffer> fb2 = mdl->load(
+        offset2,
+        size2,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb2.error(), Error::Ok);
     EXPECT_EQ(fb2->size(), size2);
 
@@ -125,7 +141,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
 
   // Loading zero-sized data succeeds, even at the end of the data.
   {
-    Result<FreeableBuffer> fb = mdl->Load(/*offset=*/contents_size, /*size=*/0);
+    Result<FreeableBuffer> fb = mdl->load(
+        /*offset=*/contents_size,
+        /*size=*/0,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), 0);
   }
@@ -138,7 +157,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
   {
     const size_t offset = page_size_;
     const size_t size = page_size_ / 2;
-    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    Result<FreeableBuffer> fb = mdl->load(
+        offset,
+        size,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
@@ -148,7 +170,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
   {
     const size_t offset = page_size_;
     const size_t size = page_size_ * 3 + page_size_ / 2 + 1; // Odd size
-    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    Result<FreeableBuffer> fb = mdl->load(
+        offset,
+        size,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
@@ -164,7 +189,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
     const size_t offset = 128; // Small power of 2
     EXPECT_LT(offset, page_size_);
     const size_t size = page_size_ / 2;
-    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    Result<FreeableBuffer> fb = mdl->load(
+        offset,
+        size,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
@@ -174,7 +202,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
   {
     const size_t offset = page_size_ + 128; // Small power of 2
     const size_t size = page_size_ * 3 + page_size_ / 2 + 1; // Odd size
-    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    Result<FreeableBuffer> fb = mdl->load(
+        offset,
+        size,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
@@ -184,7 +215,10 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
   {
     const size_t offset = page_size_ * 2 + 3; // Not a power of 2
     const size_t size = page_size_ * 3 + page_size_ / 2 + 1; // Odd size
-    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    Result<FreeableBuffer> fb = mdl->load(
+        offset,
+        size,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
@@ -240,7 +274,10 @@ TEST_F(MmapDataLoaderTest, FinalPageOfUnevenFileSucceeds) {
     ASSERT_NE(size % page_size_, 0);
 
     // Load and validate the final partial page.
-    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    Result<FreeableBuffer> fb = mdl->load(
+        offset,
+        size,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(fb.error(), Error::Ok);
     EXPECT_EQ(fb->size(), size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
@@ -259,8 +296,10 @@ TEST_F(MmapDataLoaderTest, OutOfBoundsLoadFails) {
 
   // Loading beyond the end of the data should fail.
   {
-    Result<FreeableBuffer> fb =
-        mdl->Load(/*offset=*/0, /*size=*/contents_size + 1);
+    Result<FreeableBuffer> fb = mdl->load(
+        /*offset=*/0,
+        /*size=*/contents_size + 1,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 
@@ -270,7 +309,10 @@ TEST_F(MmapDataLoaderTest, OutOfBoundsLoadFails) {
     const size_t offset = contents_size + page_size_;
     ASSERT_EQ(offset % page_size_, 0);
 
-    Result<FreeableBuffer> fb = mdl->Load(offset, /*size=*/0);
+    Result<FreeableBuffer> fb = mdl->load(
+        offset,
+        /*size=*/0,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }
@@ -295,12 +337,21 @@ TEST_F(MmapDataLoaderTest, MoveCtor) {
   MmapDataLoader mdl2(std::move(*mdl));
 
   // Old loader should now be invalid.
-  EXPECT_EQ(mdl->Load(0, 0).error(), Error::InvalidState);
+  EXPECT_EQ(
+      mdl->load(
+             0,
+             0,
+             DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program))
+          .error(),
+      Error::InvalidState);
   EXPECT_EQ(mdl->size().error(), Error::InvalidState);
 
   // New loader should point to the file.
   EXPECT_EQ(mdl2.size().get(), contents.size());
-  Result<FreeableBuffer> fb = mdl2.Load(/*offset=*/0, contents.size());
+  Result<FreeableBuffer> fb = mdl2.load(
+      /*offset=*/0,
+      contents.size(),
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(fb.error(), Error::Ok);
   ASSERT_EQ(fb->size(), contents.size());
   EXPECT_EQ(0, std::memcmp(fb->data(), contents.data(), fb->size()));

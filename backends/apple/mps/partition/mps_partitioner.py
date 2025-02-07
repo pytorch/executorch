@@ -7,9 +7,8 @@ import logging
 from typing import Any, cast, Dict, List, Union
 
 import torch
-from executorch.backends.apple.mps.mps_preprocess import MPSBackend
+from executorch.backends.apple.mps import MPSBackend
 from executorch.backends.apple.mps.operators.node_visitor import get_node_visitors
-from executorch.backends.apple.mps.utils.mps_utils import is_parameter
 from executorch.backends.transforms import get_shape
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -27,8 +26,7 @@ from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=FORMAT)
-
+logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 # ops implemented as Metal kernels.
 METAL_KERNELS = [
@@ -43,12 +41,6 @@ class MPSOperatorSupport(OperatorSupportBase):
         self.edge_program = edge_program
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        # Parameters are supported if any of their users are supported
-        if is_parameter(self.edge_program, node):
-            return any(
-                self.is_node_supported(submodules, user) for user in node.users.keys()
-            )
-
         if node.op != "call_function":
             return False
 
@@ -102,7 +94,7 @@ class MPSPartitioner(Partitioner):
     def tag_nodes(self, partitions: List[Partition]) -> None:
         for partition in partitions:
             crt_partition_counter = 0
-            for node in sorted(partition.nodes):
+            for node in partition.nodes:
                 delegation_tag = f"mps_{partition.id}"
                 if self.use_metal_kernel(node):
                     logging.warning(f"[WARNING] Using Metal kernel for op {node.name}!")
@@ -132,6 +124,7 @@ class MPSPartitioner(Partitioner):
         partitions = self.generate_partitions(edge_program=edge_program)
         if self.check_partitions(partitions):
             self.tag_nodes(partitions)
+            # Tag constant data that are used by the supported ops in MPS backend.
             tag_constant_data(edge_program)
         x = PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags

@@ -15,6 +15,7 @@ runtime.python_library(
         ":configs",
         ":partitioner_graphs",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/partition/config:xnnpack_partitioner_configs",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",

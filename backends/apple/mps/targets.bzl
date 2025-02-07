@@ -47,7 +47,7 @@ def define_common_targets(is_xplat = False, platforms = []):
             "//executorch/exir/backend:backend_lib",
             "//executorch/extension/pybindings/...",
             "//executorch/runtime/backend/...",
-            "//executorch/sdk/runners/...",
+            "//executorch/devtools/runners/...",
             "//executorch/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
@@ -56,11 +56,11 @@ def define_common_targets(is_xplat = False, platforms = []):
 
     if is_xplat:
         kwargs["fbobjc_frameworks"] = [
+            "Foundation",
             "Metal",
             "MetalPerformanceShaders",
             "MetalPerformanceShadersGraph",
         ]
-        kwargs["fbobjc_ios_target_sdk_version"] = "17.0"
         kwargs["platforms"] = platforms
 
     if runtime.is_oss or is_xplat:

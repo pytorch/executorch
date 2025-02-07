@@ -10,12 +10,16 @@ python_library(
     deps = [
         ":const_prop_pass",
         ":debug_handle_generator_pass",
+        ":external_constants_pass",
+        ":init_mutable_pass",
         ":insert_write_back_for_buffers_pass",
         ":memory_format_ops_pass",
         ":memory_planning_pass",
         ":normalize_transpose_pass",
         ":prim_ops_py_registry",
+        ":prune_empty_tensor_pass",
         ":quant_fusion_pass",
+        ":quantize_io_pass",
         ":remove_noop_pass",
         ":replace_aten_with_edge_pass",
         ":replace_broken_ops_with_function_ops_pass",
@@ -25,6 +29,7 @@ python_library(
         ":spec_prop_pass",
         ":sym_shape_eval_pass",
         ":sym_to_tensor_pass",
+        ":weights_to_outputs_pass",
         "//caffe2:torch",
         "//executorch/exir:common",
         "//executorch/exir:control_flow",
@@ -53,9 +58,29 @@ python_library(
 )
 
 python_library(
+    name = "external_constants_pass",
+    srcs = [
+        "external_constants_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
     name = "insert_write_back_for_buffers_pass",
     srcs = [
         "insert_write_back_for_buffers_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "weights_to_outputs_pass",
+    srcs = [
+        "weights_to_outputs_pass.py",
     ],
     deps = [
         "//caffe2:torch",
@@ -133,6 +158,19 @@ python_library(
 )
 
 python_library(
+    name = "quantize_io_pass",
+    srcs = [
+        "quantize_io_pass.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/numpy:numpy",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
     name = "memory_planning_pass",
     srcs = [
         "memory_planning_pass.py",
@@ -152,6 +190,18 @@ python_library(
     name = "remove_noop_pass",
     srcs = [
         "remove_noop_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "prune_empty_tensor_pass",
+    srcs = [
+        "prune_empty_tensors_pass.py",
     ],
     deps = [
         "//caffe2:torch",
@@ -185,13 +235,23 @@ python_library(
 )
 
 python_library(
+    name = "init_mutable_pass",
+    srcs = [
+        "init_mutable_pass.py",
+    ],
+    deps = [
+        "//executorch/exir:delegate",
+    ],
+)
+
+python_library(
     name = "sym_shape_eval_pass",
     srcs = [
         "sym_shape_eval_pass.py",
     ],
     deps = [
-        "fbsource//third-party/pypi/sympy:sympy",
         "//caffe2:torch",
+        "//executorch/exir:_warnings",
         "//executorch/exir:pass_base",
         "//executorch/exir:sym_util",
         "//executorch/exir:tensor",

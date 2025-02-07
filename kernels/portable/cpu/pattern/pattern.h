@@ -46,7 +46,6 @@ question is a bit more specific, then add a descriptive sufix. */
 
 #pragma once
 
-#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -61,8 +60,8 @@ namespace internal {
  * the input tensor element-wise.
  */
 Tensor& unary_ufunc_realh(
-    FunctionRef<double(double)> fn,
-    RuntimeContext& ctx,
+    double (*fn)(double),
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
 
@@ -73,34 +72,21 @@ Tensor& unary_ufunc_realh(
  * operation which is applied to the input tensor element-wise.
  */
 Tensor& unary_ufunc_realhb_to_bool(
-    FunctionRef<bool(double)> fn,
-    RuntimeContext& ctx,
+    bool (*fn)(double),
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
- * realhb dtye (real, half and boolean), no additional arguments, and outputs a
- * floating point tensor of the same size. The function fn specifies the math
- * operation which is applied to the input tensor element-wise.
+ * realhbbf16 dtype (real/half/bool/bfloat16), no additional arguments, and
+ * outputs a floating point tensor of the same size. The function fn specifies
+ * the math operation which is applied to the input tensor element-wise.
  */
-Tensor& unary_ufunc_realhb_to_floath(
-    FunctionRef<double(double)> fn,
-    RuntimeContext& ctx,
+Tensor& unary_ufunc_realhbbf16_to_floathbf16(
+    double (*fn)(double),
+    KernelRuntimeContext& ctx,
     const Tensor& in,
-    Tensor& out);
-
-/**
- * Implements an op pattern for ops that take two broadcastable input tensors
- * of any realb dtye, no additional arguments, performs an element-wise binary
- * logical operation, and outputs a realb tensor. The function fn specifies the
- * binary logical operation which is applied to the input tensors element-wise.
- */
-Tensor& binary_ufunc_realb_realb_to_realb_logical(
-    FunctionRef<bool(bool, bool)> fn,
-    RuntimeContext& ctx,
-    const Tensor& a,
-    const Tensor& b,
     Tensor& out);
 
 } // namespace internal

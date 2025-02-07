@@ -63,6 +63,7 @@ table PerChannelGroupQuant {
   scale:[float];
   channel_dim:int;
   group_size:int;
+  scale_bf16:[ushort];
 }
 
 table XNNTensorValue {
@@ -134,6 +135,10 @@ union XNodeUnion {
   XNNConcatenate4: _XNNCat,
   XNNStaticSlice,
   XNNScaledDotProductAttention,
+  XNNBatchMatrixMultiply: _XNNNode2x1,
+  XNNConcatenate5: _XNNCat,
+  XNNConvTranspose2d: _XNNNodeConv,
+  XNNReciprocalSquareRoot: _XNNNode1x1,
 }
 
 union XValueUnion {
@@ -207,6 +212,7 @@ table _XNNCat {
   input4_id: uint;
   output_id: uint;
   flags: uint;
+  input5_id: uint;
 }
 
 table XNNELU {

@@ -1,4 +1,4 @@
-merge_base_with = "origin/main"
+merge_base_with = "main"
 
 [[linter]]
 code = 'FLAKE8'
@@ -7,6 +7,7 @@ exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
     '.github/scripts/**',
+    'exir/serde/**',
 ]
 command = [
     'python',
@@ -37,6 +38,7 @@ include_patterns = [
 exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
+    'exir/serde/**',
 ]
 command = [
     'python',
@@ -72,6 +74,10 @@ exclude_patterns = [
     # NB: Objective-C is not supported
     'examples/apple/**',
     'examples/demo-apps/apple_ios/**',
+    'examples/demo-apps/react-native/rnllama/ios/**',
+    # File contains @generated
+    'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
+    'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
 ]
 command = [
     'python',
@@ -146,7 +152,8 @@ command = [
     'lintrunner_adapters',
     'run',
     'grep_linter',
-    '--pattern= Executorch\W+',
+    # Exclude "ExecuTorch" pattern within URLs
+    '--pattern= Executorch(?!\\W*(://|\\.[a-z]{2,}))\\W+',
     '--linter-name=ExecuTorchCapitalization',
     '--error-name=Incorrect capitalization for ExecuTorch',
     """--error-description=
@@ -155,4 +162,177 @@ command = [
     """,
     '--',
     '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'NEWLINE'
+include_patterns = ['**']
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    '**/*.png',
+    '**/*.webp',
+    '**/*.jpeg',
+    '**/*.mp4',
+    '**/*.pte',
+    '**/*.pth',
+    '**/*.bin',
+    '**/*.patch',
+    '**/*.svg',
+    '**/*.bat',
+    '**/*.jpg',
+    '**/*.jar',
+    '**/*.gif',
+    # File contains @generated
+    'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
+    'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'newlines_linter',
+    '--',
+    '@{{PATHSFILE}}',
+]
+is_formatter = true
+
+[[linter]]
+code = 'NOSTDINC'
+include_patterns = [
+    "**/*.c",
+    "**/*.cpp",
+    "**/*.h",
+    "**/*.hpp",
+]
+exclude_patterns = [
+    '**/devtools/**',
+    '**/test/**',
+    '**/testing_util/**',
+    '**/third-party/**',
+    'backends/**',
+    'devtools/**',
+    'examples/**',
+    'extension/**',
+    'kernels/optimized/**',
+    'scripts/**',
+    'third-party/**',
+    'util/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=([^\\S\r\n]*#include\s*<(deque|exception|forward_list|functional|list|map|multimap|multiset|priority_queue|queue|set|stack|string|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)>)',
+    '--linter-name=NOSTDINC',
+    '--error-name=Standard C++ container include in core',
+    """--error-description=\
+        Standard library containers should not be included in ExecuTorch core \
+        because they may call malloc, which is not allowed in core. \
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'NOTORCHINC'
+include_patterns = [
+    "**/*.c",
+    "**/*.cpp",
+    "**/*.h",
+    "**/*.hpp",
+]
+exclude_patterns = [
+    '**/devtools/**',
+    '**/fb/**',
+    '**/test/**',
+    '**/tests/**',
+    '**/testing_util/**',
+    '**/third-party/**',
+    'backends/**',
+    'codegen/templates/RegisterDispatchKeyCustomOps.cpp',
+    'codegen/templates/RegisterSchema.cpp',
+    'devtools/**',
+    'examples/**',
+    'exir/verification/bindings.cpp',
+    'extension/**',
+    'kernels/optimized/**',
+    'runtime/core/exec_aten/**',
+    'runtime/executor/tensor_parser_aten.cpp',
+    'scripts/**',
+    'test/**',
+    'third-party/**',
+    'util/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=#include\s+[<"](aten/|ATen/|torch/)',
+    '--linter-name=NOTORCHINC',
+    '--error-name=ATen or torch include',
+    """--error-description=\
+        PyTorch includes in ExecuTorch core are prohibited to prevent \
+        accidentally breaking core's requirements; please make sure this \
+        header complies (e.g., no streams/malloc/syscalls) and then include \
+        a patch to update this linter.\
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'MYPY'
+include_patterns = [
+    # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
+    # 'backends/**/*.py',
+    'backends/arm/**/*.py',
+    'build/**/*.py',
+    'codegen/**/*.py',
+    # 'devtools/**/*.py',
+    'devtools/visualization/**/*.py',
+    'docs/**/*.py',
+    # 'examples/**/*.py',
+    # 'exir/**/*.py',
+    # 'extension/**/*.py',
+    'kernels/**/*.py',
+    'profiler/**/*.py',
+    'runtime/**/*.py',
+    'scripts/**/*.py',
+    'test/**/*.py',
+    'util/**/*.py',
+    '*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    'scripts/check_binary_dependencies.py',
+    'profiler/test/test_profiler_e2e.py',
+    'backends/arm/test/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'mypy_linter',
+    '--config=.mypy.ini',
+    '--show-disable',
+    '--',
+    '--explicit-package-bases',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
 ]

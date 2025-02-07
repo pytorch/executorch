@@ -6,17 +6,18 @@
 
 nchw_to_image:
   parameter_names_with_default_values:
-    NDIM: 3
+    STORAGE: texture3d
     DTYPE: float
+    FROM_STAGING: True
   generate_variant_forall:
-    NDIM:
-      - VALUE: 3
-        SUFFIX: 3d
-      - VALUE: 2
-        SUFFIX: 2d
     DTYPE:
       - VALUE: half
       - VALUE: float
       - VALUE: int
+      - VALUE: int8
   shader_variants:
-    - NAME: nchw_to_image
+    - NAME: nchw_to_image_texture3d
+    - NAME: nchw_to_image_texture2d
+      STORAGE: texture2d
+    - NAME: clone_buffer_to_image
+      FROM_STAGING: False

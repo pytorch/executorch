@@ -13,12 +13,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& reflection_pad2d_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> padding,
+    executorch::aten::ArrayRef<int64_t> padding,
     Tensor& out) {
   (void)ctx;
 
@@ -27,6 +27,11 @@ Tensor& reflection_pad2d_out(
       check_padding_args(2, in, padding, out, /*reflection*/ true),
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   Tensor::SizesType target_sizes[kTensorDimensionLimit];
   size_t target_ndim = 0;

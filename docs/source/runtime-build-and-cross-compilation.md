@@ -1,16 +1,13 @@
 # Building with CMake
 
-Although buck2 is the main build system for the ExecuTorch project, it's also
-possible to build core pieces of the runtime using [CMake](https://cmake.org/)
-for easier integration with other build systems. Even if you don't use CMake
-directly, CMake can emit scripts for other format like Make, Ninja or Xcode.
-For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
+ExecuTorch uses [CMake](https://cmake.org/)  as its primary build system.
+Even if you don't use CMake directly, CMake can emit scripts for other format
+like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
 
 ## Targets Built by the CMake Build System
 
-ExecuTorch's CMake build system doesn't cover everything that the buck2 build
-system covers. It can only build pieces of the runtime that are likely to be
-useful to embedded systems users.
+ExecuTorch's CMake build system covers the pieces of the runtime that are
+likely to be useful to embedded systems users.
 
 - `libexecutorch.a`: The core of the ExecuTorch runtime. Does not contain any
   operator/kernel definitions or backend definitions.
@@ -31,17 +28,8 @@ useful to embedded systems users.
 
 Follow the steps below to have the tools ready before using CMake to build on your machine.
 
-1. Clone the repo and install buck2 as described in the "Building a Runtime" section
-   of [Setting Up ExecuTorch](getting-started-setup.md#building-a-runtime)
-   - `buck2` is necessary because the CMake build system runs `buck2` commands
-     to extract source lists from the primary build system. It will be possible
-     to configure the CMake system to avoid calling `buck2`, though.
-2. If your system's version of python3 is older than 3.11:
+1. If your system's version of python3 is older than 3.11:
    - Run `pip install tomli`
-   - This provides an import required by a script that the CMake build system
-     calls to extract source lists from `buck2`. Consider doing this `pip
-     install` inside your Python or Conda virtual environment if you created
-     one already by following [Setting up ExecuTorch](getting-started-setup.md#setting-up-executorch).
 3. Install CMake version 3.19 or later:
    - Run `conda install cmake` or `pip install cmake`.
 
@@ -57,10 +45,8 @@ cd executorch
 
 # Clean and configure the CMake build system. It's good practice to do this
 # whenever cloning or pulling the upstream repo.
-#
-# NOTE: If your `buck2` binary is not on the PATH, you can change this line to
-# say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 ..)
+./install_executorch.sh --clean
+(mkdir cmake-out && cd cmake-out && cmake ..)
 ```
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.
@@ -113,21 +99,20 @@ If it worked, you should see the message "Model executed successfully" followed
 by the output values.
 
 ```
-I 00:00:00.002052 executorch:executor_runner.cpp:75] Model file add.pte is loaded.
-I 00:00:00.002086 executorch:executor_runner.cpp:85] Running method forward
-I 00:00:00.002092 executorch:executor_runner.cpp:140] Setting up non-const buffer 1, size 48.
-I 00:00:00.002149 executorch:executor_runner.cpp:181] Method loaded.
-I 00:00:00.002154 executorch:util.h:105] input already initialized, refilling.
-I 00:00:00.002157 executorch:util.h:105] input already initialized, refilling.
-I 00:00:00.002159 executorch:executor_runner.cpp:186] Inputs prepared.
-I 00:00:00.011684 executorch:executor_runner.cpp:195] Model executed successfully.
-I 00:00:00.011709 executorch:executor_runner.cpp:210] 8.000000
+I 00:00:00.000526 executorch:executor_runner.cpp:82] Model file add.pte is loaded.
+I 00:00:00.000595 executorch:executor_runner.cpp:91] Using method forward
+I 00:00:00.000612 executorch:executor_runner.cpp:138] Setting up planned buffer 0, size 48.
+I 00:00:00.000669 executorch:executor_runner.cpp:161] Method loaded.
+I 00:00:00.000685 executorch:executor_runner.cpp:171] Inputs prepared.
+I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfully.
+I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs: 
+Output 0: tensor(sizes=[1], [2.])
 ```
 
 
 ## Cross compilation
 
-Follwing are instruction on how to perform cross compilation for Android and iOS.
+Following are instruction on how to perform cross compilation for Android and iOS.
 
 ### Android
 - Prerequisite: [Android NDK](https://developer.android.com/ndk), choose one of the following:
@@ -137,15 +122,16 @@ Follwing are instruction on how to perform cross compilation for Android and iOS
 Assuming Android NDK is available, run:
 ```bash
 # Run the following lines from the `executorch/` folder
-rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
+./install_executorch.sh --clean
+mkdir cmake-android-out && cd cmake-android-out
 
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-# Run `which buck2`, if it returns empty (meaning the system doesn't know where buck2 is installed), pass in this flag `-DBUCK2=/path/to/buck2` pointing to buck2
 cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
 
 cd  ..
 cmake --build  cmake-android-out  -j9
 
+adb shell mkdir -p /data/local/tmp/executorch
 # push the binary to an Android device
 adb push  cmake-android-out/executor_runner  /data/local/tmp/executorch
 # push the model file

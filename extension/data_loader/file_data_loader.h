@@ -14,18 +14,17 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+namespace executorch {
+namespace extension {
 
 /**
- * A DataLoader that loads sements from a file, allocating the memory
+ * A DataLoader that loads segments from a file, allocating the memory
  * with `malloc()`.
  *
  * Note that this will keep the file open for the duration of its lifetime, to
- * avoid the overhead of opening it again for every Load() call.
+ * avoid the overhead of opening it again for every load() call.
  */
-class FileDataLoader : public DataLoader {
+class FileDataLoader final : public executorch::runtime::DataLoader {
  public:
   /**
    * Creates a new FileDataLoader that wraps the named file.
@@ -40,12 +39,12 @@ class FileDataLoader : public DataLoader {
    *     could not be found.
    * @retval Error::MemoryAllocationFailed Internal memory allocation failure.
    */
-  static Result<FileDataLoader> from(
+  static executorch::runtime::Result<FileDataLoader> from(
       const char* file_name,
       size_t alignment = alignof(std::max_align_t));
 
   /// DEPRECATED: Use the lowercase `from()` instead.
-  __ET_DEPRECATED static Result<FileDataLoader> From(
+  ET_DEPRECATED static executorch::runtime::Result<FileDataLoader> From(
       const char* file_name,
       size_t alignment = alignof(std::max_align_t)) {
     return from(file_name, alignment);
@@ -57,18 +56,27 @@ class FileDataLoader : public DataLoader {
         file_size_(rhs.file_size_),
         alignment_(rhs.alignment_),
         fd_(rhs.fd_) {
-    rhs.file_name_ = nullptr;
-    rhs.file_size_ = 0;
-    rhs.alignment_ = 0;
-    rhs.fd_ = -1;
+    const_cast<const char*&>(rhs.file_name_) = nullptr;
+    const_cast<size_t&>(rhs.file_size_) = 0;
+    const_cast<size_t&>(rhs.alignment_) = 0;
+    const_cast<int&>(rhs.fd_) = -1;
   }
 
   ~FileDataLoader() override;
 
-  __ET_NODISCARD Result<FreeableBuffer> Load(size_t offset, size_t size)
-      override;
+  ET_NODISCARD
+  executorch::runtime::Result<executorch::runtime::FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const DataLoader::SegmentInfo& segment_info) const override;
 
-  __ET_NODISCARD Result<size_t> size() const override;
+  ET_NODISCARD executorch::runtime::Result<size_t> size() const override;
+
+  ET_NODISCARD executorch::runtime::Error load_into(
+      size_t offset,
+      size_t size,
+      ET_UNUSED const SegmentInfo& segment_info,
+      void* buffer) const override;
 
  private:
   FileDataLoader(
@@ -86,12 +94,21 @@ class FileDataLoader : public DataLoader {
   FileDataLoader& operator=(const FileDataLoader&) = delete;
   FileDataLoader& operator=(FileDataLoader&&) = delete;
 
-  const char* file_name_; // Owned by the instance.
-  size_t file_size_;
-  size_t alignment_;
-  int fd_; // Owned by the instance.
+  const char* const file_name_; // Owned by the instance.
+  const size_t file_size_;
+  const size_t alignment_;
+  const int fd_; // Owned by the instance.
 };
 
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::FileDataLoader;
 } // namespace util
 } // namespace executor
 } // namespace torch

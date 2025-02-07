@@ -15,15 +15,28 @@ The MPS backend device maps machine learning computational graphs and primitives
 * [Introduction to ExecuTorch](intro-how-it-works.md)
 * [Setting up ExecuTorch](getting-started-setup.md)
 * [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
+* [ExecuTorch iOS Demo App](demo-apps-ios.md)
+* [ExecuTorch iOS LLaMA Demo App](llm/llama-demo-ios.md)
 :::
 ::::
 
 
 ## Prerequisites (Hardware and Software)
 
-In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you'll need the following hardware and software components.
- - macOS 12 / iOS 15 or later (for MPS runtime)
- - Xcode command-line tools: xcode-select --install
+In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you'll need the following hardware and software components:
+
+### Hardware:
+ - A [mac](https://www.apple.com/mac/) for tracing the model
+
+### Software:
+
+  - **Ahead of time** tracing:
+    - [macOS](https://www.apple.com/macos/) 12
+
+  - **Runtime**:
+    - [macOS](https://www.apple.com/macos/) >= 12.4
+    - [iOS](https://www.apple.com/ios) >= 15.4
+    - [Xcode](https://developer.apple.com/xcode/) >= 14.1
 
 ## Setting up Developer Environment
 
@@ -40,47 +53,34 @@ In order to be able to successfully build and run a model using the MPS backend 
 ### AOT (Ahead-of-time) Components
 
 **Compiling model for MPS delegate**:
-- In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You'll then pass this Program(the `.pte` file) during the runtime to run it using the MPS backend.
+- In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You'll then pass this Program (the `.pte` file) during the runtime to run it using the MPS backend.
 
 ```bash
 cd executorch
-python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --bundled
+# Note: `mps_example` script uses by default the MPSPartitioner for ops that are not yet supported by the MPS delegate. To turn it off, pass `--no-use_partitioner`.
+python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --bundled --use_fp16
+
+# To see all options, run following command:
+python3 -m examples.apple.mps.scripts.mps_example --help
 ```
 
 ### Runtime
 
-**Building the MPS executor runner**
-- In this step, you'll be building the `mps_executor_runner` that is able to run MPS lowered modules.
+**Building the MPS executor runner:**
+```bash
+# In this step, you'll be building the `mps_executor_runner` that is able to run MPS lowered modules:
+cd executorch
+./examples/apple/mps/scripts/build_mps_executor_runner.sh
+```
+
+## Run the mv3 generated model using the mps_executor_runner
 
 ```bash
-# Build the mps_executor_runner
-```bash
-# Build and install executorch
-cmake -DBUCK2="$BUCK" \
-          -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DEXECUTORCH_BUILD_SDK=ON \
-          -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-          -DEXECUTORCH_BUILD_MPS=ON \
-          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-          -Bcmake-out .
-cmake --build cmake-out -j9 --target install --config Release
-CMAKE_PREFIX_PATH="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
-# build mps_executor_runner
-rm -rf cmake-out/examples/apple/mps
-cmake \
-    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-    -Bcmake-out/examples/apple/mps \
-    examples/apple/mps
-
-cmake --build cmake-out/examples/apple/mps -j9 --config Release
-
-# Run the mv2 generated model using the mps_executor_runner
 ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program
+```
 
-# You should see the following results. Note that no output file will be generated in this example:
+- You should see the following results. Note that no output file will be generated in this example:
+```
 I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3_mps_bundled_fp16.pte is loaded.
 I 00:00:00.003306 executorch:mps_executor_runner.mm:292] Program methods: 1
 I 00:00:00.003308 executorch:mps_executor_runner.mm:294] Running method forward
@@ -94,12 +94,43 @@ I 00:00:00.118731 executorch:mps_executor_runner.mm:438] Model executed successf
 I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successfully.
 ```
 
+### [Optional] Run the generated model directly using pybind
+1. Make sure `pybind` MPS support was installed:
+```bash
+./install_executorch.sh --pybind mps
+```
+2. Run the `mps_example` script to trace the model and run it directly from python:
+```bash
+cd executorch
+# Check correctness between PyTorch eager forward pass and ExecuTorch MPS delegate forward pass
+python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --no-use_fp16 --check_correctness
+# You should see following output: `Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass for mv3_mps are matching!`
+
+# Check performance between PyTorch MPS forward pass and ExecuTorch MPS forward pass
+python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --no-use_fp16 --bench_pytorch
+```
+
+### Profiling:
+1. [Optional] Generate an [ETRecord](./etrecord.rst) while you're exporting your model.
+```bash
+cd executorch
+python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_etrecord -b
+```
+2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./etdump.md).
+```
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program --dump-outputs
+```
+3. Create an instance of the Inspector API by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.
+```bash
+python3 -m sdk.inspector.inspector_cli --etdump_path etdump.etdp --etrecord_path etrecord.bin
+```
+
 ## Deploying and Running on Device
 
 ***Step 1***. Create the ExecuTorch core and MPS delegate frameworks to link on iOS
 ```bash
 cd executorch
-./build/build_apple_frameworks.sh --Release --mps
+./build/build_apple_frameworks.sh --mps
 ```
 
 `mps_delegate.xcframework` will be in `cmake-out` folder, along with `executorch.xcframework` and `portable_delegate.xcframework`:
@@ -123,4 +154,4 @@ In this tutorial, you have learned how to lower a model to the MPS delegate, bui
 
 ## Frequently encountered errors and resolution.
 
-If you encountered any bugs or issues following this tutorial please file a bug/issue on the ExecuTorch repository, with hashtag **#mps**.
+If you encountered any bugs or issues following this tutorial please file a bug/issue on the [ExecuTorch repository](https://github.com/pytorch/executorch/issues), with hashtag **#mps**.

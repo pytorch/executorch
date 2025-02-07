@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDeviceCustomConfig.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 std::vector<QnnDevice_CustomConfig_t>
 HtpDeviceCustomConfig::CreateDeviceCustomConfig(
@@ -24,5 +24,5 @@ HtpDeviceCustomConfig::CreateDeviceCustomConfig(
   return ret;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

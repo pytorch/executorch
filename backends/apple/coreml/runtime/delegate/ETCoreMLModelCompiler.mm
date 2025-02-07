@@ -26,25 +26,38 @@
 #else
     __block NSError *localError = nil;
     __block NSURL *result = nil;
-    
-    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-    [MLModel compileModelAtURL:modelURL completionHandler:^(NSURL * _Nullable tempURL, NSError * _Nullable compilationError) {
-        result = [tempURL copy];
-        localError = compilationError;
-        dispatch_semaphore_signal(sema);
-    }];
-    
-    long status = dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(maxWaitTimeInSeconds * NSEC_PER_SEC)));
-    if (status != 0) {
-        ETCoreMLLogErrorAndSetNSError(error,
-                                      ETCoreMLErrorCompilationFailed,
-                                      "%@: Failed to compile model in %f seconds.",
-                                      NSStringFromClass(ETCoreMLModelCompiler.class),
-                                      maxWaitTimeInSeconds);
-        return nil;
+
+    if (@available(iOS 16, macOS 13, watchOS 9, tvOS 16, *)) {
+        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+        [MLModel compileModelAtURL:modelURL completionHandler:^(NSURL * _Nullable tempURL, NSError * _Nullable compilationError) {
+            result = [tempURL copy];
+            localError = compilationError;
+            dispatch_semaphore_signal(sema);
+        }];
+
+        long status = dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(maxWaitTimeInSeconds * NSEC_PER_SEC)));
+        if (status != 0) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                        ETCoreMLErrorCompilationFailed,
+                                        "%@: Failed to compile model in %f seconds.",
+                                        NSStringFromClass(ETCoreMLModelCompiler.class),
+                                        maxWaitTimeInSeconds);
+            return nil;
+        }
+    } else {
+        result = [MLModel compileModelAtURL:modelURL error:&localError];
     }
-    
-    return result;
+
+    if (localError) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                    ETCoreMLErrorCompilationFailed,
+                                    "%@: Failed to compile model, error: %@",
+                                    NSStringFromClass(ETCoreMLModelCompiler.class),
+                                    localError);
+        return nil;
+    } else {
+        return result;
+    }
 #endif
 }
 

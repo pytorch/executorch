@@ -6,21 +6,22 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#pragma once
+
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 class BasicTokenizer {
  public:
-  BasicTokenizer(const std::string& filePath) {
-    std::ifstream file(filePath);
+  explicit BasicTokenizer(const std::string& file_path) {
+    std::ifstream file(file_path);
 
     if (!file) {
-      std::cerr << "Unable to open file";
-      exit(9); // return with error code
+      std::cerr << "Unable to open file " << file_path << "\n";
+      exit(9);
     }
     std::string str(
         (std::istreambuf_iterator<char>(file)),

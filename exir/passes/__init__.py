@@ -42,8 +42,9 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
+from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
-from executorch.exir.passes.remove_noop_pass import RemoveNoopPass
+from executorch.exir.passes.remove_noop_pass import RemoveNoopPass, RemoveToCopyPass
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
 from executorch.exir.passes.replace_broken_ops_with_function_ops_pass import (
     ReplaceBrokenOpsWithFunctionalOpsPass,
@@ -54,6 +55,7 @@ from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
+from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
 from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -69,6 +71,7 @@ __all__ = [
     "MemoryPlanningPass",
     "HintBasedSymShapeEvalPass",
     "insert_write_back_for_buffers_pass",
+    "weights_to_outputs_pass",
 ]
 
 Argument = Optional[
@@ -336,7 +339,7 @@ class ToOutVarPass(PassBase):
                 self.call(get_submodule(node.args[0]))
                 self.call(get_submodule(node.args[1]))
                 continue
-            elif getattr(target, "__module__", None) == "_operator":
+            elif getattr(target, "__module__", None) in ("builtins", "_operator"):
                 continue
             elif target in to_out_var_skiplist:
                 continue
@@ -369,6 +372,8 @@ class ToOutVarPass(PassBase):
                 else:
                     out_var_target, out_args_names = to_out_variant(target)
             except RuntimeError as e:
+                # pyre-fixme[16]: `GraphModule` has no attribute
+                #  `encounter_to_out_var_failure`.
                 graph_module.encounter_to_out_var_failure = True
                 logging.info(
                     f"Failed converting '{target}' to its out variant with error: '{e}'"
@@ -482,6 +487,8 @@ base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = Pass
         ScalarToTensorPass(),
         SymToTensorPass(),
         RemoveNoopPass(),
+        PruneEmptyTensorsPass(),
+        RemoveToCopyPass(),
     ]
 ).passes
 

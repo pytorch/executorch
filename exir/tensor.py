@@ -13,13 +13,17 @@ import copy
 
 import math
 import typing
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import executorch.exir.schema as schema
 import torch
 from executorch.exir.error import internal_assert
-from executorch.exir.schema import ScalarType, TensorShapeDynamism
+from executorch.exir.schema import ExtraTensorInfo, ScalarType, TensorShapeDynamism
 from executorch.exir.sym_util import eval_shape
+
+
+class AddressSpaceOverflowException(Exception):
+    pass
 
 
 def num_bytes_from_shape_and_dtype(shape: torch.Size, dtype: torch.dtype) -> int:
@@ -37,7 +41,11 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
         strides.append(accum)
         # For sizes[i] == 0, treat it as 1 to be consistent with core Pytorch
         # This preserves the PT equivalent behavior for dims with 0 elements
-        if sz != 0:
+        if isinstance(sz, int):
+            if sz != 0:
+                accum *= sz
+        else:
+            # Unbacked symints may error on the != 0 check
             accum *= sz
     return tuple(reversed(strides))
 
@@ -62,13 +70,34 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     for _, s in enumerate(stride):
         if s == 0:
             raise ValueError("0 in strides is not supported for ExecuTorch.")
+
+    from torch.fx.experimental.symbolic_shapes import guard_size_oblivious
+
+    class K(NamedTuple):
+        stride: int
+
+        def __lt__(self, other):
+            return guard_size_oblivious(self.stride < other.stride)
+
+        def __gt__(self, other):
+            return guard_size_oblivious(self.stride > other.stride)
+
+        def __le__(self, other):
+            return guard_size_oblivious(self.stride <= other.stride)
+
+        def __ge__(self, other):
+            return guard_size_oblivious(self.stride >= other.stride)
+
+        def __eq__(self, other):
+            return guard_size_oblivious(self.stride == other.stride)
+
     sorted_dims = [
-        i[0] for i in sorted(enumerate(stride), key=lambda x: x[1], reverse=True)
+        i[0] for i in sorted(enumerate(stride), key=lambda x: K(x[1]), reverse=True)
     ]
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
 
 
-def stride_from_dim_order(sizes: List[int], dim_order: List[bytes]) -> List[int]:
+def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
     """
     Converts dim order to stride using sizes
     e.g. if sizes = (2, 3, 4) and dim_order = (0, 1, 2) then strides = (12, 4, 1)
@@ -124,6 +153,7 @@ class TensorSpec:
         is_sparse: bool = False,
         const: bool = False,
         requires_grad: bool = False,
+        extra_tensor_info: Optional[ExtraTensorInfo] = None,
     ) -> None:
         self.scalar_type = dtype
         self.const = const
@@ -138,6 +168,7 @@ class TensorSpec:
         self.is_sparse = is_sparse
         self.init_mem_planning_fields()
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(self.shape)
+        self.extra_tensor_info = extra_tensor_info
 
     @property
     def allocated_memory(self) -> int:
@@ -254,6 +285,7 @@ scalar_type_table: Dict[torch.dtype, ScalarType] = {
     torch.qint32: ScalarType.QINT32,
     torch.bfloat16: ScalarType.BFLOAT16,
     torch.quint4x2: ScalarType.QUINT4x2,
+    torch.uint16: ScalarType.UINT16,
 }
 
 
@@ -292,7 +324,9 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
     memory_offset_low = mem_offset & ((1 << 32) - 1)
     memory_offset_high = mem_offset >> 32
     if memory_offset_high >= 1 << 32:
-        raise ValueError(f"mem_offset {mem_offset} does not fit in 64 bits")
+        raise AddressSpaceOverflowException(
+            f"mem_offset {mem_offset} does not fit in 64 bits"
+        )
 
     allocation_info = schema.AllocationDetails(
         memory_id=mem_id,
@@ -303,7 +337,7 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
 
 
 def make_tensor_value(
-    constant_buffer_idx: int,
+    data_buffer_idx: int,
     allocation_info: Optional[schema.AllocationDetails],
     spec: TensorSpec,
 ) -> schema.Tensor:
@@ -321,11 +355,6 @@ def make_tensor_value(
         else:
             return x
 
-    internal_assert(
-        not spec.const or not allocation_info,
-        "We only create non-constant tensors as the constant tensors are directly written to buffer",
-    )
-
     tensor_size = to_list(spec.shape)
     tensor_dim_order = to_list(spec.dim_order)
 
@@ -336,10 +365,11 @@ def make_tensor_value(
         sizes=tensor_size,
         dim_order=tensor_dim_order,
         requires_grad=spec.requires_grad,
-        constant_buffer_idx=constant_buffer_idx,
+        data_buffer_idx=data_buffer_idx,
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,
+        extra_tensor_info=spec.extra_tensor_info,
     )
     return flatbuffer_tensor
 

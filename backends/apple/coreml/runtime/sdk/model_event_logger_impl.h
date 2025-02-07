@@ -7,10 +7,10 @@
 
 #pragma once
 
+#import "model_event_logger.h"
 #import <CoreML/CoreML.h>
-#import <model_event_logger.h>
 
-namespace torch::executor {
+namespace executorch::runtime {
 class EventTracer;
 }
 
@@ -21,14 +21,14 @@ namespace executorchcoreml {
 class ModelEventLoggerImpl final : public ModelEventLogger {
 public:
     /// Construct a `ModelEventLoggerImpl` from the `EventTracer`.
-    explicit ModelEventLoggerImpl(torch::executor::EventTracer* tracer) : tracer_(tracer) { }
+    explicit ModelEventLoggerImpl(::executorch::runtime::EventTracer* tracer) : tracer_(tracer) { }
 
     /// Logs profiling infos.
     ///
     /// @param op_path_to_profiling_info_map A dictionary with the operation path as the key and operation's profiling
     /// info as the value.
-    /// @param op_path_to_debug_symbol_name_map A dictionary with the operation path as the key and the symbol name as
-    /// the value. The symbol name is the delegate handle.
+    /// @param op_path_to_debug_symbol_name_map A dictionary with the operation path as the key and the debug symbol
+    /// name as the value.
     void log_profiling_infos(
         NSDictionary<ETCoreMLModelStructurePath*, ETCoreMLOperationProfilingInfo*>* op_path_to_profiling_info_map,
         NSDictionary<ETCoreMLModelStructurePath*, NSString*>* op_path_to_debug_symbol_name_map) const noexcept override;
@@ -37,13 +37,13 @@ public:
     ///
     /// @param op_path_to_value_map A dictionary with the operation path as the key and the operation's value as the
     /// value.
-    /// @param op_path_to_debug_symbol_name_map A dictionary with the operation path as the key and the symbol name as
-    /// the value. The symbol name is the delegate handle.
+    /// @param op_path_to_debug_symbol_name_map A dictionary with the operation path as the key and the debug symbol
+    /// name as the value.
     void log_intermediate_tensors(
         NSDictionary<ETCoreMLModelStructurePath*, MLMultiArray*>* op_path_to_value_map,
-        NSDictionary<ETCoreMLModelStructurePath*, NSString*>* op_path_to_debug_symbol_name_map) const noexcept override;
+        NSDictionary<ETCoreMLModelStructurePath*, NSString*>* op_path_to_debug_symbol_map) const noexcept override;
 
 private:
-    torch::executor::EventTracer* tracer_;
+    ::executorch::runtime::EventTracer* tracer_;
 };
 } // namespace executorchcoreml

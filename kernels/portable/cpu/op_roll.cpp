@@ -47,7 +47,7 @@ size_t unshift_flat_ix(size_t ix, const Tensor& in, IntArrayRef dim_shifts) {
 } // namespace
 
 Tensor& roll_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     IntArrayRef shifts,
     IntArrayRef dims,
@@ -59,6 +59,9 @@ Tensor& roll_out(
 
   ET_KERNEL_CHECK(
       ctx, check_roll_args(in, shifts, dims, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   if (in.numel() == 0) {
     return out;
@@ -78,7 +81,7 @@ Tensor& roll_out(
 
   constexpr auto name = "roll.out";
 
-  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 

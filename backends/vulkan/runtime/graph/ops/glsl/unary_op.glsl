@@ -10,30 +10,45 @@
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
+#define T ${buffer_scalar_type(DTYPE)}
 
 #define op(X, A, B) ${OPERATOR}
 
+${define_active_storage_type(STORAGE)}
+
 #include "indexing_utils.h"
+
+${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-
-layout(set = 0, binding = 2) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 3) uniform PRECISION restrict Min {
-  float minimum;
-};
-
-layout(set = 0, binding = 4) uniform PRECISION restrict Max {
-  float maximum;
-};
+${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
+$if STORAGE == "buffer":
+  ${layout_declare_ubo(2, "int", "numel")}
+$else:
+  ${layout_declare_ubo(2, "ivec3", "out_limits")}
+${layout_declare_ubo(3, "float", "minimum")}
+${layout_declare_ubo(4, "float", "maximum")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+#include "activations.h"
+
+#ifdef USING_BUFFER
+
+void main() {
+  const int i = int(gl_GlobalInvocationID.x);
+  if (i >= numel) {
+    return;
+  }
+
+  float in_val = float(t_in[i]);
+  t_out[i] = T(op(in_val, minimum, maximum));
+}
+
+#else
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
@@ -42,6 +57,8 @@ void main() {
     return;
   }
 
-  VEC4_T in_texel = texelFetch(image_in, pos, 0);
-  imageStore(image_out, pos, op(in_texel, minimum, maximum));
+  VEC4_T in_texel = texelFetch(t_in, pos, 0);
+  imageStore(t_out, pos, VEC4_T(op(in_texel, minimum, maximum)));
 }
+
+#endif

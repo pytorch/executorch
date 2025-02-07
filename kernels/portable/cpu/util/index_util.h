@@ -14,6 +14,13 @@
 namespace torch {
 namespace executor {
 
+bool check_gather_args(
+    const Tensor& in,
+    int64_t dim,
+    const Tensor& index,
+    bool sparse_grad,
+    Tensor& output);
+
 bool check_index_select_args(
     const Tensor& in,
     int64_t dim,
@@ -24,8 +31,10 @@ void get_index_select_out_target_size(
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim);
+
+bool check_nonzero_args(const Tensor& in, const Tensor& out);
 
 bool check_scatter_add_args(
     const Tensor& self,
@@ -34,21 +43,19 @@ bool check_scatter_add_args(
     const Tensor& src,
     Tensor& out);
 
-bool check_nonzero_args(const Tensor& in, const Tensor& out);
-
-bool check_slice_scatter_args(
-    const Tensor& input,
-    const Tensor& src,
+bool check_scatter_src_args(
+    const Tensor& self,
     int64_t dim,
-    int64_t num_values,
-    int64_t step,
-    Tensor output);
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out);
 
-int64_t adjust_slice_indices(
-    int64_t dim_length,
-    int64_t* start,
-    int64_t* end,
-    int64_t step);
+bool check_scatter_value_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Scalar& value,
+    Tensor& out);
 
 bool check_select_scatter_args(
     const Tensor& in,

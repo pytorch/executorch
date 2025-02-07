@@ -19,13 +19,15 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& arange_out(RuntimeContext& ctx, const Scalar& end, Tensor& out) {
+Tensor& arange_out(KernelRuntimeContext& ctx, const Scalar& end, Tensor& out) {
   double end_val = 0;
   ET_KERNEL_CHECK(
       ctx, utils::extract_scalar(end, &end_val), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx, check_arange_args(0.0, end_val, 1.0, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
 
   size_t size = static_cast<size_t>(std::ceil(end_val));
 
@@ -37,7 +39,7 @@ Tensor& arange_out(RuntimeContext& ctx, const Scalar& end, Tensor& out) {
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES(out.scalar_type(), ctx, "arange.out", CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(out.scalar_type(), ctx, "arange.out", CTYPE, [&]() {
     auto out_data = out.mutable_data_ptr<CTYPE>();
     for (size_t i = 0; i < size; i++) {
       out_data[i] = static_cast<CTYPE>(i);
@@ -48,7 +50,7 @@ Tensor& arange_out(RuntimeContext& ctx, const Scalar& end, Tensor& out) {
 }
 
 Tensor& arange_start_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Scalar& start,
     const Scalar& end,
     const Scalar& step,
@@ -73,6 +75,8 @@ Tensor& arange_start_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
+
   double size_d = (d_end - d_start) / d_step;
   size_t size = static_cast<size_t>(std::ceil(size_d));
 
@@ -84,7 +88,7 @@ Tensor& arange_start_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES(
+  ET_SWITCH_REALHBF16_TYPES(
       out.scalar_type(), ctx, "arange.start_out", CTYPE, [&]() {
         auto out_data = out.mutable_data_ptr<CTYPE>();
         for (size_t i = 0; i < size; i++) {

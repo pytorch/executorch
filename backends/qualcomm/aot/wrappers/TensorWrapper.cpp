@@ -12,9 +12,12 @@
 #include <cstring>
 #include <limits>
 #include <numeric>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 std::uint32_t GetDataTypeSize(Qnn_DataType_t data_type) {
   std::uint32_t size = 0;
 
@@ -91,7 +94,9 @@ TensorWrapper::TensorWrapper(
   if (data != nullptr) {
     QNN_VER_PTR(tensor_)->clientBuf.dataSize = bytes;
 
-    if (copy_data) {
+    if (tensor_type != QNN_TENSOR_TYPE_STATIC) {
+      QNN_VER_PTR(tensor_)->clientBuf.data = nullptr;
+    } else if (copy_data) {
       owned_data_ = std::make_unique<char[]>(bytes);
       const char* src_data = static_cast<const char*>(data);
       std::memcpy(owned_data_.get(), src_data, bytes);
@@ -212,5 +217,5 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor) {
       QNN_VER_PTR(tensor)->clientBuf.data);
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

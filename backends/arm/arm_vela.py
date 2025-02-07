@@ -1,24 +1,29 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import os
 import struct
-import subprocess
 import tempfile
 
 from typing import List
 
 import numpy as np
+from ethosu.vela import vela  # type: ignore
 
 
 # Pack either input or output tensor block, compose the related arrays into
 # per-io structs to simplify runtime use.
-def vela_bin_pack_io(prefix, data):
-    ios = struct.pack("<i", len(data[prefix + "_shape"]))
-    for i in range(len(data[prefix + "_shape"])):
-        io_shape = data[prefix + "_shape"][i]
+def vela_bin_pack_io(prefix, data, shape_order=None):
+    vela_input_shapes = data[prefix + "_shape"]
+
+    order = shape_order if shape_order else range(len(vela_input_shapes))
+    ios = struct.pack("<i", len(vela_input_shapes))
+    for i in order:
+        io_shape = vela_input_shapes[i]
         io_elem_size = data[prefix + "_elem_size"][i]
         io_offset = data[prefix + "_offset"][i]
         io_region = data[prefix + "_region"][i]
@@ -34,25 +39,26 @@ def vela_bin_pack_io(prefix, data):
 # Output via Vela to binary stream for ArmBackendEthosU
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
-def vela_compile(tosa_graph, args: List[str]):
+def vela_compile(tosa_graph, args: List[str], shape_order=None):
     with tempfile.TemporaryDirectory() as tmpdir:
         tosaname = "out.tosa"
         flatbuffer = tosa_graph.serialize()
-        with open(os.path.join(tmpdir, tosaname), "wb") as f:
+        tosa_path = os.path.join(tmpdir, tosaname)
+        with open(tosa_path, "wb") as f:
             f.write(flatbuffer)
 
         # invoke vela
-        vela_command = f"cd {tmpdir}; vela {' '.join(args)} {tosaname}"
-        try:
-            subprocess.run([vela_command], shell=True, check=True, capture_output=True)
-        except subprocess.CalledProcessError as process_error:
-            raise RuntimeError(
-                f"Vela compiler ('{vela_command}') failed with error:\n \
-                                     {process_error.stderr.decode()}\n \
-                                      Stdout:\n{process_error.stdout.decode()}"
-            )
+        output_dir = os.path.join(tmpdir, "output")
+        args.append(f"--output-dir={output_dir}")
+        args.append(tosa_path)
+        vela.main(" ".join(args).split(" "))
 
-        np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
+        if any("ethos-u85" in arg for arg in args) or any(
+            "debug-force-regor" in arg for arg in args
+        ):
+            np_path = os.path.join(tmpdir, "output", "out_vela.npz")
+        else:
+            np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
         blocks = b""
 
         with np.load(np_path, allow_pickle=False) as data:
@@ -75,7 +81,7 @@ def vela_compile(tosa_graph, args: List[str]):
             bin_blocks["scratch_data"] = b"\x00" * block_length
 
             # Capture inputs and outputs
-            bin_blocks["inputs"] = vela_bin_pack_io("input", data)
+            bin_blocks["inputs"] = vela_bin_pack_io("input", data, shape_order)
             bin_blocks["outputs"] = vela_bin_pack_io("output", data)
 
             bin_blocks["vela_end_stream"] = b""
@@ -90,13 +96,13 @@ def vela_compile(tosa_graph, args: List[str]):
                 block_name = block_name + b"\x00" * (16 - len(block_name))
 
                 # We need the acual unpadded block lengths for hw setup
-                block_length = struct.pack("<iiii", len(bin_blocks[key]), 0, 0, 0)
+                block_length_bytes = struct.pack("<iiii", len(bin_blocks[key]), 0, 0, 0)
 
                 # Pad block data to multiple of 16 bytes
                 block_data = bin_blocks[key]
                 block_data = block_data + b"\x00" * (15 - (len(block_data) - 1) % 16)
 
-                block = block_name + block_length + block_data
+                block = block_name + block_length_bytes + block_data
                 blocks = blocks + block
 
         return blocks

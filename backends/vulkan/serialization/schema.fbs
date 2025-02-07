@@ -6,6 +6,7 @@ namespace vkgraph;
 file_identifier "VK00";
 
 table OperatorCall {
+  node_id:uint;
   name:string;
   args:[int];
 }
@@ -31,7 +32,7 @@ enum VkStorageType : ubyte {
 
 // Describes how memory should be laid out in GPU memory. See the GPUMemoryLayout
 // enum class in PyTorch Vulkan for more details. The int values assigned to each
-// entry must match the corresponding entry in api::GPUMemoryLayout.
+// entry must match the corresponding entry in utils::GPUMemoryLayout.
 enum VkMemoryLayout : ubyte {
   TENSOR_WIDTH_PACKED = 0,
   TENSOR_HEIGHT_PACKED = 1,
@@ -88,6 +89,10 @@ table ValueList {
   items:[int];
 }
 
+table SymInt {
+  value:int;
+}
+
 union GraphTypes {
   Null,
   Int,
@@ -99,6 +104,7 @@ union GraphTypes {
   BoolList,
   ValueList,
   String,
+  SymInt,
 }
 
 table VkValue {

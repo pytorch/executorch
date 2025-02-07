@@ -11,10 +11,12 @@
 @property (readwrite, atomic) BOOL enableCommitAndContinue;
 @end
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
+
+using executorch::runtime::Error;
 
 //-----------------------------------------------------------------
 //  MPSStream
@@ -55,7 +57,7 @@ id<MTLComputeCommandEncoder> MPSStream::commandEncoder() {
   return _commandEncoder;
 }
 
-__ET_NODISCARD
+ET_NODISCARD
 Error MPSStream::synchronize(SyncType syncType) {
   endKernelCoalescing();
   switch(syncType) {
@@ -157,7 +159,7 @@ void MPSStream::copy(id<MTLBuffer> srcBuffer,
       endKernelCoalescing();
       if (@available(iOS 13.0, *)) {
         id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer() blitCommandEncoder];
-        
+
         [blitEncoder copyFromBuffer:srcBuffer
                        sourceOffset:(NSUInteger)srcOffset
                            toBuffer:dstBuffer
@@ -258,5 +260,5 @@ MPSStream* getDefaultMPSStream() {
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -38,26 +38,29 @@ void add_unary_op_node(
     const float max,
     const ValueRef out,
     const std::string& op_name) {
-  ValueRef arg = prepack_if_tensor_ref(graph, in);
-
-  vTensorPtr t_out = graph.get_tensor(out);
-  api::utils::uvec3 global_size = t_out->extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name(op_name);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  vkapi::ParamsBindList ubos({});
+  if (graph.is_buffer_storage(out)) {
+    ubos.append({graph.numel_ubo(out)});
+  } else {
+    ubos.append({graph.logical_limits_ubo(out)});
+  }
+  ubos.append(
+      {graph.create_params_buffer(min), graph.create_params_buffer(max)});
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
-       graph.create_params_buffer(min),
-       graph.create_params_buffer(max)},
+      ubos,
       // Specialization Constants
       {},
       // Resizing Logic
@@ -100,20 +103,71 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         kClampShaderName);                                               \
   }
 
+#define DEFINE_HARDSHRINK_FN(op_name)                                    \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_unary_op_node(                                            \
+        graph,                                                           \
+        args[0],                                                         \
+        get_val_or_inf(graph, args[1], /*max = */ false),                \
+        -get_val_or_inf(graph, args[1], /*max = */ true),                \
+        args[2],                                                         \
+        "hardshrink");                                                   \
+  }
+
+#define DEFINE_LEAKY_RELU_FN(op_name)                                    \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_unary_op_node(                                            \
+        graph,                                                           \
+        args[0],                                                         \
+        get_val_or_inf(graph, args[1], /*neg slope*/ false),             \
+        kDummyFloat,                                                     \
+        args[2],                                                         \
+        "leaky_relu");                                                   \
+  }
+
+void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  // args[1] is the `approximate` string
+  // https://fburl.com/code/9omngmyo
+  // currently only `approximate = "tanh"` is supported
+  return add_unary_op_node(
+      graph, args[0], kDummyFloat, kDummyFloat, args[2], "gelu");
+}
+
 DEFINE_ACTIVATION_FN(abs);
+DEFINE_ACTIVATION_FN(cos);
+DEFINE_ACTIVATION_FN(exp);
+DEFINE_ACTIVATION_FN(neg);
 DEFINE_ACTIVATION_FN(sigmoid);
+DEFINE_ACTIVATION_FN(sin);
+DEFINE_ACTIVATION_FN(sqrt);
+DEFINE_ACTIVATION_FN(rsqrt);
 DEFINE_ACTIVATION_FN(tanh);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
+DEFINE_HARDSHRINK_FN(hardshrink);
+DEFINE_ACTIVATION_FN(hardswish);
+DEFINE_ACTIVATION_FN(hardsigmoid);
+DEFINE_LEAKY_RELU_FN(leaky_relu);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
   VK_REGISTER_OP(aten.clamp.default, clamp);
+  VK_REGISTER_OP(aten.cos.default, cos);
+  VK_REGISTER_OP(aten.exp.default, exp);
+  VK_REGISTER_OP(aten.gelu.default, gelu);
   VK_REGISTER_OP(aten.hardtanh.default, hardtanh);
+  VK_REGISTER_OP(aten.neg.default, neg);
   VK_REGISTER_OP(aten.relu.default, relu);
   VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
+  VK_REGISTER_OP(aten.sin.default, sin);
+  VK_REGISTER_OP(aten.sqrt.default, sqrt);
+  VK_REGISTER_OP(aten.rsqrt.default, rsqrt);
   VK_REGISTER_OP(aten.tanh.default, tanh);
+  VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
+  VK_REGISTER_OP(aten.hardswish.default, hardswish);
+  VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
+  VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
 }
 
 } // namespace vkcompute

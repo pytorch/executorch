@@ -44,13 +44,14 @@ Follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting
 tutorial to configure the basic environment:
 
 ```bash
-git clone -b release/0.2 https://github.com/pytorch/executorch.git
+git clone https://github.com/pytorch/executorch.git --depth 1 --recurse-submodules --shallow-submodules
 cd executorch
-git submodule update --init
 
 python3 -m venv .venv && source .venv/bin/activate
 
-./install_requirements.sh --pybind coreml mps xnnpack
+pip install --upgrade cmake pip setuptools wheel
+
+./install_executorch.sh --pybind coreml mps xnnpack
 ```
 
 ### 4. Backend Dependencies
@@ -75,13 +76,15 @@ Export the MobileNet v3 model with Core ML, MPS and XNNPACK backends, and move
 the exported model to a specific location where the Demo App will pick them up:
 
 ```bash
-python3 -m examples.portable.scripts.export --model_name="mv3"
-python3 -m examples.apple.coreml.scripts.export --model_name="mv3"
-python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3"
-python3 -m examples.xnnpack.aot_compiler --delegate --model_name="mv3"
+MODEL_NAME="mv3"
+
+python3 -m examples.portable.scripts.export --model_name="$MODEL_NAME"
+python3 -m examples.apple.coreml.scripts.export --model_name="$MODEL_NAME"
+python3 -m examples.apple.mps.scripts.mps_example --model_name="$MODEL_NAME"
+python3 -m examples.xnnpack.aot_compiler --model_name="$MODEL_NAME" --delegate
 
 mkdir -p examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
-mv mv3*.pte examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+mv "$MODEL_NAME*.pte" examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
 ```
 
 ### 2. Download Labels
@@ -128,5 +131,7 @@ using `Cmd + R`. Try installing a Release build for better performance.
 
 Congratulations! You've successfully set up the ExecuTorch iOS Demo App. Now,
 you can explore and enjoy the power of ExecuTorch on your iOS device!
+
+Learn more about integrating and running [ExecuTorch on Apple](https://pytorch.org/executorch/stable/apple-runtime) platforms.
 
 ![](_static/img/demo_ios_xcode.jpg)

@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpMinimumOutTest : public OperatorTest {
@@ -63,6 +63,10 @@ TEST_F(OpMinimumOutTest, IntTensors) {
 
 TEST_F(OpMinimumOutTest, LongTensors) {
   test_minimum_out_same_size<ScalarType::Long>();
+}
+
+TEST_F(OpMinimumOutTest, HalfTensors) {
+  test_minimum_out_same_size<ScalarType::Half>();
 }
 
 TEST_F(OpMinimumOutTest, FloatTensors) {

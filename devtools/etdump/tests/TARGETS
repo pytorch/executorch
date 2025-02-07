@@ -1,0 +1,18 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+python_unittest(
+    name = "serialize_test",
+    srcs = [
+        "serialize_test.py",
+    ],
+    deps = [
+        "//executorch/devtools/etdump:schema_flatcc",
+        "//executorch/devtools/etdump:serialize",
+        "//executorch/exir/_serialize:lib",
+    ],
+)

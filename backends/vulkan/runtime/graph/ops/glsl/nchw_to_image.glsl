@@ -10,56 +10,57 @@
 
 #define PRECISION ${PRECISION}
 
-#define BUF_T ${buffer_scalar_type(DTYPE)}
-#define VEC4_T ${texel_type(DTYPE)}
-#define SCALAR_T ${texel_component_type(DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
+#define SCALAR_T ${texel_load_component_type(DTYPE, STORAGE)}
 
-#include "indexing_utils.h"
+${define_active_storage_type(STORAGE)}
 
-$if DTYPE == "half":
-  #extension GL_EXT_shader_16bit_storage : require
+${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) buffer  PRECISION restrict readonly Buffer {
-  BUF_T buffer_in[];
-};
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_buffer(B, "r", "buf_in", DTYPE)}
+${layout_declare_ubo(B, "ivec4", "sizes")}
+$if not FROM_STAGING:
+  ${layout_declare_ubo(B, "ivec4", "buf_strides")}
 
-layout(set = 0, binding = 2) uniform PRECISION restrict Sizes {
-  ivec4 sizes;
-};
+#include "indexing_utils.h"
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
+${layout_declare_spec_const(C, "int", "t_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 axis_map = unhash_axis_map(t_layout);
+const lowp int packed_dim = unhash_packed_dim(t_layout);
+
+VEC4_T read_texel(ivec4 tidx) {
+  $if FROM_STAGING:
+    const ivec4 buf_indices = tidx_to_nchwi(tidx, sizes, packed_dim);
+  $else:
+    const ivec4 buf_indices = tidx_to_4bufi(tidx, buf_strides, packed_dim);
+
+  VEC4_T texel = VEC4_T(0);
+  if (tidx[packed_dim] < sizes[packed_dim]) {
+    texel.x = SCALAR_T(buf_in[buf_indices.x]);
+  }
+  if (tidx[packed_dim] + 1 < sizes[packed_dim]) {
+    texel.y = SCALAR_T(buf_in[buf_indices.y]);
+  }
+  if (tidx[packed_dim] + 2 < sizes[packed_dim]) {
+    texel.z = SCALAR_T(buf_in[buf_indices.z]);
+  }
+  if (tidx[packed_dim] + 3 < sizes[packed_dim]) {
+    texel.w = SCALAR_T(buf_in[buf_indices.w]);
+  }
+  return texel;
+}
 
 void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx(pos, sizes, packed_dim);
-
-  if (any(greaterThanEqual(idx, sizes))) {
+  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
+  const ivec4 tidx = lpos_to_tidx(lpos, sizes, axis_map.w, packed_dim);
+  if (any(greaterThanEqual(tidx, sizes))) {
     return;
   }
 
-  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
-
-  const int packed_dim_size = sizes[packed_dim];
-  int packed_idx = idx[packed_dim];
-
-  VEC4_T texel = VEC4_T(0);
-  if (packed_idx < packed_dim_size) {
-    texel.x = SCALAR_T(buffer_in[buf_indices.x]);
-  }
-  if (packed_idx + 1 < packed_dim_size) {
-    texel.y = SCALAR_T(buffer_in[buf_indices.y]);
-  }
-  if (packed_idx + 2 < packed_dim_size) {
-    texel.z = SCALAR_T(buffer_in[buf_indices.z]);
-  }
-  if (packed_idx + 3 < packed_dim_size) {
-    texel.w = SCALAR_T(buffer_in[buf_indices.w]);
-  }
-
-  imageStore(image_out, ${get_pos[NDIM]("pos")}, texel);
+  write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
 }

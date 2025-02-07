@@ -103,8 +103,11 @@ __attribute__((objc_subclassing_restricted))
 /// @retval `YES` if the model was pre-warmed otherwise `NO`.
 - (BOOL)prewarmModelWithHandle:(ModelHandle*)handle error:(NSError* __autoreleasing*)error;
 
-/// The `ETCoreMLAssetManager` instance used to manage models cache.
-@property (strong, readonly, nonatomic) ETCoreMLAssetManager* assetManager;
+/// Purges model cache.
+///
+/// @param error   On failure, error is filled with the failure information.
+/// @retval `YES` if the cache is purged otherwise `NO`.
+- (BOOL)purgeModelsCacheAndReturnError:(NSError* __autoreleasing*)error;
 
 @end
 

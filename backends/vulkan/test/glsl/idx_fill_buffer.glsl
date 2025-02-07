@@ -10,39 +10,24 @@
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${buffer_gvec_type(DTYPE, 4)}
+#define T ${buffer_scalar_type(DTYPE)}
 
 #include "indexing_utils.h"
 
-$if DTYPE == "half":
-  #extension GL_EXT_shader_16bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
-$elif DTYPE == "int8":
-  #extension GL_EXT_shader_8bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
-$elif DTYPE == "uint8":
-  #extension GL_EXT_shader_8bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_uint8 : require
+${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0) buffer  PRECISION restrict writeonly Buffer {
-  VEC4_T data[];
-}
-buffer_in;
-
-layout(set = 0, binding = 1) uniform PRECISION restrict Params {
-  int len;
-}
-params;
+${layout_declare_buffer(0, "w", "out_buf", DTYPE, PRECISION, True)}
+${layout_declare_ubo(1, "int", "numel")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main() {
-  const int i = ivec3(gl_GlobalInvocationID).x;
-
-  const int base = 4 * i;
-  if (base < params.len) {
-    buffer_in.data[i] = VEC4_T(base, base + 1, base + 2, base + 3);
+  const int t_id = ivec3(gl_GlobalInvocationID).x;
+  if (t_id >= numel) {
+    return;
   }
+
+  out_buf[t_id] = T(t_id);
 }

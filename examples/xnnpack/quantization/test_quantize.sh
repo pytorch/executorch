@@ -47,12 +47,15 @@ test_cmake_quantization() {
   SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
   CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
-  (rm -rf cmake-out \
-    && mkdir cmake-out \
+  clean_executorch_install_folders
+
+  (mkdir cmake-out \
     && cd cmake-out \
-    && retry cmake -DBUCK2="$BUCK" \
+    && retry cmake \
       -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_XNNPACK="$EXECUTORCH_BUILD_XNNPACK" \
+      -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+      -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 

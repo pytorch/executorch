@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 
 import torch
@@ -33,7 +35,7 @@ class TestVerification(unittest.TestCase):
 
         # Generate program
         program = (
-            to_edge(export(WrapperModule(f), (torch.randn(2),)))
+            to_edge(export(WrapperModule(f), (torch.randn(2),), strict=True))
             .transform(
                 [
                     ConstPropPass(),
@@ -47,7 +49,7 @@ class TestVerification(unittest.TestCase):
         for val_idx in range(len(test.execution_plan.values)):
             val = test.execution_plan.values[val_idx].val
             if not (
-                isinstance(val, Tensor) and val.constant_buffer_idx == 0
+                isinstance(val, Tensor) and val.data_buffer_idx == 0
             ) and not isinstance(val, TensorList):
                 test.load_value(val_idx)
         vlist = test.get_value_list()
@@ -88,7 +90,9 @@ class TestVerification(unittest.TestCase):
         model1 = Op1()
         inputs = (torch.ones(2, 2),)
         program = (
-            to_edge(export(model1, inputs)).to_executorch()._emitter_output.program
+            to_edge(export(model1, inputs, strict=True))
+            .to_executorch()
+            ._emitter_output.program
         )
 
         # Initialize and test Interpreter -- assert that the operators are same as above
@@ -102,7 +106,9 @@ class TestVerification(unittest.TestCase):
         model2 = Op2()
         inputs = (torch.ones(2, 2),)
         program = (
-            to_edge(export(model2, inputs)).to_executorch()._emitter_output.program
+            to_edge(export(model2, inputs, strict=True))
+            .to_executorch()
+            ._emitter_output.program
         )
 
         # Initialize and test Interpreter -- assert that the operators are same as above
@@ -133,7 +139,7 @@ class TestVerification(unittest.TestCase):
         # Generate a program with Op2's operations (remainder, div, add)
         model2 = Op2()
         inputs = torch.ones(2, 2)
-        exec_prog = to_edge(export(model2, (inputs,))).to_executorch()
+        exec_prog = to_edge(export(model2, (inputs,), strict=True)).to_executorch()
 
         exported_prog = exec_prog.exported_program()
         res = exported_prog.module()(inputs)[0]  # noqa
@@ -156,8 +162,7 @@ class TestEdgeVerification(unittest.TestCase):
         egm = (
             to_edge(
                 export(
-                    m,
-                    (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
+                    m, (torch.randn(1, 3, 100, 100).to(dtype=torch.int),), strict=True
                 )
             )
             .exported_program()
@@ -182,6 +187,7 @@ class TestEdgeVerification(unittest.TestCase):
                 export(
                     m,
                     (torch.rand(16, 8, 32, 32), torch.rand(8), torch.rand(8)),
+                    strict=True,
                 )
             )
             .exported_program()
@@ -200,16 +206,7 @@ class TestEdgeVerification(unittest.TestCase):
                 return torch._to_cpu(x)
 
         m = TestModel()
-        egm = (
-            to_edge(
-                export(
-                    m,
-                    ([],),
-                )
-            )
-            .exported_program()
-            .graph_module
-        )
+        egm = to_edge(export(m, ([],), strict=True)).exported_program().graph_module
         verifier = EXIREdgeDialectVerifier()
         verifier(egm)
         self.assertTrue(verifier.is_valid(egm))
@@ -226,8 +223,7 @@ class TestEdgeVerification(unittest.TestCase):
 
         m = TestModel()
         egm = export(
-            m,
-            (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
+            m, (torch.randn(1, 3, 100, 100).to(dtype=torch.int),), strict=True
         ).graph_module
         verifier = EXIREdgeDialectVerifier()
         with self.assertRaises(SpecViolationError):
@@ -245,8 +241,7 @@ class TestEdgeVerification(unittest.TestCase):
         egm = (
             to_edge(
                 export(
-                    m,
-                    (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
+                    m, (torch.randn(1, 3, 100, 100).to(dtype=torch.int),), strict=True
                 )
             )
             .exported_program()
@@ -265,6 +260,7 @@ class TestEdgeVerification(unittest.TestCase):
                     export(
                         m,
                         (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),),
+                        strict=True,
                     )
                 )
                 .exported_program()

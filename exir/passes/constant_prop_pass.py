@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
@@ -14,7 +16,6 @@ from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
     get_param,
-    is_buffer,
     is_lifted_tensor_constant,
     is_param,
 )
@@ -76,6 +77,16 @@ def get_data(
     return None
 
 
+def is_constant_buffer(program: "ExportedProgram", node: torch.fx.Node) -> bool:
+    """Checks if the given node is a constant buffer."""
+
+    if node.target not in program.graph_signature.inputs_to_buffers:
+        return False
+    fqn = program.graph_signature.inputs_to_buffers[node.target]
+    # if the buffer is mutated then record that
+    return fqn not in program.graph_signature.buffers_to_mutate.values()
+
+
 def get_constant_placeholder_dict(
     exported_program: ExportedProgram,
 ) -> OrderedDict[torch.fx.Node, torch.Tensor]:
@@ -83,15 +94,12 @@ def get_constant_placeholder_dict(
     Returns a dictionary of placeholder node -> constant tensor.
     """
     const_node_to_tensor: OrderedDict[torch.fx.Node, torch.Tensor] = OrderedDict()
-    for node in exported_program.graph.nodes:
-        if node.op != "placeholder":
-            continue
-
+    for node in exported_program.graph.find_nodes(op="placeholder"):
         if is_param(exported_program, node):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_param(exported_program, node)
             )
-        elif is_buffer(exported_program, node):
+        elif is_constant_buffer(exported_program, node):
             const_node_to_tensor[node] = cast(
                 torch.Tensor, get_buffer(exported_program, node)
             )
@@ -112,11 +120,11 @@ def get_propagated_const_tensor_dict(
     # Initialize dict with all constant placeholders.
     const_node_to_tensor = get_constant_placeholder_dict(exported_program)
 
-    all_skip_targets: set[EdgeOpOverload] = set()
-    # Default set of targets to skip.
-    all_skip_targets.update(_DEFAULT_SKIP_TARGETS)
     if custom_skip_targets is not None:
-        all_skip_targets.update(custom_skip_targets)
+        all_skip_targets = custom_skip_targets
+    else:
+        # Default set of targets to skip.
+        all_skip_targets = _DEFAULT_SKIP_TARGETS
 
     for node in exported_program.graph.nodes:
         if node.op != "call_function" or node.target in all_skip_targets:
@@ -126,6 +134,10 @@ def get_propagated_const_tensor_dict(
             node.args,
             exported_program,
             const_node_to_tensor,
+        ) or not is_const(
+            node.kwargs,
+            exported_program,
+            const_node_to_tensor,
         ):
             continue
 
@@ -133,9 +145,11 @@ def get_propagated_const_tensor_dict(
             lambda x: get_data(x, exported_program, const_node_to_tensor),
             (node.args, node.kwargs),
         )
-
-        # Execute the `node.target` and create a new propagated constant tensor.
-        prop_constant_tensor = node.target(*args_data, **kwargs_data)
+        # Disable grad for constant propagation, otherwise the generated tensor can't be copied
+        # because of the grad_fn.
+        with torch.no_grad():
+            # Execute the `node.target` and create a new propagated constant tensor.
+            prop_constant_tensor = node.target(*args_data, **kwargs_data)
         const_node_to_tensor[node] = prop_constant_tensor
 
     return const_node_to_tensor
@@ -162,7 +176,22 @@ def replace_with_constant_node(
     exported_program: ExportedProgram,
 ) -> tuple[torch.fx.Node, str]:
     # Add `prop_constant_tensor` to program.state_dict.
-    prop_constant_tensor_fqn = f"_prop_tensor_constant{len(exported_program.constants)}"
+    prefix = "_prop_tensor_constant"
+    prop_constant_tensor_fqn = f"{prefix}{len(exported_program.constants)}"
+    # If prop_constant_tensor_fqn already exists in the state dict, we need
+    # to create a new name. Find the largest suffix of "_prop_tensor_constant",
+    # and increment it by 1 to form the new name.
+    if prop_constant_tensor_fqn in exported_program.constants:
+        suffix = 1 + max(
+            (
+                int(name[len(prefix) :])
+                for name in exported_program.constants.keys()
+                if name.startswith(prefix) and name[len(prefix) :].isdigit()
+            ),
+            default=-1,
+        )
+        prop_constant_tensor_fqn = f"{prefix}{suffix}"
+
     exported_program.constants[prop_constant_tensor_fqn] = prop_constant_tensor
 
     # Insert a new placeholder node for the propagated constant tensor.
@@ -204,11 +233,11 @@ def erase_constant_node(
 ) -> None:
     # Remove corresponding tensor from param/constants dict.
     signature = exported_program.graph_signature
-    if name := signature.inputs_to_parameters.pop(node.name, None):
+    if name := signature.inputs_to_parameters.get(node.name, None):
         exported_program.state_dict.pop(name, None)
-    elif name := signature.inputs_to_lifted_tensor_constants.pop(node.name, None):
+    elif name := signature.inputs_to_lifted_tensor_constants.get(node.name, None):
         exported_program.constants.pop(name, None)
-    elif name := signature.inputs_to_buffers.pop(node.name, None):
+    elif name := signature.inputs_to_buffers.get(node.name, None):
         exported_program.constants.pop(name, None)
         exported_program.state_dict.pop(name, None)
 

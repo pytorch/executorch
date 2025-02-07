@@ -18,16 +18,14 @@ There are two main scripts, setup.sh and run.sh. Each takes one optional,
 positional argument. It is a path to a scratch dir to download and generate
 build artifacts. If supplied, the same argument must be supplied to both the scripts.
 
-run.sh also takes a second optional positional arg to specify a buck2 command.
-
 To run these scripts. On a Linux system, in a terminal, with a working internet connection,
 ```
 # Step [1] - setup necessary tools
 $ ./setup.sh --i-agree-to-the-contained-eula [optional-scratch-dir]
 
 # Step [2] - build + run ExecuTorch and executor_runner baremetal application
-# suited for Corstone300 to run a simple PyTorch model.
-$ ./run.sh [same-optional-scratch-dir-as-before]
+# suited for Corstone FVP's to run a simple PyTorch model.
+$ ./run.sh [--scratch-dir=same-optional-scratch-dir-as-before]
 ```
 ### Online Tutorial
 

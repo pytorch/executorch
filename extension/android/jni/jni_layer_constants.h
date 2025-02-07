@@ -8,9 +8,9 @@
 
 #include <unordered_map>
 
-#include <executorch/runtime/core/portable_type/scalar_type.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
-namespace executorch_jni {
+namespace executorch::extension {
 
 constexpr static int kTensorDTypeUInt8 = 0;
 constexpr static int kTensorDTypeInt8 = 1;
@@ -37,7 +37,7 @@ constexpr static int kTensorDTypeBits4x2 = 20;
 constexpr static int kTensorDTypeBits8 = 21;
 constexpr static int kTensorDTypeBits16 = 22;
 
-using torch::executor::ScalarType;
+using executorch::aten::ScalarType;
 
 const std::unordered_map<ScalarType, int> scalar_type_to_java_dtype = {
     {ScalarType::Byte, kTensorDTypeUInt8},
@@ -93,4 +93,4 @@ const std::unordered_map<int, ScalarType> java_dtype_to_scalar_type = {
     {kTensorDTypeBits16, ScalarType::Bits16},
 };
 
-} // namespace executorch_jni
+} // namespace executorch::extension

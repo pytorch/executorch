@@ -6,19 +6,19 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <XCTest/XCTest.h>
-
-#import <string>
-
 #import <executorch/runtime/core/data_loader.h>
 #import <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #import <executorch/runtime/executor/method.h>
 #import <executorch/runtime/executor/program.h>
 #import <executorch/runtime/platform/runtime.h>
+#import <string>
+
+#import "MLModel_Prewarm.h"
 
 static constexpr size_t kRuntimeMemorySize = 50 * 1024U * 1024U; // 50 MB
 
-using namespace torch::executor;
-using torch::executor::testing::TensorFactory;
+using namespace executorch::runtime;
+using executorch::runtime::testing::TensorFactory;
 
 namespace {
 // TODO: Move the following methods to a utility class, so that it can be shared with `executor_runner.main.mm`
@@ -26,26 +26,27 @@ NSData * _Nullable read_data(const std::string& filePath) {
     NSURL *url = [NSURL fileURLWithPath:@(filePath.c_str())];
     return [NSData dataWithContentsOfURL:url];
 }
-    
-class DataLoaderImpl: public DataLoader {
+
+class DataLoaderImpl final : public DataLoader {
 public:
     DataLoaderImpl(std::string filePath)
     :data_(read_data(filePath))
     {}
-    
-    Result<FreeableBuffer> Load(size_t offset, size_t size) override {
+
+    Result<FreeableBuffer> load(
+        size_t offset, size_t size, ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
         NSData *subdata = [data_ subdataWithRange:NSMakeRange(offset, size)];
         return FreeableBuffer(subdata.bytes, size, nullptr);
     }
-    
+
     Result<size_t> size() const override {
         return data_.length;
     }
-     
+
 private:
-   NSData *data_;
+   NSData * const data_;
 };
-    
+
 using Buffer = std::vector<uint8_t>;
 
 std::unique_ptr<Program> get_program(DataLoader *loader) {
@@ -53,16 +54,16 @@ std::unique_ptr<Program> get_program(DataLoader *loader) {
     if (!program.ok()) {
         return nullptr;
     }
-    
+
     return std::make_unique<Program>(std::move(program.get()));
 }
-    
+
 Result<std::string> get_method_name(Program *program) {
     const auto method_name = program->get_method_name(0);
     if (!method_name.ok()) {
         return Error::InvalidProgram;
     }
-    
+
     return std::string(method_name.get());
 }
 
@@ -72,7 +73,7 @@ get_planned_buffers(const std::string& method_name, Program *program) {
     if (!method_meta.ok()) {
         return Error::InvalidProgram;
     }
-    
+
     std::vector<std::vector<uint8_t>> buffers;
     buffers.reserve(method_meta->num_memory_planned_buffers());
     for (size_t bufferID = 0; bufferID < method_meta->num_memory_planned_buffers(); ++bufferID) {
@@ -80,17 +81,17 @@ get_planned_buffers(const std::string& method_name, Program *program) {
         std::vector<uint8_t> data(buffer_size.get(), 0);
         buffers.emplace_back(std::move(data));
     }
-    
+
     return buffers;
 }
-   
+
 std::vector<Span<uint8_t>> to_spans(std::vector<Buffer>& buffers) {
     std::vector<Span<uint8_t>> result;
     result.reserve(buffers.size());
     for (auto& buffer : buffers) {
         result.emplace_back(buffer.data(), buffer.size());
     }
-    
+
     return result;
 }
 
@@ -106,8 +107,8 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
          }
          Buffer buffer(tensor_meta->nbytes(), 0);
          auto sizes = tensor_meta->sizes();
-         exec_aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
-         exec_aten::Tensor tensor(&tensor_impl);
+         executorch::aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
+         executorch::aten::Tensor tensor(&tensor_impl);
          EValue input_value(std::move(tensor));
          Error err = method.set_input(input_value, i);
          if (err != Error::Ok) {
@@ -128,7 +129,7 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
 @implementation CoreMLBackendDelegateTests
 
 + (void)setUp {
-    runtime_init();
+    executorch::runtime::runtime_init();
 }
 
 + (nullable NSURL *)bundledResourceWithName:(NSString *)name extension:(NSString *)extension {
@@ -185,19 +186,33 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
 - (void)testAddProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
 }
 
 - (void)testMulProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
 }
 
 - (void)testMV3ProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
+}
+
+#if MODEL_STATE_IS_SUPPORTED
+- (void)testStateProgramExecute {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"state_coreml_all" extension:@"pte"];
+    XCTAssertNotNil(modelURL);
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
+}
+#endif
+
+- (void)testAddMulCompiledProgramExecute {
+    NSURL *modelURL = [[self class] bundledResourceWithName:@"add_mul_compiled_coreml_all" extension:@"pte"];
+    XCTAssertNotNil(modelURL);
+    [self executeModelAtURL:modelURL nLoads:1 nExecutions:2];
 }
 
 - (void)executeMultipleModelsConcurrently:(NSArray<NSURL *> *)modelURLs
@@ -215,7 +230,7 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
             [expectation fulfill];
         });
     }
-    
+
     [self waitForExpectations:expectations timeout:timeout];
 }
 

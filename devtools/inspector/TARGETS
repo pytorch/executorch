@@ -1,0 +1,58 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "inspector",
+    srcs = [
+        "_inspector.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/ipython:ipython",
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/pypi/pandas:pandas",
+        "fbsource//third-party/pypi/tabulate:tabulate",
+        ":inspector_utils",
+        "//executorch/devtools/debug_format:et_schema",
+        "//executorch/devtools/etdump:schema_flatcc",
+        "//executorch/devtools/etrecord:etrecord",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_binary(
+    name = "inspector_cli",
+    main_function = ".inspector_cli.main",
+    main_src = "inspector_cli.py",
+    deps = [
+        "//executorch/devtools:lib",
+        "//executorch/devtools/inspector:lib",
+    ],
+)
+
+python_library(
+    name = "inspector_utils",
+    srcs = [
+        "_inspector_utils.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/matplotlib:matplotlib",
+        "fbsource//third-party/pypi/numpy:numpy",
+        "//caffe2:torch",
+        "//executorch/devtools/debug_format:base_schema",
+        "//executorch/devtools/debug_format:et_schema",
+        "//executorch/devtools/etdump:schema_flatcc",
+        "//executorch/devtools/etdump:serialize",
+        "//executorch/devtools/etrecord:etrecord",
+    ],
+)
+
+python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":inspector",
+        ":inspector_utils",
+    ],
+)

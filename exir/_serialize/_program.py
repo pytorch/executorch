@@ -21,6 +21,8 @@ from executorch.exir._serialize._flatbuffer import (
     _program_json_to_flatbuffer,
 )
 
+from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
+
 from executorch.exir.schema import (
     BackendDelegateDataReference,
     BackendDelegateInlineData,
@@ -48,19 +50,6 @@ def _json_to_program(program_json: bytes) -> Program:
     """Returns a Program deserialized from the given JSON string."""
     # construct program class recursively from dict
     return _json_to_dataclass(json.loads(program_json), cls=Program)
-
-
-def _padding_required(offset: int, alignment: int) -> int:
-    """Returns the padding required to align `offset` to `alignment`."""
-    remainder: int = offset % alignment
-    if remainder != 0:
-        return alignment - remainder
-    return 0
-
-
-def _aligned_size(input_size: int, alignment: int) -> int:
-    """Returns input_size padded up to the next whole multiple of alignment."""
-    return input_size + _padding_required(input_size, alignment)
 
 
 def _insert_flatbuffer_header(
@@ -211,25 +200,6 @@ class _ExtendedHeader:
         return data
 
 
-def _pad_to(data: bytes, length: int) -> bytes:
-    """Returns the input followed by enough zero bytes to become the requested length.
-
-    Args:
-        data: The data to pad.
-        length: The length of the returned data.
-    Returns:
-        The padded data.
-    Raises:
-        ValueError: If the requested length is less than the input length.
-    """
-    if length < len(data):
-        raise ValueError(f"Data length {len(data)} > padded length {length}")
-    if length > len(data):
-        data = data + b"\x00" * (length - len(data))
-    assert len(data) == length
-    return data
-
-
 def _get_extended_header(program_data: bytes) -> Optional[_ExtendedHeader]:
     """Returns the extended header of the program data, if present and valid."""
     try:
@@ -254,6 +224,7 @@ def _extract_delegate_segments(
     """
     remaining_inline: List[BackendDelegateInlineData] = []
     inline_indices_seen: set[int] = set()
+    segment_index_map: dict[bytes, int] = {}
     for plan in program.execution_plan:
         for delegate in plan.delegates:
             if delegate.processed.location != DataLocation.INLINE:
@@ -279,8 +250,11 @@ def _extract_delegate_segments(
             inline_indices_seen.add(delegate.processed.index)
             if inline.data:
                 # Move the delegate data out of the program.
-                segment_index = len(segments)
-                segments.append(Cord(inline.data))
+                segment_index = segment_index_map.get(inline.data)
+                if segment_index is None:
+                    segment_index = len(segments)
+                    segments.append(Cord(inline.data))
+                    segment_index_map[inline.data] = segment_index
                 delegate.processed = BackendDelegateDataReference(
                     location=DataLocation.SEGMENT,
                     index=segment_index,
@@ -309,7 +283,7 @@ def _extract_delegate_segments(
 
 def _extract_constant_segment(
     constant_buffer: List[Buffer],
-    tensor_alignment: int,
+    tensor_alignment: Optional[int] = None,
 ) -> Tuple[Cord, List[int]]:
     """Copies the tensors from the provided list into a Cord and tracks the offsets
         of each tensor.
@@ -329,7 +303,11 @@ def _extract_constant_segment(
         buffer = constant_buffer[i]
         constant_segment_data.append(buffer.storage)
         buffer_length = len(buffer.storage)
-        pad_length = _padding_required(buffer_length, tensor_alignment)
+        pad_length = (
+            padding_required(buffer_length, tensor_alignment)
+            if tensor_alignment is not None
+            else 0
+        )
         if i < len(constant_buffer) - 1:
             constant_segment_data.append(b"\x00" * pad_length)
         constant_segment_offsets.append(current_offset)
@@ -341,9 +319,9 @@ def _extract_constant_segment(
 def serialize_pte_binary(
     program: Program,
     *,
+    mutable_data: Optional[List[Buffer]] = None,
     extract_delegate_segments: bool = False,
-    extract_constant_segment: bool = False,
-    segment_alignment: int = 4096,
+    segment_alignment: int = 128,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
 ) -> Cord:
@@ -358,8 +336,6 @@ def serialize_pte_binary(
               and the starting segment offset.
             - Update the Program.segments field with the offsets and lengths
               of each segment.
-        extract_constant_segment: Whether to move the constant data from the Program
-            into a separate segment.
         segment_alignment: Alignment in bytes. The starting offset of each
             segment will be aligned to this value in the output data.
         constant_tensor_alignment: The minimum alignment of tensor
@@ -382,19 +358,38 @@ def serialize_pte_binary(
     # Store extracted segment data; this may be constant data or delegate data.
     segments: List[Cord] = []
 
-    if extract_constant_segment:
-        constant_segment_data, constant_segment_offsets = _extract_constant_segment(
-            program.constant_buffer, tensor_alignment=constant_tensor_alignment
+    constant_segment_data, constant_segment_offsets = _extract_constant_segment(
+        program.constant_buffer, tensor_alignment=constant_tensor_alignment
+    )
+
+    # If there are no constants, len(constant_segment_data) = 0. However, there may
+    # be non-constants, in which case len(constant_segment_offsets) = 1, containing
+    # the placeholder value 0. Ensure the placeholder value is put into
+    # program.constant_segment.offsets.
+    if len(constant_segment_offsets) > 0:
+        # Update program.constant_segment with constant subsegment offset information.
+        program.constant_segment = SubsegmentOffsets(
+            segment_index=len(segments), offsets=constant_segment_offsets
         )
-        if len(constant_segment_data) > 0:
-            # Update program.constant_segment with constant subsegment offset information.
-            program.constant_segment = SubsegmentOffsets(
-                segment_index=len(segments), offsets=constant_segment_offsets
-            )
-            # Clear the constant buffer, as constant data will be stored in segments.
-            program.constant_buffer = []
+        # Clear the constant buffer, as constant data will be stored in segments.
+        program.constant_buffer = []
+        # Add to the aggregate segments cord.
+        segments.append(constant_segment_data)
+
+    if mutable_data is not None:
+        mutable_segment_data, mutable_segment_offsets = _extract_constant_segment(
+            mutable_data,
+            tensor_alignment=None,  # data is copied at Method load so no need to align.
+        )
+        if len(mutable_segment_data) > 0:
+            # Update program.mutable_segment_data with constant subsegment offset information.
+            program.mutable_data_segments = [
+                SubsegmentOffsets(
+                    segment_index=len(segments), offsets=mutable_segment_offsets
+                ),
+            ]
             # Add to the aggregate segments cord.
-            segments.append(constant_segment_data)
+            segments.append(mutable_segment_data)
 
     if extract_delegate_segments:
         _extract_delegate_segments(program, segments)
@@ -411,11 +406,11 @@ def serialize_pte_binary(
         )
         program.segments.append(
             DataSegment(
-                offset=_aligned_size(prev_end, segment_alignment), size=len(data)
+                offset=aligned_size(prev_end, segment_alignment), size=len(data)
             )
         )
         # Add to aggregate segments cord with padding.
-        padding_length = _padding_required(len(segments_data), segment_alignment)
+        padding_length = padding_required(len(segments_data), segment_alignment)
         if padding_length > 0:
             segments_data.append(b"\x00" * padding_length)
         segments_data.append(data)
@@ -433,7 +428,7 @@ def serialize_pte_binary(
 
     # Size of the header to insert. Its size is padded to the largest
     # force_align value present in the schema.
-    padded_header_length: int = _aligned_size(
+    padded_header_length: int = aligned_size(
         input_size=_ExtendedHeader.EXPECTED_LENGTH,
         alignment=result.max_alignment,
     )
@@ -441,7 +436,7 @@ def serialize_pte_binary(
     program_size: int = padded_header_length + len(result.data)
     # Offset to the first segment, or zero if there are no segments.
     segment_base_offset: int = (
-        _aligned_size(input_size=program_size, alignment=segment_alignment)
+        aligned_size(input_size=program_size, alignment=segment_alignment)
         if len(segments_data) > 0
         else 0
     )
@@ -450,7 +445,7 @@ def serialize_pte_binary(
     header_data: bytes = _ExtendedHeader(
         program_size=program_size, segment_base_offset=segment_base_offset
     ).to_bytes()
-    header_data = _pad_to(header_data, padded_header_length)
+    header_data = pad_to(header_data, padded_header_length)
 
     # Insert the header into the flatbuffer data.
     program_data: bytes = _insert_flatbuffer_header(
@@ -475,7 +470,7 @@ def serialize_pte_binary(
     # - segments data (optional); aligned to segment_alignment.
     pte_data = Cord(program_data)
     if len(segments_data) > 0:
-        padding_length = _padding_required(len(pte_data), segment_alignment)
+        padding_length = padding_required(len(pte_data), segment_alignment)
         pte_data.append(b"\x00" * padding_length)
         # The first segment after program data should start at the segment base offset.
         assert (
@@ -531,6 +526,24 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
             delegate.processed = BackendDelegateDataReference(
                 location=DataLocation.INLINE, index=data_index
             )
+
+    # Replace constants from constant_segment into constant_buffer.
+    if program.constant_segment and len(program.constant_segment.offsets) > 0:
+        buffers: List[Buffer] = []
+        constant_segment = segments[program.constant_segment.segment_index]
+        for i in range(len(program.constant_segment.offsets)):
+            start_offset = program.constant_segment.offsets[i]
+            # Note: this is the original end offset plus any padding between
+            # it and the next start offset.
+            end_offset = (
+                program.constant_segment.offsets[i + 1]
+                if i < len(program.constant_segment.offsets) - 1
+                else len(constant_segment)
+            )
+            buffers.append(Buffer(storage=constant_segment[start_offset:end_offset]))
+        program.constant_buffer = buffers
+        program.constant_segment.segment_index = 0
+        program.constant_segment.offsets = []
 
     # Clear out the segments list since the original Program didn't have one.
     program.segments = []

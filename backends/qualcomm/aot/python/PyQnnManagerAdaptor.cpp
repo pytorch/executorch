@@ -9,9 +9,12 @@
 #include <pybind11/pybind11.h>
 
 namespace py = pybind11;
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
   // TODO: Add related documents for configurations listed below
   using namespace qnn_delegate;
@@ -26,13 +29,29 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
 
   py::class_<PyQnnManager, std::shared_ptr<PyQnnManager>>(m, "QnnManager")
       .def(py::init<const py::bytes&>())
+      .def(py::init<const py::bytes&, const py::bytes&>())
+      .def(py::init<const py::bytes&, const py::list&>())
       .def("Init", &PyQnnManager::Init)
       .def("IsNodeSupportedByBackend", &PyQnnManager::IsNodeSupportedByBackend)
-      .def("Compile", &PyQnnManager::Compile)
+      .def("Compile", py::overload_cast<>(&PyQnnManager::Compile))
+      .def(
+          "Compile",
+          py::overload_cast<
+              const std::string&,
+              std::vector<std::shared_ptr<OpWrapper>>&>(&PyQnnManager::Compile))
       .def("Destroy", &PyQnnManager::Destroy)
       .def("IsAvailable", &PyQnnManager::IsAvailable)
-      .def("IsTensorDump", &PyQnnManager::IsTensorDump);
+      .def("IsTensorDump", &PyQnnManager::IsTensorDump)
+      .def("AllocateTensor", &PyQnnManager::AllocateTensor)
+      .def("GetGraphInputs", &PyQnnManager::GetGraphInputs)
+      .def("GetGraphOutputs", &PyQnnManager::GetGraphOutputs)
+      .def("GetGraphNames", &PyQnnManager::GetGraphNames)
+      .def("GetSpillFillBufferSize", &PyQnnManager::GetSpillFillBufferSize)
+      .def(
+          "MakeBinaryInfo",
+          py::overload_cast<const py::bytes&>(&PyQnnManager::MakeBinaryInfo))
+      .def("StripProtocol", &PyQnnManager::StripProtocol);
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

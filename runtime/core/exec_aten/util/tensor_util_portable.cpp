@@ -13,17 +13,17 @@
 #include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 /**
  * Implementation for ExecuTorch tensor util, should only be included in
  * an target with ATen mode turned off. Explicitly taking
- * torch::executor::Tensor (instead of exec_aten::Tensor) to make sure it fails
- * at compile time if built incorrectly.
+ * torch::executor::Tensor (instead of executorch::aten::Tensor) to make sure it
+ * fails at compile time if built incorrectly.
  */
 Error get_dim_order(
     const torch::executor::Tensor& tensor,
-    exec_aten::DimOrderType* out_dim_order,
+    executorch::aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size) {
   ET_CHECK_OR_RETURN_ERROR(
       out_dim_order_size == tensor.dim_order().size(),
@@ -34,7 +34,7 @@ Error get_dim_order(
   std::memcpy(
       out_dim_order,
       tensor.dim_order().data(),
-      tensor.dim_order().size() * sizeof(exec_aten::DimOrderType));
+      tensor.dim_order().size() * sizeof(executorch::aten::DimOrderType));
   return Error::Ok;
 }
 
@@ -71,6 +71,66 @@ bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
     }
   }
   return ret_val;
+}
+
+bool tensor_is_default_dim_order(torch::executor::Tensor t) {
+  bool ret_val =
+      is_contiguous_dim_order(t.dim_order().data(), t.dim_order().size());
+
+  if (!ret_val) {
+    ET_LOG(Error, "Expected tensor to have default dim order, but got");
+    for (size_t d = 0; d < t.dim(); ++d) {
+      ET_LOG(
+          Error,
+          "    dim_order(%zu): %zu",
+          static_cast<size_t>(d),
+          static_cast<size_t>(t.dim_order()[d]));
+    }
+  }
+  return ret_val;
+}
+
+bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
+  bool ret_val =
+      is_channels_last_dim_order(t.dim_order().data(), t.dim_order().size());
+
+  if (!ret_val) {
+    ET_LOG(Error, "Expected tensor to have channels last dim order, but got");
+    for (size_t d = 0; d < t.dim(); ++d) {
+      ET_LOG(
+          Error,
+          "    dim_order(%zu): %zu",
+          static_cast<size_t>(d),
+          static_cast<size_t>(t.dim_order()[d]));
+    }
+  }
+  return ret_val;
+}
+
+bool tensors_have_same_dim_order(
+    const executorch::aten::ArrayRef<executorch::aten::Tensor> tensor_list) {
+  if (tensor_list.size() < 2) {
+    return true;
+  }
+  bool all_contiguous = true;
+  bool all_channels_last = true;
+  for (size_t i = 0; i < tensor_list.size(); ++i) {
+    all_contiguous = all_contiguous &&
+        is_contiguous_dim_order(
+                         tensor_list[i].dim_order().data(),
+                         tensor_list[i].dim_order().size());
+    all_channels_last = all_channels_last &&
+        is_channels_last_dim_order(
+                            tensor_list[i].dim_order().data(),
+                            tensor_list[i].dim_order().size());
+  }
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      all_contiguous || all_channels_last,
+      "%zd input tensors have different dim orders",
+      tensor_list.size());
+
+  return true;
 }
 
 namespace internal {
@@ -116,7 +176,7 @@ Error copy_tensor_data(
   return Error::Ok;
 }
 
-__ET_NODISCARD Error set_tensor_data(
+ET_NODISCARD Error set_tensor_data(
     const torch::executor::Tensor& t,
     void* buffer,
     size_t buffer_size) {
@@ -137,19 +197,19 @@ void reset_data_ptr(const torch::executor::Tensor& tensor) {
 
 class TensorResizerFriend final {
  public:
-  __ET_NODISCARD static Error resize_tensor_impl(
-      exec_aten::TensorImpl* impl,
-      exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
+  ET_NODISCARD static Error resize_tensor_impl(
+      executorch::aten::TensorImpl* impl,
+      executorch::aten::ArrayRef<executorch::aten::SizesType> new_sizes) {
     return impl->internal_resize_contiguous(new_sizes);
   }
 };
 
 Error resize_tensor_impl(
     torch::executor::TensorImpl* impl,
-    torch::executor::ArrayRef<exec_aten::SizesType> new_sizes) {
+    torch::executor::ArrayRef<executorch::aten::SizesType> new_sizes) {
   return TensorResizerFriend::resize_tensor_impl(impl, new_sizes);
 }
 } // namespace internal
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

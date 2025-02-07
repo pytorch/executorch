@@ -7,4 +7,8 @@
 
 set -eux
 
-echo "This script is run after building ExecuTorch binaries"
+# This script is run after building ExecuTorch binaries
+
+# Rename pip-out directory, to avoid using shared libraries in pip-out during
+# smoke test.
+mv pip-out BACKUP-pip-out

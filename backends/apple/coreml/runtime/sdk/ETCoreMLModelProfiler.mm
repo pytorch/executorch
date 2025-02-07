@@ -5,16 +5,18 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLModelStructurePath.h>
-#import <ETCoreMLOperationProfilingInfo.h>
-#import <ETCoreMLPair.h>
-#import <ETCoreMLModelProfiler.h>
-#import <ETCoreMLStrings.h>
+#import "ETCoreMLModelProfiler.h"
+
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLModel.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModelStructurePath.h"
+#import "ETCoreMLOperationProfilingInfo.h"
+#import "ETCoreMLPair.h"
+#import "ETCoreMLStrings.h"
 #import <mach/mach_time.h>
 #import <math.h>
-#import <program_path.h>
+#import "program_path.h"
 
 namespace  {
 using namespace executorchcoreml::modelstructure;
@@ -220,8 +222,8 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
 }
 
 @interface ETCoreMLModelProfiler ()
-/// The CoreML model.
-@property (readonly, strong, nonatomic) MLModel *model;
+/// The model.
+@property (readonly, strong, nonatomic) ETCoreMLModel *model;
 /// The model output names.
 @property (readonly, copy, nonatomic) NSOrderedSet<NSString *> *outputNames;
 #if MODEL_PROFILING_IS_AVAILABLE
@@ -239,25 +241,19 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
 
 @implementation ETCoreMLModelProfiler
 
-- (nullable instancetype)initWithCompiledModelAsset:(ETCoreMLAsset *)compiledModelAsset
-                                        outputNames:(NSOrderedSet<NSString *> *)outputNames
-                                      configuration:(MLModelConfiguration *)configuration
-                                              error:(NSError * __autoreleasing *)error  {
+- (nullable instancetype)initWithModel:(ETCoreMLModel *)model
+                         configuration:(MLModelConfiguration *)configuration
+                                 error:(NSError * __autoreleasing *)error  {
 #if MODEL_PROFILING_IS_AVAILABLE
     if (@available(macOS 14.4, iOS 17.4, tvOS 17.4, watchOS 10.4, *)) {
-        NSURL *compiledModelURL = compiledModelAsset.contentURL;
+        NSURL *compiledModelURL = model.asset.contentURL;
         MLComputePlan *computePlan = get_compute_plan_of_model_at_url(compiledModelURL,
                                                                       configuration,
                                                                       error);
         if (!computePlan) {
             return nil;
         }
-        
-        MLModel *model = [MLModel modelWithContentsOfURL:compiledModelURL error:error];
-        if (!model) {
-            return nil;
-        }
-        
+
         __block NSMutableArray<ETCoreMLModelStructurePath *> *operationPaths = [NSMutableArray array];
         __block NSMutableDictionary<NSValue *, ETCoreMLModelStructurePath *> *operationToPathMap = [NSMutableDictionary dictionary];
         __block NSMutableArray<MLModelStructureProgramOperation *> *topologicallySortedOperations = [NSMutableArray new];
@@ -279,7 +275,6 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
         
         self = [super init];
         if (self) {
-            _outputNames = [outputNames copy];
             _model = model;
             _computePlan = computePlan;
             _operationToPathMap = operationToPathMap;
@@ -331,10 +326,10 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
     return nil;
 }
 
-- (nullable ETCoreMLModelProfilingResult *)profilingInfoForAllOperationsWithOptions:(MLPredictionOptions *)options
-                                                                             inputs:(id<MLFeatureProvider>)inputs
-                                                                       modelOutputs:(NSArray<MLMultiArray *> *_Nullable __autoreleasing *_Nonnull)modelOutputs
-                                                                              error:(NSError* __autoreleasing *)error {
+- (nullable ETCoreMLModelProfilingResult *)profilingInfoForOperationsAtPaths:(MLPredictionOptions *)options
+                                                                      inputs:(id<MLFeatureProvider>)inputs
+                                                                modelOutputs:(NSArray<MLMultiArray *> *_Nullable __autoreleasing *_Nonnull)modelOutputs
+                                                                       error:(NSError* __autoreleasing *)error {
 #if MODEL_PROFILING_IS_AVAILABLE
     if (@available(macOS 14.4, iOS 17.4, tvOS 17.4, watchOS 10.4, *)) {
         __block NSMutableArray<ETCoreMLModelStructurePath *> *paths = [NSMutableArray array];
@@ -344,7 +339,7 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
             }
             return YES;
         });
-        
+
         return [self profilingInfoForOperationsAtPaths:paths
                                                options:options
                                                 inputs:inputs

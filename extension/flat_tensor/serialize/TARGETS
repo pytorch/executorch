@@ -1,0 +1,34 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_library(
+    name = "schema",
+    srcs = [
+        "flat_tensor_schema.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+)
+
+runtime.python_library(
+    name = "serialize",
+    srcs = [
+        "serialize.py",
+    ],
+    resources = [
+        "flat_tensor.fbs",
+        "scalar_type.fbs",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        ":schema",
+        "//executorch/exir/_serialize:lib",
+    ],
+)

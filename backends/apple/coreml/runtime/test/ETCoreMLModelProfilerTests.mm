@@ -6,15 +6,15 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <XCTest/XCTest.h>
+#import "ETCoreMLTestUtils.h"
 #import <ETCoreMLModelAnalyzer.h>
 #import <ETCoreMLModelProfiler.h>
-#import <ETCoreMLOperationProfilingInfo.h>
 #import <ETCoreMLModelStructurePath.h>
-#import <model_logging_options.h>
+#import <ETCoreMLOperationProfilingInfo.h>
+#import <XCTest/XCTest.h>
+#import <executorch/runtime/platform/runtime.h>
 #import <model_event_logger.h>
-
-#import "ETCoreMLTestUtils.h"
+#import <model_logging_options.h>
 
 namespace  {
 using namespace executorchcoreml::modelstructure;
@@ -57,6 +57,10 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
 @end
 
 @implementation ETCoreMLModelProfilerTests
+
++ (void)setUp {
+    executorch::runtime::runtime_init();
+}
 
 + (nullable NSURL *)bundledResourceWithName:(NSString *)name extension:(NSString *)extension {
     NSBundle *bundle = [NSBundle bundleForClass:ETCoreMLModelProfilerTests.class];
@@ -102,10 +106,8 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
     if (@available(macOS 14.4, iOS 17.4, watchOS 10.4, tvOS 17.4, *)) {
         NotifyFn notify = [](NSDictionary<ETCoreMLModelStructurePath *, ETCoreMLOperationProfilingInfo *> *profilingResult,
                              NSDictionary<ETCoreMLModelStructurePath *, NSString *> *__unused pathToSymbolNameMap) {
-            // There are 3 add ops, we verify that the profiling info exists for the ops.
-            XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_add_tensor_2_cast_fp16")]);
+            // There is 1 add op, we verify that the profiling info exists for the ops.
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_add_tensor_cast_fp16")]);
-            XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_add_tensor_1_cast_fp16")]);
         };
         
         [self profileModelWithName:@"add_coreml_all"
@@ -144,7 +146,6 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_13_cast_fp16")]);
             XCTAssertNotNil(profilingResult[make_path_with_output_name("_inversed_aten_div_tensor_24_cast_fp16")]);
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_mean_dim_7_cast_fp16")]);
-            XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_clamp_default_54_cast_fp16")]);
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_22_cast_fp16")]);
             XCTAssertNotNil(profilingResult[make_path_with_output_name("aten_mul_tensor_27_cast_fp16")]);
         };

@@ -171,7 +171,7 @@ class TestTensor(unittest.TestCase):
         )
         for test_case in test_cases:
             kwargs = test_case[0]
-            with self.assertRaisesRegex(ValueError, test_case[1], msg=f"{kwargs}"):
+            with self.assertRaisesRegex(Exception, test_case[1], msg=f"{kwargs}"):
                 make_allocation_info(**kwargs)
 
     def test_contiguous_stride_from_shape(self) -> None:

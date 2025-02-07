@@ -14,6 +14,10 @@
 
 namespace vkcompute {
 
+//
+// Staging Buffer <-> Tensor
+//
+
 void add_staging_to_tensor_node(
     ComputeGraph& graph,
     const ValueRef in_staging,
@@ -24,11 +28,51 @@ void add_tensor_to_staging_node(
     const ValueRef in_tensor,
     const ValueRef out_staging);
 
-ValueRef prepack_if_tensor_ref(
-    ComputeGraph& graph,
-    const ValueRef v,
-    const api::GPUMemoryLayout layout);
+//
+// Standard Prepack
+//
 
-ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v);
+/*
+ * Given that `v` is a `TensorRef`, create a new `Tensor` value with the
+ * specified `storage_type` and `memory_layout`, and add a a prepacking node to
+ * transfer the `TensorRef` data to the new `Tensor` object via a staging to
+ * tensor shader. The created `Tensor` value is then returned.
+ *
+ * If `passthrough` is `true`, then `v` may be a `Tensor` as well. If `v` is a
+ * `Tensor`, then it is returned as-is. If `passthrough` is `false` (default),
+ * then an exception will be thrown.
+ */
+
+ValueRef prepack_standard(
+    ComputeGraph& graph,
+    const ValueRef tensor_data,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout layout,
+    const bool passthrough = false,
+    const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
+
+/*
+ * Equivalent to `prepack_standard()` function, except the `storage_type` and
+ * `memory_layout` are set to match `to_copy`, which must be a `Tensor`.
+ */
+ValueRef prepack_standard_like(
+    ComputeGraph& graph,
+    const ValueRef tensor_data,
+    const ValueRef to_copy,
+    const bool passthrough = false);
+
+//
+// Direct buffer copy prepack
+//
+
+/*
+ * Given that `v` is a `TensorRef`, create a new `Tensor` value with buffer
+ * storage and `kWidthPacked` memory layout, and add a prepacking node to
+ * transfer the `TensorRef` data to the new `Tensor` object via a direct buffer
+ * to buffer copy shader.
+ */
+ValueRef prepack_direct_copy_buffer(
+    ComputeGraph& graph,
+    const ValueRef tensor_data);
 
 } // namespace vkcompute

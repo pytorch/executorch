@@ -14,8 +14,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::optional;
-using exec_aten::Tensor;
+using executorch::aten::optional;
+using executorch::aten::Tensor;
 
 namespace {
 
@@ -116,13 +116,18 @@ void cdist(const Tensor& x1, const Tensor& x2, Tensor& out, double p) {
 } // namespace
 
 Tensor& _cdist_forward_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& x1,
     const Tensor& x2,
     double p,
     optional<int64_t> compute_mode,
     Tensor& out) {
   (void)ctx;
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(x1, x2, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(x1), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx,
@@ -157,7 +162,7 @@ Tensor& _cdist_forward_out(
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "_cdist_forward.out";
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       out_type, ctx, name, CTYPE, [&] { cdist<CTYPE>(x1, x2, out, p); });
 
   return out;

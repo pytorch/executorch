@@ -7,7 +7,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Dict, List, Mapping, NamedTuple, Union
+from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Tuple, Union
+
+import torch
 
 from executorch.exir.backend.backend_details import enforcedmethod
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -91,3 +93,22 @@ class Partitioner(ABC):
             PartitionResult: includes the tagged graph and the delegation spec to indicate what backend_id and compile_spec is used for each node and the tag created by the backend developers.
         """
         pass
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        """
+        Returns a list of operator names that should not be decomposed. When these ops are
+        registered and the `to_backend` is invoked through to_edge_transform_and_lower it will be
+        guaranteed that the program that the backend receives will not have any of these ops
+        decomposed.
+
+        Returns:
+            List[torch._ops.OpOverload]: a list of operator names that should not be decomposed.
+            Optional[Callable[[torch.fx.Node], bool]]]: an optional callable, acting as a filter, that users can provide
+            which will be called for each node in the graph that users can use as a filter for certain
+            nodes that should be continued to be decomposed even though the op they correspond to is
+            in the list returned by ops_to_not_decompose.
+        """
+        return ([], None)

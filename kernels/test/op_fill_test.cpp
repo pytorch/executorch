@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpFillTest : public OperatorTest {
@@ -92,7 +92,7 @@ class OpFillTest : public OperatorTest {
     TEST_FILL_OUT(test_fill_scalar_out, DTYPE);      \
   }
 
-ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_SCALAR_INPUT_SUPPORT_TEST)
+ET_FORALL_REALHBBF16_TYPES(GENERATE_SCALAR_INPUT_SUPPORT_TEST)
 
 // Create input support tests for tensor variant.
 #define GENERATE_TENSOR_INPUT_SUPPORT_TEST(_, DTYPE) \
@@ -100,7 +100,7 @@ ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_SCALAR_INPUT_SUPPORT_TEST)
     TEST_FILL_OUT(test_fill_tensor_out, DTYPE);      \
   }
 
-ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_TENSOR_INPUT_SUPPORT_TEST)
+ET_FORALL_REALHBBF16_TYPES(GENERATE_TENSOR_INPUT_SUPPORT_TEST)
 
 TEST_F(OpFillTest, MismatchedOtherPropertiesDies) {
   TensorFactory<ScalarType::Int> tf;

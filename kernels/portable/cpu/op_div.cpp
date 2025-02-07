@@ -7,8 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -20,7 +19,7 @@ namespace native {
 
 namespace {
 
-ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
+ScalarType get_common_type(ScalarType a_type, ScalarType b_type) {
   if (isFloatingType(a_type) && isFloatingType(b_type)) {
     return promoteTypes(a_type, b_type);
   } else if (isFloatingType(a_type)) {
@@ -33,205 +32,243 @@ ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
 
 } // namespace
 
-Tensor&
-div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
+Tensor& div_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
+  // Common Dtype
+  ScalarType common_type = get_common_type(a.scalar_type(), b.scalar_type());
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-  ET_KERNEL_CHECK(
-      ctx,
-      !isComplexType(a_type) && !isQIntType(a_type) && !isBitsType(a_type),
-      InvalidArgument,
-      out);
-  ET_KERNEL_CHECK(
-      ctx,
-      !isComplexType(b_type) && !isQIntType(b_type) && !isBitsType(b_type),
-      InvalidArgument,
-      out);
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "div.out";
 
-  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
-
-  ScalarType common_type = get_compute_type(a_type, b_type);
-  ScalarType out_type = out.scalar_type();
-
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
-
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.out", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div.out", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div.out", CTYPE_IN, [&]() {
-        ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div.out", CTYPE_OUT, [&]() {
-          apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-              [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                CTYPE_IN value = a_casted / b_casted;
-
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a,
-              b,
-              out);
-        });
-      });
-    });
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          return val_a / val_b;
+        },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        b,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::FLOATHBF16);
   });
 
   return out;
 }
 
 Tensor& div_out_mode(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    exec_aten::optional<exec_aten::string_view> mode,
+    executorch::aten::optional<executorch::aten::string_view> mode,
     Tensor& out) {
+  if (!mode.has_value()) {
+    return div_out(ctx, a, b, out);
+  }
+
+  auto mode_val = mode.value();
+
+  // Check mode
+  ET_KERNEL_CHECK(
+      ctx, mode_val == "trunc" || mode_val == "floor", InvalidArgument, out);
+
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
+
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx,
+      (canCast(common_type, out.scalar_type()) &&
+       common_type != ScalarType::Bool),
+      InvalidArgument,
+      out);
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType common_type = get_compute_type(a_type, b_type);
-  ScalarType out_type = out.scalar_type();
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "div.out_mode";
 
-  // Allow casting float -> integral here
-  // non-bool -> bool is still disallowed
-  ET_KERNEL_CHECK(
-      ctx,
-      !(common_type != ScalarType::Bool && out_type == ScalarType::Bool),
-      InvalidArgument,
-      out);
+  const bool mode_is_trunc = mode_val == "trunc";
+  bool div_by_zero_error = false;
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.out_mode", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div.out_mode", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div.out_mode", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "div.out_mode", CTYPE_OUT, [&]() {
-          apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-              [mode](const CTYPE_A val_a, const CTYPE_B val_b) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                CTYPE_IN value = a_casted / b_casted;
-                if (mode.has_value() && mode.value() == "trunc") {
-                  value = std::trunc(value);
-                } else if (mode.has_value() && mode.value() == "floor") {
-                  value = std::floor(value);
-                }
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a,
-              b,
-              out);
-        });
-      });
-    });
+  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [mode_is_trunc, &div_by_zero_error](
+            const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
+            if (val_b == 0) {
+              div_by_zero_error = true;
+              return static_cast<CTYPE_COMPUTE>(0);
+            }
+          }
+          CTYPE_COMPUTE value = val_a / val_b;
+          if (mode_is_trunc) {
+            value = std::trunc(value);
+          } else {
+            // We established above that the mode is either trunc or floor, so
+            // it must be floor.
+            value = utils::floor_divide(val_a, val_b);
+          }
+          return value;
+        },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        b,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::REALHBF16);
   });
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !div_by_zero_error,
+      InvalidArgument,
+      out,
+      "Div mode operation encountered integer division by zero");
 
   return out;
 }
 
 Tensor& div_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
-  (void)ctx;
+  // Common Dtype
+  ScalarType common_type =
+      isFloatingType(a.scalar_type()) ? a.scalar_type() : ScalarType::Float;
 
-  // Resize for dynamic shape
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
+  // Check Common Dtype
+  ET_KERNEL_CHECK(ctx, common_type == out.scalar_type(), InvalidArgument, out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType common_type = isFloatingType(a_type) ? a_type : ScalarType::Float;
-  ScalarType out_type = out.scalar_type();
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Resize
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.Scalar_out", CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "div.Scalar_out", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div.Scalar_out", CTYPE, [&]() {
-        CTYPE_B b_val;
-        utils::extract_scalar(b, &b_val);
-        CTYPE b_casted = static_cast<CTYPE>(b_val);
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-        apply_unary_map_fn(
-            [b_casted](const CTYPE_A val_a) {
-              CTYPE a_casted = static_cast<CTYPE>(val_a);
-              CTYPE value = a_casted / b_casted;
-              return static_cast<CTYPE>(value);
-            },
-            a.const_data_ptr<CTYPE_A>(),
-            out.mutable_data_ptr<CTYPE>(),
-            out.numel());
-      });
-    });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "div.Scalar_out";
+
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_b](const CTYPE_COMPUTE val_a) { return val_a / val_b; },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;
 }
 
 Tensor& div_scalar_mode_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
-    exec_aten::optional<exec_aten::string_view> mode,
+    executorch::aten::optional<executorch::aten::string_view> mode,
     Tensor& out) {
-  (void)ctx;
+  if (!mode.has_value()) {
+    return div_scalar_out(ctx, a, b, out);
+  }
 
-  // Resize for dynamic shape
+  auto mode_val = mode.value();
+
+  // Check mode
+  ET_KERNEL_CHECK(
+      ctx, mode_val == "trunc" || mode_val == "floor", InvalidArgument, out);
+
+  // Common Dtype
+  ScalarType common_type = utils::promote_type_with_scalar(a.scalar_type(), b);
+
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx,
+      (canCast(common_type, out.scalar_type()) &&
+       common_type != ScalarType::Bool),
+      InvalidArgument,
+      out);
+
+  // Check for intergral division by zero
   ET_KERNEL_CHECK_MSG(
       ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
+      !(executorch::runtime::isIntegralType(common_type, true) &&
+        utils::scalar_to<double>(b) == 0),
       InvalidArgument,
       out,
-      "Failed to resize output tensor.");
+      "Div mode operation encountered integer division by zero");
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
-  ScalarType out_type = out.scalar_type();
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  // Resize
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
-  constexpr auto name = "div.Scalar_mode_out";
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-  ET_SWITCH_REALB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(out_type, ctx, name, CTYPE, [&]() {
-        CTYPE_B b_val;
-        utils::extract_scalar(b, &b_val);
-        CTYPE b_casted = static_cast<CTYPE>(b_val);
+  const bool mode_is_trunc = mode_val == "trunc";
 
-        apply_unary_map_fn(
-            [b_casted, mode](const CTYPE_A val_a) {
-              CTYPE a_casted = static_cast<CTYPE>(val_a);
-              CTYPE value = a_casted / b_casted;
-              if (mode.has_value() && mode.value() == "trunc") {
-                value = std::trunc(value);
-              } else if (mode.has_value() && mode.value() == "floor") {
-                value = utils::floor_divide(a_casted, b_casted);
-              }
-              return value;
-            },
-            a.const_data_ptr<CTYPE_A>(),
-            out.mutable_data_ptr<CTYPE>(),
-            out.numel());
-      });
-    });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "div.Scalar_mode_out";
+
+  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [val_b, mode_is_trunc](const CTYPE_COMPUTE val_a) {
+          CTYPE_COMPUTE value = val_a / val_b;
+          if (mode_is_trunc) {
+            value = std::trunc(value);
+          } else {
+            value = utils::floor_divide(val_a, val_b);
+          }
+          return value;
+        },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::REALHBF16);
   });
 
   return out;

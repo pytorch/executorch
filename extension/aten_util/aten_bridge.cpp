@@ -11,11 +11,11 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cstring>
 
-namespace torch {
-namespace util {
+namespace executorch {
+namespace extension {
 
 namespace {
-void check_tensor_meta(const at::Tensor& a, const exec_aten::Tensor& b) {
+void check_tensor_meta(const at::Tensor& a, const executorch::aten::Tensor& b) {
   // Check sizes/strides pointers
   ET_CHECK_MSG(
       b.sizes().data() != nullptr, "ETensor must have valid sizes array");
@@ -55,69 +55,43 @@ ET_CHECK_MSG(
   }
   // check dtype
   ET_CHECK_MSG(
-      b.scalar_type() == torchToExecuTorchScalarType(a.options().dtype()),
+      b.scalar_type() == torch_to_executorch_scalar_type(a.options().dtype()),
       "dtypes dont match a %hhd vs. b %hhd",
-      torchToExecuTorchScalarType(a.options().dtype()),
-      b.scalar_type());
+      static_cast<int8_t>(torch_to_executorch_scalar_type(a.options().dtype())),
+      static_cast<int8_t>(b.scalar_type()));
 }
 } // namespace
 
-torch::executor::ScalarType torchToExecuTorchScalarType(caffe2::TypeMeta type) {
-  switch (c10::typeMetaToScalarType(type)) {
-    case c10::ScalarType::Byte:
-      return torch::executor::ScalarType::Byte;
-    case c10::ScalarType::Char:
-      return torch::executor::ScalarType::Char;
-    case c10::ScalarType::Short:
-      return torch::executor::ScalarType::Short;
-    case c10::ScalarType::Half:
-      return torch::executor::ScalarType::Half;
-    case c10::ScalarType::Int:
-      return torch::executor::ScalarType::Int;
-    case c10::ScalarType::Float:
-      return torch::executor::ScalarType::Float;
-    case c10::ScalarType::Long:
-      return torch::executor::ScalarType::Long;
-    case c10::ScalarType::Double:
-      return torch::executor::ScalarType::Double;
-    case c10::ScalarType::Bool:
-      return torch::executor::ScalarType::Bool;
-    case c10::ScalarType::QInt8:
-      return torch::executor::ScalarType::QInt8;
-    case c10::ScalarType::QUInt8:
-      return torch::executor::ScalarType::QUInt8;
-    default:
-      ET_ASSERT_UNREACHABLE();
-  }
+executorch::runtime::etensor::ScalarType torch_to_executorch_scalar_type(
+    caffe2::TypeMeta type) {
+  const auto intermediate =
+      static_cast<std::underlying_type<c10::ScalarType>::type>(
+          c10::typeMetaToScalarType(type));
+
+  ET_CHECK_MSG(
+      intermediate >= 0 &&
+          intermediate <= static_cast<std::underlying_type<
+                              executorch::runtime::etensor::ScalarType>::type>(
+                              executorch::runtime::etensor::ScalarType::UInt64),
+      "ScalarType %d unsupported in Executorch",
+      intermediate);
+  return static_cast<executorch::runtime::etensor::ScalarType>(intermediate);
 }
 
-c10::ScalarType execuTorchtoTorchScalarType(torch::executor::ScalarType type) {
-  switch (type) {
-    case torch::executor::ScalarType::Byte:
-      return c10::ScalarType::Byte;
-    case torch::executor::ScalarType::Char:
-      return c10::ScalarType::Char;
-    case torch::executor::ScalarType::Short:
-      return c10::ScalarType::Short;
-    case torch::executor::ScalarType::Half:
-      return c10::ScalarType::Half;
-    case torch::executor::ScalarType::Int:
-      return c10::ScalarType::Int;
-    case torch::executor::ScalarType::Float:
-      return c10::ScalarType::Float;
-    case torch::executor::ScalarType::Long:
-      return c10::ScalarType::Long;
-    case torch::executor::ScalarType::Double:
-      return c10::ScalarType::Double;
-    case torch::executor::ScalarType::Bool:
-      return c10::ScalarType::Bool;
-    case torch::executor::ScalarType::QInt8:
-      return c10::ScalarType::QInt8;
-    case torch::executor::ScalarType::QUInt8:
-      return c10::ScalarType::QUInt8;
-    default:
-      ET_ASSERT_UNREACHABLE();
-  }
+c10::ScalarType executorch_to_torch_scalar_type(
+    torch::executor::ScalarType type) {
+  const auto intermediate = static_cast<
+      std::underlying_type<executorch::runtime::etensor::ScalarType>::type>(
+      type);
+
+  ET_CHECK_MSG(
+      intermediate >= 0 &&
+          intermediate <= static_cast<std::underlying_type<
+                              executorch::runtime::etensor::ScalarType>::type>(
+                              executorch::runtime::etensor::ScalarType::UInt64),
+      "ScalarType %d unsupported in Executorch",
+      intermediate);
+  return static_cast<c10::ScalarType>(intermediate);
 }
 
 /*
@@ -147,13 +121,29 @@ void alias_etensor_to_attensor(
 }
 
 at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
-  c10::ScalarType dtype = execuTorchtoTorchScalarType(etensor.scalar_type());
+  c10::ScalarType dtype =
+      executorch_to_torch_scalar_type(etensor.scalar_type());
   std::vector<int64_t> at_tensor_sizes(
       etensor.sizes().begin(), etensor.sizes().end());
+  std::vector<int64_t> at_tensor_strides(
+      etensor.strides().begin(), etensor.strides().end());
+
   at::Tensor t = at::from_blob(
-      etensor.mutable_data_ptr(), at_tensor_sizes, at::TensorOptions(dtype));
+      etensor.mutable_data_ptr(),
+      at_tensor_sizes,
+      at_tensor_strides,
+      at::TensorOptions(dtype));
+
   check_tensor_meta(t, etensor);
   return t;
 }
-} // namespace util
-} // namespace torch
+
+TensorPtr alias_tensor_ptr_to_attensor(at::Tensor& t) {
+  return make_tensor_ptr(
+      {t.sizes().begin(), t.sizes().end()},
+      t.mutable_data_ptr(),
+      torch::executor::ScalarType(t.scalar_type()));
+}
+
+} // namespace extension
+} // namespace executorch

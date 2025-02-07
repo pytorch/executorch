@@ -5,13 +5,21 @@
 
 #include <executorch/backends/apple/mps/runtime/MPSGraphBuilder.h>
 #include <executorch/backends/apple/mps/runtime/MPSDevice.h>
+#include <executorch/backends/apple/mps/runtime/MPSDelegateHeader.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
-MPSGraphBuilder::MPSGraphBuilder(const void* buffer_pointer, std::unordered_map<MPSGraphTensor*, int32_t>& mpsGraphTensorToId) : _mpsGraphTensorToId(mpsGraphTensorToId), _buffer_pointer(buffer_pointer) {
+using executorch::runtime::Result;
+
+MPSGraphBuilder::MPSGraphBuilder(
+  const void* buffer_pointer,
+  size_t num_bytes,
+  std::unordered_map<MPSGraphTensor*, int32_t>& mpsGraphTensorToId) :
+    _mpsGraphTensorToId(mpsGraphTensorToId), _buffer_pointer(buffer_pointer), _num_bytes(num_bytes) {
+
   _mpsGraph = [MPSGraph new];
   _feeds = [NSMutableDictionary dictionary];
   _targetTensors = [NSMutableArray new];
@@ -24,15 +32,36 @@ Error
 MPSGraphBuilder::compileModel() {
   Error err = Error::Ok;
 
-  ET_CHECK(_buffer_pointer != nullptr);
+  Result<MPSDelegateHeader> header = MPSDelegateHeader::Parse(_buffer_pointer, _num_bytes);
+  const uint8_t* flatbuffer_data_ptr = nullptr;
+
+  if (header.ok()) {
+    flatbuffer_data_ptr = reinterpret_cast<const uint8_t*>(_buffer_pointer) +
+        header->flatbuffer_offset;
+    _constant_data_ptr = reinterpret_cast<const uint8_t*>(_buffer_pointer) +
+        header->constant_data_offset;
+  } else if (header.error() == Error::NotFound) {
+    ET_LOG(
+        Error,
+        "MPSDelegateHeader version mismatch: '%.4s' != expected '%.4s'",
+        // Header Magic and FlatbufferIdentifier are same offset and size
+        flatbuffers::GetBufferIdentifier(_buffer_pointer),
+        MPSDelegateHeader::kMagic);
+    return header.error();
+  } else {
+    ET_LOG(Error, "MPSDelegateHeader may be corrupt");
+    return header.error();
+  }
+
+  ET_CHECK(flatbuffer_data_ptr != nullptr);
   ET_CHECK_OR_RETURN_ERROR(
-    mpsgraph::MPSGraphBufferHasIdentifier(_buffer_pointer),
+    mpsgraph::MPSGraphBufferHasIdentifier(flatbuffer_data_ptr),
     DelegateInvalidCompatibility,
     "MPS Delegate Serialization Format version identifier '%.4s' != expected '%.4s'",
-    flatbuffers::GetBufferIdentifier(_buffer_pointer),
+    flatbuffers::GetBufferIdentifier(flatbuffer_data_ptr),
     mpsgraph::MPSGraphIdentifier());
 
-  _flatBufferGraph = mpsgraph::GetMPSGraph(_buffer_pointer);
+  _flatBufferGraph = mpsgraph::GetMPSGraph(flatbuffer_data_ptr);
   switch (_flatBufferGraph->graph_type()) {
     case mpsgraph::OpType::metal_kernel:
     {
@@ -159,5 +188,5 @@ MPSGraphBuilder::getMPSGraphExecutable() {
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

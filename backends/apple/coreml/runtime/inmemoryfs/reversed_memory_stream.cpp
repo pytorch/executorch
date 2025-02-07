@@ -7,6 +7,8 @@
 
 #include "reversed_memory_stream.hpp"
 
+#include <limits>
+
 namespace inmemoryfs {
 
 ReversedIMemoryStreamBuf::ReversedIMemoryStreamBuf(std::shared_ptr<MemoryBuffer> buffer) noexcept

@@ -17,13 +17,13 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpSliceCopyTensorOutTest : public OperatorTest {
+class OpSliceScatterTensorOutTest : public OperatorTest {
  protected:
   Tensor& op_slice_scatter_out(
       const Tensor& self,
@@ -37,7 +37,7 @@ class OpSliceCopyTensorOutTest : public OperatorTest {
         context_, self, src, dim, start, end, step, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -49,7 +49,7 @@ class OpSliceCopyTensorOutTest : public OperatorTest {
         5,   6,   7,   8, // [1, :]
         9,  10,  11,  12, // [2, :]
       });
-  
+
     // op_slice_scatter_out(input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out),
     // src shape should equal to input[0:2:1, :]
     Tensor src = tf.make(
@@ -76,7 +76,7 @@ class OpSliceCopyTensorOutTest : public OperatorTest {
   }
 };
 
-TEST_F(OpSliceCopyTensorOutTest, LegalDimSupported) {
+TEST_F(OpSliceScatterTensorOutTest, LegalDimSupported) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -212,7 +212,7 @@ TEST_F(OpSliceCopyTensorOutTest, LegalDimSupported) {
   }
 }
 
-TEST_F(OpSliceCopyTensorOutTest, AllStartValsSupported) {
+TEST_F(OpSliceScatterTensorOutTest, AllStartValsSupported) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -380,7 +380,7 @@ TEST_F(OpSliceCopyTensorOutTest, AllStartValsSupported) {
   }
 }
 
-TEST_F(OpSliceCopyTensorOutTest, AllEndValsSupported) {
+TEST_F(OpSliceScatterTensorOutTest, AllEndValsSupported) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -546,7 +546,7 @@ TEST_F(OpSliceCopyTensorOutTest, AllEndValsSupported) {
   }
 }
 
-TEST_F(OpSliceCopyTensorOutTest, LegalStepsSupported) {
+TEST_F(OpSliceScatterTensorOutTest, LegalStepsSupported) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -668,16 +668,16 @@ TEST_F(OpSliceCopyTensorOutTest, LegalStepsSupported) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-TEST_F(OpSliceCopyTensorOutTest, AllRealDtypesSupported) {
+TEST_F(OpSliceScatterTensorOutTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
   // for those types.
 }
 
-TEST_F(OpSliceCopyTensorOutTest, EmptyInputSupported) {
+TEST_F(OpSliceScatterTensorOutTest, EmptyInputSupported) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.ones({1, 0, 1});
@@ -697,7 +697,7 @@ TEST_F(OpSliceCopyTensorOutTest, EmptyInputSupported) {
   }
 }
 
-TEST_F(OpSliceCopyTensorOutTest, EmptySizeInputDies) {
+TEST_F(OpSliceScatterTensorOutTest, EmptySizeInputDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.ones({});
@@ -715,7 +715,7 @@ TEST_F(OpSliceCopyTensorOutTest, EmptySizeInputDies) {
           input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
-TEST_F(OpSliceCopyTensorOutTest, NonPostiveStepsDies) {
+TEST_F(OpSliceScatterTensorOutTest, NonPostiveStepsDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.ones({1, 1, 1});
@@ -732,7 +732,7 @@ TEST_F(OpSliceCopyTensorOutTest, NonPostiveStepsDies) {
   }
 }
 
-TEST_F(OpSliceCopyTensorOutTest, DimOutOfBoundDies) {
+TEST_F(OpSliceScatterTensorOutTest, DimOutOfBoundDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.ones({1, 1, 1});
@@ -749,7 +749,7 @@ TEST_F(OpSliceCopyTensorOutTest, DimOutOfBoundDies) {
   }
 }
 
-TEST_F(OpSliceCopyTensorOutTest, MismatchedOutDtypesDies) {
+TEST_F(OpSliceScatterTensorOutTest, MismatchedOutDtypesDies) {
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Float> tf_float;
   Tensor input = tf_int.zeros({1, 2, 2});
@@ -764,7 +764,7 @@ TEST_F(OpSliceCopyTensorOutTest, MismatchedOutDtypesDies) {
           input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
-TEST_F(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
+TEST_F(OpSliceScatterTensorOutTest, OutSizeMismatchDimDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -782,7 +782,7 @@ TEST_F(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
           input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
 }
 
-TEST_F(OpSliceCopyTensorOutTest, SrcSizeMismatchDimDies) {
+TEST_F(OpSliceScatterTensorOutTest, SrcSizeMismatchDimDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -800,7 +800,7 @@ TEST_F(OpSliceCopyTensorOutTest, SrcSizeMismatchDimDies) {
           input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
 }
 
-TEST_F(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
+TEST_F(OpSliceScatterTensorOutTest, DefaultStartValSupported) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -813,7 +813,7 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
       input,
       src,
       /*dim=*/0,
-      /*start=*/exec_aten::nullopt,
+      /*start=*/executorch::aten::nullopt,
       /*end=*/2,
       /*step=*/1,
       out);
@@ -821,7 +821,7 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
   EXPECT_TENSOR_EQ(ret_default_start, expected);
 }
 
-TEST_F(OpSliceCopyTensorOutTest, DefaultEndValSupported) {
+TEST_F(OpSliceScatterTensorOutTest, DefaultEndValSupported) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -835,14 +835,14 @@ TEST_F(OpSliceCopyTensorOutTest, DefaultEndValSupported) {
       src,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/exec_aten::nullopt,
+      /*end=*/executorch::aten::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);
   EXPECT_TENSOR_EQ(ret_default_end, expected);
 }
 
-TEST_F(OpSliceCopyTensorOutTest, DynamicShapeTest) {
+TEST_F(OpSliceScatterTensorOutTest, DynamicShapeTest) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({1, 4, 4});
@@ -857,9 +857,30 @@ TEST_F(OpSliceCopyTensorOutTest, DynamicShapeTest) {
       src,
       /*dim=*/0,
       /*start=*/0,
-      /*end=*/exec_aten::nullopt,
+      /*end=*/executorch::aten::nullopt,
       /*step=*/1,
       out);
   EXPECT_TENSOR_EQ(ret_default_end, out);
   EXPECT_TENSOR_EQ(ret_default_end, expected);
+}
+
+TEST_F(OpSliceScatterTensorOutTest, LargeEndValue) {
+  TensorFactory<ScalarType::Int> tf;
+
+  Tensor input = tf.zeros({1, 1, 2, 5, 3, 3});
+  Tensor src = tf.ones({1, 1, 2, 5, 3, 3});
+
+  Tensor out = tf.zeros({1, 1, 2, 5, 3, 3});
+  Tensor expected = tf.ones({1, 1, 2, 5, 3, 3});
+
+  Tensor ret = op_slice_scatter_out(
+      input,
+      src,
+      /*dim=*/1,
+      /*start=*/0,
+      /*end=*/9223372036854775807,
+      /*step=*/1,
+      out);
+  EXPECT_TENSOR_EQ(ret, out);
+  EXPECT_TENSOR_EQ(ret, expected);
 }

@@ -21,16 +21,16 @@ class ComputeGraph;
  * access permission.
  */
 struct ArgGroup {
-  ArgGroup(const ValueRef ref, const api::MemoryAccessType access)
+  ArgGroup(const ValueRef ref, const vkapi::MemoryAccessFlags access)
       : refs{ref}, access(access) {}
 
   ArgGroup(
       const std::vector<ValueRef>& refs,
-      const api::MemoryAccessType access)
+      const vkapi::MemoryAccessFlags access)
       : refs(refs), access(access) {}
 
   const std::vector<ValueRef> refs;
-  const api::MemoryAccessType access;
+  const vkapi::MemoryAccessFlags access;
 };
 
 /*
@@ -39,7 +39,7 @@ struct ArgGroup {
  * encoding of the shader corresponding to the op into the command buffer of a
  * ComputeGraph.
  */
-class ExecuteNode final {
+class ExecuteNode {
   friend class ComputeGraph;
 
  public:
@@ -48,20 +48,22 @@ class ExecuteNode final {
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
 
-  ExecuteNode(
-      ComputeGraph& graph,
-      const api::ShaderInfo& shader,
-      const api::utils::uvec3& global_workgroup_size,
-      const api::utils::uvec3& local_workgroup_size,
-      const std::vector<ArgGroup>& args,
-      const api::ParamsBindList& params,
-      const api::SpecVarList& spec_vars = {},
+  /*
+   * This overload of the DispatchNode constructor is used to register ops which
+   * update a tensor view. No shader is dispatched, but the node still needs to
+   * update the view's sizes and strides after a resize.
+   */
+  explicit ExecuteNode(
       const ResizeFunction& resize_fn = nullptr,
-      const std::vector<ValueRef>& resize_args = {});
+      const std::vector<ValueRef>& resize_args = {},
+      const std::vector<ArgGroup>& args = {},
+      const std::string& name = "Graph Node");
 
-  ~ExecuteNode() = default;
+  virtual ~ExecuteNode() = default;
 
-  void encode(ComputeGraph* graph);
+  virtual void encode(ComputeGraph* graph) {
+    (void)graph;
+  }
 
   inline void trigger_resize(ComputeGraph* graph) {
     if (resize_fn_ != nullptr) {
@@ -69,15 +71,20 @@ class ExecuteNode final {
     }
   }
 
+  inline void set_node_id(uint32_t node_id) {
+    node_id_ = node_id;
+  }
+
+  inline const std::string& name() const {
+    return name_;
+  }
+
  protected:
-  const api::ShaderInfo shader_;
-  const api::utils::uvec3 global_workgroup_size_;
-  const api::utils::uvec3 local_workgroup_size_;
-  const std::vector<ArgGroup> args_;
-  const api::ParamsBindList params_;
-  const api::SpecVarList spec_vars_;
+  uint32_t node_id_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
+  const std::vector<ArgGroup> args_;
+  const std::string name_;
 };
 
 } // namespace vkcompute

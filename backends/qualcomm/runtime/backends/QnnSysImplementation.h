@@ -11,19 +11,19 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnSysFunctionInterface.h>
 
 #include <string>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class QnnSystemImplementation {
  public:
   explicit QnnSystemImplementation(std::string lib_path)
       : lib_path_(std::move(lib_path)){};
 
-  Error Load();
+  executorch::runtime::Error Load();
 
   const QnnSystemInterface& GetQnnSystemInterface() const;
 
-  Error Unload();
+  executorch::runtime::Error Unload();
 
  private:
   static constexpr const int required_num_providers_{1};
@@ -33,5 +33,5 @@ class QnnSystemImplementation {
   void* lib_handle_{nullptr};
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

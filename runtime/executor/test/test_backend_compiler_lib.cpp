@@ -13,8 +13,18 @@
 #include <cstdio>
 #include <cstdlib> /* strtol */
 
-namespace torch {
-namespace executor {
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendInterface;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
 
 struct DemoOp {
   const char* name;
@@ -28,7 +38,7 @@ struct DemoOpList {
   size_t numops;
 };
 
-class BackendWithCompiler final : public PyTorchBackendInterface {
+class BackendWithCompiler final : public BackendInterface {
   int max_shape = 4;
 
  public:
@@ -109,9 +119,25 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
     const char* kSignLiteral = "#";
     // The first number is the number of total instruction
     const char* start = static_cast<const char*>(processed->data());
-    char* instruction_number_end =
+
+    const char* kVersion = "version:";
+    const long int kRuntimeVersion = 0;
+    char* version_start =
+        const_cast<char*>(strstr(start, kVersion)) + strlen(kVersion);
+    char* version_end;
+    char* instruction_set_start =
         const_cast<char*>(strstr(start, kSignLiteral));
+
+    long int version = strtol(version_start, &version_end, 10);
+    ET_CHECK_OR_RETURN_ERROR(
+        version == kRuntimeVersion,
+        DelegateInvalidCompatibility,
+        "The version of BackendWithCompiler runtime is %ld, but received an incompatible version %ld instead.",
+        kRuntimeVersion,
+        version);
+    char* instruction_number_end;
     long int instruction_number = strtol(start, &instruction_number_end, 10);
+
     ET_CHECK_OR_RETURN_ERROR(
         instruction_number >= 0,
         InvalidArgument,
@@ -124,7 +150,7 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
         runtime_allocator, DemoOp, instruction_number);
     op_list->numops = static_cast<size_t>(instruction_number);
 
-    parse_delegate(instruction_number_end + 1, kSignLiteral, op_list->ops);
+    parse_delegate(instruction_set_start + 1, kSignLiteral, op_list->ops);
 
     // Can't call `processed->Free()` because op_list points into it.
 
@@ -137,7 +163,7 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
   // backend you can imagine how this function could be used to actually
   // dispatch the inputs to the relevant backend/device.
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("BackendWithCompiler::execute");
@@ -202,6 +228,3 @@ auto cls = BackendWithCompiler();
 Backend backend{"BackendWithCompilerDemo", &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
-
-} // namespace executor
-} // namespace torch

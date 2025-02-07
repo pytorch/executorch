@@ -9,12 +9,12 @@
 
 #include <string>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 // Create Directory
 void CreateDirectory(const std::string& path);
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

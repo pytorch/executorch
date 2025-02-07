@@ -11,16 +11,16 @@
 #include <executorch/backends/apple/mps/runtime/MPSDevice.h>
 #include <executorch/backends/apple/mps/schema_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
 #define INF std::numeric_limits<float>::infinity()
 
-MPSDataType getMPSScalarType(exec_aten::ScalarType scalar_type);
-exec_aten::ScalarType getScalarType(MPSDataType mpsDataType);
-MPSGraphTensor *castMPSTensor(MPSGraph *mpsGraph, MPSGraphTensor *tensor, exec_aten::ScalarType toType);
+MPSDataType getMPSScalarType(executorch::aten::ScalarType scalar_type);
+executorch::aten::ScalarType getScalarType(MPSDataType mpsDataType);
+MPSGraphTensor *castMPSTensor(MPSGraph *mpsGraph, MPSGraphTensor *tensor, executorch::aten::ScalarType toType);
 MPSGraphTensor *castMPSTensor(MPSGraph *mpsGraph, MPSGraphTensor *tensor, MPSDataType toType);
 std::vector<int64_t> getMPSShapeVec(const MPSShape *shape);
 
@@ -33,12 +33,12 @@ template <typename T = size_t> std::vector<T> flatbufferDimsToVector(const flatb
   return dimsData;
 }
 
-id<MTLBuffer> getMTLBufferStorage(const Tensor &tensor);
+id<MTLBuffer> getMTLBufferStorage(const executorch::aten::Tensor &tensor);
 void *pageAlignedBlockPtr(const void *ptr, NSUInteger size, NSUInteger *alignedBlockSize);
 
 MPSGraphTensor *permuteTensor(MPSGraph *graph, MPSGraphTensor *inputTensor, NSArray *permuteOrder);
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

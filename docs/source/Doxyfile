@@ -943,7 +943,8 @@ WARN_LOGFILE           =
 # spaces. See also FILE_PATTERNS and EXTENSION_MAPPING
 # Note: If this tag is empty the current directory is searched.
 
-INPUT                  = ../runtime/executor/memory_manager.h \
+INPUT                  = ../devtools/bundled_program/bundled_program.h \
+                         ../runtime/executor/memory_manager.h \
                          ../runtime/executor/method.h \
                          ../runtime/executor/method_meta.h \
                          ../runtime/executor/program.h \
@@ -959,14 +960,12 @@ INPUT                  = ../runtime/executor/memory_manager.h \
                          ../runtime/core/event_tracer_hooks.h \
                          ../runtime/core/event_tracer.h \
                          ../runtime/core/freeable_buffer.h \
-                         ../runtime/core/function_ref.h \
                          ../runtime/core/span.h \
                          ../runtime/core/tag.h \
                          ../runtime/core/tensor_shape_dynamism.h \
                          ../runtime/platform/compiler.h \
                          ../runtime/executor/ \
-                         ../runtime/platform/ \
-                         ../util/
+                         ../runtime/platform/
 
 
 

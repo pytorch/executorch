@@ -120,7 +120,11 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
                 signature=ModuleCallSignature(
                     inputs=[],
                     outputs=[],
+                    # pyre-fixme[6]: For 3rd argument expected `TreeSpec` but got
+                    #  `Union[Tensor, Module]`.
                     in_spec=in_spec,
+                    # pyre-fixme[6]: For 4th argument expected `TreeSpec` but got
+                    #  `Union[Tensor, Module]`.
                     out_spec=out_spec,
                 ),
             )
@@ -206,16 +210,17 @@ def capture(  # noqa: C901
                         cast(torch.nn.Module, f.__self__),
                         args,
                         dynamic_shapes=dynamic_shapes,
+                        strict=True,
                     )
             else:
                 mod = f if isinstance(f, torch.nn.Module) else WrapperModule(f)
-                ep = export(mod, args, dynamic_shapes=dynamic_shapes)
+                ep = export(mod, args, dynamic_shapes=dynamic_shapes, strict=True)
 
             ep = ep.run_decompositions(_default_decomposition_table())
             ep = _transform(ep, ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
                 return ExirExportedProgram(ep, False)
-            graph_module = ep.module()
+            graph_module = cast(torch.fx.GraphModule, ep.module())
 
         elif config.enable_dynamic_shape:
             graph_module, _ = dynamo_trace(
@@ -350,12 +355,14 @@ def capture(  # noqa: C901
                     inputs=[],
                     outputs=[],
                     in_spec=in_spec,
+                    # pyre-fixme[6]: For 4th argument expected `TreeSpec` but got
+                    #  `Union[None, TreeSpec, Tensor, Module]`.
                     out_spec=out_spec,
                 ),
             )
         ],
         example_inputs=None,
-        verifier=EXIRATenDialectVerifierBase,
+        verifiers=[EXIRATenDialectVerifierBase],
     )
     return ExirExportedProgram(ep, False)
 

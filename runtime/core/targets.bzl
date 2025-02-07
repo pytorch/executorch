@@ -15,8 +15,16 @@ def build_sdk():
 def get_sdk_flags():
     sdk_flags = []
     if build_sdk():
-        sdk_flags += ["-DEXECUTORCH_BUILD_SDK"]
+        sdk_flags += ["-DEXECUTORCH_BUILD_DEVTOOLS"]
     return sdk_flags
+
+def enable_enum_strings():
+    return native.read_config("executorch", "enable_enum_strings", "true") == "true"
+
+def get_core_flags():
+    core_flags = []
+    core_flags += ["-DET_ENABLE_ENUM_STRINGS=" + ("1" if enable_enum_strings() else "0")]
+    return core_flags
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -30,9 +38,9 @@ def define_common_targets():
         exported_headers = [
             "array_ref.h",  # TODO(T157717874): Migrate all users to span and then move this to portable_type
             "data_loader.h",
+            "defines.h",
             "error.h",
             "freeable_buffer.h",
-            "function_ref.h",
             "result.h",
             "span.h",
         ],
@@ -40,6 +48,7 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        exported_preprocessor_flags = get_core_flags(),
         exported_deps = [
             "//executorch/runtime/platform:platform",
         ],
@@ -110,10 +119,40 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "tag",
+        srcs = ["tag.cpp"],
         exported_headers = [
             "tag.h",
+        ],
+        exported_deps = [
+            ":core",
+            "//executorch/runtime/platform:compiler",
         ],
         visibility = [
             "//executorch/...",
         ],
+    )
+
+    runtime.cxx_library(
+        name = "named_data_map",
+        exported_headers = [
+            "named_data_map.h",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            ":tensor_layout",
+        ],
+    )
+    
+    runtime.cxx_library(
+        name = "tensor_layout",
+        srcs = ["tensor_layout.cpp"],
+        exported_headers = ["tensor_layout.h"],
+        exported_deps = [
+            ":core", 
+            "//executorch/runtime/core/exec_aten:lib",
+        ],
+        visibility = ["//executorch/..."],
     )

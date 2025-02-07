@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpReduceSum, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -31,27 +32,29 @@ class Sum(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         sum_input_tensors = [input_tensor_wrapper]
 
         # sum dims
         sum_dims = cast(List[int], node.args[1])
         sum_dims = [sum_dim % len(input_node.meta["val"].shape) for sum_dim in sum_dims]
-        if "axis_order" in node.meta:
-            sum_dims = [node.meta["axis_order"].index(sum_dim) for sum_dim in sum_dims]
+        if QCOM_AXIS_ORDER in node.meta:
+            sum_dims = [
+                node.meta[QCOM_AXIS_ORDER].index(sum_dim) for sum_dim in sum_dims
+            ]
         sum_dims_shape = [len(sum_dims)]
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         sum_output_tensors = [output_tensor_wrapper]
         sum_op = PyQnnWrapper.PyQnnOpWrapper(
@@ -75,6 +78,6 @@ class Sum(NodeVisitor):
             sum_op.AddScalarParam(
                 OpReduceSum.param_keep_dims,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-                {"data": keep_dims},
+                {QCOM_DATA: keep_dims},
             )
         return sum_op

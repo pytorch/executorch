@@ -7,7 +7,6 @@
 import json
 import os
 import re
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -15,7 +14,7 @@ import piq
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.edsr import EdsrModel
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     make_output_dir,
     parse_skip_delegation_node,
@@ -91,43 +90,7 @@ def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str
     return SrDataset(hr_dir, lr_dir)
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./edsr",
-        default="./edsr",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-r",
-        "--hr_ref_dir",
-        help="Path to the high resolution images",
-        default="",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-l",
-        "--lr_dir",
-        help="Path to the low resolution image inputs",
-        default="",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-d",
-        "--default_dataset",
-        help="If specified, download and use B100 dataset by torchSR API",
-        action="store_true",
-        default=False,
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
@@ -139,14 +102,17 @@ if __name__ == "__main__":
             "Please specify a device serial by -s/--device argument."
         )
 
-    dataset = get_dataset(
-        args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
-    )
-
-    inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
-    pte_filename = "edsr_qnn"
     instance = EdsrModel()
+    if args.compile_only:
+        inputs = instance.get_example_inputs()
+    else:
+        dataset = get_dataset(
+            args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
+        )
 
+        inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
+
+    pte_filename = "edsr_qnn_q8"
     build_executorch_binary(
         instance.get_eager_model().eval(),
         (inputs[0],),
@@ -160,17 +126,11 @@ if __name__ == "__main__":
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        artifact_path=f"{args.build_folder}",
+        build_path=f"{args.build_folder}",
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
@@ -215,11 +175,57 @@ if __name__ == "__main__":
         psnr_list.append(piq.psnr(hr, output_raws[i]))
         ssim_list.append(piq.ssim(hr, output_raws[i]))
 
-    avg_PNSR = sum(psnr_list).item() / len(psnr_list)
+    avg_PSNR = sum(psnr_list).item() / len(psnr_list)
     avg_SSIM = sum(ssim_list).item() / len(ssim_list)
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
-            conn.send(json.dumps({"PNSR": avg_PNSR, "SSIM": avg_SSIM}))
+            conn.send(json.dumps({"PSNR": avg_PSNR, "SSIM": avg_SSIM}))
     else:
-        print(f"Average of PNSR is: {avg_PNSR}")
+        print(f"Average of PNSR is: {avg_PSNR}")
         print(f"Average of SSIM is: {avg_SSIM}")
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./edsr",
+        default="./edsr",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-r",
+        "--hr_ref_dir",
+        help="Path to the high resolution images",
+        default="",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-l",
+        "--lr_dir",
+        help="Path to the low resolution image inputs",
+        default="",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-d",
+        "--default_dataset",
+        help="If specified, download and use B100 dataset by torchSR API",
+        action="store_true",
+        default=False,
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

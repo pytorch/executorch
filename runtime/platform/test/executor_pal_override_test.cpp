@@ -14,7 +14,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::LogLevel;
+using executorch::runtime::LogLevel;
 
 class PalSpy : public PlatformIntercept {
  public:
@@ -53,12 +53,29 @@ class PalSpy : public PlatformIntercept {
     last_log_message_args.length = length;
   }
 
+  void* allocate(size_t size) override {
+    ++allocate_call_count;
+    last_allocated_size = size;
+    last_allocated_ptr = (void*)0x1234;
+    return nullptr;
+  }
+
+  void free(void* ptr) override {
+    ++free_call_count;
+    last_freed_ptr = ptr;
+  }
+
   virtual ~PalSpy() = default;
 
   size_t init_call_count = 0;
   size_t current_ticks_call_count = 0;
   size_t emit_log_message_call_count = 0;
   et_tick_ratio_t tick_ns_multiplier = {1, 1};
+  size_t allocate_call_count = 0;
+  size_t free_call_count = 0;
+  size_t last_allocated_size = 0;
+  void* last_allocated_ptr = nullptr;
+  void* last_freed_ptr = nullptr;
 
   /// The args that were passed to the most recent call to emit_log_message().
   struct {
@@ -75,7 +92,8 @@ class PalSpy : public PlatformIntercept {
 // Demonstrate what would happen if we didn't intercept the PAL calls.
 TEST(ExecutorPalOverrideTest, DiesIfNotIntercepted) {
   ET_EXPECT_DEATH(
-      torch::executor::runtime_init(), "et_pal_init call was not intercepted");
+      executorch::runtime::runtime_init(),
+      "et_pal_init call was not intercepted");
 }
 
 TEST(ExecutorPalOverrideTest, InitIsRegistered) {
@@ -83,7 +101,7 @@ TEST(ExecutorPalOverrideTest, InitIsRegistered) {
   InterceptWith iw(spy);
 
   EXPECT_EQ(spy.init_call_count, 0);
-  torch::executor::runtime_init();
+  executorch::runtime::runtime_init();
   EXPECT_EQ(spy.init_call_count, 1);
 }
 
@@ -155,6 +173,35 @@ TEST(ExecutorPalOverrideTest, TickToNsMultiplier) {
   spy.tick_ns_multiplier = {3, 1};
   EXPECT_EQ(et_pal_ticks_to_ns_multiplier().numerator, 3);
   EXPECT_EQ(et_pal_ticks_to_ns_multiplier().denominator, 1);
+}
+
+TEST(ExecutorPalOverrideTest, AllocateSmokeTest) {
+  PalSpy spy;
+  InterceptWith iw(spy);
+
+  // Validate that et_pal_allocate is overridden.
+  EXPECT_EQ(spy.allocate_call_count, 0);
+  EXPECT_EQ(spy.last_allocated_ptr, nullptr);
+  et_pal_allocate(4);
+  EXPECT_EQ(spy.allocate_call_count, 1);
+  EXPECT_EQ(spy.last_allocated_size, 4);
+  EXPECT_EQ(spy.last_allocated_ptr, (void*)0x1234);
+}
+
+TEST(ExecutorPalOverrideTest, FreeSmokeTest) {
+  PalSpy spy;
+  InterceptWith iw(spy);
+
+  et_pal_allocate(4);
+  EXPECT_EQ(spy.last_allocated_size, 4);
+  EXPECT_EQ(spy.last_allocated_ptr, (void*)0x1234);
+
+  // Validate that et_pal_free is overridden.
+  EXPECT_EQ(spy.free_call_count, 0);
+  EXPECT_EQ(spy.last_freed_ptr, nullptr);
+  et_pal_free(spy.last_allocated_ptr);
+  EXPECT_EQ(spy.free_call_count, 1);
+  EXPECT_EQ(spy.last_freed_ptr, (void*)0x1234);
 }
 
 #endif

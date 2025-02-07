@@ -116,11 +116,14 @@ class StaticConstantPadVisitor(NodeVisitor):
         pre_paddings = all_paddings[-2::-2]  # even index elements in reverse order
         post_paddings = all_paddings[::-2]  # odd index elements in reverse order
 
+        # the padding value, which defaults to 0.0
+        padding_value = cast(float, node.args[2]) if len(node.args) > 2 else 0.0
+
         ser_node = XNode(
             xnode_union=XNNStaticConstantPad(
                 pre_paddings=pre_paddings,
                 post_paddings=post_paddings,
-                padding_value=cast(float, node.args[2]),
+                padding_value=padding_value,
                 input_id=input_id,
                 output_id=output_id,
                 flags=0,

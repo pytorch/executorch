@@ -13,7 +13,7 @@ runtime.python_test(
         "test_xnnpack_utils_classes.py",
     ],
     deps = [
-        "//executorch/backends/xnnpack/passes:xnnpack_passes",
+        "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:lib",
@@ -35,10 +35,12 @@ runtime.python_test(
     ],
     deps = [
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/xnnpack/test/tester:tester",
-        "//executorch/sdk:lib",
-        "//executorch/sdk/bundled_program:config",
-        "//executorch/sdk/bundled_program/serialize:lib",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir/passes:constant_prop_pass",
         "//pytorch/ao:torchao",  # @manual
     ],
     external_deps = [
@@ -57,7 +59,7 @@ runtime.python_test(
         "fbsource//third-party/pypi/torchsr:torchsr",  # @manual
         "fbsource//third-party/pypi/transformers:transformers",  # @manual
         "//executorch/backends/xnnpack/test/tester:tester",
-        "//executorch/examples/models/llama2:llama2_model",
+        "//executorch/examples/models/llama:llama2_model",
         "//pytorch/audio/src:torchaudio_core",
         "//pytorch/vision:torchvision",  # @manual
     ],
@@ -73,5 +75,21 @@ runtime.python_test(
     ]),
     deps = [
         "//executorch/backends/xnnpack:xnnpack_preprocess",
+    ],
+)
+
+runtime.python_test(
+    name = "test_xnnpack_quantizer",
+    srcs = glob([
+        "quantizer/*.py",
+    ]),
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//pytorch/ao:torchao",  # @manual
+        "//caffe2:torch",
+    ],
+    external_deps = [
+        "libtorch",
     ],
 )

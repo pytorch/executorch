@@ -15,7 +15,7 @@ from torchvision import models
 class TestMobileNetV3(unittest.TestCase):
     mv3 = models.mobilenetv3.mobilenet_v3_small(pretrained=True)
     mv3 = mv3.eval()
-    model_inputs = (torch.ones(1, 3, 224, 224),)
+    model_inputs = (torch.randn(1, 3, 224, 224),)
     dynamic_shapes = (
         {
             2: torch.export.Dim("height", min=224, max=455),
@@ -28,7 +28,6 @@ class TestMobileNetV3(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_clamp_default",
         "executorch_exir_dialects_edge__ops_aten_permute_copy_default",
         "executorch_exir_dialects_edge__ops_aten_addmm_default",
-        "executorch_exir_dialects_edge__ops_aten__to_copy_default",
         "executorch_exir_dialects_edge__ops_aten_convolution_default",
         "executorch_exir_dialects_edge__ops_aten_relu_default",
         "executorch_exir_dialects_edge__ops_aten_add_Tensor",
@@ -41,9 +40,7 @@ class TestMobileNetV3(unittest.TestCase):
         (
             Tester(self.mv3, self.model_inputs, dynamic_shapes=self.dynamic_shapes)
             .export()
-            .to_edge()
-            .check(list(self.all_operators))
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .check_not(list(self.all_operators))
             .to_executorch()
@@ -51,19 +48,31 @@ class TestMobileNetV3(unittest.TestCase):
             .run_method_and_compare_outputs(num_runs=5)
         )
 
-    def test_qs8_mv3(self):
-        ops_after_quantization = self.all_operators - {
-            "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
-        }
+    @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
+    def _test_qs8_mv3(self):
+        ops_after_lowering = self.all_operators
+
+        (
+            Tester(self.mv3, self.model_inputs, dynamic_shapes=self.dynamic_shapes)
+            .quantize()
+            .export()
+            .to_edge_tranform_and_lower()
+            .check(["torch.ops.higher_order.executorch_call_delegate"])
+            .check_not(list(ops_after_lowering))
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(num_runs=5)
+        )
+
+    # TODO: Delete and only used calibrated test after T187799178
+    def test_qs8_mv3_no_calibration(self):
         ops_after_lowering = self.all_operators
 
         (
             Tester(self.mv3, self.model_inputs, dynamic_shapes=self.dynamic_shapes)
             .quantize(Quantize(calibrate=False))
             .export()
-            .to_edge()
-            .check(list(ops_after_quantization))
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .check_not(list(ops_after_lowering))
             .to_executorch()

@@ -15,6 +15,7 @@ from executorch.exir.program._program import (
     ExecutorchProgramManager,
     ExirExportedProgram,
     to_edge,
+    to_edge_transform_and_lower,
 )
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "ExecutorchProgram",
     "_to_edge",
     "to_edge",
+    "to_edge_transform_and_lower",
     "edge_to_executorch_passes",
     "EdgeProgramManager",
     "ExecutorchProgramManager",

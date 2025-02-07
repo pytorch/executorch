@@ -9,7 +9,6 @@
 #include <cmath>
 #include <tuple>
 
-#include <executorch/kernels/portable/cpu/util/index_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -17,13 +16,22 @@
 namespace torch {
 namespace executor {
 namespace native {
+namespace {
 
-using ScalarType = exec_aten::ScalarType;
-using SizesType = exec_aten::SizesType;
-using Tensor = exec_aten::Tensor;
+template <typename CTYPE>
+constexpr CTYPE upper_bound() {
+  using lim = std::numeric_limits<CTYPE>;
+  return lim::has_infinity ? lim::infinity() : lim::max();
+}
+
+} // namespace
+
+using ScalarType = executorch::aten::ScalarType;
+using SizesType = executorch::aten::SizesType;
+using Tensor = executorch::aten::Tensor;
 
 std::tuple<Tensor&, Tensor&> min_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool keepdim,
@@ -46,6 +54,24 @@ std::tuple<Tensor&, Tensor&> min_out(
   ET_KERNEL_CHECK(
       ctx,
       resize_tensor(min_indices, min.sizes()) == Error::Ok,
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({min, min_indices})));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, min),
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({min, min_indices})));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensor_is_default_dim_order(min_indices),
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({min, min_indices})));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensor_is_default_dim_order(in),
       InvalidArgument,
       (std::tuple<Tensor&, Tensor&>({min, min_indices})));
 
@@ -74,6 +100,44 @@ std::tuple<Tensor&, Tensor&> min_out(
       });
 
   return {min, min_indices};
+}
+
+Tensor&
+min_unary_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
+  (void)ctx;
+
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, {}) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ScalarType in_type = in.scalar_type();
+  ScalarType out_type = out.scalar_type();
+
+  ET_KERNEL_CHECK(ctx, canCast(in_type, out_type), InvalidArgument, out);
+
+  constexpr auto name = "min.unary_out";
+
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+      const auto data_in = in.const_data_ptr<CTYPE_IN>();
+      auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
+      data_out[0] = upper_bound<CTYPE_OUT>();
+      for (auto i = 0; i < in.numel(); ++i) {
+        CTYPE_OUT val = static_cast<CTYPE_OUT>(data_in[i]);
+        if (std::isnan(val)) {
+          data_out[0] = val;
+          break;
+        }
+        if (val < data_out[0]) {
+          data_out[0] = val;
+        }
+      }
+    });
+  });
+
+  return out;
 }
 
 } // namespace native

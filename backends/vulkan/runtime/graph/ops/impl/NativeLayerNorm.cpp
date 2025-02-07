@@ -18,7 +18,7 @@
 namespace vkcompute {
 
 std::vector<int64_t> calc_out_mean_sizes(
-    vTensor& self,
+    api::vTensor& self,
     int64_t normalized_shape_dim) {
   std::vector<int64_t> output_size = self.sizes();
   int64_t self_dim = self.sizes().size();
@@ -48,17 +48,17 @@ void resize_native_layer_norm_node(
   rstd->virtual_resize(mean_size);
 }
 
-void check_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+void check_args(const api::vTensor& in, const api::vTensor& out) {
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 void add_native_layer_norm_node(
     ComputeGraph& graph,
     const ValueRef in,
     const ValueRef normalized_shape,
-    const ValueRef weight,
-    const ValueRef bias,
+    const ValueRef weight_data,
+    const ValueRef bias_data,
     const ValueRef eps,
     const ValueRef out) {
   const auto normalized_shape_dim =
@@ -67,19 +67,16 @@ void add_native_layer_norm_node(
     VK_THROW("native_layer_norm only supports normalized_shape with dim == 1");
   }
 
-  if (graph.val_is_none(weight)) {
+  if (graph.val_is_none(weight_data)) {
     VK_THROW("native_layer_norm requires weight to be non-None");
   }
 
-  if (graph.val_is_none(bias)) {
+  if (graph.val_is_none(bias_data)) {
     VK_THROW("native_layer_norm requires bias to be non-None");
   }
 
-  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight, graph.memory_layout_of(arg_in));
-  ValueRef arg_bias =
-      prepack_if_tensor_ref(graph, bias, graph.memory_layout_of(arg_in));
+  ValueRef arg_weight = prepack_standard_like(graph, weight_data, in);
+  ValueRef arg_bias = prepack_standard_like(graph, bias_data, in);
 
   const auto out_val = graph.get_value_list(out);
   vTensorPtr t_out = graph.get_tensor(out_val->at(0));
@@ -91,29 +88,34 @@ void add_native_layer_norm_node(
 
   std::vector<int64_t> in_sizes = t_input->sizes();
 
-  api::utils::uvec3 global_size = t_mean->extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 global_size = t_mean->logical_limits();
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("native_layer_norm");
   kernel_name.reserve(kShaderNameReserve);
 
   add_dtype_suffix(kernel_name, *t_out);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{{out_val->at(0), out_val->at(1), out_val->at(2)},
-        api::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
+        vkapi::MemoryAccessType::WRITE},
+       {{in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
-       t_out->sizes_ubo(),
-       graph.create_params_buffer(epsilon)},
+      {
+          t_out->logical_limits_ubo(),
+          t_out->sizes_ubo(),
+          graph.create_params_buffer(epsilon),
+      },
       // Specialization Constants
-      {},
+      {
+          t_input->hashed_layout(),
+          t_out->hashed_layout(),
+      },
       // Resizing Logic
       resize_native_layer_norm_node,
       {normalized_shape}));

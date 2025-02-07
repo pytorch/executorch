@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpTrilTest : public OperatorTest {
@@ -727,7 +727,7 @@ class OpTrilTest : public OperatorTest {
     test_tril_out_multi_unequal_dim<ScalarType::DTYPE>(); \
   }
 
-ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_GENERIC_TEST)
+ET_FORALL_REALHBBF16_TYPES(GENERATE_GENERIC_TEST)
 
 // Create generic tests for real dtypes. Tensors have diverse values.
 #define GENERATE_REAL_TEST(_, DTYPE)                          \
@@ -738,7 +738,7 @@ ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_GENERIC_TEST)
     test_tril_out_randint_multi_unequal<ScalarType::DTYPE>(); \
   }
 
-ET_FORALL_REAL_TYPES(GENERATE_REAL_TEST)
+ET_FORALL_REALHBBF16_TYPES(GENERATE_REAL_TEST)
 
 TEST_F(OpTrilTest, InvalidInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;

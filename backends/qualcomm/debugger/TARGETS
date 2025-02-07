@@ -1,0 +1,12 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/graphviz:graphviz",
+        "//executorch/backends/qualcomm/aot/python:PyQnnManagerAdaptor",
+        "fbsource//third-party/pypi/pandas:pandas",
+    ]
+)

@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpBitwiseNotOutTest : public OperatorTest {
@@ -42,35 +42,6 @@ class OpBitwiseNotOutTest : public OperatorTest {
     EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{-1, 0, 1, -4}));
   }
 
-  template <>
-  void test_bitwise_not_out<ScalarType::Byte>() {
-    TensorFactory<ScalarType::Byte> tf;
-
-    const std::vector<int32_t> sizes = {2, 2};
-
-    // Destination for the bitwise_not operator.
-    Tensor out = tf.zeros(sizes);
-
-    // Check that it matches the expected output.
-    op_bitwise_not_out(tf.make(sizes, /*data=*/{0, 1, 2, 3}), out);
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{255, 254, 253, 252}));
-  }
-
-  template <>
-  void test_bitwise_not_out<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf;
-
-    const std::vector<int32_t> sizes = {2, 2};
-
-    // Destination for the bitwise_not operator.
-    Tensor out = tf.zeros(sizes);
-
-    // Check that it matches the expected output.
-    op_bitwise_not_out(
-        tf.make(sizes, /*data=*/{true, false, true, false}), out);
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, true, false, true}));
-  }
-
   // Unhandled output dtypes.
   template <ScalarType DTYPE>
   void test_bitwise_not_invalid_dtype_dies() {
@@ -84,6 +55,34 @@ class OpBitwiseNotOutTest : public OperatorTest {
     ET_EXPECT_KERNEL_FAILURE(context_, op_bitwise_not_out(in, out));
   }
 };
+
+template <>
+void OpBitwiseNotOutTest::test_bitwise_not_out<ScalarType::Byte>() {
+  TensorFactory<ScalarType::Byte> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // Destination for the bitwise_not operator.
+  Tensor out = tf.zeros(sizes);
+
+  // Check that it matches the expected output.
+  op_bitwise_not_out(tf.make(sizes, /*data=*/{0, 1, 2, 3}), out);
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{255, 254, 253, 252}));
+}
+
+template <>
+void OpBitwiseNotOutTest::test_bitwise_not_out<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // Destination for the bitwise_not operator.
+  Tensor out = tf.zeros(sizes);
+
+  // Check that it matches the expected output.
+  op_bitwise_not_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, true, false, true}));
+}
 
 TEST_F(OpBitwiseNotOutTest, AllIntInputOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) test_bitwise_not_out<ScalarType::dtype>();

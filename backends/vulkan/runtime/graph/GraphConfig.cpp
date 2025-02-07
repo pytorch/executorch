@@ -12,62 +12,74 @@ namespace vkcompute {
 
 GraphConfig::GraphConfig() {
   // No automatic submissions
-  const uint32_t submit_frequency = UINT32_MAX;
+  const uint32_t cmd_submit_frequency = UINT32_MAX;
 
   // Only one command buffer will be encoded at a time
-  const api::CommandPoolConfig cmd_config{
-      1u, // cmdPoolInitialSize
-      1u, // cmdPoolBatchSize
+  const vkapi::CommandPoolConfig cmd_config{
+      1u, // cmd_pool_initial_size
+      1u, // cmd_pool_batch_size
   };
 
   // Use lazy descriptor pool initialization by default; the graph runtime will
   // tally up the number of descriptor sets needed while building the graph and
   // trigger descriptor pool initialization with exact sizes before encoding the
   // command buffer.
-  const api::DescriptorPoolConfig descriptor_pool_config{
-      0u, // descriptorPoolMaxSets
-      0u, // descriptorUniformBufferCount
-      0u, // descriptorStorageBufferCount
-      0u, // descriptorCombinedSamplerCount
-      0u, // descriptorStorageImageCount
-      0u, // descriptorPileSizes
+  const vkapi::DescriptorPoolConfig descriptor_pool_config{
+      0u, // descriptor_pool_max_sets
+      0u, // descriptor_uniform_buffer_count
+      0u, // descriptor_storage_buffer_count
+      0u, // descriptor_combined_sampler_count
+      0u, // descriptor_storage_image_count
+      0u, // descriptor_pile_sizes
   };
 
-  const api::QueryPoolConfig query_pool_config{};
+  const vkapi::QueryPoolConfig query_pool_config{};
 
-  const api::ContextConfig context_config{
-      submit_frequency, // cmdSubmitFrequency
-      cmd_config, // cmdPoolConfig
-      descriptor_pool_config, // descriptorPoolConfig
-      query_pool_config, // queryPoolConfig
+  context_config = {
+      cmd_submit_frequency,
+      cmd_config,
+      descriptor_pool_config,
+      query_pool_config,
   };
-
-  contextConfig = context_config;
 
   // Empirically selected safety factor. If descriptor pools start running out
   // of memory, increase this safety factor.
-  descriptorPoolSafetyFactor = 1.25;
+  descriptor_pool_safety_factor = 1.25;
 
   // For now, force kTexture3D storage as we are still developing shader support
   // for buffer storage type.
-  enableStorageTypeOverride = true;
-  storageTypeOverride = api::kTexture3D;
+  enable_storage_type_override = true;
+  storage_type_override = utils::kTexture3D;
 
   // For now, force kWidthPacked memory layout by default as we are still
   // developing support for other memory layouts. In the future memory layout
   // settings will be serialized as part of the graph.
-  enableMemoryLayoutOverride = true;
-  memoryLayoutOverride = api::kWidthPacked;
+  enable_memory_layout_override = true;
+  memory_layout_override = utils::kWidthPacked;
+
+  // QueryPool objects are used to measure execution times of individual shader
+  // dispatches. By default, this functionality is disabled.
+  enable_querypool = false;
+
+  enable_local_wg_size_override = false;
+  local_wg_size_override = {};
 }
 
-void GraphConfig::setStorageTypeOverride(api::StorageType storage_type) {
-  enableStorageTypeOverride = true;
-  storageTypeOverride = storage_type;
+void GraphConfig::set_storage_type_override(utils::StorageType storage_type) {
+  enable_storage_type_override = true;
+  storage_type_override = storage_type;
 }
 
-void GraphConfig::setMemoryLayoutOverride(api::GPUMemoryLayout memory_layout) {
-  enableMemoryLayoutOverride = true;
-  memoryLayoutOverride = memory_layout;
+void GraphConfig::set_memory_layout_override(
+    utils::GPUMemoryLayout memory_layout) {
+  enable_memory_layout_override = true;
+  memory_layout_override = memory_layout;
+}
+
+void GraphConfig::set_local_wg_size_override(
+    const utils::uvec3& local_wg_size) {
+  enable_local_wg_size_override = true;
+  local_wg_size_override = local_wg_size;
 }
 
 } // namespace vkcompute

@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -11,12 +12,11 @@ import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
-import torch.export._trace as export_trace
+from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import (
     EdgeCompileConfig,
@@ -24,11 +24,14 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
     to_edge,
+    to_edge_transform_and_lower,
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+
 from executorch.exir.print_program import pretty_print, print_program
+from torch.export import export_for_training
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -40,14 +43,17 @@ except ImportError as e:
     logger.warning(f"{e=}")
     pass
 
-from torch._export.pass_base import PassType
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.quantizer import Quantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+)
+from executorch.exir.program._program import _transform
+from torch._export.pass_base import PassType
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
@@ -140,12 +146,14 @@ class Quantize(Stage):
         quantizer: Optional[Quantizer] = None,
         quantization_config: Optional[QuantizationConfig] = None,
         calibrate: bool = True,
+        calibration_samples: Optional[Sequence[Any]] = None,
     ):
         self.quantizer = quantizer or XNNPACKQuantizer()
         self.quantization_config = (
             quantization_config or get_symmetric_quantization_config()
         )
         self.calibrate = calibrate
+        self.calibration_samples = calibration_samples
 
         self.quantizer.set_global(self.quantization_config)
 
@@ -154,15 +162,19 @@ class Quantize(Stage):
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
-        captured_graph = export_trace._export(
-            artifact, inputs, pre_dispatch=True
-        ).module()
+        assert inputs is not None
+        captured_graph = export_for_training(artifact, inputs).module()
 
+        assert isinstance(captured_graph, torch.fx.GraphModule)
         prepared = prepare_pt2e(captured_graph, self.quantizer)
 
         if self.calibrate:
             # Calibrate prepared model to provide data to quantization observers.
-            prepared(*inputs)
+            if self.calibration_samples is not None:
+                for inp in self.calibration_samples:
+                    prepared(*inp)
+            else:
+                prepared(*inputs)
 
         converted = convert_pt2e(prepared)
         self.converted_graph = converted
@@ -174,6 +186,9 @@ class Quantize(Stage):
     @property
     def graph_module(self) -> str:
         return self.converted_graph
+
+    def run_artifact(self, inputs):
+        return self.converted_graph.forward(*inputs)
 
 
 @register_stage
@@ -188,7 +203,7 @@ class Export(Stage):
         inputs: Tuple[torch.Tensor],
     ) -> None:
         self.exported_program = export(
-            artifact, inputs, dynamic_shapes=self.dynamic_shapes
+            artifact, inputs, dynamic_shapes=self.dynamic_shapes, strict=True
         )
 
     @property
@@ -224,14 +239,79 @@ class ToEdge(Stage):
 
 @register_stage
 class RunPasses(Stage):
-    def __init__(self, pass_list: Optional[List[Type[PassType]]] = None):
+    def __init__(
+        self,
+        pass_list: Optional[List[Type[PassType]]] = None,
+        pass_functions: Optional[List[Callable]] = None,
+    ):
         self.pass_list = pass_list
+        self.pass_functions = pass_functions
+        self.edge_or_aten_program = None
+
+    def run(
+        self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
+    ) -> None:
+        if isinstance(artifact, EdgeProgramManager):
+            self.edge_or_aten_program = artifact
+            if self.pass_list:
+                pass_manager = XNNPACKPassManager(
+                    artifact.exported_program(), self.pass_list
+                )
+                self.edge_or_aten_program._edge_programs["forward"] = (
+                    pass_manager.transform()
+                )
+            if self.pass_functions:
+                assert isinstance(self.pass_functions, list)
+                for pass_function in self.pass_functions:
+                    self.edge_or_aten_program._edge_programs["forward"] = pass_function(
+                        self.edge_or_aten_program.exported_program()
+                    )
+        else:
+            transformed_ep = artifact
+            if self.pass_list:
+                assert isinstance(self.pass_list, list)
+                for pass_ in self.pass_list:
+                    transformed_ep = _transform(transformed_ep, pass_())
+
+            if self.pass_functions:
+                assert isinstance(self.pass_functions, list)
+                for pass_function in self.pass_functions:
+                    transformed_ep = pass_function(transformed_ep)
+
+            self.edge_or_aten_program = transformed_ep
+
+    @property
+    def artifact(self) -> Union[EdgeProgramManager, ExportedProgram]:
+        return self.edge_or_aten_program
+
+    @property
+    def graph_module(self) -> str:
+        if isinstance(self.edge_or_aten_program, EdgeProgramManager):
+            return self.edge_or_aten_program.exported_program().graph_module
+        else:
+            return self.edge_or_aten_program.graph_module
+
+
+@register_stage
+class ToEdgeTransformAndLower(Stage):
+    def __init__(
+        self,
+        partitioners: Optional[List[Partitioner]] = None,
+        edge_compile_config: Optional[EdgeCompileConfig] = None,
+    ):
+        self.partitioners = partitioners or [XnnpackPartitioner()]
+        self.edge_compile_conf = (
+            edge_compile_config or get_xnnpack_edge_compile_config()
+        )
         self.edge_dialect_program = None
 
-    def run(self, artifact: EdgeProgramManager, inputs=None) -> None:
-        pass_manager = XNNPACKPassManager(artifact.exported_program(), self.pass_list)
-        self.edge_dialect_program = artifact
-        self.edge_dialect_program._edge_programs["forward"] = pass_manager.transform()
+    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+        artifact_to_run = copy.deepcopy(artifact)
+        self.edge_dialect_program = to_edge_transform_and_lower(
+            artifact_to_run,
+            compile_config=self.edge_compile_conf,
+            partitioner=self.partitioners,
+        )
 
     @property
     def artifact(self) -> EdgeProgramManager:
@@ -341,25 +421,34 @@ class Tester:
     def __init__(
         self,
         module: torch.nn.Module,
-        inputs: Tuple[torch.Tensor],
+        example_inputs: Tuple[torch.Tensor],
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
 
         self.original_module = module
-        self.inputs = inputs
+        self.example_inputs = example_inputs
         self.dynamic_shapes = dynamic_shapes
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
         self.pipeline = {
             self.stage_name(Quantize): [self.stage_name(Export)],
             self.stage_name(Export): [
+                self.stage_name(RunPasses),
                 self.stage_name(ToEdge),
+                self.stage_name(ToEdgeTransformAndLower),
+            ],
+            self.stage_name(ToEdgeTransformAndLower): [
+                self.stage_name(RunPasses),
+                self.stage_name(ToExecutorch),
             ],
             self.stage_name(ToEdge): [
                 self.stage_name(Partition),
                 self.stage_name(RunPasses),
             ],
-            self.stage_name(RunPasses): [self.stage_name(Partition)],
+            self.stage_name(RunPasses): [
+                self.stage_name(Partition),
+                self.stage_name(ToEdgeTransformAndLower),
+            ],
             # TODO Make this Stage optional
             self.stage_name(Partition): [self.stage_name(ToExecutorch)],
             self.stage_name(ToExecutorch): [self.stage_name(Serialize)],
@@ -385,15 +474,15 @@ class Tester:
         # Get shapes of inputs
         input_shapes = []
         if self.dynamic_shapes is None:
-            for tensor_arg in self.inputs:
+            for tensor_arg in self.example_inputs:
                 assert isinstance(tensor_arg, torch.Tensor)
                 input_shapes.append(tensor_arg.shape)
         else:
             # Random shapes depending on dynamic shape constraint
             dim_name_to_size = {}
-            for arg_idx in range(len(self.inputs)):
-                assert isinstance(self.inputs[arg_idx], torch.Tensor)
-                ex_shape = list(self.inputs[arg_idx].shape)
+            for arg_idx in range(len(self.example_inputs)):
+                assert isinstance(self.example_inputs[arg_idx], torch.Tensor)
+                ex_shape = list(self.example_inputs[arg_idx].shape)
                 dynamic_dim_spec = self.dynamic_shapes[arg_idx]
                 for dim_idx, dim_spec in dynamic_dim_spec.items():
                     assert dim_idx < len(ex_shape)
@@ -418,7 +507,7 @@ class Tester:
                             dim_spec.max, 1000
                         )  # unbounded int max is too large
                         lower_bound = (
-                            dim_spec.min if dim_spec.min != 2 else 1
+                            dim_spec.min if dim_spec.min >= 2 else 1
                         )  # 0/1 specialization means dim_spec.min can never be 1
                         dim_name_to_size[dim_name] = fn(
                             random.randint(lower_bound, upper_bound)
@@ -427,9 +516,11 @@ class Tester:
                 input_shapes.append(torch.Size(ex_shape))
         # create random tensor inputs with the shapes given above:
         random_inputs = []
-        for arg_idx in range(len(self.inputs)):
+        for arg_idx in range(len(self.example_inputs)):
             random_inputs.append(
-                torch.randn(input_shapes[arg_idx]).to(dtype=self.inputs[arg_idx].dtype)
+                torch.randn(input_shapes[arg_idx]).to(
+                    dtype=self.example_inputs[arg_idx].dtype
+                )
             )
 
         yield tuple(random_inputs)
@@ -466,15 +557,24 @@ class Tester:
 
     # Stages
     def quantize(self, quantize_stage: Optional[Quantize] = None):
-        return self._run_stage(quantize_stage or Quantize(), self.inputs)
+        return self._run_stage(quantize_stage or Quantize(), self.example_inputs)
 
     def export(self, export_stage: Optional[Export] = None):
         return self._run_stage(
-            export_stage or Export(dynamic_shapes=self.dynamic_shapes), self.inputs
+            export_stage or Export(dynamic_shapes=self.dynamic_shapes),
+            self.example_inputs,
         )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
-        return self._run_stage(to_edge_stage or ToEdge())
+        if not to_edge_stage:
+            to_edge_stage = ToEdge()
+        res = self._run_stage(to_edge_stage)
+        return res
+
+    def to_edge_transform_and_lower(
+        self, to_edge_and_transform_stage: Optional[ToEdgeTransformAndLower] = None
+    ):
+        return self._run_stage(to_edge_and_transform_stage or ToEdgeTransformAndLower())
 
     def run_passes(self, run_passes_stage: Optional[RunPasses] = None):
         return self._run_stage(run_passes_stage or RunPasses())
@@ -534,6 +634,15 @@ class Tester:
 
         return self
 
+    def visualize(
+        self, reuse_server: bool = True, stage: Optional[str] = None, **kwargs
+    ):
+        # import here to avoid importing model_explorer when it is not needed which is most of the time.
+        from executorch.devtools.visualization import visualize
+
+        visualize(self.get_artifact(stage), reuse_server=reuse_server, **kwargs)
+        return self
+
     def run_method_and_compare_outputs(
         self,
         stage: Optional[str] = None,
@@ -586,6 +695,9 @@ class Tester:
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
+            assert (
+                ref.shape == model.shape
+            ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
             assert torch.allclose(
                 model,
                 ref,

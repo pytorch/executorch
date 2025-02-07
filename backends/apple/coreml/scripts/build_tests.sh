@@ -13,7 +13,7 @@ SCRIPT_DIR_PATH="$(
 EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../../../")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
 PROTOBUF_DIR_PATH="$COREML_DIR_PATH/third-party/coremltools/deps/protobuf"
-IOS_TOOLCHAIN_PATH="$COREML_DIR_PATH/third-party/ios-cmake/ios.toolchain.cmake"
+IOS_TOOLCHAIN_PATH="$EXECUTORCH_ROOT_PATH/third-party/ios-cmake/ios.toolchain.cmake"
 CMAKE_EXECUTORCH_BUILD_DIR_PATH="$COREML_DIR_PATH/executorch-cmake-out"
 CMAKE_PROTOBUF_BUILD_DIR_PATH="$COREML_DIR_PATH/protobuf-cmake-out"
 LIBRARIES_DIR_PATH="$COREML_DIR_PATH/runtime/libraries"
@@ -59,7 +59,7 @@ cmake --build "$CMAKE_PROTOBUF_BUILD_DIR_PATH"  -j9 -t libprotobuf-lite
 echo "ExecuTorch: Copying libraries"
 mkdir "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_EXECUTORCH_BUILD_DIR_PATH/libexecutorch.a" "$LIBRARIES_DIR_PATH"
-cp -f "$CMAKE_EXECUTORCH_BUILD_DIR_PATH/libexecutorch_no_prim_ops.a" "$LIBRARIES_DIR_PATH"
+cp -f "$CMAKE_EXECUTORCH_BUILD_DIR_PATH/libexecutorch_core.a" "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_PROTOBUF_BUILD_DIR_PATH/libprotobuf-lite.a" "$LIBRARIES_DIR_PATH"
 
 #Copy ExecuTorch headers

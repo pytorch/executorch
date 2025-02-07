@@ -9,12 +9,13 @@
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -71,7 +72,7 @@ bool check_as_strided_copy_args(
 }
 
 bool check_cat_args(
-    exec_aten::ArrayRef<Tensor> tensors,
+    executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   // Ensure the input tensors list is non-empty
@@ -93,6 +94,8 @@ bool check_cat_args(
     // All input dtypes must be castable to the output dtype.
     ET_LOG_AND_RETURN_IF_FALSE(
         canCast(tensors[i].scalar_type(), out.scalar_type()));
+
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(tensors[i], out));
 
     // Empty tensors have no shape constraints.
     if (tensors[i].numel() == 0) {
@@ -120,9 +123,9 @@ bool check_cat_args(
 }
 
 void get_cat_out_target_size(
-    exec_aten::ArrayRef<Tensor> tensors,
+    executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   // Find the first non-1D-or-empty tensor in the list to use as a reference
   // because an 1D empty tensor is a wildcard and should be ignored when we
@@ -178,9 +181,9 @@ bool check_expand_copy_args(
 }
 
 bool get_expand_copy_out_target_size(
-    exec_aten::ArrayRef<exec_aten::SizesType> self_sizes,
-    exec_aten::ArrayRef<int64_t> expand_sizes,
-    exec_aten::SizesType* output_sizes,
+    executorch::aten::ArrayRef<executorch::aten::SizesType> self_sizes,
+    executorch::aten::ArrayRef<int64_t> expand_sizes,
+    executorch::aten::SizesType* output_sizes,
     size_t* output_rank) {
   auto j{expand_sizes.size()};
   *output_rank = 0;
@@ -302,7 +305,7 @@ bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out) {
 void get_permute_copy_out_target_size(
     const Tensor& in,
     IntArrayRef dims,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
@@ -324,13 +327,26 @@ bool check_pixel_shuffle_args(
   return true;
 }
 
+bool check_pixel_unshuffle_args(
+    const Tensor& in,
+    int64_t downscale_factor,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 3));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(out, 3));
+  ET_LOG_AND_RETURN_IF_FALSE(downscale_factor > 0);
+  ET_LOG_AND_RETURN_IF_FALSE(in.size(in.dim() - 1) % downscale_factor == 0);
+  ET_LOG_AND_RETURN_IF_FALSE(in.size(in.dim() - 2) % downscale_factor == 0);
+  return true;
+}
+
 void get_pixel_shuffle_out_target_size(
     const Tensor& in,
     int64_t upscale_factor,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
-  const exec_aten::SizesType casted_upscale_factor = upscale_factor;
+  const executorch::aten::SizesType casted_upscale_factor = upscale_factor;
 
   size_t i = 0;
   for (; i < in.dim() - 3; ++i) {
@@ -344,6 +360,29 @@ void get_pixel_shuffle_out_target_size(
   out_sizes[i] = in.size(i) * casted_upscale_factor;
   i++;
   out_sizes[i] = in.size(i) * casted_upscale_factor;
+}
+
+void get_pixel_unshuffle_out_target_size(
+    const Tensor& in,
+    int64_t downscale_factor,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim();
+  const executorch::aten::SizesType casted_factor = downscale_factor;
+
+  size_t i = 0;
+  for (; i < in.dim() - 3; ++i) {
+    // Copy all leading dimensions in.
+    out_sizes[i] = in.size(i);
+  }
+  // The last 3 dimensions are (channel, height, width). Multiply channel by
+  // the downscale factor squared and divide the height and width by that
+  // factor.
+  out_sizes[i] = in.size(i) * (casted_factor * casted_factor);
+  i++;
+  out_sizes[i] = in.size(i) / casted_factor;
+  i++;
+  out_sizes[i] = in.size(i) / casted_factor;
 }
 
 bool check_select_copy_out_args(
@@ -361,7 +400,7 @@ bool check_select_copy_out_args(
 void get_select_copy_out_target_size(
     const Tensor& in,
     int64_t dim,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim() - 1;
 
@@ -374,36 +413,9 @@ void get_select_copy_out_target_size(
   }
 }
 
-bool check_slice_copy_args(
-    const Tensor& in,
-    int64_t dim,
-    int64_t step,
-    Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      step > 0, "slice step must be greater than zero");
-  return true;
-}
-
-void get_slice_copy_out_target_size(
-    const Tensor& in,
-    int64_t dim,
-    int64_t num_values,
-    exec_aten::SizesType* out_sizes,
-    size_t* out_ndim) {
-  *out_ndim = in.dim();
-
-  for (size_t d = 0; d < in.dim(); ++d) {
-    out_sizes[d] = in.size(d);
-  }
-  out_sizes[dim] = num_values;
-}
-
 bool check_split_with_sizes_copy_args(
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> split_sizes,
+    executorch::aten::ArrayRef<int64_t> split_sizes,
     int64_t dim,
     TensorList out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 1));
@@ -432,7 +444,7 @@ void get_split_with_sizes_copy_out_target_size(
     const Tensor& in,
     int64_t split_size,
     int64_t dim,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
@@ -455,7 +467,7 @@ bool check_squeeze_copy_dim_args(
 void get_squeeze_copy_dim_out_target_size(
     const Tensor in,
     int64_t dim,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   // For 0 dim tensors, the output should also be 0 dim.
   if (in.dim() == 0) {
@@ -481,7 +493,7 @@ void get_squeeze_copy_dim_out_target_size(
 
 bool check_squeeze_copy_dims_args(
     const Tensor in,
-    const exec_aten::ArrayRef<int64_t> dims,
+    const executorch::aten::ArrayRef<int64_t> dims,
     const Tensor out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
 
@@ -507,8 +519,8 @@ bool check_squeeze_copy_dims_args(
 
 void get_squeeze_copy_dims_out_target_size(
     const Tensor in,
-    const exec_aten::ArrayRef<int64_t> dims,
-    exec_aten::SizesType* out_sizes,
+    const executorch::aten::ArrayRef<int64_t> dims,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   // For 0 dim tensors, the output should also be 0 dim.
   if (in.dim() == 0) {
@@ -517,7 +529,7 @@ void get_squeeze_copy_dims_out_target_size(
   }
 
   // A dim is only removed if the size at the given dim is 1.
-  exec_aten::SizesType dims_to_remove = 0;
+  executorch::aten::SizesType dims_to_remove = 0;
   for (size_t i = 0; i < dims.size(); ++i) {
     int64_t dim = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
     if (in.size(dim) == 1) {
@@ -544,7 +556,7 @@ void get_squeeze_copy_dims_out_target_size(
 }
 
 bool check_stack_args(
-    exec_aten::ArrayRef<Tensor> tensors,
+    executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   // Ensure the input tensors list is non-empty
@@ -572,9 +584,9 @@ bool check_stack_args(
 }
 
 void get_stack_out_target_size(
-    exec_aten::ArrayRef<Tensor> tensors,
+    executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = tensors[0].dim() + 1;
 
@@ -718,7 +730,7 @@ bool check_split_copy_args(
 bool check_to_copy_args(
     const Tensor& input,
     bool non_blocking,
-    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)input;
   (void)out;
@@ -732,6 +744,45 @@ bool check_to_copy_args(
       !memory_format.has_value() ||
       memory_format.value() == MemoryFormat::Contiguous);
 
+  return true;
+}
+
+bool check__to_dim_order_copy_args(
+    const Tensor& input,
+    bool non_blocking,
+    executorch::aten::OptionalArrayRef<int64_t> dim_order,
+    Tensor& out) {
+  // Right now we only support blocking data transfer
+  ET_LOG_AND_RETURN_IF_FALSE(non_blocking == false);
+
+  if (dim_order.has_value()) {
+    executorch::aten::ArrayRef<int64_t> dim_order_ref = dim_order.value();
+
+    // dim order size shall equal to input dim
+    ET_LOG_AND_RETURN_IF_FALSE(dim_order_ref.size() == input.dim());
+
+    ET_LOG_AND_RETURN_IF_FALSE(
+        is_channels_last_dim_order(
+            dim_order.value().data(), dim_order.value().size()) ||
+        is_contiguous_dim_order(
+            dim_order.value().data(), dim_order.value().size()));
+
+    // Out tensor shall have same dim order as dim_order
+    auto out_dim_order = out.dim_order();
+    ET_LOG_AND_RETURN_IF_FALSE(out_dim_order.size() == dim_order_ref.size());
+    for (size_t i = 0; i < dim_order_ref.size(); i++) {
+      ET_LOG_AND_RETURN_IF_FALSE(out_dim_order[i] == dim_order_ref[i]);
+    }
+  } else { // dim_order is not set, preserve the dim order of input
+
+    // Out tensor shall have same dim order as input dim_order
+    auto out_dim_order = out.dim_order();
+    auto input_dim_order = input.dim_order();
+    ET_LOG_AND_RETURN_IF_FALSE(out_dim_order.size() == input_dim_order.size());
+    for (size_t i = 0; i < input_dim_order.size(); i++) {
+      ET_LOG_AND_RETURN_IF_FALSE(out_dim_order[i] == input_dim_order[i]);
+    }
+  }
   return true;
 }
 
@@ -792,7 +843,7 @@ bool check_unsqueeze_copy_args(
 
 bool check_view_copy_args(
     const Tensor& self,
-    exec_aten::ArrayRef<int64_t> size_int64_t,
+    executorch::aten::ArrayRef<int64_t> size_int64_t,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == out.sizes().size());
 
@@ -823,9 +874,9 @@ bool check_view_copy_args(
 
 bool get_view_copy_target_size(
     const Tensor input,
-    exec_aten::ArrayRef<int64_t> size_int64_t,
+    executorch::aten::ArrayRef<int64_t> size_int64_t,
     int64_t dim,
-    exec_aten::SizesType* out_sizes) {
+    executorch::aten::SizesType* out_sizes) {
   size_t out_numels_without_minus_1 = 1;
   int32_t minus_1_dim = -1;
 
@@ -833,7 +884,7 @@ bool get_view_copy_target_size(
 
   for (size_t i = 0; i < dim; ++i) {
     if (size_int64_t[i] != -1) {
-      out_sizes[i] = static_cast<exec_aten::SizesType>(size_int64_t[i]);
+      out_sizes[i] = static_cast<executorch::aten::SizesType>(size_int64_t[i]);
       out_numels_without_minus_1 = out_numels_without_minus_1 * size_int64_t[i];
     } else {
       // TODO(kimishpatel): Add test to hit this line
@@ -873,7 +924,7 @@ void get_diagonal_copy_out_target_size(
     int64_t offset,
     int64_t dim1,
     int64_t dim2,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim() - 1;
 

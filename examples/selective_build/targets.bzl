@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib")
 
 def define_common_targets():
@@ -63,6 +63,7 @@ def define_common_targets():
         deps = [
             ":select_ops_in_dict",
         ],
+        dtype_selective_build = True,
         visibility = ["//executorch/..."],
     )
 
@@ -87,7 +88,7 @@ def define_common_targets():
     # Select all ops from a given model
     # TODO(larryliu0820): Add this
 
-    if not runtime.is_oss:
+    if not runtime.is_oss and not is_xplat():
         runtime.genrule(
             name = "add_mul_model",
             outs = {"add_mul": ["add_mul.pte"]},

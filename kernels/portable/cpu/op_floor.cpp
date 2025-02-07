@@ -14,9 +14,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
-Tensor& floor_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& floor_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   return internal::unary_ufunc_realh(std::floor, ctx, in, out);
 }
 

@@ -160,7 +160,7 @@ void constant_pad_nd_out_impl(
 } // namespace
 
 Tensor& constant_pad_nd_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     IntArrayRef pad,
     const Scalar& value,
@@ -169,6 +169,9 @@ Tensor& constant_pad_nd_out(
 
   ET_KERNEL_CHECK(
       ctx, check_constant_pad_args(in, pad, value, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   // resize out tensor for dynamic shapes
   ET_KERNEL_CHECK_MSG(
@@ -181,17 +184,16 @@ Tensor& constant_pad_nd_out(
   ScalarType in_type = in.scalar_type();
   ScalarType value_type = utils::get_scalar_dtype(value);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "constant_pad_nd.out", CTYPE, [&]() {
-        CTYPE value_v;
-        ET_SWITCH_SCALAR_OBJ_TYPES(
-            value_type, ctx, "constant_pad_nd.out", CTYPE_VALUE, [&]() {
-              CTYPE_VALUE val;
-              utils::extract_scalar(value, &val);
-              value_v = static_cast<CTYPE>(val);
-            });
-        constant_pad_nd_out_impl<CTYPE>(in, pad, value_v, out);
-      });
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "constant_pad_nd.out", CTYPE, [&]() {
+    CTYPE value_v;
+    ET_SWITCH_SCALAR_OBJ_TYPES(
+        value_type, ctx, "constant_pad_nd.out", CTYPE_VALUE, [&]() {
+          CTYPE_VALUE val;
+          utils::extract_scalar(value, &val);
+          value_v = static_cast<CTYPE>(val);
+        });
+    constant_pad_nd_out_impl<CTYPE>(in, pad, value_v, out);
+  });
 
   return out;
 }

@@ -7,61 +7,55 @@
  */
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
-namespace {
-
-template <class T>
-const T& min(const T& a, const T& b) {
-  return (b < a) ? b : a;
-}
-
-} // namespace
 
 Tensor& minimum_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  (void)ctx;
+  // Common Dtype
+  ScalarType common_type = promoteTypes(a.scalar_type(), b.scalar_type());
 
+  // Check Common Dtype
+  ET_KERNEL_CHECK(
+      ctx, canCast(common_type, out.scalar_type()), InvalidArgument, out);
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType common_type = promoteTypes(a_type, b_type);
-  ScalarType out_type = out.scalar_type();
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "minimum.out";
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "minimum.out", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "minimum.out", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(
-          Bool, common_type, ctx, "minimum.out", CTYPE_IN, [&]() {
-            ET_SWITCH_REAL_TYPES_AND(
-                Bool, out_type, ctx, "minimum.out", CTYPE_OUT, [&]() {
-                  apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                      [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                        CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                        CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                        CTYPE_IN value = min(a_casted, b_casted);
-
-                        return static_cast<CTYPE_OUT>(value);
-                      },
-                      a,
-                      b,
-                      out);
-                });
-          });
-    });
+  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          return utils::min_override(val_a, val_b);
+        },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        b,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;

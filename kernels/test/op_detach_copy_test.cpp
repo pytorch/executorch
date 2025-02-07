@@ -17,9 +17,9 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpDetachCopyOutTest : public OperatorTest {
@@ -42,31 +42,6 @@ class OpDetachCopyOutTest : public OperatorTest {
     EXPECT_TENSOR_EQ(out, tf.make(sizes, {1, 2, 3, 4}));
   }
 
-  template <>
-  void test_detach_copy_out<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf;
-    const std::vector<int32_t> sizes = {2, 2};
-    Tensor out = tf.zeros(sizes);
-
-    // Valid input should give the expected output
-    op_detach_copy_out(
-        tf.make(sizes, /*data=*/{true, false, true, false}), out);
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, false, true, false}));
-  }
-
-  template <>
-  void test_detach_copy_out<ScalarType::Float>() {
-    TensorFactory<ScalarType::Float> tf;
-    const std::vector<int32_t> sizes = {2, 2};
-    Tensor out = tf.zeros(sizes);
-
-    // Valid input should give the expected output
-    op_detach_copy_out(
-        tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}), out);
-    EXPECT_TENSOR_EQ(
-        out, tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}));
-  }
-
   template <ScalarType DTYPE>
   void test_detach_copy_out_invalid_shape() {
     TensorFactory<DTYPE> tf;
@@ -80,6 +55,30 @@ class OpDetachCopyOutTest : public OperatorTest {
     ET_EXPECT_KERNEL_FAILURE(context_, op_detach_copy_out(in, out));
   }
 };
+
+template <>
+void OpDetachCopyOutTest::test_detach_copy_out<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf;
+  const std::vector<int32_t> sizes = {2, 2};
+  Tensor out = tf.zeros(sizes);
+
+  // Valid input should give the expected output
+  op_detach_copy_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, false, true, false}));
+}
+
+template <>
+void OpDetachCopyOutTest::test_detach_copy_out<ScalarType::Float>() {
+  TensorFactory<ScalarType::Float> tf;
+  const std::vector<int32_t> sizes = {2, 2};
+  Tensor out = tf.zeros(sizes);
+
+  // Valid input should give the expected output
+  op_detach_copy_out(
+      tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}), out);
+  EXPECT_TENSOR_EQ(
+      out, tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}));
+}
 
 TEST_F(OpDetachCopyOutTest, AllScalarInputOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) test_detach_copy_out<ScalarType::dtype>();

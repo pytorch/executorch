@@ -13,3 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 # NB: Install all linter dependencies, the caching of lintrunner init could be
 # done after Executorch becomes public
 pip_install -r requirements-lintrunner.txt
+
+# Install google-java-format
+curl -L --retry 3 https://github.com/google/google-java-format/releases/download/v1.23.0/google-java-format_linux-x86-64 > /opt/google-java-format
+chmod +x /opt/google-java-format

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -10,7 +11,6 @@ import os
 import platform
 import stat
 import sys
-import tempfile
 import urllib.request
 
 from dataclasses import dataclass
@@ -67,18 +67,33 @@ BUCK_PLATFORM_MAP = {
         archive_name="buck2-x86_64-unknown-linux-musl.zst",
         target_versions=[
             # MUSL
-            "071372cfde6e9936c62eb92823742392af4a945570df5c5b34d3eed1b03813c3",
+            "edae27cfca00053d9c5f7c7be81b6b0d7d07573a50be374ce53a9d8692afa5fc",
             # GNU
-            "38f7c508bf1b87bcdc816bf56d1b9f2d2411c6be",
+            "10334cb20cb7c321",
+        ],
+    ),
+    ("linux", "aarch64"): BuckInfo(
+        archive_name="buck2-aarch64-unknown-linux-gnu.zst",
+        target_versions=[
+            # MUSL
+            "5d7af382acbe0dde70f0e9b0a0bc36deea906077ec1ffe80d3fa280490109051",
+            # GNU
+            "08d4382de22fab275978abc7c27c001d7823eb2f",
         ],
     ),
     ("darwin", "aarch64"): BuckInfo(
         archive_name="buck2-aarch64-apple-darwin.zst",
-        target_versions=["99e407b49dc432eda0cbddd67ea78346"],
+        target_versions=["f3b7a37732803ed090cd8a37f00cc000"],
     ),
     ("darwin", "x86_64"): BuckInfo(
         archive_name="buck2-x86_64-apple-darwin.zst",
-        target_versions=["9150d78e7a7531799a1b06ce58623bbc"],
+        target_versions=["9c9a583658d43e82b41f3fc9d369a9b0"],
+    ),
+    ("windows", "x86_64"): BuckInfo(
+        archive_name="buck2-x86_64-pc-windows-msvc.exe.zst",
+        target_versions=[
+            "c7d378f3f307e9590f0b29a5f7f1b21b8e784f4e4bd30a0160b2a69df50d2ee0"
+        ],
     ),
 }
 
@@ -122,7 +137,7 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
     arch = "unknown"
     if machine == "x86" or machine == "x86_64" or machine == "amd64":
         arch = "x86_64"
-    elif machine == "arm64":
+    elif machine == "arm64" or machine == "aarch64":
         arch = "aarch64"
 
     os_family = "unknown"
@@ -130,6 +145,8 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
         os_family = "linux"
     elif sys.platform.startswith("darwin"):
         os_family = "darwin"
+    elif sys.platform.startswith("win"):
+        os_family = "windows"
 
     platform_key = (os_family, arch)
     if platform_key not in BUCK_PLATFORM_MAP:
@@ -188,12 +205,12 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
 
             buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
 
-            with tempfile.NamedTemporaryFile() as archive_file:
+            try:
                 print(f"Downloading buck2 from {buck2_archive_url}...", file=sys.stderr)
-                urllib.request.urlretrieve(buck2_archive_url, archive_file.name)
+                archive_file, _ = urllib.request.urlretrieve(buck2_archive_url)
 
                 # Extract and chmod.
-                with open(archive_file.name, "rb") as f:
+                with open(archive_file, "rb") as f:
                     data = f.read()
                     decompressed_bytes = zstd.decompress(data)
 
@@ -202,6 +219,8 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
 
                 file_stat = os.stat(buck2_local_path)
                 os.chmod(buck2_local_path, file_stat.st_mode | stat.S_IEXEC)
+            finally:
+                os.remove(archive_file)
 
             return buck2_local_path
 

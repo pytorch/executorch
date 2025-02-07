@@ -7,6 +7,8 @@
 
 #include "memory_stream.hpp"
 
+#include <limits>
+
 namespace inmemoryfs {
 
 MemoryStreamBuf::MemoryStreamBuf(const std::shared_ptr<MemoryBuffer>& buffer) noexcept : buffer_(buffer) {

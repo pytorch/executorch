@@ -13,11 +13,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& prod_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ScalarType> dtype,
     Tensor& out) {
@@ -33,8 +33,8 @@ Tensor& prod_out(
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "prod.int_out";
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
       const auto data_in = in.const_data_ptr<CTYPE_IN>();
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = static_cast<CTYPE_OUT>(1);
@@ -48,7 +48,7 @@ Tensor& prod_out(
 }
 
 Tensor& prod_int_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool keepdim,
@@ -73,8 +73,8 @@ Tensor& prod_int_out(
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "prod.int_out";
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
         CTYPE_OUT prod = 1;

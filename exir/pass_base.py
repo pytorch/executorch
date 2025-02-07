@@ -54,6 +54,7 @@ PassType = Callable[[torch.fx.GraphModule], Optional[PassResult]]
 
 _TORCH_SYM_OPS: Set[Any] = {  # pyre-ignore
     torch.sym_int,
+    torch.sym_float,
     torch.sym_ite,
     torch.sym_max,
     torch.sym_min,
@@ -176,7 +177,7 @@ class _ExportPassBase(PassBase):
             self.fake_tensor_mode: Optional[FakeTensorMode] = None
             self.submodules: Dict[torch.nn.Module, str] = {}
 
-        def trace(self) -> None:
+        def trace(self) -> None:  # pyre-fixme[14,15]
             raise ExportPassBaseError("ExportTracer doesn't support trace().")
 
         def create_arg(self, a: Argument) -> torch.fx.Node:
@@ -289,7 +290,7 @@ class _ExportPassBase(PassBase):
             self.callback = callback
             self.node: torch.fx.Node = next(iter(gm.graph.nodes))
 
-        def placeholder(
+        def placeholder(  # pyre-fixme[14]
             self,
             target: str,
             args: Tuple[Argument, ...],
@@ -317,7 +318,11 @@ class _ExportPassBase(PassBase):
             if target == operator.getitem:
                 value, key = args
                 return self.callback.call_getitem(value, key, meta)
-            elif getattr(target, "__module__", None) in {"_operator", "math"}:
+            elif getattr(target, "__module__", None) in {
+                "_operator",
+                "builtins",
+                "math",
+            }:
                 assert callable(target)
                 return self.callback.call_sym(target, args, meta)
             elif target in _TORCH_SYM_OPS:
@@ -350,7 +355,7 @@ class _ExportPassBase(PassBase):
             else:
                 raise ExportPassBaseError(f"Unsupported target type: {target}")
 
-        def get_attr(
+        def get_attr(  # pyre-fixme[14]
             self, target: str, args: Tuple[Argument, ...], kwargs: Dict[str, Argument]
         ) -> Argument:
             return super().get_attr(target, args, kwargs)
@@ -363,7 +368,7 @@ class _ExportPassBase(PassBase):
         ) -> None:
             raise ExportPassBaseError("call_module is not supported.")
 
-        def call_method(
+        def call_method(  # pyre-fixme[14]
             self, target: str, args: Tuple[Argument, ...], kwargs: Dict[str, Argument]
         ) -> None:
             raise ExportPassBaseError("call_method is not supported.")
@@ -452,7 +457,7 @@ class _ExportPassBase(PassBase):
     def placeholder(self, name: str, arg: Argument, meta: NodeMetadata) -> ProxyValue:
         arg_proxy = self.tracer.create_proxy("placeholder", name, (), {})
         arg_proxy.node.meta = meta.data
-        self.tracer.set_metadata(arg_proxy.node, arg)
+        arg_proxy.node.meta["val"] = arg
         return ProxyValue(arg, arg_proxy)
 
     def call_operator(
@@ -721,7 +726,6 @@ def map_args(
         args[key] = fn(args[key], schema)
 
     for i, schema in enumerate(op._schema.arguments):
-        assert isinstance(schema, ArgSchema)
         if schema.name in kwargs:
             update(schema.name, kwargs, schema)
         elif not schema.kwarg_only and i < len(args):

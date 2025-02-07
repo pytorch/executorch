@@ -16,10 +16,14 @@ concurrency:
 
 jobs:
   lintrunner:
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-linter
+      submodules: 'true'
       fetch-depth: 0
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -27,6 +31,11 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
+        
+        # For mypy linting, we need to first install executorch first so that
+        # it builds the python package information.
+        BUILD_TOOL="cmake"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
         CACHE_DIRECTORY="/tmp/.lintbin"
         # Try to recover the cached binaries
@@ -54,3 +63,28 @@ jobs:
           lint.json || true
 
         exit $RC
+
+  android-java-format:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-linter
+      fetch-depth: 0
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        FILES_NEEDS_FORMAT=$(/opt/google-java-format -n extension/android/src/main/java/org/pytorch/executorch/*.java \
+          examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/*.java \
+          examples/demo-apps/android/LlamaDemo/app/src/main/java/com/example/executorchllamademo/*.java \
+          extension/benchmark/android/benchmark/app/src/main/java/org/pytorch/minibench/*.java)
+        if [ -n "$FILES_NEEDS_FORMAT" ]; then
+          echo "Warning: The following files need formatting. Please use google-java-format."
+          echo "Use a binary from https://github.com/google/google-java-format/releases/"
+          echo "For example:"
+          echo "wget https://github.com/google/google-java-format/releases/download/v1.23.0/google-java-format_linux-x86-64"
+          echo "chmod +x google-java-format_linux-x86-64"
+          echo "./google-java-format_linux-x86-64 -i $FILES_NEEDS_FORMAT"
+          exit 1
+        fi

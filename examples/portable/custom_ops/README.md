@@ -1,4 +1,4 @@
-# Custom Operator Registration Examples (WIP)
+# Custom Operator Registration Examples
 This folder contains examples to register custom operators into PyTorch as well as register its kernels into ExecuTorch runtime.
 
 ## How to run
@@ -9,7 +9,7 @@ Run:
 
 ```bash
 cd executorch
-bash examples/portable/custom_ops/test_custom_ops.sh [cmake|buck2]
+bash examples/portable/custom_ops/test_custom_ops.sh
 ```
 
 ## AOT registration
@@ -37,24 +37,11 @@ After the model is exported by EXIR, we need C++ implementations of these custom
 ```
 For how to write these YAML entries, please refer to [`kernels/portable/README.md`](https://github.com/pytorch/executorch/blob/main/kernels/portable/README.md).
 
-Currently we provide 2 build systems that links `my_ops::mul3.out` kernel (written in `custom_ops_1.cpp`) to Executor runtime: buck2 and CMake. Both instructions are listed in `examples/portable/custom_ops/test_custom_ops.sh`(test_buck2_custom_op_1 and test_cmake_custom_op_1).
+Currently we use Cmake as the build system to link the `my_ops::mul3.out` kernel (written in `custom_ops_1.cpp`) to the ExecuTorch runtime. See instructions in: `examples/portable/custom_ops/test_custom_ops.sh` (test_cmake_custom_op_1).
 
 ## Selective build
 
-Note that we have defined a custom op for both `my_ops::mul3.out` and `my_ops::mul4.out` in `custom_ops.yaml`. Below is a demonstration of how to only register the operator from the model we are running into the runtime.
-
-In CMake, this is done by passing in a list of operators to `gen_oplist` custom rule: `--root_ops="my_ops::mul4.out"`.
-
-In Buck2, this is done by a rule called `et_operator_library`:
-```python
-et_operator_library(
-    name = "select_custom_ops_2",
-    ops = [
-        "my_ops::mul4.out",
-    ],
-...
-)
-```
+Note that we have defined a custom op for both `my_ops::mul3.out` and `my_ops::mul4.out` in `custom_ops.yaml`. To reduce binary size, we can choose to only register the operators used in the model. This is done by passing in a list of operators to the `gen_oplist` custom rule, for example: `--root_ops="my_ops::mul4.out"`.
 
 We then let the custom ops library depend on this target, to only register the ops we want.
 

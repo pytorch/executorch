@@ -16,19 +16,17 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "error_handling_test",
-        srcs = [
-            "error_handling_test.cpp",
-        ],
+        name = "tensor_layout_test",
+        srcs = ["tensor_layout_test.cpp"],
         deps = [
-            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:tensor_layout",
         ],
     )
 
     runtime.cxx_test(
-        name = "function_ref_test",
+        name = "error_handling_test",
         srcs = [
-            "function_ref_test.cpp",
+            "error_handling_test.cpp",
         ],
         deps = [
             "//executorch/runtime/core:core",
@@ -80,6 +78,16 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/runtime/core:memory_allocator",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "tag_test",
+        srcs = [
+            "tag_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:tag",
         ],
     )
 

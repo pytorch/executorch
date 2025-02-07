@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::MemoryAllocator;
+using executorch::runtime::Error;
+using executorch::runtime::MemoryAllocator;
 
 struct TestType8 {
   char data[8];
@@ -34,7 +34,7 @@ class MemoryAllocatorTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -195,12 +195,13 @@ TEST_F(MemoryAllocatorTest, AllocateListFailure) {
   EXPECT_EQ(p, nullptr);
 }
 
+#if ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 class HelperMacrosTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -402,3 +403,4 @@ TEST_F(HelperMacrosTest, AllocateListOrReturnFailure) {
       &allocator, allocator.size() * 2, &p);
   EXPECT_EQ(err, Error::MemoryAllocationFailed);
 }
+#endif // ET_HAVE_GNU_STATEMENT_EXPRESSIONS

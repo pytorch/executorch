@@ -7,10 +7,12 @@
 
 #import <ETCoreMLModel.h>
 
-#import <ETCoreMLAsset.h>
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLLogging.h"
+#import "multiarray.h"
+#import "objc_array_util.h"
+#import "MLModel_Prewarm.h"
 #import <functional>
-#import <objc_array_util.h>
-#import <multiarray.h>
 #import <numeric>
 
 #pragma mark - ETCoreMLMultiArrayDescriptor
@@ -155,6 +157,19 @@ NSDictionary<NSString *, MLMultiArrayConstraint *> *get_multi_array_output_const
     return get_multi_array_constraints_by_name(description.outputDescriptionsByName);
 }
 
+#if MODEL_STATE_IS_SUPPORTED
+API_AVAILABLE(macos(15.0), ios(18.0), tvos(18.0), watchos(11.0))
+void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
+    [state getMultiArrayForStateNamed:feature_name handler:^(MLMultiArray *buffer) {
+        [buffer getMutableBytesWithHandler:^(void *mutableBytes, NSInteger size, NSArray<NSNumber *> * __unused strides) {
+            uint8_t *start = reinterpret_cast<uint8_t *>(mutableBytes);
+            uint8_t *end = start + size;
+            std::fill(start, end, uint8_t(0));
+        }];
+    }];
+}
+#endif
+
 }
 
 #pragma mark - ETCoreMLModel
@@ -194,6 +209,11 @@ NSDictionary<NSString *, MLMultiArrayConstraint *> *get_multi_array_output_const
         _cache = [[NSCache alloc] init];
         _inputConstraintsByName = get_multi_array_input_constraints_by_name(mlModel.modelDescription);
         _outputConstraintsByName = get_multi_array_output_constraints_by_name(mlModel.modelDescription);
+#if MODEL_STATE_IS_SUPPORTED
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+            _state = mlModel.modelDescription.stateDescriptionsByName.count > 0 ? [_mlModel newState] : nil;
+        }
+#endif
     }
     
     return self;
@@ -270,6 +290,54 @@ NSDictionary<NSString *, MLMultiArrayConstraint *> *get_multi_array_output_const
                     copyData:NO
                        error:error];
     
+}
+
+- (nullable id<MLFeatureProvider>)predictionFromFeatures:(id<MLFeatureProvider>)input
+                                                 options:(MLPredictionOptions *)options
+                                                   error:(NSError **)error {
+#if MODEL_STATE_IS_SUPPORTED
+    if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+        if (self.state != nil) {
+            return [self.mlModel predictionFromFeatures:input
+                                             usingState:(MLState *)self.state
+                                                options:options
+                                                  error:error];
+        }
+    }
+#endif
+
+    id<MLFeatureProvider> result = [self.mlModel predictionFromFeatures:input
+                                                                options:options
+                                                                  error:error];
+
+    return result;
+}
+
+- (BOOL)prewarmAndReturnError:(NSError* __autoreleasing*)error {
+    NSError *localError = nil;
+    BOOL result = [self.mlModel prewarmUsingState:self.state error:error];
+    if (!result) {
+        ETCoreMLLogError(localError,
+                         "%@: Failed to prewarm model with identifier = %@",
+                         NSStringFromClass(self.class),
+                         self.identifier);
+    }
+
+#if MODEL_STATE_IS_SUPPORTED
+    if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+        NSDictionary<NSString *, MLFeatureDescription *> *stateDescriptions = self.mlModel.modelDescription.stateDescriptionsByName;
+        [stateDescriptions enumerateKeysAndObjectsUsingBlock:^(NSString *featureName, MLFeatureDescription * __unused obj, BOOL * __unused stop) {
+            reset_state_for_feature_name(featureName, (MLState *) self.state);
+        }];
+    }
+#endif
+
+
+    if (error) {
+        *error = localError;
+    }
+
+    return result;
 }
 
 @end

@@ -1,0 +1,40 @@
+tokenizer:
+  _component_: torchtune.models.phi3.phi3_mini_tokenizer
+  path: /tmp/Phi-3-mini-4k-instruct/tokenizer.model
+  max_seq_len: 512
+
+dataset:
+  _component_: torchtune.datasets.alpaca_cleaned_dataset
+seed: null
+shuffle: True
+batch_size: 1
+
+loss:
+  _component_: torch.nn.CrossEntropyLoss
+
+model:
+  _component_: torchtune.models.phi3.lora_phi3_mini
+  lora_attn_modules: ['q_proj', 'v_proj']
+  apply_lora_to_mlp: False
+  apply_lora_to_output: False
+  lora_rank: 8
+  lora_alpha: 16
+
+checkpointer:
+  _component_: torchtune.training.FullModelHFCheckpointer
+  checkpoint_dir: /tmp/Phi-3-mini-4k-instruct
+  checkpoint_files: [
+    model-00001-of-00002.safetensors,
+    model-00002-of-00002.safetensors
+  ]
+  recipe_checkpoint: null
+  output_dir: /tmp/Phi-3-mini-4k-instruct/
+  model_type: PHI3_MINI
+resume_from_checkpoint: False
+save_adapter_weights_only: False
+
+device: cpu
+dtype: fp32
+
+enable_activation_checkpointing: True
+compile: False

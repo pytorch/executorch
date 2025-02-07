@@ -14,9 +14,10 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
-Tensor& alias_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor&
+alias_copy_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
@@ -28,6 +29,8 @@ Tensor& alias_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
       "Failed to resize output tensor.");
 
   ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   if (in.nbytes() > 0) {
     // Note that this check is important. It's valid for a tensor with numel 0

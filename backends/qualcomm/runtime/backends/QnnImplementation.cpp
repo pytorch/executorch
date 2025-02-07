@@ -9,9 +9,12 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 
 #include "QnnInterface.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
+
+using executorch::runtime::Error;
+
 template <typename Fn>
 Fn loadQnnFunction(void* handle, const char* function_name) {
   return reinterpret_cast<Fn>(dlsym(handle, function_name)); // NOLINT
@@ -216,5 +219,5 @@ const QnnInterface& QnnImplementation::GetQnnInterface() const {
   return qnn_interface_;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -6,10 +6,12 @@
 
 #include <executorch/backends/apple/mps/runtime/MPSGraphBuilder.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
+
+using executorch::aten::ScalarType;
 
 MPSGraphTensor*
 binaryOpTensor(
@@ -20,12 +22,12 @@ binaryOpTensor(
   MPSDataType mpsInputDataType = [primaryTensor dataType];
   MPSDataType mpsOtherDataType = [secondaryTensor dataType];
 
-  exec_aten::ScalarType inputDataType = getScalarType(mpsInputDataType);
-  exec_aten::ScalarType otherDataType = getScalarType(mpsOtherDataType);
+  ScalarType inputDataType = getScalarType(mpsInputDataType);
+  ScalarType otherDataType = getScalarType(mpsOtherDataType);
 
   MPSGraphTensor* primaryCastTensor = primaryTensor;
   MPSGraphTensor* secondaryCastTensor = secondaryTensor;
-  exec_aten::ScalarType commonDataType = promoteTypes(inputDataType, otherDataType);
+  ScalarType commonDataType = executorch::runtime::promoteTypes(inputDataType, otherDataType);
   if (inputDataType != commonDataType) {
     primaryCastTensor = castMPSTensor(mpsGraph, primaryTensor, commonDataType);
   }
@@ -119,8 +121,8 @@ auto graphNode = nodePtr->mpsnode_union_as_MPS##aot_name();                     
     graphNode->output_id()                                                         \
   );                                                                               \
   ET_CHECK_OR_RETURN_ERROR(                                                        \
-    isMacOS13OrNewer(), NotSupported,                                              \
-    "%s supported by MPS on MacOS13.0+/iOS16.1+", #aot_name);                       \
+    is_macos_13_or_newer(), NotSupported,                                          \
+    "%s supported by MPS on MacOS13.0+/iOS16.1+", #aot_name);                      \
                                                                                    \
   _idToMPSGraphTensor[graphNode->output_id()] = binaryOpTensor(                    \
     getMPSGraphTensor(graphNode->input1_id()),                                     \
@@ -176,7 +178,7 @@ MPSGraphTensor* mpsTruncTensor(MPSGraphTensor* inputTensor, MPSGraph* mpsGraph) 
     return inputTensor;
   }
 
-  if (!isMacOS13OrNewer(MacOSVersion::MACOS_VER_13_0_PLUS)) {
+  if (!is_macos_13_or_newer(MacOSVersion::MACOS_VER_13_0_PLUS)) {
     MPSGraphTensor* zeroTensor = [mpsGraph constantWithScalar:0.0 dataType:inputTensor.dataType];
     MPSGraphTensor* predicateTensor = [mpsGraph lessThanWithPrimaryTensor:inputTensor
                                                           secondaryTensor:zeroTensor
@@ -292,5 +294,5 @@ REGISTER_DIV_OP(Remainder, "floor")
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

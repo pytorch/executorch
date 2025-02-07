@@ -87,22 +87,22 @@ function which will be called when the program is out of its lifespan.
 
 ```cpp
 // Runtime check
-__ET_NODISCARD bool is_available();
+ET_NODISCARD bool is_available();
 
 // Runtime initialization
-__ET_NODISCARD virtual Result<DelegateHandle*> init(
+ET_NODISCARD virtual Result<DelegateHandle*> init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs);
 
 // Runtime execution
-__ET_NODISCARD virtual Error execute(
+ET_NODISCARD virtual Error execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
     EValue** args);
 
 // [optional] Runtime destroy. Destroy the resource held by the backend
-virtual void destroy(__ET_UNUSED DelegateHandle* handle);
+virtual void destroy(ET_UNUSED DelegateHandle* handle);
 ```
 
 The diagram looks like following
@@ -114,7 +114,7 @@ The diagram looks like following
 
 In order to make backend available to ExecuTorch runtime, it must be registered via the `register_backend` API:
 ```cpp
-__ET_NODISCARD Error register_backend(const Backend& backend);
+ET_NODISCARD Error register_backend(const Backend& backend);
 ```
 
 Static registeration, i.e., at libraray init or load time, of a backend can be achieved as follows:
@@ -127,13 +127,13 @@ static auto success_with_compiler = register_backend(backend);
 ```
 
 
-## SDK Integration: Debuggability
+## Developer Tools Integration: Debuggability
 
-Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native SDK (Software Development Kit) for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](./sdk-etrecord).
+Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native Developer Tools for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](./etrecord).
 
-Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native SDK does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
+Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native Developer Tools does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
 
-In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, SDK provides an interface to correlate delegated (sub)graph to original (sub)graph. The SDK does so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [SDK delegate integration](./sdk-delegate-integration).
+In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, Developer Tools provide an interface to correlate delegated (sub)graph to original (sub)graph. The Developer Tools do so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [Delegate Debugging](./delegate-debugging).
 
 By leveraging the debug identifier, backend developer can embed the debug as part of the delegated blob
 

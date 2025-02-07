@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/executor/program.h>
+
 #include <cctype>
 #include <filesystem>
 
@@ -16,7 +18,6 @@
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
@@ -24,10 +25,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Program;
-using torch::executor::Result;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
 using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
@@ -41,7 +43,7 @@ class ProgramTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Load the serialized ModuleAdd data.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
@@ -49,8 +51,11 @@ class ProgramTest : public ::testing::Test {
     ASSERT_EQ(loader.error(), Error::Ok);
 
     // This file should always be compatible.
-    Result<FreeableBuffer> header =
-        loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+    Result<FreeableBuffer> header = loader->load(
+        /*offset=*/0,
+        Program::kMinHeadBytes,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(header.error(), Error::Ok);
     EXPECT_EQ(
         Program::check_header(header->data(), header->size()),
@@ -58,14 +63,17 @@ class ProgramTest : public ::testing::Test {
 
     add_loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
 
-    // Load the serialized ModuleAdd data.
+    // Load the serialized ModuleMultiEntry data.
     path = std::getenv("ET_MODULE_MULTI_ENTRY_PATH");
     Result<FileDataLoader> multi_loader = FileDataLoader::from(path);
     ASSERT_EQ(multi_loader.error(), Error::Ok);
 
     // This file should always be compatible.
-    Result<FreeableBuffer> multi_header =
-        multi_loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+    Result<FreeableBuffer> multi_header = multi_loader->load(
+        /*offset=*/0,
+        Program::kMinHeadBytes,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(multi_header.error(), Error::Ok);
     EXPECT_EQ(
         Program::check_header(multi_header->data(), multi_header->size()),
@@ -79,16 +87,26 @@ class ProgramTest : public ::testing::Test {
   std::unique_ptr<FileDataLoader> multi_loader_;
 };
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 // Provides access to private Program methods.
 class ProgramTestFriend final {
  public:
-  __ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
+  ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
       const Program* program,
-      size_t index) {
-    return program->LoadSegment(index);
+      const DataLoader::SegmentInfo& segment_info) {
+    return program->LoadSegment(segment_info);
+  }
+
+  ET_NODISCARD static Error load_mutable_subsegment_into(
+      const Program* program,
+      size_t mutable_data_segments_index,
+      size_t offset_index,
+      size_t size,
+      void* buffer) {
+    return program->load_mutable_subsegment_into(
+        mutable_data_segments_index, offset_index, size, buffer);
   }
 
   const static executorch_flatbuffer::Program* GetInternalProgram(
@@ -97,10 +115,10 @@ class ProgramTestFriend final {
   }
 };
 } // namespace testing
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
 
-using torch::executor::testing::ProgramTestFriend;
+using executorch::runtime::testing::ProgramTestFriend;
 
 TEST_F(ProgramTest, DataParsesWithMinimalVerification) {
   // Parse the Program from the data.
@@ -125,7 +143,11 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
   size_t data_len = add_loader_->size().get();
   auto data = std::make_unique<char[]>(data_len);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get(), src->data(), data_len);
@@ -168,8 +190,11 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
 TEST_F(ProgramTest, VerificationCatchesTruncation) {
   // Get the program data.
   size_t full_data_len = add_loader_->size().get();
-  Result<FreeableBuffer> full_data =
-      add_loader_->Load(/*offset=*/0, full_data_len);
+  Result<FreeableBuffer> full_data = add_loader_->load(
+      /*offset=*/0,
+      full_data_len,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(full_data.error(), Error::Ok);
 
   // Make a loader that only exposes half of the data.
@@ -186,7 +211,11 @@ TEST_F(ProgramTest, VerificationCatchesCorruption) {
   size_t data_len = add_loader_->size().get();
   auto data = std::make_unique<char[]>(data_len);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get(), src->data(), data_len);
@@ -210,7 +239,11 @@ TEST_F(ProgramTest, UnalignedProgramDataFails) {
   size_t data_len = add_loader_->size().get();
   auto data = std::make_unique<char[]>(data_len + 1);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get() + 1, src->data(), data_len);
@@ -227,20 +260,27 @@ TEST_F(ProgramTest, UnalignedProgramDataFails) {
 }
 
 TEST_F(ProgramTest, LoadSegmentWithNoSegments) {
-  // Load a program with no segments.
+  // Load a program with no appended segments.
   Result<Program> program =
       Program::load(add_loader_.get(), kDefaultVerification);
   EXPECT_EQ(program.error(), Error::Ok);
 
-  // Loading a segment should fail.
+  // Loading a non-program segment should fail.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Backend,
+      /*segment_index=*/0,
+      "some-backend");
   Result<FreeableBuffer> segment =
-      ProgramTestFriend::LoadSegment(&program.get(), 0);
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
   EXPECT_NE(segment.error(), Error::Ok);
 }
 
 TEST_F(ProgramTest, ShortDataHeader) {
-  Result<FreeableBuffer> header =
-      add_loader_->Load(/*offset=*/0, Program::kMinHeadBytes);
+  Result<FreeableBuffer> header = add_loader_->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(header.error(), Error::Ok);
 
   // Provide less than the required amount of data.
@@ -254,7 +294,11 @@ TEST_F(ProgramTest, IncompatibleHeader) {
   size_t data_len = Program::kMinHeadBytes;
   auto data = std::make_unique<char[]>(data_len);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get(), src->data(), data_len);
@@ -286,7 +330,11 @@ TEST_F(ProgramTest, HeaderNotPresent) {
   size_t data_len = Program::kMinHeadBytes;
   auto data = std::make_unique<char[]>(data_len);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get(), src->data(), data_len);
@@ -331,17 +379,41 @@ TEST_F(ProgramTest, DEPRECATEDLoad) {
   EXPECT_EQ(program_res.error(), Error::Ok);
 }
 
+TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+  Result<Program> program =
+      Program::load(add_loader_.get(), kDefaultVerification);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Load constant segment data should fail.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Constant,
+      /*segment_index=*/0);
+  Result<FreeableBuffer> segment =
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
+  EXPECT_NE(segment.error(), Error::Ok);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // The constant buffer should be empty.
+  EXPECT_EQ(flatbuffer_program->constant_buffer()->size(), 0);
+
+  // Expect 1 constant segment, placeholder for non-const tensors.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+}
+
 TEST_F(ProgramTest, LoadConstantSegment) {
-  // Load the serialized ModuleLinear data, with constants in the segment and no
-  // constants in the flatbuffer.
-  const char* linear_path =
-      std::getenv("ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH");
+  // Load the serialized ModuleLinear data, with constants in the segment.
+  const char* linear_path = std::getenv("ET_MODULE_LINEAR_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
   // This file should always be compatible.
-  Result<FreeableBuffer> linear_header =
-      linear_loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+  Result<FreeableBuffer> linear_header = linear_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(linear_header.error(), Error::Ok);
   EXPECT_EQ(
       Program::check_header(linear_header->data(), linear_header->size()),
@@ -350,9 +422,13 @@ TEST_F(ProgramTest, LoadConstantSegment) {
   Result<Program> program = Program::load(&linear_loader.get());
   ASSERT_EQ(program.error(), Error::Ok);
 
-  // Load constant segment data.
+  // Load constant segment data, which is currently always in segment index
+  // zero.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Constant,
+      /*segment_index=*/0);
   Result<FreeableBuffer> segment =
-      ProgramTestFriend::LoadSegment(&program.get(), 0);
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
   EXPECT_EQ(segment.error(), Error::Ok);
 
   const executorch_flatbuffer::Program* flatbuffer_program =
@@ -369,17 +445,20 @@ TEST_F(ProgramTest, LoadConstantSegment) {
   EXPECT_GE(flatbuffer_program->constant_segment()->offsets()->size(), 1);
 }
 
-TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
   // Load the serialized ModuleLinear data, with constants in the flatbuffer and
   // no constants in the segment.
   const char* linear_path =
-      std::getenv("ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
   // This file should always be compatible.
-  Result<FreeableBuffer> linear_header =
-      linear_loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+  Result<FreeableBuffer> linear_header = linear_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(linear_header.error(), Error::Ok);
   EXPECT_EQ(
       Program::check_header(linear_header->data(), linear_header->size()),
@@ -396,4 +475,90 @@ TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
 
   // The constant buffer should exist.
   EXPECT_GE(flatbuffer_program->constant_buffer()->size(), 1);
+}
+
+TEST_F(ProgramTest, LoadFromMutableSegment) {
+  // Load the serialized ModuleSimpleTrain data.
+  auto path = std::getenv("ET_MODULE_SIMPLE_TRAIN_PATH");
+  Result<FileDataLoader> training_loader = FileDataLoader::from(path);
+  ASSERT_EQ(training_loader.error(), Error::Ok);
+
+  // This file should always be compatible.
+  Result<FreeableBuffer> training_header = training_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(training_header.error(), Error::Ok);
+  EXPECT_EQ(
+      Program::check_header(training_header->data(), training_header->size()),
+      Program::HeaderStatus::CompatibleVersion);
+
+  Result<Program> program = Program::load(&training_loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // dummy buffers to load into
+  uint8_t buffer[1] = {0};
+  uint8_t buffer2[1] = {0};
+
+  // Load some mutable segment data
+  Error err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, 1, buffer);
+  EXPECT_EQ(err, Error::Ok);
+
+  // Check that the data loaded correctly, and then mutate it
+  EXPECT_EQ(buffer[0], 232); // 232 comes from inspecting the file itself. The
+                             // file is seeded so this value should be stable.
+  buffer[0] = 0;
+
+  // Load the same mutable segment data from file into a different buffer.
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(),
+      0, // mutable_data_segments_index
+      1, // offset_index
+      1, // size
+      buffer2);
+  EXPECT_EQ(err, Error::Ok);
+
+  // Check that new data loaded from the file does not reflect the change to
+  // buffer.
+  EXPECT_EQ(buffer2[0], 232);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // Expect 2 segments. 1 mutable segment and 1 constant segment.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 2);
+
+  // Expect a mutable data segment.
+  EXPECT_EQ(flatbuffer_program->mutable_data_segments()->size(), 1);
+
+  // Expect the 0 index to be reserved and the offsets for weight and bias of
+  // linear to be indices 1 and 2.
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->size(),
+      3);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(0),
+      0);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(1),
+      0);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(2),
+      36);
+
+  // Loading beyond file should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, 500, buffer);
+  EXPECT_NE(err, Error::Ok);
+
+  // Loading beyond offsets should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 500, 1, buffer);
+  EXPECT_NE(err, Error::Ok);
+
+  // Loading beyond segments should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 500, 1, 1, buffer);
+  EXPECT_NE(err, Error::Ok);
 }

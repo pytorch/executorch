@@ -45,9 +45,6 @@ class AddModule(torch.nn.Module, EagerModelBase):
 
     def forward(self, x, y):
         z = x + y
-        z = z + x
-        z = z + x
-        z = z + z
         return z
 
     def get_eager_model(self) -> torch.nn.Module:

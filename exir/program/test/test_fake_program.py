@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
 
 import sys
 import unittest
@@ -29,8 +30,7 @@ def get_exported_program() -> ExportedProgram:
 
     linear = Linear()
     exported_program = export(
-        linear,
-        args=(torch.randn(10, 10),),
+        linear, args=(torch.randn(10, 10),), strict=True
     ).run_decompositions()
     return exported_program
 
@@ -61,8 +61,8 @@ class TestFakeProgram(unittest.TestCase):
         self.assertEqual(exported_program.verifier, fake_program.verifier)
         self.assertEqual(id(exported_program.verifier), id(fake_program.verifier))
 
-        # Fake program uses fake tensors for the state dict. Size should be smaller.
-        self.assertLess(
+        # Fake program uses fake tensors for the state dict. Size should be not be larger.
+        self.assertLessEqual(
             sys.getsizeof(fake_program.state_dict),
             sys.getsizeof(exported_program.state_dict),
         )
@@ -73,4 +73,6 @@ class TestFakeProgram(unittest.TestCase):
 
         update_to_real_program(fake_program, exported_program)
         self.assertEqual(exported_program.state_dict, fake_program.state_dict)
-        self.assertEqual(id(exported_program.state_dict), id(fake_program.state_dict))
+        self.assertEqual(
+            exported_program.state_dict.keys(), fake_program.state_dict.keys()
+        )

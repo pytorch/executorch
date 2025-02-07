@@ -13,7 +13,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& scalar_tensor_out(RuntimeContext& ctx, const Scalar& s, Tensor& out) {
+Tensor&
+scalar_tensor_out(KernelRuntimeContext& ctx, const Scalar& s, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(
@@ -24,13 +25,14 @@ Tensor& scalar_tensor_out(RuntimeContext& ctx, const Scalar& s, Tensor& out) {
 
   constexpr auto name = "scalar_tensor.out";
 
-  ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(s_type, ctx, name, CTYPE_S, [&]() {
-      CTYPE_S val_s;
-      utils::extract_scalar(s, &val_s);
-      out.mutable_data_ptr<CTYPE>()[0] = convert<CTYPE, CTYPE_S>(val_s);
-    });
-  });
+  ET_SWITCH_REAL_TYPES_AND3(
+      Half, Bool, BFloat16, out_type, ctx, name, CTYPE, [&]() {
+        ET_SWITCH_SCALAR_OBJ_TYPES(s_type, ctx, name, CTYPE_S, [&]() {
+          CTYPE_S val_s;
+          utils::extract_scalar(s, &val_s);
+          out.mutable_data_ptr<CTYPE>()[0] = convert<CTYPE, CTYPE_S>(val_s);
+        });
+      });
 
   return out;
 }

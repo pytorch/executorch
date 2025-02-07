@@ -35,9 +35,11 @@ set(_mps_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 set(_mps_schema__outputs)
 foreach(fbs_file ${_mps_schema__srcs})
   string(REGEX REPLACE "serialization/([^/]+)[.]fbs$" "\\1_generated.h"
-                       generated "${fbs_file}")
+                       generated "${fbs_file}"
+  )
   list(APPEND _mps_schema__outputs
-       "${_mps_schema__include_dir}/executorch/${generated}")
+       "${_mps_schema__include_dir}/executorch/${generated}"
+  )
 endforeach()
 
 # Generate the headers from the .fbs files.
@@ -49,14 +51,17 @@ add_custom_command(
     ${_mps_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   COMMENT "Generating mps_schema headers"
-  VERBATIM)
+  VERBATIM
+)
 
 add_library(mps_schema INTERFACE ${_mps_schema__outputs})
 set_target_properties(mps_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
-mps_schema INTERFACE ${_mps_schema__include_dir}
-                     ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
-                     ${_common_include_directories})
+  mps_schema
+  INTERFACE ${_mps_schema__include_dir}
+            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+            ${_common_include_directories}
+)
 
 list(TRANSFORM _mps_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(mpsdelegate ${_mps_backend__srcs})
@@ -64,24 +69,26 @@ add_library(mpsdelegate ${_mps_backend__srcs})
 find_library(FOUNDATION_FRAMEWORK Foundation)
 find_library(METAL_FRAMEWORK Metal)
 find_library(MPS_FRAMEWORK MetalPerformanceShaders)
-find_library(MPS_GRAPG_FRAMEWORK MetalPerformanceShadersGraph)
+find_library(MPS_GRAPH_FRAMEWORK MetalPerformanceShadersGraph)
 
-target_link_libraries(mpsdelegate
-  PRIVATE
-  bundled_program
-  mps_schema
-  executorch_no_prim_ops
-  ${FOUNDATION_FRAMEWORK}
-  ${METAL_FRAMEWORK}
-  ${MPS_FRAMEWORK}
-  ${MPS_GRAPG_FRAMEWORK}
+target_link_libraries(
+  mpsdelegate
+  PRIVATE bundled_program
+          mps_schema
+          executorch_core
+          ${FOUNDATION_FRAMEWORK}
+          ${METAL_FRAMEWORK}
+          ${MPS_FRAMEWORK}
+          ${MPS_GRAPH_FRAMEWORK}
 )
 
 target_link_options_shared_lib(mpsdelegate)
 target_compile_options(mpsdelegate PUBLIC ${_common_compile_options})
+target_compile_options(mpsdelegate PRIVATE "-fno-objc-arc")
 
 install(
   TARGETS mpsdelegate
   DESTINATION lib
   INCLUDES
-  DESTINATION ${_common_include_directories})
+  DESTINATION ${_common_include_directories}
+)

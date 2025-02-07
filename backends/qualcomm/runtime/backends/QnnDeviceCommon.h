@@ -7,16 +7,16 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
-#include <executorch/backends/qualcomm/schema_generated.h>
 
 #include <vector>
 
 #include "QnnDevice.h"
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class QnnDevice {
  public:
@@ -29,15 +29,16 @@ class QnnDevice {
     return handle_;
   }
 
-  Error Configure();
+  executorch::runtime::Error Configure();
 
  protected:
-  virtual Error MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
-    return Error::Ok;
+  virtual executorch::runtime::Error MakeConfig(
+      std::vector<const QnnDevice_Config_t*>& config) {
+    return executorch::runtime::Error::Ok;
   };
 
-  virtual Error AfterCreateDevice() {
-    return Error::Ok;
+  virtual executorch::runtime::Error AfterCreateDevice() {
+    return executorch::runtime::Error::Ok;
   };
   const QnnImplementation& implementation_;
 
@@ -46,5 +47,5 @@ class QnnDevice {
   QnnLogger* logger_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

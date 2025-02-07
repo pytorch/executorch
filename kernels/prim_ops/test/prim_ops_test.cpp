@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 
-using exec_aten::SizesType;
+using executorch::aten::SizesType;
 using torch::executor::Error;
 using torch::executor::resize_tensor;
 
@@ -29,10 +29,10 @@ namespace executor {
 
 class RegisterPrimOpsTest : public ::testing::Test {
  protected:
-  RuntimeContext context;
+  KernelRuntimeContext context;
   void SetUp() override {
     torch::executor::runtime_init();
-    context = RuntimeContext();
+    context = KernelRuntimeContext();
   }
 };
 
@@ -111,6 +111,15 @@ TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
 
   getOpsFn("executorch_prim::truediv.Scalar")(context, stack);
   EXPECT_FLOAT_EQ(stack[2]->toDouble(), 0.75);
+
+  getOpsFn("executorch_prim::mod.int")(context, stack);
+  EXPECT_EQ(stack[2]->toInt(), 3);
+
+  getOpsFn("executorch_prim::mod.Scalar")(context, stack);
+  EXPECT_EQ(stack[2]->toInt(), 3);
+
+  getOpsFn("executorch_prim::sym_float.Scalar")(context, stack);
+  EXPECT_FLOAT_EQ(stack[1]->toDouble(), 3.0);
 }
 
 TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
@@ -272,6 +281,53 @@ TEST_F(RegisterPrimOpsTest, LocalScalarDenseReturnsCorrectValue) {
 
   int64_t expected = 1;
   EXPECT_EQ(stack[1]->toInt(), expected);
+}
+
+TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
+  EValue values[2];
+
+  // Test with float
+  values[0] = EValue(5.0f);
+  values[1] = EValue(0.0f);
+
+  EValue* stack[2];
+  for (size_t i = 0; i < 2; i++) {
+    stack[i] = &values[i];
+  }
+
+  getOpsFn("executorch_prim::neg.Scalar")(context, stack);
+
+  EXPECT_EQ(stack[1]->toDouble(), -5.0f);
+
+  // Test with int
+  int64_t a = 5;
+  int64_t b = 0;
+  values[0] = EValue(a);
+  values[1] = EValue(b);
+
+  getOpsFn("executorch_prim::neg.Scalar")(context, stack);
+
+  EXPECT_EQ(stack[1]->toInt(), -5l);
+}
+
+TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
+  testing::TensorFactory<ScalarType::Int> tf;
+
+  EValue values[2];
+
+  auto tensor = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+
+  int64_t zero = 0;
+  values[0] = EValue(tensor);
+  values[1] = EValue(zero);
+
+  EValue* stack[2];
+  for (size_t i = 0; i < 2; i++) {
+    stack[i] = &values[i];
+  }
+
+  // Try to negate a tensor, which should cause a runtime error.
+  ET_EXPECT_DEATH(getOpsFn("executorch_prim::neg.Scalar")(context, stack), "");
 }
 
 TEST_F(RegisterPrimOpsTest, TestETView) {
@@ -445,6 +501,67 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
   EValue* bad_stack[3] = {&self_evalue, &bad_size_int_list_evalue, &out_evalue};
   ET_EXPECT_DEATH(
       getOpsFn("executorch_prim::et_view.default")(context, bad_stack), "");
+}
+
+TEST_F(RegisterPrimOpsTest, TestCeil) {
+  std::array<double, 10> inputs = {
+      0.0, 0.25, 0.5, 0.75, 1.0, 1.75, -0.5, -1.0, -1.5, 9.999999};
+  std::array<int64_t, 10> expected = {0, 1, 1, 1, 1, 2, 0, -1, -1, 10};
+
+  for (auto i = 0; i < inputs.size(); i++) {
+    EValue values[2];
+    values[0] = EValue(inputs[i]);
+    values[1] = EValue(0.0);
+
+    EValue* stack[2];
+    for (size_t j = 0; j < 2; j++) {
+      stack[j] = &values[j];
+    }
+
+    getOpsFn("executorch_prim::ceil.Scalar")(context, stack);
+    EXPECT_EQ(stack[1]->toInt(), expected[i]);
+  }
+}
+
+TEST_F(RegisterPrimOpsTest, TestRound) {
+  // Note that Python uses round-to-even for halfway values.
+  std::array<double, 10> inputs = {
+      0.0, 0.25, 0.5, 0.75, 1.0, 1.5, -0.5, -1.0, -1.5, 9.999999};
+  std::array<int64_t, 10> expected = {0, 0, 0, 1, 1, 2, 0, -1, -2, 10};
+
+  for (auto i = 0; i < inputs.size(); i++) {
+    EValue values[2];
+    values[0] = EValue(inputs[i]);
+    values[1] = EValue(0.0);
+
+    EValue* stack[2];
+    for (size_t j = 0; j < 2; j++) {
+      stack[j] = &values[j];
+    }
+
+    getOpsFn("executorch_prim::round.Scalar")(context, stack);
+    EXPECT_EQ(stack[1]->toInt(), expected[i]);
+  }
+}
+
+TEST_F(RegisterPrimOpsTest, TestTrunc) {
+  std::array<double, 10> inputs = {
+      0.0, 0.25, 0.5, 0.75, 1.0, 1.75, -0.5, -1.0, -1.5, 9.999999};
+  std::array<int64_t, 10> expected = {0, 0, 0, 0, 1, 1, 0, -1, -1, 9};
+
+  for (auto i = 0; i < inputs.size(); i++) {
+    EValue values[2];
+    values[0] = EValue(inputs[i]);
+    values[1] = EValue(0.0);
+
+    EValue* stack[2];
+    for (size_t j = 0; j < 2; j++) {
+      stack[j] = &values[j];
+    }
+
+    getOpsFn("executorch_prim::trunc.Scalar")(context, stack);
+    EXPECT_EQ(stack[1]->toInt(), expected[i]);
+  }
 }
 
 } // namespace executor

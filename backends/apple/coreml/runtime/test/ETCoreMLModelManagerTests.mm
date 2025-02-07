@@ -6,15 +6,14 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <XCTest/XCTest.h>
-
-
 #import "ETCoreMLTestUtils.h"
 #import <ETCoreMLAsset.h>
 #import <ETCoreMLAssetManager.h>
 #import <ETCoreMLModel.h>
 #import <ETCoreMLModelManager.h>
 #import <MLModel_Prewarm.h>
+#import <XCTest/XCTest.h>
+#import <executorch/runtime/platform/runtime.h>
 #import <model_logging_options.h>
 
 @interface ETCoreMLModelManagerTests : XCTestCase
@@ -33,6 +32,7 @@
 }
 
 - (void)setUp {
+    executorch::runtime::runtime_init();
     @autoreleasepool {
         NSError *localError = nil;
         self.fileManager = [[NSFileManager alloc] init];
@@ -103,11 +103,8 @@
     ETCoreMLModel *model = [self.modelManager modelWithHandle:handle];
     int x = 20;
     int y = 50;
-    // add_coreml_all does the following operations.
+    // add_coreml_all does the following operation.
     int z = x + y;
-    z = z + x;
-    z = z + x;
-    z = z + z;
     
     NSArray<MLMultiArray *> *inputs = [ETCoreMLTestUtils inputsForModel:model repeatedValues:@[@(x), @(y)] error:&localError];
     XCTAssertNotNil(inputs);

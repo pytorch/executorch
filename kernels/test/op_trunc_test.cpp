@@ -16,14 +16,14 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_trunc_out(const Tensor& a, Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::trunc_outf(context, a, out);
 }
 

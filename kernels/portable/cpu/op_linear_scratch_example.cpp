@@ -20,10 +20,10 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 template <typename T>
-using optional = exec_aten::optional<T>;
+using optional = executorch::aten::optional<T>;
 
 // kernel for demonstration purpose only
 
@@ -118,7 +118,7 @@ Tensor& linear_scratch_example(
 }
 
 Tensor& linear_scratch_example(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
     const optional<Tensor>& bias,

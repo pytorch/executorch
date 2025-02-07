@@ -19,11 +19,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using TensorOptList = exec_aten::ArrayRef<exec_aten::optional<Tensor>>;
+using Tensor = executorch::aten::Tensor;
+using TensorOptList =
+    executorch::aten::ArrayRef<executorch::aten::optional<Tensor>>;
 
 Tensor& index_Tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     TensorOptList indices,
     Tensor& out) {
@@ -31,6 +32,11 @@ Tensor& index_Tensor_out(
 
   ET_KERNEL_CHECK(
       ctx, check_index_args(in, indices, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   size_t block_count = count_index_blocks(indices);
@@ -40,12 +46,11 @@ Tensor& index_Tensor_out(
   if (block_count == 0) {
     ET_KERNEL_CHECK(
         ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
-    ET_SWITCH_REAL_TYPES_AND(
-        Bool, in_type, ctx, "index.Tensor_out", CTYPE, [&]() {
-          const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
-          CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
-          memcpy(out_data, in_data, in.nbytes());
-        });
+    ET_SWITCH_REALHB_TYPES(in_type, ctx, "index.Tensor_out", CTYPE, [&]() {
+      const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
+      CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+      memcpy(out_data, in_data, in.nbytes());
+    });
     return out;
   }
 
@@ -85,20 +90,19 @@ Tensor& index_Tensor_out(
   compute_dim_map(in, indices, dim_map, block_count == 1);
   compute_index_map(in, indices, ix_map);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "index.Tensor_out", CTYPE, [&]() {
-        const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
-        CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "index.Tensor_out", CTYPE, [&]() {
+    const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
+    CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
-        for (auto out_ix = 0; out_ix < out.numel(); out_ix++) {
-          size_t in_ix = 0;
-          bool success = true;
-          std::tie(in_ix, success) =
-              get_in_ix(in, indices, out, out_ix, start, xdim, dim_map, ix_map);
-          ET_KERNEL_CHECK(ctx, success, InvalidArgument, );
-          out_data[out_ix] = in_data[in_ix];
-        }
-      });
+    for (auto out_ix = 0; out_ix < out.numel(); out_ix++) {
+      size_t in_ix = 0;
+      bool success = true;
+      std::tie(in_ix, success) =
+          get_in_ix(in, indices, out, out_ix, start, xdim, dim_map, ix_map);
+      ET_KERNEL_CHECK(ctx, success, InvalidArgument, );
+      out_data[out_ix] = in_data[in_ix];
+    }
+  });
 
   return out;
 }

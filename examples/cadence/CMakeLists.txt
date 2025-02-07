@@ -44,7 +44,8 @@ add_compile_options(
   -fsigned-char
   -Wno-missing-braces
   -fmessage-length=0
-  -DPRINTF_FLOAT_ENABLE=1)
+  -DPRINTF_FLOAT_ENABLE=1
+)
 
 if(NOT DEFINED NXP_SDK_ROOT_DIR)
   message(FATAL_ERROR "NXP_SDK_ROOT_DIR is not set")
@@ -67,7 +68,8 @@ set(SOURCES
     ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/debug_console_lite/fsl_debug_console.c
     ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp/board_hifi4.c
     ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp/pin_mux.c
-    ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/str/fsl_str.c)
+    ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/str/fsl_str.c
+)
 
 add_library(dsp_mu_polling_libs STATIC ${SOURCES})
 
@@ -81,14 +83,19 @@ target_include_directories(
          ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S
          ${NXP_SDK_ROOT_DIR}/CMSIS/Core/Include
          ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/str
-         ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp)
+         ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp
+)
 
 add_library(extension_runner_util STATIC IMPORTED)
-set_property(TARGET extension_runner_util PROPERTY IMPORTED_LOCATION
-  "${CMAKE_CURRENT_LIST_DIR}/../../cmake-out/extension/runner_util/libextension_runner_util.a")
+set_property(
+  TARGET extension_runner_util
+  PROPERTY
+    IMPORTED_LOCATION
+    "${CMAKE_CURRENT_LIST_DIR}/../../cmake-out/extension/runner_util/libextension_runner_util.a"
+)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ops)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hifi/operators)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hifi/kernels)
 
 # Generate the model header file
 add_custom_command(
@@ -96,7 +103,8 @@ add_custom_command(
   COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/utils/gen_header.py
           --model_path ${MODEL_PATH} --header_output_path ${CMAKE_BINARY_DIR}
   COMMENT "Converting .pte model to header file..."
-  DEPENDS ${CMAKE_CURRENT_LIST_DIR}/utils/gen_header.py)
+  DEPENDS ${CMAKE_CURRENT_LIST_DIR}/utils/gen_header.py
+)
 
 add_custom_target(gen_model_header DEPENDS ${CMAKE_BINARY_DIR}/model_pte.h)
 
@@ -104,14 +112,19 @@ add_executable(cadence_executorch_example executor_runner.cpp)
 add_dependencies(cadence_executorch_example gen_model_header)
 
 # lint_cmake: -linelength
-target_include_directories(cadence_executorch_example PUBLIC ${ROOT_DIR}/..
-                                                            ${CMAKE_BINARY_DIR}
-                                                            ${_common_include_directories})
+target_include_directories(
+  cadence_executorch_example PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
+                                    ${_common_include_directories}
+)
 
-target_link_options(cadence_executorch_example PRIVATE
-                    -mlsp=${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/xtensa/min-rt)
-target_link_libraries(cadence_executorch_example dsp_mu_polling_libs
-                      cadence_ops_lib extension_runner_util executorch)
+target_link_options(
+  cadence_executorch_example PRIVATE
+  -mlsp=${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/xtensa/min-rt
+)
+target_link_libraries(
+  cadence_executorch_example dsp_mu_polling_libs cadence_ops_lib
+  extension_runner_util executorch
+)
 
 add_custom_command(
   TARGET cadence_executorch_example
@@ -124,4 +137,5 @@ add_custom_command(
     the dsp_text_release.bin and dsp_data_release.bin that are generated into
     your NXP MCUXpresso IDE workspace and flash the DSP with these binaries."
     DEPENDS
-    ${CMAKE_CURRENT_LIST_DIR}/utils/post_compilation.py)
+    ${CMAKE_CURRENT_LIST_DIR}/utils/post_compilation.py
+)

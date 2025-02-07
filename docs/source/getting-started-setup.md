@@ -1,5 +1,4 @@
 <!---- DO NOT MODIFY Progress Bar Start --->
-
 <div class="progress-bar-wrapper">
    <div class="progress-bar-item">
      <div class="step-number" id="step-1">1</div>
@@ -18,11 +17,7 @@
      <span class="step-caption" id="caption-4"></span>
    </div>
 </div>
-
 <!---- DO NOT MODIFY Progress Bar End--->
-```{note}
-  Before diving in, make sure you understand the concepts in the [ExecuTorch Overview](intro-overview.md)
-```
 
 # Setting Up ExecuTorch
 In this section, we'll learn how to
@@ -37,36 +32,38 @@ We've tested these instructions on the following systems, although they should
 also work in similar environments.
 
 
-::::{grid} 3
-:::{grid-item-card}  Linux (x86_64)
-:class-card: card-prerequisites
+Linux (x86_64)
 - CentOS 8+
 - Ubuntu 20.04.6 LTS+
 - RHEL 8+
-:::
-:::{grid-item-card} macOS (x86_64/M1/M2)
-:class-card: card-prerequisites
+
+macOS (x86_64/M1/M2)
 - Big Sur (11.0)+
-:::
-:::{grid-item-card} Windows (x86_64)
-:class-card: card-prerequisites
+
+Windows (x86_64)
 - Windows Subsystem for Linux (WSL) with any of the Linux options
-:::
-::::
 
 ### Software
 * `conda` or another virtual environment manager
   - We recommend `conda` as it provides cross-language
     support and integrates smoothly with `pip` (Python's built-in package manager)
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
-* `g++` version 8 or higher, `clang++` version 8 or higher, or another
-  C++17-compatible toolchain that supports GNU C-style [statement
-  expressions](https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html) (`({ ...
-  })` syntax).
+* `g++` version 7 or higher, `clang++` version 5 or higher, or another
+  C++17-compatible toolchain.
 
 Note that the cross-compilable core runtime code supports a wider range of
-toolchains, down to C++11. See the [Runtime Overview](./runtime-overview.md) for
+toolchains, down to C++17. See the [Runtime Overview](./runtime-overview.md) for
 portability details.
+
+## Quick Setup: Colab/Jupyter Notebook Prototype
+
+To utilize ExecuTorch to its fullest extent, please follow the setup instructions provided below to install from source.
+
+Alternatively, if you would like to experiment with ExecuTorch quickly and easily, we recommend using the following [colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) for prototyping purposes. You can install directly via `pip` for basic functionality.
+  ```bash
+  pip install executorch
+  ```
+
 
 ## Environment Setup
 
@@ -83,7 +80,9 @@ portability details.
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   git clone https://github.com/pytorch/executorch.git
+   # 'main' branch is the primary development branch where you see the latest changes.
+   # 'viable/strict' contains all of the commits on main that pass all of the necessary CI checks.
+   git clone --branch viable/strict https://github.com/pytorch/executorch.git
    cd executorch
 
    # Update and pull submodules
@@ -92,15 +91,45 @@ portability details.
 
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
-   ./install_requirements.sh
+   # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
+   ./install_executorch.sh
    ```
 
-   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29) to install with pybindings and dependencies for other backends.
+   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends.
    ```bash
-   ./install_requirements.sh --pybind <coreml | mps | xnnpack>
+   ./install_executorch.sh --pybind <coreml | mps | xnnpack>
+
+   # Example: pybindings with CoreML *only*
+   ./install_executorch.sh --pybind coreml
+
+   # Example: pybinds with CoreML *and* XNNPACK
+   ./install_executorch.sh --pybind coreml xnnpack
    ```
+
+   By default, `./install_executorch.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
+   ```bash
+   ./install_executorch.sh --pybind off
+   ```
+
 After setting up your environment, you are ready to convert your PyTorch programs
 to ExecuTorch.
+
+> **_NOTE:_**  Cleaning the build system
+>
+> When fetching a new version of the upstream repo (via `git fetch` or `git
+> pull`) it is a good idea to clean the old build artifacts. The build system
+> does not currently adapt well to changes in build dependencies.
+>
+> You should also update and pull the submodules again, in case their versions
+> have changed.
+>
+> ```bash
+> # From the root of the executorch repo:
+> ./install_executorch.sh --clean
+> git submodule sync
+> git submodule update --init
+> ```
+
 ## Create an ExecuTorch program
 
 After setting up your environment, you are ready to convert your PyTorch programs
@@ -114,7 +143,19 @@ ExecuTorch provides APIs to compile a PyTorch [`nn.Module`](https://pytorch.org/
 1. Save the result as a [`.pte` binary](pte-file-format.md) to be consumed by the ExecuTorch runtime.
 
 
-Let's try this using with a simple PyTorch model that adds its inputs. Create a file called `export_add.py` with the following code:
+Let's try this using with a simple PyTorch model that adds its inputs.
+
+Create `export_add.py` in a new directory outside of the ExecuTorch repo.
+
+**Note: It's important that this file does does not live in the directory that's a parent of the `executorch` directory. We need python to import from site-packages, not from the repo itself.**
+
+```
+mkdir -p ../example_files
+cd ../example_files
+touch export_add.py
+```
+
+Add the following code to `export_add.py`:
 ```python
 import torch
 from torch.export import export
@@ -148,31 +189,57 @@ Then, execute it from your terminal.
 python3 export_add.py
 ```
 
+If it worked you'll see `add.pte` in that directory
+
 See the [ExecuTorch export tutorial](tutorials_source/export-to-executorch-tutorial.py) to learn more about the export process.
 
 
 ## Build & Run
 
-After creating a program, we can use the ExecuTorch runtime to execute it.
+After creating a program go back to the executorch directory to execute it using the ExecuTorch runtime.
+```
+cd ../executorch
+```
 
 For now, let's use [`executor_runner`](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp), an example that runs the `forward` method on your program using the ExecuTorch runtime.
 
 ### Build Tooling Setup
 The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it to build the `executor_runner` tool to run it on our desktop OS.
   ```bash
-  # Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.
-  (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+  # Clean and configure the CMake build system. Compiled programs will
+  # appear in the executorch/cmake-out directory we create here.
+  ./install_executorch.sh --clean
+  (mkdir cmake-out && cd cmake-out && cmake ..)
+
+  # Go to work directory.
+  cd ..
 
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9
   ```
+
+> **_NOTE:_**  Cleaning the build system
+>
+> When fetching a new version of the upstream repo (via `git fetch` or `git
+> pull`) it is a good idea to clean the old build artifacts. The build system
+> does not currently adapt well to changes in build dependencies.
+>
+> You should also update and pull the submodules again, in case their versions
+> have changed.
+>
+> ```bash
+> # From the root of the executorch repo:
+> ./install_executorch.sh --clean
+> git submodule sync
+> git submodule update --init
+> ```
 
 ### Run Your Program
 
 Now that we've exported a program and built the runtime, let's execute it!
 
   ```bash
-  ./cmake-out/executor_runner --model_path add.pte
+  ./cmake-out/executor_runner --model_path ../example_files/add.pte
   ```
 Our output is a `torch.Tensor` with a size of 1. The `executor_runner` sets all input values to a [`torch.ones`](https://pytorch.org/docs/stable/generated/torch.ones.html) tensor, so when `x=[1]` and `y=[1]`, we get `[1]+[1]=[2]`
   :::{dropdown} Sample Output
@@ -182,7 +249,7 @@ Output 0: tensor(sizes=[1], [2.])
   ```
   :::
 
-To learn how to build a similar program, visit the [ExecuTorch in C++ Tutorial](running-a-model-cpp-tutorial.md).
+To learn how to build a similar program, visit the [Runtime APIs Tutorial](extension-module.md).
 
 ## Next Steps
 

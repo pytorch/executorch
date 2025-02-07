@@ -20,14 +20,14 @@ buck_targets = [
   "//runtime/executor:program",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 filters = [
   ".cpp$",
 ]
 
 
-[targets.executorch_no_prim_ops]
+[targets.executorch_core]
 buck_targets = [
   "//runtime/executor:program_no_prim_ops",
 ]
@@ -55,7 +55,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.optimized_kernels]
@@ -72,7 +72,8 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
+  "extension_threadpool",
   "portable_kernels",
 ]
 
@@ -90,7 +91,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
 ]
 
@@ -112,10 +113,24 @@ filters = [
 excludes = [
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 
+[targets.optimized_native_cpu_ops_oss]
+buck_targets = [
+  "//configurations:optimized_native_cpu_ops_oss",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+]
+deps = [
+  "executorch_core",
+  "executorch",
+  "portable_kernels",
+]
 # ---------------------------------- core end ----------------------------------
 # ---------------------------------- extension start ----------------------------------
 [targets.extension_data_loader]
@@ -129,7 +144,7 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 
@@ -142,7 +157,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "extension_data_loader",
 ]
 
@@ -155,9 +170,74 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
+[targets.extension_llm_runner]
+buck_targets = [
+  "//extension/llm/runner:runner_lib",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+  "extension_module",
+  "extension_runner_util",
+]
+
+[targets.extension_tensor]
+buck_targets = [
+  "//extension/tensor:tensor",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+]
+
+[targets.extension_threadpool]
+buck_targets = [
+  "//extension/threadpool:threadpool",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+]
+
+[targets.extension_training]
+buck_targets = [
+  "//extension/training/module:training_module",
+  "//extension/training/optimizer:sgd",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch_core",
+]
+
+[targets.train_xor]
+buck_targets = [
+  "//extension/training/examples/XOR:train_xor",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+  "portable_kernels",
+]
 # ---------------------------------- extension end ----------------------------------
 # ---------------------------------- binary start ----------------------------------
 
@@ -173,7 +253,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
   "quantized_kernels",
 ]
@@ -189,7 +269,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 # ---------------------------------- binary end ----------------------------------
@@ -206,7 +286,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
 ]
 
@@ -219,7 +299,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.mps_schema]
@@ -245,7 +325,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -259,15 +339,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
-]
-
-[targets.xnnpack_dynamic_quant_utils]
-buck_targets = [
-  "//backends/xnnpack:dynamic_quant_utils",
-]
-filters = [
-  ".cpp$",
+  "executorch_core",
 ]
 
 [targets.xnnpack_schema]
@@ -281,7 +353,7 @@ filters = [
 # ---------------------------------- Vulkan start ---------------------------------
 [targets.vulkan_schema]
 buck_targets = [
-  "//backends/vulkan:vk_delegate_schema",
+  "//backends/vulkan/serialization:vk_delegate_schema",
 ]
 filters = [
   ".fbs$",
@@ -290,24 +362,28 @@ filters = [
 # ---------------------------------- LLama start ----------------------------------
 [targets.custom_ops]
 buck_targets = [
-  "//examples/models/llama2/custom_ops:custom_ops",
+  "//extension/llm/custom_ops:custom_ops",
 ]
 filters = [
-  ".cpp$",
+  # Second clause is to pick up fht_neon.c/fht_avx.c from FFHT. TODO:
+  # remove filters and patch extract_sources.py's Buck query to fetch
+  # srcs; presumably filters is here to remove .h files.
+  "(.cpp$)|(fht.*\\.c$)",
 ]
 excludes = [
   "^codegen",
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "optimized_kernels",
+  "extension_threadpool",
   "xnnpack_backend",
 ]
 
 [targets.llama_runner]
 buck_targets = [
-  "//examples/models/llama2/runner:runner",
+  "//examples/models/llama/runner:runner",
 ]
 filters = [
   ".cpp$",
@@ -318,11 +394,12 @@ excludes = [
 deps = [
   "custom_ops",
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "extension_data_loader",
   "extension_module",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
+  "optimized_native_cpu_ops_oss",
 ]
 # ---------------------------------- LLama end ----------------------------------

@@ -4,12 +4,21 @@ Welcome to the ExecuTorch Documentation
 =======================================
 
 .. important::
-   This is a preview version of ExecuTorch and should be used for testing
-   and evaluation purposes only. It is not recommended for use in production
-   settings. We welcome any feedback, suggestions, and bug reports from the
-   community to help us improve the technology. Please use the `PyTorch
-   Forums <https://discuss.pytorch.org/c/executorch>`__ for discussion and
-   feedback about ExecuTorch using the **ExecuTorch** category, and our `GitHub
+   v0.4.0 was the beta release of ExecuTorch. Starting from v0.4.0, the API
+   follows the `API Lifecycle and Deprecation Policy <api-life-cycle.html>`__,
+   and the ``.pte`` binary format complies with the `Runtime Compatibility
+   Policy
+   <https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md>`__.
+   This helps ensure that application developers can update to the latest
+   version of ExecuTorch without breaking existing integration code, in
+   accordance with these policies. If any issues arise or compatibility breaks
+   occur, please `report them in GitHub
+   <https://github.com/pytorch/executorch/issues/new/choose>`__.
+
+   We welcome any feedback, suggestions, and bug reports from the community
+   to help us improve the technology. Please use the `PyTorch Forums
+   <https://discuss.pytorch.org/c/executorch>`__ for discussion and feedback
+   about ExecuTorch using the **ExecuTorch** category, and our `GitHub
    repository <https://github.com/pytorch/executorch/issues>`__ for bug
    reporting.
 
@@ -51,13 +60,12 @@ Topics in this section will help you get started with ExecuTorch.
         ExecuTorch.
 
      .. grid-item-card:: :octicon:`file-code;1em`
-        ExecuTorch Intermediate Representation API
+        ExecuTorch Llama
         :img-top: _static/img/card-background.svg
-        :link: ir-exir.html
+        :link: llm/llama.html
         :link-type: url
 
-        Learn about EXIR, a graph-based intermediate
-        representation (IR) of PyTorch programs.
+        Learn about running Llama models via ExecuTorch
 
 .. toctree::
    :glob:
@@ -66,8 +74,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    intro-overview
-   concepts
    intro-how-it-works
+   getting-started-architecture
+   concepts
 
 .. toctree::
    :glob:
@@ -75,17 +84,10 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Getting Started
    :hidden:
 
-   getting-started-architecture
    getting-started-setup
+   export-overview
    runtime-build-and-cross-compilation
-
-.. toctree::
-   :glob:
-   :maxdepth: 2
-   :caption: Working with LLMs
-   :hidden:
-
-   llm/getting-started
+   getting-started-faqs
 
 .. toctree::
    :glob:
@@ -95,7 +97,10 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
-   tutorials/sdk-integration-tutorial
+   extension-module
+   extension-tensor
+   tutorials/devtools-integration-tutorial
+   apple-runtime
    demo-apps-ios
    demo-apps-android
    examples-end-to-end-to-lower-model-to-delegate
@@ -106,17 +111,22 @@ Topics in this section will help you get started with ExecuTorch.
       customcarditem entries below.
    executorch-arm-delegate-tutorial
    build-run-coreml
+   build-run-mediatek-backend
    build-run-mps
    build-run-qualcomm-ai-engine-direct-backend
    build-run-xtensa
 
 .. toctree::
    :glob:
-   :maxdepth: 1
-   :caption: Exporting to ExecuTorch
+   :maxdepth: 2
+   :caption: Working with LLMs
    :hidden:
 
-   export-overview
+   Llama <llm/llama>
+   Llama on Android <llm/llama-demo-android>
+   Llama on iOS <llm/llama-demo-ios>
+   Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+   Intro to LLMs in Executorch <llm/getting-started>
 
 .. toctree::
    :glob:
@@ -126,6 +136,8 @@ Topics in this section will help you get started with ExecuTorch.
 
    export-to-executorch-api-reference
    executorch-runtime-api-reference
+   runtime-python-api-reference
+   api-life-cycle
 
 .. toctree::
    :glob:
@@ -192,18 +204,27 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: SDK
+   :caption: Developer Tools
    :hidden:
 
-   sdk-overview
-   sdk-bundled-io
-   sdk-etrecord
-   sdk-etdump
-   sdk-profiling
-   sdk-debugging
-   sdk-inspector
-   sdk-delegate-integration
-   sdk-tutorial
+   devtools-overview
+   bundled-io
+   etrecord
+   etdump
+   runtime-profiling
+   model-debugging
+   model-inspector
+   memory-planning-inspection
+   delegate-debugging
+   devtools-tutorial
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Contributing
+   :hidden:
+
+   contributing
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -228,11 +249,32 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
-   :header: Using the ExecuTorch SDK to Profile a Model
-   :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
+   :header: Simplified Runtime APIs Tutorial
+   :card_description: A simplified tutorial for executing the model on device.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/sdk-integration-tutorial.html
-   :tags: SDK
+   :link: extension-module.html
+   :tags:
+
+.. customcarditem::
+   :header: Managing Tensor Memory in C++ Tutorial
+   :card_description: A tutorial for managing the dynamic memory when working with tensors.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: extension-tensor.html
+   :tags:
+
+.. customcarditem::
+   :header: Using the ExecuTorch Developer Tools to Profile a Model
+   :card_description: A tutorial for using the ExecuTorch Developer Tools to profile and analyze a model with linkage back to source code.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: tutorials/devtools-integration-tutorial.html
+   :tags: devtools
+
+.. customcarditem::
+   :header: Integrating and Running ExecuTorch on Apple Platforms
+   :card_description: A tutorial on integrating, using, and troubleshooting the ExecuTorch runtime on iOS.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: apple-runtime.html
+   :tags: iOS, macOS
 
 .. customcarditem::
    :header: Building an ExecuTorch iOS Demo App
@@ -289,6 +331,13 @@ ExecuTorch tutorials.
    :image: _static/img/generic-pytorch-logo.png
    :link: build-run-coreml.html
    :tags: Export,Backend,Delegation,CoreML
+
+.. customcarditem::
+   :header: Building and Running ExecuTorch with MediaTek Backend
+   :card_description: A tutorial that walks you through the process of building ExecuTorch with MediaTek Backend
+   :image: _static/img/generic-pytorch-logo.png
+   :link: build-run-mediatek-backend.html
+   :tags: Export,Backend,Delegation,MediaTek
 
 .. customcarditem::
    :header: Building and Running ExecuTorch with MPS Backend

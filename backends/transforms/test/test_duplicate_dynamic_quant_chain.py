@@ -8,15 +8,14 @@ import copy
 import unittest
 
 import torch
-import torch._export as export
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 # TODO: Move away from using torch's internal testing utils
 from torch.testing._internal.common_quantization import (
@@ -59,10 +58,10 @@ class TestDuplicateDynamicQuantChainPass(QuantizationTestCase):
 
         # program capture
         m = copy.deepcopy(m_eager)
-        m = export.capture_pre_autograd_graph(
+        m = torch.export.export_for_training(
             m,
             example_inputs,
-        )
+        ).module()
 
         m = prepare_pt2e(m, quantizer)
         # Calibrate

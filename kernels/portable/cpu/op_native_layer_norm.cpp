@@ -16,7 +16,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -66,15 +66,16 @@ void layer_norm(
     bias_data = nullptr;
   }
 
+  const CTYPE ct_normalized = static_cast<CTYPE>(normalized);
   for (int i = 0; i < leading; ++i) {
     const CTYPE* x = input_data + i * normalized;
     CTYPE* y = out_data + i * normalized;
 
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    CTYPE sum = reduce_add(x, normalized);
-    CTYPE sq_sum = vec_powerf(x, normalized);
-    CTYPE mean_value = sum / normalized;
-    CTYPE variance = sq_sum / normalized - mean_value * mean_value;
+    CTYPE sum = reduce_add(x, ct_normalized);
+    CTYPE sq_sum = vec_powerf(x, ct_normalized);
+    CTYPE mean_value = sum / ct_normalized;
+    CTYPE variance = sq_sum / ct_normalized - mean_value * mean_value;
     CTYPE std = std::sqrt(variance + eps);
 
     // Calculate the elements of output
@@ -97,11 +98,11 @@ void layer_norm(
 // As a reference, there's math_native_layer_norm in ATen:
 // https://www.internalfb.com/code/fbsource/[2da5b17b086554c6cd0c3ab08a35aeec2a8bad8c]/xplat/caffe2/aten/src/ATen/native/layer_norm.cpp?lines=188
 std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     double eps,
     Tensor& out,
     Tensor& mean_out,
@@ -116,6 +117,33 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
           input, normalized_shape, weight, bias, out, mean_out, rstd_out),
       InvalidArgument,
       ret_val);
+
+  // Only support default dim order for now.
+  // TODO: Support other dim orders.
+  ET_KERNEL_CHECK(
+      ctx, tensor_is_default_dim_order(input), InvalidArgument, ret_val);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(input, out, mean_out, rstd_out),
+      InvalidArgument,
+      ret_val);
+
+  if (weight.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(input, weight.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
+  if (bias.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(input, bias.value()),
+        InvalidArgument,
+        ret_val);
+  }
 
   Tensor::SizesType mean_rstd_sizes[kTensorDimensionLimit];
   size_t mean_rstd_ndim = 0;
@@ -140,7 +168,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
       InvalidArgument,
       ret_val);
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       input.scalar_type(), ctx, "native_layer_norm.out", CTYPE, [&]() {
         layer_norm<CTYPE>(
             input,

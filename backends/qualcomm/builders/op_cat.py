@@ -3,12 +3,14 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpConcat, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -34,26 +36,27 @@ class Cat(NodeVisitor):
             list_of_tensor_wrappers.append(
                 self.define_tensor(
                     tensor_input,
+                    node,
                     input_tensor,
                     PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                     nodes_to_wrappers,
-                    is_input_tensor=True,
                 )
             )
 
         if len(list_of_tensors) != len(list_of_tensor_wrappers):
-            print(
-                "The number or input tensors is not equal to the number of input tensor wrappers."
+            warnings.warn(
+                "[QNN Delegate Op Builder]: The number or input tensors is not equal to the number of input tensor wrappers.",
+                stacklevel=1,
             )
             return
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         # node args[1] might not exist
@@ -64,8 +67,8 @@ class Cat(NodeVisitor):
         if axis < 0:
             axis += node.meta["val"].dim()
 
-        if "axis_order" in node.meta:
-            axis = node.meta["axis_order"].index(axis)
+        if QCOM_AXIS_ORDER in node.meta:
+            axis = node.meta[QCOM_AXIS_ORDER].index(axis)
 
         concat_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
@@ -78,7 +81,7 @@ class Cat(NodeVisitor):
         concat_op.AddScalarParam(
             OpConcat.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(axis)},
+            {QCOM_DATA: np.uint32(axis)},
         )
 
         return concat_op

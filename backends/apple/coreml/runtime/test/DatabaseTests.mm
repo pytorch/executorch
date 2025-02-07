@@ -8,7 +8,7 @@
 #import <XCTest/XCTest.h>
 
 #import <database.hpp>
-#import <json.hpp>
+#import <nlohmann/json.hpp>
 
 @interface DatabaseTests : XCTestCase
 
@@ -58,7 +58,7 @@ using namespace executorchcoreml::sqlite;
     XCTAssertTrue(insertStatement->bind_name("$value", std::string("1"), error));
     XCTAssertTrue(insertStatement->execute(error));
     XCTAssertTrue(database->get_row_count("TEST", error) == 1);
-    
+
     auto query = database->prepare_statement("SELECT * FROM TEST", error);
     XCTAssertTrue(query != nullptr);
     XCTAssertTrue(query->step(error));

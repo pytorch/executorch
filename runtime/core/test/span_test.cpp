@@ -12,9 +12,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-
-namespace torch {
-namespace executor {
+using executorch::runtime::Span;
 
 TEST(SpanTest, Ctors) {
   int64_t x[2] = {1, 2};
@@ -44,7 +42,7 @@ TEST(SpanTest, MutableElements) {
 TEST(SpanTest, Empty) {
   int64_t x[2] = {1, 2};
   Span<int64_t> span_full = {x, 2};
-  Span<int64_t> span_empty = {x, (int64_t)0};
+  Span<int64_t> span_empty = {x, (size_t)0};
 
   EXPECT_FALSE(span_full.empty());
   EXPECT_TRUE(span_empty.empty());
@@ -64,6 +62,3 @@ TEST(SpanTest, TriviallyCopyable) {
   EXPECT_EQ(span.size(), span_copy.size());
   EXPECT_TRUE(std::is_trivially_copyable<Span<int64_t>>::value);
 }
-
-} // namespace executor
-} // namespace torch

@@ -29,7 +29,30 @@ class RemoveGraphAssertsPass(PassBase):
                         torch.ops.aten._assert_scalar.default,
                         torch.ops.aten.sym_constrain_range_for_size.default,
                         torch.ops.aten.sym_constrain_range.default,
+                        torch.ops.aten._assert_tensor_metadata.default,
                     )
+                ):
+                    module.graph.erase_node(node)
+
+            module.recompile()
+            module.graph.eliminate_dead_code()
+
+        return PassResult(graph_module, True)
+
+
+class RemoveNonCoreAtenOpGraphAssertsPass(PassBase):
+    """
+    Remove assert ops from the graph that're not Aten Canonical.
+    """
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for module in graph_module.modules():
+            if not isinstance(module, torch.fx.GraphModule):
+                continue
+
+            for node in module.graph.nodes:
+                if node.op == "call_function" and (
+                    node.target in (torch.ops.aten._assert_tensor_metadata.default,)
                 ):
                     module.graph.erase_node(node)
 

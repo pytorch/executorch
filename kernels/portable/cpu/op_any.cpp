@@ -13,20 +13,23 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
-Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& any_all_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, {}) == Error::Ok, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "any.all_out";
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
       const auto data_in = in.const_data_ptr<CTYPE_IN>();
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
@@ -44,7 +47,7 @@ Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 }
 
 Tensor& any_dims_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
@@ -68,11 +71,14 @@ Tensor& any_dims_out(
         out);
   }
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "any.dims_out";
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       if (dim_list.has_value() && dim_list.value().empty()) {
@@ -102,7 +108,7 @@ Tensor& any_dims_out(
 }
 
 Tensor& any_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool keepdim,
@@ -122,11 +128,14 @@ Tensor& any_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "any.out";
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {

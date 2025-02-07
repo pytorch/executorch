@@ -16,7 +16,9 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNStaticReshape,
     XNode,
 )
+
 from executorch.backends.xnnpack.utils.utils import check_or_raise, get_input_node
+from torch.fx.experimental.symbolic_shapes import free_symbols
 
 
 @register_node_visitor
@@ -57,7 +59,7 @@ class SqueezeVisitor(NodeVisitor):
 
         num_dynamic_dims = 0
         for dim in dynamic_shape:
-            if isinstance(dim, torch.SymInt):
+            if free_symbols(dim):
                 num_dynamic_dims += 1
                 new_shape.append(0)
             else:
@@ -119,7 +121,7 @@ class UnsqueezeVisitor(NodeVisitor):
 
         num_dynamic_dims = 0
         for dim in dynamic_shape:
-            if isinstance(dim, torch.SymInt):
+            if free_symbols(dim):
                 num_dynamic_dims += 1
                 new_shape.append(0)
             else:

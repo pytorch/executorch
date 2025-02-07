@@ -26,19 +26,12 @@ layout(set = 0, binding = 1) buffer  PRECISION restrict readonly Buffer {
   BUF_T buffer_in[];
 };
 
-// Corresponds to {1,4,3,9} in the example below.
 layout(set = 0, binding = 2) uniform PRECISION restrict Sizes {
   ivec4 sizes;
 };
 
-// Corresponds to {3,3,1,11} in the example below.
 layout(set = 0, binding = 3) uniform PRECISION restrict OriginalSizes {
   ivec4 original_sizes;
-};
-
-// Corresponds to {1,12} in the example below.
-layout(set = 0, binding = 4) uniform PRECISION restrict PaddedSizes {
-  ivec2 padded_sizes;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -48,27 +41,8 @@ layout(constant_id = 3) const int packed_dim = C_DIM;
 /*
  * Computes special prepacking for a depthwise convolution. Each shader invocation
  * calculates the input buffer location to read into the desired texel. This
- * packing was originally developed on CPU and that approach is described in the
- * rest of this comment. Refer to the code-level comments, for how we translate
- * it to GPU by reversing the steps.
- *
- * Consider an example weight tensor of size {11,1,3,3}. The following
- * transformations will be applied.
- *
- * 1. Pad the N dim so that it is a multiple of 4. In this case, 1
- * batch of padding is added, producing a tensor of size {12,1,3,3}.
- *      at::pad(x, {0,0,0,0,0,0,0,1}, "constant", 0);
- *
- * 2. Flatten the last two dims by reshaping the tensor:
- *      x.reshape({12,1,9});
- *
- * 3. "Fold" the N dim into the C dim. Split the tensor along the N dim so that
- * each split has 4 channels.
- *      x.reshape({3,4,1,9});
- *
- * 4. Stack the batches on each other vertically by permuting the N and C dims
- * and reshaping the tensor.
- *      x.permute({1,0,2,3}).reshape({4,3,9});
+ * packing was originally developed on CPU here:
+ * https://github.com/pytorch/pytorch/blob/d63e7d0aa2e0a1b1fd7518f917224774afe97bae/aten/src/ATen/native/vulkan/ops/Convolution.cpp#L58-L118
  */
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
@@ -78,39 +52,40 @@ void main() {
     return;
   }
 
-  // As in usual staging shaders, map from GPU texel position to normal CPU
-  // buffer indices: (9,3) -> (4,3,9)
-  const ivec4 p0 = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
+  // Map tensor_idx to normal buffer_i
+  const ivec4 p0 = tidx_to_nchwi(idx, sizes, packed_dim);
 
-  // Re-map the normal CPU buffer indices to special indices, through a series
-  // of mappings: reshape is a no-op to the underlying indices, so we only map
-  // for pad and permute.
-  const int Np = padded_sizes.x;
+  // Compute modified tensor_idx by inverting the CPU function
   const int N = original_sizes.w;
   const int C = original_sizes.z;
   const int H = original_sizes.y;
   const int W = original_sizes.x;
+  const int Y = sizes.y;
 
-  // Undo step 3 permute: (4,3,1,9) -> (3,4,1,9)
-  const ivec4 p1 = swap_adj_dims(p0, 4, (Np / 4), (C * H * W));
+  const ivec4 p1 = p0 / W;
+  const ivec4 p2 = p1 / H;
 
-  // Undo step 1 pad: (12,1,3,3) -> (11,1,3,3)
-  // For values in the padded region, write zero instead of buffer data.
-  const ivec4 n = p1 / (C * H * W);
-  const ivec4 mask = ivec4(greaterThanEqual(n, ivec4(N)));
+  const ivec4 n = (p2 % Y) * 4 + (p2 / Y);
+  const ivec4 h = p1 % H;
+  const ivec4 w = p0 % W;
+
+  // Map modified tensor_idx to modifed buffer_i
+  // Zero out if modified tensor idx is out of bounds
+  const ivec4 buf_i = n * C*H*W + h * W + w;
+  const bvec4 mask = bvec4(lessThan(n, ivec4(N)));
 
   VEC4_T texel = VEC4_T(0);
-  if (mask.x == 0) {
-    texel.x = SCALAR_T(buffer_in[p1.x]);
+  if (mask.x) {
+    texel.x = SCALAR_T(buffer_in[buf_i.x]);
   }
-  if (mask.y == 0) {
-    texel.y = SCALAR_T(buffer_in[p1.y]);
+  if (mask.y) {
+    texel.y = SCALAR_T(buffer_in[buf_i.y]);
   }
-  if (mask.z == 0) {
-    texel.z = SCALAR_T(buffer_in[p1.z]);
+  if (mask.z) {
+    texel.z = SCALAR_T(buffer_in[buf_i.z]);
   }
-  if (mask.w == 0) {
-    texel.w = SCALAR_T(buffer_in[p1.w]);
+  if (mask.w) {
+    texel.w = SCALAR_T(buffer_in[buf_i.w]);
   }
 
   imageStore(image_out, pos.xy, texel);

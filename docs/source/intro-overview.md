@@ -10,9 +10,9 @@ Key value propositions of ExecuTorch are:
 - **Portability:** Compatibility with a wide variety of computing platforms,
   from high-end mobile phones to highly constrained embedded systems and
   microcontrollers.
-- **Productivity:** Enabling developers to use the same toolchains and SDK from
-  PyTorch model authoring and conversion, to debugging and deployment to a wide
-  variety of platforms.
+- **Productivity:** Enabling developers to use the same toolchains and Developer
+  Tools from PyTorch model authoring and conversion, to debugging and deployment
+  to a wide variety of platforms.
 - **Performance:** Providing end users with a seamless and high-performance
   experience due to a lightweight runtime and utilizing full hardware
   capabilities such as CPUs, NPUs, and DSPs.

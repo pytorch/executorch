@@ -20,16 +20,17 @@
 #endif // USE_ATEN_LIB
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::SizesType;
-using exec_aten::StridesType;
-using exec_aten::Tensor;
-using exec_aten::TensorList;
-using torch::executor::Error;
-using torch::executor::resize_tensor;
-using torch::executor::testing::TensorFactory;
-using torch::executor::testing::TensorListFactory;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::SizesType;
+using executorch::aten::StridesType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorList;
+using executorch::runtime::Error;
+using executorch::runtime::resize_tensor;
+using executorch::runtime::TensorShapeDynamism;
+using executorch::runtime::testing::TensorFactory;
+using executorch::runtime::testing::TensorListFactory;
 
 // The tensor under test will be modified so pass an rvalue ref
 void resize_tensor_to_assert_static(Tensor&& t) {
@@ -75,7 +76,7 @@ void resize_tensor_to_assert_dynamic_unbound(Tensor&& t) {
 }
 
 #ifndef USE_ATEN_LIB
-using exec_aten::DimOrderType;
+using executorch::aten::DimOrderType;
 using torch::executor::TensorImpl;
 #endif // !USE_ATEN_LIB
 
@@ -107,7 +108,7 @@ class TensorFactoryTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -448,7 +449,7 @@ TEST_F(TensorFactoryTest, MakeStridedDataIsCopied) {
 
   // Create two tensors using the same input data and strided vector.
   std::vector<int32_t> data = {1, 2, 3, 4};
-  std::vector<int32_t> strides = {1, 2};
+  std::vector<executorch::aten::StridesType> strides = {1, 2};
   Tensor t1 = tf.make(/*sizes=*/{2, 2}, data, strides);
   Tensor t2 = tf.make(/*sizes=*/{2, 2}, data, strides);
 
@@ -963,138 +964,110 @@ TEST(TensorListFactoryTest, ZerosLikeEmpty) {
 
 TEST_F(TensorFactoryTest, ZerosDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
-  resize_tensor_to_assert_static(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::STATIC));
+  resize_tensor_to_assert_static(tf.zeros({2, 2}, TensorShapeDynamism::STATIC));
   resize_tensor_to_assert_dynamic_bound(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.zeros({2, 2}, TensorShapeDynamism::DYNAMIC_BOUND));
   resize_tensor_to_assert_dynamic_unbound(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.zeros({2, 2}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::STATIC),
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.zeros({2, 2}, TensorShapeDynamism::STATIC),
+      tf.zeros({2, 2}, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::STATIC),
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.zeros({2, 2}, TensorShapeDynamism::STATIC),
+      tf.zeros({2, 2}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, ZerosLikeDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
   Tensor zeros = tf.zeros({2, 2});
   resize_tensor_to_assert_static(
-      tf.zeros_like(zeros, torch::executor::TensorShapeDynamism::STATIC));
-  resize_tensor_to_assert_dynamic_bound(tf.zeros_like(
-      zeros, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
-  resize_tensor_to_assert_dynamic_unbound(tf.zeros_like(
-      zeros, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.zeros_like(zeros, TensorShapeDynamism::STATIC));
+  resize_tensor_to_assert_dynamic_bound(
+      tf.zeros_like(zeros, TensorShapeDynamism::DYNAMIC_BOUND));
+  resize_tensor_to_assert_dynamic_unbound(
+      tf.zeros_like(zeros, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.zeros_like(zeros, torch::executor::TensorShapeDynamism::STATIC),
-      tf.zeros_like(
-          zeros, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.zeros_like(zeros, TensorShapeDynamism::STATIC),
+      tf.zeros_like(zeros, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.zeros_like(zeros, torch::executor::TensorShapeDynamism::STATIC),
-      tf.zeros_like(
-          zeros, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.zeros_like(zeros, TensorShapeDynamism::STATIC),
+      tf.zeros_like(zeros, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, OnesDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
-  resize_tensor_to_assert_static(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::STATIC));
+  resize_tensor_to_assert_static(tf.ones({2, 2}, TensorShapeDynamism::STATIC));
   resize_tensor_to_assert_dynamic_bound(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.ones({2, 2}, TensorShapeDynamism::DYNAMIC_BOUND));
   resize_tensor_to_assert_dynamic_unbound(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.ones({2, 2}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::STATIC),
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.ones({2, 2}, TensorShapeDynamism::STATIC),
+      tf.ones({2, 2}, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::STATIC),
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.ones({2, 2}, TensorShapeDynamism::STATIC),
+      tf.ones({2, 2}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, OnesLikeDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
   Tensor ones = tf.ones({2, 2});
   resize_tensor_to_assert_static(
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::STATIC));
+      tf.ones_like(ones, TensorShapeDynamism::STATIC));
   resize_tensor_to_assert_dynamic_bound(
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
-  resize_tensor_to_assert_dynamic_unbound(tf.ones_like(
-      ones, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.ones_like(ones, TensorShapeDynamism::DYNAMIC_BOUND));
+  resize_tensor_to_assert_dynamic_unbound(
+      tf.ones_like(ones, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::STATIC),
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.ones_like(ones, TensorShapeDynamism::STATIC),
+      tf.ones_like(ones, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::STATIC),
-      tf.ones_like(
-          ones, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.ones_like(ones, TensorShapeDynamism::STATIC),
+      tf.ones_like(ones, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, FullDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
   resize_tensor_to_assert_static(
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::STATIC));
+      tf.full({2, 2}, 1, TensorShapeDynamism::STATIC));
   resize_tensor_to_assert_dynamic_bound(
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
-  resize_tensor_to_assert_dynamic_unbound(tf.full(
-      {2, 2}, 1, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.full({2, 2}, 1, TensorShapeDynamism::DYNAMIC_BOUND));
+  resize_tensor_to_assert_dynamic_unbound(
+      tf.full({2, 2}, 1, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::STATIC),
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.full({2, 2}, 1, TensorShapeDynamism::STATIC),
+      tf.full({2, 2}, 1, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::STATIC),
-      tf.full(
-          {2, 2}, 1, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.full({2, 2}, 1, TensorShapeDynamism::STATIC),
+      tf.full({2, 2}, 1, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, MakeDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
-  resize_tensor_to_assert_static(tf.make(
-      {2, 2}, {1, 2, 3, 4}, {}, torch::executor::TensorShapeDynamism::STATIC));
-  resize_tensor_to_assert_dynamic_bound(tf.make(
-      {2, 2},
-      {1, 2, 3, 4},
-      {},
-      torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
-  resize_tensor_to_assert_dynamic_unbound(tf.make(
-      {2, 2},
-      {1, 2, 3, 4},
-      {},
-      torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+  resize_tensor_to_assert_static(
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::STATIC));
+  resize_tensor_to_assert_dynamic_bound(
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::DYNAMIC_BOUND));
+  resize_tensor_to_assert_dynamic_unbound(
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.make(
-          {2, 2},
-          {1, 2, 3, 4},
-          {},
-          torch::executor::TensorShapeDynamism::STATIC),
-      tf.make(
-          {2, 2},
-          {1, 2, 3, 4},
-          {},
-          torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::STATIC),
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.make(
-          {2, 2},
-          {1, 2, 3, 4},
-          {},
-          torch::executor::TensorShapeDynamism::STATIC),
-      tf.make(
-          {2, 2},
-          {1, 2, 3, 4},
-          {},
-          torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::STATIC),
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 #if !defined(USE_ATEN_LIB)
@@ -1107,7 +1080,7 @@ TEST_F(TensorFactoryTest, FullDynamic) {
   ET_EXPECT_DEATH(torch::executor::resize(out, new_sizes), "");
 
   out = tf.full(
-      /*sizes=*/{2, 2}, 5, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      /*sizes=*/{2, 2}, 5, TensorShapeDynamism::DYNAMIC_BOUND);
   new_sizes[1] = 2;
   EXPECT_EQ(
       torch::executor::resize_tensor(out, new_sizes),
@@ -1128,10 +1101,7 @@ TEST_F(TensorFactoryTest, MakeIntTensorDynamic) {
 
   std::vector<int32_t> data = {1, 2, 3, 4};
   out = tf.make(
-      /*sizes=*/{2, 2},
-      data,
-      {},
-      torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      /*sizes=*/{2, 2}, data, {}, TensorShapeDynamism::DYNAMIC_BOUND);
   new_sizes[1] = 2;
   EXPECT_EQ(
       torch::executor::resize_tensor(out, new_sizes),
@@ -1151,7 +1121,7 @@ TEST_F(TensorFactoryTest, MakeZerosDynamic) {
   ET_EXPECT_DEATH(torch::executor::resize(out, new_sizes), "");
 
   out = tf.zeros(
-      /*sizes=*/{2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      /*sizes=*/{2, 2}, TensorShapeDynamism::DYNAMIC_BOUND);
   new_sizes[1] = 2;
   EXPECT_EQ(
       torch::executor::resize_tensor(out, new_sizes),
@@ -1165,7 +1135,7 @@ TEST_F(TensorFactoryTest, MakeZerosDynamic) {
   new_sizes[1] = 1;
   ET_EXPECT_DEATH(torch::executor::resize(out_like, new_sizes), "");
 
-  out = tf.zeros_like(out, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+  out = tf.zeros_like(out, TensorShapeDynamism::DYNAMIC_BOUND);
   new_sizes[1] = 2;
   EXPECT_EQ(
       torch::executor::resize_tensor(out, new_sizes),
@@ -1184,7 +1154,7 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order.resize(2);
   dim_order[0] = 0;
   dim_order[1] = 1;
-  exec_aten::ArrayRef<DimOrderType> dim_order_ref(
+  executorch::aten::ArrayRef<DimOrderType> dim_order_ref(
       dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, out.dim_order());
@@ -1194,8 +1164,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 0;
   dim_order[1] = 1;
   dim_order[2] = 2;
-  dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, out.dim_order());
 
@@ -1205,8 +1175,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 0;
   dim_order[1] = 2;
   dim_order[2] = 1;
-  dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 
@@ -1216,8 +1186,8 @@ TEST_F(TensorFactoryTest, DimOrderToStrideTest) {
   dim_order[0] = 1;
   dim_order[1] = 2;
   dim_order[2] = 0;
-  dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 }
@@ -1240,8 +1210,8 @@ TEST_F(TensorFactoryTest, AmbgiuousDimOrderToStrideTest) {
   // boundary from strides land to dim order land, we have to resolve
   // such ambiguity in a deterministic way.
   // In dim order land, it is less ambiguous
-  auto dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  auto dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 
@@ -1250,8 +1220,8 @@ TEST_F(TensorFactoryTest, AmbgiuousDimOrderToStrideTest) {
   dim_order[0] = 2;
   dim_order[1] = 0;
   dim_order[2] = 1;
-  dim_order_ref =
-      exec_aten::ArrayRef<DimOrderType>(dim_order.data(), dim_order.size());
+  dim_order_ref = executorch::aten::ArrayRef<DimOrderType>(
+      dim_order.data(), dim_order.size());
 
   CHECK_ARRAY_REF_EQUAL(dim_order_ref, strided_out.dim_order());
 }

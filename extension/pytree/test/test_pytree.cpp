@@ -6,21 +6,32 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/pytree/pytree.h>
+
 #include <gtest/gtest.h>
 #include <string>
 
-#include <executorch/extension/pytree/pytree.h>
-
-int main(int argc, char* argv[]) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
-
-namespace torch {
-namespace executor {
-namespace pytree {
+using ::executorch::extension::pytree::arr;
+using ::executorch::extension::pytree::ContainerHandle;
+using ::executorch::extension::pytree::Key;
+using ::executorch::extension::pytree::Kind;
+using ::executorch::extension::pytree::unflatten;
 
 using Leaf = int32_t;
+
+TEST(PyTreeTest, ArrBasic) {
+  arr<int> x(5);
+  ASSERT_EQ(x.size(), 5);
+  EXPECT_THROW(x.at(5), std::out_of_range);
+  for (int ii = 0; ii < x.size(); ++ii) {
+    x[ii] = 2 * ii;
+  }
+  int idx = 0;
+  for (const auto item : x) {
+    EXPECT_EQ(item, 2 * idx);
+    ++idx;
+  }
+}
 
 TEST(PyTreeTest, List) {
   Leaf items[2] = {11, 12};
@@ -188,6 +199,21 @@ TEST(pytree, FlattenNestedDict) {
   }
 }
 
-} // namespace pytree
-} // namespace executor
-} // namespace torch
+TEST(pytree, EmptySpec) {
+  Leaf items[1] = {9};
+  EXPECT_THROW(unflatten("", items), std::out_of_range);
+}
+
+TEST(pytree, BoundsCheckListLayout) {
+  // Malformed: layout one child, have two
+  std::string spec = "L1#1($,$)";
+  Leaf items[2] = {11, 12};
+  EXPECT_THROW(unflatten(spec, items), std::out_of_range);
+}
+
+TEST(pytree, BoundsCheckDictLayout) {
+  // Malformed: layout one child, have two.
+  std::string spec = "D1#1('key0':$,'key1':$)";
+  Leaf items[2] = {11, 12};
+  EXPECT_THROW(unflatten(spec, items), std::out_of_range);
+}

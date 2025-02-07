@@ -14,28 +14,30 @@ import executorch.exir as exir
 
 import torch
 
+# pyre-fixme[21]: Could not find module `executorch.backends.apple.coreml.compiler`.
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
-from executorch.backends.apple.coreml.partition.coreml_partitioner import (
-    CoreMLPartitioner,
-)
+# pyre-fixme[21]: Could not find module `executorch.backends.apple.coreml.partition`.
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.devtools.etrecord import generate_etrecord
 from executorch.exir import to_edge
 
 from executorch.exir.backend.backend_api import to_backend
-from executorch.sdk.etrecord import generate_etrecord
+
 from torch.export import export
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
 sys.path.append(str(EXAMPLES_DIR.absolute()))
 
-from models import MODEL_NAME_TO_MODEL
-from models.model_factory import EagerModelFactory
+from executorch.examples.models import MODEL_NAME_TO_MODEL
+from executorch.examples.models.model_factory import EagerModelFactory
 
 # Script to export a model with coreml delegation.
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
+    _skip_dim_order=True,  # TODO(T182928844): enable dim_order in backend
 )
 
 
@@ -76,6 +78,7 @@ def parse_args() -> argparse.ArgumentParser:
     parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
+    # pyre-fixme[7]: Expected `ArgumentParser` but got `Namespace`.
     return args
 
 
@@ -83,9 +86,11 @@ def partition_module_to_coreml(module):
     module = module.eval()
 
 
-def lower_module_to_coreml(module, compile_specs):
+def lower_module_to_coreml(module, compile_specs, example_inputs):
     module = module.eval()
-    edge = to_edge(export(module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG)
+    edge = to_edge(
+        export(module, example_inputs, strict=True), compile_config=_EDGE_COMPILE_CONFIG
+    )
     # All of the subsequent calls on the edge_dialect_graph generated above (such as delegation or
     # to_executorch()) are done in place and the graph is also modified in place. For debugging purposes
     # we would like to keep a copy of the original edge dialect graph and hence we create a deepcopy of
@@ -104,12 +109,9 @@ def lower_module_to_coreml(module, compile_specs):
 def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     lowered_module(*example_inputs)
     exec_prog = to_edge(
-        export(lowered_module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG
-    ).to_executorch(
-        config=exir.ExecutorchBackendConfig(
-            extract_constant_segment=False, extract_delegate_segments=True
-        )
-    )
+        export(lowered_module, example_inputs, strict=True),
+        compile_config=_EDGE_COMPILE_CONFIG,
+    ).to_executorch(config=exir.ExecutorchBackendConfig(extract_delegate_segments=True))
 
     return exec_prog
 
@@ -146,7 +148,7 @@ def generate_compile_specs_from_args(args):
     )
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
@@ -162,7 +164,7 @@ if __name__ == "__main__":
             f"Valid compute units are {valid_compute_units}."
         )
 
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
@@ -171,7 +173,8 @@ if __name__ == "__main__":
 
     if args.use_partitioner:
         model.eval()
-        exir_program_aten = torch.export.export(model, example_inputs)
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
+
         edge_program_manager = exir.to_edge(exir_program_aten)
         edge_copy = copy.deepcopy(edge_program_manager)
         partitioner = CoreMLPartitioner(
@@ -179,13 +182,12 @@ if __name__ == "__main__":
         )
         delegated_program_manager = edge_program_manager.to_backend(partitioner)
         exec_program = delegated_program_manager.to_executorch(
-            config=exir.ExecutorchBackendConfig(
-                extract_constant_segment=False, extract_delegate_segments=True
-            )
+            config=exir.ExecutorchBackendConfig(extract_delegate_segments=True)
         )
     else:
         lowered_module, edge_copy = lower_module_to_coreml(
             module=model,
+            example_inputs=example_inputs,
             compile_specs=compile_specs,
         )
         exec_program = export_lowered_module_to_executorch_program(
@@ -193,10 +195,15 @@ if __name__ == "__main__":
             example_inputs,
         )
 
-    save_executorch_program(exec_program, args.model_name, args.compute_unit)
+    model_name = f"{args.model_name}_compiled" if args.compile else args.model_name
+    save_executorch_program(exec_program, model_name, args.compute_unit)
     generate_etrecord(f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program)
 
     if args.save_processed_bytes and lowered_module is not None:
         save_processed_bytes(
             lowered_module.processed_bytes, args.model_name, args.compute_unit
         )
+
+
+if __name__ == "__main__":
+    main()

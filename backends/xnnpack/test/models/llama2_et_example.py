@@ -9,7 +9,7 @@ import unittest
 import torch
 
 from executorch.backends.xnnpack.test.tester import Tester
-from executorch.examples.models.llama2.model import Llama2Model
+from executorch.examples.models.llama.model import Llama2Model
 
 
 class TestLlama2ETExample(unittest.TestCase):
@@ -39,11 +39,8 @@ class TestLlama2ETExample(unittest.TestCase):
         (
             Tester(model, example_inputs)
             .export()
-            .to_edge()
-            .dump_artifact()
-            .partition()
-            .dump_artifact()
+            .to_edge_transform_and_lower()
             .to_executorch()
             .serialize()
-            .run_method_and_compare_outputs(atol=5e-2)
+            .run_method_and_compare_outputs(atol=5e-2, inputs=example_inputs)
         )

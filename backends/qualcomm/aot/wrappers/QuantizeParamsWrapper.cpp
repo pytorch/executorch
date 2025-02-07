@@ -7,8 +7,8 @@
  */
 #include <executorch/backends/qualcomm/aot/wrappers/QuantizeParamsWrapper.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     const Qnn_QuantizeParams_t& quantization) {
@@ -69,5 +69,5 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
   return quantize_param_wrapper;
 }
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

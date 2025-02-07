@@ -6,7 +6,7 @@ We provide a list of util functions to give users insights on what happened to t
 The `get_delegation_info()` method provides a summary of what happened to the model after the `to_backend()` call:
 
 ```python
-from executorch.exir.backend.utils import get_delegation_info
+from executorch.devtools.backend_debug import get_delegation_info
 from tabulate import tabulate
 
 # ... After call to to_backend(), but before to_executorch()
@@ -39,12 +39,12 @@ Number  of  non-delegated  nodes:  430
 From the table, the operator `aten_view_copy_default` appears 170 times in delegate graphs and 48 times in non-delegated graphs. Users can use information like this to debug.
 
 ## Visualize delegated graph
-To see a more detailed view, use the `print_delegated_graph()` method to display a printout of the whole graph:
+To see a more detailed view, use the `format_delegated_graph()` method to get a str of printout of the whole graph or use `print_delegated_graph()` to print directly:
 
 ```python
-from executorch.exir.backend.utils import print_delegated_graph
+from executorch.exir.backend.utils import format_delegated_graph
 graph_module = edge_manager.exported_program().graph_module
-print(print_delegated_graph(graph_module))
+print(format_delegated_graph(graph_module)) # or call print_delegated_graph(graph_module)
 ```
 It will print the whole model as well as the subgraph consumed by the backend. The generic debug function provided by fx like `print_tabular()` or `print_readable()` will only show `call_delegate` but hide the the subgraph consumes by the backend, while this function exposes the contents inside the subgraph.
 

@@ -8,6 +8,7 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpResizeBilinear, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -29,19 +30,19 @@ class ResizeBilinear(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         reisze_bilinear_op = PyQnnWrapper.PyQnnOpWrapper(
@@ -55,12 +56,12 @@ class ResizeBilinear(NodeVisitor):
         reisze_bilinear_op.AddScalarParam(
             OpResizeBilinear.param_align_corners,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": node.args[2]},
+            {QCOM_DATA: node.args[2]},
         )
         reisze_bilinear_op.AddScalarParam(
             OpResizeBilinear.param_half_pixel_centers,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": True},
+            {QCOM_DATA: not node.args[2]},
         )
 
         return reisze_bilinear_op

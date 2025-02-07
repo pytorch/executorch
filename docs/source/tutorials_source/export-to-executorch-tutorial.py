@@ -65,8 +65,8 @@ class SimpleConv(torch.nn.Module):
         return self.relu(a)
 
 
-example_args = (torch.randn(1, 3, 256, 256),)
-aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
+example_args: tuple[torch.Tensor] = (torch.randn(1, 3, 256, 256),)
+aten_dialect: ExportedProgram = export(SimpleConv(), example_args, strict=True)
 print(aten_dialect)
 
 ######################################################################
@@ -100,8 +100,11 @@ class Basic(torch.nn.Module):
         return x + y
 
 
-example_args = (torch.randn(3, 3), torch.randn(3, 3))
-aten_dialect: ExportedProgram = export(Basic(), example_args)
+example_args_2: tuple[torch.Tensor, torch.Tensor] = (
+    torch.randn(3, 3),
+    torch.randn(3, 3),
+)
+aten_dialect = export(Basic(), example_args_2, strict=True)
 
 # Works correctly
 print(aten_dialect.module()(torch.ones(3, 3), torch.ones(3, 3)))
@@ -118,20 +121,11 @@ except Exception:
 
 from torch.export import Dim
 
-
-class Basic(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return x + y
-
-
-example_args = (torch.randn(3, 3), torch.randn(3, 3))
+example_args_2 = (torch.randn(3, 3), torch.randn(3, 3))
 dim1_x = Dim("dim1_x", min=1, max=10)
 dynamic_shapes = {"x": {1: dim1_x}, "y": {1: dim1_x}}
-aten_dialect: ExportedProgram = export(
-    Basic(), example_args, dynamic_shapes=dynamic_shapes
+aten_dialect = export(
+    Basic(), example_args_2, dynamic_shapes=dynamic_shapes, strict=True
 )
 print(aten_dialect)
 
@@ -179,8 +173,8 @@ except Exception:
 # -----------------------
 #
 # To quantize a model, we first need to capture the graph with
-# ``torch._export.capture_pre_autograd_graph``, perform quantization, and then
-# call ``torch.export``. ``torch._export.capture_pre_autograd_graph`` returns a
+# ``torch.export.export_for_training``, perform quantization, and then
+# call ``torch.export``. ``torch.export.export_for_training`` returns a
 # graph which contains ATen operators which are Autograd safe, meaning they are
 # safe for eager-mode training, which is needed for quantization. We will call
 # the graph at this level, the ``Pre-Autograd ATen Dialect`` graph.
@@ -193,27 +187,27 @@ except Exception:
 # will annotate the nodes in the graph with information needed to quantize the
 # model properly for a specific backend.
 
-from torch._export import capture_pre_autograd_graph
+from torch.export import export_for_training
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+pre_autograd_aten_dialect = export_for_training(SimpleConv(), example_args).module()
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
-prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)
+prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)  # type: ignore[arg-type]
 # calibrate with a sample dataset
 converted_graph = convert_pt2e(prepared_graph)
 print("Quantized Graph")
 print(converted_graph)
 
-aten_dialect: ExportedProgram = export(converted_graph, example_args)
+aten_dialect = export(converted_graph, example_args, strict=True)
 print("ATen Dialect Graph")
 print(aten_dialect)
 
@@ -243,7 +237,7 @@ print(aten_dialect)
 from executorch.exir import EdgeProgramManager, to_edge
 
 example_args = (torch.randn(1, 3, 256, 256),)
-aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
+aten_dialect = export(SimpleConv(), example_args, strict=True)
 
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 print("Edge Dialect Graph")
@@ -267,14 +261,12 @@ class Decode(torch.nn.Module):
 
 
 encode_args = (torch.randn(1, 10),)
-aten_encode: ExportedProgram = export(Encode(), encode_args)
+aten_encode: ExportedProgram = export(Encode(), encode_args, strict=True)
 
 decode_args = (torch.randn(1, 5),)
-aten_decode: ExportedProgram = export(Decode(), decode_args)
+aten_decode: ExportedProgram = export(Decode(), decode_args, strict=True)
 
-edge_program: EdgeProgramManager = to_edge(
-    {"encode": aten_encode, "decode": aten_decode}
-)
+edge_program = to_edge({"encode": aten_encode, "decode": aten_decode})
 for method in edge_program.methods:
     print(f"Edge Dialect graph of {method}")
     print(edge_program.exported_program(method))
@@ -291,8 +283,8 @@ for method in edge_program.methods:
 # rather than the ``torch.ops.aten`` namespace.
 
 example_args = (torch.randn(1, 3, 256, 256),)
-aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
-edge_program: EdgeProgramManager = to_edge(aten_dialect)
+aten_dialect = export(SimpleConv(), example_args, strict=True)
+edge_program = to_edge(aten_dialect)
 print("Edge Dialect Graph")
 print(edge_program.exported_program())
 
@@ -357,8 +349,8 @@ class LowerableModule(torch.nn.Module):
 
 # Export and lower the module to Edge Dialect
 example_args = (torch.ones(1),)
-aten_dialect: ExportedProgram = export(LowerableModule(), example_args)
-edge_program: EdgeProgramManager = to_edge(aten_dialect)
+aten_dialect = export(LowerableModule(), example_args, strict=True)
+edge_program = to_edge(aten_dialect)
 to_be_lowered_module = edge_program.exported_program()
 
 from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
@@ -369,7 +361,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (  # noqa
 )
 
 # Lower the module
-lowered_module: LoweredBackendModule = to_backend(
+lowered_module: LoweredBackendModule = to_backend(  # type: ignore[call-arg]
     "BackendWithCompilerDemo", to_be_lowered_module, []
 )
 print(lowered_module)
@@ -423,8 +415,8 @@ class ComposedModule(torch.nn.Module):
 
 
 example_args = (torch.ones(1),)
-aten_dialect: ExportedProgram = export(ComposedModule(), example_args)
-edge_program: EdgeProgramManager = to_edge(aten_dialect)
+aten_dialect = export(ComposedModule(), example_args, strict=True)
+edge_program = to_edge(aten_dialect)
 exported_program = edge_program.exported_program()
 print("Edge Dialect graph")
 print(exported_program)
@@ -460,16 +452,16 @@ class Foo(torch.nn.Module):
         return z
 
 
-example_args = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-aten_dialect: ExportedProgram = export(Foo(), example_args)
-edge_program: EdgeProgramManager = to_edge(aten_dialect)
+example_args_3 = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+aten_dialect = export(Foo(), example_args_3, strict=True)
+edge_program = to_edge(aten_dialect)
 exported_program = edge_program.exported_program()
 print("Edge Dialect graph")
 print(exported_program)
 
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 
-delegated_program = to_backend(exported_program, AddMulPartitionerDemo())
+delegated_program = to_backend(exported_program, AddMulPartitionerDemo())  # type: ignore[call-arg]
 print("Delegated program")
 print(delegated_program)
 print(delegated_program.graph_module.lowered_module_0.original_module)
@@ -484,19 +476,9 @@ print(delegated_program.graph_module.lowered_module_1.original_module)
 # call ``to_backend`` on it:
 
 
-class Foo(torch.nn.Module):
-    def forward(self, a, x, b):
-        y = torch.mm(a, x)
-        z = y + b
-        a = z - a
-        y = torch.mm(a, x)
-        z = y + b
-        return z
-
-
-example_args = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-aten_dialect: ExportedProgram = export(Foo(), example_args)
-edge_program: EdgeProgramManager = to_edge(aten_dialect)
+example_args_3 = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+aten_dialect = export(Foo(), example_args_3, strict=True)
+edge_program = to_edge(aten_dialect)
 exported_program = edge_program.exported_program()
 delegated_program = edge_program.to_backend(AddMulPartitionerDemo())
 
@@ -523,16 +505,13 @@ from executorch.exir.passes import MemoryPlanningPass
 executorch_program: ExecutorchProgramManager = edge_program.to_executorch(
     ExecutorchBackendConfig(
         passes=[],  # User-defined passes
-        memory_planning_pass=MemoryPlanningPass(
-            "greedy"
-        ),  # Default memory planning pass
+        memory_planning_pass=MemoryPlanningPass(),  # Default memory planning pass
     )
 )
 
 print("ExecuTorch Dialect")
 print(executorch_program.exported_program())
 
-import executorch.exir as exir
 
 ######################################################################
 # Notice that in the graph we now see operators like ``torch.ops.aten.sub.out``
@@ -562,8 +541,7 @@ import executorch.exir as exir
 # Here is an example for an entire end-to-end workflow:
 
 import torch
-from torch._export import capture_pre_autograd_graph
-from torch.export import export, ExportedProgram
+from torch.export import export, export_for_training, ExportedProgram
 
 
 class M(torch.nn.Module):
@@ -577,14 +555,14 @@ class M(torch.nn.Module):
 
 
 example_args = (torch.randn(3, 4),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
+pre_autograd_aten_dialect = export_for_training(M(), example_args).module()
 # Optionally do quantization:
 # pre_autograd_aten_dialect = convert_pt2e(prepare_pt2e(pre_autograd_aten_dialect, CustomBackendQuantizer))
-aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
-edge_program: exir.EdgeProgramManager = exir.to_edge(aten_dialect)
+aten_dialect = export(pre_autograd_aten_dialect, example_args, strict=True)
+edge_program = to_edge(aten_dialect)
 # Optionally do delegation:
 # edge_program = edge_program.to_backend(CustomBackendPartitioner)
-executorch_program: exir.ExecutorchProgramManager = edge_program.to_executorch(
+executorch_program = edge_program.to_executorch(
     ExecutorchBackendConfig(
         passes=[],  # User-defined passes
     )

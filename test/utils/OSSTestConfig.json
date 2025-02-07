@@ -1,0 +1,102 @@
+{ "tests": [
+    {
+        "directory": "extension/data_loader/test",
+        "sources": [
+            "buffer_data_loader_test.cpp",
+            "shared_ptr_data_loader_test.cpp",
+            "file_data_loader_test.cpp",
+            "mmap_data_loader_test.cpp"
+        ],
+        "additional_libs": [
+            "extension_data_loader"
+        ]
+    },
+    {
+        "directory": "extension/evalue_util/test",
+        "sources": [
+            "print_evalue_test.cpp",
+            "../print_evalue.cpp"
+        ]
+    },
+    {
+        "directory": "extension/kernel_util/test",
+        "sources": [
+            "make_boxed_from_unboxed_functor_test.cpp"
+        ]
+    },
+    {
+        "directory": "extension/memory_allocator/test",
+        "sources": [
+            "malloc_memory_allocator_test.cpp"
+        ]
+    },
+    {
+        "directory": "extension/pytree/test",
+        "sources": [
+            "function_ref_test.cpp",
+            "test_pytree.cpp"
+        ]
+    },
+    {
+        "directory": "extension/tensor/test",
+        "sources": [
+            "tensor_ptr_maker_test.cpp",
+            "tensor_ptr_test.cpp"
+        ],
+        "additional_libs": [
+            "extension_tensor"
+        ]
+    },
+    {
+        "directory": "kernels/portable/cpu/util/test",
+        "sources": [
+            "broadcast_test.cpp",
+            "reduce_test.cpp"
+        ],
+        "additional_libs": [
+            "portable_kernels",
+            "portable_ops_lib"
+        ]
+    },
+    {
+        "directory": "runtime/core/portable_type/test",
+        "sources": [
+            "optional_test.cpp",
+            "tensor_test.cpp",
+            "half_test.cpp",
+            "scalar_test.cpp",
+            "tensor_impl_test.cpp",
+            "bfloat16_test.cpp"
+        ]
+    },
+    {
+        "directory": "runtime/core/test",
+        "sources": [
+            "span_test.cpp",
+            "error_handling_test.cpp",
+            "event_tracer_test.cpp",
+            "freeable_buffer_test.cpp",
+            "array_ref_test.cpp",
+            "memory_allocator_test.cpp",
+            "hierarchical_allocator_test.cpp",
+            "evalue_test.cpp"
+        ]
+    },
+    {
+        "directory": "runtime/core/exec_aten/util/test",
+        "sources": [
+            "dim_order_util_test.cpp",
+            "operator_impl_example_test.cpp",
+            "scalar_type_util_test.cpp",
+            "tensor_shape_to_c_string_test.cpp",
+            "tensor_util_test.cpp"
+        ]
+    },
+    {
+        "directory": "runtime/core/exec_aten/testing_util/test",
+        "sources": [
+            "tensor_util_test.cpp",
+            "tensor_factory_test.cpp"
+        ]
+    }
+] }

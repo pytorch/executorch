@@ -15,7 +15,7 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Error select_copy_util(
     const Tensor& in,
@@ -35,6 +35,10 @@ Error select_copy_util(
   get_select_copy_out_target_size(in, dim, target_sizes, &target_ndim);
 
   if (!(resize_tensor(out, {target_sizes, target_ndim}) == Error::Ok)) {
+    return Error::InvalidArgument;
+  }
+
+  if (!tensors_have_same_dim_order(in, out)) {
     return Error::InvalidArgument;
   }
 

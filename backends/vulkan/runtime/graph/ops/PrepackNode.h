@@ -28,30 +28,35 @@ class PrepackNode final {
  public:
   PrepackNode(
       ComputeGraph& graph,
-      const api::ShaderInfo& shader,
-      const api::utils::uvec3& global_workgroup_size,
-      const api::utils::uvec3& local_workgroup_size,
+      const vkapi::ShaderInfo& shader,
+      const utils::uvec3& global_workgroup_size,
+      const utils::uvec3& local_workgroup_size,
       const ValueRef tref,
       const ValueRef packed,
-      const api::ParamsBindList& params,
-      const api::SpecVarList& spec_vars = {});
+      const vkapi::ParamsBindList& params,
+      const vkapi::SpecVarList& spec_vars = {});
 
   ~PrepackNode() = default;
 
   void encode(ComputeGraph* graph);
 
+  inline void set_node_id(uint32_t node_id) {
+    node_id_ = node_id;
+  }
+
  protected:
-  const api::ShaderInfo shader_;
-  api::ShaderInfo noop_shader_;
-  const api::utils::uvec3 global_workgroup_size_;
-  const api::utils::uvec3 local_workgroup_size_;
+  uint32_t node_id_;
+  const vkapi::ShaderInfo shader_;
+  vkapi::ShaderInfo noop_shader_;
+  const utils::uvec3 global_workgroup_size_;
+  const utils::uvec3 local_workgroup_size_;
   const ValueRef tref_;
   const ValueRef packed_;
-  const api::ParamsBindList params_;
-  const api::SpecVarList spec_vars_;
+  const vkapi::ParamsBindList params_;
+  const vkapi::SpecVarList spec_vars_;
 
  private:
-  api::StorageBuffer create_staging_buffer(ComputeGraph* graph);
+  api::StagingBuffer create_staging_buffer(ComputeGraph* graph);
 };
 
 } // namespace vkcompute

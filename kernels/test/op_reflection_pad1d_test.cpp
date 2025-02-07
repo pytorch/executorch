@@ -16,16 +16,16 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_reflection_pad1d_out(
     const Tensor& input,
     ArrayRef<int64_t> padding,
     Tensor& out) {
-  exec_aten::RuntimeContext context{};
+  executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::aten::reflection_pad1d_outf(
       context, input, padding, out);
 }

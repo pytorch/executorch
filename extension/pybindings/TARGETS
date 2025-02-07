@@ -30,9 +30,10 @@ runtime.genrule(
     srcs = [":pybinding_types"],
     outs = {
         "aten_lib.pyi": ["aten_lib.pyi"],
+        "core.pyi": ["core.pyi"],
         "_portable_lib.pyi": ["_portable_lib.pyi"],
     },
-    cmd = "cp $(location :pybinding_types)/* $OUT/_portable_lib.pyi && cp $(location :pybinding_types)/* $OUT/aten_lib.pyi",
+    cmd = "cp $(location :pybinding_types)/* $OUT/_portable_lib.pyi && cp $(location :pybinding_types)/* $OUT/aten_lib.pyi && cp $(location :pybinding_types)/* $OUT/core.pyi",
     visibility = ["//executorch/extension/pybindings/..."],
 )
 
@@ -40,6 +41,7 @@ executorch_pybindings(
     compiler_flags = ["-std=c++17"],
     cppdeps = PORTABLE_MODULE_DEPS,
     python_module_name = "core",
+    types = ["//executorch/extension/pybindings:pybindings_types_gen[core.pyi]"],
     visibility = ["PUBLIC"],
 )
 
@@ -63,6 +65,10 @@ executorch_pybindings(
 runtime.python_library(
     name = "portable_lib",
     srcs = ["portable_lib.py"],
-    visibility = ["@EXECUTORCH_CLIENTS"],
+    visibility = [
+        "//executorch/exir/...",
+        "//executorch/runtime/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
     deps = [":_portable_lib"],
 )

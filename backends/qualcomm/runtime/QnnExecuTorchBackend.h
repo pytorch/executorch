@@ -11,27 +11,46 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 
-namespace torch {
-namespace executor {
+#include <mutex>
+#include <unordered_map>
 
-class QnnExecuTorchBackend final : public PyTorchBackendInterface {
+namespace executorch {
+namespace backends {
+namespace qnn {
+
+class QnnExecuTorchBackend final
+    : public ::executorch::runtime::BackendInterface {
  public:
   ~QnnExecuTorchBackend(){};
 
-  Result<DelegateHandle*> init(
-      BackendInitContext& context,
-      FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs) const override;
+  executorch::runtime::Result<executorch::runtime::DelegateHandle*> init(
+      executorch::runtime::BackendInitContext& context,
+      executorch::runtime::FreeableBuffer* processed,
+      executorch::runtime::ArrayRef<executorch::runtime::CompileSpec>
+          compile_specs) const override;
 
-  Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
-      DelegateHandle* handle,
-      EValue** args) const override;
+  executorch::runtime::Error execute(
+      ET_UNUSED executorch::runtime::BackendExecutionContext& context,
+      executorch::runtime::DelegateHandle* handle,
+      executorch::runtime::EValue** args) const override;
 
-  void destroy(DelegateHandle* handle) const override;
+  void destroy(executorch::runtime::DelegateHandle* handle) const override;
 
   bool is_available() const override;
+
+ private:
+  void add_cached_delegate(
+      const std::int64_t& signature,
+      executorch::runtime::DelegateHandle* handle) const;
+  void erase_cached_delegate(executorch::runtime::DelegateHandle* handle) const;
+
+  mutable std::mutex mutex_;
+  mutable std::unordered_map<int64_t, executorch::runtime::DelegateHandle*>
+      delegate_map_;
+  mutable std::unordered_map<executorch::runtime::DelegateHandle*, std::int64_t>
+      delegate_map_rev_;
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace qnn
+} // namespace backends
+} // namespace executorch

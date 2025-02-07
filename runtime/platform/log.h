@@ -33,8 +33,8 @@
 #define ET_LOG_ENABLED 1
 #endif // !defined(ET_LOG_ENABLED)
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Severity level of a log message. Must be ordered from lowest to highest
@@ -79,7 +79,7 @@ namespace internal {
  *
  * @retval Monotonically non-decreasing timestamp in system ticks.
  */
-et_timestamp_t getLogTimestamp();
+et_timestamp_t get_log_timestamp();
 
 /**
  * Log a string message.
@@ -94,7 +94,7 @@ et_timestamp_t getLogTimestamp();
  * @param[in] format Format string.
  * @param[in] args Variable argument list.
  */
-__ET_PRINTFLIKE(6, 0)
+ET_PRINTFLIKE(6, 0)
 void vlogf(
     LogLevel level,
     et_timestamp_t timestamp,
@@ -116,7 +116,7 @@ void vlogf(
  * @param[in] line Source file line of the caller.
  * @param[in] format Format string.
  */
-__ET_PRINTFLIKE(6, 7)
+ET_PRINTFLIKE(6, 7)
 inline void logf(
     LogLevel level,
     et_timestamp_t timestamp,
@@ -135,6 +135,14 @@ inline void logf(
 
 } // namespace internal
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::LogLevel;
 } // namespace executor
 } // namespace torch
 
@@ -146,23 +154,24 @@ inline void logf(
  * @param[in] _level Log severity level.
  * @param[in] _format Log message format string.
  */
-#define ET_LOG(_level, _format, ...)                                          \
-  ({                                                                          \
-    const auto _log_level = torch::executor::LogLevel::_level;                \
-    if (static_cast<uint32_t>(_log_level) >=                                  \
-        static_cast<uint32_t>(torch::executor::LogLevel::ET_MIN_LOG_LEVEL)) { \
-      const auto _timestamp = torch::executor::internal::getLogTimestamp();   \
-      torch::executor::internal::logf(                                        \
-          _log_level,                                                         \
-          _timestamp,                                                         \
-          __ET_SHORT_FILENAME,                                                \
-          __ET_FUNCTION,                                                      \
-          __ET_LINE,                                                          \
-          _format,                                                            \
-          ##__VA_ARGS__);                                                     \
-    }                                                                         \
-  })
-
+#define ET_LOG(_level, _format, ...)                                 \
+  do {                                                               \
+    const auto _log_level = ::executorch::runtime::LogLevel::_level; \
+    if (static_cast<uint32_t>(_log_level) >=                         \
+        static_cast<uint32_t>(                                       \
+            ::executorch::runtime::LogLevel::ET_MIN_LOG_LEVEL)) {    \
+      const auto _timestamp =                                        \
+          ::executorch::runtime::internal::get_log_timestamp();      \
+      ::executorch::runtime::internal::logf(                         \
+          _log_level,                                                \
+          _timestamp,                                                \
+          ET_SHORT_FILENAME,                                         \
+          ET_FUNCTION,                                               \
+          ET_LINE,                                                   \
+          _format,                                                   \
+          ##__VA_ARGS__);                                            \
+    }                                                                \
+  } while (0)
 #else // ET_LOG_ENABLED
 
 /**

@@ -28,13 +28,13 @@ void InterceptWith::install(PlatformIntercept* pi) {
 }
 
 /// Prints a message and aborts if an intercept is not installed.
-#define ASSERT_INTERCEPT_INSTALLED()                                   \
-  ({                                                                   \
-    if (platform_intercept == nullptr) {                               \
-      fprintf(stderr, "%s call was not intercepted\n", __ET_FUNCTION); \
-      fflush(stderr);                                                  \
-      __builtin_trap();                                                \
-    }                                                                  \
+#define ASSERT_INTERCEPT_INSTALLED()                                 \
+  ({                                                                 \
+    if (platform_intercept == nullptr) {                             \
+      fprintf(stderr, "%s call was not intercepted\n", ET_FUNCTION); \
+      fflush(stderr);                                                \
+      __builtin_trap();                                              \
+    }                                                                \
   })
 
 extern "C" {
@@ -44,7 +44,7 @@ void et_pal_init(void) {
   platform_intercept->init();
 }
 
-__ET_NORETURN void et_pal_abort(void) {
+ET_NORETURN void et_pal_abort(void) {
   ASSERT_INTERCEPT_INSTALLED();
   // We can't properly intercept this since it's marked NORETURN.
   fprintf(stderr, "StubPlatform et_pal_abort called\n");
@@ -66,13 +66,23 @@ void et_pal_emit_log_message(
     et_timestamp_t timestamp,
     et_pal_log_level_t level,
     const char* filename,
-    __ET_UNUSED const char* function,
+    ET_UNUSED const char* function,
     size_t line,
     const char* message,
-    __ET_UNUSED size_t length) {
+    ET_UNUSED size_t length) {
   ASSERT_INTERCEPT_INSTALLED();
   platform_intercept->emit_log_message(
       timestamp, level, filename, function, line, message, length);
+}
+
+void* et_pal_allocate(size_t size) {
+  ASSERT_INTERCEPT_INSTALLED();
+  return platform_intercept->allocate(size);
+}
+
+void et_pal_free(void* ptr) {
+  ASSERT_INTERCEPT_INSTALLED();
+  platform_intercept->free(ptr);
 }
 
 } // extern "C"

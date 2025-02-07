@@ -32,19 +32,19 @@ class StrideSlice(NodeVisitor):
 
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             tensor_type,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         dim = cast(int, node.args[1])
@@ -61,7 +61,9 @@ class StrideSlice(NodeVisitor):
         ranges = []
         for i in range(input_tensor_rank):
             if i == dim:
-                ranges.extend([start, end, 1])
+                # find step
+                step = node.args[4] if len(node.args) > 4 else 1
+                ranges.extend([start, end, step])
             else:
                 ranges.extend([0, input_tensor.shape[i], 1])
 

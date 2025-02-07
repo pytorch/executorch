@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 
@@ -14,36 +14,58 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+namespace {
 
-Tensor&
-atan2_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
-  // Determine output size and resize for dynamic shapes
+ScalarType get_common_type(ScalarType a_type, ScalarType b_type) {
+  if (isFloatingType(a_type) && isFloatingType(b_type)) {
+    return promoteTypes(a_type, b_type);
+  } else if (isFloatingType(a_type)) {
+    return a_type;
+  } else if (isFloatingType(b_type)) {
+    return b_type;
+  }
+  return ScalarType::Float;
+}
+
+} // namespace
+
+Tensor& atan2_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
+  // Common Dtype
+  ScalarType common_type = get_common_type(a.scalar_type(), b.scalar_type());
+
+  // Check Dim Order
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
+  // Resize
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
 
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType out_type = out.scalar_type();
+  // Compute Dtype
+  ScalarType compute_type = utils::get_compute_type(common_type);
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, "atan2.out", CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, "atan2.out", CTYPE_B, [&]() {
-      ET_SWITCH_FLOATH_TYPES(out_type, ctx, "atan2.out", CTYPE_OUT, [&]() {
-        apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-            [](const CTYPE_A val_a, const CTYPE_B val_b) {
-              CTYPE_OUT casted_a = static_cast<CTYPE_OUT>(val_a);
-              CTYPE_OUT casted_b = static_cast<CTYPE_OUT>(val_b);
-              return static_cast<CTYPE_OUT>(std::atan2(casted_a, casted_b));
-            },
-            a,
-            b,
-            out);
-      });
-    });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "atan2.out";
+
+  ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          return std::atan2(val_a, val_b);
+        },
+        ctx,
+        a,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        b,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::FLOATHBF16);
   });
 
   return out;

@@ -13,21 +13,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
-option(EXECUTORCH_BUILD_OPTIMIZED "" ON)
+option(EXECUTORCH_BUILD_EXTENSION_TENSOR "" ON)
+option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 option(EXECUTORCH_BUILD_XNNPACK "" ON) # Build with Xnnpack backend
 
 # Include the executorch subdirectory.
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
-    ${CMAKE_BINARY_DIR}/executorch)
-
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+  ${CMAKE_BINARY_DIR}/executorch
+)
 
 add_executable(nanogpt_runner main.cpp)
 target_link_libraries(
-    nanogpt_runner
-    PRIVATE
-    executorch
-    extension_module_static # Provides the Module class
-    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
-    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
+  nanogpt_runner
+  PRIVATE executorch
+          extension_module_static # Provides the Module class
+          extension_tensor # Provides the TensorPtr class
+          optimized_native_cpu_ops_lib # Provides baseline cross-platform
+                                       # kernels
+          xnnpack_backend # Provides the XNNPACK CPU acceleration backend
+)

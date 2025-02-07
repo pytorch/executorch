@@ -16,7 +16,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 namespace {
 
@@ -30,7 +30,7 @@ inline CTYPE round_to_even(CTYPE a) {
 
 } // namespace
 
-Tensor& round_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& round_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
@@ -43,11 +43,18 @@ Tensor& round_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_realhbf16_type(out),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   auto in_scalar_type = in.scalar_type();
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "round.out", CTYPE, [&] {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "round.out", CTYPE, [&] {
     apply_unary_map_fn(
         [in_scalar_type](const CTYPE val_in) {
           if (isIntegralType(in_scalar_type, /*includeBool=*/false)) {

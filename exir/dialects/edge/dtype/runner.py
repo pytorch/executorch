@@ -17,7 +17,9 @@ from executorch.exir.dialects.edge.op.api import get_callable
 
 class DtypeRunner:
     def __init__(self):
-        self.tensor_dtypes = list(common_dtype.all_types_and(torch.bool, torch.half))
+        self.tensor_dtypes = list(
+            common_dtype.all_types_and(torch.bool, torch.half, torch.uint16)
+        )
         self.scalar_dtypes = [torch.bool, torch.int, torch.float]
 
     @staticmethod

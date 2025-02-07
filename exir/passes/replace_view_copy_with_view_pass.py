@@ -109,6 +109,7 @@ class _ViewSpec(TensorSpec):
             "mem_obj_id",
             "mem_offset",
             "dtype",  # property
+            "extra_tensor_info",  # property
         ]
 
         # Make sure _self_fields and _base_fields are disjoint
@@ -273,7 +274,9 @@ class ReplaceViewCopyWithViewPass(PassBase):
             if not isinstance(module, torch.fx.GraphModule):
                 continue
             for node in module.graph.nodes:
-                if _is_view_copy(node):
+                # Note: We only replace view_copy nodes that are not output, since
+                # the output pointer could be modified at runtime (T187925929)
+                if _is_view_copy(node) and all(u.op != "output" for u in node.users):
                     base, _ = node.args
                     node.target = _VIEW_OP
 
@@ -298,7 +301,11 @@ class ReplaceViewCopyWithViewPass(PassBase):
             if not isinstance(module, torch.fx.GraphModule):
                 continue
             for node in module.graph.nodes:
-                assert not _is_view_copy(node)
+                # Note: We only replace view_copy nodes that are not output, since
+                # the output pointer could be modified at runtime (T187925929)
+                assert not (
+                    _is_view_copy(node) and all(u.op != "output" for u in node.users)
+                )
                 if node.op == "call_function" and node.target == _VIEW_OP:
                     assert isinstance(node.meta["spec"], _ViewSpec)
 
@@ -311,6 +318,8 @@ class ReplaceViewCopyWithViewPass(PassBase):
             if not isinstance(module, torch.fx.GraphModule):
                 continue
             for node in module.graph.nodes:
-                if _is_view_copy(node):
+                # Note: We only replace view_copy nodes that are not output, since
+                # the output pointer could be modified at runtime (T187925929)
+                if _is_view_copy(node) and all(u.op != "output" for u in node.users):
                     base, size = node.args
                     assert not _is_view_copy(base)

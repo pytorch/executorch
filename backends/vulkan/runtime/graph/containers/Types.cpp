@@ -29,6 +29,7 @@ std::ostream& operator<<(std::ostream& out, const TypeTag& tag) {
     PRINT_CASE(BOOLLIST)
     PRINT_CASE(VALUELIST)
     PRINT_CASE(STRING)
+    PRINT_CASE(SYMINT)
   }
   return out;
 }

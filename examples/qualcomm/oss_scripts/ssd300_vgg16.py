@@ -14,7 +14,7 @@ import numpy as np
 import torch
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     make_output_dir,
     parse_skip_delegation_node,
@@ -28,7 +28,6 @@ def create_data_lists(voc07_path, data_size):
     Create lists of images, the bounding boxes and labels of the objects in these images, and save these to file.
 
     :param voc07_path: path to the 'VOC2007' folder
-    :param output_folder: folder where the JSONs must be saved
     """
     from utils import parse_annotation
 
@@ -119,50 +118,7 @@ def SSD300VGG16(pretrained_weight_model):
     return model.eval()
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./ssd300_vgg16",
-        default="./ssd300_vgg16",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-d",
-        "--download",
-        help="If specified, download VOCSegmentation dataset by torchvision API",
-        action="store_true",
-        default=False,
-    )
-
-    parser.add_argument(
-        "--oss_repo",
-        help=(
-            "Repository that contains model backbone and score calculation."
-            "e.g., --M ./a-PyTorch-Tutorial-to-Object-Detection"
-            "Please clone the repository from https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Object-Detection"
-        ),
-        type=str,
-        required=True,
-    )
-
-    parser.add_argument(
-        "-p",
-        "--pretrained_weight",
-        help=(
-            "Location of model pretrained weight."
-            "e.g., -p ./checkpoint_ssd300.pth.tar"
-            "Pretrained model can be found in the link https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Object-Detection, under the Training Section"
-        ),
-        type=str,
-        required=True,
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     sys.path.insert(0, args.oss_repo)
 
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
@@ -194,20 +150,15 @@ if __name__ == "__main__":
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
+        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        artifact_path=f"{args.build_folder}",
+        build_path=f"{args.build_folder}",
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
@@ -279,3 +230,56 @@ if __name__ == "__main__":
             pp.pprint(APs)
 
     adb.pull(output_path=args.artifact, callback=post_process)
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./ssd300_vgg16",
+        default="./ssd300_vgg16",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-d",
+        "--download",
+        help="If specified, download VOCSegmentation dataset by torchvision API",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--oss_repo",
+        help=(
+            "Repository that contains model backbone and score calculation."
+            "e.g., --M ./a-PyTorch-Tutorial-to-Object-Detection"
+            "Please clone the repository from https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Object-Detection"
+        ),
+        type=str,
+        required=True,
+    )
+
+    parser.add_argument(
+        "-p",
+        "--pretrained_weight",
+        help=(
+            "Location of model pretrained weight."
+            "e.g., -p ./checkpoint_ssd300.pth.tar"
+            "Pretrained model can be found in the link https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Object-Detection, under the Training Section"
+        ),
+        type=str,
+        required=True,
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

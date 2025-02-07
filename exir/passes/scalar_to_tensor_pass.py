@@ -24,7 +24,7 @@ class ScalarToTensorPass(ExportPass):
                 return (
                     torch.tensor(value)
                     if isinstance(value, (float, int, bool))
-                    and type(arg.type) == torch.TensorType
+                    and isinstance(arg.type, torch.TensorType)
                     else value
                 )
 

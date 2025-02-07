@@ -10,10 +10,8 @@
 
 #include <executorch/runtime/core/error.h>
 
-namespace torch {
-namespace executor {
+namespace example {
 
-Error registerExecutorBackend();
+::executorch::runtime::Error register_executor_backend();
 
-} // namespace executor
-} // namespace torch
+} // namespace example

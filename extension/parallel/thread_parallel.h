@@ -9,10 +9,10 @@
 #pragma once
 
 #include <cstdint>
-// @nolint PATTERNLINT Ok to use stdlib for this optional library
 #include <functional>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
 
 /**
  * A helper to run function in parallel.
@@ -39,4 +39,15 @@ int64_t get_thread_num();
 
 void set_thread_num(int64_t thread_num);
 
-} // namespace torch::executor
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::get_thread_num;
+using ::executorch::extension::parallel_for;
+using ::executorch::extension::set_thread_num;
+} // namespace executor
+} // namespace torch

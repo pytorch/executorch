@@ -18,9 +18,9 @@
 
 #include <gtest/gtest.h>
 
-namespace torch {
-namespace executor {
-namespace testing {
+namespace executorch {
+namespace extension {
+namespace testing { // Test-only helpers belong in a "testing" sub-namespace.
 
 /**
  * Creates and manages a named temporary file in the file system. Deletes the
@@ -98,6 +98,16 @@ class TempFile {
   std::string path_;
 };
 
+} // namespace testing
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace testing {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::testing::TempFile;
 } // namespace testing
 } // namespace executor
 } // namespace torch

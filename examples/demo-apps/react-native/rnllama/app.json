@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "rnllama",
+    "slug": "rnllama",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/rnllama.png",
+    "scheme": "myapp",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/rnllama.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hietalajulius.rnllama"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/rnllama.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/rnllama.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-document-picker",
+        {
+          "iCloudContainerEnvironment": "Production"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

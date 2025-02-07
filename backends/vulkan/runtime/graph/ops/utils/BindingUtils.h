@@ -17,17 +17,17 @@ namespace vkcompute {
 //
 
 void bind_tensor_to_descriptor_set(
-    vTensor& tensor,
-    api::PipelineBarrier& pipeline_barrier,
-    const api::MemoryAccessType accessType,
-    api::DescriptorSet& descriptor_set,
+    api::vTensor& tensor,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::MemoryAccessFlags accessType,
+    vkapi::DescriptorSet& descriptor_set,
     const uint32_t idx);
 
 uint32_t bind_values_to_descriptor_set(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    api::PipelineBarrier& pipeline_barrier,
-    api::DescriptorSet& descriptor_set,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    vkapi::DescriptorSet& descriptor_set,
     const uint32_t base_idx);
 
 //
@@ -35,13 +35,13 @@ uint32_t bind_values_to_descriptor_set(
 //
 
 uint32_t bind_params_to_descriptor_set(
-    const api::ParamsBindList& params,
-    api::DescriptorSet& descriptor_set,
+    const vkapi::ParamsBindList& params,
+    vkapi::DescriptorSet& descriptor_set,
     const uint32_t base_idx);
 
 void bind_staging_to_descriptor_set(
-    api::StorageBuffer& staging,
-    api::DescriptorSet& descriptor_set,
+    api::StagingBuffer& staging,
+    vkapi::DescriptorSet& descriptor_set,
     const uint32_t idx);
 
 } // namespace vkcompute

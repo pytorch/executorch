@@ -121,6 +121,7 @@ def _make_submodule(
         )
         output.args = tuple(output.args[0])
         gm.recompile()
+    # pyre-fixme[16]: `GraphModule` has no attribute `__tracing_inputs__`.
     gm.__tracing_inputs__ = args
     return gm
 

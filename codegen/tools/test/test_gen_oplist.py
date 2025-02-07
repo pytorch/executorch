@@ -42,7 +42,7 @@ class TestGenOpList(unittest.TestCase):
         mock_get_operators: NonCallableMock,
     ) -> None:
         args = ["--output_path=wrong_path", "--model_file_path=path2"]
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(RuntimeError):
             gen_oplist.main(args)
 
     @patch("executorch.codegen.tools.gen_oplist._get_kernel_metadata_for_model")
@@ -119,6 +119,7 @@ class TestGenOpList(unittest.TestCase):
         mock_get_operators: NonCallableMock,
     ) -> None:
         output_path = os.path.join(self.temp_dir.name, "output.yaml")
+        test_path = os.path.join(self.temp_dir.name, "test.yaml")
         args = [
             f"--output_path={output_path}",
             "--root_ops=aten::relu.out",
@@ -128,7 +129,7 @@ class TestGenOpList(unittest.TestCase):
         mock_dump_yaml.assert_called_once_with(
             ["aten::add.out", "aten::mul.out", "aten::relu.out"],
             output_path,
-            "test.yaml",
+            test_path,
             {
                 "aten::relu.out": ["default"],
                 "aten::add.out": ["default"],

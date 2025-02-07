@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Arm Limited and/or its affiliates.
+ * Copyright 2023-2024 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -15,7 +15,12 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+
+namespace executorch {
+namespace backends {
+namespace arm {
 
 // Standard block name size
 const uint32_t kVelaBlockNameLength = 16;
@@ -49,7 +54,7 @@ typedef struct {
   size_t cmd_data_size;
   const char* weight_data;
   size_t weight_data_size;
-  const char* scratch_data;
+  char* scratch_data;
   size_t scratch_data_size;
   VelaIOs* inputs;
   VelaIOs* outputs;
@@ -66,3 +71,7 @@ bool vela_bin_read(const char* data, VelaHandles* handles, int size);
  * on the Ethos-U.
  */
 bool vela_bin_validate(const char* data, int size);
+
+} // namespace arm
+} // namespace backends
+} // namespace executorch

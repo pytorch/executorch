@@ -9,20 +9,21 @@
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 // copy.out(const Tensor& in, const Tensor& src, bool non_blocking, Tensor(a!)
 // out) -> Tensor(a!), see caffe2/aten/src/ATen/native/Copy.cpp
 // TODO: We actually shouldn't see this op with the proper functionalization,
 // and this op needs to be deleted
 Tensor& copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& src,
     bool non_blocking,
@@ -39,26 +40,32 @@ Tensor& copy_out(
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
-  ScalarType in_type = in.scalar_type();
-  ScalarType src_type = src.scalar_type();
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "copy.out", CTYPE, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, src_type, ctx, "copy.out", CTYPE_SRC, [&]() {
-      apply_binary_elementwise_fn<CTYPE, CTYPE_SRC, CTYPE>(
-          [](const CTYPE val_in, const CTYPE_SRC val_src) {
-            return convert<CTYPE, CTYPE_SRC>(val_src);
-          },
-          in,
-          src,
-          out);
-    });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "copy.out";
+
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy.out", CTYPE, [&]() {
+    utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
+        [](ET_UNUSED const CTYPE _, const CTYPE val_src) { return val_src; },
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        src,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;
 }
 
-Tensor&
-copy_(RuntimeContext& ctx, Tensor& in, const Tensor& src, bool non_blocking) {
+Tensor& copy_(
+    KernelRuntimeContext& ctx,
+    Tensor& in,
+    const Tensor& src,
+    bool non_blocking) {
   (void)ctx;
   // Right now we only support blocking data transfer
   ET_KERNEL_CHECK(ctx, non_blocking == false, InvalidArgument, in);
@@ -66,19 +73,22 @@ copy_(RuntimeContext& ctx, Tensor& in, const Tensor& src, bool non_blocking) {
   ET_KERNEL_CHECK(
       ctx, tensor_is_broadcastable_to(src, in), InvalidArgument, in);
 
-  ScalarType in_type = in.scalar_type();
-  ScalarType src_type = src.scalar_type();
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, src), InvalidArgument, in);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "copy_", CTYPE, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, src_type, ctx, "copy_", CTYPE_SRC, [&]() {
-      apply_binary_elementwise_fn<CTYPE, CTYPE_SRC, CTYPE>(
-          [](const CTYPE val_in, const CTYPE_SRC val_src) {
-            return convert<CTYPE, CTYPE_SRC>(val_src);
-          },
-          in,
-          src,
-          in);
-    });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "copy_";
+
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy_", CTYPE, [&]() {
+    utils::apply_bitensor_elementwise_fn<CTYPE, op_name>(
+        [](ET_UNUSED const CTYPE _, const CTYPE val_src) { return val_src; },
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        src,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return in;

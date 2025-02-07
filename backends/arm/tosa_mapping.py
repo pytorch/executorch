@@ -1,7 +1,9 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 
 #
 # PyTorch to Tosa mapping - simple mapping functions and multi-type extraction
@@ -9,72 +11,70 @@
 # the standardised TOSA representation.
 #
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
-from executorch.exir.dialects._ops import ops as exir_ops
-from serializer.tosa_serializer import TosaOp
+
+
+UNSUPPORTED_DTYPES = (
+    torch.float64,
+    torch.double,
+    torch.complex64,
+    torch.cfloat,
+    torch.complex128,
+    torch.cdouble,
+    torch.uint8,
+    torch.int64,
+    torch.long,
+)
+
+DTYPE_MAP = {
+    torch.float32: ts.DType.FP32,
+    torch.float: ts.DType.FP32,
+    torch.float16: ts.DType.FP16,
+    torch.half: ts.DType.FP16,
+    torch.bfloat16: ts.DType.BF16,
+    torch.int8: ts.DType.INT8,
+    torch.int16: ts.DType.INT16,
+    torch.short: ts.DType.INT16,
+    torch.int32: ts.DType.INT32,
+    torch.int: ts.DType.INT32,
+    torch.bool: ts.DType.BOOL,
+}
 
 
 def map_dtype(data_type):
-    unsupported = (
-        torch.float64,
-        torch.double,
-        torch.complex64,
-        torch.cfloat,
-        torch.complex128,
-        torch.cdouble,
-        torch.uint8,
-        torch.int64,
-        torch.long,
-    )
-
-    dmap = {
-        torch.float32: ts.DType.FP32,
-        torch.float: ts.DType.FP32,
-        torch.float16: ts.DType.FP16,
-        torch.half: ts.DType.FP16,
-        torch.bfloat16: ts.DType.BF16,
-        torch.int8: ts.DType.INT8,
-        torch.int16: ts.DType.INT16,
-        torch.short: ts.DType.INT16,
-        torch.int32: ts.DType.INT32,
-        torch.int: ts.DType.INT32,
-        torch.bool: ts.DType.BOOL,
-    }
-
-    assert unsupported.count(data_type) == 0, "Unsupported type"
-    rtype = dmap.get(data_type)
-    assert rtype is not None, "Unknown type"
-    return rtype
+    assert data_type not in UNSUPPORTED_DTYPES, f"Unsupported type: {data_type}"
+    assert data_type in DTYPE_MAP, f"Unknown type: {data_type}"
+    return DTYPE_MAP[data_type]
 
 
 # Returns the shape and type of a node
 # TODO: other types, can be
 # SymInt, FakeTensor, a List[Union[FakeTensor, SymInt]], or None
-def extract_tensor_meta(thing):
-    if type(thing) is tuple:
+def extract_tensor_meta(meta):
+    assert meta.get("val") is not None
+    val = meta["val"]
+    if type(val) is tuple:
         # TODO: should use first concrete representation
-        thing = thing[0]
+        val = val[0]
 
-    assert torch._subclasses.fake_tensor.FakeTensor == type(thing)
+    assert torch._subclasses.fake_tensor.FakeTensor == type(val)
+    dtype = map_dtype(val.dtype)
+    shape = tuple(val.size())
 
-    dtype = map_dtype(thing.dtype)
-    shape = tuple(thing.size())
-    return (dtype, shape)
-
-
-def op(op):
-    ops = {exir_ops.edge.aten.add.Tensor: TosaOp.Op().ADD}
-    return ops.get(op, None)
+    if meta.get("tosa_dim_order") is not None:
+        dim_order = meta["tosa_dim_order"]
+    else:
+        dim_order = tuple(range(len(shape)))
+    return (dtype, shape, dim_order)
 
 
 # Class to capture arguments and turn into tensor references for TOSA OPs
 class TosaArg:
     def __process_node(self, argument):
         assert isinstance(argument, torch.fx.node.Node)
-        assert argument.meta.get("val") is not None
         self.name = argument.name
-        self.dtype, self.shape = extract_tensor_meta(argument.meta["val"])
+        self.dtype, self.shape, self.dim_order = extract_tensor_meta(argument.meta)
 
     def __process_list(self, argument):
         self.special = list(argument)
@@ -86,6 +86,7 @@ class TosaArg:
         self.name = None
         self.dtype = None
         self.shape = None
+        self.dim_order = None
         self.special = None
 
         if argument is None:

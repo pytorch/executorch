@@ -17,17 +17,19 @@ import subprocess
 from typing import List
 
 import torch
+from executorch.devtools import BundledProgram
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 from executorch.exir import ExecutorchBackendConfig, to_edge
 
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
 from executorch.exir.print_program import pretty_print
-from executorch.sdk import BundledProgram
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
 
-from executorch.test.models.linear_model import LinearModel
+from executorch.test.models.linear_model import (  # type: ignore[import-not-found]
+    LinearModel,
+)
 from torch.export import export
 
 
@@ -37,7 +39,7 @@ def main() -> None:
     trace_inputs = (torch.ones(2, 2, dtype=torch.float),)
 
     # Trace to FX Graph.
-    exec_prog = to_edge(export(model, trace_inputs)).to_executorch(
+    exec_prog = to_edge(export(model, trace_inputs, strict=True)).to_executorch(
         config=ExecutorchBackendConfig(
             memory_planning_pass=MemoryPlanningPass(),
             to_out_var_pass=ToOutVarPass(),

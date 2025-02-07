@@ -14,12 +14,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
-using Tensor = exec_aten::Tensor;
+using Scalar = executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& fill_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
@@ -31,6 +31,9 @@ Tensor& fill_scalar_out(
 
   ET_KERNEL_CHECK(ctx, a_type == out_type, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
+
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
       ctx,
@@ -39,7 +42,7 @@ Tensor& fill_scalar_out(
       out,
       "Failed to resize output tensor.");
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
     CTYPE_A b_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "fill.Scalar_out", CTYPE_B, [&] {
       CTYPE_B b_val;
@@ -58,7 +61,7 @@ Tensor& fill_scalar_out(
 }
 
 Tensor& fill_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -66,6 +69,9 @@ Tensor& fill_tensor_out(
 
   // Assert `b` must be a scalar tensor.
   ET_KERNEL_CHECK(ctx, tensor_is_scalar(b), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -81,14 +87,13 @@ Tensor& fill_tensor_out(
       out,
       "Failed to resize output tensor.");
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill.Tensor_out", CTYPE_A, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "fill.Tensor_out", CTYPE_A, [&] {
     CTYPE_A b_casted;
-    ET_SWITCH_REAL_TYPES_AND(
-        Bool, b_type, ctx, "fill.Tensor_out", CTYPE_B, [&] {
-          CTYPE_B b_val;
-          extract_scalar_tensor(b, &b_val);
-          b_casted = static_cast<CTYPE_A>(b_val);
-        });
+    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, "fill.Tensor_out", CTYPE_B, [&] {
+      CTYPE_B b_val;
+      ET_EXTRACT_SCALAR_TENSOR(b, b_val);
+      b_casted = static_cast<CTYPE_A>(b_val);
+    });
 
     apply_unary_map_fn(
         [b_casted](const CTYPE_A val_a) { return b_casted; },

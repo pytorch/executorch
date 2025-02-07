@@ -14,8 +14,8 @@
 #include <memory>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -24,15 +24,16 @@ class MPSCompiler {
   // Takes Flatbuffer Serialized MPS Model and rebuilds the MPSGraphExecutable
   // returns an executor object that holds the MPS runtime object which we
   // can then use to set inputs and run inference using the MPSGraphExecutable.
-  __ET_NODISCARD static Error compileModel(
+  ET_NODISCARD static executorch::runtime::Error compileModel(
       const void* buffer_pointer,
       size_t num_bytes,
       MPSExecutor* executor,
-      MemoryAllocator* runtime_allocator,
-      ArrayRef<CompileSpec> compile_specs);
+      executorch::runtime::MemoryAllocator* runtime_allocator,
+      executorch::runtime::ArrayRef<executorch::runtime::CompileSpec>
+          compile_specs);
 };
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

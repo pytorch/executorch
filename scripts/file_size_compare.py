@@ -170,6 +170,7 @@ def main() -> int:
         )
     elif args.max_size is not None:
         return compare_against_max(args.compare_file, args.max_size)
+    return 0
 
 
 if __name__ == "__main__":

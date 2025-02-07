@@ -16,10 +16,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::MemoryFormat;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::MemoryFormat;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpCopyTest : public OperatorTest {
@@ -34,7 +34,7 @@ class OpCopyTest : public OperatorTest {
   }
 
   // test if copy.out works well under all kinds of legal input type.
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
     Tensor self = tf.make(/*sizes=*/{2, 4}, /*data=*/{2, 3, 2, 4, 1, 5, 1, 6});
@@ -125,13 +125,13 @@ class OpCopyInplaceTest : public OperatorTest {
 // regular test for copy.out
 TEST_F(OpCopyTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpCopyTest, EmptyInputSupported) {
 #define TEST_ENTRY(ctype, dtype) test_empty_input<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

@@ -8,9 +8,10 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <cstring>
-#include <memory>
-#include <sstream>
+#ifdef VULKAN_DEBUG
+#include <iomanip>
+#include <iostream>
+#endif // VULKAN_DEBUG
 
 #ifndef VULKAN_DESCRIPTOR_POOL_SIZE
 #define VULKAN_DESCRIPTOR_POOL_SIZE 1024u
@@ -26,17 +27,15 @@ namespace api {
 Context::Context(size_t adapter_i, const ContextConfig& config)
     : config_(config),
       // Important handles
-      adapter_p_(runtime()->get_adapter_p(adapter_i)),
+      adapter_p_(vkapi::runtime()->get_adapter_p(adapter_i)),
       device_(adapter_p_->device_handle()),
       queue_(adapter_p_->request_queue()),
       // Resource pools
-      command_pool_(device_, queue_.family_index, config_.cmdPoolConfig),
-      descriptor_pool_(device_, config_.descriptorPoolConfig),
+      command_pool_(device_, queue_.family_index, config_.cmd_pool_config),
+      descriptor_pool_(device_, config_.descriptor_pool_config),
       fences_(device_),
-// Diagnostics
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
-      querypool_(config_.queryPoolConfig, adapter_p_),
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
+      // Profiling
+      querypool_(config_.query_pool_config, nullptr),
       // Command buffer submission
       cmd_mutex_{},
       cmd_(VK_NULL_HANDLE, 0u),
@@ -45,7 +44,11 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       buffer_clearlist_mutex_{},
       buffers_to_clear_{},
       image_clearlist_mutex_{},
-      images_to_clear_{} {
+      images_to_clear_{},
+      preferred_image_tiling_{VK_IMAGE_TILING_OPTIMAL} {
+  if (adapter_p_->linear_tiling_3d_enabled()) {
+    preferred_image_tiling_ = VK_IMAGE_TILING_LINEAR;
+  }
 }
 
 Context::~Context() {
@@ -57,25 +60,79 @@ Context::~Context() {
   }
 }
 
-DescriptorSet Context::get_descriptor_set(
-    const ShaderInfo& shader_descriptor,
+void Context::initialize_querypool() {
+  querypool_.initialize(adapter_p_);
+}
+
+void Context::cmd_reset_querypool() {
+  if (querypool_) {
+    set_cmd();
+    querypool_.reset_querypool(cmd_);
+  }
+}
+
+void Context::report_shader_dispatch_start(
+    const std::string& shader_name,
+    const utils::uvec3& global_wg_size,
+    const utils::uvec3& local_wg_size,
+    const uint32_t dispatch_id) {
+  if (querypool_) {
+    querypool_.shader_profile_begin(
+        cmd_,
+        dispatch_id,
+        shader_name,
+        vkapi::create_extent3d(global_wg_size),
+        vkapi::create_extent3d(local_wg_size));
+  }
+}
+
+void Context::report_shader_dispatch_end() {
+  if (querypool_) {
+    querypool_.shader_profile_end(cmd_);
+  }
+}
+
+void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
+  if (shader.requires_shader_int16) {
+    if (!adapter_p_->supports_int16_shader_types()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::SHADER_INT16);
+    }
+  }
+  if (shader.requires_16bit_storage) {
+    if (!adapter_p_->supports_16bit_storage_buffers()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::INT16_STORAGE);
+    }
+  }
+  if (shader.requires_8bit_storage) {
+    if (!adapter_p_->supports_8bit_storage_buffers()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::INT8_STORAGE);
+    }
+  }
+}
+
+vkapi::DescriptorSet Context::get_descriptor_set(
+    const vkapi::ShaderInfo& shader_descriptor,
     const utils::uvec3& local_workgroup_size,
-    const SpecVarList& additional_constants) {
+    const vkapi::SpecVarList& additional_constants,
+    const uint32_t push_constants_size) {
   VkDescriptorSetLayout shader_layout =
       shader_layout_cache().retrieve(shader_descriptor.kernel_layout);
 
   VkPipelineLayout pipeline_layout =
-      pipeline_layout_cache().retrieve(shader_layout);
+      pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  SpecVarList spec_constants = {
-      SV(local_workgroup_size.data[0u]),
-      SV(local_workgroup_size.data[1u]),
-      SV(local_workgroup_size.data[2u])};
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
 
   spec_constants.append(additional_constants);
 
   VkPipeline pipeline = pipeline_cache().retrieve(
-      {pipeline_layout_cache().retrieve(shader_layout),
+      {pipeline_layout_cache().retrieve(shader_layout, push_constants_size),
        shader_cache().retrieve(shader_descriptor),
        spec_constants});
 
@@ -86,27 +143,55 @@ DescriptorSet Context::get_descriptor_set(
 }
 
 void Context::register_shader_dispatch(
-    const DescriptorSet& descriptors,
-    PipelineBarrier& pipeline_barrier,
-    const ShaderInfo& shader_descriptor,
-    const utils::uvec3& global_workgroup_size) {
+    const vkapi::DescriptorSet& descriptors,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::ShaderInfo& shader_descriptor,
+    const utils::uvec3& global_workgroup_size,
+    const void* push_constants_data,
+    const uint32_t push_constants_size) {
   // Adjust the global workgroup size based on the output tile size
+  uint32_t global_wg_w = utils::div_up(
+      global_workgroup_size[0u], shader_descriptor.out_tile_size[0u]);
+  uint32_t global_wg_h = utils::div_up(
+      global_workgroup_size[1u], shader_descriptor.out_tile_size[1u]);
+  uint32_t global_wg_d = utils::div_up(
+      global_workgroup_size[2u], shader_descriptor.out_tile_size[2u]);
+
+  // Submitting a global work group size of 0 is undefined behaviour. If this is
+  // detected then submit a single workgroup instead.
+  if (global_wg_w == 0u || global_wg_h == 0u || global_wg_d == 0u) {
+    global_wg_w = 1u;
+    global_wg_h = 1u;
+    global_wg_d = 1u;
+  }
+
   const utils::uvec3 effective_global_wg = {
-      utils::div_up(
-          global_workgroup_size.data[0u],
-          shader_descriptor.out_tile_size.data[0u]),
-      utils::div_up(
-          global_workgroup_size.data[1u],
-          shader_descriptor.out_tile_size.data[1u]),
-      utils::div_up(
-          global_workgroup_size.data[2u],
-          shader_descriptor.out_tile_size.data[2u]),
+      global_wg_w,
+      global_wg_h,
+      global_wg_d,
   };
 
   cmd_.bind_descriptors(descriptors.get_bind_handle());
   cmd_.insert_barrier(pipeline_barrier);
 
+  if (push_constants_size > 0 && push_constants_data != nullptr) {
+    const VkDescriptorSetLayout shader_layout =
+        shader_layout_cache().retrieve(shader_descriptor.kernel_layout);
+    const VkPipelineLayout pipeline_layout =
+        pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
+    cmd_.set_push_constants(
+        pipeline_layout, push_constants_data, push_constants_size);
+  }
+
   cmd_.dispatch(effective_global_wg);
+}
+
+void Context::register_blit(
+    vkapi::PipelineBarrier& pipeline_barrier,
+    vkapi::VulkanImage& src,
+    vkapi::VulkanImage& dst) {
+  cmd_.insert_barrier(pipeline_barrier);
+  cmd_.blit(src, dst);
 }
 
 void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
@@ -143,14 +228,14 @@ bool available() {
 Context* context() {
   static const std::unique_ptr<Context> context([]() -> Context* {
     try {
-      const uint32_t submit_frequency = 16u;
+      const uint32_t cmd_submit_frequency = 16u;
 
-      const CommandPoolConfig cmd_config{
+      const vkapi::CommandPoolConfig cmd_config{
           32u, // cmdPoolInitialSize
           8u, // cmdPoolBatchSize
       };
 
-      const DescriptorPoolConfig descriptor_pool_config{
+      const vkapi::DescriptorPoolConfig descriptor_pool_config{
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorPoolMaxSets
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorUniformBufferCount
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorStorageBufferCount
@@ -159,19 +244,19 @@ Context* context() {
           32u, // descriptorPileSizes
       };
 
-      const QueryPoolConfig query_pool_config{
+      const vkapi::QueryPoolConfig query_pool_config{
           VULKAN_QUERY_POOL_SIZE, // maxQueryCount
           256u, // initialReserveSize
       };
 
       const ContextConfig config{
-          submit_frequency, // cmdSubmitFrequency
-          cmd_config, // cmdPoolConfig
-          descriptor_pool_config, // descriptorPoolConfig
-          query_pool_config, // queryPoolConfig
+          cmd_submit_frequency,
+          cmd_config,
+          descriptor_pool_config,
+          query_pool_config,
       };
 
-      return new Context(runtime()->default_adapter_i(), config);
+      return new Context(vkapi::runtime()->default_adapter_i(), config);
     } catch (...) {
     }
 
@@ -181,65 +266,220 @@ Context* context() {
   return context.get();
 }
 
-//
-// UniformParamsBuffer
-//
+#ifdef VULKAN_DEBUG
 
-namespace {
+#ifdef VK_KHR_pipeline_executable_properties
 
-void memcpy_to_buffer(const VulkanBuffer& src, VulkanBuffer& dst) {
-  MemoryMap dst_mapping(dst, MemoryAccessType::WRITE);
+VkPipeline Context::get_shader_pipeline(
+    const vkapi::ShaderInfo& shader,
+    const vkapi::SpecVarList& spec_constants) {
+  const uint32_t push_constants_size = 128u;
 
-  MemoryMap src_mapping(src, MemoryAccessType::READ);
-  src_mapping.invalidate();
+  VkDescriptorSetLayout shader_layout =
+      shader_layout_cache().retrieve(shader.kernel_layout);
+  VkPipelineLayout pipeline_layout =
+      pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  void* dst_ptr = dst_mapping.template data<void>();
-  void* src_ptr = src_mapping.template data<void>();
+  vkapi::SpecVarList spec_constants_full_list = {4u, 4u, 1u};
+  spec_constants_full_list.append(spec_constants);
 
-  // @lint-ignore CLANGTIDY facebook-security-vulnerable-memcpy
-  memcpy(dst_ptr, src_ptr, src.mem_size());
+  VkPipeline pipeline = pipeline_cache().retrieve(
+      {pipeline_layout,
+       shader_cache().retrieve(shader),
+       spec_constants_full_list});
+
+  return pipeline;
 }
 
-} // namespace
+std::vector<VkPipelineExecutablePropertiesKHR>
+Context::get_pipeline_executable_props(const VkPipeline pipeline) {
+  VkPipelineInfoKHR pipeline_info{
+      VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR,
+      nullptr,
+      pipeline,
+  };
 
-UniformParamsBuffer::UniformParamsBuffer(const UniformParamsBuffer& other)
-    : context_p_(other.context_p_), vulkan_buffer_{} {
-  if (other.vulkan_buffer_) {
-    vulkan_buffer_ = context_p_->adapter_ptr()->vma().create_uniform_buffer(
-        other.vulkan_buffer_.mem_size());
+  uint32_t shader_props_count = 0u;
+  vkGetPipelineExecutablePropertiesKHR(
+      device(), &pipeline_info, &shader_props_count, nullptr);
 
-    memcpy_to_buffer(other.vulkan_buffer_, vulkan_buffer_);
+  std::vector<VkPipelineExecutablePropertiesKHR> pipeline_props(
+      shader_props_count);
+  for (int i = 0; i < shader_props_count; i++) {
+    pipeline_props.at(i).sType =
+        VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR;
+    pipeline_props.at(i).pNext = nullptr;
+  }
+  vkGetPipelineExecutablePropertiesKHR(
+      device(), &pipeline_info, &shader_props_count, pipeline_props.data());
+
+  return pipeline_props;
+}
+
+std::tuple<
+    std::vector<VkPipelineExecutableInternalRepresentationKHR>,
+    std::vector<std::vector<char>>>
+Context::get_shader_executable_irs(
+    const VkPipeline pipeline,
+    const uint32_t pipeline_exec_idx) {
+  VkPipelineExecutableInfoKHR exec_info{
+      VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR,
+      nullptr,
+      pipeline,
+      pipeline_exec_idx,
+  };
+
+  uint32_t ir_count;
+  VK_CHECK(vkGetPipelineExecutableInternalRepresentationsKHR(
+      device(), &exec_info, &ir_count, nullptr));
+
+  std::vector<VkPipelineExecutableInternalRepresentationKHR> irs(ir_count);
+  for (int i = 0; i < ir_count; i++) {
+    irs.at(i).sType =
+        VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INTERNAL_REPRESENTATION_KHR;
+    irs.at(i).pNext = nullptr;
+    irs.at(i).pData = nullptr;
+  }
+  VK_CHECK(vkGetPipelineExecutableInternalRepresentationsKHR(
+      device(), &exec_info, &ir_count, irs.data()));
+
+  std::vector<std::vector<char>> irs_data(ir_count);
+  for (int i = 0; i < ir_count; i++) {
+    irs_data.at(i).resize(irs.at(i).dataSize);
+    irs.at(i).pData = irs_data.at(i).data();
+  }
+  VK_CHECK(vkGetPipelineExecutableInternalRepresentationsKHR(
+      device(), &exec_info, &ir_count, irs.data()));
+
+  return std::make_tuple(irs, irs_data);
+}
+
+std::vector<VkPipelineExecutableStatisticKHR>
+Context::get_shader_executable_stats(
+    const VkPipeline pipeline,
+    const uint32_t pipeline_exec_idx) {
+  VkPipelineExecutableInfoKHR exec_info{
+      VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR,
+      nullptr,
+      pipeline,
+      pipeline_exec_idx,
+  };
+
+  uint32_t stats_count;
+  VK_CHECK(vkGetPipelineExecutableStatisticsKHR(
+      device(), &exec_info, &stats_count, NULL));
+
+  std::vector<VkPipelineExecutableStatisticKHR> shader_stats(stats_count);
+  for (int i = 0; i < stats_count; i++) {
+    shader_stats.at(i).sType =
+        VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR;
+    shader_stats.at(i).pNext = nullptr;
+  }
+  vkGetPipelineExecutableStatisticsKHR(
+      device(), &exec_info, &stats_count, shader_stats.data());
+
+  return shader_stats;
+}
+
+std::ostream& operator<<(
+    std::ostream& os,
+    const VkPipelineExecutablePropertiesKHR& props) {
+  os << std::left << std::setw(10) << "name: " << props.name << std::endl;
+  os << std::left << std::setw(10) << "descr: " << props.description
+     << std::endl;
+  os << std::left << std::setw(10) << "subgroup: " << props.subgroupSize
+     << std::endl;
+
+  return os;
+}
+
+std::ostream& operator<<(
+    std::ostream& os,
+    const VkPipelineExecutableInternalRepresentationKHR& ir) {
+  os << std::left << std::setw(10) << "descr: " << ir.description << std::endl;
+  os << std::left << std::setw(10) << "isText: " << ir.isText << std::endl;
+  os << std::left << std::setw(10) << "size: " << ir.dataSize << std::endl;
+  if (ir.isText) {
+    os << "text:" << std::endl;
+    char* str = (char*)ir.pData;
+    os << str << std::endl;
+  }
+  return os;
+}
+
+std::ostream& operator<<(
+    std::ostream& os,
+    VkPipelineExecutableStatisticKHR& stat) {
+  os << stat.name << ": ";
+  switch (stat.format) {
+    case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR:
+      os << (stat.value.b32 ? "true" : "false") << std::endl;
+      break;
+    case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR:
+      os << stat.value.i64 << std::endl;
+      break;
+    case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR:
+      os << stat.value.u64 << std::endl;
+      break;
+    case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR:
+      os << stat.value.f64 << std::endl;
+      break;
+    default:
+      break;
+  }
+  os << "    " << stat.description << std::endl;
+  return os;
+}
+
+std::ostream& operator<<(
+    std::ostream& os,
+    std::vector<VkPipelineExecutableStatisticKHR>& shader_stats) {
+  for (int i = 0; i < shader_stats.size(); i++) {
+    VkPipelineExecutableStatisticKHR& stat = shader_stats.at(i);
+    os << stat;
+  }
+  return os;
+}
+
+void Context::print_shader_executable_properties(
+    const vkapi::ShaderInfo& shader,
+    const vkapi::SpecVarList& spec_constants) {
+  VkPipeline pipeline = get_shader_pipeline(shader, spec_constants);
+
+  std::vector<VkPipelineExecutablePropertiesKHR> pipeline_props_list =
+      get_pipeline_executable_props(pipeline);
+
+  VK_CHECK_COND(pipeline_props_list.size() == 1u);
+
+  std::cout << pipeline_props_list.at(0) << std::endl;
+
+  std::tuple<
+      std::vector<VkPipelineExecutableInternalRepresentationKHR>,
+      std::vector<std::vector<char>>>
+      irs_and_irs_data = get_shader_executable_irs(pipeline, 0u);
+
+  std::vector<VkPipelineExecutableInternalRepresentationKHR>& irs =
+      std::get<0>(irs_and_irs_data);
+
+  std::cout << "Found " << irs.size() << " IRs" << std::endl << std::endl;
+  for (int i = 0; i < irs.size(); i++) {
+    std::cout << "====== IR " << i << ": " << irs.at(i).name
+              << " ======" << std::endl;
+    std::cout << irs.at(i) << std::endl;
+  }
+
+  std::vector<VkPipelineExecutableStatisticKHR> shader_stats =
+      get_shader_executable_stats(pipeline, 0u);
+  std::cout << "Found " << shader_stats.size() << " Statistics" << std::endl;
+  if (shader_stats.size() > 0) {
+    std::cout << "====== Statistics: ======" << std::endl;
+    std::cout << shader_stats << std::endl;
   }
 }
 
-UniformParamsBuffer& UniformParamsBuffer::operator=(
-    const UniformParamsBuffer& other) {
-  if (&other != this) {
-    context_p_ = other.context_p_;
+#endif // VK_KHR_pipeline_executable_properties
 
-    // Move vulkan_buffer_ to another VulkanBuffer for cleanup
-    if (vulkan_buffer_) {
-      VulkanBuffer temp_buffer(std::move(vulkan_buffer_));
-      context_p_->register_buffer_cleanup(temp_buffer);
-    }
-    // vulkan_buffer_ should now be empty
-
-    if (other.vulkan_buffer_) {
-      vulkan_buffer_ = context_p_->adapter_ptr()->vma().create_uniform_buffer(
-          other.vulkan_buffer_.mem_size());
-
-      memcpy_to_buffer(other.vulkan_buffer_, vulkan_buffer_);
-    }
-  }
-
-  return *this;
-}
-
-ParamsBindList::ParamsBindList(
-    std::initializer_list<const api::BufferBindInfo> init_list) {
-  bind_infos.resize(init_list.size());
-  std::copy(init_list.begin(), init_list.end(), bind_infos.begin());
-}
+#endif // VULKAN_DEBUG
 
 } // namespace api
 } // namespace vkcompute

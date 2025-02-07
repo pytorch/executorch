@@ -15,12 +15,12 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using Scalar = exec_aten::Scalar;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using Scalar = executorch::aten::Scalar;
 
 Tensor& masked_fill_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& mask,
     const Scalar& value,
@@ -39,8 +39,11 @@ Tensor& masked_fill_scalar_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "masked_fill.Scalar_out", CTYPE, [&]() {
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, mask, out), InvalidArgument, out);
+
+  ET_SWITCH_REALHBBF16_TYPES(
+      in_type, ctx, "masked_fill.Scalar_out", CTYPE, [&]() {
         ET_SWITCH_REAL_TYPES_AND(
             Bool, val_type, ctx, "masked_fill.Scalar_out", CTYPE_VAL, [&]() {
               CTYPE_VAL value_v;

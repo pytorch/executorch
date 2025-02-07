@@ -6,7 +6,7 @@
 
 # Please this file formatted by running:
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 
 cmake_minimum_required(VERSION 3.19)
@@ -25,6 +25,11 @@ target_compile_options(extension_data_loader PUBLIC ${_common_compile_options})
 # Install libraries
 install(
   TARGETS extension_data_loader
-  DESTINATION ${CMAKE_BINARY_DIR}/lib
+  DESTINATION lib
   INCLUDES
-  DESTINATION ${_common_include_directories})
+  DESTINATION ${_common_include_directories}
+)
+
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

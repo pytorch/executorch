@@ -129,7 +129,7 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
         expected_res = sin_module(*model_inputs)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
 
         lowered_sin_module = to_backend(
             "BackendWithCompilerDemo", edgeir_m.exported_program(), []
@@ -154,7 +154,7 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -174,7 +174,9 @@ class TestBackends(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+        exec_prog = to_edge(
+            export(composite_model, model_inputs, strict=True)
+        ).to_executorch(
             config=exir.ExecutorchBackendConfig(
                 extract_delegate_segments=extract_delegate_segments
             )
@@ -210,7 +212,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
         )
 
         # Check the delegate instruction
@@ -248,7 +250,7 @@ class TestBackends(unittest.TestCase):
 
         add_mul_module = AddMulModule()
         model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
-        edge_graph_module = to_edge(export(add_mul_module, model_inputs))
+        edge_graph_module = to_edge(export(add_mul_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_add_mul = to_backend(
@@ -269,7 +271,9 @@ class TestBackends(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+        exec_prog = to_edge(
+            export(composite_model, model_inputs, strict=True)
+        ).to_executorch(
             config=exir.ExecutorchBackendConfig(
                 extract_delegate_segments=extract_delegate_segments
             )
@@ -298,7 +302,7 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         # the backend only  accepts shape <= 4
         model_inputs = (torch.ones(6),)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -318,7 +322,9 @@ class TestBackends(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+        exec_prog = to_edge(
+            export(composite_model, model_inputs, strict=True)
+        ).to_executorch(
             config=exir.ExecutorchBackendConfig(
                 extract_delegate_segments=extract_delegate_segments
             ),
@@ -361,7 +367,7 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -383,7 +389,9 @@ class TestBackends(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+        exec_prog = to_edge(
+            export(composite_model, model_inputs, strict=True)
+        ).to_executorch(
             config=exir.ExecutorchBackendConfig(
                 extract_delegate_segments=extract_delegate_segments
             ),
@@ -414,7 +422,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
         )
 
         # Check the delegate instruction
@@ -452,7 +460,7 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         error_msg = r"call_function aten.cos.default is not supported in backend BackendWithCompilerDemo"
 
         with self.assertRaisesRegex(
@@ -473,7 +481,7 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         error_msg = r"Backend FakeBackendWithCompilerDemo was not found."
 
         with self.assertRaisesRegex(
@@ -499,7 +507,9 @@ class TestBackends(unittest.TestCase):
         # sin_module is an nn.Module
         to_be_lowered = LowerableSubModel()
         example_input = (torch.ones(1),)
-        to_be_lowered_exir_submodule = to_edge(export(to_be_lowered, example_input))
+        to_be_lowered_exir_submodule = to_edge(
+            export(to_be_lowered, example_input, strict=True)
+        )
 
         max_value = example_input[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -538,7 +548,9 @@ class TestBackends(unittest.TestCase):
         # Verify the input works with eager module
         composite_model(*model_inputs)
 
-        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+        exec_prog = to_edge(
+            export(composite_model, model_inputs, strict=True)
+        ).to_executorch(
             config=exir.ExecutorchBackendConfig(
                 extract_delegate_segments=extract_delegate_segments
             ),
@@ -598,14 +610,14 @@ class TestBackends(unittest.TestCase):
         orig_res = composite_m(*inputs)
 
         traced = to_edge(
-            export(composite_m, inputs),
+            export(composite_m, inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False, _use_edge_ops=True
             ),
         )
 
         program_without_delegates = to_edge(
-            export(CompositeModel(3), inputs),
+            export(CompositeModel(3), inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
@@ -719,17 +731,14 @@ class TestBackends(unittest.TestCase):
         orig_res = composite_m(*inputs)
 
         traced = to_edge(
-            export(composite_m, inputs),
+            export(composite_m, inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False, _use_edge_ops=True
             ),
         )
 
         program_without_delegates = to_edge(
-            export(
-                CompositeModel(3),
-                (input_x, input_h, input_c),
-            ),
+            export(CompositeModel(3), (input_x, input_h, input_c), strict=True),
             compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
@@ -842,7 +851,7 @@ class TestBackends(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
         orig_res = m(*inputs)
 
-        ep = to_edge(export(m, inputs))
+        ep = to_edge(export(m, inputs, strict=True))
         executorch_prog = ep
         executorch_prog = executorch_prog.to_backend(AddMulPartitionerDemo())
         executorch_prog = executorch_prog.to_executorch(
@@ -899,7 +908,7 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.randn(1, 3), torch.randn(1, 3))
         orig_res = Model()(*inputs)
-        ep = to_edge(export(Model(), inputs))
+        ep = to_edge(export(Model(), inputs, strict=True))
         executorch_prog = ep
         executorch_prog = executorch_prog.to_backend(AddAttributePartitionerDemo())
         executorch_prog = executorch_prog.to_executorch(
@@ -962,7 +971,7 @@ class TestBackends(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        ep = to_edge(export(Model(), inputs))
+        ep = to_edge(export(Model(), inputs, strict=True))
         with self.assertRaises(AssertionError):
             _ = ep.to_backend(BadPartitioner())
 
@@ -988,10 +997,7 @@ class TestBackends(unittest.TestCase):
 
         # fails to trace here
         converted_linear_gm = to_edge(
-            export(
-                converted_linear,
-                example_inputs,
-            ),
+            export(converted_linear, example_inputs, strict=True),
             compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
@@ -1023,12 +1029,7 @@ class TestBackends(unittest.TestCase):
         f = Module()
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         orig_res = f(*inputs)
-        orig = to_edge(
-            export(
-                f,
-                inputs,
-            )
-        )
+        orig = to_edge(export(f, inputs, strict=True))
         partitioned = orig
         partitioned = partitioned.to_backend(AddMulPartitionerDemo())
 
@@ -1077,12 +1078,7 @@ class TestBackends(unittest.TestCase):
         f = Module()
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         orig_res = f(*inputs)
-        orig = to_edge(
-            export(
-                f,
-                inputs,
-            )
-        )
+        orig = to_edge(export(f, inputs, strict=True))
         partitioned = orig
         partitioned = partitioned.to_backend(AddMulPartitionerDemo())
 
@@ -1151,12 +1147,7 @@ class TestBackends(unittest.TestCase):
 
         f = Module()
         orig_res = f(*inputs)
-        orig = to_edge(
-            export(
-                f,
-                inputs,
-            )
-        )
+        orig = to_edge(export(f, inputs, strict=True))
         partitioned = orig
         partitioned = partitioned.to_backend(AddMulPartitionerDemo())
 
@@ -1219,7 +1210,7 @@ class TestBackends(unittest.TestCase):
 
         f = Module()
         inputs = ([torch.randn(2, 2), torch.randn(2, 2)],)
-        edge_prog = to_edge(export(f, inputs))
+        edge_prog = to_edge(export(f, inputs, strict=True))
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )
@@ -1232,7 +1223,7 @@ class TestBackends(unittest.TestCase):
             def forward(self, x: List[torch.Tensor]):
                 return self.lowered(x)
 
-        gm = to_edge(export(ComposedM(), inputs))
+        gm = to_edge(export(ComposedM(), inputs, strict=True))
         gm.exported_program().module()(*inputs)
 
     def test_dict_input(self):
@@ -1243,7 +1234,7 @@ class TestBackends(unittest.TestCase):
 
         f = Module()
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = to_edge(export(f, inputs))
+        edge_prog = to_edge(export(f, inputs, strict=True))
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )
@@ -1256,5 +1247,5 @@ class TestBackends(unittest.TestCase):
             def forward(self, x: List[torch.Tensor]):
                 return self.lowered(x)
 
-        gm = to_edge(export(ComposedM(), inputs))
+        gm = to_edge(export(ComposedM(), inputs, strict=True))
         gm.exported_program().module()(*inputs)

@@ -10,7 +10,6 @@
 #import <ETCoreMLModel.h>
 #import <ETCoreMLModelManager.h>
 #import <ETCoreMLStrings.h>
-#import <atomic>
 #import <backend_delegate.h>
 #import <model_event_logger.h>
 #import <multiarray.h>
@@ -88,6 +87,158 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 }
 } //namespace
 
+@interface ETCoreMLModelManagerDelegate : NSObject
+
+- (instancetype)init NS_UNAVAILABLE;
+
++ (instancetype)new NS_UNAVAILABLE;
+
+- (instancetype)initWithConfig:(BackendDelegate::Config)config NS_DESIGNATED_INITIALIZER;
+
+- (BOOL)loadAndReturnError:(NSError * _Nullable __autoreleasing *)error;
+
+- (void)loadAsynchronously;
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                               error:(NSError* __autoreleasing*)error;
+
+- (BOOL)executeModelWithHandle:(ModelHandle*)handle
+                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
+                loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                   eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
+                         error:(NSError* __autoreleasing*)error;
+
+- (BOOL)unloadModelWithHandle:(ModelHandle*)handle;
+
+- (BOOL)purgeModelsCacheAndReturnError:(NSError * _Nullable __autoreleasing *)error;
+
+@property (assign, readonly, nonatomic) BackendDelegate::Config config;
+@property (strong, readonly, nonatomic) dispatch_queue_t syncQueue;
+@property (strong, nonatomic, nullable) ETCoreMLModelManager *impl;
+@property (assign, readonly, nonatomic) BOOL isAvailable;
+
+@end
+
+@implementation ETCoreMLModelManagerDelegate
+
+- (instancetype)initWithConfig:(BackendDelegate::Config)config {
+    self = [super init];
+    if (self) {
+        _config = std::move(config);
+        _syncQueue = dispatch_queue_create("com.executorchcoreml.modelmanagerdelegate.sync", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
+    }
+    
+    return self;
+}
+
+- (BOOL)_loadAndReturnError:(NSError * _Nullable __autoreleasing *)error {
+    if (self.impl != nil) {
+        return YES;
+    }
+    
+    ETCoreMLAssetManager *assetManager = create_asset_manager(ETCoreMLStrings.assetsDirectoryPath,
+                                                              ETCoreMLStrings.trashDirectoryPath,
+                                                              ETCoreMLStrings.databaseDirectoryPath,
+                                                              ETCoreMLStrings.databaseName,
+                                                              self.config.max_models_cache_size,
+                                                              error);
+    if (!assetManager) {
+        return NO;
+    }
+    
+    ETCoreMLModelManager *modelManager = [[ETCoreMLModelManager alloc] initWithAssetManager:assetManager];
+    if (!modelManager) {
+        return NO;
+    }
+    
+    self.impl = modelManager;
+    
+    if (self.config.should_prewarm_asset) {
+        [modelManager prewarmRecentlyUsedAssetsWithMaxCount:1];
+    }
+
+    return YES;
+}
+
+- (BOOL)loadAndReturnError:(NSError * _Nullable __autoreleasing *)error {
+    __block NSError *localError = nil;
+    __block BOOL result = NO;
+    dispatch_sync(self.syncQueue, ^{
+        result = [self _loadAndReturnError:&localError];
+    });
+    
+    if (error) {
+        *error = localError;
+    }
+    
+    return result;
+}
+
+- (void)loadAsynchronously {
+    dispatch_async(self.syncQueue, ^{
+        (void)[self _loadAndReturnError:nil];
+    });
+}
+
+- (ModelHandle*)loadModelFromAOTData:(NSData*)data
+                       configuration:(MLModelConfiguration*)configuration
+                               error:(NSError* __autoreleasing*)error {
+    if (![self loadAndReturnError:error]) {
+        return nil;
+    }
+    
+    auto handle = [self.impl loadModelFromAOTData:data
+                                    configuration:configuration
+                                            error:error];
+    if ((handle != NULL) && self.config.should_prewarm_model) {
+        [self.impl prewarmModelWithHandle:handle error:nil];
+    }
+
+    return handle;
+}
+
+- (BOOL)executeModelWithHandle:(ModelHandle*)handle
+                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
+                loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                   eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
+                         error:(NSError* __autoreleasing*)error {
+    assert(self.impl != nil && "Impl must not be nil");
+    return [self.impl executeModelWithHandle:handle
+                                     argsVec:argsVec
+                              loggingOptions:loggingOptions
+                                 eventLogger:eventLogger
+                                       error:error];
+}
+
+- (nullable ETCoreMLModel*)modelWithHandle:(ModelHandle*)handle {
+    assert(self.impl != nil && "Impl must not be nil");
+    return [self.impl modelWithHandle:handle];
+}
+
+- (BOOL)unloadModelWithHandle:(ModelHandle*)handle {
+    assert(self.impl != nil && "Impl must not be nil");
+    return [self.impl unloadModelWithHandle:handle];
+}
+
+- (BOOL)purgeModelsCacheAndReturnError:(NSError * _Nullable __autoreleasing *)error {
+    if (![self loadAndReturnError:error]) {
+        return NO;
+    }
+    
+    return [self.impl purgeModelsCacheAndReturnError:error];;
+}
+
+- (BOOL)isAvailable {
+    if (![self loadAndReturnError:nil]) {
+        return NO;
+    }
+    
+    return YES;
+}
+
+@end
+
 namespace executorchcoreml {
 
 std::string BackendDelegate::ErrorCategory::message(int code) const {
@@ -114,20 +265,9 @@ std::string BackendDelegate::ErrorCategory::message(int code) const {
 class BackendDelegateImpl: public BackendDelegate {
 public:
     explicit BackendDelegateImpl(const Config& config) noexcept
-    :BackendDelegate(), config_(config) {
-        NSError *localError = nil;
-        ETCoreMLAssetManager *asset_manager = create_asset_manager(ETCoreMLStrings.assetsDirectoryPath,
-                                                                   ETCoreMLStrings.trashDirectoryPath,
-                                                                   ETCoreMLStrings.databaseDirectoryPath,
-                                                                   ETCoreMLStrings.databaseName,
-                                                                   config.max_models_cache_size,
-                                                                   &localError);
-        
-        model_manager_ = (asset_manager != nil) ? [[ETCoreMLModelManager alloc] initWithAssetManager:asset_manager] : nil;
-        if (model_manager_ != nil && config_.should_prewarm_asset) {
-            [model_manager_ prewarmRecentlyUsedAssetsWithMaxCount:1];
-        }
-        available_.store(model_manager_ != nil, std::memory_order_seq_cst);
+    :BackendDelegate(), model_manager_([[ETCoreMLModelManagerDelegate alloc] initWithConfig:config])
+    {
+        [model_manager_ loadAsynchronously];
     }
     
     BackendDelegateImpl(BackendDelegateImpl const&) = delete;
@@ -142,11 +282,6 @@ public:
         ModelHandle *modelHandle = [model_manager_ loadModelFromAOTData:data
                                                           configuration:configuration
                                                                   error:&localError];
-        if (modelHandle && config_.should_prewarm_model) {
-            NSError *localError = nil;
-            [model_manager_ prewarmModelWithHandle:modelHandle error:&localError];
-        }
-        
         return modelHandle;
     }
     
@@ -158,7 +293,7 @@ public:
         NSError *error = nil;
         if (![model_manager_ executeModelWithHandle:handle
                                             argsVec:args
-                                    loggingOptions:logging_options
+                                     loggingOptions:logging_options
                                         eventLogger:event_logger
                                               error:&error]) {
             ec = static_cast<ErrorCode>(error.code);
@@ -173,7 +308,7 @@ public:
     }
     
     bool is_available() const noexcept override {
-        return available_.load(std::memory_order_acquire);
+        return static_cast<bool>(model_manager_.isAvailable);
     }
     
     std::pair<size_t, size_t> get_num_arguments(Handle* handle) const noexcept override {
@@ -187,12 +322,11 @@ public:
     
     bool purge_models_cache() const noexcept override {
         NSError *localError = nil;
-        bool result = static_cast<bool>([model_manager_.assetManager purge:&localError]);
+        bool result = static_cast<bool>([model_manager_ purgeModelsCacheAndReturnError:&localError]);
         return result;
     }
     
-    ETCoreMLModelManager *model_manager_;
-    std::atomic<bool> available_;
+    ETCoreMLModelManagerDelegate *model_manager_;
     Config config_;
 };
 
@@ -200,4 +334,3 @@ std::shared_ptr<BackendDelegate> BackendDelegate::make(const Config& config) {
     return std::make_shared<BackendDelegateImpl>(config);
 }
 } //namespace executorchcoreml
-

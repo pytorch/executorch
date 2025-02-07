@@ -98,17 +98,18 @@ After exporting the XNNPACK Delegated model, we can now try running it with exam
 cd executorch
 
 # Get a clean cmake-out directory
-rm- -rf cmake-out
+./install_executorch.sh --clean
 mkdir cmake-out
 
 # Configure cmake
 cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_ENABLE_LOGGING=1 \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-out .
 ```

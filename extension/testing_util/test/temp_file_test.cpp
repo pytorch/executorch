@@ -18,7 +18,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::testing::TempFile;
+using executorch::extension::testing::TempFile;
 
 TEST(TempFileTest, Smoke) {
   std::string path;

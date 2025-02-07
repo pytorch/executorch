@@ -6,8 +6,8 @@
 
 #include <executorch/backends/apple/mps/runtime/MPSGraphBuilder.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -204,7 +204,31 @@ MPSGraphBuilder::mpsIndexPutOp(NodePtr nodePtr) {
   return err;
 }
 
+Error
+MPSGraphBuilder::mpsScatterOp(NodePtr nodePtr) {
+  auto graphNode = nodePtr->mpsnode_union_as_MPSScatter();
+  ET_LOG(
+    Debug, "%s %d: %d",
+    __FUNCTION__, graphNode->input1_id(), graphNode->output_id()
+  );
+
+  int64_t dim = graphNode->dim();
+  MPSGraphTensor* inputTensor = getMPSGraphTensor(graphNode->input1_id());
+  MPSGraphTensor* indicesTensor = getMPSGraphTensor(graphNode->idx_id());
+  MPSGraphTensor* updatesTensor = getMPSGraphTensor(graphNode->src_id());
+
+  _idToMPSGraphTensor[graphNode->output_id()] =
+    [_mpsGraph scatterAlongAxis:dim
+                 withDataTensor:inputTensor
+                  updatesTensor:updatesTensor
+                  indicesTensor:indicesTensor
+                           mode:MPSGraphScatterModeSet
+                           name:nil];
+  return Error::Ok;
+}
+
+
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

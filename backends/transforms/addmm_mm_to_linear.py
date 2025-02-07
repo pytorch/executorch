@@ -122,16 +122,15 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
                         ops.aten.t_copy.default,
                         ops.aten.permute_copy.default,
                     ]:
-                        raise RuntimeError(
-                            f"Weight input to addmm must be tranposed but found {weight_t_node}"
-                        )
+                        # Skip this node as it appears to be a standalone `addmm`
+                        continue
                     weight_node = weight_t_node.args[0]
                     args = (node.args[1], weight_node, node.args[0])
                     linear_node = graph.create_node(
                         "call_function", ops.aten.linear.default, args
                     )
                     node.replace_all_uses_with(linear_node)
-                    output_val = linear_node.target(
+                    output_val = linear_node.target(  # pyre-fixme[29]
                         args[0].meta["val"], args[1].meta["val"], args[2].meta["val"]
                     )
                 else:
@@ -140,16 +139,15 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
                         ops.aten.t_copy.default,
                         ops.aten.permute_copy.default,
                     ]:
-                        raise RuntimeError(
-                            f"Weight input to addmm must be tranposed but found {weight_t_node}"
-                        )
+                        # Skip this node as it appears to be a standalone `mm`
+                        continue
                     weight_node = weight_t_node.args[0]
                     args = (node.args[0], weight_node)
                     linear_node = graph.create_node(
                         "call_function", ops.aten.linear.default, args
                     )
                     node.replace_all_uses_with(linear_node)
-                    output_val = linear_node.target(
+                    output_val = linear_node.target(  # pyre-fixme[29]
                         args[0].meta["val"], args[1].meta["val"]
                     )
                 linear_node.meta = node.meta

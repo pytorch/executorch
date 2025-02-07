@@ -17,11 +17,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& leaky_relu_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Scalar& negative_slope,
     Tensor& out) {
@@ -35,13 +35,16 @@ Tensor& leaky_relu_out(
       out,
       "Failed to resize output tensor.");
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType sc_type = utils::get_scalar_dtype(negative_slope);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
-  ET_SWITCH_FLOAT_TYPES(in_type, ctx, "leaky_relu.out", CTYPE, [&]() {
+  ET_SWITCH_FLOATHBF16_TYPES(in_type, ctx, "leaky_relu.out", CTYPE, [&]() {
     CTYPE negative_slope_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(
         sc_type, ctx, "leaky_relu.out", CTYPE_MIN, [&]() {

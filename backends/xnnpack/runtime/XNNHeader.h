@@ -10,8 +10,8 @@
 
 #include <executorch/runtime/core/result.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace xnnpack {
 namespace delegate {
 
@@ -98,7 +98,9 @@ struct XNNHeader {
    *     error if size was too short, if the header was not found, or if the
    *     header appeared to be corrupt.
    */
-  static Result<XNNHeader> Parse(const void* data, size_t size);
+  static executorch::runtime::Result<XNNHeader> Parse(
+      const void* data,
+      size_t size);
 
   /**
    * The offset in bytes to the beginning of the flatbuffer data.
@@ -121,5 +123,5 @@ struct XNNHeader {
 
 } // namespace delegate
 } // namespace xnnpack
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

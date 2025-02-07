@@ -23,20 +23,68 @@
  * The benefit of defining these hooks is that we can easily control whether or
  * not we want to compile in the EventTracer code based on the status of the
  * ET_EVENT_TRACER_ENABLED flag.
+ *
+ * TODO(dbort): Make this a private header of runtime/executor. It only contains
+ * runtime-internal functions and should not be part of the public set of
+ * headers.
  */
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace internal {
+
+/**
+ * This class enables scope based profiling where needed using RAII for
+ * operators only. If operator profiling is disabled then this class is a no-op.
+ */
+class EventTracerProfileOpScope final {
+ public:
+  EventTracerProfileOpScope(EventTracer* event_tracer, const char* name) {
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_ = event_tracer;
+    if (event_tracer_ == nullptr) {
+      return;
+    }
+    if (event_tracer_->event_tracer_profiling_level() >
+        executorch::runtime::EventTracerProfilingLevel::kProfileMethodOnly) {
+      event_entry_ = event_tracer->start_profiling(name);
+    }
+#else //! ET_EVENT_TRACER_ENABLED
+    (void)event_tracer;
+    (void)name;
+#endif
+  }
+
+  ~EventTracerProfileOpScope() {
+#ifdef ET_EVENT_TRACER_ENABLED
+    if (event_tracer_ == nullptr) {
+      return;
+    }
+    if (event_tracer_->event_tracer_profiling_level() >
+        executorch::runtime::EventTracerProfilingLevel::kProfileMethodOnly) {
+      event_tracer_->end_profiling(event_entry_);
+    }
+#endif
+  }
+
+ private:
+#ifdef ET_EVENT_TRACER_ENABLED
+  EventTracer* event_tracer_;
+  EventTracerEntry event_entry_;
+#endif
+};
+
+using EventTracerProfileScope = EventTracerProfileOpScope;
 
 /**
  * This class enables scope based profiling where needed using RAII.
  * Profiling will be started when the object is created and will end
- * when the object goes out of scope.
+ * when the object goes out of scope. This is specifically intended to
+ * be used for profiling methods in the runtime.
  */
-class EventTracerProfileScope final {
+class EventTracerProfileMethodScope final {
  public:
-  EventTracerProfileScope(EventTracer* event_tracer, const char* name) {
+  EventTracerProfileMethodScope(EventTracer* event_tracer, const char* name) {
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_ = event_tracer;
     if (event_tracer_ == nullptr) {
@@ -49,7 +97,7 @@ class EventTracerProfileScope final {
 #endif
   }
 
-  ~EventTracerProfileScope() {
+  ~EventTracerProfileMethodScope() {
 #ifdef ET_EVENT_TRACER_ENABLED
     if (event_tracer_ == nullptr) {
       return;
@@ -107,6 +155,13 @@ class EventTracerProfileInstructionScope final {
 #endif
 };
 
+inline bool event_tracer_enabled() {
+#ifdef ET_EVENT_TRACER_ENABLED
+  return true;
+#else //! ET_EVENT_TRACER_ENABLED
+  return false;
+#endif
+}
 /**
  * Create a new event block with the specified name. Any events logged
  * after this will be associated with this new event block.
@@ -248,6 +303,28 @@ inline void event_tracer_set_bundled_input_index(
   (void)bundled_input_index;
 #endif
 }
+
+} // namespace internal
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace internal {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::internal::event_tracer_begin_profiling_event;
+using ::executorch::runtime::internal::event_tracer_create_event_block;
+using ::executorch::runtime::internal::event_tracer_end_profiling_event;
+using ::executorch::runtime::internal::event_tracer_log_evalue;
+using ::executorch::runtime::internal::event_tracer_log_evalue_output;
+using ::executorch::runtime::internal::event_tracer_set_bundled_input_index;
+using ::executorch::runtime::internal::event_tracer_track_allocation;
+using ::executorch::runtime::internal::event_tracer_track_allocator;
+using ::executorch::runtime::internal::EventTracerProfileInstructionScope;
+using ::executorch::runtime::internal::EventTracerProfileMethodScope;
+using ::executorch::runtime::internal::EventTracerProfileOpScope;
+using ::executorch::runtime::internal::EventTracerProfileScope;
 
 } // namespace internal
 } // namespace executor

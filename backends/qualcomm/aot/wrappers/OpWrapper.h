@@ -17,8 +17,8 @@
 #include <memory>
 #include <sstream>
 #include <typeinfo>
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class OpWrapper final {
  public:
@@ -102,6 +102,19 @@ class OpWrapper final {
   const std::string GetOpType() {
     return op_type_;
   }
+  const std::string GetName() {
+    return name_;
+  }
+  const std::string GetPackageName() {
+    return package_name_;
+  }
+  std::vector<ParamWrapper*> GetRawParams() const {
+    std::vector<ParamWrapper*> raw_params;
+    for (const auto& param : params_) {
+      raw_params.push_back(param.get());
+    }
+    return raw_params;
+  }
   Qnn_OpConfig_t GetOpConfig();
 
  private:
@@ -116,5 +129,5 @@ class OpWrapper final {
   std::vector<Qnn_Param_t> param_types_;
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

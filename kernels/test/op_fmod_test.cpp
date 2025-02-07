@@ -15,9 +15,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpFmodTest : public OperatorTest {
@@ -32,3 +32,16 @@ class OpFmodTest : public OperatorTest {
     return torch::executor::aten::fmod_outf(context_, self, other, out);
   }
 };
+
+TEST_F(OpFmodTest, SmokeTest) {
+  TensorFactory<ScalarType::Long> tfDouble;
+  TensorFactory<ScalarType::Long> tfLong;
+  TensorFactory<ScalarType::Int> tfInt;
+
+  Tensor self = tfLong.full({2, 2}, 46);
+  Tensor other = tfInt.full({2, 2}, 4);
+  Tensor out = tfDouble.zeros({2, 2});
+  Tensor out_expected = tfDouble.full({2, 2}, 2.0);
+  op_fmod_tensor_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}

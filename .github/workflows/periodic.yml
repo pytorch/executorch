@@ -1,0 +1,68 @@
+name: periodic
+
+on:
+  schedule:
+    # We have several schedules so jobs can check github.event.schedule to activate only for a fraction of the runs.
+    # Also run less frequently on weekends.
+    - cron: 45 0,8,16 * * *
+  push:
+    tags:
+      - ciflow/periodic/*
+    branches:
+      - release/*
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}-${{ github.event.schedule }}
+  cancel-in-progress: true
+
+permissions: read-all
+
+jobs:
+  gather-models:
+    runs-on: ubuntu-22.04
+    outputs:
+      models: ${{ steps.gather-models.outputs.models }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'false'
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Extract the list of models to test
+        id: gather-models
+        run: |
+          set -eux
+
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${GITHUB_EVENT_NAME}"
+
+  test-models-linux:
+    name: test-models-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    needs: gather-models
+    strategy:
+      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: ${{ matrix.timeout }}
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=${{ matrix.build-tool }}
+        BACKEND=${{ matrix.backend }}
+        DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Build and test ExecuTorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"

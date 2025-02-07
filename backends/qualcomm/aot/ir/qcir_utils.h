@@ -8,17 +8,17 @@
 
 #pragma once
 
+#include <executorch/backends/qualcomm/aot/ir/qcir_generated.h>
 #include "QnnTypes.h"
-#include "qcir_generated.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 
-typedef flatbuffers::Vector<::flatbuffers::Offset<qcir::Tensor>>::value_type
+typedef flatbuffers::Vector<::flatbuffers::Offset<qcir::Tensor>>::return_type
     tensor_type;
 typedef flatbuffers::Vector<
-    ::flatbuffers::Offset<qcir::QuantizeParam>>::value_type qparam_type;
+    ::flatbuffers::Offset<qcir::QuantizeParam>>::return_type qparam_type;
 
 qcir::TensorType ToTensorType(Qnn_TensorType_t type);
 Qnn_TensorType_t ToTensorType(qcir::TensorType type);
@@ -26,15 +26,16 @@ qcir::DataType ToDataType(Qnn_DataType_t type);
 Qnn_DataType_t ToDataType(qcir::DataType type);
 
 flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
-    const Qnn_QuantizeParams_t& param,
+    const Qnn_Tensor_t& tensor,
     flatbuffers::FlatBufferBuilder* builder);
-Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& type);
+Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor);
 
 flatbuffers::Offset<qcir::Tensor> ToTensor(
     const Qnn_Tensor_t& tensor,
+    const uint64_t data_offset,
     flatbuffers::FlatBufferBuilder* builder);
-Qnn_Tensor_t ToTensor(const tensor_type& tensor);
+Qnn_Tensor_t ToTensor(const tensor_type& tensor, const uint8_t* data_ptr);
 
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

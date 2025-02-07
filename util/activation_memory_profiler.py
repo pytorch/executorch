@@ -4,16 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import json
 import typing
 from dataclasses import dataclass, field
-from typing import List
+from typing import Any, Dict, List, Optional
 
 import executorch.exir.memory as memory
 import torch
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import get_node_tensor_specs
-from executorch.exir.tensor import num_bytes_from_shape_and_dtype
+
+from executorch.exir.tensor import num_bytes_from_shape_and_dtype, TensorSpec
 from torch.export import ExportedProgram
 
 
@@ -22,6 +25,7 @@ class Allocation:
     name: str
     op_name: str
     memory_id: int
+    memory_offset: int
     size_bytes: int
     fqn: str
     file_and_line_num: str
@@ -49,9 +53,12 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
     allocations at that timestep.
     """
     nodes = graph.nodes
-    memory_timeline = [None] * len(nodes)
-    for i, node in enumerate(nodes):
-        if node.target == memory.alloc:
+    memory_timeline: List[Optional[MemoryTimeline]] = [None for _ in range(len(nodes))]
+    unique_specs: set[TensorSpec] = set()
+    for _, node in enumerate(nodes):
+        if node.op == "output":
+            continue
+        if node.target == memory.alloc or node.target == memory.view:
             continue
         tensor_specs = get_node_tensor_specs(node)
         if tensor_specs is None:
@@ -60,6 +67,9 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
             # TODO: Make use of mem_id in the allocation info
             if tensor_spec is None or tensor_spec.mem_id is None or tensor_spec.const:
                 continue
+            if tensor_spec in unique_specs:
+                continue
+            unique_specs.add(tensor_spec)
             start, end = tensor_spec.lifetime
             size = num_bytes_from_shape_and_dtype(
                 typing.cast(torch.Size, tensor_spec.shape), tensor_spec.dtype
@@ -67,15 +77,23 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
             stack_trace = node.meta.get("stack_trace")
             fqn = _get_module_hierarchy(node)
             for j in range(start, end + 1):
-                if memory_timeline[j] is None:
-                    # pyre-ignore
-                    memory_timeline[j] = MemoryTimeline()
-                # pyre-ignore
-                memory_timeline[j].allocations.append(
-                    Allocation(node.name, node.target, i, size, fqn, stack_trace)
+                memory_timeline_j = memory_timeline[j]
+                if memory_timeline_j is None:
+                    memory_timeline_j = MemoryTimeline()
+                    memory_timeline[j] = memory_timeline_j
+                assert memory_timeline_j
+                memory_timeline_j.allocations.append(
+                    Allocation(
+                        node.name,
+                        node.target,
+                        tensor_spec.mem_id,
+                        tensor_spec.mem_offset,
+                        size,
+                        fqn,
+                        stack_trace,
+                    )
                 )
-    # pyre-ignore
-    return memory_timeline
+    return memory_timeline  # type: ignore[return-value]
 
 
 def _validate_memory_planning_is_done(exported_program: ExportedProgram):
@@ -90,7 +108,11 @@ def _validate_memory_planning_is_done(exported_program: ExportedProgram):
 
 
 def generate_memory_trace(
-    executorch_program_manager: ExecutorchProgramManager, chrome_trace_filename: str
+    executorch_program_manager: ExecutorchProgramManager,
+    chrome_trace_filename: str,
+    enable_memory_offsets: bool = False,
+    method_name: str = "forward",
+    ommit_metadata: bool = False,
 ):
     """
     Generate the memory timeline from the given ExecuTorch program.
@@ -107,13 +129,13 @@ def generate_memory_trace(
             f"generate_memory_trace expects ExecutorchProgramManager instance but got {type(executorch_program_manager)}"
         )
 
-    exported_program = executorch_program_manager.exported_program()
+    exported_program = executorch_program_manager.exported_program(method_name)
     if not _validate_memory_planning_is_done(exported_program):
         raise ValueError("Executorch program does not have memory planning.")
 
     memory_timeline = create_tensor_allocation_info(exported_program.graph)
     root = {}
-    trace_events = []
+    trace_events: List[Dict[str, Any]] = []
     root["traceEvents"] = trace_events
 
     tid = 0
@@ -122,20 +144,28 @@ def generate_memory_trace(
         if memory_timeline_event is None:
             continue
         for allocation in memory_timeline_event.allocations:
-            e = {}
+            e: Dict[str, Any] = {}
             e["name"] = allocation.name
             e["cat"] = "memory_allocation"
             e["ph"] = "X"
-            e["ts"] = int(start_time)
+            e["ts"] = (
+                int(allocation.memory_offset)
+                if enable_memory_offsets
+                else int(start_time)
+            )
             allocation_size_kb = allocation.size_bytes
             e["dur"] = int(allocation_size_kb)
-            e["pid"] = 0
+            e["pid"] = int(allocation.memory_id)
             e["tid"] = tid
             e["args"] = {}
-            e["args"]["op_name"] = f"{allocation.op_name}"
-            e["args"]["fqn"] = f"{allocation.fqn}"
-            e["args"]["source"] = f"{allocation.file_and_line_num}"
-            e["args"]["bytes"] = allocation.size_bytes
+            if not ommit_metadata:
+                e["args"]["op_name"] = f"{allocation.op_name}"
+                # ID refers to memory space, typically from 1 to N.
+                # For CPU, everything is allocated on one "space", other backends may have multiple.
+                e["args"]["Memory ID"] = allocation.memory_id
+                e["args"]["fqn"] = f"{allocation.fqn}"
+                e["args"]["source"] = f"{allocation.file_and_line_num}"
+                e["args"]["bytes"] = allocation.size_bytes
             start_time += allocation_size_kb
             trace_events.append(e)
         tid += 1

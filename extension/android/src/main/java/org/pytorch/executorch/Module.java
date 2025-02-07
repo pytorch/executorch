@@ -10,46 +10,65 @@ package org.pytorch.executorch;
 
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
-import java.util.Map;
+import org.pytorch.executorch.annotations.Experimental;
 
-/** Java wrapper for ExecuTorch Module. */
+/**
+ * Java wrapper for ExecuTorch Module.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
+ */
+@Experimental
 public class Module {
 
-  /** Reference to the INativePeer object of this module. */
-  private INativePeer mNativePeer;
+  /** Load mode for the module. Load the whole file as a buffer. */
+  public static final int LOAD_MODE_FILE = 0;
+
+  /** Load mode for the module. Use mmap to load pages into memory. */
+  public static final int LOAD_MODE_MMAP = 1;
+
+  /** Load mode for the module. Use memory locking and handle errors. */
+  public static final int LOAD_MODE_MMAP_USE_MLOCK = 2;
+
+  /** Load mode for the module. Use memory locking and ignore errors. */
+  public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
+
+  /** Reference to the NativePeer object of this module. */
+  private NativePeer mNativePeer;
 
   /**
    * Loads a serialized ExecuTorch module from the specified path on the disk.
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
-   * @param extraFiles map with extra files names as keys, content of them will be loaded to values.
-   * @return new {@link org.pytorch.executorch.Module} object which owns torch::jit::Module.
+   * @param loadMode load mode for the module. See constants in {@link Module}.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
-  public static Module load(final String modelPath, final Map<String, String> extraFiles) {
+  public static Module load(final String modelPath, int loadMode) {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
-    return new Module(new NativePeer(modelPath, extraFiles));
+    return new Module(new NativePeer(modelPath, loadMode));
   }
 
   /**
    * Loads a serialized ExecuTorch module from the specified path on the disk to run on CPU.
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
-   * @return new {@link org.pytorch.executorch.Module} object which owns torch::jit::Module.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath) {
-    return load(modelPath, null);
+    return load(modelPath, LOAD_MODE_FILE);
   }
 
-  Module(INativePeer nativePeer) {
+  Module(NativePeer nativePeer) {
     this.mNativePeer = nativePeer;
   }
 
   /**
    * Runs the 'forward' method of this module with the specified arguments.
    *
-   * @param inputs arguments for the ExecuTorch module's 'forward' method.
+   * @param inputs arguments for the ExecuTorch module's 'forward' method. Note: if method 'forward'
+   *     requires inputs but no inputs are given, the function will not error out, but run 'forward'
+   *     with sample inputs.
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {
@@ -78,6 +97,11 @@ public class Module {
    */
   public int loadMethod(String methodName) {
     return mNativePeer.loadMethod(methodName);
+  }
+
+  /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
+  public String[] readLogBuffer() {
+    return mNativePeer.readLogBuffer();
   }
 
   /**

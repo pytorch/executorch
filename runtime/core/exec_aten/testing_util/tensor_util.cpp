@@ -16,11 +16,13 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::BFloat16;
+using executorch::aten::Half;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 
 namespace {
@@ -32,15 +34,22 @@ namespace {
  * T must be a floating point type. Non-floating point data should be compared
  * directly.
  */
-template <
-    typename T,
-    typename = std::enable_if_t<std::is_floating_point<T>::value>>
+template <typename T>
 bool data_is_close(
     const T* a,
     const T* b,
     size_t numel,
     double rtol,
     double atol) {
+  ET_CHECK_MSG(
+      numel == 0 || (a != nullptr && b != nullptr),
+      "Pointers must not be null when numel > 0: numel %zu, a 0x%p, b 0x%p",
+      numel,
+      a,
+      b);
+  if (a == b) {
+    return true;
+  }
   for (size_t i = 0; i < numel; i++) {
     const auto ai = a[i];
     const auto bi = b[i];
@@ -67,13 +76,22 @@ bool data_is_close(
   return true;
 }
 
+double default_atol_for_type(ScalarType t) {
+  if (t == ScalarType::Half) {
+    return internal::kDefaultHalfAtol;
+  }
+  if (t == ScalarType::BFloat16) {
+    return internal::kDefaultBFloat16Atol;
+  }
+  return internal::kDefaultAtol;
+}
 } // namespace
 
 bool tensors_are_close(
     const Tensor& a,
     const Tensor& b,
     double rtol,
-    double atol) {
+    std::optional<double> opt_atol) {
   if (a.scalar_type() != b.scalar_type() || a.sizes() != b.sizes()) {
     return false;
   }
@@ -90,6 +108,8 @@ bool tensors_are_close(
   // b[i_1, i_2, ... i_n] = b.const_data_ptr()[m])
   // So we can just compare the two underlying data sequentially to figure out
   // if the two tensors are same.
+
+  double atol = opt_atol.value_or(default_atol_for_type(a.scalar_type()));
 
   if (a.nbytes() == 0) {
     // Note that this case is important. It's valid for a zero-size tensor to
@@ -110,6 +130,20 @@ bool tensors_are_close(
         a.numel(),
         rtol,
         atol);
+  } else if (a.scalar_type() == ScalarType::Half) {
+    return data_is_close<Half>(
+        a.const_data_ptr<Half>(),
+        b.const_data_ptr<Half>(),
+        a.numel(),
+        rtol,
+        atol);
+  } else if (a.scalar_type() == ScalarType::BFloat16) {
+    return data_is_close<BFloat16>(
+        a.const_data_ptr<BFloat16>(),
+        b.const_data_ptr<BFloat16>(),
+        a.numel(),
+        rtol,
+        atol);
   } else {
     // Non-floating-point types can be compared bitwise.
     return memcmp(a.const_data_ptr(), b.const_data_ptr(), a.nbytes()) == 0;
@@ -126,11 +160,12 @@ bool tensor_data_is_close(
     const Tensor& a,
     const Tensor& b,
     double rtol,
-    double atol) {
+    std::optional<double> opt_atol) {
   if (a.scalar_type() != b.scalar_type() || a.numel() != b.numel()) {
     return false;
   }
 
+  double atol = opt_atol.value_or(default_atol_for_type(a.scalar_type()));
   if (a.nbytes() == 0) {
     // Note that this case is important. It's valid for a zero-size tensor to
     // have a null data pointer, but in some environments it's invalid to pass a
@@ -157,17 +192,17 @@ bool tensor_data_is_close(
 }
 
 bool tensor_lists_are_close(
-    const exec_aten::Tensor* tensors_a,
+    const executorch::aten::Tensor* tensors_a,
     size_t num_tensors_a,
-    const exec_aten::Tensor* tensors_b,
+    const executorch::aten::Tensor* tensors_b,
     size_t num_tensors_b,
     double rtol,
-    double atol) {
+    std::optional<double> opt_atol) {
   if (num_tensors_a != num_tensors_b) {
     return false;
   }
   for (size_t i = 0; i < num_tensors_a; i++) {
-    if (!tensors_are_close(tensors_a[i], tensors_b[i], rtol, atol)) {
+    if (!tensors_are_close(tensors_a[i], tensors_b[i], rtol, opt_atol)) {
       return false;
     }
   }
@@ -175,9 +210,19 @@ bool tensor_lists_are_close(
 }
 
 } // namespace testing
+} // namespace runtime
+} // namespace executorch
 
 // ATen already defines operator<<() for Tensor and ScalarType.
 #ifndef USE_ATEN_LIB
+
+/*
+ * These functions must be declared in the original namespaces of their
+ * associated types so that C++ can find them.
+ */
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
 /**
  * Prints the ScalarType to the stream as a human-readable string.
@@ -209,6 +254,17 @@ std::ostream& print_data(std::ostream& os, const T* data, size_t numel) {
   return os;
 }
 
+template <typename T>
+std::ostream&
+print_data(std::ostream& os, const etensor::complex<T>* data, size_t numel) {
+  for (auto i = 0; i < numel; i++) {
+    os << data[i].real_ << " + " << data[i].imag_ << "j";
+    if (i < numel - 1) {
+      os << ", ";
+    }
+  }
+  return os;
+}
 /**
  * Prints the elements of `data` to the stream as comma-separated strings.
  *
@@ -251,7 +307,8 @@ std::ostream& operator<<(std::ostream& os, const Tensor& t) {
     break;
 
   switch (t.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND2(Half, Bool, PRINT_CASE)
+    ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, PRINT_CASE)
+    ET_FORALL_COMPLEX_TYPES(PRINT_CASE)
     default:
       ET_CHECK_MSG(
           false,
@@ -266,7 +323,8 @@ std::ostream& operator<<(std::ostream& os, const Tensor& t) {
   return os;
 }
 
-#endif // !USE_ATEN_LIB
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch
 
-} // namespace executor
-} // namespace torch
+#endif // !USE_ATEN_LIB

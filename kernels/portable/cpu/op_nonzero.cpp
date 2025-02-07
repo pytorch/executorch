@@ -17,9 +17,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using SizesType = exec_aten::SizesType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using SizesType = executorch::aten::SizesType;
 
 namespace {
 
@@ -39,7 +39,7 @@ void increment_index(size_t* index, const ArrayRef<SizesType> sizes) {
  * out to the appropriate size, and then loop again and properly write into out
  */
 template <typename CTYPE>
-void nonzero(RuntimeContext& ctx, const Tensor& input, Tensor& output) {
+void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
   const CTYPE* in_data = input.const_data_ptr<CTYPE>();
   size_t lim = input.numel();
   int32_t num_nonzero = 0;
@@ -56,7 +56,8 @@ void nonzero(RuntimeContext& ctx, const Tensor& input, Tensor& output) {
       static_cast<SizesType>(num_nonzero), static_cast<SizesType>(input.dim())};
   ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(output, ArrayRef<exec_aten::SizesType>(out_shape, 2)) ==
+      resize_tensor(
+          output, ArrayRef<executorch::aten::SizesType>(out_shape, 2)) ==
           Error::Ok,
       InvalidArgument, );
 
@@ -83,15 +84,14 @@ void nonzero(RuntimeContext& ctx, const Tensor& input, Tensor& output) {
  * Determines the non zero indices of input.
  * Out is a 2-D tensor where every row is a non zero index of the input.
  */
-Tensor& nonzero_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& nonzero_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   ET_KERNEL_CHECK(ctx, check_nonzero_args(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
-        nonzero<CTYPE>(ctx, in, out);
-      });
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
+    nonzero<CTYPE>(ctx, in, out);
+  });
 
   return out;
 }

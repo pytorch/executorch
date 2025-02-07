@@ -13,10 +13,12 @@
 
 #include <vector>
 
+#include "HTP/QnnHtpCommon.h"
 #include "QnnBackend.h"
 #include "QnnCommon.h"
-namespace torch {
-namespace executor {
+#include "QnnTypes.h"
+namespace executorch {
+namespace backends {
 namespace qnn {
 // qnn backend
 class QnnBackend {
@@ -32,7 +34,7 @@ class QnnBackend {
     return false;
   }
 
-  Error Configure();
+  executorch::runtime::Error Configure();
 
   Qnn_ErrorHandle_t BackendValidateOpConfig(const Qnn_OpConfig_t& op_config) {
     return implementation_.GetQnnInterface().qnn_backend_validate_op_config(
@@ -43,16 +45,25 @@ class QnnBackend {
     return handle_;
   }
 
+  executorch::runtime::Error VerifyQNNSDKVersion(
+      const QnnExecuTorchBackendType backend_id);
+
  protected:
-  virtual Error MakeConfig(std::vector<const QnnBackend_Config_t*>& config) {
-    return Error::Ok;
+  virtual Qnn_Version_t GetExpectedBackendVersion() const = 0;
+  virtual executorch::runtime::Error MakeConfig(
+      std::vector<const QnnBackend_Config_t*>& config) {
+    return executorch::runtime::Error::Ok;
   };
 
  private:
   Qnn_BackendHandle_t handle_;
   const QnnImplementation& implementation_;
   QnnLogger* logger_;
+  executorch::runtime::Error VersionChecker(
+      const Qnn_Version_t& qnn_version,
+      const Qnn_Version_t& expected,
+      const std::string& prefix);
 };
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

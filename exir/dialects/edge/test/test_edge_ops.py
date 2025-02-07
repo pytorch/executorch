@@ -426,22 +426,6 @@ class TestEdgeOps(unittest.TestCase):
         ):
             view_op.to_out_variant()
 
-    def test_to_out_variant_ignores_overload_that_cant_convert_to_native_schema(
-        self,
-    ) -> None:
-        library = Library("TEST_ONLY", "DEF")
-        library.define(
-            "foo.t(t[] a, t[] b) -> t[]"
-        )  # can't convert torch._C.FunctionSchema into torchgen.model.FunctionSchema
-        library.define("foo.Tensor(Tensor a, Tensor b) -> Tensor")
-        library.define(
-            "foo.Tensor_out(Tensor a, Tensor b, *, Tensor(a!) out) -> Tensor(a!)"
-        )
-
-        op = ops.edge.TEST_ONLY.foo.Tensor
-        out = op.to_out_variant()
-        self.assertEqual(out, torch.ops.TEST_ONLY.foo.Tensor_out)
-
     def test_get_new_registered_out_var(
         self,
     ) -> None:

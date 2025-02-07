@@ -14,9 +14,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
-Tensor& neg_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+Tensor& neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
@@ -30,7 +30,10 @@ Tensor& neg_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
     apply_unary_map_fn(
         [](const CTYPE val_in) { return static_cast<CTYPE>(-val_in); },
         in.const_data_ptr<CTYPE>(),

@@ -20,15 +20,13 @@
 #endif
 #include <ATen/native/Resize.h>
 #include <executorch/extension/kernel_util/type_list.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/evalue.h>
 #include <torch/torch.h>
 
-namespace torch {
-namespace executor {
-
-class KernelRuntimeContext; // Forward declaration
-using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
+namespace executorch {
+namespace extension {
+namespace internal {
 
 // Map types from ETen to ATen.
 // This is used to convert ETen arguments into ATen.
@@ -64,12 +62,12 @@ struct type_map<torch::executor::Tensor> final {
 // Optional.
 template <class T>
 struct type_map<torch::executor::optional<T>> final {
-  using type = c10::optional<typename type_map<T>::type>;
+  using type = std::optional<typename type_map<T>::type>;
 };
 
 template <class T>
 struct type_map<torch::executor::optional<T>&> final {
-  using type = c10::optional<typename type_map<T>::type>&;
+  using type = std::optional<typename type_map<T>::type>&;
 };
 
 // ArrayRef.
@@ -107,25 +105,20 @@ struct type_convert<
             typename remove_const_ref<ETensor>::type,
             torch::executor::Tensor>>>
     final {
- public:
-  ATensor val;
-  std::unique_ptr<ManagedTensor> managed_tensor;
-  torch::executor::Tensor converted;
-  std::vector<exec_aten::SizesType> sizes;
   explicit type_convert(ATensor value)
-      : val(value), converted(torch::executor::Tensor(nullptr)) {
-    for (auto size : val.sizes()) {
-      sizes.push_back(size);
-    }
-    torch::executor::ScalarType scalar_type =
-        static_cast<torch::executor::ScalarType>(val.scalar_type());
-    managed_tensor = std::make_unique<ManagedTensor>(
-        val.mutable_data_ptr(), val.numel(), sizes, scalar_type);
-    converted = managed_tensor->get_aliasing_tensor();
-  }
+      : value_(value.contiguous()),
+        converted_(from_blob(
+            value_.mutable_data_ptr(),
+            {value_.sizes().begin(), value_.sizes().end()},
+            ::torch::executor::ScalarType(value_.scalar_type()))) {}
+
   ETensor call() {
-    return converted;
+    return *converted_;
   }
+
+ private:
+  typename remove_const_ref<ATensor>::type value_;
+  TensorPtr converted_;
 };
 
 // Tensors: ETen to ATen.
@@ -137,32 +130,31 @@ struct type_convert<
         std::is_same_v<typename remove_const_ref<ATensor>::type, at::Tensor> &&
         std::is_same_v<
             typename remove_const_ref<ETensor>::type,
-            torch::executor::Tensor>>>
+            ::torch::executor::Tensor>>>
     final {
- public:
-  ETensor val;
-  at::Tensor converted;
-  std::vector<int64_t> sizes;
-  explicit type_convert(ETensor value) : val(value) {
-    for (auto size : val.sizes()) {
-      sizes.push_back(size);
-    }
-    c10::ScalarType scalar_type =
-        static_cast<c10::ScalarType>(val.scalar_type());
-    converted = at::from_blob(val.mutable_data_ptr(), sizes, scalar_type);
-  }
+  explicit type_convert(ETensor value)
+      : value_(value),
+        converted_(at::from_blob(
+            value_.mutable_data_ptr(),
+            std::vector<int64_t>{value_.sizes().begin(), value_.sizes().end()},
+            c10::ScalarType(value_.scalar_type()))) {}
+
   ATensor call() {
-    return converted;
+    return converted_;
   }
+
+ private:
+  ETensor value_;
+  at::Tensor converted_;
 };
 
 // Optionals: ATen to ETen.
 template <class F, class T>
-struct type_convert<c10::optional<F>, torch::executor::optional<T>> final {
+struct type_convert<std::optional<F>, torch::executor::optional<T>> final {
  public:
-  c10::optional<F> val;
+  std::optional<F> val;
   std::unique_ptr<struct type_convert<F, T>> convert_struct;
-  explicit type_convert(c10::optional<F> value) : val(value) {}
+  explicit type_convert(std::optional<F> value) : val(value) {}
   torch::executor::optional<T> call() {
     if (val.has_value()) {
       convert_struct = std::make_unique<struct type_convert<F, T>>(
@@ -176,18 +168,18 @@ struct type_convert<c10::optional<F>, torch::executor::optional<T>> final {
 
 // Optionals: ETen to ATen.
 template <class F, class T>
-struct type_convert<torch::executor::optional<F>, c10::optional<T>> final {
+struct type_convert<torch::executor::optional<F>, std::optional<T>> final {
  public:
   torch::executor::optional<F> val;
   std::unique_ptr<struct type_convert<F, T>> convert_struct;
   explicit type_convert(torch::executor::optional<F> value) : val(value) {}
-  c10::optional<T> call() {
+  std::optional<T> call() {
     if (val.has_value()) {
       convert_struct = std::make_unique<struct type_convert<F, T>>(
           type_convert<F, T>(val.value()));
-      return c10::optional<T>(convert_struct->call());
+      return std::optional<T>(convert_struct->call());
     } else {
-      return c10::optional<T>();
+      return std::optional<T>();
     }
   }
 };
@@ -246,7 +238,12 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
   using TupleArgsType = std::tuple<typename type_map<Args>::type...>;
   static constexpr size_t num_args = sizeof...(Args);
   static_assert(
-      (N < num_args && std::is_same_v<element_t<N, typelist<Args...>>, R>) ||
+      (N < num_args &&
+       std::is_same_v<
+           executorch::extension::kernel_util_internal::element_t<
+               N,
+               executorch::extension::kernel_util_internal::typelist<Args...>>,
+           R>) ||
           N == -1,
       "The index of the out tensor can't be greater or equal to num_args and "
       "the Nth argument type has to be the same as the return type.");
@@ -286,16 +283,18 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
   }
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace internal
+} // namespace extension
+} // namespace executorch
 
 // Wrapper macro for out variant function. N is the index of the out tensor.
 // We need N to know how to preserve the semantics of modifying out tensor and
 // return the reference without allocating a new memory buffer for out tensor.
-#define _WRAP_2(func, N) \
-  ::torch::executor::wrapper_impl<decltype(&func), func, decltype(N), N>::wrap
+#define _WRAP_2(func, N)              \
+  ::executorch::extension::internal:: \
+      wrapper_impl<decltype(&func), func, decltype(N), N>::wrap
 #define _WRAP_1(func) \
-  ::torch::executor::wrapper_impl<decltype(&func), func>::wrap
+  ::executorch::extension::internal::wrapper_impl<decltype(&func), func>::wrap
 
-#define GET_MACRO(_1, _2, NAME, ...) NAME
-#define WRAP_TO_ATEN(...) GET_MACRO(__VA_ARGS__, _WRAP_2, _WRAP_1)(__VA_ARGS__)
+#define _GET_MACRO(_1, _2, NAME, ...) NAME
+#define WRAP_TO_ATEN(...) _GET_MACRO(__VA_ARGS__, _WRAP_2, _WRAP_1)(__VA_ARGS__)

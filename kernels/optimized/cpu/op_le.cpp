@@ -16,11 +16,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 Tensor& opt_le_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
@@ -53,31 +53,26 @@ Tensor& opt_le_tensor_out(
               a.numel());
         });
   } else {
-    ScalarType common_type = promoteTypes(a_type, b_type);
     ET_SWITCH_REAL_TYPES_AND(
         Bool, a_type, ctx, "le.Tensor_out", CTYPE_A, [&]() {
           ET_SWITCH_REAL_TYPES_AND(
               Bool, b_type, ctx, "le.Tensor_out", CTYPE_B, [&]() {
+                using CTYPE_IN = typename torch::executor::
+                    promote_types<CTYPE_A, CTYPE_B>::type;
+                ET_DCHECK(
+                    CppTypeToScalarType<CTYPE_IN>::value ==
+                    promoteTypes(a_type, b_type));
                 ET_SWITCH_REAL_TYPES_AND(
-                    Bool, common_type, ctx, "le.Tensor_out", CTYPE_IN, [&]() {
-                      ET_SWITCH_REAL_TYPES_AND(
-                          Bool,
-                          out_type,
-                          ctx,
-                          "le.Tensor_out",
-                          CTYPE_OUT,
-                          [&]() {
-                            const size_t n = a.numel();
-                            const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-                            const CTYPE_B* b_data = b.const_data_ptr<CTYPE_B>();
-                            CTYPE_OUT* out_data =
-                                out.mutable_data_ptr<CTYPE_OUT>();
-                            for (auto i = 0; i < n; ++i) {
-                              out_data[i] = static_cast<CTYPE_OUT>(
-                                  static_cast<CTYPE_IN>(a_data[i]) <=
-                                  static_cast<CTYPE_IN>(b_data[i]));
-                            }
-                          });
+                    Bool, out_type, ctx, "le.Tensor_out", CTYPE_OUT, [&]() {
+                      const size_t n = a.numel();
+                      const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
+                      const CTYPE_B* b_data = b.const_data_ptr<CTYPE_B>();
+                      CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+                      for (auto i = 0; i < n; ++i) {
+                        out_data[i] = static_cast<CTYPE_OUT>(
+                            static_cast<CTYPE_IN>(a_data[i]) <=
+                            static_cast<CTYPE_IN>(b_data[i]));
+                      }
                     });
               });
         });
@@ -87,7 +82,7 @@ Tensor& opt_le_tensor_out(
 }
 
 Tensor& opt_le_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {

@@ -20,8 +20,8 @@ double rsqrt(double x) {
 
 } // namespace
 
-Tensor& rsqrt_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhb_to_floath(rsqrt, ctx, in, out);
+Tensor& rsqrt_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
+  return internal::unary_ufunc_realhbbf16_to_floathbf16(rsqrt, ctx, in, out);
 }
 
 } // namespace native

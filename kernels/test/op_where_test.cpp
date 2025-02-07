@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
@@ -38,6 +38,7 @@ class OpWhereOutTest : public OperatorTest {
       return;
     }
     TensorFactory<ScalarType::Bool> tf_condition;
+    TensorFactory<ScalarType::Byte> tf_condition_byte;
     TensorFactory<DTYPE_A> tf_a;
     TensorFactory<DTYPE_B> tf_b;
     TensorFactory<DTYPE_OUT> tf_out;
@@ -48,19 +49,30 @@ class OpWhereOutTest : public OperatorTest {
     Tensor out = tf_out.zeros(sizes);
 
     // clang-format off
+    std::vector<uint8_t> condition_data = {
+      false, true, false, true, true, false,
+      false, true, false, true, true, false
+    };
+    const auto a_tensor = tf_a.make(sizes, /*data=*/{  1,  2,  3,  4,  5,  6,  6,  5,  4,  3,  2,  1});
+    const auto b_tensor = tf_b.make(sizes, /*data=*/{  6,  5,  4,  3,  2,  1,  1,  2,  3,  4,  5,  6});
+    // clang-format on
     op_where_self_out(
-        tf_condition.make(condition_sizes, /*data=*/{false, true, false, true, true, false,
-                                                     false, true, false, true, true, false}),
-        tf_a.make(sizes, /*data=*/{  1,  2,  3,  4,  5,  6,  6,  5,  4,  3,  2,  1}),
-        tf_b.make(sizes, /*data=*/{  6,  5,  4,  3,  2,  1,  1,  2,  3,  4,  5,  6}),
+        tf_condition.make(condition_sizes, /*data=*/condition_data),
+        a_tensor,
+        b_tensor,
         out);
 
+    auto expectedOut =
+        tf_out.make(sizes, /*data=*/{6, 2, 4, 4, 5, 1, 1, 5, 3, 3, 2, 6});
     // Check that it matches the expected output.
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make(
-            sizes, /*data=*/{  6,  2,  4,  4,  5,  1,  1,  5,  3,  3,  2,  6}));
-    // clang-format on
+    EXPECT_TENSOR_CLOSE(out, expectedOut);
+
+    op_where_self_out(
+        tf_condition_byte.make(condition_sizes, condition_data),
+        a_tensor,
+        b_tensor,
+        out);
+    EXPECT_TENSOR_CLOSE(out, expectedOut);
   }
 
   template <ScalarType DTYPE_A, ScalarType DTYPE_B>
@@ -68,7 +80,7 @@ class OpWhereOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_where<DTYPE_A, DTYPE_B, ScalarType::dtype>();
 
-    ET_FORALL_FLOAT_TYPES(ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -78,7 +90,7 @@ class OpWhereOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_where<DTYPE_A, ScalarType::dtype, DTYPE_A>();
 
-    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -136,7 +148,7 @@ class OpWhereOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_where_enumerate_b_types<ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -145,7 +157,7 @@ class OpWhereOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_where<ScalarType::dtype, ScalarType::dtype, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }

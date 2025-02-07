@@ -1,0 +1,51 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_library(
+    name = "core",
+    srcs = [
+        "core.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":config",
+        ":version",
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program/schema:bundled_program_schema_py",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "config",
+    srcs = [
+        "config.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "version",
+    srcs = [
+        "version.py",
+    ],
+    visibility = [
+        "//executorch/devtools/...",
+    ],
+)

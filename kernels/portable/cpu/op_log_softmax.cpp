@@ -17,10 +17,10 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& log_softmax_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     bool half_to_float,
@@ -36,10 +36,13 @@ Tensor& log_softmax_out(
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   // Adjust for negative dim
   dim = dim < 0 ? dim + nonzero_dim(in) : dim;
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       in.scalar_type(), ctx, "_log_softmax.out", CTYPE, [&]() {
         const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
         CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();

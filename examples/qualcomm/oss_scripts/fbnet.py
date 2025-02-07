@@ -7,15 +7,14 @@
 import json
 import os
 import re
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
 import timm
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.examples.qualcomm.scripts.inception_v4 import get_dataset
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_imagenet_dataset,
     make_output_dir,
     setup_common_args_and_variables,
     SimpleADB,
@@ -23,30 +22,7 @@ from executorch.examples.qualcomm.scripts.utils import (
 )
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./fbnet",
-        default="./fbnet",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-d",
-        "--dataset",
-        help=(
-            "path to the validation folder of ImageNet dataset. "
-            "e.g. --dataset imagenet-mini/val "
-            "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
-        ),
-        type=str,
-        required=True,
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     if not args.compile_only and args.device is None:
         raise RuntimeError(
             "device serial is required if not compile only. "
@@ -59,9 +35,10 @@ if __name__ == "__main__":
     instance = timm.create_model("fbnetc_100", pretrained=True).eval()
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
+    inputs, targets, input_list = get_imagenet_dataset(
         dataset_path=f"{args.dataset}",
         data_size=data_num,
+        image_shape=(299, 299),
     )
 
     pte_filename = "fbnet"
@@ -73,14 +50,15 @@ if __name__ == "__main__":
         f"{args.artifact}/{pte_filename}",
         inputs,
         quant_dtype=QuantDtype.use_8a8w,
+        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        artifact_path=f"{args.build_folder}",
+        build_path=f"{args.build_folder}",
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
@@ -126,3 +104,36 @@ if __name__ == "__main__":
     else:
         for i, k in enumerate(k_val):
             print(f"top_{k}->{topk[i]}%")
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./fbnet",
+        default="./fbnet",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-d",
+        "--dataset",
+        help=(
+            "path to the validation folder of ImageNet dataset. "
+            "e.g. --dataset imagenet-mini/val "
+            "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
+        ),
+        type=str,
+        required=True,
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

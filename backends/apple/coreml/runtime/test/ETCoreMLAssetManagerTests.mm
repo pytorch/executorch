@@ -6,12 +6,11 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <XCTest/XCTest.h>
-
+#import "ETCoreMLTestUtils.h"
 #import <ETCoreMLAsset.h>
 #import <ETCoreMLAssetManager.h>
-
-#import "ETCoreMLTestUtils.h"
+#import <XCTest/XCTest.h>
+#import <executorch/runtime/platform/runtime.h>
 
 @interface ETCoreMLAssetManagerTests : XCTestCase
 
@@ -22,6 +21,10 @@
 @end
 
 @implementation ETCoreMLAssetManagerTests
+
++ (void)setUp {
+    executorch::runtime::runtime_init();
+}
 
 - (void)setUp {
     @autoreleasepool {
@@ -145,7 +148,7 @@
         // Close the asset so that it could be deleted.
         [asset close];
     }
-    XCTAssertTrue([self.assetManager purge:&localError]);
+    XCTAssertTrue([self.assetManager purgeAndReturnError:&localError]);
 }
 
 @end

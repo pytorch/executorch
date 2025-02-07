@@ -9,22 +9,22 @@
 #include <cstdint>
 #include <cstring>
 
-#include <executorch/kernels/portable/cpu/util/index_util.h>
+#include <executorch/kernels/portable/cpu/util/slice_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& slice_scatter_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& src,
     int64_t dim,
-    exec_aten::optional<int64_t> start_val,
-    exec_aten::optional<int64_t> end_val,
+    executorch::aten::optional<int64_t> start_val,
+    executorch::aten::optional<int64_t> end_val,
     int64_t step,
     Tensor& out) {
   (void)ctx;
@@ -39,6 +39,9 @@ Tensor& slice_scatter_out(
       resize_tensor(out, input.sizes()) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(input, out), InvalidArgument, out);
 
   if (input.numel() == 0) {
     return out;
@@ -74,28 +77,27 @@ Tensor& slice_scatter_out(
   ScalarType in_type = input.scalar_type();
   ScalarType src_type = src.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "slice_scatter.out", CTYPE, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, src_type, ctx, "slice_scatter.out", CTYPE_SRC, [&]() {
-              CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-              const CTYPE_SRC* src_data = src.const_data_ptr<CTYPE_SRC>();
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "slice_scatter.out", CTYPE, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(
+        src_type, ctx, "slice_scatter.out", CTYPE_SRC, [&]() {
+          CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+          const CTYPE_SRC* src_data = src.const_data_ptr<CTYPE_SRC>();
 
-              size_t src_offset = 0;
+          size_t src_offset = 0;
 
-              for (int i = 0; i < leading_dims; i++) {
-                size_t out_offset = (i * dim_length + start) * trailing_dims;
-                for (int j = 0; j < num_values; j++) {
-                  for (size_t k = 0; k < trailing_dims; ++k) {
-                    out_data[out_offset + k] =
-                        convert<CTYPE, CTYPE_SRC>(src_data[src_offset + k]);
-                  }
-                  src_offset += trailing_dims;
-                  out_offset += step * trailing_dims;
-                }
+          for (int i = 0; i < leading_dims; i++) {
+            size_t out_offset = (i * dim_length + start) * trailing_dims;
+            for (int j = 0; j < num_values; j++) {
+              for (size_t k = 0; k < trailing_dims; ++k) {
+                out_data[out_offset + k] =
+                    convert<CTYPE, CTYPE_SRC>(src_data[src_offset + k]);
               }
-            });
-      });
+              src_offset += trailing_dims;
+              out_offset += step * trailing_dims;
+            }
+          }
+        });
+  });
 
   return out;
 }

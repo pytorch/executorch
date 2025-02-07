@@ -17,7 +17,8 @@ from executorch.exir.emit._emitter import (
     _TopLevelEmitter,
 )
 from executorch.exir.error import ExportError, ExportErrorType
-from executorch.exir.schema import Program, SubsegmentOffsets
+
+from executorch.exir.schema import Buffer, Program, SubsegmentOffsets
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
 from torch.export.exported_program import ExportedProgram, OutputKind
 from torch.utils import _pytree as pytree
@@ -43,6 +44,15 @@ class EmitterOutput:
     method_to_delegate_debug_id_map: Dict[
         str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]
     ]
+
+    mutable_data: Optional[List[Buffer]]
+
+    # Constants are optionally stored in external files.
+    # Aggregate unique external constants into one buffer.
+    external_constant_buffer: List[bytes]
+    # Each constant_tag groups a set of constants together.
+    # {constant_tag: {fqn: index into external_constant_buffer}}
+    external_constant_map: Optional[Dict[str, Dict[str, int]]]
 
 
 def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.GraphModule:
@@ -73,6 +83,35 @@ def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.Grap
         gm.graph.erase_node(output_node)
 
     return gm
+
+
+# For each entry point in the model, determine if its a joint graph,
+# and if it is return a map of the indices in the model output that the
+# gradient outputs start at and that the parameter outputs start at.
+def _get_training_metadata(methods: Dict[str, ExportedProgram]) -> Dict[str, int]:
+    gradients_method_prefix = "__et_training_gradients_index_"
+    parameters_method_prefix = "__et_training_parameters_index_"
+    fqn_method_prefix = "__et_training_fqn_"
+    training_metadata = {}
+    for name, method in methods.items():
+        found_grad = False
+        found_param = False
+        fqns = []
+        i = 0
+        for output_spec in method.graph_signature.output_specs:
+            if output_spec.kind == OutputKind.GRADIENT_TO_PARAMETER:
+                if not found_grad:
+                    training_metadata[gradients_method_prefix + name] = i
+                    found_grad = True
+                fqns.append(output_spec.target)
+            elif output_spec.kind == OutputKind.TOKEN and not found_param:
+                assert found_grad  # Params must come after gradients
+                training_metadata[parameters_method_prefix + name] = i
+                found_param = True
+            i += 1
+            if len(fqns) > 0:
+                training_metadata[fqn_method_prefix + name] = fqns
+    return training_metadata
 
 
 def emit_program(
@@ -140,6 +179,10 @@ def emit_program(
             emitter.instr_id_to_delegate_debug_id_map
         )
 
+    training_metadata = _get_training_metadata(methods)
+    if len(training_metadata) > 0:
+        plans.extend(emitter._emit_prim_getters(training_metadata))
+
     # emit any primitive getters
     if prim_getters is not None:
         plans.extend(emitter._emit_prim_getters(prim_getters))
@@ -156,5 +199,13 @@ def emit_program(
             segments=[],
             # Subsegment offsets may be added at serialization time.
             constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
+            mutable_data_segments=None,  # Will be filled in during serialization
         ),
+        mutable_data=(
+            program_state.mutable_buffer
+            if len(program_state.mutable_buffer) > 1
+            else None
+        ),
+        external_constant_buffer=program_state.external_constant_buffer,
+        external_constant_map=program_state.external_constant_map,
     )

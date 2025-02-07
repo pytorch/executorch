@@ -52,10 +52,6 @@ class TestBackendOps(unittest.TestCase):
         self.assertTrue(self.torch_foo(a).allclose(self.backend_foo(a)))
         self.assertTrue(self.edge_foo(a).allclose(self.backend_foo(a)))
 
-    def test_backend_ops_with_no_kernel_raise_exception(self):
-        with self.assertRaises(AssertionError):
-            ops.backend.DO_NOT_USE_TEST_ONLY.bar.default
-
     def test_backend_ops_with_meta_kernel_passes(self):
         x = torch.randn(2, 3)
         with FakeTensorMode() as mode:
@@ -67,6 +63,9 @@ class TestBackendOps(unittest.TestCase):
         self.assertEqual(meta_result.size(), x.size())
 
     def test_backend_ops_equivalent_pattern(self):
+        with self.assertRaises(AssertionError):
+            ops.backend.DO_NOT_USE_TEST_ONLY.bar.default
+
         @bind_pattern_to_op(lib, "bar")
         def f(x: torch.Tensor):
             return x + x

@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 import torch
 import torch.nn as nn
-from executorch.examples.models.llama2.llama_transformer import (
+from executorch.examples.models.llama.llama_transformer import (
     ModelArgs as LlamaModelArgs,
     Transformer as LlamaTransformer,
 )
@@ -99,8 +99,8 @@ def convert_to_pte(gguf_model_args: GGUFModelArgs, gguf_weights: GGUFWeights) ->
     """Convert a GGUF model into an ExecuTorch program.
 
     Args:
-        model_args: The arguments for the GGUF model.
-        weights: The weights of the GGUF model.
+        gguf_model_args: The arguments for the GGUF model.
+        gguf_weights: The weights of the GGUF model.
     """
 
     assert (

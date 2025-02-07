@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -18,8 +19,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 /**
@@ -34,17 +35,22 @@ namespace {
  * the memory level, thereby increasing the speed of memory IO as
  * well as reducing the number of cache misses.
  */
-template <typename CTYPE_IN, typename CTYPE_OUT>
-void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
+template <typename CTYPE_OUT, typename LoadFn = CTYPE_OUT (*)(const void*)>
+void cumsum_tensors(
+    const Tensor& self,
+    LoadFn load_self,
+    int64_t dim,
+    Tensor& out) {
   if (self.numel() == 0) {
     return;
   }
 
-  const CTYPE_IN* input_data_base = self.const_data_ptr<CTYPE_IN>();
+  const char* const input_data_base =
+      reinterpret_cast<const char*>(self.const_data_ptr());
   CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
 
   if (self.dim() == 0) {
-    output_data_base[0] = input_data_base[0];
+    output_data_base[0] = load_self(&input_data_base[0]);
     return;
   }
 
@@ -57,7 +63,7 @@ void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
 
     for (size_t idx = 0; idx < trailing_dims; idx++) {
       output_data_base[start_loc + idx] =
-          static_cast<CTYPE_OUT>(input_data_base[start_loc + idx]);
+          load_self(&input_data_base[(start_loc + idx) * self.element_size()]);
     }
 
     for (size_t j = 1; j < dim_size; j++) {
@@ -65,7 +71,8 @@ void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
       size_t prev_round_base = start_loc + (j - 1) * trailing_dims;
       for (size_t idx = 0; idx < trailing_dims; idx++) {
         output_data_base[cur_round_base + idx] =
-            static_cast<CTYPE_OUT>(input_data_base[cur_round_base + idx]) +
+            load_self(&input_data_base
+                          [(cur_round_base + idx) * self.element_size()]) +
             output_data_base[prev_round_base + idx];
       }
     }
@@ -80,7 +87,7 @@ void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
  * operation is performed. This is useful for preventing data type overflows.
  */
 Tensor& cumsum_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     optional<ScalarType> enforced_dtype,
@@ -94,17 +101,22 @@ Tensor& cumsum_out(
       out);
 
   ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
       ctx, resize_tensor(out, self.sizes()) == Error::Ok, InvalidArgument, out);
 
   dim = (self.dim() == 0) ? 0 : dim < 0 ? dim + self.dim() : dim;
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, self.scalar_type(), ctx, "cumsum", CTYPE_SELF, [&] {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, out.scalar_type(), ctx, "cumsum", CTYPE_OUT, [&] {
-              cumsum_tensors<CTYPE_SELF, CTYPE_OUT>(self, dim, out);
-            });
-      });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "cumsum.out";
+
+  ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+    const auto load_self =
+        utils::internal::get_load_to_common_fn<CTYPE_OUT, op_name>(
+            self, utils::SupportedTensorDtypes::REALHBBF16);
+    cumsum_tensors<CTYPE_OUT>(self, load_self, dim, out);
+  });
 
   return out;
 }

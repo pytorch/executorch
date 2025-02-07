@@ -14,6 +14,7 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -23,40 +24,40 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <executorch/test/utils/alignment.h>
-#include <executorch/util/util.h>
 
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using torch::executor::BackendExecutionContext;
-using torch::executor::BackendInitContext;
-using torch::executor::CompileSpec;
-using torch::executor::DataLoader;
-using torch::executor::DelegateHandle;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::FreeableBuffer;
-using torch::executor::MemoryAllocator;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::PyTorchBackendInterface;
-using torch::executor::Result;
-using torch::executor::testing::ManagedMemoryManager;
+using executorch::aten::ArrayRef;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendInterface;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DataLoader;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 /**
  * A backend class whose methods can be overridden individually.
  */
-class StubBackend final : public PyTorchBackendInterface {
+class StubBackend final : public BackendInterface {
  public:
-  // Function signature types that match the PyTorchBackendInterface methods.
+  // Function signature types that match the BackendInterface methods.
   using IsAvailableFn = std::function<bool()>;
   using InitFn = std::function<Result<DelegateHandle*>(
       FreeableBuffer*,
       ArrayRef<CompileSpec>,
-      MemoryAllocator*)>;
-  using ExecuteFn = std::function<Error(DelegateHandle*, EValue**)>;
+      BackendInitContext&)>;
+  using ExecuteFn =
+      std::function<Error(BackendExecutionContext&, DelegateHandle*, EValue**)>;
   using DestroyFn = std::function<void(DelegateHandle*)>;
 
   // Default name that this backend is registered as.
@@ -83,8 +84,7 @@ class StubBackend final : public PyTorchBackendInterface {
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
     if (init_fn_) {
-      return init_fn_.value()(
-          processed, compile_specs, context.get_runtime_allocator());
+      return init_fn_.value()(processed, compile_specs, context);
     }
     // Return a benign value otherwise.
     return nullptr;
@@ -95,11 +95,11 @@ class StubBackend final : public PyTorchBackendInterface {
   }
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     if (execute_fn_) {
-      return execute_fn_.value()(handle, args);
+      return execute_fn_.value()(context, handle, args);
     }
     // Return a benign value otherwise.
     return Error::Ok;
@@ -135,7 +135,7 @@ class StubBackend final : public PyTorchBackendInterface {
   static Error register_singleton(const char* name = kName) {
     if (!registered_) {
       registered_ = true;
-      return torch::executor::register_backend({name, &singleton_});
+      return executorch::runtime::register_backend({name, &singleton_});
     }
     return Error::Ok;
   }
@@ -164,7 +164,7 @@ StubBackend StubBackend::singleton_;
  * A DataLoader that wraps a real DataLoader and records the operations
  * performed on it and the FreeableBuffers it loads.
  */
-class DataLoaderSpy : public DataLoader {
+class DataLoaderSpy final : public DataLoader {
  public:
   /// A record of an operation performed on this DataLoader.
   struct Operation {
@@ -172,16 +172,29 @@ class DataLoaderSpy : public DataLoader {
     size_t offset; // Set for Load; zero for Free.
     void* data; // Set for Free; nullptr for Load.
     size_t size; // Set for Load and Free.
+    std::unique_ptr<const DataLoader::SegmentInfo>
+        segment_info; // Set for Load; nullptr for Free.
   };
 
   explicit DataLoaderSpy(DataLoader* delegate) : delegate_(delegate) {}
 
-  Result<FreeableBuffer> Load(size_t offset, size_t size) override {
-    Result<FreeableBuffer> buf = delegate_->Load(offset, size);
+  Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const SegmentInfo& segment_info) const override {
+    Result<FreeableBuffer> buf = delegate_->load(offset, size, segment_info);
     if (!buf.ok()) {
       return buf.error();
     }
-    operations_.push_back({Operation::Load, offset, /*data=*/nullptr, size});
+
+    auto segment_info_cpy =
+        std::make_unique<const DataLoader::SegmentInfo>(segment_info);
+    operations_.push_back(
+        {Operation::Load,
+         offset,
+         /*data=*/nullptr,
+         size,
+         /*segment_info=*/std::move(segment_info_cpy)});
     auto* context = new SpyContext(&operations_, std::move(buf.get()));
     // Use context->buffer since buf has been moved.
     return FreeableBuffer(
@@ -198,6 +211,32 @@ class DataLoaderSpy : public DataLoader {
    */
   const std::vector<Operation>& operations() const {
     return operations_;
+  }
+
+  /**
+   * Returns true if the DataLoader::load() method was called with the correct
+   * segment info.
+   */
+  bool UsedLoad(
+      DataLoader::SegmentInfo::Type segment_type,
+      const char* descriptor = nullptr) const {
+    for (const auto& op : operations_) {
+      if (op.op != Operation::Load) {
+        continue;
+      }
+      // We have a load op.
+      if (op.segment_info->segment_type == segment_type) {
+        if (segment_type != DataLoader::SegmentInfo::Type::Backend) {
+          // For non-backend segments, the descriptor is irrelevant / a nullptr.
+          return true;
+        } else {
+          if (strcmp(op.segment_info->descriptor, descriptor) == 0) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -223,14 +262,15 @@ class DataLoaderSpy : public DataLoader {
 
   static void FreeBuffer(void* context, void* data, size_t size) {
     auto* sc = reinterpret_cast<SpyContext*>(context);
-    sc->operations->push_back({Operation::Free, /*offset=*/0, data, size});
+    sc->operations->push_back(
+        {Operation::Free, /*offset=*/0, data, size, /*segment_info=*/nullptr});
     delete sc;
   }
 
   /// The real loader to delegate to.
   DataLoader* delegate_;
 
-  std::vector<Operation> operations_;
+  mutable std::vector<Operation> operations_;
 };
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024;
@@ -241,7 +281,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Make sure that the backend has been registered. Safe to call multiple
     // times. Doing this at runtime ensures that it's only registered if these
@@ -285,8 +325,8 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
 };
 
 TEST_P(BackendIntegrationTest, BackendIsPresent) {
-  PyTorchBackendInterface* backend =
-      torch::executor::get_backend_class(StubBackend::kName);
+  BackendInterface* backend =
+      executorch::runtime::get_backend_class(StubBackend::kName);
   ASSERT_EQ(backend, &StubBackend::singleton());
 }
 
@@ -297,6 +337,10 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
 
   Result<Program> program = Program::load(&loader.get());
   ASSERT_EQ(program.error(), Error::Ok);
+
+  auto method_meta = program->method_meta("forward");
+  EXPECT_EQ(method_meta->uses_backend(StubBackend::kName), true);
+  EXPECT_EQ(method_meta->uses_backend("INVALID_BACKEND_NAME"), false);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method_res = program->load_method("forward", &mmm.get());
@@ -310,8 +354,8 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   const void* processed_data = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         init_called = true;
         processed_data = processed->data();
@@ -333,7 +377,7 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   EXPECT_EQ(method_res.error(), Error::Ok);
 
   // Demonstrate that our installed init was called.
-  EXPECT_EQ(init_called, true);
+  EXPECT_TRUE(init_called);
 
   // See if the processed data was freed.
   bool processed_was_freed = spy_loader.WasFreed(processed_data);
@@ -354,8 +398,8 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   FreeableBuffer* init_processed = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         init_processed = processed;
         return processed;
@@ -365,7 +409,9 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   // FreeableBuffer.
   DelegateHandle* execute_handle = nullptr;
   StubBackend::singleton().install_execute(
-      [&](DelegateHandle* handle, __ET_UNUSED EValue** args) -> Error {
+      [&](ET_UNUSED BackendExecutionContext& backend_execution_context,
+          DelegateHandle* handle,
+          ET_UNUSED EValue** args) -> Error {
         execute_handle = handle;
         auto* processed = reinterpret_cast<FreeableBuffer*>(handle);
 
@@ -414,10 +460,9 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
     EXPECT_FALSE(spy_loader.WasFreed(init_processed->data()));
     auto method(std::move(method_res.get()));
     // Execute the model.
-    exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(method);
+    auto input_cleanup = executorch::extension::prepare_input_tensors(method);
+    ASSERT_EQ(input_cleanup.error(), Error::Ok);
     auto err = method.execute();
-    torch::executor::util::FreeInputs(inputs);
     EXPECT_EQ(err, Error::Ok);
 
     // Check that the processed buffer was passed to execute() as the handle.
@@ -444,6 +489,93 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   EXPECT_EQ(execute_handle, destroy_handle);
 }
 
+/**
+ * Tests that the DataLoader's load is receiving the correct segment info for
+ * different types of segments.
+ */
+TEST_P(BackendIntegrationTest, SegmentInfoIsPassedIntoDataLoader) {
+  const void* processed_data = nullptr;
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& backend_init_context)
+          -> Result<DelegateHandle*> {
+        processed_data = processed->data();
+        processed->Free();
+        return nullptr;
+      });
+
+  // Wrap the real loader in a spy so we can see which operations were
+  // performed.
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  DataLoaderSpy spy_loader(&loader.get());
+
+  // Load the program.
+  Result<Program> program = Program::load(&spy_loader);
+  ASSERT_EQ(program.error(), Error::Ok);
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  // Expect that load was called correctly on program segments.
+  bool program_load_was_called =
+      spy_loader.UsedLoad(DataLoader::SegmentInfo::Type::Program, nullptr);
+
+  // Load a method.
+  Result<Method> method_res = program->load_method("forward", &mmm.get());
+  EXPECT_EQ(method_res.error(), Error::Ok);
+
+  // Expect that load was called correctly on a backend segment.
+  bool backend_load_was_called = spy_loader.UsedLoad(
+      DataLoader::SegmentInfo::Type::Backend,
+      "StubBackend"); // This backend id is taken from the StubBackend defined
+                      // in export_delegated_program.py.
+
+  EXPECT_TRUE(program_load_was_called);
+  EXPECT_EQ(backend_load_was_called, using_segments());
+}
+
+TEST_P(BackendIntegrationTest, GetMethodNameDuringInitSuccess) {
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  const void* processed_data = nullptr;
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& backend_init_context)
+          -> Result<DelegateHandle*> {
+        auto method_name = backend_init_context.get_method_name();
+        // Ensure that we can get the method name during init via context
+        EXPECT_STREQ(method_name, "forward");
+        processed_data = processed->data();
+        return nullptr;
+      });
+  Result<Program> program = Program::load(&loader.get());
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  EXPECT_TRUE(method.ok());
+  ASSERT_EQ(program.error(), Error::Ok);
+}
+
+TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  StubBackend::singleton().install_execute(
+      [&](BackendExecutionContext& backend_execution_context,
+          ET_UNUSED DelegateHandle* handle,
+          ET_UNUSED EValue** args) -> Error {
+        // Ensure that we can get the method name during execution via context
+        auto method_name = backend_execution_context.get_method_name();
+        EXPECT_STREQ(method_name, "forward");
+        return Error::Ok;
+      });
+  Result<Program> program = Program::load(&loader.get());
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  EXPECT_TRUE(method.ok());
+  Error err = method->execute();
+  ASSERT_EQ(err, Error::Ok);
+}
+
 // TODO: Add more tests for the runtime-to-backend interface. E.g.:
 // - Errors during init() or execute() result in runtime init/execution failures
 // - Correct values are passed to init()/execute()
@@ -463,7 +595,7 @@ class DelegateDataAlignmentTest : public ::testing::TestWithParam<bool> {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Make sure that the backend has been registered. Safe to call multiple
     // times. Doing this at runtime ensures that it's only registered if these
@@ -521,8 +653,8 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
   const void* processed_data = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED BackendInitContext& backend_init_context)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         return nullptr;

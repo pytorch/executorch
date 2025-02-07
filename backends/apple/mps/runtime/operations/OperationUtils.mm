@@ -11,8 +11,8 @@
 #define PAGE_SIZE 4096
 #endif
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -27,9 +27,17 @@ MPSGraphBuilder::getMPSDataType(DataType serializedDataType) {
     case DataType::mps_data_type_float16:
       return MPSDataTypeFloat16;
     case DataType::mps_data_type_float32:
+    case DataType::mps_data_type_float64:
       return MPSDataTypeFloat32;
     case DataType::mps_data_type_int8:
       return MPSDataTypeInt8;
+    case DataType::mps_data_type_int4: {
+      if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)) {
+        return MPSDataTypeInt4;
+      } else {
+        return ((MPSDataType)(MPSDataTypeSignedBit | 4));
+      }
+    }
     case DataType::mps_data_type_int16:
       return MPSDataTypeInt16;
     case DataType::mps_data_type_int32:
@@ -88,10 +96,11 @@ MPSGraphBuilder::numel(const flatbuffers::Vector<int32_t>* shape) {
 NSData*
 MPSGraphBuilder::getConstantData(int32_t id) {
   TensorPtr mpsTensor = _flatBufferGraph->mps_values()->Get(id);
-  int32_t constantBufferSize = mpsTensor->constant_buffer_size();
-  const unsigned char* constantBuffer = mpsTensor->constant_buffer()->storage()->data();
+  uint64_t constantBufferSize = mpsTensor->constant_buffer_size();
+  uint64_t segmentOffset = mpsTensor->segment_offset();
+  const unsigned char* constantBuffer = _constant_data_ptr + segmentOffset;
   ET_CHECK_MSG(constantBufferSize > 0 && constantBuffer != nullptr, "[ERROR] Invalid constant buffer");
-  return [[NSData alloc] initWithBytes:constantBuffer
+  return [[NSData alloc] initWithBytesNoCopy:(void*)constantBuffer
                                 length:constantBufferSize];
 }
 
@@ -181,6 +190,7 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     _DEFINE_MPS_NODE(Embedding);
     _DEFINE_MPS_NODE(IndexTensor);
     _DEFINE_MPS_NODE(IndexPut);
+    _DEFINE_MPS_NODE(Scatter);
     // Reduce ops
     _DEFINE_MPS_NODE(Mean);
     // Shape ops
@@ -215,6 +225,8 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     _DEFINE_MPS_NODE(ConstantPadND);
     // Range ops
     _DEFINE_MPS_NODE(Arange);
+    // Quant-Dequant ops
+    _DEFINE_MPS_NODE(DequantizePerChannelGroup);
 
     case mpsgraph::MPSNodeUnion::NONE:
     default:
@@ -238,41 +250,41 @@ MPSGraphBuilder::getMPSGraphTensor(int32_t id) {
   return _idToMPSGraphTensor[id];
 }
 
-MPSDataType getMPSScalarType(exec_aten::ScalarType scalar_type) {
+MPSDataType getMPSScalarType(executorch::aten::ScalarType scalar_type) {
   switch (scalar_type) {
     // This is an intentional fallthrough supporting Double for Scalar
     // types as they are casted to Float32 currently.
-    case exec_aten::ScalarType::Float:
+    case executorch::aten::ScalarType::Float:
       return MPSDataTypeFloat32;
-    case exec_aten::ScalarType::Half:
+    case executorch::aten::ScalarType::Half:
       return MPSDataTypeFloat16;
     default:
       ET_CHECK_MSG(false, "Unhandled ExecuTorch scalar type!");
   }
 }
 
-exec_aten::ScalarType getScalarType(MPSDataType mpsDataType) {
+executorch::aten::ScalarType getScalarType(MPSDataType mpsDataType) {
   switch (mpsDataType) {
     case MPSDataTypeFloat16:
-      return exec_aten::ScalarType::Half;
+      return executorch::aten::ScalarType::Half;
     case MPSDataTypeFloat32:
-      return exec_aten::ScalarType::Float;
+      return executorch::aten::ScalarType::Float;
     case MPSDataTypeInt8:
-      return exec_aten::ScalarType::Char;
+      return executorch::aten::ScalarType::Char;
     case MPSDataTypeInt16:
-      return exec_aten::ScalarType::Short;
+      return executorch::aten::ScalarType::Short;
     case MPSDataTypeInt32:
-      return exec_aten::ScalarType::Int;
+      return executorch::aten::ScalarType::Int;
     case MPSDataTypeInt64:
-      return exec_aten::ScalarType::Long;
+      return executorch::aten::ScalarType::Long;
     case MPSDataTypeBool:
-      return exec_aten::ScalarType::Bool;
+      return executorch::aten::ScalarType::Bool;
     default:
       ET_CHECK_MSG(false, "Unhandled MPS data type!");
   }
 }
 
-MPSGraphTensor* castMPSTensor(MPSGraph* mpsGraph, MPSGraphTensor* tensor, exec_aten::ScalarType toType) {
+MPSGraphTensor* castMPSTensor(MPSGraph* mpsGraph, MPSGraphTensor* tensor, executorch::aten::ScalarType toType) {
   return castMPSTensor(mpsGraph, tensor, getMPSScalarType(toType));
 }
 
@@ -289,7 +301,7 @@ std::vector<int64_t> getMPSShapeVec(const MPSShape* shape) {
   return shapeVec;
 }
 
-id<MTLBuffer> getMTLBufferStorage(const Tensor &tensor) {
+id<MTLBuffer> getMTLBufferStorage(const executorch::aten::Tensor &tensor) {
   uint8_t *data = tensor.mutable_data_ptr<uint8_t>();
   return [MPSDevice::getInstance()->device() newBufferWithBytesNoCopy:data
                                                                length:tensor.nbytes()
@@ -312,36 +324,30 @@ void* pageAlignedBlockPtr(const void* ptr, NSUInteger size, NSUInteger* alignedB
 
 
 MPSGraphTensor* permuteTensor(MPSGraph* graph, MPSGraphTensor* inputTensor, NSArray* permuteOrder) {
-  if (isMacOS13OrNewer()) {
-   return [graph transposeTensor:inputTensor
-                     permutation:permuteOrder
-                            name:nil];
-  } else {
-    NSUInteger srcRank = [[inputTensor shape] count];
-    if (srcRank != [permuteOrder count]) {
-      return nil;
-    }
-
-    MPSGraphTensor* outputTensor = inputTensor;
-    std::vector<NSUInteger> dimensionOrder(srcRank);
-    std::iota(std::begin(dimensionOrder), std::end(dimensionOrder), 0);
-
-    for (int32_t i = 0; i < srcRank; i++) {
-      NSUInteger axis = [permuteOrder[i] integerValue];
-      auto axisIter = std::find(dimensionOrder.begin(), dimensionOrder.end(), axis);
-      NSUInteger axis1 = i;
-      NSUInteger axis2 = axisIter - dimensionOrder.begin();
-      iter_swap(dimensionOrder.begin() + i, axisIter);
-
-      outputTensor = [graph transposeTensor:outputTensor dimension:axis1 withDimension:axis2 name:nil];
-    }
-
-    return outputTensor;
+  NSUInteger srcRank = [[inputTensor shape] count];
+  if (srcRank != [permuteOrder count]) {
+    return nil;
   }
+
+  MPSGraphTensor* outputTensor = inputTensor;
+  std::vector<NSUInteger> dimensionOrder(srcRank);
+  std::iota(std::begin(dimensionOrder), std::end(dimensionOrder), 0);
+
+  for (int32_t i = 0; i < srcRank; i++) {
+    NSUInteger axis = [permuteOrder[i] integerValue];
+    auto axisIter = std::find(dimensionOrder.begin(), dimensionOrder.end(), axis);
+    NSUInteger axis1 = i;
+    NSUInteger axis2 = axisIter - dimensionOrder.begin();
+    iter_swap(dimensionOrder.begin() + i, axisIter);
+
+    outputTensor = [graph transposeTensor:outputTensor dimension:axis1 withDimension:axis2 name:nil];
+  }
+
+  return outputTensor;
 }
 
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

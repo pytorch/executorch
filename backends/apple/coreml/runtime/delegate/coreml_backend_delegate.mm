@@ -11,6 +11,7 @@
 #import <backend_delegate.h>
 #import <coreml_backend/delegate.h>
 #import <executorch/runtime/core/evalue.h>
+#import <executorch/runtime/platform/log.h>
 #import <memory>
 #import <model_event_logger.h>
 #import <model_logging_options.h>
@@ -24,8 +25,21 @@
 #endif
 
 namespace {
-using namespace torch::executor;
 using namespace executorchcoreml;
+
+using executorch::aten::ScalarType;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::EValue;
+using executorch::runtime::Error;
+using executorch::runtime::EventTracerDebugLogLevel;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::get_backend_class;
+using executorch::runtime::Result;
 
 std::optional<MultiArray::DataType> get_data_type(ScalarType scalar_type) {
     switch (scalar_type) {
@@ -59,14 +73,14 @@ std::optional<MultiArray> get_multi_array(EValue *eValue, ArgType argType) {
     if (!eValue->isTensor()) {
         return std::nullopt;
     }
-    
+
     auto tensor = eValue->toTensor();
     auto dataType = get_data_type(tensor.scalar_type());
     if (!dataType.has_value()) {
         ET_LOG(Error, "%s: DataType=%d is not supported", ETCoreMLStrings.delegateIdentifier.UTF8String, (int)tensor.scalar_type());
         return std::nullopt;
     }
-    
+
     std::vector<ssize_t> strides(tensor.strides().begin(), tensor.strides().end());
     std::vector<size_t> shape(tensor.sizes().begin(), tensor.sizes().end());
     MultiArray::MemoryLayout layout(dataType.value(), std::move(shape), std::move(strides));
@@ -85,7 +99,7 @@ std::optional<BackendDelegate::Config> parse_config(NSURL *plistURL) {
     if (!dict) {
         return std::nullopt;
     }
-    
+
     BackendDelegate::Config config;
     {
         NSNumber *should_prewarm_model = SAFE_CAST(dict[@"shouldPrewarmModel"], NSNumber);
@@ -93,21 +107,21 @@ std::optional<BackendDelegate::Config> parse_config(NSURL *plistURL) {
             config.should_prewarm_model = static_cast<bool>(should_prewarm_model.boolValue);
         }
     }
-    
+
     {
         NSNumber *should_prewarm_asset = SAFE_CAST(dict[@"shouldPrewarmAsset"], NSNumber);
         if (should_prewarm_asset) {
             config.should_prewarm_asset = static_cast<bool>(should_prewarm_asset.boolValue);
         }
     }
-    
+
     {
         NSNumber *max_models_cache_size_in_bytes = SAFE_CAST(dict[@"maxModelsCacheSizeInBytes"], NSNumber);
         if (max_models_cache_size_in_bytes) {
             config.max_models_cache_size = max_models_cache_size_in_bytes.unsignedLongLongValue;
         }
     }
-    
+
     return config;
 }
 
@@ -123,16 +137,18 @@ ModelLoggingOptions get_logging_options(BackendExecutionContext& context) {
     auto event_tracer = context.event_tracer();
     if (event_tracer) {
         options.log_profiling_info = true;
-        options.log_intermediate_tensors = event_tracer->intermediate_outputs_logging_status();
+        auto debug_level = event_tracer->event_tracer_debug_level();
+        options.log_intermediate_tensors = (debug_level >= EventTracerDebugLogLevel::kIntermediateOutputs);
     }
-    
+
     return options;
 }
 
 } //namespace
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
+namespace coreml {
 
 using namespace executorchcoreml;
 
@@ -152,7 +168,7 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
         auto buffer = Buffer(spec.value.buffer, spec.value.nbytes);
         specs_map.emplace(spec.key, std::move(buffer));
     }
-    
+
     auto buffer = Buffer(processed->data(), processed->size());
     std::error_code error;
     auto handle = impl_->init(std::move(buffer), specs_map);
@@ -171,7 +187,7 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
     size_t nInputs = nArgs.first;
     size_t nOutputs = nArgs.second;
     delegate_args.reserve(nInputs + nOutputs);
-    
+
     // inputs
     for (size_t i = 0; i < nInputs; i++) {
         auto multi_array = get_multi_array(args[i], ArgType::Input);
@@ -180,7 +196,7 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
                                  "%s: Failed to create multiarray from input at args[%zu]", ETCoreMLStrings.delegateIdentifier.UTF8String, i);
         delegate_args.emplace_back(std::move(multi_array.value()));
     }
-    
+
     // outputs
     for (size_t i = nInputs; i < nInputs + nOutputs; i++) {
         auto multi_array = get_multi_array(args[i], ArgType::Output);
@@ -189,7 +205,7 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
                                  "%s: Failed to create multiarray from output at args[%zu]", ETCoreMLStrings.delegateIdentifier.UTF8String, i);
         delegate_args.emplace_back(std::move(multi_array.value()));
     }
-    
+
     auto logging_options = get_logging_options(context);
     std::error_code ec;
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -204,7 +220,7 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
                              "%s: Failed to run the model.",
                              ETCoreMLStrings.delegateIdentifier.UTF8String);
 #endif
-    
+
     return Error::Ok;
 }
 
@@ -233,6 +249,6 @@ Backend backend{ETCoreMLStrings.delegateIdentifier.UTF8String, &cls};
 static auto success_with_compiler = register_backend(backend);
 }
 
-} // namespace executor
-} // namespace torch
-
+} // namespace coreml
+} // namespace backends
+} // namespace executorch

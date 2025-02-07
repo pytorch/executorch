@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/platform.h>
 #include <stdlib.h>
@@ -13,8 +14,8 @@
 
 #pragma once
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /// Represents an allocator id returned by track_allocator.
 typedef uint32_t AllocatorID;
@@ -67,6 +68,18 @@ enum class EventTracerDebugLogLevel {
 };
 
 /**
+ * Indicates the level of profiling that should be enabled. Profiling
+ * events will be logged in increasing order of verbosity as we go down the
+ * enum list. Thus it is important to keep the enum values in the right order.
+ */
+enum class EventTracerProfilingLevel {
+  /// No operator profiling.
+  kProfileMethodOnly,
+  /// All profiling events enabled.
+  kProfileAllEvents,
+};
+
+/**
  * This is the struct which should be returned when a profiling event is
  * started. This is used to uniquely identify that profiling event and will be
  * required to be passed into the end_profiling call to signal that the event
@@ -96,7 +109,7 @@ struct EventTracerEntry {
  * EventTracer is a class that users can inherit and implement to
  * log/serialize/stream etc. the profiling and debugging events that are
  * generated at runtime for a model. An example of this is the ETDump
- * implementation in the SDK codebase that serializes these events to a
+ * implementation in the devtools codebase that serializes these events to a
  * flatbuffer.
  */
 class EventTracer {
@@ -257,6 +270,106 @@ class EventTracer {
       LoggedEValueType evalue_type) = 0;
 
   /**
+   * Log an intermediate tensor output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The tensor type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const executorch::aten::Tensor& output) = 0;
+
+  /**
+   * Log an intermediate tensor array output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The tensor array type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const ArrayRef<executorch::aten::Tensor> output) = 0;
+
+  /**
+   * Log an intermediate int output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The int type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const int& output) = 0;
+
+  /**
+   * Log an intermediate bool output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The bool type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const bool& output) = 0;
+
+  /**
+   * Log an intermediate double output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The double type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const double& output) = 0;
+
+  /**
    * Helper function to set the chain id ands debug handle. Users have two
    * options, the first is that they can directly pass in the chain id and debug
    * handle to start_profiling or they can explicitly set them through this
@@ -323,6 +436,21 @@ class EventTracer {
   }
 
   /**
+   * Set the level of event tracer profiling that is desired.
+   */
+  void set_event_tracer_profiling_level(
+      EventTracerProfilingLevel profiling_level) {
+    event_tracer_profiling_level_ = profiling_level;
+  }
+
+  /**
+   * Return the current level of event tracer profiling.
+   */
+  EventTracerProfilingLevel event_tracer_profiling_level() {
+    return event_tracer_profiling_level_;
+  }
+
+  /**
    * Return the current status of intermediate outputs logging mode.
    */
   bool intermediate_outputs_logging_status() {
@@ -357,7 +485,27 @@ class EventTracer {
   int bundled_input_index_ = kUnsetBundledInputIndex;
   EventTracerDebugLogLevel event_tracer_debug_level_ =
       EventTracerDebugLogLevel::kNoLogging;
+  EventTracerProfilingLevel event_tracer_profiling_level_ =
+      EventTracerProfilingLevel::kProfileAllEvents;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::AllocatorID;
+using ::executorch::runtime::ChainID;
+using ::executorch::runtime::DebugHandle;
+using ::executorch::runtime::DelegateDebugIdType;
+using ::executorch::runtime::EventTracer;
+using ::executorch::runtime::EventTracerDebugLogLevel;
+using ::executorch::runtime::EventTracerEntry;
+using ::executorch::runtime::kUnsetBundledInputIndex;
+using ::executorch::runtime::kUnsetChainId;
+using ::executorch::runtime::kUnsetDebugHandle;
+using ::executorch::runtime::LoggedEValueType;
 } // namespace executor
 } // namespace torch

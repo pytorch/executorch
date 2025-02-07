@@ -18,27 +18,13 @@ export_model() {
   cp "${MODEL_NAME}_xnnpack_fp32.pte" "${ASSETS_DIR}"
 }
 
-build_android_native_library() {
-  pushd examples/demo-apps/android/LlamaDemo
-  CMAKE_OUT="cmake-out-android-$1" ANDROID_NDK=/opt/ndk ANDROID_ABI="$1" ./gradlew setup
-  popd
-}
-
 build_android_demo_app() {
+  mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/libs
+  cp executorch.aar examples/demo-apps/android/ExecuTorchDemo/app/libs
   pushd examples/demo-apps/android/ExecuTorchDemo
   ANDROID_HOME=/opt/android/sdk ./gradlew build
   popd
 }
 
-build_android_llama_demo_app() {
-  pushd examples/demo-apps/android/LlamaDemo
-  ANDROID_HOME=/opt/android/sdk ./gradlew build
-  ANDROID_HOME=/opt/android/sdk ./gradlew assembleAndroidTest
-  popd
-}
-
-build_android_native_library arm64-v8a
-build_android_native_library x86_64
 export_model
 build_android_demo_app
-build_android_llama_demo_app

@@ -6,20 +6,28 @@
 
 import json
 import os
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
 
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.utils import (
+    generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
+    skip_annotation,
+)
+from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     make_output_dir,
+    make_quantizer,
     parse_skip_delegation_node,
+    QnnPartitioner,
     setup_common_args_and_variables,
     SimpleADB,
 )
+from executorch.exir import to_edge
 from transformers import BertTokenizer, MobileBertForSequenceClassification
 
 
@@ -204,8 +212,6 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
             )
 
     model.load_state_dict(
-        # TODO: If possible, it's better to set weights_only to True
-        # https://pytorch.org/docs/stable/generated/torch.load.html
         torch.load(
             (
                 f"{artifacts_dir}/finetuned_mobilebert_epoch_{epochs}.model"
@@ -213,49 +219,14 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
                 else pretrained_weight
             ),
             map_location=torch.device("cpu"),
-            weights_only=False,
+            weights_only=True,
         ),
     )
 
     return model.eval(), dataloader_val, labels
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./mobilebert_fine_tune",
-        default="./mobilebert_fine_tune",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-p",
-        "--pretrained_weight",
-        help="Location of pretrained weight",
-        default=None,
-        type=str,
-    )
-
-    parser.add_argument(
-        "-F",
-        "--use_fp16",
-        help="If specified, will run in fp16 precision and discard ptq setting",
-        action="store_true",
-        default=False,
-    )
-
-    parser.add_argument(
-        "-P",
-        "--ptq",
-        help="If specified, will do PTQ quantization. default is 8bits activation and 8bits weight. Support 8a8w, 16a16w and 16a4w.",
-        default="8a8w",
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
@@ -267,51 +238,72 @@ if __name__ == "__main__":
             "Please specify a device serial by -s/--device argument."
         )
 
-    pte_filename = "ptq_mb_qnn" if args.ptq else "mb_qnn"
-    batch_size = 1 if args.ptq else 3
+    batch_size, pte_filename = 1, "ptq_mb_qnn"
     model, data_val, labels = get_fine_tuned_mobilebert(
         args.artifact, args.pretrained_weight, batch_size
     )
     inputs, input_list = get_dataset(data_val)
 
-    if args.ptq == "8a8w":
-        quant_dtype = QuantDtype.use_8a8w
-    elif args.ptq == "16a16w":
-        quant_dtype = QuantDtype.use_16a16w
-    elif args.ptq == "16a4w":
-        quant_dtype = QuantDtype.use_16a4w
-    else:
+    try:
+        quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
+    except:
         raise AssertionError(
             f"No support for quant type {args.ptq}. Support 8a8w, 16a16w and 16a4w."
         )
 
     if args.use_fp16:
         quant_dtype = None
+        pte_filename = "mb_qnn"
+        build_executorch_binary(
+            model,
+            inputs[0],
+            args.model,
+            f"{args.artifact}/{pte_filename}",
+            inputs,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+            quant_dtype=quant_dtype,
+            shared_buffer=args.shared_buffer,
+        )
+    else:
 
-    build_executorch_binary(
-        model,
-        inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        inputs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
-        quant_dtype=quant_dtype,
-        shared_buffer=args.shared_buffer,
-    )
+        def calibrator(gm):
+            for input in inputs:
+                gm(*input)
+
+        quantizer = make_quantizer(quant_dtype=quant_dtype)
+        backend_options = generate_htp_compiler_spec(quant_dtype is not None)
+        partitioner = QnnPartitioner(
+            generate_qnn_executorch_compiler_spec(
+                soc_model=getattr(QcomChipset, args.model),
+                backend_options=backend_options,
+            ),
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+        )
+        # skip embedding layer cause it's quantization sensitive
+        graph_module, _ = skip_annotation(
+            nn_module=model,
+            quantizer=quantizer,
+            partitioner=partitioner,
+            sample_input=inputs[0],
+            calibration_cb=calibrator,
+            fp_node_op_set={torch.ops.aten.embedding.default},
+        )
+        # lower all graph again, the skipped operators will be left in CPU
+        exec_prog = to_edge(
+            torch.export.export(graph_module, inputs[0], strict=True),
+        ).to_executorch()
+
+        with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
+            file.write(exec_prog.buffer)
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        artifact_path=f"{args.build_folder}",
+        build_path=f"{args.build_folder}",
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
@@ -353,3 +345,48 @@ if __name__ == "__main__":
             print(f"\n[{target[0]}]")
             for k, v in target[1].items():
                 print(f"{k}: {v[0]}/{v[1]}")
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./mobilebert_fine_tune",
+        default="./mobilebert_fine_tune",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-p",
+        "--pretrained_weight",
+        help="Location of pretrained weight",
+        default=None,
+        type=str,
+    )
+
+    parser.add_argument(
+        "-F",
+        "--use_fp16",
+        help="If specified, will run in fp16 precision and discard ptq setting",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "-P",
+        "--ptq",
+        help="If specified, will do PTQ quantization. default is 8bits activation and 8bits weight. Support 8a8w, 16a16w and 16a4w.",
+        default="8a8w",
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

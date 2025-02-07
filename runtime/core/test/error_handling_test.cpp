@@ -15,7 +15,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 
-using namespace torch::executor;
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 static void* test_ptr = static_cast<void*>((uintptr_t*)0xDEADBEEF);
 
@@ -189,7 +190,7 @@ TEST(ErrorHandlingTest, ResultNoCopy) {
 }
 
 TEST(ErrorHandlingTest, ResultMove) {
-  torch::executor::runtime_init();
+  executorch::runtime::runtime_init();
 
   Result<Movable> res = Movable(2);
   ASSERT_TRUE(res.ok());

@@ -5,16 +5,21 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from collections import defaultdict
 from typing import final, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 
-from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
-from executorch.backends.qualcomm.passes.insert_io_qdq import InsertIOQDQ
-from executorch.backends.qualcomm.passes.insert_requantize import InsertRequantize
-from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
-from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
+import torch  # noqa: F401
+from executorch.backends.qualcomm._passes.fuse_consecutive_transpose import (
+    FuseConsecutiveTranspose,
+)
+from executorch.backends.qualcomm._passes.insert_io_qdq import InsertIOQDQ
+from executorch.backends.qualcomm._passes.insert_requantize import InsertRequantize
+from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
@@ -43,10 +48,10 @@ class QnnBackend(BackendDetails):
         # QNN Delegate Specific Passes
         qnn_compiler_passes = PassManager(
             passes=[
-                ConvertToLinear(),
                 InsertRequantize(edge_program),
                 InsertIOQDQ(edge_program),
                 LayoutTransform(edge_program, insert_permute=True),
+                FuseConsecutiveTranspose(),
             ]
         )
 
@@ -54,7 +59,7 @@ class QnnBackend(BackendDetails):
         assert pass_result is not None
 
         enable_tensor_dump = qnn_manager.IsTensorDump()
-        nodes_to_wrappers = {}
+        nodes_to_wrappers = defaultdict(dict)
         node_visitors = get_node_visitors(
             edge_program, enable_tensor_dump=enable_tensor_dump
         )
@@ -72,9 +77,24 @@ class QnnBackend(BackendDetails):
                         else:
                             py_op_wrapper_list.append(py_op_wrapper)
                 else:
-                    raise RuntimeError(
-                        f"For {node}, {node.op}:{node.target.__name__} is not supported in Qnn Delegate"
+                    err_msg = (
+                        f"For {node}, {node.op}:{node.target.__name__} "
+                        "is not supported in Qnn Delegate"
                     )
+                    try:
+                        context_loader_target = eval(
+                            f"torch.ops.{OpContextLoader.namespace}.{node.target.__name__}",
+                            globals().update(torch.__dict__),
+                        )
+                        assert node.target == context_loader_target, err_msg
+                        # if graph has context binary loader node, return directly
+                        return PreprocessResult(
+                            processed_bytes=node.meta[OpContextLoader.meta_ctx_bin],
+                            debug_handle_map={},
+                        )
+                    except:
+                        raise RuntimeError(err_msg)
+
             elif node.op in [
                 "get_attr",
                 "placeholder",
@@ -84,11 +104,13 @@ class QnnBackend(BackendDetails):
             else:
                 raise RuntimeError(f"{node.op} is not supported in Qnn")
         qnn_context_binary = qnn_manager.Compile(
-            [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list]
+            qnn_manager.GetGraphNames()[0],
+            [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list],
         )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.Destroy()
         # For now, debug_handle_map is not used by QNN ExecuTorch
         return PreprocessResult(
-            processed_bytes=bytes(qnn_context_binary), debug_handle_map={}
+            processed_bytes=bytes(qnn_context_binary),
+            debug_handle_map={},
         )

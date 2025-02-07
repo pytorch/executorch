@@ -8,7 +8,6 @@ import logging
 
 import torch
 
-# pyre-ignore
 from torchvision.models import inception_v3  # @manual
 
 from ..model_base import EagerModelBase
@@ -20,7 +19,6 @@ class InceptionV3Model(EagerModelBase):
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading torchvision inception_v3 model")
-        # pyre-ignore
         inception_v3_model = inception_v3(weights="IMAGENET1K_V1")
         logging.info("Loaded torchvision inception_v3 model")
         return inception_v3_model

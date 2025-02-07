@@ -18,9 +18,9 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpMinOutTest : public OperatorTest {
@@ -166,57 +166,115 @@ class OpMinOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(min, tf_in.make({2, 3, 1}, {0, 0, 0, 0, 0, 0}));
     EXPECT_TENSOR_EQ(min_indices, tf_long.make({2, 3, 1}, {0, 3, 1, 3, 0, 1}));
   }
+};
 
-  template <>
-  void test_min_out_dtype<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf_bool;
-    TensorFactory<ScalarType::Long> tf_long;
-    // clang-format off
-  Tensor in = tf_bool.make(
-    {2, 3, 4},
-    {
-      true,  false, true,  false,
-      false, false, false, false,
-      false, true,  true,  false,
+template <>
+void OpMinOutTest::test_min_out_dtype<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Long> tf_long;
+  // clang-format off
+Tensor in = tf_bool.make(
+  {2, 3, 4},
+  {
+    true,  false, true,  false,
+    false, false, false, false,
+    false, true,  true,  false,
 
-      false, false, true,  false,
-      false, false, false, true,
-      true,  true,  true,  true,
-    });
-    // clang-format on
+    false, false, true,  false,
+    false, false, false, true,
+    true,  true,  true,  true,
+  });
+  // clang-format on
 
-    Tensor min = tf_bool.zeros({2, 3, 1});
-    Tensor min_indices = tf_long.zeros({2, 3, 1});
+  Tensor min = tf_bool.zeros({2, 3, 1});
+  Tensor min_indices = tf_long.zeros({2, 3, 1});
 
-    // +/-inf and nan should work
-    op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
-    // clang-format off
-  EXPECT_TENSOR_CLOSE(
-      min, tf_bool.make(
-        {2, 3, 1},
-        {
-          false,
-          false,
-          false,
+  // +/-inf and nan should work
+  op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
+  // clang-format off
+EXPECT_TENSOR_CLOSE(
+    min, tf_bool.make(
+      {2, 3, 1},
+      {
+        false,
+        false,
+        false,
 
-          false,
-          false,
-          true
-        }));
-  EXPECT_TENSOR_EQ(min_indices, tf_long.make(
-    {2, 3, 1},
-    {
-      1,
-      0,
-      0,
+        false,
+        false,
+        true
+      }));
+EXPECT_TENSOR_EQ(min_indices, tf_long.make(
+  {2, 3, 1},
+  {
+    1,
+    0,
+    0,
 
-      0,
-      0,
-      0
-    }));
-    // clang-format on
+    0,
+    0,
+    0
+  }));
+  // clang-format on
+}
+
+class OpMinUnaryOutTest : public OperatorTest {
+ protected:
+  Tensor& op_min_unary_out(const Tensor& self, Tensor& out) {
+    return torch::executor::aten::min_outf(context_, self, out);
+  }
+
+  template <ScalarType IN_DTYPE>
+  void test_min_unary_out_dtype() {
+    TensorFactory<IN_DTYPE> tf_in;
+    TensorFactory<ScalarType::Float> tf_out;
+    Tensor input = tf_in.make({2, 3}, {7, 1, 3, 4, 4, 2});
+    Tensor out = tf_out.zeros({});
+    Tensor expected = tf_out.make({}, {1});
+    op_min_unary_out(input, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+
+  template <typename CTYPE, ScalarType IN_DTYPE>
+  void test_min_unary_out_empty_integer() {
+    TensorFactory<IN_DTYPE> tf_in;
+    Tensor input = tf_in.make({2, 0}, {});
+    Tensor out = tf_in.zeros({});
+    Tensor expected = tf_in.make({}, {std::numeric_limits<CTYPE>::max()});
+    op_min_unary_out(input, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+
+  template <typename CTYPE, ScalarType IN_DTYPE>
+  void test_min_unary_out_empty_floating() {
+    TensorFactory<IN_DTYPE> tf_in;
+    Tensor input = tf_in.make({2, 0}, {});
+    Tensor out = tf_in.zeros({});
+    Tensor expected = tf_in.make({}, {INFINITY});
+    op_min_unary_out(input, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
   }
 };
+
+TEST_F(OpMinUnaryOutTest, AllRealHBF16InputFloatOutputPasses) {
+#define TEST_ENTRY(ctype, dtype) test_min_unary_out_dtype<ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpMinUnaryOutTest, EmptyIntegerInput) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_min_unary_out_empty_integer<ctype, ScalarType::dtype>();
+  ET_FORALL_INT_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpMinUnaryOutTest, EmptyFloatingInput) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_min_unary_out_empty_floating<ctype, ScalarType::dtype>();
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
 
 TEST_F(OpMinOutTest, MismatchedDimensionsDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {

@@ -16,10 +16,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::SizesType;
-using exec_aten::StridesType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::SizesType;
+using executorch::aten::StridesType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 // Note: This file is used for testing op_mul for *portable kernel specific*.
@@ -36,26 +36,28 @@ class OpMulOutKernelTest : public OperatorTest {
 TEST_F(OpMulOutKernelTest, UnhandledDtypeDies) {
   // mul_out() doesn't handle QInt8.
   // TensorFactory cannot be used with ScalarType::QInt8 since
-  // torch::executor::qint8 does not have a default constructor. It must be
+  // executorch::aten::qint8 does not have a default constructor. It must be
   // initialized with an explicit value. So, we need to manually create the
   // underlying data without default construction and then the tensors from that
   // data via TensorImpl.
 
   std::vector<SizesType> sizes = {2, 2};
 
-  std::vector<torch::executor::qint8> a_data{};
+  std::vector<executorch::aten::qint8> a_data{};
   std::generate_n(std::back_inserter(a_data), 4, []() {
-    return torch::executor::qint8{0};
+    return executorch::aten::qint8{0};
   });
-  std::vector<torch::executor::qint8> b_data(a_data);
-  std::vector<torch::executor::qint8> out_data(a_data);
+  std::vector<executorch::aten::qint8> b_data(a_data);
+  std::vector<executorch::aten::qint8> out_data(a_data);
+
+  std::vector<executorch::aten::DimOrderType> dim_order = {0, 1};
 
   auto a_impl = torch::executor::TensorImpl(
-      ScalarType::QInt8, 2, sizes.data(), a_data.data());
+      ScalarType::QInt8, 2, sizes.data(), a_data.data(), dim_order.data());
   auto b_impl = torch::executor::TensorImpl(
-      ScalarType::QInt8, 2, sizes.data(), b_data.data());
+      ScalarType::QInt8, 2, sizes.data(), b_data.data(), dim_order.data());
   auto out_impl = torch::executor::TensorImpl(
-      ScalarType::QInt8, 2, sizes.data(), out_data.data());
+      ScalarType::QInt8, 2, sizes.data(), out_data.data(), dim_order.data());
 
   // Two input tensors.
   Tensor a(&a_impl);

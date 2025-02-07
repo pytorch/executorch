@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 import sys
 from typing import Any, List
 
@@ -19,9 +20,17 @@ def _to_c_bool(s: Any):
 
 def generate_header(d: dict):
     """Generates a supported features header file"""
-    header_file = pkg_resources.resource_string(
-        __package__, "supported_features_header.ini"
-    ).decode("utf-8")
+    ini_path = os.path.join(
+        os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
+        "supported_features_header.ini",
+    )
+    if os.path.isfile(ini_path):
+        header_file = open(ini_path, encoding="utf-8").read()
+    else:
+        header_file = pkg_resources.resource_string(
+            __package__, "supported_features_header.ini"
+        ).decode("utf-8")
+
     return header_file.replace("$header_entries", "".join(generate_header_entry(d)))
 
 
@@ -58,9 +67,17 @@ def generate_header_entry_text(namespace: str, feature: str, properties: dict):
 
 
 def generate_definition(d: dict):
-    definition_file = pkg_resources.resource_string(
-        __package__, "supported_features_definition.ini"
-    ).decode("utf-8")
+    ini_path = os.path.join(
+        os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
+        "supported_features_definition.ini",
+    )
+    if os.path.isfile(ini_path):
+        definition_file = open(ini_path, encoding="utf-8").read()
+    else:
+        definition_file = pkg_resources.resource_string(
+            __package__, "supported_features_definition.ini"
+        ).decode("utf-8")
+
     return definition_file.replace(
         "$definition_entries", "".join(generate_definition_entry(d))
     )

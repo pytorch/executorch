@@ -80,6 +80,51 @@ inline bool scalars_have_same_dtype(Scalar a, Scalar b) {
   return false;
 }
 
+template <typename T1, typename T2, bool half_to_float = false>
+struct promote_type_with_scalar_type {
+ private:
+  static_assert(
+      std::is_same<T2, torch::executor::internal::B1>::value ||
+          std::is_same<T2, torch::executor::internal::I8>::value ||
+          std::is_same<T2, torch::executor::internal::F8>::value,
+      "scalar type can only be Bool, Long or Double");
+  static_assert(
+      !is_qint_type<T1>::value,
+      "promote_type_with_scalar_type not valid for quantized dtypes");
+  static_assert(
+      !is_bits_type<T1>::value,
+      "promote_type_with_scalar_type not valid for bits dtypes");
+  using promote_type_with_scalar_type_not_respecting_half_to_float =
+      typename std::conditional<
+          is_complex_type<T1>::value ||
+              std::is_same<T2, torch::executor::internal::B1>::value,
+          T1,
+          typename std::conditional<
+              std::is_same<T2, torch::executor::internal::I8>::value,
+              typename std::conditional<
+                  std::is_same<T1, torch::executor::internal::B1>::value,
+                  torch::executor::internal::I8,
+                  T1>::type,
+              typename std::conditional<
+                  is_floating_point<T1>::value,
+                  T1,
+                  torch::executor::internal::F4>::type>::type>::type;
+
+ public:
+  using type = typename std::conditional<
+      half_to_float &&
+          (std::is_same<
+               promote_type_with_scalar_type_not_respecting_half_to_float,
+               typename ScalarTypeToCppType<
+                   executorch::aten::ScalarType::Half>::type>::value ||
+           std::is_same<
+               promote_type_with_scalar_type_not_respecting_half_to_float,
+               typename ScalarTypeToCppType<
+                   executorch::aten::ScalarType::BFloat16>::type>::value),
+      typename ScalarTypeToCppType<executorch::aten::ScalarType::Float>::type,
+      promote_type_with_scalar_type_not_respecting_half_to_float>::type;
+};
+
 /**
  * Implement type promotion between a tensor's ScalarType with a Scalar.
  * If the Scalar contains a value in the same category of the tensor's

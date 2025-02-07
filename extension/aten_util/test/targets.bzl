@@ -18,7 +18,6 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:operator_registry",
             "//executorch/extension/aten_util:aten_bridge",
-            "//executorch/extension/runner_util:managed_tensor",
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
         external_deps = [

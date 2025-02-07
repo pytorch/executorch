@@ -8,18 +8,19 @@
 
 #include <tuple>
 
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/extension/parallel/thread_parallel.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
 
 namespace {
 thread_local int64_t thread_num_ = 0;
 }
 
-using namespace torch::executorch::threadpool;
+using namespace ::executorch::extension::threadpool;
 
 inline int64_t divup(int64_t x, int64_t y) {
   return (x + y - 1) / y;
@@ -74,4 +75,5 @@ bool parallel_for(
   return true;
 }
 
-} // namespace torch::executor
+} // namespace extension
+} // namespace executorch

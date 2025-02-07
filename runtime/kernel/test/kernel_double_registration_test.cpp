@@ -15,13 +15,17 @@
 
 using namespace ::testing;
 
-namespace torch {
-namespace executor {
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::Kernel;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::register_kernels;
 
 class KernelDoubleRegistrationTest : public ::testing::Test {
  public:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -29,14 +33,10 @@ TEST_F(KernelDoubleRegistrationTest, Basic) {
   Kernel kernels[] = {Kernel(
       "aten::add.out",
       "v1/7;0,1,2,3|7;0,1,2,3|7;0,1,2,3",
-      [](RuntimeContext&, EValue**) {})};
-  ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(kernels);
+      [](KernelRuntimeContext&, EValue**) {})};
   Error err = Error::InvalidArgument;
 
   ET_EXPECT_DEATH(
-      { auto res = register_kernels(kernels_array); },
+      { (void)register_kernels({kernels}); },
       std::to_string(static_cast<uint32_t>(err)));
 }
-
-} // namespace executor
-} // namespace torch

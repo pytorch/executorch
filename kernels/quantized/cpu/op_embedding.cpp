@@ -15,9 +15,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using Scalar = executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -27,11 +27,11 @@ namespace {
 void check_embedding_byte_args(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
@@ -93,7 +93,7 @@ void check_embedding_byte_args(
     for (int32_t i = 0; i < weight_scales.dim(); ++i) {
       ET_CHECK_MSG(
           opt_weight_zero_points.value().size(i) == weight_scales.size(i),
-          "Dimension size misatch at dim %" PRId8
+          "Dimension size misatch at dim %" PRIi32
           "Weight_zero_point size = %zd"
           ", weight_scales size = %zd.",
           i,
@@ -129,7 +129,7 @@ template <typename CTYPE_WEIGHT, typename CTYPE_PARAMS, typename CTYPE_OUT>
 void embedding_byte_per_channel(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     const Tensor& indices,
     Tensor& out) {
   // An embedding layer nn.Embedding(num_embeddings, embedding_dim) has a
@@ -163,7 +163,7 @@ void embedding_byte_per_channel(
     }
 
     const CTYPE_WEIGHT* w_data =
-        weight.data_ptr<CTYPE_WEIGHT>() + embedding_dim * index;
+        weight.const_data_ptr<CTYPE_WEIGHT>() + embedding_dim * index;
 
     for (int j = 0; j < embedding_dim; ++j) {
       int32_t group_id = j / group_size;
@@ -183,14 +183,14 @@ void resize_out_tensor(
     const Tensor& weight,
     const Tensor& indices,
     Tensor& out) {
-  exec_aten::SizesType expected_output_size[kTensorDimensionLimit];
+  executorch::aten::SizesType expected_output_size[kTensorDimensionLimit];
   for (size_t i = 0; i < indices.dim(); i++) {
     expected_output_size[i] = indices.size(i);
   }
   const size_t embedding_dim = weight.size(1);
   expected_output_size[out.dim() - 1] = embedding_dim;
 
-  exec_aten::ArrayRef<exec_aten::SizesType> output_size{
+  executorch::aten::ArrayRef<executorch::aten::SizesType> output_size{
       expected_output_size, static_cast<size_t>(out.dim())};
 
   torch::executor::Error err = resize_tensor(out, output_size);
@@ -218,7 +218,7 @@ Tensor& quantized_embedding_byte_out(
     // non quant input and returns fp output
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
@@ -250,10 +250,10 @@ Tensor& quantized_embedding_byte_out(
 }
 
 Tensor& quantized_embedding_byte_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
@@ -277,11 +277,11 @@ Tensor& quantized_embedding_byte_dtype_out(
     // non quant input and returns fp output
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO (jakeszwe): improve these to account for the size of out in relation
   // to weight and indices accounting for a possible batch dimension
@@ -313,14 +313,14 @@ Tensor& quantized_embedding_byte_dtype_out(
 }
 
 Tensor& quantized_embedding_byte_dtype_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const optional<Tensor>& opt_weight_zero_points,
+    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
-    exec_aten::optional<ScalarType> out_dtype,
+    executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper

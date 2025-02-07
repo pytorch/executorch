@@ -15,9 +15,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using Scalar = executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -60,9 +60,9 @@ void add_tensors(
     int64_t out_quant_max) {
   const size_t n = a.numel();
 
-  const auto data_a = a.data_ptr<CTYPE>();
-  const auto data_b = b.data_ptr<CTYPE>();
-  auto data_out = out.data_ptr<CTYPE>();
+  const auto data_a = a.const_data_ptr<CTYPE>();
+  const auto data_b = b.const_data_ptr<CTYPE>();
+  auto data_out = out.mutable_data_ptr<CTYPE>();
 
   for (size_t i = 0; i < n; ++i) {
     // Dq -> fp add -> Q. Can be optimized further
@@ -163,7 +163,7 @@ Tensor& quantized_add_out(
 }
 
 Tensor& quantized_add_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& a,
     double a_scale,
     int64_t a_zero_point,

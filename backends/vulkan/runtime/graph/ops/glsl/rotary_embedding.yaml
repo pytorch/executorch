@@ -1,0 +1,10 @@
+rotary_embedding:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: rotary_embedding

@@ -4,14 +4,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import copy
 import logging
 import time
 
 import torch
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import (  # @manual
     default_per_channel_symmetric_qnnpack_qconfig,
@@ -23,14 +30,9 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
 )
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
-from ...portable.utils import export_to_edge, save_pte_program
 
 from .. import MODEL_NAME_TO_OPTIONS
 from .utils import quantize
@@ -58,7 +60,7 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     m = model
 
     # 1. pytorch 2.0 export quantization flow (recommended/default flow)
-    m = torch._export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
+    m = torch.export.export_for_training(m, copy.deepcopy(example_inputs)).module()
     quantizer = XNNPACKQuantizer()
     quantization_config = get_symmetric_quantization_config(is_per_channel=True)
     quantizer.set_global(quantization_config)
@@ -160,7 +162,7 @@ def main() -> None:
         )
 
     start = time.perf_counter()
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
     end = time.perf_counter()
@@ -175,7 +177,7 @@ def main() -> None:
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch.export.export_for_training(model, example_inputs).module()
     start = time.perf_counter()
     quantized_model = quantize(model, example_inputs)
     end = time.perf_counter()
@@ -191,7 +193,7 @@ def main() -> None:
 
     start = time.perf_counter()
     prog = edge_m.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
     save_pte_program(prog, f"{args.model_name}_quantized")
     end = time.perf_counter()

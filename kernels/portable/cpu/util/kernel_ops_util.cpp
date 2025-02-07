@@ -14,7 +14,7 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -45,16 +45,6 @@ bool param_array_is_valid(
 }
 
 } // namespace
-
-int64_t val_at(IntArrayRef array, size_t i, int64_t default_value) {
-  if (array.size() == 1) {
-    return array[0];
-  } else if (array.size() > 1) {
-    return array[i];
-  } else {
-    return default_value;
-  }
-}
 
 bool int_array_all_ge(IntArrayRef array, int64_t val) {
   for (size_t i = 0; i < array.size(); ++i) {
@@ -120,8 +110,31 @@ bool dilation_is_valid(IntArrayRef dilation, size_t kernel_ndim) {
       "dilation", dilation, /*min_val=*/1, kernel_ndim, /*allow_empty=*/false);
 }
 
+bool output_padding_is_valid(
+    IntArrayRef output_padding,
+    IntArrayRef stride,
+    IntArrayRef dilation,
+    size_t kernel_ndim) {
+  ET_LOG_AND_RETURN_IF_FALSE(param_array_is_valid(
+      "output_padding",
+      output_padding,
+      /*min_val=*/0,
+      kernel_ndim,
+      /*allow_empty=*/false));
+
+  for (size_t i = 0; i < kernel_ndim; i++) {
+    const int64_t op_i = val_at(output_padding, i);
+    const int64_t s_i = val_at(stride, i);
+    const int64_t d_i = val_at(dilation, i);
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        op_i < s_i || op_i < d_i,
+        "output padding must be smaller than either stride or dilation");
+  }
+  return true;
+}
+
 bool output_size_is_valid(
-    exec_aten::ArrayRef<exec_aten::SizesType> output_size,
+    executorch::aten::ArrayRef<executorch::aten::SizesType> output_size,
     size_t kernel_ndim) {
   bool valid = true;
   size_t out_dim = output_size.size();
@@ -151,7 +164,7 @@ bool output_size_is_valid(
 void get_unsqueezed_sizes(
     const Tensor& t,
     int64_t unsqueeze_dim,
-    exec_aten::SizesType* sizes_arr,
+    executorch::aten::SizesType* sizes_arr,
     size_t& ndim) {
   ndim = t.dim() + 1;
   for (int d = 0; d < unsqueeze_dim; ++d) {
@@ -165,11 +178,11 @@ void get_unsqueezed_sizes(
 
 void get_unsqueezed_dim_order(
     const Tensor& t,
-    exec_aten::DimOrderType unsqueeze_dim,
-    exec_aten::DimOrderType* dim_order_arr) {
+    executorch::aten::DimOrderType unsqueeze_dim,
+    executorch::aten::DimOrderType* dim_order_arr) {
   int offset = 0;
   for (int i = 0; i < t.dim(); ++i) {
-    exec_aten::DimOrderType dim = t.dim_order()[i];
+    executorch::aten::DimOrderType dim = t.dim_order()[i];
     if (dim == unsqueeze_dim) {
       dim_order_arr[i] = dim;
       dim_order_arr[i + 1] = dim + 1;
@@ -187,7 +200,13 @@ int64_t _kernel_output_size_helper(
     int64_t pad,
     int64_t stride,
     int64_t dilation,
-    bool ceil_mode) {
+    bool ceil_mode,
+    bool transposed,
+    int64_t output_padding) {
+  if (transposed) {
+    return (inputSize - 1) * stride - 2 * pad + dilation * (kernelSize - 1) +
+        output_padding + 1;
+  }
   int64_t numerator = inputSize + 2 * pad - dilation * (kernelSize - 1) - 1 +
       (ceil_mode ? stride - 1 : 0);
   int64_t outputSize = numerator / stride + 1;
@@ -208,17 +227,21 @@ void calculate_kernel_output_sizes(
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
-    exec_aten::SizesType* out_sizes,
-    bool ceil_mode) {
+    executorch::aten::SizesType* out_sizes,
+    bool ceil_mode,
+    bool transposed,
+    IntArrayRef output_padding) {
   for (size_t i = 0; i < kernel_ndim; ++i) {
     auto dim = in.dim() - (kernel_ndim - i);
     int64_t k = val_at(kernel_size, i);
     int64_t s = val_at(stride, i, /*default_value=*/k);
     int64_t d = val_at(dilation, i, /*default_value=*/1);
     int64_t p = val_at(padding, i, /*default_value=*/0);
+    int64_t op =
+        transposed ? val_at(output_padding, i, /*default_value=*/0) : 0;
 
-    out_sizes[dim] =
-        _kernel_output_size_helper(in.size(dim), k, p, s, d, ceil_mode);
+    out_sizes[dim] = _kernel_output_size_helper(
+        in.size(dim), k, p, s, d, ceil_mode, transposed, op);
   }
 }
 
@@ -242,7 +265,7 @@ bool check_avg_pool2d_args(
     const IntArrayRef padding,
     const bool ceil_mode,
     const bool count_include_pad,
-    const exec_aten::optional<int64_t>& divisor_override,
+    const executorch::aten::optional<int64_t>& divisor_override,
     const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
 
@@ -277,7 +300,7 @@ void get_avg_pool2d_out_target_size(
     const IntArrayRef stride,
     const IntArrayRef padding,
     const bool ceil_mode,
-    exec_aten::SizesType* const out_sizes,
+    executorch::aten::SizesType* const out_sizes,
     size_t* const out_ndim) {
   *out_ndim = in.dim();
 
@@ -296,14 +319,14 @@ void get_avg_pool2d_out_target_size(
 bool check_convolution_args(
     const Tensor& in,
     const Tensor& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    Tensor& out) {
+    const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight, out));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
@@ -320,8 +343,11 @@ bool check_convolution_args(
 
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
-    ET_LOG_AND_RETURN_IF_FALSE(
-        tensors_have_same_size_at_dims(bias.value(), 0, weight, 0));
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        bias.value().size(0) == transposed ? groups * weight.size(1)
+                                           : weight.size(0),
+        "bias length must equal number of output channels, but got %zd",
+        bias.value().size(0));
   }
 
   int64_t kernel_size[2];
@@ -338,15 +364,41 @@ bool check_convolution_args(
   ET_LOG_AND_RETURN_IF_FALSE(
       padding_is_valid(padding, {kernel_size, kernel_ndim}, kernel_ndim));
   ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, kernel_ndim));
+  if (transposed) {
+    ET_LOG_AND_RETURN_IF_FALSE(
+        output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
+  }
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      in.size(1) % groups == 0,
-      "groups %" PRId64 " is not divisible by in.size(1) = %zd",
+      weight.size(0) >= groups,
+      "Given groups=%" PRId64 ", expected weight to be at least %" PRId64
+      " at dimension 0, but got weight.size(0) = %zd instead",
       groups,
-      in.size(1));
-
+      groups,
+      weight.size(0));
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      !transposed, "transposed convolution not supported yet.");
+      weight.size(0) % groups == 0,
+      "Given groups=%" PRId64 ", expected weight to be divisible by %" PRId64
+      " at dimension 0, but got weight.size(0) = %zd instead",
+      groups,
+      groups,
+      weight.size(0));
+
+  if (!transposed) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        in.size(1) == groups * weight.size(1),
+        "Given groups=%" PRId64
+        " and weight.size(1) = %zd, expected input to have %" PRId64
+        " channels, but got %zd",
+        groups,
+        weight.size(1),
+        groups * weight.size(1),
+        in.size(1));
+  } else {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        in.size(1) == weight.size(0),
+        "input channels must match weight.size(0) in transposed convolution");
+  }
 
   return true;
 }
@@ -357,12 +409,22 @@ void get_convolution_out_target_size(
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
-    exec_aten::SizesType* out_sizes,
+    bool transposed,
+    IntArrayRef output_padding,
+    int64_t groups,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
+  // batch dim
   out_sizes[0] = in.size(0);
-  out_sizes[1] = in.size(1) == 0 ? 0 : weight.size(0);
+
+  // channel dim
+  if (!transposed) {
+    out_sizes[1] = in.size(1) == 0 ? 0 : weight.size(0);
+  } else {
+    out_sizes[1] = in.size(1) == 0 ? 0 : groups * weight.size(1);
+  }
 
   int64_t kernel_size[2];
   size_t kernel_ndim = 2;
@@ -381,7 +443,9 @@ void get_convolution_out_target_size(
       padding,
       dilation,
       out_sizes,
-      false);
+      false,
+      transposed,
+      output_padding);
 }
 
 bool check_cumsum_args(
@@ -439,7 +503,7 @@ void get_max_pool2d_with_indices_out_target_size(
     IntArrayRef padding,
     IntArrayRef dilation,
     bool ceil_mode,
-    exec_aten::SizesType* out_sizes,
+    executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
@@ -453,117 +517,6 @@ void get_max_pool2d_with_indices_out_target_size(
 
   calculate_kernel_output_sizes(
       in, 2, kernel_size, stride, padding, dilation, out_sizes, ceil_mode);
-}
-
-bool check_slice_scatter_args(
-    const Tensor& input,
-    const Tensor& src,
-    int64_t dim,
-    int64_t num_values,
-    int64_t step,
-    Tensor output) {
-  ET_LOG_AND_RETURN_IF_FALSE(input.dim() > 0);
-
-  // Check dim. The dim planed to be selected on shall exist in input
-  ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, input.dim()));
-
-  // Input and output tensors should be the same shape and dtype
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape_and_dtype(input, output));
-
-  // The input.dim() shall equal to src.dim()
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(input, src));
-
-  // Check step. Step must be greater than zero
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      step > 0, "slice step must be greater than zero");
-
-  // The size of src tensor should follow these rules:
-  // - src.size(i) shall equal to input.size(i) if i != dim,
-  // - src.size(dim) shall equal to num_values
-  for (size_t d = 0; d < input.dim() - 1; d++) {
-    if (d != dim) {
-      ET_LOG_AND_RETURN_IF_FALSE(
-          tensors_have_same_size_at_dims(input, d, src, d));
-    } else {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
-          src.size(d) == num_values,
-          "input.size(%zu) %zd != num_values %" PRId64 " | dim = %" PRId64 ")",
-          d,
-          input.size(d),
-          num_values,
-          dim);
-    }
-  }
-
-  return true;
-}
-
-bool check_select_scatter_args(
-    const Tensor& in,
-    const Tensor& src,
-    int64_t dim,
-    int64_t index,
-    Tensor& output) {
-  /**
-   * Assumptions for inputs:
-   * 1. output size is the same as input size
-   * 2. src size is the same as the selected slice from the input
-   * 3. dim and index values are valid given the input tensor
-   */
-
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, output));
-
-  // The dim planed to be selected on shall exist in input
-  ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, in.dim()));
-
-  // The index shall be valid in the given dimenson
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      index >= 0 && index < in.size(dim),
-      "index %" PRId64 " out of range [-%zd,%zd) at in.size( %" PRId64 ")",
-      index,
-      in.size(dim),
-      in.size(dim),
-      dim);
-
-  // The src.dim() shall be one lower than in.dim() since src needs to fit
-  // into the selected data on one dim of input
-  // https://pytorch.org/docs/stable/generated/torch.select_scatter.html
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      in.dim() == src.dim() + 1,
-      "in.dim() %zd != src.dim() + 1 %zd",
-      in.dim(),
-      src.dim() + 1);
-
-  // The size of src tensor should follow these rules:
-  // - src.size(i) shall equal to in.size(i) if i < dim,
-  // - src.size(i) shall equal to in.size(i+1) if i >= dim
-
-  for (ssize_t d = 0; d < in.dim() - 1; d++) {
-    if (d < dim) {
-      ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(in, d, src, d));
-    } else {
-      ET_LOG_AND_RETURN_IF_FALSE(
-          tensors_have_same_size_at_dims(in, d + 1, src, d));
-    }
-  }
-
-  return true;
-}
-
-bool check_nonzero_args(const Tensor& in, const Tensor& out) {
-  (void)in;
-
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      out.scalar_type() == ScalarType::Long,
-      "Expected out to be a Long tensor but received %" PRId8,
-      static_cast<int8_t>(out.scalar_type()));
-
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      out.dim() == 2,
-      "Expected out to be a 2d tensor received %zd",
-      ssize_t(out.dim()));
-
-  return true;
 }
 
 bool check_masked_fill_args(

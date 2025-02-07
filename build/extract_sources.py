@@ -7,18 +7,19 @@
 
 import argparse
 import copy
+import logging
 import os
 import re
 
 from enum import Enum
-from typing import Any, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 from buck_util import Buck2Runner
 
 try:
     import tomllib  # Standard in 3.11 and later
 except ModuleNotFoundError:
-    import tomli as tomllib
+    import tomli as tomllib  # type: ignore[no-redef]
 
 """Extracts source lists from the buck2 build system and writes them to a file.
 
@@ -66,6 +67,12 @@ Example config:
     ]
 """
 
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [ExecuTorch] %(levelname)s: %(message)s"
+)
+logger = logging.getLogger()
+
 
 class Target:
     """Parsed [targets.*] entry from the TOML file.
@@ -85,7 +92,7 @@ class Target:
         base_dict: Optional[dict] = None,
     ) -> None:
         self._state: Target._InitState = Target._InitState.UNINITIALIZED
-        self._sources = frozenset()
+        self._sources: frozenset[str] = frozenset()
 
         self.name = name
         # Extend the base lists with the target-specific entries.
@@ -96,7 +103,12 @@ class Target:
             else:
                 self._config[k] = v
 
-    def get_sources(self, graph: "Graph", runner: Buck2Runner) -> frozenset[str]:
+    def get_sources(
+        self, graph: "Graph", runner: Buck2Runner, buck_args: Optional[List[str]]
+    ) -> frozenset[str]:
+        if buck_args is None:
+            buck_args = []
+
         if self._state == Target._InitState.READY:
             return self._sources
         # Detect cycles.
@@ -113,7 +125,23 @@ class Target:
         )
 
         # Get the complete list of source files that this target depends on.
-        sources: set[str] = set(runner.run(["cquery", query]))
+        # If user doesn't setup their git submodules correctly, this will fail.
+        # If we hit here, setup.py:check_submodule() should have already run
+        # but it could be that the submodules are not synced or there's local changes.
+        try:
+            sources: set[str] = set(runner.run(["cquery", query] + buck_args))
+        except RuntimeError as e:
+            logger.error(
+                f"\033[31;1mFailed to query buck for sources. Failed command:\n\n"
+                f"   buck2 cquery {query} {' '.join(buck_args)}\n\n"
+                "This is likely due "
+                "to missing git submodules or outdated CMake cache. "
+                "Please run the following before retry:\033[0m\n\n"
+                "    \033[32;1m./install_executorch.sh --clean\033[0m\n"
+                "    \033[32;1mgit submodule sync\033[0m\n"
+                "    \033[32;1mgit submodule update --init\033[0m\n"
+            )
+            raise e
 
         # Keep entries that match all of the filters.
         filters = [re.compile(p) for p in self._config.get("filters", [])]
@@ -128,7 +156,9 @@ class Target:
         # its deps. Remove entries that are already covered by the transitive
         # set of dependencies.
         for dep in self._config.get("deps", []):
-            sources.difference_update(graph.by_name[dep].get_sources(graph, runner))
+            sources.difference_update(
+                graph.by_name[dep].get_sources(graph, runner, buck_args)
+            )
 
         self._sources = frozenset(sources)
         self._state = Target._InitState.READY
@@ -173,6 +203,9 @@ def parse_args() -> argparse.Namespace:
         metavar="file",
         help="Path to the file to generate.",
     )
+    parser.add_argument(
+        "--target-platforms", help="--target-platforms to pass to buck cquery, if any."
+    )
     return parser.parse_args()
 
 
@@ -199,8 +232,12 @@ def main():
     # Run the queries and get the lists of source files.
     target_to_srcs: dict[str, list[str]] = {}
     runner: Buck2Runner = Buck2Runner(args.buck2)
+    buck_args = []
+    if args.target_platforms:
+        buck_args = ["--target-platforms"]
+        buck_args.append(args.target_platforms)
     for name, target in graph.by_name.items():
-        target_to_srcs[name] = sorted(target.get_sources(graph, runner))
+        target_to_srcs[name] = sorted(target.get_sources(graph, runner, buck_args))
 
     # Generate the requested format.
     output: bytes

@@ -20,8 +20,12 @@
 #include <type_traits>
 #include <utility>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
+// This extension has a lot of generic internal names like "size"; use a unique
+// internal namespace to avoid conflicts with other extensions.
+namespace kernel_util_internal {
+
 /**
  * Type holding a list of types for compile time type computations
  *     constexpr size_t num = size<typelist<int, double>>::value;
@@ -139,5 +143,6 @@ struct drop_if_nonempty final {
 template <class TypeList, size_t num>
 using drop_if_nonempty_t = typename drop_if_nonempty<TypeList, num>::type;
 
-} // namespace executor
-} // namespace torch
+} // namespace kernel_util_internal
+} // namespace extension
+} // namespace executorch

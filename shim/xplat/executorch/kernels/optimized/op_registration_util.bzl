@@ -1,8 +1,15 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under both the MIT license found in the
+# LICENSE-MIT file in the root directory of this source tree and the Apache
+# License, Version 2.0 found in the LICENSE-APACHE file in the root directory
+# of this source tree.
+
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
-    "get_vec_android_preprocessor_flags",
+    "get_vec_preprocessor_flags",
 )
 
 def op_target(name, deps = []):
@@ -91,7 +98,7 @@ def define_op_library(name, deps):
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps,
-        fbandroid_platform_preprocessor_flags = get_vec_android_preprocessor_flags(),
+        preprocessor_flags = get_vec_preprocessor_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
         # dependencies are not transitive

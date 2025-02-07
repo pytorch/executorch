@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -30,19 +31,19 @@ class Expand(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
 
         sizes = cast(List[int], node.args[1])
@@ -52,8 +53,9 @@ class Expand(NodeVisitor):
         output_dims = len(output_tensor.size())
 
         if input_dims < output_dims:
-            print(
-                f"The rank of input tensor: {input_dims} is less than the rank of output tensor: {output_dims}."
+            warnings.warn(
+                f"[QNN Delegate Op Builder]: The rank of input tensor: {input_dims} is less than the rank of output tensor: {output_dims}.",
+                stacklevel=1,
             )
             return
 

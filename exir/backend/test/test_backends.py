@@ -35,10 +35,7 @@ from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
-from executorch.exir.lowered_backend_module import (
-    _get_new_signature,
-    get_lowered_submodules,
-)
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.print_program import print_program
 from executorch.exir.schema import (
     BackendDelegate,
@@ -63,7 +60,6 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
 )
 from torch.export import ExportedProgram
-from torch.export.exported_program import OutputKind, TensorArgument
 from torch.testing import FileCheck
 
 
@@ -194,7 +190,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
         )
 
         # Check the delegate instruction
@@ -414,7 +410,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
         )
 
         # Check the delegate instruction
@@ -1255,7 +1251,7 @@ class TestBackends(unittest.TestCase):
                 return y
 
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = exir.to_edge(torch.export.export(M(), inputs))
+        edge_prog = exir.to_edge(torch.export.export(M(), inputs, strict=True))
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )
@@ -1270,21 +1266,3 @@ class TestBackends(unittest.TestCase):
 
         gm = exir.capture(ComposedM(), inputs, exir.CaptureConfig()).to_edge()
         gm(*inputs)
-
-    def test_get_new_signature(self):
-        class MyModule(torch.nn.Module):
-            def forward(self, x, y, z):
-                return x + y, y - z, z * x
-
-        ep = torch.export.export(
-            MyModule(), (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2))
-        )
-        sig, *_ = _get_new_signature(ep, ep.graph_module)
-        output_names = set()
-        self.assertEqual(len(sig.output_specs), 3)
-        for s in sig.output_specs:
-            self.assertEqual(s.kind, OutputKind.USER_OUTPUT)
-            self.assertIsInstance(s.arg, TensorArgument)
-            name = s.arg.name
-            self.assertNotIn(name, output_names)
-            output_names.add(name)

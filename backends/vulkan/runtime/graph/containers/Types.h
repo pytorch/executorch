@@ -36,6 +36,7 @@ enum class TypeTag : uint32_t {
   // Special Type
   VALUELIST,
   STRING,
+  SYMINT,
 };
 
 std::ostream& operator<<(std::ostream& out, const TypeTag& tag);

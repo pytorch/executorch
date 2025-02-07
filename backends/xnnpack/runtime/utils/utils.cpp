@@ -10,12 +10,14 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cinttypes>
 
-namespace torch {
-namespace executor {
-namespace qnnpack_utils {
+namespace executorch {
+namespace backends {
+namespace xnnpack {
+namespace utils {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::Error;
 
 constexpr float SMALL_SCALE_THRESHOLD = 6.1e-5f;
 
@@ -222,6 +224,8 @@ void quantize_tensor_arm64_q8_wrapper<int8_t>(
   quantize_tensor_arm64_q8<int8_t, int8x8_t>(in, out, N, scale, zero_point);
 }
 #endif
-} // namespace qnnpack_utils
-} // namespace executor
-} // namespace torch
+
+} // namespace utils
+} // namespace xnnpack
+} // namespace backends
+} // namespace executorch

@@ -17,8 +17,8 @@
 
 #include <unordered_map>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace mps {
 namespace delegate {
 
@@ -63,7 +63,7 @@ class MPSStream {
   MPSCommandBuffer* commandBuffer();
   id<MTLComputeCommandEncoder> commandEncoder();
   void endKernelCoalescing();
-  __ET_NODISCARD Error synchronize(SyncType syncType);
+  ET_NODISCARD executorch::runtime::Error synchronize(SyncType syncType);
   bool commitAndContinueEnabled();
   void copy(
       id<MTLBuffer> srcBuffer,
@@ -135,5 +135,5 @@ class MPSStreamImpl {
 
 } // namespace delegate
 } // namespace mps
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

@@ -82,13 +82,14 @@ python_library(
         "//executorch/test/...",
     ],
     deps = [
-        ":backend_with_compiler_demo",
-        "//caffe2:torch",
-        "//executorch/exir:graph_module",
-        "//executorch/exir/backend:compile_spec_schema",
-        "//executorch/exir/backend:partitioner",
-        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
-        "//executorch/exir/dialects:lib",
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:graph_module",
+        "fbcode//executorch/exir/backend:compile_spec_schema",
+        "fbcode//executorch/exir/backend:partitioner",
+        "fbcode//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "fbcode//executorch/exir/backend/test:backend_with_compiler_demo",
+        "fbcode//executorch/exir/backend/test/demos/rpc:executor_backend_preprocess",
+        "fbcode//executorch/exir/dialects:lib",
     ],
 )
 
@@ -269,7 +270,6 @@ python_unittest(
         "test_utils.py",
     ],
     deps = [
-        "fbsource//third-party/pypi/pandas:pandas",
         ":op_partitioner_demo",
         "//caffe2:torch",
         "//executorch/exir:lib",
@@ -291,6 +291,7 @@ python_unittest(
         "//executorch/exir/backend/test/demos/rpc:executor_backend_register",
     ],
     deps = [
+        ":op_partitioner_demo",
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_details",
@@ -316,5 +317,24 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/backend/canonical_partitioners:duplicate_constant_node_pass",
+    ],
+)
+
+python_unittest(
+    name = "test_compatibility",
+    srcs = [
+        "test_compatibility.py",
+    ],
+    preload_deps = [
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
+    deps = [
+        ":backend_with_compiler_demo",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
     ],
 )

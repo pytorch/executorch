@@ -1,57 +1,19 @@
-load("//third-party:glob_defs.bzl", "subdir_glob")
 load(
     ":xnnpack_src_defs.bzl",
-    "JIT_SRCS",
     "LOGGING_SRCS",
     "OPERATOR_SRCS",
     "SUBGRAPH_SRCS",
     "TABLE_SRCS",
     "XNNPACK_SRCS",
-)
-load(
-    ":xnnpack_wrapper_defs.bzl",
-    "AARCH32_ASM_MICROKERNEL_SRCS",
-    "AARCH64_ASM_MICROKERNEL_SRCS",
-    "PROD_ARMSIMD32_MICROKERNEL_SRCS",
-    "PROD_AVX2_MICROKERNEL_SRCS",
-    "PROD_AVX512F_MICROKERNEL_SRCS",
-    "PROD_AVX512SKX_MICROKERNEL_SRCS",
-    "PROD_AVX512VBMI_MICROKERNEL_SRCS",
-    "PROD_AVX512VNNIGFNI_MICROKERNEL_SRCS",
-    "PROD_AVX512VNNI_MICROKERNEL_SRCS",
-    "PROD_AVXVNNI_MICROKERNEL_SRCS",
-    "PROD_AVX_MICROKERNEL_SRCS",
-    "PROD_F16C_MICROKERNEL_SRCS",
-    "PROD_FMA3_MICROKERNEL_SRCS",
-    "PROD_FP16ARITH_MICROKERNEL_SRCS",
-    "PROD_NEONDOTFP16ARITH_AARCH64_MICROKERNEL_SRCS",
-    "PROD_NEONDOTFP16ARITH_MICROKERNEL_SRCS",
-    "PROD_NEONDOT_AARCH64_MICROKERNEL_SRCS",
-    "PROD_NEONDOT_MICROKERNEL_SRCS",
-    "PROD_NEONFMA_MICROKERNEL_SRCS",
-    "PROD_NEONFP16ARITH_AARCH64_MICROKERNEL_SRCS",
-    "PROD_NEONFP16ARITH_MICROKERNEL_SRCS",
-    "PROD_NEONFP16_MICROKERNEL_SRCS",
-    "PROD_NEONI8MM_MICROKERNEL_SRCS",
-    "PROD_NEONV8_MICROKERNEL_SRCS",
-    "PROD_NEON_AARCH64_MICROKERNEL_SRCS",
-    "PROD_NEON_MICROKERNEL_SRCS",
-    "PROD_SCALAR_MICROKERNEL_SRCS",
-    "PROD_SSE2_MICROKERNEL_SRCS",
-    "PROD_SSE41_MICROKERNEL_SRCS",
-    "PROD_SSE_MICROKERNEL_SRCS",
-    "PROD_SSSE3_MICROKERNEL_SRCS",
-    "PROD_XOP_MICROKERNEL_SRCS",
+    "get_xnnpack_headers",
+    "prod_srcs_for_arch_wrapper",
 )
 
 def define_xnnpack():
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "interface",
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/include", "**/*.h"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         exported_headers = {
             "xnnpack.h": "XNNPACK/include/xnnpack.h",
@@ -71,27 +33,6 @@ def define_xnnpack():
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
-        name = "jit_memory",
-        srcs = JIT_SRCS,
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-        ]),
-        header_namespace = "",
-        compiler_flags = [
-            "-std=c++17",
-        ],
-        preferred_linkage = "static",
-        preprocessor_flags = [
-            "-DXNN_LOG_LEVEL=0",
-        ],
-        exported_deps = [
-            ":clog",
-            ":interface",
-        ],
-    )
-
-    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
-    native.cxx_library(
         name = "operators",
         srcs = OPERATOR_SRCS + [
             "XNNPACK/src/allocator.c",
@@ -101,11 +42,9 @@ def define_xnnpack():
             "XNNPACK/src/mutex.c",
             "XNNPACK/src/normalization.c",
             "XNNPACK/src/operator-utils.c",
-            "XNNPACK/src/packing.c",
+            "XNNPACK/src/reference/packing.cc",
         ],
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
@@ -128,18 +67,15 @@ def define_xnnpack():
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "subgraph",
-        srcs = SUBGRAPH_SRCS,
+        srcs = SUBGRAPH_SRCS + ["XNNPACK/src/datatype.c"],
         compiler_flags = [
             "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
         ],
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         preferred_linkage = "static",
         preprocessor_flags = [
             "-DXNN_LOG_LEVEL=0",
-            "-DXNN_ENABLE_JIT=0",
             "-DXNN_ENABLE_SPARSE=0",
             "-DXNN_ENABLE_GEMM_M_SPECIALIZATION=0",
             "-DXNN_ENABLE_MEMOPT",
@@ -156,9 +92,7 @@ def define_xnnpack():
     native.cxx_library(
         name = "tables",
         srcs = TABLE_SRCS,
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
@@ -180,11 +114,8 @@ def define_xnnpack():
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "ukernels_scalar",
-        srcs = PROD_SCALAR_MICROKERNEL_SRCS,
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        srcs = prod_srcs_for_arch_wrapper("scalar"),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O3",
@@ -216,12 +147,9 @@ def define_xnnpack():
         name = "ukernels_armsimd32",
         srcs = select({
             "DEFAULT": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm32": PROD_ARMSIMD32_MICROKERNEL_SRCS,
+            "ovr_config//cpu:arm32": prod_srcs_for_arch_wrapper("armsimd32"),
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
@@ -259,14 +187,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_fp16arith",
         srcs = select({
-            "DEFAULT": PROD_FP16ARITH_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("fp16arith"),
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
@@ -295,14 +220,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_sse",
         srcs = select({
-            "DEFAULT": PROD_SSE_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("sse"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -317,6 +239,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -327,14 +250,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_sse2",
         srcs = select({
-            "DEFAULT": PROD_SSE2_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("sse2"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -360,14 +280,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_ssse3",
         srcs = select({
-            "DEFAULT": PROD_SSSE3_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("ssse3"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -393,14 +310,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_sse41",
         srcs = select({
-            "DEFAULT": PROD_SSE41_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("sse41"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -426,14 +340,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx",
         srcs = select({
-            "DEFAULT": PROD_AVX_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -448,38 +359,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
-            ":interface",
-        ],
-    )
-
-    XOP_COMPILER_FLAGS = ["-mxop"]
-
-    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
-    native.cxx_library(
-        name = "ukernels_xop",
-        srcs = select({
-            "DEFAULT": PROD_XOP_MICROKERNEL_SRCS,
-            "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
-        }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
-        header_namespace = "",
-        compiler_flags = [
-            "-O2",
-            "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
-        ] + select({
-            "DEFAULT": XOP_COMPILER_FLAGS,
-            "ovr_config//cpu:arm32": [],
-            "ovr_config//cpu:arm64": [],
-        }),
-        preferred_linkage = "static",
-        preprocessor_flags = [
-            "-DXNN_LOG_LEVEL=0",
-        ],
-        exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -490,14 +370,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_f16c",
         srcs = select({
-            "DEFAULT": PROD_F16C_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("f16c"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -512,6 +389,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -525,14 +403,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_fma3",
         srcs = select({
-            "DEFAULT": PROD_FMA3_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("fma3"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -547,6 +422,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -561,14 +437,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx2",
         srcs = select({
-            "DEFAULT": PROD_AVX2_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx2"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -583,6 +456,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -593,14 +467,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx512",
         srcs = select({
-            "DEFAULT": PROD_AVX512F_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx512f"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -615,6 +486,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -631,14 +503,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx512skx",
         srcs = select({
-            "DEFAULT": PROD_AVX512SKX_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx512skx"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -653,6 +522,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -668,13 +538,10 @@ def define_xnnpack():
         name = "ukernels_asm",
         srcs = select({
             "DEFAULT": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm32": AARCH32_ASM_MICROKERNEL_SRCS,
-            "ovr_config//cpu:arm64": AARCH64_ASM_MICROKERNEL_SRCS,
+            "ovr_config//cpu:arm32": prod_srcs_for_arch_wrapper("aarch32"),
+            "ovr_config//cpu:arm64": prod_srcs_for_arch_wrapper("aarch64"),
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "xnnpack/assembly.h"),
-            ("XNNPACK/src", "**/*.S"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         platform_compiler_flags = [
             (
@@ -709,14 +576,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_neon",
         srcs = select({
-            "DEFAULT": PROD_NEON_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("neon"),
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -743,14 +607,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx512vbmi",
         srcs = select({
-            "DEFAULT": PROD_AVX512VBMI_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx512vbmi"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -765,25 +626,23 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
 
-    NEON64_AARCH64_COMPILER_FLAGS = ["-mfpu=neon-vfpv6"]
+    NEON64_AARCH64_COMPILER_FLAGS = []
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "ukernels_neon_aarch64",
         srcs = select({
-            "DEFAULT": PROD_NEON_AARCH64_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("neon_aarch64"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -810,14 +669,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_neon_fp16",
         srcs = select({
-            "DEFAULT": PROD_NEONFP16_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("neonfp16"),
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -834,13 +690,13 @@ def define_xnnpack():
         ],
         exported_deps = [
             ":interface",
+            ":FP16",
         ],
     )
 
     NEON32_FMA_COMPILER_FLAGS = ["-mfpu=neon-vfp4"]
     NEON64_FMA_COMPILER_FLAGS = [
         "-march=armv8-a",
-        "-mfpu=neon-fp-armv8",
     ]
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
@@ -848,15 +704,12 @@ def define_xnnpack():
         name = "ukernels_neon_fma",
         srcs = select({
             "DEFAULT": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm32": PROD_NEONFMA_MICROKERNEL_SRCS,
-            "ovr_config//cpu:arm64": PROD_NEONFMA_MICROKERNEL_SRCS + PROD_NEON_AARCH64_MICROKERNEL_SRCS,
+            "ovr_config//cpu:arm32": prod_srcs_for_arch_wrapper("neonfma"),
+            "ovr_config//cpu:arm64": prod_srcs_for_arch_wrapper("neonfma") + prod_srcs_for_arch_wrapper("neonfma_aarch64"),
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -880,7 +733,6 @@ def define_xnnpack():
 
     NEON64_V8_COMPILER_FLAGS = [
         "-march=armv8-a",
-        "-mfpu=neon-fp-armv8",
     ]
 
     NEON32_V8_COMPILER_FLAGS = [
@@ -893,14 +745,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_neon_v8",
         srcs = select({
-            "DEFAULT": PROD_NEONV8_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("neonv8"),
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -933,13 +782,10 @@ def define_xnnpack():
         name = "ukernels_neon_fp16arith",
         srcs = select({
             "DEFAULT": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm32": PROD_NEONFP16ARITH_MICROKERNEL_SRCS,
-            "ovr_config//cpu:arm64": PROD_NEONFP16ARITH_MICROKERNEL_SRCS + PROD_NEONFP16ARITH_AARCH64_MICROKERNEL_SRCS,
+            "ovr_config//cpu:arm32": prod_srcs_for_arch_wrapper("neonfp16arith"),
+            "ovr_config//cpu:arm64": prod_srcs_for_arch_wrapper("neonfp16arith") + prod_srcs_for_arch_wrapper("neonfp16arith_aarch64"),
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -976,13 +822,10 @@ def define_xnnpack():
         name = "ukernels_neondotfp16arith",
         srcs = select({
             "DEFAULT": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm32": PROD_NEONDOTFP16ARITH_MICROKERNEL_SRCS,
-            "ovr_config//cpu:arm64": PROD_NEONDOTFP16ARITH_AARCH64_MICROKERNEL_SRCS + PROD_NEONDOTFP16ARITH_MICROKERNEL_SRCS,
+            "ovr_config//cpu:arm32": prod_srcs_for_arch_wrapper("neondotfp16arith"),
+            "ovr_config//cpu:arm64": prod_srcs_for_arch_wrapper("neondotfp16arith") + prod_srcs_for_arch_wrapper("neondotfp16arith_aarch64"),
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -1014,15 +857,12 @@ def define_xnnpack():
         name = "ukernels_neon_dot",
         srcs = select({
             "DEFAULT": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm32": PROD_NEONDOT_MICROKERNEL_SRCS,
-            "ovr_config//cpu:arm64": PROD_NEONDOT_MICROKERNEL_SRCS + PROD_NEONDOT_AARCH64_MICROKERNEL_SRCS,
+            "ovr_config//cpu:arm32": prod_srcs_for_arch_wrapper("neondot"),
+            "ovr_config//cpu:arm64": prod_srcs_for_arch_wrapper("neondot") + prod_srcs_for_arch_wrapper("neondot_aarch64"),
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -1059,14 +899,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_neon_i8mm",
         srcs = select({
-            "DEFAULT": PROD_NEONI8MM_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("neoni8mm"),
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -1100,14 +937,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx512vnni",
         srcs = select({
-            "DEFAULT": PROD_AVX512VNNI_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx512vnni"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -1122,6 +956,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -1134,14 +969,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avx512vnnigfni",
         srcs = select({
-            "DEFAULT": PROD_AVX512VNNIGFNI_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("avx512vnnifgni"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -1156,6 +988,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -1171,14 +1004,11 @@ def define_xnnpack():
     native.cxx_library(
         name = "ukernels_avxvnni",
         srcs = select({
-            "DEFAULT": PROD_AVXVNNI_MICROKERNEL_SRCS,
+            "DEFAULT": prod_srcs_for_arch_wrapper("avxvnni"),
             "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
         }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
+        headers = get_xnnpack_headers(),
         header_namespace = "",
         compiler_flags = [
             "-O2",
@@ -1193,6 +1023,7 @@ def define_xnnpack():
             "-DXNN_LOG_LEVEL=0",
         ],
         exported_deps = [
+            ":FP16",
             ":interface",
         ],
     )
@@ -1215,7 +1046,6 @@ def define_xnnpack():
         ":ukernels_sse2",
         ":ukernels_sse41",
         ":ukernels_ssse3",
-        ":ukernels_xop",
         ":ukernels_avx512vbmi",
         ":ukernels_avx512vnnigfni",
         ":ukernels_avx512vnni",
@@ -1223,7 +1053,6 @@ def define_xnnpack():
     ]
 
     ARM_XNNPACK_DEPS = [
-        ":jit_memory",
         ":ukernels_armsimd32",
         ":ukernels_fp16arith",
         ":ukernels_asm",
@@ -1242,17 +1071,15 @@ def define_xnnpack():
     native.cxx_library(
         name = "XNNPACK",
         srcs = XNNPACK_SRCS + LOGGING_SRCS + [
-            "XNNPACK/src/amalgam/gen/scalar.c",
+            "XNNPACK/src/init.c",
+            "XNNPACK/src/params.c",
             "XNNPACK/src/configs/hardware-config.c",
             "XNNPACK/src/microparams-init.c",
-            "XNNPACK/src/operator-run.c",
-            "XNNPACK/src/operators/post-operation.c",
             "XNNPACK/src/microkernel-utils.c",
+            "XNNPACK/src/reference/binary-elementwise.cc",
+            "XNNPACK/src/reference/unary-elementwise.cc",
         ],
-        headers = subdir_glob([
-            ("XNNPACK/src", "xnnpack/*.h"),
-            ("XNNPACK/include", "**/*.h"),
-        ]),
+        headers = get_xnnpack_headers(),
         exported_headers = {
             "xnnpack.h": "XNNPACK/include/xnnpack.h",
         },
@@ -1263,24 +1090,19 @@ def define_xnnpack():
         preferred_linkage = "static",
         preprocessor_flags = [
             "-DXNN_LOG_LEVEL=0",
-            "-DXNN_NO_Q8_OPERATORS",
-            "-DXNN_NO_F16_OPERATORS",
-            "-DXNN_NO_NCHW_OPERATORS",
-            "-DXNN_NO_U8_OPERATORS",
-            "-DXNN_NO_X32_OPERATORS",
-            "-DXNN_NO_X8_OPERATORS",
             "-DXNN_ENABLE_MEMOPT",
             "-DXNN_ENABLE_SPARSE=0",
-            "-DXNN_ENABLE_JIT=0",
             "-DXNN_ENABLE_ASSEMBLY",
             "-DXNN_ENABLE_GEMM_M_SPECIALIZATION",
             "-DXNN_ENABLE_ARM_DOTPROD",
             "-DXNN_ENABLE_CPUINFO",
             # "-DXNN_ENABLE_DWCONV_MULTIPLASS=1",
             "-DXNN_ENABLE_ARM_I8MM=1",
+            "-DXNN_ENABLE_ARM_FP16_VECTOR=1",
         ],
         visibility = ["PUBLIC"],
         exported_deps = COMMON_XNNPACK_DEPS + [
+            ":FP16",
             ":pthreadpool",
             ":interface",
             ":cpuinfo",

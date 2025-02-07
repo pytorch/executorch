@@ -16,11 +16,12 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::testing::TensorFactory;
 using torch::executor::testing::SupportedFeatures;
-using torch::executor::testing::TensorFactory;
+namespace etrt = executorch::runtime;
 
 class OpSubOutTest : public OperatorTest {
  protected:
@@ -60,7 +61,8 @@ class OpSubOutTest : public OperatorTest {
     test_sub<DTYPE_A, DTYPE_B, ScalarType::Float>();
     test_sub<DTYPE_A, DTYPE_B, ScalarType::Double>();
     // Integral out type is only allowed if both inputs are integral types
-    if (isIntegralType(DTYPE_A, false) && isIntegralType(DTYPE_B, false)) {
+    if (etrt::isIntegralType(DTYPE_A, false) &&
+        etrt::isIntegralType(DTYPE_B, false)) {
       test_sub<DTYPE_A, DTYPE_B, ScalarType::Int>();
       test_sub<DTYPE_A, DTYPE_B, ScalarType::Long>();
     }
@@ -104,6 +106,27 @@ class OpSubOutTest : public OperatorTest {
     ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_rank1_scalar() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor a = tf.make({2, 1, 3}, {2, 3, 4, 5, 6, 7});
+    Tensor b = tf.make({1}, {2});
+
+    // Destination for the broadcasting div. Follow the broadcasting rules in
+    // https://fburl.com/n9wl4d0o
+    Tensor out = tf.zeros({2, 1, 3});
+
+    op_sub_out(a, b, 1, out);
+
+    Tensor ret = tf.make({2, 1, 3}, {0, 1, 2, 3, 4, 5});
+    EXPECT_TENSOR_EQ(out, ret);
+
+    op_sub_out(b, a, 1, out);
+    ret = tf.make({2, 1, 3}, {0, -1, -2, -3, -4, -5});
+    EXPECT_TENSOR_EQ(out, ret);
   }
 };
 
@@ -169,19 +192,8 @@ TEST_F(OpSubOutTest, BroadcastSupported2) {
 }
 
 TEST_F(OpSubOutTest, BroadcastScalarSupported1) {
-  TensorFactory<ScalarType::Float> tf;
-
-  Tensor a = tf.make({2, 1, 3}, {2, 3, 4, 5, 6, 7});
-  Tensor b = tf.make({1}, {2});
-
-  // Destination for the broadcasting div. Follow the broadcasting rules in
-  // https://fburl.com/n9wl4d0o
-  Tensor out = tf.zeros({2, 1, 3});
-
-  op_sub_out(a, b, 1, out);
-
-  Tensor ret = tf.make({2, 1, 3}, {0, 1, 2, 3, 4, 5});
-  EXPECT_TENSOR_EQ(out, ret);
+  test_broadcast_rank1_scalar<ScalarType::Float>();
+  test_broadcast_rank1_scalar<ScalarType::Half>();
 }
 
 TEST_F(OpSubOutTest, BroadcastScalarSupported2) {
@@ -197,6 +209,31 @@ TEST_F(OpSubOutTest, BroadcastScalarSupported2) {
   op_sub_out(a, b, 1, out);
 
   Tensor ret = tf.make({3, 1, 1}, {6, 4, 0});
+  EXPECT_TENSOR_EQ(out, ret);
+
+  std::swap(a, b);
+  out = tf.zeros({3, 1, 1});
+  op_sub_out(a, b, 1, out);
+  ret = tf.make({3, 1, 1}, {-6, -4, 0});
+  EXPECT_TENSOR_EQ(out, ret);
+}
+
+TEST_F(OpSubOutTest, BroadcastScalarRank0Supported) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor a = tf.make({1}, {5});
+  Tensor b = tf.make({}, {2});
+
+  Tensor out = tf.zeros({1});
+
+  op_sub_out(a, b, 1, out);
+
+  Tensor ret = tf.make({1}, {3});
+  EXPECT_TENSOR_EQ(out, ret);
+
+  op_sub_out(b, a, 1, out);
+
+  ret = tf.make({1}, {-3});
   EXPECT_TENSOR_EQ(out, ret);
 }
 
@@ -265,15 +302,15 @@ TEST_F(OpSubOutTest, BoolOutputWithIntegralInput) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_sub_out(a, b, /*alpha=*/1, out));
 }
 
-TEST_F(OpSubOutTest, MismatchedInputShapesDies) {
+TEST_F(OpSubOutTest, MismatchedNonBroadcastableInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Subtrahend and minuend with different shapes.
-  Tensor a = tf.ones(/*sizes=*/{4});
+  Tensor a = tf.ones(/*sizes=*/{4, 2});
   Tensor b = tf.ones(/*sizes=*/{2, 2});
 
   // Destination for the subtraction; matches the shape of one of the inputs.
-  Tensor out = tf.zeros(/*sizes=*/{4});
+  Tensor out = tf.zeros(/*sizes=*/{8});
 
   // Performing substraction on two mismatched tensors should cause an assertion
   // and kill the test process.
@@ -535,4 +572,17 @@ TEST_F(OpSubScalarOutTest, OptimizedSanityCheck) {
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {0.98, -3.22, 0.28, 2.88}));
+}
+
+TEST_F(OpSubScalarOutTest, DtypeTest_float16_float_int_float16) {
+  torch::executor::testing::TensorFactory<executorch::aten::ScalarType::Half>
+      tfHalf;
+
+  executorch::aten::Tensor self = tfHalf.ones({2, 2});
+  executorch::aten::Scalar other = executorch::aten::Scalar(-1.0);
+  executorch::aten::Scalar alpha = executorch::aten::Scalar(1);
+  executorch::aten::Tensor out = tfHalf.zeros({2, 2});
+  executorch::aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
+  op_sub_scalar_out(self, other, alpha, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
 }

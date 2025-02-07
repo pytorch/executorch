@@ -3,12 +3,14 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpPoolAvg2d, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -30,19 +32,19 @@ class AvgPool2d(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         # kernel info
         filter_size = cast(List[int], node.args[1])
@@ -50,8 +52,8 @@ class AvgPool2d(NodeVisitor):
             filter_size = filter_size + filter_size
         filter_size_shape = [len(filter_size)]
 
-        # stride info
-        stride = cast(List[int], node.args[2])
+        # stride info - default to kernel_size if not given
+        stride = cast(List[int], node.args[2]) if len(node.args) > 2 else filter_size
         if len(stride) == 1:
             stride = stride + stride
         stride_shape = [len(stride)]
@@ -84,7 +86,10 @@ class AvgPool2d(NodeVisitor):
         if len(node.args) > 6:
             divisor_override = cast(int, node.args[6])
         if divisor_override != pooling_region:
-            print("Not support divisor_override which is not equal to pooling region.")
+            warnings.warn(
+                "[QNN Delegate Op Builder]: Not support divisor_override which is not equal to pooling region.",
+                stacklevel=1,
+            )
             return
 
         avg_pool2d_op = PyQnnWrapper.PyQnnOpWrapper(
@@ -132,12 +137,12 @@ class AvgPool2d(NodeVisitor):
         avg_pool2d_op.AddScalarParam(
             OpPoolAvg2d.param_rounding_mode,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(mode)},
+            {QCOM_DATA: np.uint32(mode)},
         )
         avg_pool2d_op.AddScalarParam(
             OpPoolAvg2d.param_count_pad_for_edges,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": count_include_pad},
+            {QCOM_DATA: count_include_pad},
         )
 
         return avg_pool2d_op

@@ -19,9 +19,7 @@ class MV3Model(EagerModelBase):
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading mobilenet_v3 model")
-        # pyre-ignore
         mv3_small = models.mobilenet_v3_small(
-            # pyre-ignore[16]
             weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1
         )
         logging.info("Loaded mobilenet_v3 model")

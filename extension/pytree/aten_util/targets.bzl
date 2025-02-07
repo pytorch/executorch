@@ -20,13 +20,7 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
-        fbcode_deps = [
-            "//caffe2:ATen-core",
-            "//caffe2:ATen-cpu",
-            "//caffe2/c10:c10",
-        ],
-        xplat_deps = [
-            "//xplat/caffe2:torch_mobile_core",
-            "//xplat/caffe2/c10:c10",
+        external_deps = [
+            "torch-core-cpp",
         ],
     )

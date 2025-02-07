@@ -7,6 +7,9 @@
 from typing import cast, Dict, List
 
 import torch
+from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
+    ChannelsLastTaggedReshapePass,
+)
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -16,7 +19,12 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNStaticTranspose,
     XNode,
 )
-from executorch.backends.xnnpack.utils.utils import get_input_node
+from executorch.backends.xnnpack.utils.utils import (
+    check_or_raise,
+    get_input_node,
+    PERM_NCHW_TO_NHWC,
+    PERM_NHWC_TO_NCHW,
+)
 
 
 @register_node_visitor
@@ -43,6 +51,21 @@ class PermuteVisitor(NodeVisitor):
 
         # permutation
         permute_order = cast(List[int], node.args[1])
+
+        # change permute order if under channels last
+        is_channels_last = node.meta.get(
+            ChannelsLastTaggedReshapePass.XNN_NHWC_NODE, False
+        )
+        if is_channels_last:
+            check_or_raise(
+                len(permute_order) == 4,
+                "Internal Error: Permute was tagged in channels last but is not 4D",
+            )
+            permute_order_in_contiguous = [PERM_NHWC_TO_NCHW[i] for i in permute_order]
+            permute_order_in_channels_last = [
+                permute_order_in_contiguous[i] for i in PERM_NCHW_TO_NHWC
+            ]
+            permute_order = permute_order_in_channels_last
 
         ser_node = XNode(
             xnode_union=XNNStaticTranspose(

@@ -11,22 +11,33 @@ set -ex
 [ -n "${ANDROID_NDK_VERSION}" ]
 
 install_prerequiresites() {
-  apt-get update
+  OS=$(grep -oP '(?<=^ID=).+' /etc/os-release | tr -d '"')
+  case "$OS" in
+    amzn)
+      # https://docs.aws.amazon.com/corretto/latest/corretto-17-ug/amazon-linux-install.html
+      yum install -y java-17-amazon-corretto \
+        ca-certificates \
+        ant
+      ;;
+    *)
+      apt-get update
 
-  # NB: Need OpenJDK 17 at the minimum
-  apt-get install -y --no-install-recommends \
-    openjdk-17-jdk \
-    ca-certificates-java \
-    ant
+      # NB: Need OpenJDK 17 at the minimum
+      apt-get install -y --no-install-recommends \
+        openjdk-17-jdk \
+        ca-certificates-java \
+        ant
 
-  # Cleanup package manager
-  apt-get autoclean && apt-get clean
-  rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+      # Cleanup package manager
+      apt-get autoclean && apt-get clean
+      rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    ;;
+  esac
 }
 
 install_ndk() {
   NDK_INSTALLATION_DIR=/opt/ndk
-  mkdir -p "${NDK_INSTALLATION_DIR}"
+  rm -rf "${NDK_INSTALLATION_DIR}" && mkdir -p "${NDK_INSTALLATION_DIR}"
 
   pushd /tmp
   # The NDK installation is cached on ossci-android S3 bucket
@@ -54,7 +65,7 @@ install_cmdtools() {
 
 install_sdk() {
   SDK_INSTALLATION_DIR=/opt/android/sdk
-  mkdir -p "${SDK_INSTALLATION_DIR}"
+  rm -rf "${SDK_INSTALLATION_DIR}" && mkdir -p "${SDK_INSTALLATION_DIR}"
 
   # These are the tools needed to build Android apps
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platforms;android-34"

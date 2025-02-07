@@ -9,12 +9,12 @@ import unittest
 from typing import List, Optional, Tuple
 
 import torch
-from executorch import exir
-from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import export
 from torch.fx.node import Node
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -23,25 +23,32 @@ class TestGraphPartition(unittest.TestCase):
     def get_graph_module(
         self, module: torch.nn.Module, inputs: Tuple[torch.Tensor]
     ) -> torch.fx.GraphModule:
-        capture_config = CaptureConfig()
         graph_module = (
-            exir.capture(module, inputs, capture_config)
-            .to_edge(
-                EdgeCompileConfig(
+            to_edge(
+                export(module, inputs, strict=True),
+                compile_config=EdgeCompileConfig(
                     _check_ir_validity=False,
-                )
+                ),
             )
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
 
         return graph_module
 
+    # hackily get list of nodes
     def get_node_list(
         self,
         graph_module: torch.fx.GraphModule,
         supported_modules: List[torch.nn.Module],
     ) -> List[List[Node]]:
         pattern_list_map = collections.defaultdict(list)
+        placeholders = [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "placeholder"
+            and node.target != "x"  # x is a hack to avoid the user input
+        ]
         for node in graph_module.graph.nodes:
             if "nn_module_stack" in node.meta:
                 module_values_list = list(node.meta["nn_module_stack"].values())
@@ -49,6 +56,11 @@ class TestGraphPartition(unittest.TestCase):
                 owning_module = module_values_list[-1][1]
                 if owning_module in supported_modules:
                     pattern_list_map[(full_qualified_name, owning_module)].append(node)
+                    for arg in node.args:
+                        if isinstance(arg, Node) and arg in placeholders:
+                            pattern_list_map[
+                                (full_qualified_name, owning_module)
+                            ].append(arg)
 
         return list(pattern_list_map.values())
 
@@ -58,7 +70,6 @@ class TestGraphPartition(unittest.TestCase):
         supported_modules: List[torch.nn.Module],
         op_support: Optional[OperatorSupportBase] = None,
     ) -> List:
-
         node_list = self.get_node_list(graph_module, supported_modules)
 
         partition_list = generate_partitions_from_list_of_nodes(
@@ -92,14 +103,12 @@ class TestGraphPartition(unittest.TestCase):
         graph_module = self.get_graph_module(test_module, example_inputs)
 
         supported_module = [
-            torch.nn.modules.conv.Conv2d,
-            torch.nn.modules.activation.ReLU,
+            "torch.nn.modules.conv.Conv2d",
+            "torch.nn.modules.activation.ReLU",
         ]
         partition_list = self.extract_partition_list(graph_module, supported_module)
 
-        assert (
-            len(partition_list) == 1
-        ), "the subgraph should be divided into a single part"
+        self.assertEqual(len(partition_list), 1)
 
     def test_partition_list_without_op_support_two_partitions(self):
         """
@@ -126,29 +135,27 @@ class TestGraphPartition(unittest.TestCase):
         graph_module = self.get_graph_module(test_module, example_inputs)
 
         supported_module = [
-            torch.nn.modules.conv.Conv2d,
-            torch.nn.modules.activation.ReLU,
+            "torch.nn.modules.conv.Conv2d",
+            "torch.nn.modules.activation.ReLU",
         ]
         partition_list = self.extract_partition_list(graph_module, supported_module)
 
-        assert len(partition_list) == 2, "the subgraph should be divided into 2 parts"
+        self.assertEqual(len(partition_list), 2)
 
         partition_1 = [
-            "_param_constant4",
-            "_param_constant4_1",
-            "_param_constant5",
-            "_param_constant5_1",
             "aten_convolution_default_2",
             "aten_convolution_default_3",
             "aten_relu_default",
+            "p_conv3_bias",
+            "p_conv3_weight",
         ]
         partition_2 = [
-            "_param_constant0",
-            "_param_constant1",
-            "_param_constant2",
-            "_param_constant3",
             "aten_convolution_default",
             "aten_convolution_default_1",
+            "p_conv1_bias",
+            "p_conv1_weight",
+            "p_conv2_bias",
+            "p_conv2_weight",
         ]
 
         # extract node names from partition_list, compare them with expected node names
@@ -201,30 +208,28 @@ class TestGraphPartition(unittest.TestCase):
         graph_module = self.get_graph_module(test_module, example_inputs)
 
         supported_module = [
-            torch.nn.modules.conv.Conv2d,
-            torch.nn.modules.activation.ReLU,
+            "torch.nn.modules.conv.Conv2d",
+            "torch.nn.modules.activation.ReLU",
         ]
         partition_list = self.extract_partition_list(
             graph_module, supported_module, TestOperatorSupport()
         )
 
-        assert len(partition_list) == 2, "the subgraph should be divided into 2 parts"
+        self.assertEqual(len(partition_list), 2)
 
         partition_1 = ["aten_relu_default"]
         partition_2 = [
-            "_param_constant0",
-            "_param_constant1",
-            "_param_constant2",
-            "_param_constant3",
-            "_param_constant4",
-            "_param_constant4_1",
-            "_param_constant5",
-            "_param_constant5_1",
             "aten_add_tensor",
             "aten_convolution_default",
             "aten_convolution_default_1",
             "aten_convolution_default_2",
             "aten_convolution_default_3",
+            "p_conv1_bias",
+            "p_conv1_weight",
+            "p_conv2_bias",
+            "p_conv2_weight",
+            "p_conv3_bias",
+            "p_conv3_weight",
         ]
 
         # extract node names from partition_list, compare them with expected node names

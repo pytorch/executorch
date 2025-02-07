@@ -6,7 +6,6 @@
 
 import json
 import os
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -14,8 +13,9 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.mobilenet_v2 import MV2Model
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
+    get_imagenet_dataset,
     make_output_dir,
     parse_skip_delegation_node,
     setup_common_args_and_variables,
@@ -24,66 +24,7 @@ from executorch.examples.qualcomm.scripts.utils import (
 )
 
 
-def get_dataset(dataset_path, data_size):
-    from torchvision import datasets, transforms
-
-    def get_data_loader():
-        preprocess = transforms.Compose(
-            [
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
-            ]
-        )
-        imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
-        return torch.utils.data.DataLoader(
-            imagenet_data,
-            shuffle=True,
-        )
-
-    # prepare input data
-    inputs, targets, input_list = [], [], ""
-    data_loader = get_data_loader()
-    for index, data in enumerate(data_loader):
-        if index >= data_size:
-            break
-        feature, target = data
-        inputs.append((feature,))
-        targets.append(target)
-        input_list += f"input_{index}_0.raw\n"
-
-    return inputs, targets, input_list
-
-
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-d",
-        "--dataset",
-        help=(
-            "path to the validation folder of ImageNet dataset. "
-            "e.g. --dataset imagenet-mini/val "
-            "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
-        ),
-        type=str,
-        required=True,
-    )
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. "
-        "Default ./mobilenet_v2",
-        default="./mobilenet_v2",
-        type=str,
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
@@ -96,11 +37,16 @@ if __name__ == "__main__":
         )
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
-        dataset_path=f"{args.dataset}",
-        data_size=data_num,
-    )
-    pte_filename = "mv2_qnn"
+    if args.compile_only:
+        inputs = [(torch.rand(1, 3, 224, 224),)]
+    else:
+        inputs, targets, input_list = get_imagenet_dataset(
+            dataset_path=f"{args.dataset}",
+            data_size=data_num,
+            image_shape=(256, 256),
+            crop_size=224,
+        )
+    pte_filename = "mv2_qnn_q8"
     instance = MV2Model()
     build_executorch_binary(
         instance.get_eager_model().eval(),
@@ -115,17 +61,11 @@ if __name__ == "__main__":
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        artifact_path=f"{args.build_folder}",
+        build_path=f"{args.build_folder}",
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
@@ -159,3 +99,38 @@ if __name__ == "__main__":
     else:
         for i, k in enumerate(k_val):
             print(f"top_{k}->{topk[i]}%")
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-d",
+        "--dataset",
+        help=(
+            "path to the validation folder of ImageNet dataset. "
+            "e.g. --dataset imagenet-mini/val "
+            "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
+        ),
+        type=str,
+        required=False,
+    )
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. "
+        "Default ./mobilenet_v2",
+        default="./mobilenet_v2",
+        type=str,
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

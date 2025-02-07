@@ -9,8 +9,18 @@ from __future__ import annotations
 from typing import cast, Optional, Union
 
 import torch
-from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
-from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
+from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
+    TagImplicitQDqPass,
+)
+from executorch.backends.xnnpack.utils.quant_utils import (
+    extract_qdq_affine_op_args_for_decomposed_ops,
+    is_affine_qdq,
+    is_dequant,
+    is_dynamic_qdq,
+    is_per_channel,
+    is_per_channel_group,
+    is_quant,
+)
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_param_tensor,
@@ -154,30 +164,18 @@ class QuantParams:
         q_input = quant_node.all_input_nodes[0]
 
         # TODO: Use presence of choose_qparam node to determine if this is a dynamic quantization
-        if quant_node.target in [
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-            exir_ops.edge.quantized_decomposed.quantize_per_token.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
-        ]:
+        if is_dynamic_qdq(quant_node):
             return cls._from_dynamic_input_node(quant_node)
 
-        per_channel = quant_node.target in [
-            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        ]
+        per_channel = is_per_channel(quant_node)
 
-        _groupwise = False
-        if quant_node.target in [
-            exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
-        ]:
-            # This is a sub-category of per channel quantization
-            per_channel = True
-            _groupwise = True
+        _groupwise = is_per_channel_group(quant_node)
+        quant_node_args = quant_node.args
+        if _groupwise and is_affine_qdq(quant_node):
+            quant_node_args = extract_qdq_affine_op_args_for_decomposed_ops(quant_node)
 
-        scale = quant_node.args[1]
-        zp = quant_node.args[2]
+        scale = quant_node_args[1]
+        zp = quant_node_args[2]
         axis = 0
         if per_channel:
             assert isinstance(scale, torch.fx.Node) and isinstance(scale.target, str)
@@ -193,10 +191,15 @@ class QuantParams:
 
             scale = _get_tensor(scale)
             zp = _get_tensor(zp)
-            axis = cast(int, quant_node.args[3])
+            axis = cast(int, quant_node_args[3])
 
             if _groupwise:
                 scale_tensor = cast(torch.Tensor, scale)
+                if scale_tensor.ndim == 1:
+                    scale_tensor = scale_tensor.reshape(-1, 1)
+                    zp = zp.reshape(-1, 1)
+                    scale = scale_tensor
+
                 assert (
                     scale_tensor.ndim == 2
                 ), "Weight scale must be 2D for per_channel_group [de]quant node, got {scale.ndim}D"
@@ -204,23 +207,23 @@ class QuantParams:
 
         check_or_raise(
             bool(
-                quant_node.args[-1] != torch.uint8
-                or quant_node.args[-1] != torch.quint8
+                quant_node_args[-1] != torch.uint8
+                or quant_node_args[-1] != torch.quint8
             ),
             "XNNPACK does not support unsigned quantization",
         )
 
         if _groupwise:
-            _ = quant_node.args[-1]  # output dtype - not used
-            group_size = cast(int, quant_node.args[-2])
-            dtype = cast(torch.dtype, quant_node.args[-3])
-            qmax = cast(int, quant_node.args[-4])
-            qmin = cast(int, quant_node.args[-5])
+            _ = quant_node_args[-1]  # output dtype - not used
+            group_size = cast(int, quant_node_args[-2])
+            dtype = cast(torch.dtype, quant_node_args[-3])
+            qmax = cast(int, quant_node_args[-4])
+            qmin = cast(int, quant_node_args[-5])
         else:
             group_size = 0
-            dtype = cast(torch.dtype, quant_node.args[-1])
-            qmax = cast(int, quant_node.args[-2])
-            qmin = cast(int, quant_node.args[-3])
+            dtype = cast(torch.dtype, quant_node_args[-1])
+            qmax = cast(int, quant_node_args[-2])
+            qmin = cast(int, quant_node_args[-3])
 
         is_output = any(
             user_node.op == "output" for user_node in quant_node.users.keys()
@@ -244,26 +247,14 @@ class QuantParams:
     def from_weights(
         cls, tensor_node: torch.fx.Node, ep: Optional[ExportedProgram] = None
     ) -> Optional[QuantParams]:
-        # Ignore transpose for weights
-        # TODO:T148540997 remove the t_copy/permute_copy check when convert addmm to linear
-        dq = (
-            tensor_node.all_input_nodes[0]
-            if tensor_node.target
-            in (
-                exir_ops.edge.aten.permute_copy.default,
-                exir_ops.edge.aten.t_copy.default,
-            )
-            else tensor_node
-        )
-        # check input of t_copy/permute_copy is dequant
-        if not is_dequant(dq):
+        if not is_dequant(tensor_node):
             return None
 
         # source node for quant params
-        src = dq
+        src = tensor_node
 
         # is input of dq is q?
-        dq_input = dq.all_input_nodes[0]
+        dq_input = src.all_input_nodes[0]
         if is_quant(dq_input):
             src = dq_input
 

@@ -13,15 +13,15 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::KernelRuntimeContext;
-using torch::executor::MemoryAllocator;
-using torch::executor::Result;
+using executorch::runtime::Error;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
 
 class KernelRuntimeContextTest : public ::testing::Test {
  public:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 

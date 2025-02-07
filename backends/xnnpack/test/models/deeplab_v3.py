@@ -25,15 +25,14 @@ class DL3Wrapper(torch.nn.Module):
 class TestDeepLabV3(unittest.TestCase):
     dl3 = DL3Wrapper()
     dl3 = dl3.eval()
-    model_inputs = (torch.ones(1, 3, 224, 224),)
+    model_inputs = (torch.randn(1, 3, 224, 224),)
 
     def test_fp32_dl3(self):
 
         (
             Tester(self.dl3, self.model_inputs)
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .to_executorch()
             .serialize()
             .run_method_and_compare_outputs()

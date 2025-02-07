@@ -6,8 +6,6 @@
 
 import unittest
 
-import pandas as pd
-
 import torch
 from executorch import exir
 from executorch.exir import to_edge
@@ -15,16 +13,13 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.utils import (
-    DelegationBreakdown,
+    format_delegated_graph,
     get_delegates,
-    get_delegation_info,
     get_non_lowered_nodes,
     is_identical_graph,
-    print_delegated_graph,
 )
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
-from pandas.testing import assert_frame_equal
 from torch.export import export, ExportedProgram
 from torch.fx import symbolic_trace
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
@@ -99,20 +94,14 @@ class TestUtils(unittest.TestCase):
 
         graph_module_1: torch.fx.GraphModule = (
             to_edge(
-                export(
-                    MyModule1(),
-                    (torch.rand(3, 4), torch.rand(3, 4)),
-                )
+                export(MyModule1(), (torch.rand(3, 4), torch.rand(3, 4)), strict=True)
             )
             .exported_program()
             .graph_module
         )
         graph_module_2: torch.fx.GraphModule = (
             to_edge(
-                export(
-                    MyModule2(),
-                    (torch.rand(3, 4), torch.rand(3, 4)),
-                )
+                export(MyModule2(), (torch.rand(3, 4), torch.rand(3, 4)), strict=True)
             )
             .exported_program()
             .graph_module
@@ -136,10 +125,7 @@ class TestUtils(unittest.TestCase):
 
         large_model = (
             to_edge(
-                export(
-                    LargeModel(),
-                    inputs,
-                ),
+                export(LargeModel(), inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             )
             .exported_program()
@@ -148,7 +134,7 @@ class TestUtils(unittest.TestCase):
 
         pattern = (
             to_edge(
-                export(torch.nn.Linear(3, 3), inputs),
+                export(torch.nn.Linear(3, 3), inputs, strict=True),
                 compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
             )
             .exported_program()
@@ -184,10 +170,7 @@ class TestUtils(unittest.TestCase):
                 )
 
         exported_program = to_edge(
-            export(
-                torch.nn.Linear(3, 3),
-                (torch.randn(3, 3),),
-            )
+            export(torch.nn.Linear(3, 3), (torch.randn(3, 3),), strict=True)
         )
 
         error_msg = r"needs a `partition_tags` field containing a mapping of tags to delegate spec"
@@ -221,7 +204,7 @@ class TestUtils(unittest.TestCase):
 
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-        edge = to_edge(export(m, inputs))
+        edge = to_edge(export(m, inputs, strict=True))
         edge = edge.to_backend(AddMulPartitionerDemo())
         number_of_cpu_nodes = get_non_lowered_nodes(edge.exported_program().graph)
         # Only sub is not not lowerable
@@ -242,7 +225,7 @@ class TestUtils(unittest.TestCase):
 
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-        edge = to_edge(export(m, inputs))
+        edge = to_edge(export(m, inputs, strict=True))
         edge = edge.to_backend(AddMulPartitionerDemo())
         number_of_delegates = get_delegates(edge.exported_program().graph)
         # there will be 2 delegates: (mm + add) -> sub -> (mm + add)
@@ -264,9 +247,11 @@ class TestUtils(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        edge = to_edge(export(m, inputs)).to_backend(AddMulPartitionerDemo())
+        edge = to_edge(export(m, inputs, strict=True)).to_backend(
+            AddMulPartitionerDemo()
+        )
 
-        graph_str = print_delegated_graph(edge.exported_program().graph_module)
+        graph_str = format_delegated_graph(edge.exported_program().graph_module)
         self.assertIn(
             "BackendWithCompilerDemo",
             graph_str,
@@ -277,65 +262,3 @@ class TestUtils(unittest.TestCase):
             graph_str,
             "Expect to see the aten.mm in the delegated graph",
         )
-
-    def test_get_delegation_info(self):
-        class Model(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, a, x, b):
-                y = torch.mm(a, x)
-                z = y + b
-                a = z - a
-                y = torch.mm(a, x)
-                z = y + b
-                return z
-
-        m = Model()
-        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-        edge = to_edge(torch.export.export(m, inputs)).to_backend(
-            AddMulPartitionerDemo()
-        )
-        delegation_info = get_delegation_info(edge.exported_program().graph_module)
-
-        self.assertEqual(delegation_info.num_delegated_subgraphs, 2)
-        self.assertEqual(delegation_info.num_delegated_nodes, 4)
-        self.assertEqual(delegation_info.num_non_delegated_nodes, 3)
-        expected_delegation_by_op_dict = {
-            "aten_add_tensor": DelegationBreakdown(
-                op_type="aten_add_tensor", delegated=2, non_delegated=0
-            ),
-            "aten_mm_default": DelegationBreakdown(
-                op_type="aten_mm_default", delegated=2, non_delegated=0
-            ),
-            "aten_sub_tensor": DelegationBreakdown(
-                op_type="aten_sub_tensor", delegated=0, non_delegated=1
-            ),
-            "getitem": DelegationBreakdown(
-                op_type="getitem", delegated=0, non_delegated=2
-            ),
-        }
-        self.assertEqual(
-            delegation_info.delegation_by_operator, expected_delegation_by_op_dict
-        )
-
-        self.assertIn(
-            "Total delegated subgraphs",
-            delegation_info.get_summary(),
-        )
-
-        df = delegation_info.get_operator_delegation_dataframe()
-        expected_df = pd.DataFrame(
-            {
-                "op_type": [
-                    "aten_add_tensor",
-                    "aten_mm_default",
-                    "aten_sub_tensor",
-                    "getitem",
-                    "Total",
-                ],
-                "occurrences_in_delegated_graphs": [2, 2, 0, 0, 4],
-                "occurrences_in_non_delegated_graphs": [0, 0, 1, 2, 3],
-            }
-        )
-        assert_frame_equal(expected_df, df)

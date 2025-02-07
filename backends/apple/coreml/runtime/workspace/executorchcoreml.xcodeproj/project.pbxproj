@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8307EB8A2C9262060011AE6D /* state_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 8307EB892C9262060011AE6D /* state_coreml_all.pte */; };
+		838CA6872CD1965700462190 /* add_mul_compiled_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 838CA6862CD1965700462190 /* add_mul_compiled_coreml_all.pte */; };
+		83BB78A02C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm in Sources */ = {isa = PBXBuildFile; fileRef = 83BB789F2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm */; };
+		83BB78BF2C66AAAE00274ED7 /* add_mul_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = 83BB78BD2C66AAAE00274ED7 /* add_mul_coreml_all.bin */; };
+		83BB78C02C66AAAE00274ED7 /* add_mul_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 83BB78BE2C66AAAE00274ED7 /* add_mul_coreml_all.pte */; };
 		C945E8E02B997ECE009C3FAC /* ETCoreMLModelProfiler.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8CF2B997ECD009C3FAC /* ETCoreMLModelProfiler.mm */; };
 		C945E8E12B997ECE009C3FAC /* ETCoreMLModelAnalyzer.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D42B997ECD009C3FAC /* ETCoreMLModelAnalyzer.mm */; };
 		C945E8E22B997ECE009C3FAC /* program_path.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D52B997ECD009C3FAC /* program_path.mm */; };
@@ -100,8 +105,8 @@
 		C9E7D7952AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */; };
 		C9E7D7962AB3F9BF00CCAE5D /* KeyValueStoreTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */; };
 		C9E7D7A22AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */; };
-		F24817E52BC655E100E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */; };
 		C9EC7E1B2BC73B3200A6B166 /* MultiArrayTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9EC7E1A2BC73B3200A6B166 /* MultiArrayTests.mm */; };
+		F24817E52BC655E100E80D98 /* libexecutorch_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F24817E42BC655E100E80D98 /* libexecutorch_core.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -117,6 +122,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		8307EB892C9262060011AE6D /* state_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = state_coreml_all.pte; path = ../test/models/state_coreml_all.pte; sourceTree = "<group>"; };
+		838CA6862CD1965700462190 /* add_mul_compiled_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_mul_compiled_coreml_all.pte; path = ../test/models/add_mul_compiled_coreml_all.pte; sourceTree = "<group>"; };
+		83BB789E2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelDebugInfo.h; path = ../sdk/ETCoreMLModelDebugInfo.h; sourceTree = "<group>"; };
+		83BB789F2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelDebugInfo.mm; path = ../sdk/ETCoreMLModelDebugInfo.mm; sourceTree = "<group>"; };
+		83BB78BD2C66AAAE00274ED7 /* add_mul_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = add_mul_coreml_all.bin; path = ../test/models/add_mul_coreml_all.bin; sourceTree = "<group>"; };
+		83BB78BE2C66AAAE00274ED7 /* add_mul_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_mul_coreml_all.pte; path = ../test/models/add_mul_coreml_all.pte; sourceTree = "<group>"; };
 		C945E8CD2B997ECD009C3FAC /* ETCoreMLModelProfiler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelProfiler.h; path = ../sdk/ETCoreMLModelProfiler.h; sourceTree = "<group>"; };
 		C945E8CE2B997ECD009C3FAC /* ETCoreMLModelAnalyzer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelAnalyzer.h; path = ../sdk/ETCoreMLModelAnalyzer.h; sourceTree = "<group>"; };
 		C945E8CF2B997ECD009C3FAC /* ETCoreMLModelProfiler.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelProfiler.mm; path = ../sdk/ETCoreMLModelProfiler.mm; sourceTree = "<group>"; };
@@ -299,9 +310,9 @@
 		C9EA3DB22B71A2B200B7D7BD /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
 		C9EA3FDE2B73EEA000B7D7BD /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		C9EA3FE52B73EF6300B7D7BD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
-		F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch_no_prim_ops.a; path = ../libraries/libexecutorch_no_prim_ops.a; sourceTree = "<group>"; };
 		C9EC7E092BC662A300A6B166 /* objc_array_util.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = objc_array_util.h; path = ../util/objc_array_util.h; sourceTree = "<group>"; };
 		C9EC7E1A2BC73B3200A6B166 /* MultiArrayTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = MultiArrayTests.mm; path = ../test/MultiArrayTests.mm; sourceTree = "<group>"; };
+		F24817E42BC655E100E80D98 /* libexecutorch_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch_core.a; path = ../libraries/libexecutorch_core.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -310,7 +321,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */,
-				F24817E52BC655E100E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */,
+				F24817E52BC655E100E80D98 /* libexecutorch_core.a in Frameworks */,
 				C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */,
 				C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */,
 				C99883862B95AD7D000953A3 /* libprotobuf-lite.a in Frameworks */,
@@ -329,6 +340,8 @@
 				C945E8D42B997ECD009C3FAC /* ETCoreMLModelAnalyzer.mm */,
 				C945E8D32B997ECD009C3FAC /* ETCoreMLModelDebugger.h */,
 				C945E8DF2B997ECE009C3FAC /* ETCoreMLModelDebugger.mm */,
+				83BB789E2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.h */,
+				83BB789F2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm */,
 				C945E8CD2B997ECD009C3FAC /* ETCoreMLModelProfiler.h */,
 				C945E8CF2B997ECD009C3FAC /* ETCoreMLModelProfiler.mm */,
 				C945E8D02B997ECD009C3FAC /* ETCoreMLModelStructurePath.h */,
@@ -529,7 +542,7 @@
 				C96560942AABFDCE005F8126 /* libsqlite3.tbd */,
 				C96560922AABF992005F8126 /* CoreML.framework */,
 				C96560902AABF982005F8126 /* Accelerate.framework */,
-				F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */,
+				F24817E42BC655E100E80D98 /* libexecutorch_core.a */,
 				C965608D2AABF72A005F8126 /* libexecutorch.a */,
 			);
 			name = "Recovered References";
@@ -595,7 +608,11 @@
 				C98551992AD2542D009143F9 /* mul_coreml_all.bin */,
 				C985519C2AD2542D009143F9 /* mul_coreml_all.pte */,
 				C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */,
+				838CA6862CD1965700462190 /* add_mul_compiled_coreml_all.pte */,
 				C98551982AD2542D009143F9 /* mv3_coreml_all.pte */,
+				83BB78BD2C66AAAE00274ED7 /* add_mul_coreml_all.bin */,
+				83BB78BE2C66AAAE00274ED7 /* add_mul_coreml_all.pte */,
+				8307EB892C9262060011AE6D /* state_coreml_all.pte */,
 			);
 			name = models;
 			sourceTree = "<group>";
@@ -661,9 +678,13 @@
 			files = (
 				C98551A12AD2542D009143F9 /* mv3_coreml_all.bin in Resources */,
 				C985519F2AD2542D009143F9 /* mul_coreml_all.bin in Resources */,
+				83BB78BF2C66AAAE00274ED7 /* add_mul_coreml_all.bin in Resources */,
+				83BB78C02C66AAAE00274ED7 /* add_mul_coreml_all.pte in Resources */,
 				C985519E2AD2542D009143F9 /* mv3_coreml_all.pte in Resources */,
 				C98551A02AD2542D009143F9 /* add_coreml_all.bin in Resources */,
 				C98551A22AD2542D009143F9 /* mul_coreml_all.pte in Resources */,
+				838CA6872CD1965700462190 /* add_mul_compiled_coreml_all.pte in Resources */,
+				8307EB8A2C9262060011AE6D /* state_coreml_all.pte in Resources */,
 				C98551A32AD2542D009143F9 /* add_coreml_all.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -695,6 +716,7 @@
 				C94D51042ABDF84100AF47FD /* ETCoreMLStrings.mm in Sources */,
 				C9E7D7932AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm in Sources */,
 				C945E8E42B997ECE009C3FAC /* model_event_logger_impl.mm in Sources */,
+				83BB78A02C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm in Sources */,
 				C945E9472B997EEE009C3FAC /* SoundAnalysisPreprocessing.pb.cc in Sources */,
 				C97716B52AEA21B600FC0DAC /* inmemory_filesystem_utils.mm in Sources */,
 				C9E7D7922AB3F9BF00CCAE5D /* DatabaseTests.mm in Sources */,
@@ -900,7 +922,7 @@
 					"$(SRCROOT)/../include",
 					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
-					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include",
 					"$(SRCROOT)/../../third-party/coremltools/deps/protobuf/src",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -931,7 +953,7 @@
 					"$(SRCROOT)/../include",
 					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
-					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include",
 					"$(SRCROOT)/../../third-party/coremltools/deps/protobuf/src",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;

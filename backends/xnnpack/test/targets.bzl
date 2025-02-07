@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -15,5 +16,17 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/extension/aten_util:aten_bridge",
             "//executorch/backends/xnnpack:dynamic_quant_utils",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "xnnexecutor_test",
+        srcs = ["runtime/test_xnnexecutor.cpp"],
+        deps = [
+            third_party_dep("XNNPACK"),
+            third_party_dep("FP16"),
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/backends/xnnpack:xnnpack_backend",
         ],
     )

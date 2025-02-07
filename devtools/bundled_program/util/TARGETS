@@ -1,0 +1,16 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "test_util",
+    srcs = [
+        "test_util.py",
+    ],
+    visibility = ["//executorch/devtools/bundled_program/..."],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/exir:lib",
+    ],
+)

@@ -1,14 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2024 Arm Limited and/or its affiliates.
-#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # Please this file formatted by running:
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 
 cmake_minimum_required(VERSION 3.19)
@@ -29,4 +27,9 @@ install(
   TARGETS extension_runner_util
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
-  DESTINATION ${_common_include_directories})
+  DESTINATION ${_common_include_directories}
+)
+
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

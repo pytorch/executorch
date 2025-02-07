@@ -248,6 +248,11 @@
     - arg_meta: null
       kernel_name: torch::executor::convolution_out
 
+- op: convolution_backward.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::convolution_backward_out
+
 - op: copy.out
   kernels:
     - arg_meta: null
@@ -392,6 +397,11 @@
     - arg_meta: null
       kernel_name: torch::executor::full_like_out
 
+- op: gather.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gather_out
+
 - op: ge.Scalar_out
   kernels:
     - arg_meta: null
@@ -532,10 +542,25 @@
     - arg_meta: null
       kernel_name: torch::executor::masked_fill_scalar_out
 
+- op: masked_scatter.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::masked_scatter_out
+
+- op: masked_select.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::masked_select_out
+
 - op: max.dim_max
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::max_out
+
+- op: max.unary_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::max_unary_out
 
 - op: maximum.out
   kernels:
@@ -552,10 +577,20 @@
     - arg_meta: null
       kernel_name: torch::executor::mean_dim_out
 
+- op: mean.dtype_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mean_dtype_out
+
 - op: min.dim_min
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::min_out
+
+- op: min.unary_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::min_unary_out
 
 - op: minimum.out
   kernels:
@@ -576,6 +611,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::mul_scalar_out
+
+- op: narrow_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::narrow_copy_out
 
 - op: native_group_norm.out
   kernels:
@@ -621,6 +661,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::pixel_shuffle_out
+
+- op: pixel_unshuffle.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::pixel_unshuffle_out
 
 - op: pow.Scalar_out
   kernels:
@@ -671,6 +716,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::repeat_out
+
+- op: repeat_interleave.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::repeat_interleave_Tensor_out
 
 - op: reflection_pad1d.out
   kernels:
@@ -726,6 +776,16 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::scalar_tensor_out
+
+- op: scatter.src_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::scatter_src_out
+
+- op: scatter.value_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::scatter_value_out
 
 - op: scatter_add.out
   kernels:
@@ -832,6 +892,11 @@
     - arg_meta: null
       kernel_name: torch::executor::tanh_out
 
+- op: topk.values
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::topk_values
+
 - op: transpose_copy.int_out
   kernels:
     - arg_meta: null
@@ -857,6 +922,16 @@
     - arg_meta: null
       kernel_name: torch::executor::unsqueeze_copy_out
 
+- op: upsample_bilinear2d.vec_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::upsample_bilinear2d_vec_out
+
+- op: upsample_nearest2d.vec_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::upsample_nearest2d_vec_out
+
 - op: var.correction_out
   kernels:
     - arg_meta: null
@@ -881,3 +956,13 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::zeros_out
+
+- func: dim_order_ops::_empty_dim_order.out(int[] size, *, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_empty_dim_order_out
+
+- func: dim_order_ops::_to_dim_order_copy.out(Tensor self, *, bool non_blocking=False, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_to_dim_order_copy_out

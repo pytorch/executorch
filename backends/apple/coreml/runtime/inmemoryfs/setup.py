@@ -30,7 +30,7 @@ ext_modules = [
         cxx_std=cxx_std,
         extra_compile_args=["-mmacosx-version-min=10.15", "-g"],
         include_dirs=[
-            "../../third-party/nlohmann_json/single_include/nlohmann",
+            "../../third-party/nlohmann_json/single_include",
             ".",
             "../util",
         ],

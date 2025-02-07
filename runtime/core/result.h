@@ -19,8 +19,8 @@
 #include "executorch/runtime/core/error.h"
 #include "executorch/runtime/platform/assert.h"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Result type wrapping either a value of type T or an error.
@@ -92,7 +92,7 @@ class Result final {
    * If true, it is guaranteed that `error()` will return `Error::Ok`.
    * If false, it is guaranteed that `error()` will not return `Error::Ok`.
    */
-  __ET_NODISCARD bool ok() const {
+  ET_NODISCARD bool ok() const {
     return hasValue_;
   }
 
@@ -103,7 +103,7 @@ class Result final {
    * If this does not return `Error:Ok`, it is guaranteed that `ok()` will
    * return false.
    */
-  __ET_NODISCARD Error error() const {
+  ET_NODISCARD Error error() const {
     if (hasValue_) {
       return Error::Ok;
     } else {
@@ -198,6 +198,14 @@ T* Result<T>::operator->() {
   return &value_;
 }
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::Result;
 } // namespace executor
 } // namespace torch
 

@@ -28,7 +28,7 @@ import torch
 import executorch.exir
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
-from executorch.backends.apple.coreml.partition.coreml_partitioner import CoreMLPartitioner
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 
 class Model(torch.nn.Module):
     def __init__(self):
@@ -65,14 +65,14 @@ To quantize a Program in a Core ML favored way, the client may utilize **CoreMLQ
 import torch
 import executorch.exir
 
-from torch._export import capture_pre_autograd_graph
+from torch.export import export_for_training
 from torch.ao.quantization.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
 
-from executorch.backends.apple.coreml.quantizer.coreml_quantizer import CoreMLQuantizer
+from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
 from coremltools.optimize.torch.quantization.quantization_config import (
     LinearQuantizerConfig,
     QuantizationScheme,
@@ -93,14 +93,14 @@ class Model(torch.nn.Module):
 source_model = Model()
 example_inputs = (torch.randn((1, 3, 256, 256)), )
 
-pre_autograd_aten_dialect = capture_pre_autograd_graph(model, example_inputs)
+pre_autograd_aten_dialect = export_for_training(source_model, example_inputs).module()
 
 quantization_config = LinearQuantizerConfig.from_dict(
     {
         "global_config": {
             "quantization_scheme": QuantizationScheme.symmetric,
-            "activation_dtype": torch.uint8,
-            "weight_dtype": torch.int8,
+            "activation_dtype": torch.quint8,
+            "weight_dtype": torch.qint8,
             "weight_per_channel": True,
         }
     }

@@ -17,16 +17,6 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "tensor_util_test",
-        srcs = ["tensor_util_test.cpp"],
-        deps = [
-            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-        ],
-    )
-
-    runtime.cxx_test(
         name = "operator_impl_example_test",
         srcs = ["operator_impl_example_test.cpp"],
         deps = [
@@ -42,5 +32,25 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+    )
+
+    for aten_mode in (True, False):
+        aten_suffix = "_aten" if aten_mode else ""
+        runtime.cxx_test(
+            name = "tensor_util_test" + aten_suffix,
+            srcs = ["tensor_util_test.cpp"],
+            deps = [
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
+            ],
+        )
+
+    runtime.cxx_test(
+        name = "tensor_shape_to_c_string_test",
+        srcs = ["tensor_shape_to_c_string_test.cpp"],
+        deps = [
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
         ],
     )

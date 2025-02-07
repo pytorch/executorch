@@ -21,10 +21,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::MemoryFormat;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::MemoryFormat;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 // To further emphasize the accuracy of our op_to, we test the conversion
@@ -36,7 +36,9 @@ typedef std::map<
           std::type_index,
           std::variant<
             std::vector<float>,
-            std::vector<double>>>
+            std::vector<double>,
+            std::vector<executorch::aten::Half>,
+            std::vector<executorch::aten::BFloat16>>>
         FloatingTypeToDataMap;
 
 typedef std::map<
@@ -106,7 +108,7 @@ class OpToTest : public OperatorTest {
       Tensor ret = op_to_copy_out(
           /*self=*/input,
           /*non_blocking=*/false,
-          exec_aten::MemoryFormat::Contiguous,
+          executorch::aten::MemoryFormat::Contiguous,
           output);
 
       Tensor expected = tf_out.make(test_case.sizes, data_out);
@@ -133,7 +135,7 @@ class OpToTest : public OperatorTest {
     Tensor ret = op_to_copy_out(
         /*self=*/input,
         /*non_blocking=*/false,
-        exec_aten::MemoryFormat::Contiguous,
+        executorch::aten::MemoryFormat::Contiguous,
         output);
 
     Tensor expected = tf_out.make({(int)data_out.size()}, data_out);
@@ -161,7 +163,7 @@ class OpToTest : public OperatorTest {
     Tensor ret = op_to_copy_out(
         /*self=*/input,
         /*non_blocking=*/false,
-        exec_aten::MemoryFormat::Contiguous,
+        executorch::aten::MemoryFormat::Contiguous,
         output);
 
     Tensor expected = tf_out.make({(int)data_out.size()}, data_out);
@@ -203,7 +205,7 @@ class OpToTest : public OperatorTest {
     Tensor ret = op_to_copy_out(
         /*self=*/input,
         /*non_blocking=*/false,
-        exec_aten::MemoryFormat::Contiguous,
+        executorch::aten::MemoryFormat::Contiguous,
         output);
 
     Tensor expected = tf_out.make(test_case.sizes, test_case.data_out);
@@ -309,9 +311,9 @@ TEST_F(OpToTest, AllDtypesSupported) {
       ScalarType::OUTPUT_DTYPE>(test_cases);
 
 #define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
-  ET_FORALL_REAL_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
+  ET_FORALL_REALHBF16_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 
 #undef TEST_ENTRY
 #undef TEST_KERNEL
@@ -323,14 +325,14 @@ TEST_F(OpToTest, BoolTests) {
 #define TEST_TO_BOOL(INPUT_CTYPE, INPUT_DTYPE)               \
   test_runner_to_bool<INPUT_CTYPE, ScalarType::INPUT_DTYPE>( \
       test_case_to_bool, result_to_bool);
-  ET_FORALL_REAL_TYPES(TEST_TO_BOOL);
+  ET_FORALL_REALHBF16_TYPES(TEST_TO_BOOL);
 
   std::vector<uint8_t> test_case_from_bool = {true, true, false};
   std::vector<double> result_from_bool = {1.0, 1.0, 0};
 #define TEST_FROM_BOOL(OUTPUT_CTYPE, OUTPUT_DTYPE)               \
   test_runner_from_bool<OUTPUT_CTYPE, ScalarType::OUTPUT_DTYPE>( \
       test_case_from_bool, result_from_bool);
-  ET_FORALL_REAL_TYPES(TEST_FROM_BOOL);
+  ET_FORALL_REALHBF16_TYPES(TEST_FROM_BOOL);
 }
 
 TEST_F(OpToTest, NanInfSupported) {
@@ -349,9 +351,9 @@ TEST_F(OpToTest, NanInfSupported) {
       ScalarType::OUTPUT_DTYPE>(test_cases);
 
 #define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
-  ET_FORALL_FLOAT_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
+  ET_FORALL_FLOATHBF16_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 
 #undef TEST_ENTRY
 #undef TEST_KERNEL
@@ -381,6 +383,13 @@ TEST_F(OpToTest, HardcodeFloatConvertInt) {
       -0.30919688936285893988};
   // clang-format on
 
+  std::vector<executorch::aten::Half> half_data;
+  std::vector<executorch::aten::BFloat16> bf16_data;
+  for (auto d : double_data) {
+    half_data.emplace_back(d);
+    bf16_data.emplace_back(d);
+  }
+
   std::vector<int64_t> int64_data = {
       -1, -4, 2, -2, 3, 3, -3, -4, 3, 3, 0, 2, 0, -1, 0};
   std::vector<int32_t> int32_data = {
@@ -394,6 +403,8 @@ TEST_F(OpToTest, HardcodeFloatConvertInt) {
   FloatingTypeToDataMap floating_point_data;
   floating_point_data[typeid(float)] = float_data;
   floating_point_data[typeid(double)] = double_data;
+  floating_point_data[typeid(executorch::aten::Half)] = half_data;
+  floating_point_data[typeid(executorch::aten::BFloat16)] = bf16_data;
 
   // Gathering all int data together for better traversial
   IntTypeToDataMap int_data;
@@ -412,7 +423,7 @@ TEST_F(OpToTest, HardcodeFloatConvertInt) {
 #define TEST_ENTRY(INPUT_CTYPE, INPUT_DTYPE) \
   ET_FORALL_INT_TYPES_WITH2(INPUT_CTYPE, INPUT_DTYPE, TEST_KERNEL);
 
-  ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 }
 
 TEST_F(OpToTest, MismatchedSizesDie) {
@@ -427,7 +438,7 @@ TEST_F(OpToTest, MismatchedSizesDie) {
       op_to_copy_out(
           input,
           /*non_blocking=*/false,
-          exec_aten::MemoryFormat::Contiguous,
+          executorch::aten::MemoryFormat::Contiguous,
           out));
 }
 
@@ -449,14 +460,14 @@ TEST_F(OpToTest, MismatchedMemoryFormatDies) {
       op_to_copy_out(
           input,
           /*non_blocking=*/false,
-          static_cast<exec_aten::MemoryFormat>(55),
+          static_cast<executorch::aten::MemoryFormat>(55),
           out));
   // memory format can be null
   EXPECT_TENSOR_EQ(
       op_to_copy_out(
           input,
           /*non_blocking=*/false,
-          /*memory_format=*/exec_aten::nullopt,
+          /*memory_format=*/executorch::aten::nullopt,
           out),
       input);
 }
@@ -474,7 +485,7 @@ TEST_F(OpToTest, MismatchedBlockingDie) {
       op_to_copy_out(
           input,
           /*non_blocking=*/true,
-          exec_aten::MemoryFormat::Contiguous,
+          executorch::aten::MemoryFormat::Contiguous,
           out));
 }
 

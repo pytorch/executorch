@@ -1,0 +1,27 @@
+name: Propose to merge ghstack orig PRs to main
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - 'gh/*/[0-9]+/base'
+
+jobs:
+  ghstack_merge_to_main:
+    name: Try to create a PR with ghstack /orig branch
+    runs-on: ubuntu-22.04
+    environment: cherry-pick-bot
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: '0'
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Try to merge PR to main
+      run: |
+        pip install pygithub
+
+        python .github/scripts/propose_ghstack_orig_pr.py --ref $GITHUB_REF --repo pytorch/executorch
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_PYTORCHBOT_CHERRY_PICK_TOKEN }}
+        GITHUB_REF: ${{ github.ref }}

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Example script for exporting simple models to flatbuffer
 
 import argparse
@@ -12,12 +14,16 @@ import logging
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.sdk import generate_etrecord
+from executorch.devtools import generate_etrecord
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge_transform_and_lower,
+)
+from executorch.extension.export_util.utils import save_pte_program
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
-from ..portable.utils import export_to_edge, save_pte_program
 from . import MODEL_NAME_TO_OPTIONS
 from .quantization.utils import quantize
 
@@ -73,36 +79,36 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
         )
 
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
+    ep = torch.export.export_for_training(model, example_inputs)
+    model = ep.module()
 
     if args.quantize:
         logging.info("Quantizing Model...")
         # TODO(T165162973): This pass shall eventually be folded into quantizer
         model = quantize(model, example_inputs)
+        ep = torch.export.export_for_training(model, example_inputs)
 
-    edge = export_to_edge(
-        model,
-        example_inputs,
-        edge_compile_config=EdgeCompileConfig(
+    edge = to_edge_transform_and_lower(
+        ep,
+        partitioner=[XnnpackPartitioner()],
+        compile_config=EdgeCompileConfig(
             _check_ir_validity=False if args.quantize else True,
+            _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
         ),
     )
-    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
+    logging.info(f"Exported and lowered graph:\n{edge.exported_program().graph}")
 
     # this is needed for the ETRecord as lowering modifies the graph in-place
     edge_copy = copy.deepcopy(edge)
 
-    edge = edge.to_backend(XnnpackPartitioner())
-    logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
-
     exec_prog = edge.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
     if args.etrecord is not None:

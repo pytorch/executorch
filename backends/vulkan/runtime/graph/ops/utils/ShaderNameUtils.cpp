@@ -10,28 +10,62 @@
 
 namespace vkcompute {
 
-void add_dtype_suffix(std::string& kernel_name, const vTensor& tensor) {
-  switch (tensor.image().format()) {
-    case VK_FORMAT_R32G32B32A32_SFLOAT:
+void add_storage_type_suffix(
+    std::string& kernel_name,
+    const utils::StorageType storage_type) {
+  switch (storage_type) {
+    case utils::kBuffer:
+      kernel_name += "_buffer";
+      break;
+    case utils::kTexture3D:
+      kernel_name += "_texture3d";
+      break;
+    case utils::kTexture2D:
+      kernel_name += "_texture2d";
+      break;
+  }
+}
+
+void add_storage_type_suffix(
+    std::string& kernel_name,
+    const api::vTensor& tensor) {
+  return add_storage_type_suffix(kernel_name, tensor.storage_type());
+}
+
+void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype) {
+  switch (dtype) {
+    case vkapi::kFloat:
       kernel_name += "_float";
       break;
-    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case vkapi::kHalf:
       kernel_name += "_half";
       break;
-    case VK_FORMAT_R32G32B32A32_SINT:
+    case vkapi::kInt:
       kernel_name += "_int";
+      break;
+    case vkapi::kChar:
+    case vkapi::kQInt8:
+      kernel_name += "_int8";
+      break;
+    case vkapi::kByte:
+    case vkapi::kQUInt8:
+      kernel_name += "_uint8";
       break;
     default:
       break;
   }
 }
 
-void add_ndim_suffix(std::string& kernel_name, const vTensor& tensor) {
+void add_dtype_suffix(std::string& kernel_name, const api::vTensor& tensor) {
+  return add_dtype_suffix(kernel_name, tensor.dtype());
+}
+
+void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor) {
   switch (tensor.storage_type()) {
-    case api::kTexture3D:
+    case utils::kTexture3D:
       kernel_name += "_3d";
       break;
-    case api::kTexture2D:
+    case utils::kTexture2D:
       kernel_name += "_2d";
       break;
     default:
@@ -39,20 +73,26 @@ void add_ndim_suffix(std::string& kernel_name, const vTensor& tensor) {
   }
 }
 
-void add_memory_layout_suffix(std::string& kernel_name, const vTensor& tensor) {
-  switch (tensor.gpu_memory_layout()) {
-    case api::kChannelsPacked:
-      kernel_name += "_C_packed";
-      break;
-    case api::kHeightPacked:
-      kernel_name += "_H_packed";
-      break;
-    case api::kWidthPacked:
+void add_packed_dim_suffix(std::string& kernel_name, const int32_t packed_dim) {
+  switch (packed_dim) {
+    case WHCN::kWidthDim:
       kernel_name += "_W_packed";
       break;
-    default:
+    case WHCN::kHeightDim:
+      kernel_name += "_H_packed";
       break;
+    case WHCN::kChannelsDim:
+      kernel_name += "_C_packed";
+      break;
+    default:
+      VK_THROW("Invalid packed dim!");
   }
+}
+
+void add_packed_dim_suffix(
+    std::string& kernel_name,
+    const api::vTensor& tensor) {
+  return add_packed_dim_suffix(kernel_name, tensor.packed_dim());
 }
 
 } // namespace vkcompute

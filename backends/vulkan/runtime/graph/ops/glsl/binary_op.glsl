@@ -14,58 +14,56 @@
 
 #define op(X, Y, A) ${OPERATOR}
 
+layout(std430) buffer;
+
+${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "t_other", DTYPE, STORAGE)}
+
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"
 
-layout(std430) buffer;
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-layout(set = 0, binding = 2) uniform PRECISION sampler3D image_other;
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+const lowp int packed_dim = unhash_packed_dim(out_layout);
 
-layout(set = 0, binding = 3) uniform PRECISION restrict OutSizes {
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
+
+${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
+const lowp ivec4 other_axis_map = unhash_axis_map(other_layout);
+
+layout(push_constant) uniform restrict Block {
   ivec4 out_sizes;
-};
-
-layout(set = 0, binding = 4) uniform PRECISION restrict InSizes {
   ivec4 in_sizes;
-};
-
-layout(set = 0, binding = 5) uniform PRECISION restrict OtherSizes {
   ivec4 other_sizes;
-};
-
-layout(set = 0, binding = 6) uniform PRECISION restrict BroadcastParams {
   ivec2 broadcast_params;
-};
-
-layout(set = 0, binding = 7) uniform PRECISION restrict Alpha {
   float alpha;
 };
 
-layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
-
-layout(constant_id = 3) const int packed_dim = C_DIM;
-
 void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx(pos, out_sizes, packed_dim);
+  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
+  const ivec4 tidx = lpos_to_tidx(lpos, out_sizes, out_axis_map.w, packed_dim);
 
-  if (any(greaterThanEqual(idx, out_sizes))) {
+  if (any(greaterThanEqual(tidx, out_sizes))) {
     return;
   }
 
-  ivec4 in_idx = broadcast_indices(idx, in_sizes);
-  VEC4_T in_texel = VEC4_T(texelFetch(
-    image_in,
-    to_texture_pos(in_idx, in_sizes, packed_dim),
-    0));
+  // broadcast on logical sizes
+  ivec4 in_idx = broadcast_indices(tidx, in_sizes);
+  VEC4_T in_texel = VEC4_T(load_texel(
+    t_in,
+    // read axis mapped texel
+    tidx_to_pos(in_idx, in_sizes, in_axis_map, packed_dim)));
 
-  ivec4 other_idx = broadcast_indices(idx, other_sizes);
-  VEC4_T other_texel = VEC4_T(texelFetch(
-    image_other,
-    to_texture_pos(other_idx, other_sizes, packed_dim),
-    0));
+  // broadcast on logical sizes
+  ivec4 other_idx = broadcast_indices(tidx, other_sizes);
+  VEC4_T other_texel = VEC4_T(load_texel(
+    t_other,
+    // read axis mapped texel
+    tidx_to_pos(other_idx, other_sizes, other_axis_map, packed_dim)));
 
   // Check boolean broadcast flags; we use ivec2 instead of bvec2 for alignment.
   if (broadcast_params.x > 0) {
@@ -75,5 +73,9 @@ void main() {
     other_texel = other_texel.xxxx;
   }
 
-  imageStore(image_out, pos, VEC4_T(op(in_texel, other_texel, alpha)));
+  write_texel_lpos(
+    t_out,
+    lpos,
+    VEC4_T(op(in_texel, other_texel, alpha)),
+    out_axis_map);
 }

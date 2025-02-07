@@ -25,13 +25,13 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 namespace {
 
 template <typename IN_T, typename OUT_T>
 void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
-  const IN_T* __restrict__ input_data_base = input.data_ptr<IN_T>();
-  OUT_T* __restrict__ output_data_base = out.data_ptr<OUT_T>();
+  const IN_T* __restrict__ input_data_base = input.const_data_ptr<IN_T>();
+  OUT_T* __restrict__ output_data_base = out.mutable_data_ptr<OUT_T>();
 
   if (input.dim() == 0) {
     output_data_base[0] = 0;
@@ -125,7 +125,7 @@ void log_softmax_wrapper(const Tensor& X, int64_t dim, Tensor& out) {
 // _log_softmax.out(Tensor self, int dim, bool half_to_float, *, Tensor(a!) out)
 // -> Tensor(a!)
 Tensor& opt_log_softmax_out(
-    RuntimeContext& context,
+    KernelRuntimeContext& context,
     const Tensor& self,
     int64_t dim,
     bool half_to_float,

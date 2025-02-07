@@ -11,5 +11,10 @@ def define_common_targets():
         name = "temp_file",
         srcs = [],
         exported_headers = ["temp_file.h"],
-        visibility = ["//executorch/extension/data_loader/test/...", "//executorch/extension/testing_util/test/..."],
+        visibility = [
+            "//executorch/extension/data_loader/test/...",
+            "//executorch/extension/testing_util/test/...",
+            "//executorch/extension/fb/ptez/decompression_methods/test/...",
+            "//executorch/extension/fb/ptez/test/...",
+        ],
     )

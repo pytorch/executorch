@@ -71,8 +71,8 @@ void ComputeGraph::print_readable() {
             << std::setfill(' ') << std::endl;
 
   std::cout << std::setw(6) << "idx" << std::setw(10) << "type" << std::setw(20)
-            << "sizes" << std::setw(10) << "node_type" << std::setw(10)
-            << "so_idx" << std::endl;
+            << "sizes" << std::setw(10) << "node_type" << std::setw(15)
+            << "storage_bytes" << std::setw(10) << "so_idx" << std::endl;
 
   size_t value_idx = 0;
   for (Value& val : values_) {
@@ -81,7 +81,7 @@ void ComputeGraph::print_readable() {
     // sizes
     std::cout << std::setw(20);
     if (val.isTensor()) {
-      const vTensor& v_tensor = val.toTensor();
+      const api::vTensor& v_tensor = val.toTensor();
       std::stringstream ss;
       ss << v_tensor.sizes();
       std::cout << ss.str();
@@ -106,6 +106,16 @@ void ComputeGraph::print_readable() {
       } else {
         std::cout << "";
       }
+    }
+
+    // Actual storage bytes used
+    std::cout << std::setw(15);
+    if (val.isTensor()) {
+      const api::vTensor& v_tensor = val.toTensor();
+      auto memory_reqs = v_tensor.get_memory_requirements();
+      std::cout << memory_reqs.size;
+    } else {
+      std::cout << "";
     }
 
     std::cout << std::setw(10);
@@ -146,11 +156,11 @@ void ComputeGraph::print_readable() {
   size_t node_idx = 0;
   for (const std::unique_ptr<ExecuteNode>& node : execute_nodes()) {
     std::cout << std::setw(6) << node_idx;
-    std::cout << std::setw(32) << node->shader_.kernel_name;
+    std::cout << std::setw(32) << node->name();
 
     std::stringstream read_s;
     for (const ArgGroup& arg_group : node->args_) {
-      if (arg_group.access != api::MemoryAccessType::READ) {
+      if (arg_group.access != vkapi::MemoryAccessType::READ) {
         continue;
       }
       read_s << arg_group.refs;
@@ -159,7 +169,7 @@ void ComputeGraph::print_readable() {
 
     std::stringstream write_s;
     for (const ArgGroup& arg_group : node->args_) {
-      if (arg_group.access != api::MemoryAccessType::WRITE) {
+      if (arg_group.access != vkapi::MemoryAccessType::WRITE) {
         continue;
       }
       write_s << arg_group.refs;

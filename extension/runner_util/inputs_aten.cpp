@@ -14,10 +14,12 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/method_meta.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+using executorch::runtime::Error;
+using executorch::runtime::Method;
+using executorch::runtime::TensorInfo;
 
+namespace executorch {
+namespace extension {
 namespace internal {
 
 Error fill_and_set_input(
@@ -38,7 +40,5 @@ Error fill_and_set_input(
 }
 
 } // namespace internal
-
-} // namespace util
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch

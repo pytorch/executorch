@@ -77,7 +77,7 @@ bool check_softmax_args(
 }
 
 Error resize_glu_out(const Tensor& in, int64_t dim, Tensor& out) {
-  exec_aten::SizesType expected_output_size[kTensorDimensionLimit];
+  executorch::aten::SizesType expected_output_size[kTensorDimensionLimit];
 
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
   for (size_t i = 0; i < in.dim(); i++) {
@@ -85,7 +85,7 @@ Error resize_glu_out(const Tensor& in, int64_t dim, Tensor& out) {
         (i == non_negative_dim) ? (in.size(i) / 2) : in.size(i);
   }
 
-  ArrayRef<exec_aten::SizesType> output_size{
+  ArrayRef<executorch::aten::SizesType> output_size{
       expected_output_size, static_cast<size_t>(out.dim())};
 
   return resize_tensor(out, output_size);

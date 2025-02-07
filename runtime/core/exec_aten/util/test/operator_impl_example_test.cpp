@@ -21,9 +21,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using torch::executor::testing::TensorFactory;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::runtime::testing::TensorFactory;
 
 //
 // A sample implementation of a PyTorch operator using the utilities in this

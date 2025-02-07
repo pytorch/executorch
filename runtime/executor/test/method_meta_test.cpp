@@ -6,21 +6,22 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/executor/method_meta.h>
+
 #include <cstdlib>
 #include <filesystem>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/executor/program.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::MethodMeta;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::TensorInfo;
+using executorch::runtime::Error;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::TensorInfo;
 using torch::executor::util::FileDataLoader;
 
 class MethodMetaTest : public ::testing::Test {
@@ -56,10 +57,11 @@ void check_tensor(const TensorInfo& tensor_info) {
   EXPECT_EQ(sizes.size(), 2);
   EXPECT_EQ(sizes[0], 2);
   EXPECT_EQ(sizes[1], 2);
-  EXPECT_EQ(tensor_info.scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor_info.scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(dim_order.size(), 2);
   EXPECT_EQ(dim_order[0], 0);
   EXPECT_EQ(dim_order[1], 1);
+  EXPECT_EQ(tensor_info.is_memory_planned(), true);
   EXPECT_EQ(tensor_info.nbytes(), 16);
 }
 } // namespace
@@ -89,6 +91,9 @@ TEST_F(MethodMetaTest, MethodMetaApi) {
   EXPECT_EQ(
       method_meta->non_const_buffer_size(1).error(),
       Error::InvalidArgument); // Deprecated API
+
+  // Number instructions in method is nonzero
+  EXPECT_NE(method_meta->num_instructions(), 0);
 
   // Missing method fails
   EXPECT_EQ(

@@ -5,7 +5,7 @@ load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 oncall("executorch")
 
 cpp_unittest(
-    name = "cpptest",
+    name = "pytree_test",
     srcs = ["test_pytree.cpp"],
     deps = ["//executorch/extension/pytree:pytree"],
 )
@@ -17,7 +17,7 @@ cpp_unittest(
 )
 
 python_unittest(
-    name = "test",
+    name = "pybindings_test",
     srcs = [
         "test.py",
     ],

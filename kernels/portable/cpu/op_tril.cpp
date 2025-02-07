@@ -14,8 +14,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
+using executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -57,7 +57,7 @@ void apply_tril(
  */
 template <typename CTYPE>
 void tril_kernel(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t diagonal,
     const Tensor& out) {
@@ -131,7 +131,7 @@ void tril_kernel(
  *       main one are also captured.
  */
 Tensor& tril_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t diagonal,
     Tensor& out) {
@@ -145,6 +145,11 @@ Tensor& tril_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
+
   if (self.numel() == 0) {
     return out;
   }
@@ -153,7 +158,7 @@ Tensor& tril_out(
   clear_out(out);
 
   ScalarType out_type = out.scalar_type();
-  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, __func__, CTYPE, [&]() {
     tril_kernel<CTYPE>(ctx, self, diagonal, out);
   });
 

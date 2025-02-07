@@ -13,8 +13,9 @@
 /// Example usage:
 /// ```
 /// Tensor&
-/// my_op(RuntimeContext& ctx, const Tensor& self, const Tensor& other, Tensor&
-/// out) {
+/// my_op(KernelRuntimeContext& ctx, const Tensor& self, const Tensor& other,
+///       Tensor& out)
+/// {
 ///   // ...
 ///   return out;
 /// }
@@ -47,67 +48,73 @@
 #include <type_traits>
 #include <typeinfo>
 
-namespace torch {
-namespace executor {
-
+namespace executorch {
+namespace runtime {
 class KernelRuntimeContext; // Forward declaration
-using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
+} // namespace runtime
+} // namespace executorch
 
-// evalue_to_arg
+namespace executorch {
+namespace extension {
+
+// This extension has a lot of generic internal names like "size"; use a unique
+// internal namespace to avoid conflicts with other extensions.
+namespace kernel_util_internal {
+
 template <class T>
 struct decay_if_not_tensor final {
   using type = std::decay_t<T>;
 };
 template <>
-struct decay_if_not_tensor<exec_aten::Tensor&> final {
-  using type = exec_aten::Tensor&;
+struct decay_if_not_tensor<executorch::aten::Tensor&> final {
+  using type = executorch::aten::Tensor&;
 };
 template <>
-struct decay_if_not_tensor<const exec_aten::Tensor&> final {
-  using type = const exec_aten::Tensor&;
+struct decay_if_not_tensor<const executorch::aten::Tensor&> final {
+  using type = const executorch::aten::Tensor&;
 };
 
 template <class T>
 struct evalue_to_arg final {
-  static T call(EValue& v) {
+  static T call(executorch::runtime::EValue& v) {
     return std::move(v).to<T>();
   }
 };
 
 template <>
-struct evalue_to_arg<exec_aten::Tensor&> final {
-  static exec_aten::Tensor& call(EValue& v) {
+struct evalue_to_arg<executorch::aten::Tensor&> final {
+  static executorch::aten::Tensor& call(executorch::runtime::EValue& v) {
     return v.toTensor();
   }
 };
 
 template <>
-struct evalue_to_arg<const exec_aten::Tensor&> final {
-  static const exec_aten::Tensor& call(EValue& v) {
+struct evalue_to_arg<const executorch::aten::Tensor&> final {
+  static const executorch::aten::Tensor& call(executorch::runtime::EValue& v) {
     return v.toTensor();
   }
 };
 
 template <class T>
-struct evalue_to_arg<exec_aten::optional<T>> final {
-  static exec_aten::optional<T> call(EValue& v) {
+struct evalue_to_arg<executorch::aten::optional<T>> final {
+  static executorch::aten::optional<T> call(executorch::runtime::EValue& v) {
     return v.toOptional<T>();
   }
 };
 
 template <class T>
-struct evalue_to_arg<exec_aten::ArrayRef<exec_aten::optional<T>>> final {
-  static exec_aten::ArrayRef<exec_aten::optional<T>> call(EValue& v) {
+struct evalue_to_arg<executorch::aten::ArrayRef<executorch::aten::optional<T>>>
+    final {
+  static executorch::aten::ArrayRef<executorch::aten::optional<T>> call(
+      executorch::runtime::EValue& v) {
     return v.toListOptionalTensor();
   }
 };
 
-// Call functor with args from stack
-
 template <class Functor, size_t... evalue_arg_indices, typename... ArgTypes>
-void call_functor_with_args_from_stack_(
-    RuntimeContext& ctx,
-    EValue** stack,
+void call_functor_with_args_from_stack(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    executorch::runtime::EValue** stack,
     std::index_sequence<evalue_arg_indices...>,
     typelist<ArgTypes...>*) {
   (*Functor::func_ptr())(
@@ -115,6 +122,8 @@ void call_functor_with_args_from_stack_(
       evalue_to_arg<typename decay_if_not_tensor<ArgTypes>::type>::call(
           *stack[evalue_arg_indices])...);
 }
+
+} // namespace kernel_util_internal
 
 /**
  * WrapUnboxedIntoFunctor: Given a function pointer, wrap it into a functor that
@@ -124,23 +133,29 @@ void call_functor_with_args_from_stack_(
 template <class FuncType>
 struct WrapUnboxedIntoFunctor {
   static_assert(
-      is_compile_time_function_pointer<FuncType>::value,
+      kernel_util_internal::is_compile_time_function_pointer<FuncType>::value,
       "Can't handle function other than EXECUTORCH_FN");
   using TrueType = typename FuncType::FuncType;
-  using ReturnType = typename infer_function_traits_t<TrueType>::return_type;
-  using ArgsType = typename infer_function_traits_t<TrueType>::parameter_types;
-  // check if the first argument is RuntimeContext, if so, remove it
+  using ReturnType = typename kernel_util_internal::infer_function_traits_t<
+      TrueType>::return_type;
+  using ArgsType = typename kernel_util_internal::infer_function_traits_t<
+      TrueType>::parameter_types;
+  // check if the first argument is KernelRuntimeContext, if so, remove it
   static constexpr bool first_arg_is_context = std::is_same<
-      RuntimeContext,
-      std::remove_reference_t<head_with_default_t<void, ArgsType>>>::value;
+      ::executorch::runtime::KernelRuntimeContext,
+      std::remove_reference_t<
+          kernel_util_internal::head_with_default_t<void, ArgsType>>>::value;
   using ContextRemovedArgsType = std::conditional_t<
       first_arg_is_context,
-      drop_if_nonempty_t<ArgsType, 1>,
+      kernel_util_internal::drop_if_nonempty_t<ArgsType, 1>,
       ArgsType>;
 
-  static void call(RuntimeContext& ctx, EValue** stack) {
-    constexpr size_t num_inputs = size<ContextRemovedArgsType>::value;
-    return call_functor_with_args_from_stack_<FuncType>(
+  static void call(
+      ::executorch::runtime::KernelRuntimeContext& ctx,
+      executorch::runtime::EValue** stack) {
+    constexpr size_t num_inputs =
+        kernel_util_internal::size<ContextRemovedArgsType>::value;
+    return kernel_util_internal::call_functor_with_args_from_stack<FuncType>(
         ctx,
         stack,
         std::make_index_sequence<num_inputs>(),
@@ -149,14 +164,35 @@ struct WrapUnboxedIntoFunctor {
 };
 
 template <typename FuncType>
-static Kernel make_boxed_kernel(const char* name, FuncType) {
-  return Kernel(name, WrapUnboxedIntoFunctor<FuncType>::call);
+static executorch::runtime::Kernel make_boxed_kernel(
+    const char* name,
+    FuncType) {
+  return executorch::runtime::Kernel(
+      name, WrapUnboxedIntoFunctor<FuncType>::call);
 }
 
+} // namespace extension
+} // namespace executorch
+
+// Inspired from C10_CONCATENATE
+#define ET_CONCATENATE_IMPL(s1, s2) s1##s2
+#define ET_CONCATENATE(s1, s2) ET_CONCATENATE_IMPL(s1, s2)
+#define ET_UID __LINE__
+
+#define EXECUTORCH_LIBRARY(ns, op_name, func) \
+  _EXECUTORCH_LIBRARY_IMPL(ns, op_name, func, ET_UID)
+
+#define _EXECUTORCH_LIBRARY_IMPL(ns, op_name, func, uid) \
+  static auto ET_CONCATENATE(res_##ns##_, uid) =         \
+      ::executorch::runtime::register_kernel(            \
+          ::executorch::extension::make_boxed_kernel(    \
+              #ns "::" op_name, EXECUTORCH_FN(func)))
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::make_boxed_kernel;
+using ::executorch::extension::WrapUnboxedIntoFunctor;
 } // namespace executor
 } // namespace torch
-
-#define EXECUTORCH_LIBRARY(ns, op_name, func)                 \
-  static auto res_##ns = ::torch::executor::register_kernels( \
-      ::torch::executor::make_boxed_kernel(                   \
-          #ns "::" op_name, EXECUTORCH_FN(func)))

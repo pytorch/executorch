@@ -21,15 +21,15 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::nullopt;
-using exec_aten::optional;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::nullopt;
+using executorch::aten::optional;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-using OptScalar = exec_aten::optional<Scalar>;
+using OptScalar = executorch::aten::optional<Scalar>;
 
 class OpClampOutTest : public OperatorTest {
  protected:
@@ -147,8 +147,16 @@ class OpClampOutTest : public OperatorTest {
   // Test cases that are compatible with float and double.
   template <ScalarType DTYPE>
   void run_floating_point_test_cases() {
-    constexpr auto kInfinity =
-        std::numeric_limits<typename TensorFactory<DTYPE>::ctype>::infinity();
+    using ctype = typename TensorFactory<DTYPE>::ctype;
+    using opt_infinity_type = std::conditional_t<
+        std::is_same<ctype, executorch::aten::Half>::value,
+        float,
+        ctype>;
+    constexpr auto kInfinity = std::numeric_limits<ctype>::infinity();
+    const auto kOptInfinity =
+        OptScalar(static_cast<opt_infinity_type>(kInfinity));
+    const auto kOptMinusInfinity =
+        OptScalar(static_cast<opt_infinity_type>(-kInfinity));
     std::vector<ClampTestCase<DTYPE>> test_cases = {
         {
             std::string(__func__) + ": Simple negative/positive clamp",
@@ -178,7 +186,7 @@ class OpClampOutTest : public OperatorTest {
             std::string(__func__) + ": Infinite min",
             {2, 2}, // sizes
             {-10.1, -1.1, 1.1, 10.1}, // input_data
-            OptScalar(-kInfinity), // min
+            kOptMinusInfinity, // min
             OptScalar(5.5), // max
             {-10.1, -1.1, 1.1, 5.5}, // expected_data
         },
@@ -187,7 +195,7 @@ class OpClampOutTest : public OperatorTest {
             {2, 2}, // sizes
             {-10.1, -1.1, 1.1, 10.1}, // input_data
             OptScalar(-5.5), // min
-            OptScalar(kInfinity), // max
+            kOptInfinity, // max
             {-5.5, -1.1, 1.1, 10.1}, // expected_data
         },
         {
@@ -252,7 +260,7 @@ class OpClampTensorOutTest : public OperatorTest {
       const optional<Tensor>& min,
       const optional<Tensor>& max,
       Tensor& out) {
-    exec_aten::RuntimeContext context{};
+    executorch::runtime::KernelRuntimeContext context{};
     return torch::executor::aten::clamp_outf(context, self, min, max, out);
   }
 };
@@ -283,6 +291,15 @@ TEST_F(OpClampOutTest, IntTensors) {
 TEST_F(OpClampOutTest, LongTensors) {
   run_unsigned_integer_test_cases<ScalarType::Long>();
   run_signed_integer_test_cases<ScalarType::Long>();
+}
+
+TEST_F(OpClampOutTest, HalfTensors) {
+  // Note that the integer test cases test the situation where the min/max value
+  // Scalars are integer types, demonstrating that floating point types can be
+  // clamped to integer values.
+  run_unsigned_integer_test_cases<ScalarType::Half>();
+  run_signed_integer_test_cases<ScalarType::Half>();
+  run_floating_point_test_cases<ScalarType::Half>();
 }
 
 TEST_F(OpClampOutTest, FloatTensors) {
@@ -463,6 +480,54 @@ TEST_F(OpClampTensorOutTest, SmokeTest) {
   Tensor max = tf_max.make({2, 1}, {2, 5});
   Tensor out = tf_out.zeros({2, 3});
   Tensor expected = tf_out.make({2, 3}, {2, 2, 2, 3, 3, 4});
+
+  op_clamp_tensor_out(in, min, max, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpClampTensorOutTest, DowncastingSmokeTest) {
+  TensorFactory<ScalarType::Byte> tf_in;
+  TensorFactory<ScalarType::Short> tf_min;
+  TensorFactory<ScalarType::Int> tf_max;
+  TensorFactory<ScalarType::Char> tf_out;
+
+  Tensor in = tf_in.make({}, {5});
+  Tensor min = tf_min.make({}, {-129});
+  Tensor max = tf_max.make({}, {300});
+  Tensor out = tf_out.zeros({});
+  Tensor expected = tf_out.make({}, {5});
+
+  op_clamp_tensor_out(in, min, max, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpClampTensorOutTest, DowncastingSmokeTest2) {
+  TensorFactory<ScalarType::Short> tf_in;
+  TensorFactory<ScalarType::Short> tf_min;
+  TensorFactory<ScalarType::Int> tf_max;
+  TensorFactory<ScalarType::Char> tf_out;
+
+  Tensor in = tf_in.make({}, {301});
+  Tensor min = tf_min.make({}, {-129});
+  Tensor max = tf_max.make({}, {300});
+  Tensor out = tf_out.zeros({});
+  Tensor expected = tf_out.make({}, {44});
+
+  op_clamp_tensor_out(in, min, max, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpClampTensorOutTest, DowncastingSmokeTest3) {
+  TensorFactory<ScalarType::Short> tf_in;
+  TensorFactory<ScalarType::Short> tf_min;
+  TensorFactory<ScalarType::Int> tf_max;
+  TensorFactory<ScalarType::Char> tf_out;
+
+  Tensor in = tf_in.make({}, {45});
+  Tensor min = tf_min.make({}, {-129});
+  Tensor max = tf_max.make({}, {300});
+  Tensor out = tf_out.zeros({});
+  Tensor expected = tf_out.make({}, {45});
 
   op_clamp_tensor_out(in, min, max, out);
   EXPECT_TENSOR_EQ(out, expected);

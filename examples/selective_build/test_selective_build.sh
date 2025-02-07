@@ -15,6 +15,22 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 
+
+# BUCK2 examples; test internally in fbcode/xplat
+# 1. `--config executorch.select_ops=all`: select all ops from the dependency
+#       kernel libraries, register all of them into ExecuTorch runtime.
+# 2. `--config executorch.select_ops=list`: Only select ops from `ops` kwarg
+#       in `et_operator_library` macro.
+# 3. `--config executorch.select_ops=yaml`: Only select from a yaml file from
+#       `ops_schema_yaml_target` kwarg in `et_operator_library` macro
+# 4. `--config executorch.select_ops=dict`: Only select ops from `ops_dict`
+#       kwarg in `et_operator_library` macro. Add `dtype_selective_build = True`
+#       to executorch_generated_lib to select dtypes specified in the dictionary.
+
+# Other configs:
+# - `--config executorch.max_kernel_num=N`: Only allocate memory for the
+#       required number of operators. Users can retrieve N from `selected_operators.yaml`.
+
 test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"
@@ -32,9 +48,9 @@ test_buck2_select_ops_in_list() {
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
 
     echo "Running selective build test"
-    # set max_kernel_num=18: 16 primops, add, mul
+    # set max_kernel_num=22: 19 primops, add, mul
     $BUCK run //examples/selective_build:selective_build_test \
-        --config=executorch.max_kernel_num=18 \
+        --config=executorch.max_kernel_num=22 \
         --config=executorch.select_ops=list \
         -- --model_path=./add_mul.pte
 
@@ -69,6 +85,7 @@ test_buck2_select_ops_from_yaml() {
     rm "./custom_ops_1.pte"
 }
 
+# CMake examples; test in OSS. Check the README for more information.
 test_cmake_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"
@@ -100,11 +117,11 @@ test_cmake_select_ops_in_list() {
 
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
-    # set MAX_KERNEL_NUM=18: 16 primops, add, mul
+    # set MAX_KERNEL_NUM=22: 19 primops, add, mul
     rm -rf ${build_dir}
     retry cmake -DBUCK2="$BUCK" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DMAX_KERNEL_NUM=18 \
+            -DMAX_KERNEL_NUM=22 \
             -DEXECUTORCH_SELECT_OPS_LIST="aten::convolution.out,\
 aten::_native_batch_norm_legit_no_training.out,aten::hardtanh.out,aten::add.out,\
 aten::mean.out,aten::view_copy.out,aten::permute_copy.out,aten::addmm.out,\

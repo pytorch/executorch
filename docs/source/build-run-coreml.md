@@ -87,7 +87,7 @@ cd executorch
 
 Note that profiling is supported on [macOS](https://developer.apple.com/macos) >= 14.4.
 
-1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) when exporting your model.
+1. [Optional] Generate an [ETRecord](./etrecord.rst) when exporting your model.
 ```bash
 cd executorch
 
@@ -100,7 +100,7 @@ python3 -m examples.apple.coreml.scripts.export --model_name mv3 --generate_etre
 # Builds `coreml_executor_runner`.
 ./examples/apple/coreml/scripts/build_executor_runner.sh
 ```
-3. Run and generate an [ETDump](./sdk-etdump.md).
+3. Run and generate an [ETDump](./etdump.md).
 ```bash
 cd executorch
 
@@ -108,7 +108,7 @@ cd executorch
 ./coreml_executor_runner --model_path mv3_coreml_all.pte --profile_model --etdump_path etdump.etdp
 ```
 
-4. Create an instance of the [Inspector API](./sdk-inspector.rst) by passing in the [ETDump](./sdk-etdump.md) you have sourced from the runtime along with the optionally generated [ETRecord](./sdk-etrecord.rst) from step 1 or execute the following command in your terminal to display the profiling data table.
+4. Create an instance of the [Inspector API](./model-inspector.rst) by passing in the [ETDump](./etdump.md) you have sourced from the runtime along with the optionally generated [ETRecord](./etrecord.rst) from step 1 or execute the following command in your terminal to display the profiling data table.
 ```bash
 python examples/apple/coreml/scripts/inspector_cli.py --etdump_path etdump.etdp --etrecord_path mv3_coreml.bin
 ```
@@ -127,7 +127,7 @@ python examples/apple/coreml/scripts/inspector_cli.py --etdump_path etdump.etdp 
 1. Build frameworks, running the following will create a `executorch.xcframework` and `coreml_backend.xcframework` in the `cmake-out` directory.
 ```bash
 cd executorch
-./build/build_apple_frameworks.sh --Release --coreml
+./build/build_apple_frameworks.sh --coreml
 ```
 2. Create a new [Xcode project](https://developer.apple.com/documentation/xcode/creating-an-xcode-project-for-an-app#) or open an existing project.
 
@@ -143,15 +143,14 @@ libsqlite3.tbd
 ```
 5. Add the exported program to the [Copy Bundle Phase](https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product) of your Xcode target.
 
-6. Please follow the [running a model](./running-a-model-cpp-tutorial.md) tutorial to integrate the code for loading an ExecuTorch program.
+6. Please follow the [Runtime APIs Tutorial](extension-module.md) to integrate the code for loading an ExecuTorch program.
 
 7. Update the code to load the program from the Application's bundle.
 ``` objective-c
-using namespace torch::executor;
-
 NSURL *model_url = [NBundle.mainBundle URLForResource:@"mv3_coreml_all" extension:@"pte"];
 
-Result<util::FileDataLoader> loader = util::FileDataLoader::from(model_url.path.UTF8String);
+Result<executorch::extension::FileDataLoader> loader =
+    executorch::extension::FileDataLoader::from(model_url.path.UTF8String);
 ```
 
 8. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device.

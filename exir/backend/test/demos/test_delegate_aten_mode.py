@@ -6,9 +6,8 @@
 
 import unittest
 
-import executorch.exir as exir
-
 import torch
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
@@ -20,6 +19,7 @@ from executorch.extension.pybindings.aten_lib import (  # @manual
 )
 
 from executorch.extension.pytree import tree_flatten
+from torch.export import export
 
 
 class TestDelegateAtenMode(unittest.TestCase):
@@ -35,14 +35,12 @@ class TestDelegateAtenMode(unittest.TestCase):
 
         add_mul_module = AddMulModule()
         model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
-        edge_graph_module = exir.capture(
-            add_mul_module, model_inputs, exir.CaptureConfig()
-        ).to_edge()
+        edge_graph_module = to_edge(export(add_mul_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_add_mul = to_backend(
             BackendWithCompilerDemo.__name__,
-            edge_graph_module.exported_program,
+            edge_graph_module.exported_program(),
             compile_specs,
         )
 
@@ -58,11 +56,9 @@ class TestDelegateAtenMode(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = (
-            exir.capture(composite_model, model_inputs, exir.CaptureConfig())
-            .to_edge()
-            .to_executorch()
-        )
+        exec_prog = to_edge(
+            export(composite_model, model_inputs, strict=True)
+        ).to_executorch()
 
         buff = exec_prog.buffer
 

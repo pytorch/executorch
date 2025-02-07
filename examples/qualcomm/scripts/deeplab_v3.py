@@ -8,14 +8,14 @@ import json
 import os
 import random
 import re
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
+import torch
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     make_output_dir,
     parse_skip_delegation_node,
@@ -61,27 +61,7 @@ def get_dataset(data_size, dataset_dir, download):
     return inputs, targets, input_list
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./deeplab_v3",
-        default="./deeplab_v3",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-d",
-        "--download",
-        help="If specified, download VOCSegmentation dataset by torchvision API",
-        action="store_true",
-        default=False,
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
@@ -94,10 +74,14 @@ if __name__ == "__main__":
         )
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
-        data_size=data_num, dataset_dir=args.artifact, download=args.download
-    )
-    pte_filename = "dlv3_qnn"
+    if args.compile_only:
+        inputs = [(torch.rand(1, 3, 224, 224),)]
+    else:
+        inputs, targets, input_list = get_dataset(
+            data_size=data_num, dataset_dir=args.artifact, download=args.download
+        )
+
+    pte_filename = "dl3_qnn_q8"
     instance = DeepLabV3ResNet101Model()
 
     build_executorch_binary(
@@ -113,17 +97,11 @@ if __name__ == "__main__":
     )
 
     if args.compile_only:
-        sys.exit(0)
+        return
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        artifact_path=f"{args.build_folder}",
+        build_path=f"{args.build_folder}",
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,
@@ -196,3 +174,33 @@ if __name__ == "__main__":
         print(f"MPA  : {mpa}%")
         print(f"MIoU : {miou}%")
         print(f"CIoU : \n{json.dumps(cls_iou, indent=2)}")
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./deeplab_v3",
+        default="./deeplab_v3",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-d",
+        "--download",
+        help="If specified, download VOCSegmentation dataset by torchvision API",
+        action="store_true",
+        default=False,
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

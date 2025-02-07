@@ -1,0 +1,12 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_test(
+    name = "test_runtime",
+    srcs = ["test_runtime.py"],
+    deps = [
+        "//executorch/extension/pybindings/test:make_test",
+        "//executorch/runtime:runtime",
+    ],
+)

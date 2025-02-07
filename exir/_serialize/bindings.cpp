@@ -8,8 +8,8 @@
 
 #include <flatbuffers/flatc.h> // @manual=fbsource//third-party/flatbuffers:flatc_library
 #include <flatbuffers/idl.h> // @manual=fbsource//third-party/flatbuffers:flatc_library
-#include <pybind11/pybind11.h> // @manual=fbsource//third-party/pybind11/2.6.2:pybind11
-#include <pybind11/stl.h> // @manual=fbsource//third-party/pybind11/2.6.2:pybind11
+#include <pybind11/pybind11.h> // @manual=fbsource//third-party/pybind11:pybind11
+#include <pybind11/stl.h> // @manual=fbsource//third-party/pybind11:pybind11
 
 namespace exir {
 namespace {

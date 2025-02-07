@@ -16,9 +16,14 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
+using executorch::runtime::Error;
+using executorch::runtime::Method;
+using executorch::runtime::TensorInfo;
+
+namespace executorch {
+namespace extension {
 namespace internal {
 
 namespace {
@@ -31,11 +36,11 @@ Error fill_ones(torch::executor::Tensor tensor) {
     std::fill(                                         \
         tensor.mutable_data_ptr<T>(),                  \
         tensor.mutable_data_ptr<T>() + tensor.numel(), \
-        1);                                            \
+        T(1));                                         \
     break;
 
   switch (tensor.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, FILL_CASE)
+    ET_FORALL_REALHBBF16_TYPES(FILL_CASE)
     default:
       ET_LOG(Error, "Unsupported scalar type %d", (int)tensor.scalar_type());
       return Error::InvalidArgument;
@@ -68,6 +73,5 @@ Error fill_and_set_input(
 }
 
 } // namespace internal
-} // namespace util
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch

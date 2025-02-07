@@ -16,8 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using namespace torch::util;
 using namespace torch::executor;
+using namespace torch::executor::util;
+using namespace executorch::extension;
 
 namespace {
 at::Tensor generate_at_tensor() {
@@ -145,4 +146,11 @@ TEST(ATenBridgeTest, AliasATTensorToETensor) {
   torch::executor::Tensor etensor(&tensor_impl);
   auto aliased_at_tensor = alias_attensor_to_etensor(etensor);
   EXPECT_EQ(aliased_at_tensor.const_data_ptr(), etensor_data.data());
+}
+
+TEST(ATenBridgeTest, AliasTensorPtrToATenTensor) {
+  auto at_tensor = generate_at_tensor();
+  const auto& et_tensor_ptr = alias_tensor_ptr_to_attensor(at_tensor);
+  alias_etensor_to_attensor(at_tensor, *et_tensor_ptr);
+  EXPECT_EQ(at_tensor.const_data_ptr(), et_tensor_ptr->const_data_ptr());
 }

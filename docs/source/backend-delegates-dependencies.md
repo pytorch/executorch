@@ -123,9 +123,8 @@ but the URLs can't be in the requirements.txt, so not recommending this for now.
 The recommended approach is to include a git submodule for a given C++
 dependency in the `executorch/backends/<delegate_name>/third-party` directory.
 
-### buck2/CMake Support
-At a minimum CMake support is required. Adding buck2 support is optional, but
-will make the delegate available to more ExecuTorch users.
+### CMake Support
+At a minimum CMake support is required.
 
 <!---
 TODO: Add more details about: complying with ET runtime build configurations;

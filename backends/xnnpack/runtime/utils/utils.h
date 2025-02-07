@@ -19,16 +19,17 @@
 #include <arm_neon.h>
 #endif
 
-namespace torch {
-namespace executor {
-namespace qnnpack_utils {
+namespace executorch {
+namespace backends {
+namespace xnnpack {
+namespace utils {
 
 struct QuantizationParams {
   double scale;
   int32_t zero_point;
 };
 
-Error ChooseQuantizationParams(
+executorch::runtime::Error ChooseQuantizationParams(
     float min,
     float max,
     int32_t qmin,
@@ -125,9 +126,9 @@ void quantize_tensor_arm64_q8_wrapper(
 #endif /* __aarch64__ */
 
 template <typename T = uint8_t>
-Error QuantizePerTensor(
-    const exec_aten::Tensor& rtensor,
-    exec_aten::Tensor& qtensor,
+executorch::runtime::Error QuantizePerTensor(
+    const executorch::aten::Tensor& rtensor,
+    executorch::aten::Tensor& qtensor,
     double scale,
     int zero_point) {
   const float* rdata = rtensor.const_data_ptr<float>();
@@ -151,17 +152,18 @@ Error QuantizePerTensor(
     qdata[i] = quantize_val<T>(scale, zero_point, rdata[i]);
   }
 #endif /* __aarch64__ */
-  return Error::Ok;
+  return executorch::runtime::Error::Ok;
 }
 
-Error GenerateRequantizationScale(
-    const exec_aten::Tensor& weight_scales,
+executorch::runtime::Error GenerateRequantizationScale(
+    const executorch::aten::Tensor& weight_scales,
     float input_scale,
     float output_scale,
     std::vector<float>& requant_scales);
 
-std::pair<float, float> GetMinMax(const exec_aten::Tensor& ft);
+std::pair<float, float> GetMinMax(const executorch::aten::Tensor& ft);
 
-} // namespace qnnpack_utils
-} // namespace executor
-} // namespace torch
+} // namespace utils
+} // namespace xnnpack
+} // namespace backends
+} // namespace executorch

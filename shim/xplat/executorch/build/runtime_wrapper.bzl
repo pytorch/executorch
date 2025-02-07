@@ -59,7 +59,7 @@ def _patch_executorch_references(targets, use_static_deps = False):
         return targets
     out_targets = []
     for target in targets:
-        if target.startswith("//xplat/executorch"):
+        if target.startswith("//xplat/executorch/") or target.startswith("//xplat/executorch:"):
             fail("References to executorch build targets must use " +
                  "`//executorch`, not `//xplat/executorch`")
 
@@ -85,38 +85,26 @@ def _patch_build_mode_flags(kwargs):
     Returns:
         The possibly-modified `kwargs` parameter for chaining.
     """
-    build_mode = native.read_config("fbcode", "build_mode_test_label", "")
-    flags = []
-
-    # Base build modes.
-    if build_mode.startswith("dev"):
-        flags.append("-D__ET_BUILD_MODE_DEV=1")
-    elif build_mode.startswith("opt"):
-        flags.append("-D__ET_BUILD_MODE_OPT=1")
-    elif build_mode.startswith("dbgo"):
-        flags.append("-D__ET_BUILD_MODE_DBGO=1")
-    elif build_mode.startswith("dbg"):
-        flags.append("-D__ET_BUILD_MODE_DBG=1")
-
-    # Build mode extensions.
-    if "-cov" in build_mode:
-        flags.append("-D__ET_BUILD_MODE_COV=1")
-    elif "-asan" in build_mode:
-        flags.append("-D__ET_BUILD_MODE_ASAN=1")
-    elif "-tsan" in build_mode:
-        flags.append("-D__ET_BUILD_MODE_TSAN=1")
-    elif "-ubsan" in build_mode:
-        flags.append("-D__ET_BUILD_MODE_UBSAN=1")
-    elif "-lto" in build_mode:
-        flags.append("-D__ET_BUILD_MODE_LTO=1")
-
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
 
     # kwargs["compiler_flags"].extend(flags) or kwargs["compiler_flags"] += would
     # fail if kwargs["compiler_flags"] is Immutable (ex: the default argument of
     # a Buck macro)
-    kwargs["compiler_flags"] = kwargs["compiler_flags"] + flags
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+        "DEFAULT": [],
+        # @oss-disable: "ovr_config//build_mode:dbg": ["-D__ET_BUILD_MODE_DBG=1"],
+        # @oss-disable: "ovr_config//build_mode:dbgo": ["-D__ET_BUILD_MODE_DBGO=1"],
+        # @oss-disable: "ovr_config//build_mode:dev": ["-D__ET_BUILD_MODE_DEV=1"],
+        # @oss-disable: "ovr_config//build_mode:opt": ["-D__ET_BUILD_MODE_OPT=1"],
+    }) + select({
+        "DEFAULT": [],
+        # @oss-disable: "ovr_config//build_mode:asan": ["-D__ET_BUILD_MODE_ASAN=1"],
+        # @oss-disable: "ovr_config//build_mode:tsan": ["-D__ET_BUILD_MODE_TSAN=1"],
+        # @oss-disable: "ovr_config//build_mode:ubsan": ["-D__ET_BUILD_MODE_UBSAN=1"],
+        # @oss-disable: "ovr_config//build_mode:lto-fat": ["-D__ET_BUILD_MODE_LTO=1"],
+        # @oss-disable: "ovr_config//build_mode:code-coverage": ["-D__ET_BUILD_MODE_COV=1"],
+    })
 
     return kwargs
 
@@ -125,16 +113,16 @@ def _patch_test_compiler_flags(kwargs):
         kwargs["compiler_flags"] = []
 
     # Required globally by all c++ tests.
-    kwargs["compiler_flags"].extend([
+    kwargs["compiler_flags"] += [
         "-std=c++17",
-    ])
+    ]
 
     # Relaxing some constraints for tests
-    kwargs["compiler_flags"].extend([
+    kwargs["compiler_flags"] += [
         "-Wno-missing-prototypes",
         "-Wno-unused-variable",
         "-Wno-error",
-    ])
+    ]
     return kwargs
 
 def _external_dep_location(name):
@@ -301,6 +289,10 @@ def _filegroup(*args, **kwargs):
     _patch_kwargs_common(kwargs)
     env.filegroup(*args, **kwargs)
 
+def _command_alias(*args, **kwargs):
+    _patch_kwargs_common(kwargs)
+    env.command_alias(*args, **kwargs)
+
 def _genrule(*args, **kwargs):
     _patch_kwargs_common(kwargs)
     env.patch_platforms(kwargs)
@@ -345,6 +337,7 @@ def get_oss_build_kwargs():
 # see the "Build Rules" section in the sidebar of
 # https://buck.build/concept/build_rule.html.
 runtime = struct(
+    command_alias = _command_alias,
     cxx_binary = _cxx_binary,
     cxx_library = _cxx_library,
     cxx_python_extension = _cxx_python_extension,

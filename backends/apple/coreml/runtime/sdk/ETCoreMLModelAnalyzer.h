@@ -7,7 +7,7 @@
 
 #import <CoreML/CoreML.h>
 
-#import <ETCoreMLModelExecutor.h>
+#import "ETCoreMLModelExecutor.h"
 
 namespace executorchcoreml {
 struct ModelMetadata;
@@ -15,6 +15,7 @@ struct ModelMetadata;
 
 @class ETCoreMLAsset;
 @class ETCoreMLAssetManager;
+@class ETCoreMLModelDebugInfo;
 @class ETCoreMLModelStructurePath;
 @protocol ETCoreMLModelEventLogger;
 
@@ -32,16 +33,15 @@ __attribute__((objc_subclassing_restricted))
 ///
 /// @param compiledModelAsset The compiled model asset (mlmodelc).
 /// @param modelAsset The model asset (mlpackage).
+/// @param modelDebugInfo The model debug info.
 /// @param metadata The model metadata.
-/// @param operationPathToDebugSymbolMap The operation path to debug symbol map.
 /// @param configuration The model configuration.
 /// @param assetManager The asset manager used to manage storage of compiled models.
 /// @param error   On failure, error is filled with the failure information.
 - (nullable instancetype)initWithCompiledModelAsset:(ETCoreMLAsset*)compiledModelAsset
                                          modelAsset:(nullable ETCoreMLAsset*)modelAsset
+                                     modelDebugInfo:(nullable ETCoreMLModelDebugInfo*)modelDebugInfo
                                            metadata:(const executorchcoreml::ModelMetadata&)metadata
-                      operationPathToDebugSymbolMap:
-                          (nullable NSDictionary<ETCoreMLModelStructurePath*, NSString*>*)operationPathToDebugSymbolMap
                                       configuration:(MLModelConfiguration*)configuration
                                        assetManager:(ETCoreMLAssetManager*)assetManager
                                               error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;

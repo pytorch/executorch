@@ -18,12 +18,12 @@
 namespace vkcompute {
 
 void check_args(
-    const vTensor& t_in,
+    const api::vTensor& t_in,
     int64_t dim,
     int64_t index,
-    const vTensor& t_out) {
-  VK_CHECK_COND(check_memory_layout_is(t_in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(t_out, api::kChannelsPacked));
+    const api::vTensor& t_out) {
+  VK_CHECK_COND(check_packed_dim_is(t_in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(t_out, WHCN::kChannelsDim));
 
   const int64_t in_dim = t_in.dim();
   VK_CHECK_COND(
@@ -102,25 +102,23 @@ void add_select_int_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  api::utils::uvec3 global_size = t_out->extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   // TODO: add resizing to support dynamic shapes.
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_out->sizes_ubo(),
        // TODO: num_batches and num_texel_per_batch are provided by
        // t_out->sizes. Can change the following to reduce params
        // created.
-       graph.create_params_buffer(api::utils::make_ivec4(
-           {index, num_batches, num_texel_per_batch, 0}))},
+       graph.create_params_buffer(
+           utils::make_ivec4({index, num_batches, num_texel_per_batch, 0}))},
       // Specialization Constants
       {}));
 }

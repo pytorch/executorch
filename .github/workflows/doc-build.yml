@@ -8,13 +8,17 @@ on:
       - release/*
     tags:
       - v[0-9]+.[0-9]+.[0-9]+
+      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
 
 jobs:
   build:
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         include:
@@ -48,7 +52,7 @@ jobs:
 
         GITHUB_REF=${{ github.ref }}
         echo "$GITHUB_REF"
-        ET_VERSION_DOCS="${GITHUB_REF}"
+        export ET_VERSION_DOCS="${GITHUB_REF}"
         echo "$ET_VERSION_DOCS"
 
         set -eux
@@ -80,8 +84,9 @@ jobs:
     needs: build
     if: github.repository == 'pytorch/executorch' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     permissions:
+      id-token: write
       contents: write
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       repository: pytorch/executorch
       download-artifact: docs
@@ -93,11 +98,11 @@ jobs:
         # Get github.ref for the output doc folder. By default "main"
         # If matches a tag like refs/tags/v1.12.0-rc3 or
         # refs/tags/v1.12.0 convert to 1.12
-        GITHUB_REF=${{ github.ref }}
+        export GITHUB_REF=${{ github.ref }}
 
         # Convert refs/tags/v1.12.0rc3 into 1.12.
         # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml#L150C11-L155C13
-        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\\.[0-9]+)\\. ]]; then
+        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+) ]]; then
           TARGET_FOLDER="${BASH_REMATCH[1]}"
         else
           TARGET_FOLDER="main"

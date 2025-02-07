@@ -10,8 +10,8 @@
 
 #include <cstddef>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * A read-only buffer than can be freed.
@@ -110,5 +110,13 @@ class FreeableBuffer final {
   size_t size_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::FreeableBuffer;
 } // namespace executor
 } // namespace torch

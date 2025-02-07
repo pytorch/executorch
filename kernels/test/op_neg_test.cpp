@@ -15,8 +15,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpNegTest : public OperatorTest {
@@ -24,17 +24,25 @@ class OpNegTest : public OperatorTest {
   Tensor& op_neg_out(const Tensor& self, Tensor& out) {
     return torch::executor::aten::neg_outf(context_, self, out);
   }
+
+  template <ScalarType DTYPE>
+  void run_smoke_test() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor in = tf.make({1, 7}, {-3.0, -2.5, -1.01, 0.0, 1.01, 2.5, 3.0});
+    Tensor out = tf.zeros({1, 7});
+    Tensor expected = tf.make({1, 7}, {3.0, 2.5, 1.01, 0.0, -1.01, -2.5, -3.0});
+
+    Tensor ret = op_neg_out(in, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
 };
 
-TEST_F(OpNegTest, SanityCheck) {
-  TensorFactory<ScalarType::Float> tf;
-
-  Tensor in = tf.make({1, 7}, {-3.0, -2.5, -1.01, 0.0, 1.01, 2.5, 3.0});
-  Tensor out = tf.zeros({1, 7});
-  Tensor expected = tf.make({1, 7}, {3.0, 2.5, 1.01, 0.0, -1.01, -2.5, -3.0});
-
-  Tensor ret = op_neg_out(in, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
+TEST_F(OpNegTest, SmokeTest) {
+#define RUN_SMOKE_TEST(ctype, dtype) run_smoke_test<ScalarType::dtype>();
+  // TODO: cover all REALHBF16 types with generalized unary function test
+  // harness.
+  ET_FORALL_FLOATHBF16_TYPES(RUN_SMOKE_TEST);
 }

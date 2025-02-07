@@ -17,8 +17,8 @@
 #include "QnnTypes.h"
 
 #define QNN_VER_PTR(x) (&((x).v1))
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace qnn {
 class TensorWrapper {
  public:
@@ -33,9 +33,11 @@ class TensorWrapper {
       const void* data = nullptr,
       bool copy_data = false);
 
-  Error FillDataBuffer(const void* data, bool copy_data = false);
+  executorch::runtime::Error FillDataBuffer(
+      const void* data,
+      bool copy_data = false);
 
-  Error AllocateDataBuffer();
+  executorch::runtime::Error AllocateDataBuffer();
 
   // update qnn tensor meta
   // this function is used to recover metadata from QNN context binary.
@@ -75,7 +77,11 @@ class TensorWrapper {
     return QNN_VER_PTR(tensor_)->memType;
   };
 
-  std::string GetName() const {
+  Qnn_QuantizeParams_t GetQuantizeParams() const {
+    return QNN_VER_PTR(tensor_)->quantizeParams;
+  }
+
+  const std::string& GetName() const {
     return qnn_tensor_name_;
   };
 
@@ -83,13 +89,17 @@ class TensorWrapper {
     return QNN_VER_PTR(tensor_)->rank;
   };
 
+  std::uint32_t GetBytes() const {
+    return bytes_;
+  };
+
   const void* GetStaticTensorData() const {
     return QNN_VER_PTR(tensor_)->clientBuf.data;
   };
 
-  Error SetName(const std::string& name);
+  executorch::runtime::Error SetName(const std::string& name);
 
-  Error SetMemHandle(Qnn_MemHandle_t mem_handle);
+  executorch::runtime::Error SetMemHandle(Qnn_MemHandle_t mem_handle);
 
  private:
   // need this to handle QNN_TENSOR_ERROR_NAME_HASH_COLLISION
@@ -130,5 +140,5 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor);
 // Utility to get size in bytes of QNN data type
 std::uint32_t GetDataTypeSize(Qnn_DataType_t data_type);
 } // namespace qnn
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

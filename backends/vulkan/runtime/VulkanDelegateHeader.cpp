@@ -15,9 +15,12 @@
 
 #pragma clang diagnostic ignored "-Wdeprecated"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 namespace vulkan {
+
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 namespace {
 
@@ -39,7 +42,7 @@ constexpr ByteSlice kBytesSize = {22, 8};
 } // namespace
 
 /// Interprets the 8 bytes at `data` as a little-endian uint64_t.
-uint64_t GetUInt64LE(const uint8_t* data) {
+uint64_t getUInt64LE(const uint8_t* data) {
   return (uint64_t)data[0] | ((uint64_t)data[1] << 8) |
       ((uint64_t)data[2] << 16) | ((uint64_t)data[3] << 24) |
       ((uint64_t)data[4] << 32) | ((uint64_t)data[5] << 40) |
@@ -47,13 +50,13 @@ uint64_t GetUInt64LE(const uint8_t* data) {
 }
 
 /// Interprets the 4 bytes at `data` as a little-endian uint32_t.
-uint32_t GetUInt32LE(const uint8_t* data) {
+uint32_t getUInt32LE(const uint8_t* data) {
   return (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
       ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
 }
 
 /// Interprets the 2 bytes at `data` as a little-endian uint32_t.
-uint32_t GetUInt16LE(const uint8_t* data) {
+uint32_t getUInt16LE(const uint8_t* data) {
   return (uint32_t)data[0] | ((uint32_t)data[1] << 8);
 }
 
@@ -77,7 +80,7 @@ bool VulkanDelegateHeader::is_valid() const {
   return true;
 }
 
-Result<VulkanDelegateHeader> VulkanDelegateHeader::Parse(const void* data) {
+Result<VulkanDelegateHeader> VulkanDelegateHeader::parse(const void* data) {
   const uint8_t* header_data = (const uint8_t*)data;
 
   const uint8_t* magic_start = header_data + kMagic.offset;
@@ -86,11 +89,11 @@ Result<VulkanDelegateHeader> VulkanDelegateHeader::Parse(const void* data) {
   }
 
   VulkanDelegateHeader header = VulkanDelegateHeader{
-      GetUInt16LE(header_data + kHeaderSize.offset),
-      GetUInt32LE(header_data + kFlatbufferOffset.offset),
-      GetUInt32LE(header_data + kFlatbufferSize.offset),
-      GetUInt32LE(header_data + kBytesOffset.offset),
-      GetUInt64LE(header_data + kBytesSize.offset),
+      getUInt16LE(header_data + kHeaderSize.offset),
+      getUInt32LE(header_data + kFlatbufferOffset.offset),
+      getUInt32LE(header_data + kFlatbufferSize.offset),
+      getUInt32LE(header_data + kBytesOffset.offset),
+      getUInt64LE(header_data + kBytesSize.offset),
   };
 
   if (!header.is_valid()) {
@@ -101,5 +104,5 @@ Result<VulkanDelegateHeader> VulkanDelegateHeader::Parse(const void* data) {
 }
 
 } // namespace vulkan
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

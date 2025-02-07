@@ -17,10 +17,11 @@ namespace executorchcoreml {
 class BackendDelegate;
 }
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
+namespace coreml {
 
-class CoreMLBackendDelegate final : public PyTorchBackendInterface {
+class CoreMLBackendDelegate final : public ::executorch::runtime::BackendInterface {
 public:
     CoreMLBackendDelegate() noexcept;
     ~CoreMLBackendDelegate() = default;
@@ -34,8 +35,10 @@ public:
     /// produce `processed`.
     /// @retval On success, an opaque handle representing the loaded model
     /// otherwise  an`Error` case.
-    Result<DelegateHandle*>
-    init(BackendInitContext& context, FreeableBuffer* processed, ArrayRef<CompileSpec> compileSpecs) const override;
+    executorch::runtime::Result<executorch::runtime::DelegateHandle*>
+    init(executorch::runtime::BackendInitContext& context,
+         executorch::runtime::FreeableBuffer* processed,
+         executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> compileSpecs) const override;
 
     /// Executes the loaded model.
     ///
@@ -43,7 +46,9 @@ public:
     /// @param handle The handle returned by an earlier call to `init`.
     /// @param args The models inputs and outputs.
     /// @retval On success, `Error::Ok` otherwise any other `Error` case.
-    Error execute(BackendExecutionContext& context, DelegateHandle* handle, EValue** args) const override;
+    executorch::runtime::Error execute(executorch::runtime::BackendExecutionContext& context,
+                                       executorch::runtime::DelegateHandle* handle,
+                                       executorch::runtime::EValue** args) const override;
 
     /// Returns `true` if the delegate is available otherwise `false`.
     bool is_available() const override;
@@ -51,7 +56,7 @@ public:
     /// Unloads the loaded CoreML model with the  specified handle.
     ///
     /// @param handle The handle returned by an earlier call to `init`.
-    void destroy(DelegateHandle* handle) const override;
+    void destroy(executorch::runtime::DelegateHandle* handle) const override;
 
     /// Returns the registered `CoreMLBackendDelegate` instance.
     static CoreMLBackendDelegate* get_registered_delegate() noexcept;
@@ -65,5 +70,7 @@ public:
 private:
     std::shared_ptr<executorchcoreml::BackendDelegate> impl_;
 };
-} // namespace executor
-} // namespace torch
+
+} // namespace coreml
+} // namespace backends
+} // namespace executorch

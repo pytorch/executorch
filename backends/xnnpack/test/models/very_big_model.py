@@ -29,13 +29,12 @@ class TestVeryBigModel(unittest.TestCase):
             return self.seq(x)
 
     @unittest.skip("This test is used for benchmarking and should not be run in CI")
-    def test_very_big_model(self):
+    def _test_very_big_model(self):
 
         (
             Tester(self.BigModel(), (torch.randn(1, 5000),))
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()

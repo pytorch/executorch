@@ -6,17 +6,18 @@
 
 no_op:
   parameter_names_with_default_values:
-    NDIM: 3
     DTYPE: float
+    STORAGE: texture3d
   generate_variant_forall:
-    NDIM:
-      - VALUE: 3
-        SUFFIX: 3d
-      - VALUE: 2
-        SUFFIX: 2d
     DTYPE:
       - VALUE: half
       - VALUE: float
       - VALUE: int
+      - VALUE: int8
+      - VALUE: uint8
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: texture2d
+      - VALUE: buffer
   shader_variants:
     - NAME: no_op

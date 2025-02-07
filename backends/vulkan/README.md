@@ -78,36 +78,47 @@ currently in development:
 ## End to End Example
 
 To further understand the features of the Vulkan Delegate and how to use it,
-consider the following end to end example with MobileNet V2.
+consider the following end to end example with a simple single operator model.
 
 ### Compile and lower a model to the Vulkan Delegate
 
 Assuming ExecuTorch has been set up and installed, the following script can be
 used to produce a lowered MobileNet V2 model as `vulkan_mobilenetv2.pte`.
 
+Once ExecuTorch has been set up and installed, the following script can be used
+to generate a simple model and lower it to the Vulkan delegate.
+
 ```
+# Note: this script is the same as the script from the "Setting up ExecuTorch"
+# page, with one minor addition to lower to the Vulkan backend.
 import torch
-import torchvision.models as models
+from torch.export import export
+from executorch.exir import to_edge
 
-from torch.export import export, ExportedProgram
-from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
-from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
-from executorch.exir.backend.backend_api import to_backend
 
-mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
-sample_inputs = (torch.randn(1, 3, 224, 224), )
+# Start with a PyTorch model that adds two input tensors (matrices)
+class Add(torch.nn.Module):
+  def __init__(self):
+    super(Add, self).__init__()
 
-exported_program: ExportedProgram = export(mobilenet_v2, sample_inputs)
-edge: EdgeProgramManager = to_edge(exported_program)
+  def forward(self, x: torch.Tensor, y: torch.Tensor):
+      return x + y
 
-# Lower the model to Vulkan backend
-edge = edge.to_backend(VulkanPartitioner())
+# 1. torch.export: Defines the program with the ATen operator set.
+aten_dialect = export(Add(), (torch.ones(1), torch.ones(1)))
 
-exec_prog = edge.to_executorch()
+# 2. to_edge: Make optimizations for Edge devices
+edge_program = to_edge(aten_dialect)
+# 2.1 Lower to the Vulkan backend
+edge_program = edge_program.to_backend(VulkanPartitioner())
 
-with open("vulkan_mobilenetv2.pte", "wb") as file:
-    exec_prog.write_to_file(file)
+# 3. to_executorch: Convert the graph to an ExecuTorch program
+executorch_program = edge_program.to_executorch()
+
+# 4. Save the compiled .pte program
+with open("vk_add.pte", "wb") as file:
+    file.write(executorch_program.buffer)
 ```
 
 Like other ExecuTorch delegates, a model can be lowered to the Vulkan Delegate
@@ -122,29 +133,31 @@ will be executed on the GPU.
 
 
 ::::{note}
-The [Vulkan partitioner code](https://github.com/pytorch/executorch/blob/main/backends/vulkan/partitioner/vulkan_partitioner.py)
-can be inspected to examine which ops are currently implemented in the Vulkan
-delegate.
+The [supported ops list](https://github.com/pytorch/executorch/blob/main/backends/vulkan/partitioner/supported_ops.py)
+Vulkan partitioner code can be inspected to examine which ops are currently
+implemented in the Vulkan delegate.
 ::::
 
 ### Build Vulkan Delegate libraries
 
 The easiest way to build and test the Vulkan Delegate is to build for Android
 and test on a local Android device. Android devices have built in support for
-Vulkan, and the Android NDK ships with a GLSL compiler, which is needed to
+Vulkan, and the Android NDK ships with a GLSL compiler which is needed to
 compile the Vulkan Compute Library's GLSL compute shaders.
 
 The Vulkan Delegate libraries can be built by setting `-DEXECUTORCH_BUILD_VULKAN=ON`
 when building with CMake.
 
-First, make sure that you have the Android NDK installed - Android NDK r25c is
-recommended. The Android SDK should also be installed so that you have access
-to `adb`.
+First, make sure that you have the Android NDK installed; any NDK version past
+NDK r19c should work. Note that the examples in this doc have been validated with
+NDK r27b. The Android SDK should also be installed so that you have access to `adb`.
+
+The instructions in this page assumes that the following environment variables
+are set.
 
 ```shell
-# Recommended version is Android NDK r25c.
 export ANDROID_NDK=<path_to_ndk>
-# Select an appropriate Android ABI
+# Select the appropriate Android ABI for your device
 export ANDROID_ABI=arm64-v8a
 # All subsequent commands should be performed from ExecuTorch repo root
 cd <path_to_executorch_root>
@@ -183,10 +196,10 @@ GPU!
 cmake --build cmake-android-out --target vulkan_executor_runner -j32
 
 # Push model to device
-adb push vulkan_mobilenetv2.pte /data/local/tmp/vulkan_mobilenetv2.pte
+adb push vk_add.pte /data/local/tmp/vk_add.pte
 # Push binary to device
 adb push cmake-android-out/backends/vulkan/vulkan_executor_runner /data/local/tmp/runner_bin
 
 # Run the model
-adb shell /data/local/tmp/runner_bin --model_path /data/local/tmp/vulkan_mobilenetv2.pte
+adb shell /data/local/tmp/runner_bin --model_path /data/local/tmp/vk_add.pte
 ```

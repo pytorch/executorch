@@ -13,9 +13,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using SizesType = exec_aten::SizesType;
-using StridesType = exec_aten::StridesType;
-using Tensor = exec_aten::Tensor;
+using SizesType = executorch::aten::SizesType;
+using StridesType = executorch::aten::StridesType;
+using Tensor = executorch::aten::Tensor;
 
 /**
  * Swaps dimension 'dim0' of 'a' with 'dim1', and copying
@@ -25,7 +25,7 @@ using Tensor = exec_aten::Tensor;
  * transpose_copy.int_out(Tensor self, int dim0, int dim1, *, Tensor(a!) out)
  */
 Tensor& transpose_copy_int_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim0,
     int64_t dim1,
@@ -56,6 +56,9 @@ Tensor& transpose_copy_int_out(
       resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ET_SWITCH_ALL_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
     transpose_tensors<CTYPE>(in, dim0, dim1, out);

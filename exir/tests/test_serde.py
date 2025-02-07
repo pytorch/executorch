@@ -49,7 +49,7 @@ class TestSerde(unittest.TestCase):
 
     # pyre-ignore
     def check_serde(self, m, inputs, check_executorch=True) -> None:
-        aten = export(m, inputs)
+        aten = export(m, inputs, strict=True)
         aten_new = deserialize(serialize(aten))
         self.check_ep(aten, aten_new, inputs)
 
@@ -135,7 +135,7 @@ class TestSerde(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = to_edge(export(sin_module, model_inputs))
+        edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -155,7 +155,7 @@ class TestSerde(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        edge = to_edge(export(composite_model, model_inputs))
+        edge = to_edge(export(composite_model, model_inputs, strict=True))
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, model_inputs)
 
@@ -197,7 +197,7 @@ class TestSerde(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        ep = to_edge(export(m, inputs))
+        ep = to_edge(export(m, inputs, strict=True))
         edge = ep.to_backend(AddMulPartitionerDemo())
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, inputs)
@@ -217,7 +217,7 @@ class TestSerde(unittest.TestCase):
         inputs = (torch.randn(1, 1, 32, 32),)
 
         metadata = ()
-        edge = to_edge(export(m, inputs))
+        edge = to_edge(export(m, inputs, strict=True))
         for node in edge.exported_program().graph_module.graph.nodes:
             if "convolution" in str(node.target):
                 metadata = (

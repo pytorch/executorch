@@ -28,11 +28,11 @@ def define_common_targets():
         deps = [
             ":models",
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-            "//executorch/examples/portable:utils",
+            "//executorch/extension/export_util:export_util",
             "//executorch/examples/xnnpack/quantization:quant_utils",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
-            "//executorch/sdk:lib",
+            "//executorch/devtools:lib",
         ],
     )
 
@@ -40,7 +40,7 @@ def define_common_targets():
         name = "aot_compiler",
         main_module = "executorch.examples.xnnpack.aot_compiler",
         resources = {
-            "//executorch/examples/models/llama2/params:params": "params",
+            "//executorch/examples/models/llama/params:params": "params",
         },
         deps = [
             ":xnnpack_aot_lib",

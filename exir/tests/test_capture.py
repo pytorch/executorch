@@ -19,6 +19,8 @@ class TestCapture(unittest.TestCase):
     # pyre-ignore
     @parameterized.expand(models.MODELS)
     def test_module_call(self, model_name: str, model: torch.nn.Module) -> None:
+        # pyre-fixme[29]: `Union[torch._tensor.Tensor,
+        #  torch.nn.modules.module.Module]` is not a function.
         inputs = model.get_random_inputs()
         expected = model(*inputs)
         # TODO(ycao): Replace it with capture_multiple

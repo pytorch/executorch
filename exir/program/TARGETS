@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
@@ -21,6 +22,8 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:error",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:pass_base",
         "//executorch/exir:pass_manager",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
@@ -36,10 +39,13 @@ python_library(
         "//executorch/exir/passes:normalize_view_copy_base_pass",
         "//executorch/exir/passes:remove_graph_asserts_pass",
         "//executorch/exir/passes:remove_mixed_type_operators",
+        "//executorch/exir/passes:replace_aten_with_edge_pass",
         "//executorch/exir/passes:replace_view_copy_with_view_pass",
         "//executorch/exir/passes:spec_prop_pass",
+        "//executorch/exir/passes:weights_to_outputs_pass",
         "//executorch/exir/verification:verifier",
-    ],
+        "//executorch/extension/flat_tensor/serialize:serialize",
+    ] +  (["//executorch/exir/program/fb:logger"] if not runtime.is_oss else [])
 )
 
 python_library(

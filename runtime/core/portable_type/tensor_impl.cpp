@@ -8,30 +8,38 @@
 
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
+#include <algorithm>
 #include <cstdint>
-#include <cstring> // std::memcpy
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <executorch/runtime/core/portable_type/qint_types.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
+namespace etensor {
 
-namespace {
 /**
  * Compute the number of elements based on the sizes of a tensor.
  */
 ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
-  ssize_t n = 1;
-  for (ssize_t i = 0; i < dim; i++) {
-    n *= sizes[i];
+  ET_CHECK_MSG(
+      dim == 0 || sizes != nullptr,
+      "Sizes must be provided for non-scalar tensors");
+  ssize_t numel = 1; // Zero-dimensional tensors (scalars) have numel == 1.
+  for (ssize_t i = 0; i < dim; ++i) {
+    ET_CHECK_MSG(
+        sizes[i] >= 0,
+        "Size must be non-negative, got %d at dimension %zd",
+        sizes[i],
+        i);
+    numel *= sizes[i];
   }
-  return n;
+  return numel;
 }
-} // namespace
 
 TensorImpl::TensorImpl(
     ScalarType type,
@@ -47,33 +55,16 @@ TensorImpl::TensorImpl(
       data_(data),
       dim_(dim),
       numel_(compute_numel(sizes, dim)),
-      capacity_(numel_ * elementSize(type)),
+      numel_bound_(numel_),
       type_(type),
-      shape_dynamism_(dynamism) {}
+      shape_dynamism_(dynamism) {
+  ET_CHECK_MSG(
+      isValid(type_), "Invalid type %" PRId8, static_cast<int8_t>(type_));
+  ET_CHECK_MSG(dim_ >= 0, "Dimension must be non-negative, got %zd", dim_);
+}
 
 size_t TensorImpl::nbytes() const {
   return numel_ * elementSize(type_);
-}
-
-ssize_t TensorImpl::size(ssize_t dim) const {
-  ET_CHECK_MSG(
-      dim < dim_ && dim >= 0,
-      "Dimension out of range (expected to be in range of [0, %zd], but got %zd",
-      dim_ - 1,
-      dim);
-  return sizes_[dim];
-}
-
-ssize_t TensorImpl::dim() const {
-  return dim_;
-}
-
-ssize_t TensorImpl::numel() const {
-  return numel_;
-}
-
-ScalarType TensorImpl::scalar_type() const {
-  return type_;
 }
 
 // Return the size of one element of the tensor
@@ -81,35 +72,11 @@ ssize_t TensorImpl::element_size() const {
   return elementSize(type_);
 }
 
-const ArrayRef<TensorImpl::SizesType> TensorImpl::sizes() const {
-  return ArrayRef<SizesType>{sizes_, static_cast<size_t>(dim_)};
-}
-
-const ArrayRef<TensorImpl::DimOrderType> TensorImpl::dim_order() const {
-  return ArrayRef<DimOrderType>{dim_order_, static_cast<size_t>(dim_)};
-}
-
-const ArrayRef<TensorImpl::StridesType> TensorImpl::strides() const {
-  return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
-}
-
-const void* TensorImpl::data() const {
-  return data_;
-}
-
-void* TensorImpl::mutable_data() const {
-  return data_;
-}
-
-void TensorImpl::set_data(void* ptr) {
-  data_ = ptr;
-}
-
 Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   ET_CHECK_OR_RETURN_ERROR(
       new_sizes.size() == dim_,
       NotSupported,
-      "ETensor rank is immutable old: %zu new: %zu",
+      "Attempted to change the tensor rank which is immutable: old=%zu, new=%zu",
       dim_,
       new_sizes.size());
 
@@ -125,59 +92,54 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
     return Error::Ok;
   }
 
-  // Can only resize a StaticShape Tensor to the same size
-  if (shape_dynamism_ == TensorShapeDynamism::STATIC) {
-    for (int i = 0; i < new_sizes.size(); i++) {
+  switch (shape_dynamism_) {
+    case TensorShapeDynamism::STATIC:
+      if (!std::equal(sizes_, sizes_ + dim_, new_sizes.begin())) {
+#ifdef ET_LOG_ENABLED
+        auto old_sizes_str = executorch::runtime::tensor_shape_to_c_string(
+            executorch::runtime::Span<const SizesType>(
+                sizes().data(), sizes().size()));
+        auto new_sizes_str = executorch::runtime::tensor_shape_to_c_string(
+            executorch::runtime::Span<const SizesType>(
+                new_sizes.data(), new_sizes.size()));
+#endif
+
+        ET_CHECK_OR_RETURN_ERROR(
+            false,
+            NotSupported,
+            "Attempted to resize a static tensor. Expected shape %s, but received %s.",
+            old_sizes_str.data(),
+            new_sizes_str.data())
+      }
+
+      break;
+    case TensorShapeDynamism::DYNAMIC_BOUND:
+      // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
+      // supported: treat them as upper-bounded.
+    case TensorShapeDynamism::DYNAMIC_UNBOUND: {
+      const auto new_numel = compute_numel(new_sizes.data(), dim_);
+
       ET_CHECK_OR_RETURN_ERROR(
-          new_sizes[i] == sizes_[i],
+          new_numel <= numel_bound_,
           NotSupported,
-          "Attempted to resize a static tensor to a new shape at "
-          "dimension %d old_size: %d new_size: %d",
-          i,
-          sizes_[i],
-          new_sizes[i]);
+          "Attempted to resize a bounded tensor with a maximum capacity of %zu elements to %zu elements.",
+          numel_bound_,
+          new_numel);
+
+      if (strides_ && dim_order_) {
+        auto error =
+            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_);
+        if (error != Error::Ok) {
+          return error;
+        }
+      }
+      numel_ = new_numel;
+      std::copy(new_sizes.begin(), new_sizes.end(), sizes_);
     }
-    // no work to do after checking for error
-    return Error::Ok;
   }
-
-  auto new_numel = compute_numel(new_sizes.data(), dim_);
-
-  // Upper bounded tensors can be reshaped but not beyond upper bound
-  if (shape_dynamism_ == TensorShapeDynamism::DYNAMIC_BOUND ||
-      // TODO(T175194371): Unbounded tensor resizing is not yet supported: treat
-      // them as upper-bounded.
-      shape_dynamism_ == TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto new_nbytes = new_numel * elementSize(type_);
-    ET_CHECK_OR_RETURN_ERROR(
-        new_nbytes <= capacity_,
-        NotSupported,
-        "Attempted to resize a tensor with dynamism %d "
-        "to %zu which is beyond its capacity %zu",
-        (int)shape_dynamism_,
-        new_nbytes,
-        capacity_);
-  }
-
-  // Copy sizes over
-  std::memcpy(sizes_, new_sizes.data(), sizeof(SizesType) * dim_);
-
-  // Compute new strides
-  ET_CHECK_OR_RETURN_ERROR(
-      strides_ != nullptr, Internal, "Strides cannot be nullptr for resize");
-  ET_CHECK_OR_RETURN_ERROR(
-      dim_order_ != nullptr,
-      Internal,
-      "Dim order cannot be nullptr for resize");
-  auto status = dim_order_to_stride(sizes_, dim_order_, dim_, strides_);
-  ET_CHECK_OR_RETURN_ERROR(
-      status == Error::Ok,
-      Internal,
-      "dim_order_to_stride returned invalid status");
-  numel_ = new_numel;
-
   return Error::Ok;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace etensor
+} // namespace runtime
+} // namespace executorch

@@ -16,16 +16,10 @@ layout(std430) buffer;
 
 #include "indexing_utils.h"
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-
-layout(set = 0, binding = 2) uniform PRECISION restrict OutSizes {
-  ivec4 out_sizes;
-};
-
-layout(set = 0, binding = 3) uniform PRECISION restrict InSizes {
-  ivec4 in_sizes;
-};
+${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_ubo(2, "ivec4", "out_sizes")}
+${layout_declare_ubo(3, "ivec4", "in_sizes")}
 
 layout(set = 0, binding = 4) uniform PRECISION restrict SliceArg {
   int offset;
@@ -49,11 +43,11 @@ void main() {
   // we calculate the source whcn-coordinate amended with offset-ed channel
   // value.  Then we calculate the actual texture position from the
   // whcn-coordinate.
-  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(idx, out_sizes, packed_dim);
+  const ivec4 buf_indices = tidx_to_nchwi(idx, out_sizes, packed_dim);
 
   vec4 outex;
   for (int i=0;i<4;i++) {
-      ivec4 user_coor = from_nchw_buffer_i(buf_indices[i], out_sizes);
+      ivec4 user_coor = nchwi_to_tidx(buf_indices[i], out_sizes);
 
       int in_channel = user_coor.z;
 
@@ -65,9 +59,9 @@ void main() {
         in_sizes,
         packed_dim);
 
-      vec4 v = texelFetch(image_in, in_pow_elem.xyz, 0);
+      vec4 v = texelFetch(t_in, in_pow_elem.xyz, 0);
 
       outex[i] = v[in_pow_elem.w];
   }
-  imageStore(image_out, out_pos, outex);
+  imageStore(t_out, out_pos, outex);
 }

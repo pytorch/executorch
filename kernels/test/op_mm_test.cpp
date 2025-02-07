@@ -19,10 +19,10 @@
 #include <limits>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpMmOutTest : public OperatorTest {
@@ -31,7 +31,7 @@ class OpMmOutTest : public OperatorTest {
     return torch::executor::aten::mm_outf(context_, self, mat2, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf;
 
@@ -81,7 +81,7 @@ TEST_F(OpMmOutTest, OutputDim) {
 /// zeros().
 TEST_F(OpMmOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Half, TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()

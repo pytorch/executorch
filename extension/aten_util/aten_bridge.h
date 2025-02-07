@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #include <ATen/Functions.h> // @manual=//caffe2/aten:ATen-cpu
@@ -18,12 +19,14 @@
 #include <memory>
 #include <vector>
 
-namespace torch {
-namespace util {
+namespace executorch {
+namespace extension {
 
-torch::executor::ScalarType torchToExecuTorchScalarType(caffe2::TypeMeta type);
+torch::executor::ScalarType torch_to_executorch_scalar_type(
+    caffe2::TypeMeta type);
 
-c10::ScalarType execuTorchtoTorchScalarType(torch::executor::ScalarType type);
+c10::ScalarType executorch_to_torch_scalar_type(
+    torch::executor::ScalarType type);
 
 /*
  * @param[in] aten_tensor Input at::Tensor
@@ -45,5 +48,39 @@ void alias_etensor_to_attensor(at::Tensor& at, torch::executor::Tensor& et);
  * cloned.
  */
 at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& et);
+
+TensorPtr alias_tensor_ptr_to_attensor(at::Tensor& t);
+
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::alias_attensor_to_etensor;
+using ::executorch::extension::alias_etensor_to_attensor;
+inline torch::executor::ScalarType torchToExecuTorchScalarType(
+    caffe2::TypeMeta type) {
+  return ::executorch::extension::torch_to_executorch_scalar_type(type);
+}
+inline c10::ScalarType execuTorchtoTorchScalarType(
+    torch::executor::ScalarType type) {
+  return ::executorch::extension::executorch_to_torch_scalar_type(type);
+}
+} // namespace util
+} // namespace executor
+} // namespace torch
+
+// Some users refer to these as `torch::util::`.
+namespace torch {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::torch::executor::util::alias_attensor_to_etensor;
+using ::torch::executor::util::alias_etensor_to_attensor;
+using ::torch::executor::util::execuTorchtoTorchScalarType;
+using ::torch::executor::util::torchToExecuTorchScalarType;
 } // namespace util
 } // namespace torch

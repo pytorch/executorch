@@ -38,13 +38,15 @@
 #include <type_traits>
 #include <utility>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
 namespace pytree {
 
 //===----------------------------------------------------------------------===//
 //     Features from C++20
 //===----------------------------------------------------------------------===//
+
+namespace internal {
 
 template <typename T>
 struct remove_cvref {
@@ -54,6 +56,8 @@ struct remove_cvref {
 
 template <typename T>
 using remove_cvref_t = typename remove_cvref<T>::type;
+
+} // namespace internal
 
 template <typename Fn>
 class FunctionRef;
@@ -79,7 +83,7 @@ class FunctionRef<Ret(Params...)> {
       typename Callable,
       // This is not the copy-constructor.
       typename std::enable_if<
-          !std::is_same<remove_cvref_t<Callable>, FunctionRef>::value,
+          !std::is_same<internal::remove_cvref_t<Callable>, FunctionRef>::value,
           int32_t>::type = 0,
       // Avoid lvalue reference to non-capturing lambda.
       typename std::enable_if<
@@ -153,6 +157,16 @@ class FunctionRef<Ret(Params...)> {
   }
 };
 
+} // namespace pytree
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace pytree {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::pytree::FunctionRef;
 } // namespace pytree
 } // namespace executor
 } // namespace torch
