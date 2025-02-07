@@ -20,6 +20,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_dimension_limit.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -892,16 +893,6 @@ inline bool tensors_have_same_rank(
 inline bool tensor_is_scalar(executorch::aten::Tensor t) {
   return t.dim() == 0 && t.numel() == 1;
 }
-
-/**
- * The expected output size may not be the existing size of any inputs and
- * outputs if the operator supports both broadcast and dynamic shape.
- * Therefore such operators needs extra space to store the calculated expected
- * output size. such dynamic allocation is troublesome in executorch so we can
- * just hard code a static value of a relatively small value because users
- * don't create high dimensional tensors.
- */
-constexpr size_t kTensorDimensionLimit = 16;
 
 /// Returns the product of dim[0:dim), not including dim.
 inline size_t getLeadingDims(
