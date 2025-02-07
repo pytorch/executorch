@@ -38,7 +38,7 @@ install_python() {
   if [[ $(uname -m) == "aarch64" ]]; then
     conda_install "openblas==0.3.28=*openmp*"
   else
-    conda_install mkl=2021.4.0 mkl-include=2021.4.0
+    conda_install mkl=2022.1.0 mkl-include=2022.1.0
   fi
 
   popd

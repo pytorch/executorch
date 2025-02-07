@@ -24,7 +24,7 @@ install_ubuntu() {
     gdb \
     rsync \
     libssl-dev \
-    zip \
+    zip
 
   # These libraries are needed by TorchVision to get optimal performance processing images
   apt-get install -y --no-install-recommends \
