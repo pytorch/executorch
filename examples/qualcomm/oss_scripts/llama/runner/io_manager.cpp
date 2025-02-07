@@ -557,8 +557,8 @@ SmartMaskIoMgr::SmartMaskIoMgr(
     const bool use_int64_token)
     : IoMgrBase(modules),
       shard_layers_({num_layers}),
-      prefill_cache_len_(prefill_cache_len),
       kv_cache_len_(kv_cache_len),
+      prefill_cache_len_(prefill_cache_len),
       vocab_size_(vocab_size),
       num_layers_(num_layers),
       head_dim_(head_dim),
@@ -1002,7 +1002,7 @@ void SmartMaskIoMgr::prepare_prefill_io(
 
   // [O]: logits
   int logit_index = 0;
-  Result<TensorInfo> logits = methods_meta[0]->output_tensor_meta(0);
+  Result<TensorInfo> logits = methods_meta[0]->output_tensor_meta(logit_index);
   prefill_logits_ = std::make_unique<TensorImpl>(
       logits->scalar_type(),
       logits->sizes().size(),
