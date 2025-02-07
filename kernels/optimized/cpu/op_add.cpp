@@ -140,29 +140,30 @@ Tensor& opt_add_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
+    static constexpr const char op_name[] = "add.out";
     if (selected_optimized_path ==
             ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
         selected_optimized_path ==
             ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
         selected_optimized_path ==
             ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
-      // This behavior is a bit confusing.
       // Reason we swap out args here is because handle_broadcast_elementwise
       // handles this selected_optimized_path option a bit differently.
-      // This should really be resoled in handle_broadcast_elementwise.
-      // However, the current blocker is that handle_broadcast_elementwise tries to
-      // be agnostic of op. This should be fixed, likely by moving lambda creation
-      // to handle_broadcast_elementwise and it be aware of which op is being executed.
+      // This should really be resolved in handle_broadcast_elementwise.
+      // However, the current blocker is that handle_broadcast_elementwise tries
+      // to be agnostic of op. This should be fixed, likely by moving lambda
+      // creation to handle_broadcast_elementwise and it be aware of which op is
+      // being executed.
       auto add_lambda = [](auto x, auto y, auto alpha_val) {
         return y + alpha_val * x;
       };
-      return torch::executor::handle_broadcast_elementwise<BinaryOpType::kAdd>(
+      return torch::executor::handle_broadcast_elementwise<op_name>(
           ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
     } else {
       auto add_lambda = [](auto x, auto y, auto alpha_val) {
         return x + alpha_val * y;
       };
-      return torch::executor::handle_broadcast_elementwise<BinaryOpType::kAdd>(
+      return torch::executor::handle_broadcast_elementwise<op_name>(
           ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
     }
   } else {
