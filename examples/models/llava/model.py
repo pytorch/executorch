@@ -208,7 +208,7 @@ class Llava(torch.nn.Module):
     ) -> torch.Tensor:
         """Input is one token. Return logits for next token."""
         token_embeds = self.embed_tokens(token).unsqueeze(0)
-        return self.text_model.forward(None, input_pos, token_embeds)
+        return self.text_model.forward(None, {"input_pos": input_pos}, token_embeds)
 
     def image_embedding(self, images: torch.Tensor) -> torch.Tensor:
         preprocessed_img = self.image_preprocess(images)
@@ -236,7 +236,9 @@ class Llava(torch.nn.Module):
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
         # returns the prefilled token length too, because the text model generates one logits in each forward call.
-        return embeds.shape[1], self.text_model.forward(None, torch.tensor([0]), embeds)
+        return embeds.shape[1], self.text_model.forward(
+            None, {"input_pos": torch.tensor([0])}, embeds
+        )
 
     # reference prefill using the text model in HF
     def prefill_ref(
