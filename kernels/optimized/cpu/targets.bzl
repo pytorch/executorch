@@ -115,7 +115,7 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "add_sub_impl",
-        srcs = ["op_add_sub_impl.cpp"],
+        srcs = [],
         exported_headers = ["op_add_sub_impl.h"],
         visibility = ["//executorch/kernels/optimized/cpu/..."],
         exported_deps = ["//executorch/runtime/core:core"],

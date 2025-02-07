@@ -130,12 +130,15 @@ Tensor& opt_mul_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    // Reason for using alpha:
+    // Reason for using alpha even when used for mul is becasuse
+    // handle_broadcast_elementwise is used for add and sub as well
+    // and it uses alpha.
     auto mul_lambda = [](auto x, auto y, auto alpha) {
-      (void)alpha;
+      [[maybe_unused]] alpha;
       return x * y;
     };
-    return torch::executor::handle_broadcast_elementwise<BinaryOpType::kMul>(
+    static constexpr const char op_name[] = "mul.out";
+    return torch::executor::handle_broadcast_elementwise<op_name>(
         ctx, mul_lambda, a, b, out, selected_optimized_path);
   } else {
     ScalarType common_type =
