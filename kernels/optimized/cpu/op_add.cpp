@@ -67,7 +67,8 @@ Tensor& opt_add_out(
     return opt_add_out(ctx, b, a, alpha, out);
   }
 
-  return torch::executor::kernels::impl::opt_add_sub_out_impl(
+  static constexpr const char op_name[] = "add.out";
+  return torch::executor::kernels::impl::opt_add_sub_out_impl<false, op_name>(
       ctx, a, b, alpha, out);
 }
 
