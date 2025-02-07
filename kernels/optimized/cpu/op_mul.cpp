@@ -133,8 +133,7 @@ Tensor& opt_mul_out(
     // Reason for using alpha even when used for mul is becasuse
     // handle_broadcast_elementwise is used for add and sub as well
     // and it uses alpha.
-    auto mul_lambda = [](auto x, auto y, auto alpha) {
-      [[maybe_unused]] alpha;
+    auto mul_lambda = [](auto x, auto y, [[maybe_unused]] auto alpha) {
       return x * y;
     };
     static constexpr const char op_name[] = "mul.out";
