@@ -513,6 +513,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.rand([1, 2, 3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_logical_not(self):
+        module = LogicalNot()  # noqa: F405
+        sample_input = (torch.rand([1, 2, 3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_log_softmax(self):
         module = LogSoftmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
@@ -691,6 +696,18 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = View()  # noqa: F405
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_where(self):
+        modules = [
+            Where(),  # noqa: F405
+            WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
+            (torch.randn(3, 2),),
+        ]
+        for i, module in enumerate(modules):
+            self.lower_module_and_test_output(module, sample_inputs[i])
 
 
 class TestQNNFloatingPointModel(TestQNN):
@@ -1396,6 +1413,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_logical_not(self):
+        module = LogicalNot()  # noqa: F405
+        sample_input = (torch.rand([1, 2, 3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_log_softmax(self):
         module = LogSoftmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
@@ -1608,6 +1631,19 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_where(self):
+        modules = [
+            Where(),  # noqa: F405
+            WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
+        ]
+        sample_inputs = [
+            (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
+            (torch.randn(3, 2),),
+        ]
+        for i, module in enumerate(modules):
+            module = self.get_qdq_module(module, sample_inputs[i])
+            self.lower_module_and_test_output(module, sample_inputs[i])
 
 
 class TestQNNQuantizedModel(TestQNN):
