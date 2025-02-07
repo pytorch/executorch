@@ -66,7 +66,8 @@ def load_calibration_dataset(dataset_path: str):
 
 
 def quantize_model(model: torch.fx.GraphModule, example_args, subset_size=300):
-    quantizer = OpenVINOQuantizer(ignored_scope=nncf.IgnoredScope(types=["__getitem__", "layer_norm"]))
+    #quantizer = OpenVINOQuantizer(ignored_scope=nncf.IgnoredScope(types=["__getitem__", "layer_norm"]))
+    quantizer = OpenVINOQuantizer()
 
     print("PTQ: Annotate the model...")
     annotated_model = prepare_pt2e(model, quantizer)
@@ -100,12 +101,12 @@ def main(suite: str, model_name: str, input_shape, quantize: bool, dataset_path:
         # Quantize model
         if not dataset_path:
             raise ValueError("Quantization requires a calibration dataset.")
-        calibration_dataset = load_calibration_dataset(dataset_path)
+        #calibration_dataset = load_calibration_dataset(dataset_path)
 
         captured_model = aten_dialect.module()
-        visualize_fx_model(captured_model, f"{model_name}_fp32.svg")
+        #visualize_fx_model(captured_model, f"{model_name}_fp32.svg")
         quantized_model = quantize_model(captured_model, example_args)
-        visualize_fx_model(quantized_model, f"{model_name}_int8.svg")
+        #visualize_fx_model(quantized_model, f"{model_name}_int8.svg")
         aten_dialect: ExportedProgram = export(quantized_model, example_args)
 
     # Convert to edge dialect
