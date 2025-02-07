@@ -179,8 +179,6 @@ def main(args):
         # latest PT commit otherwise
         use_pytorch_nightly = False
 
-    install_requirements(use_pytorch_nightly)
-
     # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
     # or is not turned off explicitly (--pybind off)
     # then install XNNPACK by default.
@@ -206,6 +204,8 @@ def main(args):
 
     # Check if the required submodules are present and update them if not
     check_and_update_submodules()
+
+    install_requirements(use_pytorch_nightly)
 
     # Run the pip install command
     subprocess.run(
