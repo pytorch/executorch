@@ -101,6 +101,8 @@ parseListOptionalType(
  * @param[in] program The Program to use for constant buffer data.
  * @param[in] nbytes The amount of memory to get from the allocator.
  * @param[in] allocator The source of memory for non-constant tensors.
+ * @param[in] named_data_map An optional map of {name, blob} used to resolve
+ *     data that is external to the PTE, if any.
  *
  * @returns On success, the data pointer to use for the tensor. On failure, a
  *     non-Ok Error.

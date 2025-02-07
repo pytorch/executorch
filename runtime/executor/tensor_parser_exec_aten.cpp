@@ -134,11 +134,11 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
       return err;
     }
     return planned_ptr;
-
   }
-  // Constant, stored externally.
+
+  // External tensors.
   else if (
-      allocation_info == nullptr && s_tensor->extra_tensor_info() != nullptr &&
+      s_tensor->extra_tensor_info() != nullptr &&
       s_tensor->extra_tensor_info()->location() ==
           executorch_flatbuffer::TensorDataLocation::EXTERNAL) {
     // Check that fqn is not null.
@@ -192,15 +192,41 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
           i);
     }
 
-    Result<FreeableBuffer> data_res = named_data_map->get_data(
-        s_tensor->extra_tensor_info()->fully_qualified_name()->c_str());
-    if (!data_res.ok()) {
-      return data_res.error();
+    // Constant value.
+    if (allocation_info == nullptr) {
+      Result<FreeableBuffer> data_res = named_data_map->get_data(
+          s_tensor->extra_tensor_info()->fully_qualified_name()->c_str());
+      if (!data_res.ok()) {
+        return data_res.error();
+      }
+      // The const_cast is 'ok' here because program and runtime should
+      // guarantee that this data is never modified. Temporary until runtime
+      // takes ownership of FreeableBuffers in TODO(T214294528).
+      return const_cast<void*>(data_res.get().data());
     }
-    // The const_cast is 'ok' here because program and runtime should guarantee
-    // that this data is never modified. Temporary until we introduce the
-    // `get_and_persist_data` API from TODO(T214294528).
-    return const_cast<void*>(static_cast<const void*>(data_res.get().data()));
+
+    // Mutable value.
+    else {
+      // Call load_into.
+      auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
+      if (!planned_ptr.ok()) {
+        return planned_ptr.error();
+      }
+      auto size = named_data_map->load_data_into(
+          s_tensor->extra_tensor_info()->fully_qualified_name()->c_str(),
+          planned_ptr.get(),
+          nbytes);
+      if (size.error() != Error::Ok) {
+        return size.error();
+      }
+      ET_CHECK_OR_RETURN_ERROR(
+          size.get() == nbytes,
+          InvalidExternalData,
+          "Expected to load %zu bytes, actually loaded %u bytes",
+          nbytes,
+          static_cast<uint>(size.get()));
+      return planned_ptr;
+    }
   }
 
   // Constant, stored in PTE file.

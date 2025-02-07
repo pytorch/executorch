@@ -3,6 +3,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from typing import FrozenSet
+
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter, is_constant
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -15,9 +17,14 @@ class I64toI32(ExportPass):
     Cast unsupported int64 datatype into int32.
     """
 
-    def __init__(self, edge_program: torch.export.ExportedProgram):
+    def __init__(
+        self,
+        edge_program: torch.export.ExportedProgram,
+        skip_node: FrozenSet[str] = frozenset(),
+    ):
         super(I64toI32, self).__init__()
         self.edge_program = edge_program
+        self.skip_node = skip_node
         # pyre-ignore[4]
         self.copy_op = exir_ops.edge.aten._to_copy.default
 
@@ -42,6 +49,8 @@ class I64toI32(ExportPass):
 
     def _cast_to_int32(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
+            if n.target in self.skip_node:
+                continue
             if is_constant(n, self.edge_program):
                 param = get_parameter(n, self.edge_program)
                 if param.dtype == torch.int64:

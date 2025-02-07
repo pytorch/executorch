@@ -146,5 +146,14 @@ inline std::ostream& operator<<(
   return os;
 }
 
+enum class AxisMapLayout : uint8_t {
+  DEFAULT = 0u,
+  OPTIMIZED = 1u,
+};
+
+constexpr AxisMapLayout kDefaultAxisMap = AxisMapLayout::DEFAULT;
+
+constexpr AxisMapLayout kOptimizedAxisMap = AxisMapLayout::OPTIMIZED;
+
 } // namespace utils
 } // namespace vkcompute

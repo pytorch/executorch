@@ -265,6 +265,7 @@ set(_optimized_kernels_test_sources
     "op_bmm_test.cpp"
     "op_div_test.cpp"
     "op_exp_test.cpp"
+    "op_fft_r2c_test.cpp"
     "op_gelu_test.cpp"
     "op_le_test.cpp"
     "op_log_softmax_test.cpp"

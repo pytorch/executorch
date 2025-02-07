@@ -7,6 +7,9 @@
  */
 
 #pragma once
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -55,7 +58,6 @@ class Method final {
         program_(rhs.program_),
         memory_manager_(rhs.memory_manager_),
         temp_allocator_(rhs.temp_allocator_),
-        named_data_map_(rhs.named_data_map_),
         serialization_plan_(rhs.serialization_plan_),
         event_tracer_(rhs.event_tracer_),
         n_value_(rhs.n_value_),
@@ -273,13 +275,11 @@ class Method final {
       const Program* program,
       MemoryManager* memory_manager,
       EventTracer* event_tracer,
-      MemoryAllocator* temp_allocator,
-      const NamedDataMap* named_data_map)
+      MemoryAllocator* temp_allocator)
       : step_state_(),
         program_(program),
         memory_manager_(memory_manager),
         temp_allocator_(temp_allocator),
-        named_data_map_(named_data_map),
         serialization_plan_(nullptr),
         event_tracer_(event_tracer),
         n_value_(0),
@@ -303,7 +303,9 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  ET_NODISCARD Error init(executorch_flatbuffer::ExecutionPlan* s_plan);
+  ET_NODISCARD Error init(
+      executorch_flatbuffer::ExecutionPlan* s_plan,
+      const NamedDataMap* named_data_map);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {
@@ -322,7 +324,6 @@ class Method final {
   const Program* program_;
   MemoryManager* memory_manager_;
   MemoryAllocator* temp_allocator_;
-  const NamedDataMap* named_data_map_;
   executorch_flatbuffer::ExecutionPlan* serialization_plan_;
   EventTracer* event_tracer_;
 
@@ -342,7 +343,7 @@ class Method final {
    * the number of successfully-initialized entries so that ~Method doesn't try
    * to clean up uninitialized entries.
    */
-  ET_NODISCARD Error parse_values();
+  ET_NODISCARD Error parse_values(const NamedDataMap* named_data_map);
 
   ET_NODISCARD Error resolve_operator(
       int32_t op_index,
@@ -364,3 +365,5 @@ namespace executor {
 using ::executorch::runtime::Method;
 } // namespace executor
 } // namespace torch
+
+#pragma GCC diagnostic pop

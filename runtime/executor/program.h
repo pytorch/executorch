@@ -7,6 +7,9 @@
  */
 
 #pragma once
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <cinttypes>
 #include <cstdint>
@@ -126,6 +129,8 @@ class Program final {
    *     execution of the loaded method. If `memory_manager.temp_allocator()` is
    *     null, the runtime will allocate temp memory using `et_pal_allocate()`.
    * @param[in] event_tracer The event tracer to use for this method run.
+   * @param[in] named_data_map An optional map of {name, blob} used to resolve
+   *     data that is external to the PTE, if any.
    *
    * @returns The loaded method on success, or an error on failure.
    */
@@ -302,3 +307,5 @@ namespace executor {
 using ::executorch::runtime::Program;
 } // namespace executor
 } // namespace torch
+
+#pragma GCC diagnostic pop

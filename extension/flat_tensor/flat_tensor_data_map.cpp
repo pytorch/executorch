@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/flat_tensor/data_map.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/extension/flat_tensor/serialize/schema_generated.h>
@@ -76,23 +76,18 @@ Result<const TensorLayout> create_tensor_layout(
 
 } // namespace
 
-ET_NODISCARD Result<const TensorLayout> DataMap::get_metadata(
+ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_metadata(
     const char* key) const {
-  auto tensor_metadata = flat_tensor_->tensors();
   Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata_res =
-      get_flat_tensor_metadata(key, tensor_metadata);
+      get_flat_tensor_metadata(key, flat_tensor_->tensors());
   if (!metadata_res.ok()) {
     return metadata_res.error();
   }
-  Result<const TensorLayout> tensor_layout_res =
-      create_tensor_layout(metadata_res.get());
-  if (!tensor_layout_res.ok()) {
-    return tensor_layout_res.error();
-  }
-  return tensor_layout_res.get();
+  return create_tensor_layout(metadata_res.get());
 }
 
-ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* key) const {
+ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
+    const char* key) const {
   auto tensor_metadata = flat_tensor_->tensors();
 
   Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata_res =
@@ -101,9 +96,9 @@ ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* key) const {
     return metadata_res.error();
   }
   const auto metadata = metadata_res.get();
-  if (metadata->segment_index() == -1 || metadata->offset() == -1) {
-    // Key doesn't exist.
-    return Error::NotFound;
+  if (metadata->segment_index() < 0 || metadata->offset() < 0) {
+    // Invalid segment_index/offset; malformed PTD file.
+    return Error::InvalidExternalData;
   }
 
   Result<const TensorLayout> tensor_layout_res = create_tensor_layout(metadata);
@@ -111,31 +106,37 @@ ET_NODISCARD Result<FreeableBuffer> DataMap::get_data(const char* key) const {
     return tensor_layout_res.error();
   }
 
+  // This FreeableBuffer doesn't own the underlying data, and will not free it,
+  // which is why the free function is a nullptr.
+  // TODO(T214294528): Remove data_ro_ and instead load the data here, letting
+  // FreeableBuffer own it.
   return FreeableBuffer(
       static_cast<const uint8_t*>(data_ro_.data()) + metadata->offset(),
       tensor_layout_res.get().nbytes(),
       nullptr);
 }
 
-ET_NODISCARD Result<size_t> DataMap::load_data_into(
+ET_NODISCARD Result<size_t> FlatTensorDataMap::load_data_into(
     ET_UNUSED const char* key,
     ET_UNUSED void* buffer,
     ET_UNUSED size_t size) const {
   return Error::NotImplemented;
 }
 
-ET_NODISCARD Result<size_t> DataMap::get_num_keys() const {
+ET_NODISCARD Result<size_t> FlatTensorDataMap::get_num_keys() const {
   return flat_tensor_->tensors()->size();
 }
 
-ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
+ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
+    size_t index) const {
   if (index < 0 || index >= flat_tensor_->tensors()->size()) {
     return Error::InvalidArgument;
   }
   return flat_tensor_->tensors()->Get(index)->fully_qualified_name()->c_str();
 }
 
-/* static */ Result<DataMap> DataMap::load(DataLoader* loader) {
+/* static */ Result<FlatTensorDataMap> FlatTensorDataMap::load(
+    DataLoader* loader) {
   // Load data map.
   size_t flatbuffer_offset = 0;
   size_t flatbuffer_size = 0;
@@ -202,6 +203,16 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
   const flat_tensor_flatbuffer::FlatTensor* flat_tensor =
       flat_tensor_flatbuffer::GetFlatTensor(flat_tensor_data->data());
 
+  // Validate flatbuffer data.
+  flatbuffers::Verifier verifier(
+      reinterpret_cast<const uint8_t*>(flat_tensor_data->data()),
+      flat_tensor_data->size());
+  bool ok = flat_tensor_flatbuffer::VerifyFlatTensorBuffer(verifier);
+  ET_CHECK_OR_RETURN_ERROR(
+      ok,
+      InvalidExternalData,
+      "Verification failed; data may be truncated or corrupt");
+
   // Get pointer to tensor metadata.
   const auto* s_tensor_metadata = flat_tensor->tensors();
   if (s_tensor_metadata == nullptr) {
@@ -213,19 +224,15 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
   const auto* s_data_segment = flat_tensor->segments();
 
   // TODO(T214294528): Support multiple segments in FlatTensor.
-  if (s_data_segment->size() > 1) {
+  if (s_data_segment->size() != 1) {
     ET_LOG(
         Error,
         "FlatTensor has %u segments, only 1 supported.",
         s_data_segment->size());
   }
-  // First segment offset should be 0.
-  int segment_offset = s_data_segment->Get(0)->offset();
-  if (segment_offset != 0) {
-    ET_LOG(Error, "FlatTensor segment offset %d != 0", segment_offset);
-  }
   // First segment size should be <= the total segment data size.
   int segment_size = s_data_segment->Get(0)->size();
+  int segment_offset = s_data_segment->Get(0)->offset();
   if (segment_size > segment_data_size) {
     ET_LOG(
         Error,
@@ -242,13 +249,8 @@ ET_NODISCARD Result<const char*> DataMap::get_key(size_t index) const {
     return data_ro.error();
   }
 
-  return DataMap(
+  return FlatTensorDataMap(
       std::move(flat_tensor_data.get()), flat_tensor, std::move(data_ro.get()));
-}
-
-DataMap::~DataMap() {
-  flat_tensor_data_.Free();
-  data_ro_.Free();
 }
 
 } // namespace extension

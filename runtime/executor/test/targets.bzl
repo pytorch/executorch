@@ -137,7 +137,7 @@ def define_common_targets(is_fbcode = False):
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/extension/flat_tensor:data_map",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/extension/runner_util:inputs",
                 "//executorch/kernels/portable:generated_lib",
             ],

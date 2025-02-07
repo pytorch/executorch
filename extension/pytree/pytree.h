@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <variant>
 
@@ -24,8 +25,10 @@ namespace executorch {
 namespace extension {
 namespace pytree {
 
-inline void pytree_assert(bool must_be_true) {
-  assert(must_be_true);
+inline void pytree_check(bool must_be_true) {
+  if (!must_be_true) {
+    throw std::runtime_error("pytree assertion failed");
+  }
 }
 
 #ifdef _MSC_VER
@@ -35,18 +38,6 @@ inline void pytree_assert(bool must_be_true) {
 #else
 #define EXECUTORCH_ALWAYS_INLINE inline
 #endif
-
-[[noreturn]] EXECUTORCH_ALWAYS_INLINE void pytree_unreachable() {
-  assert(false);
-#if defined(__GNUC__)
-  __builtin_unreachable();
-#elif defined(_MSC_VER)
-  __assume(0);
-#else
-  while (!0)
-    ;
-#endif
-}
 
 enum class Kind : uint8_t { List, Tuple, NamedTuple, Dict, Leaf, Custom, None };
 
@@ -60,7 +51,7 @@ struct Key {
   std::variant<std::monostate, KeyInt, KeyStr> repr_;
 
  public:
-  Key() {}
+  Key() = default;
   /*implicit*/ Key(KeyInt key) : repr_(key) {}
   /*implicit*/ Key(KeyStr key) : repr_(std::move(key)) {}
 
@@ -131,7 +122,7 @@ struct ContainerHandle {
   using leaf_type = T;
   std::unique_ptr<container_type> handle;
 
-  ContainerHandle() {}
+  ContainerHandle() = default;
 
   template <typename... Args>
   ContainerHandle(Args... args)
@@ -143,45 +134,45 @@ struct ContainerHandle {
       : handle(std::move(c)) {}
 
   void set_leaf(leaf_type* leaf) {
-    pytree_assert(handle->kind == Kind::Leaf);
+    pytree_check(handle->kind == Kind::Leaf);
     handle->leaf = leaf;
   }
 
   operator leaf_type() const {
-    pytree_assert(handle->kind == Kind::Leaf);
+    pytree_check(handle->kind == Kind::Leaf);
     return *handle->leaf;
   }
 
   const leaf_type& leaf() const {
-    pytree_assert(handle->kind == Kind::Leaf);
+    pytree_check(handle->kind == Kind::Leaf);
     return *handle->leaf;
   }
   leaf_type& leaf() {
-    pytree_assert(handle->kind == Kind::Leaf);
+    pytree_check(handle->kind == Kind::Leaf);
     return *handle->leaf;
   }
 
   const leaf_type* leaf_ptr() const {
-    pytree_assert(handle->kind == Kind::Leaf);
+    pytree_check(handle->kind == Kind::Leaf);
     return handle->leaf;
   }
   leaf_type* leaf_ptr() {
-    pytree_assert(handle->kind == Kind::Leaf);
+    pytree_check(handle->kind == Kind::Leaf);
     return handle->leaf;
   }
 
   const ContainerHandle& operator[](size_t idx) const {
-    pytree_assert(idx < handle->size);
+    pytree_check(idx < handle->size);
     return handle->items[idx];
   }
 
   ContainerHandle& operator[](size_t idx) {
-    pytree_assert(idx < handle->size);
+    pytree_check(idx < handle->size);
     return handle->items[idx];
   }
 
   bool contains(const KeyStr& lookup_key) const {
-    pytree_assert(isDict());
+    pytree_check(isDict());
     for (size_t i = 0; i < handle->size; ++i) {
       if (handle->keys[i] == lookup_key) {
         return true;
@@ -191,13 +182,13 @@ struct ContainerHandle {
   }
 
   const ContainerHandle& at(const Key& lookup_key) const {
-    pytree_assert(isDict());
+    pytree_check(isDict());
     for (size_t i = 0; i < handle->size; ++i) {
       if (handle->keys[i] == lookup_key) {
         return handle->items[i];
       }
     }
-    pytree_unreachable();
+    throw std::runtime_error("Dict::at lookup failed");
   }
 
   const ContainerHandle& at(const KeyInt& lookup_key) const {
@@ -209,11 +200,11 @@ struct ContainerHandle {
   }
 
   const Key& key(size_t idx) const {
-    pytree_assert(isDict());
+    pytree_check(isDict());
     return handle->keys[idx];
   }
   Key& key(size_t idx) {
-    pytree_assert(isDict());
+    pytree_check(isDict());
     return handle->keys[idx];
   }
 
@@ -398,7 +389,8 @@ StrTreeSpec to_str_internal(const TreeSpec<Aux>& spec) {
         s.append(key.as_str());
         s.push_back(Config::kDictStrKeyQuote);
       } else {
-        pytree_unreachable();
+        throw std::runtime_error(
+            "invalid key in pytree dict; must be int or string");
       }
       s.push_back(Config::kDictKeyValueSep);
       s.append(to_str_internal(spec[i]));
@@ -427,8 +419,40 @@ struct arr {
     return data_[idx];
   }
 
+  T& at(size_t idx) {
+    if (idx >= size()) {
+      throw std::out_of_range(
+          "bounds check failed in pytree arr at index " + std::to_string(idx));
+    }
+    return data_[idx];
+  }
+
+  const T& at(size_t idx) const {
+    if (idx >= size()) {
+      throw std::out_of_range(
+          "bounds check failed in pytree arr at index " + std::to_string(idx));
+    }
+    return data_[idx];
+  }
+
   inline T* data() {
     return data_.get();
+  }
+
+  T* begin() {
+    return data_.get();
+  }
+
+  T* end() {
+    return begin() + size();
+  }
+
+  const T* begin() const {
+    return data_.get();
+  }
+
+  const T* end() const {
+    return begin() + size();
   }
 
   inline size_t size() const {
@@ -442,7 +466,12 @@ struct arr {
 
 inline size_t read_number(const StrTreeSpec& spec, size_t& read_idx) {
   size_t num = 0;
-  while (isdigit(spec[read_idx])) {
+  if (!isdigit(spec.at(read_idx))) {
+    throw std::runtime_error(
+        std::string("expected a digit while decoding pytree, not ") +
+        spec[read_idx]);
+  }
+  while (isdigit(spec.at(read_idx))) {
     num = 10 * num + (spec[read_idx] - '0');
     read_idx++;
   }
@@ -454,19 +483,22 @@ inline arr<size_t> read_node_layout(const StrTreeSpec& spec, size_t& read_idx) {
   arr<size_t> ret(child_num);
 
   size_t child_idx = 0;
-  while (spec[read_idx] == Config::kChildrenDataSep) {
+  while (spec.at(read_idx) == Config::kChildrenDataSep) {
     ++read_idx;
-    ret[child_idx++] = read_number(spec, read_idx);
+    ret.at(child_idx++) = read_number(spec, read_idx);
   }
   return ret;
 }
 
+// spec_data comes from pre_parse, which guarantees 1)
+// spec_data.size() == spec.size() and 2) contents of spec_data are
+// in-bounds indices for spec, so we omit bounds checks for spec_data.
 template <typename Aux>
 TreeSpec<Aux> from_str_internal(
     const StrTreeSpec& spec,
     size_t read_idx,
     const arr<size_t>& spec_data) {
-  const auto kind_char = spec[read_idx];
+  const auto kind_char = spec.at(read_idx);
   switch (kind_char) {
     case Config::kTuple:
     case Config::kNamedTuple:
@@ -480,7 +512,7 @@ TreeSpec<Aux> from_str_internal(
       } else if (Config::kCustom == kind_char) {
         kind = Kind::Custom;
         read_idx++;
-        assert(spec[read_idx] == '(');
+        assert(spec.at(read_idx) == '(');
         auto type_str_end = spec_data[read_idx];
         read_idx++;
         custom_type = spec.substr(read_idx, type_str_end - read_idx);
@@ -499,10 +531,15 @@ TreeSpec<Aux> from_str_internal(
       size_t leaves_offset = 0;
 
       if (size > 0) {
-        while (spec[read_idx] != Config::kNodeDataEnd) {
+        while (spec.at(read_idx) != Config::kNodeDataEnd) {
           // NOLINTNEXTLINE
           auto next_delim_idx = spec_data[read_idx];
           read_idx++;
+          if (child_idx >= size) {
+            throw std::out_of_range(
+                "bounds check failed writing to pytree item at index " +
+                std::to_string(child_idx));
+          }
           c->items[child_idx] =
               from_str_internal<Aux>(spec, read_idx, spec_data);
           read_idx = next_delim_idx;
@@ -525,11 +562,16 @@ TreeSpec<Aux> from_str_internal(
       size_t leaves_offset = 0;
 
       if (size > 0) {
-        while (spec[read_idx] != Config::kNodeDataEnd) {
+        while (spec.at(read_idx) != Config::kNodeDataEnd) {
           // NOLINTNEXTLINE
           auto next_delim_idx = spec_data[read_idx];
           read_idx++;
-          if (spec[read_idx] == Config::kDictStrKeyQuote) {
+          if (child_idx >= size) {
+            throw std::out_of_range(
+                "bounds check failed decoding pytree dict at index " +
+                std::to_string(child_idx));
+          }
+          if (spec.at(read_idx) == Config::kDictStrKeyQuote) {
             auto key_delim_idx = spec_data[read_idx];
             read_idx++;
             const size_t key_len = key_delim_idx - read_idx;
@@ -537,7 +579,6 @@ TreeSpec<Aux> from_str_internal(
             c->keys[child_idx] = spec.substr(read_idx, key_len);
             read_idx = key_delim_idx + 2;
           } else {
-            pytree_assert(isdigit(spec[read_idx]));
             size_t key = read_number(spec, read_idx);
             c->keys[child_idx] = KeyInt(key);
             read_idx += 1;
@@ -546,7 +587,7 @@ TreeSpec<Aux> from_str_internal(
           c->items[child_idx] =
               from_str_internal<Aux>(spec, read_idx, spec_data);
           read_idx = next_delim_idx;
-          leaves_offset += layout[child_idx++];
+          leaves_offset += layout.at(child_idx++);
         }
       } else {
         read_idx++;
@@ -558,7 +599,6 @@ TreeSpec<Aux> from_str_internal(
     case Config::kLeaf:
       return new TreeSpecContainer<Aux>(nullptr);
   }
-  pytree_unreachable();
   return new TreeSpecContainer<Aux>(Kind::None);
 }
 
@@ -570,17 +610,17 @@ struct stack final {
   T data[SIZE];
 
   void push(T&& item) {
-    pytree_assert(size_ < SIZE);
+    pytree_check(size_ < SIZE);
     data[size_++] = std::move(item);
   }
 
   T pop() {
-    pytree_assert(size_ > 0);
+    pytree_check(size_ > 0);
     return data[--size_];
   }
 
   T& top() {
-    pytree_assert(size_ > 0);
+    pytree_check(size_ > 0);
     return data[size_ - 1];
   }
 
@@ -589,7 +629,9 @@ struct stack final {
   }
 };
 
+// We guarantee indicies in the result are in bounds.
 inline arr<size_t> pre_parse(const StrTreeSpec& spec) {
+  // Invariant: indices in stack are in bounds.
   stack<std::pair<size_t, size_t>> stack;
   size_t i = 0;
   const size_t size = spec.size();
@@ -611,11 +653,16 @@ inline arr<size_t> pre_parse(const StrTreeSpec& spec) {
       case Config::kDictStrKeyQuote: {
         size_t idx = i;
         i++;
-        while (spec[i] != Config::kDictStrKeyQuote) {
+        while (spec.at(i) != Config::kDictStrKeyQuote) {
           i++;
         }
-        ret[idx] = i;
-        ret[i] = idx;
+        if (i >= size) {
+          throw std::out_of_range(
+              "bounds check failed while parsing dictionary key at index " +
+              std::to_string(i));
+        }
+        ret.at(idx) = i;
+        ret.at(i) = idx;
         break;
       }
       case Config::kChildrenSep: {

@@ -108,12 +108,23 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
         for schema_ret in target._schema.returns:
             name = schema_ret.name if schema_ret.name else f"__ret_{ret_index}"
             kernel_ret = next(ret_iter)
-            # Return value should not be in OptionalTensor type, so only check torch.TensorType here.
-            if isinstance(schema_ret.type, torch.TensorType) and isinstance(
-                kernel_ret, torch.Tensor
-            ):
-                tensor_arg_types[name] = kernel_ret.dtype
-                ret_index += 1
+            if isinstance(schema_ret.type, torch.TensorType):
+                if isinstance(kernel_ret, torch.Tensor):
+                    tensor_arg_types[name] = kernel_ret.dtype
+                    ret_index += 1
+                # Exceptionally rarely (basically only backwards ops) you might see an OptionalTensor returned.
+                # The schema of these ops though is typically -> (Tensor, Tensor ...). So the actual type
+                # returned in cpp is empty/undefined tensor. There is no analogy to this in python so it
+                # gets crudely mapped to None. To properly fix this core pytorch would have to change the
+                # schema to (Tensor?, ...) which is just never going to happen. So we have to handle this case
+                # here in the verifier and in memory planning as well.
+                elif kernel_ret is None:
+                    tensor_arg_types[name] = schema_ret.default_value
+                    ret_index += 1
+                else:
+                    raise InternalError(
+                        f"encountered return with type Tensor but value wasnt a tensor or None. schema:{target._schema}, output:{ret_index}"
+                    )
             elif schema_ret.type == torch.ListType.ofTensors() and all(
                 isinstance(kernel_ret[i], torch.Tensor) for i in range(len(kernel_ret))
             ):

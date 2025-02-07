@@ -10,7 +10,7 @@
 #include <filesystem>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
-#include <executorch/extension/flat_tensor/data_map.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/method.h>
@@ -22,7 +22,7 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::extension::DataMap;
+using executorch::extension::FlatTensorDataMap;
 using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
@@ -62,11 +62,13 @@ class MethodTest : public ::testing::Test {
         {module_name,
          std::make_unique<FileDataLoader>(std::move(loader.get()))});
 
-    Result<DataMap> data_map = DataMap::load(loaders_[module_name].get());
+    Result<FlatTensorDataMap> data_map =
+        FlatTensorDataMap::load(loaders_[module_name].get());
     EXPECT_EQ(data_map.error(), Error::Ok);
 
     data_maps_.insert(
-        {module_name, std::make_unique<DataMap>(std::move(data_map.get()))});
+        {module_name,
+         std::make_unique<FlatTensorDataMap>(std::move(data_map.get()))});
   }
 
   void SetUp() override {
@@ -92,7 +94,8 @@ class MethodTest : public ::testing::Test {
 
  protected:
   std::unordered_map<std::string, std::unique_ptr<Program>> programs_;
-  std::unordered_map<std::string, std::unique_ptr<DataMap>> data_maps_;
+  std::unordered_map<std::string, std::unique_ptr<FlatTensorDataMap>>
+      data_maps_;
 };
 
 TEST_F(MethodTest, MoveTest) {
