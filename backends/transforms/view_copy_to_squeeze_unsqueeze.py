@@ -46,8 +46,8 @@ class ViewCopyToSqueezeUnsqueezePass(ExportPass):
         i = 0
         j = 0
         idx = []
-        while i < len(input_shape):
-            if j < len(view_shape) and input_shape[i] == view_shape[j]:
+        while i < len(input_shape) and j < len(view_shape):
+            if input_shape[i] == view_shape[j]:
                 i += 1
                 j += 1
             elif input_shape[i] == 1:
@@ -56,8 +56,8 @@ class ViewCopyToSqueezeUnsqueezePass(ExportPass):
                 i += 1
             else:
                 return None
-        # If there are remaining dimensions in view_shape, shapes do not match
-        if j < len(view_shape):
+        # If there are remaining dimensions, shapes do not match
+        if i < len(input_shape) or j < len(view_shape):
             return None
         return idx
 
