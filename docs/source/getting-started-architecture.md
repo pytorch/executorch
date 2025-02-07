@@ -1,4 +1,4 @@
-# High-level Architecture and Components of ExecuTorch
+# Architecture and Components
 
 This page describes the technical architecture of ExecuTorch and its individual components. This document is targeted towards engineers who are deploying PyTorch model onto edge devices.
 
