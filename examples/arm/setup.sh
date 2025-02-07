@@ -96,10 +96,16 @@ function setup_fvp() {
         shift; # drop this arg
     fi
     if [[ "${OS}" != "Linux" ]]; then
-        echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
-        echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
-        echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
-        return 1
+        # Check if FVP is callable
+        if command -v FVP_Corstone_SSE-300_Ethos-U55 &> /dev/null; then
+            echo "[${FUNCNAME[0]}] Info: FVP for MacOS seem to be installed. Continuing..."
+            return 0  # If true exit gracefully and proceed with setup
+        else
+            echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
+            echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
+            echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
+            return 1  # Throw error. User need to install FVP according to ^^^
+        fi
     fi
 
     # Download and install the Corstone 300 FVP simulator platform
