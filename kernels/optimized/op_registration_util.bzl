@@ -90,9 +90,14 @@ def define_op_library(name, deps):
             "//executorch/kernels/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        # kernels often have helpers with no prototypes just disabling the warning here as the headers
-        # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes"] + get_compiler_optimization_flags(),
+        compiler_flags = [
+            # kernels often have helpers with no prototypes just disabling the warning here as the headers
+            # are codegend and linked in later
+            "-Wno-missing-prototypes",
+            # pragma unroll fails with -Os, don't need to warn us and
+            # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
+            "-Wno-pass-failed",
+        ] + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps + get_vec_deps(),
