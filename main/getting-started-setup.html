@@ -709,6 +709,9 @@ to ExecuTorch.</p>
 ./install_executorch.sh<span class="w"> </span>--clean
 <span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 
+<span class="c1"># Go to work directory.</span>
+<span class="nb">cd</span><span class="w"> </span>..
+
 <span class="c1"># Build the executor_runner target</span>
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>--target<span class="w"> </span>executor_runner<span class="w"> </span>-j9
 </pre></div>
