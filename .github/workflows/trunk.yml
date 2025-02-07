@@ -1,12 +1,16 @@
 name: trunk
 
 on:
-  pull_request:
-    tags:
-      - ciflow/trunk/*
   push:
     branches:
       - main
+      - release/*
+    tags:
+      - ciflow/trunk/*
+  pull_request:
+    paths:
+      - CMakeLists.txt
+      - .github/workflows/trunk.yml
   workflow_dispatch:
 
 concurrency:
@@ -20,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: macos-m1-stable
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
