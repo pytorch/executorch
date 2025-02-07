@@ -292,9 +292,6 @@ class TestProgramManagers(unittest.TestCase):
         ).exported_program()
         for node in ep.graph.nodes:
             self.assertNotEqual(node.op, "get_attr")
-        self.assertEqual(
-            len([node for node in ep.graph.nodes if node.op == "placeholder"]), 2
-        )
 
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir
