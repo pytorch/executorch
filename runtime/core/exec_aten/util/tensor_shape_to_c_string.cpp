@@ -11,6 +11,8 @@
 #include <executorch/runtime/platform/assert.h>
 
 #include <cinttypes>
+#include <cstdio> // For snprintf.
+#include <cstring>
 
 namespace executorch::runtime {
 namespace {
