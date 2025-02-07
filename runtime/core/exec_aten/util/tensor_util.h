@@ -338,13 +338,18 @@
  *
  * @param[in] cond the condition to check
  */
-#define ET_LOG_AND_RETURN_IF_FALSE(cond)           \
+#define ET_LOG_AND_RETURN_UNLESS(cond)             \
   do {                                             \
     if (!(cond)) {                                 \
       ET_LOG(Error, "Check failed (%s): ", #cond); \
       return false;                                \
     }                                              \
   } while (false)
+
+/**
+ * Backward compatibility shim for the old name of ET_LOG_AND_RETURN_UNLESS.
+ */
+#define ET_LOG_AND_RETURN_IF_FALSE ET_LOG_AND_RETURN_UNLESS
 
 /**
  * A convenience macro to be used in utility functions that check whether input
@@ -354,13 +359,18 @@
  * @param[in] cond the condition to check
  * @param[in] message an additional message to log with `cond`
  */
-#define ET_LOG_MSG_AND_RETURN_IF_FALSE(cond, message, ...)                \
+#define ET_LOG_MSG_AND_RETURN_UNLESS(cond, message, ...)                  \
   do {                                                                    \
     if (!(cond)) {                                                        \
       ET_LOG(Error, "Check failed (%s): " message, #cond, ##__VA_ARGS__); \
       return false;                                                       \
     }                                                                     \
   } while (false)
+
+/**
+ * Backward compatibility shim for the old name of ET_LOG_MSG_AND_RETURN_UNLESS
+ */
+#define ET_LOG_MSG_AND_RETURN_IF_FALSE ET_LOG_MSG_AND_RETURN_UNLESS
 
 /**
  * If `cond` is false, log `cond` and return from the kernel with a failure
