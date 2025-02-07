@@ -85,10 +85,11 @@
     {
         "directory": "runtime/core/exec_aten/util/test",
         "sources": [
-            "tensor_util_test.cpp",
-            "scalar_type_util_test.cpp",
+            "dim_order_util_test.cpp",
             "operator_impl_example_test.cpp",
-            "dim_order_util_test.cpp"
+            "scalar_type_util_test.cpp",
+            "tensor_shape_to_c_string_test.cpp",
+            "tensor_util_test.cpp"
         ]
     },
     {
