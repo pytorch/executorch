@@ -26,7 +26,7 @@ install_ubuntu() {
     libssl-dev \
     zip
 
-  # These libraries are needed by TorchVision to get optimal performance processing images
+  # These libraries are needed by TorchVision
   apt-get install -y --no-install-recommends \
     libjpeg-dev \
     libpng-dev
