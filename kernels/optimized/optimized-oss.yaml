@@ -1,8 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # This yaml file contains operators that have optimized kernels available.
-# Note that this is a copy of optimized.yaml that does not include gelu and
-# log_softmax, due to the OSS build not currently including sleef.
+# Note that this is a copy of optimized.yaml that does not include log_softmax,
+# due to the OSS build not currently including sleef.
 # TODO (T183193812)
 
 - op: add.out
@@ -39,6 +39,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::opt_sigmoid_out
+
+- op: gelu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_gelu_out
 
 - op: le.Scalar_out
   kernels:
