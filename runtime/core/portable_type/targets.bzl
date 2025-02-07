@@ -50,6 +50,9 @@ def define_common_targets():
             "qint_types.h",
             "bits_types.h",
         ],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type/c10:c10",
+        ],
         visibility = [
             "//executorch/extension/...",
             "//executorch/runtime/core/exec_aten/util/...",
