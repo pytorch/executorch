@@ -77,7 +77,8 @@ def define_common_targets():
             name = "tensor_shape_to_c_string" + aten_suffix,
             srcs = ["tensor_shape_to_c_string.cpp"],
             exported_deps = [
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
             ],
             exported_headers = ["tensor_shape_to_c_string.h"],
             visibility = [
@@ -85,3 +86,12 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
         )
+
+    runtime.cxx_library(
+        name = "tensor_dimension_limit",
+        exported_headers = ["tensor_dimension_limit.h"],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )

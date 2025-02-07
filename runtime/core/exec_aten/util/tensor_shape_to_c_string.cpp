@@ -10,13 +10,13 @@
 
 #include <executorch/runtime/platform/assert.h>
 
+#include <cinttypes>
+
 namespace executorch::runtime {
-/**
- * Shared implementation for tensor_util.h, may only contain code that
- * works whether or not ATen mode is active.
- */
-std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
-    executorch::runtime::Span<const executorch::aten::SizesType> shape) {
+namespace {
+template <typename SizesType>
+std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string_impl(
+    executorch::runtime::Span<SizesType> shape) {
   std::array<char, kTensorShapeStringSizeLimit> out;
   char* p = out.data();
   if ET_UNLIKELY (shape.size() > kTensorDimensionLimit) {
@@ -47,6 +47,17 @@ std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
   *(p - 2) = ')';
   *(p - 1) = '\0';
   return out;
+}
+} // namespace
+
+std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
+    executorch::runtime::Span<const std::int32_t> shape) {
+  return tensor_shape_to_c_string_impl(shape);
+}
+
+std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string(
+    executorch::runtime::Span<const std::int64_t> shape) {
+  return tensor_shape_to_c_string_impl(shape);
 }
 
 } // namespace executorch::runtime

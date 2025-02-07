@@ -97,10 +97,10 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       if (!std::equal(sizes_, sizes_ + dim_, new_sizes.begin())) {
 #ifdef ET_LOG_ENABLED
         auto old_sizes_str = executorch::runtime::tensor_shape_to_c_string(
-            executorch::runtime::Span<const executorch::aten::SizesType>(
+            executorch::runtime::Span<const SizesType>(
                 sizes().data(), sizes().size()));
         auto new_sizes_str = executorch::runtime::tensor_shape_to_c_string(
-            executorch::runtime::Span<const executorch::aten::SizesType>(
+            executorch::runtime::Span<const SizesType>(
                 new_sizes.data(), new_sizes.size()));
 #endif
 
