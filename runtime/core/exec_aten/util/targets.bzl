@@ -72,3 +72,13 @@ def define_common_targets():
             # specify library directory path.
             force_static = True,
         )
+
+    runtime.cxx_library(
+        name = "tensor_shape_to_c_string",
+        srcs = ["tensor_shape_to_c_string.cpp"],
+        exported_headers = ["tensor_shape_to_c_string.h"],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
