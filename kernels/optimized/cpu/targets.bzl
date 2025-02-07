@@ -5,6 +5,7 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_add",
         deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
@@ -19,13 +20,24 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_div",
         deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
     ),
-    op_target(name = "op_exp"),
-    op_target(name = "op_sigmoid"),
+    op_target(
+        name = "op_exp",
+        deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
+        ],
+    ),
+    op_target(
+        name = "op_sigmoid",
+        deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
+        ],
+    ),
     op_target(
         name = "op_gelu",
         deps = [
@@ -36,6 +48,7 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_le",
         deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
             "//executorch/kernels/portable/cpu:scalar_utils",
         ],
     ),
@@ -68,6 +81,7 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_mul",
         deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
@@ -77,14 +91,21 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_native_layer_norm",
         deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
             ":moments_utils",
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
         ],
     ),
-    op_target(name = "op_neg"),
+    op_target(
+        name = "op_neg",
+        deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
+        ],
+    ),
     op_target(
         name = "op_sub",
         deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
@@ -135,6 +156,7 @@ def define_common_targets():
         exported_headers = ["moments_utils.h"],
         visibility = ["//executorch/kernels/optimized/..."],
         exported_deps = [
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
             "//executorch/kernels/optimized:libvec",
             "//executorch/kernels/optimized:libutils",
         ],

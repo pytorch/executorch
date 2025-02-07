@@ -11,7 +11,7 @@
 // DO NOT DEFINE STATIC DATA IN THIS HEADER!
 // See Note [Do not compile initializers with AVX]
 
-#include <executorch/kernels/optimized/vec/vec.h>
+#include <ATen/cpu/vec/vec.h>
 
 namespace executorch {
 namespace vec {
@@ -20,9 +20,9 @@ namespace vec {
 template <typename scalar_t, typename Op>
 inline scalar_t vec_reduce_all(
     const Op& vec_fun,
-    vec::Vectorized<scalar_t> acc_vec,
+    at::vec::Vectorized<scalar_t> acc_vec,
     int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   scalar_t acc_arr[Vec::size()];
   acc_vec.store(acc_arr);
   for (int64_t i = 1; i < size; ++i) {
@@ -37,8 +37,8 @@ inline scalar_t vec_reduce_all(
 
 template <typename scalar_t, typename Op>
 struct VecReduceAllSIMD {
-  static inline scalar_t apply(const Op& vec_fun, const Vectorized<scalar_t>& acc_vec) {
-    return vec_reduce_all(vec_fun, acc_vec, Vectorized<scalar_t>::size());
+  static inline scalar_t apply(const Op& vec_fun, const at::vec::Vectorized<scalar_t>& acc_vec) {
+    return vec_reduce_all(vec_fun, acc_vec, at::vec::Vectorized<scalar_t>::size());
   }
 };
 
@@ -46,8 +46,8 @@ struct VecReduceAllSIMD {
 #if defined(CPU_CAPABILITY_AVX2)
 template <typename Op>
 struct VecReduceAllSIMD<float, Op> {
-  static inline float apply(const Op& vec_fun, const Vectorized<float>& acc_vec) {
-    using Vec = Vectorized<float>;
+  static inline float apply(const Op& vec_fun, const at::vec::Vectorized<float>& acc_vec) {
+    using Vec = at::vec::Vectorized<float>;
     Vec v = acc_vec;
     // 128-bit shuffle
     Vec v1 = _mm256_permute2f128_ps(v, v, 0x1);
@@ -65,8 +65,8 @@ struct VecReduceAllSIMD<float, Op> {
 #if defined(CPU_CAPABILITY_AVX512)
 template <typename Op>
 struct VecReduceAllSIMD<float, Op> {
-  static inline float apply(const Op& vec_fun, const Vectorized<float>& acc_vec) {
-    using Vec = Vectorized<float>;
+  static inline float apply(const Op& vec_fun, const at::vec::Vectorized<float>& acc_vec) {
+    using Vec = at::vec::Vectorized<float>;
     Vec v = acc_vec;
     // 256-bit shuffle
     Vec v1 = _mm512_shuffle_f32x4(v, v, 0x4E);
@@ -87,13 +87,13 @@ struct VecReduceAllSIMD<float, Op> {
 #endif // defined(__GNUC__) && (__GNUC__ > 5) && !defined(_MSC_VER) && !defined(C10_MOBILE)
 
 template <typename scalar_t, typename Op>
-inline scalar_t vec_reduce_all(const Op& vec_fun, const Vectorized<scalar_t>& acc_vec) {
+inline scalar_t vec_reduce_all(const Op& vec_fun, const at::vec::Vectorized<scalar_t>& acc_vec) {
   return VecReduceAllSIMD<scalar_t, Op>::apply(vec_fun, acc_vec);
 }
 
 template <typename scalar_t, typename Op>
 inline scalar_t reduce_all(const Op& vec_fun, const scalar_t* data, int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   if (size < Vec::size())
     return vec_reduce_all(vec_fun, Vec::loadu(data, size), size);
   int64_t d = Vec::size();
@@ -113,7 +113,7 @@ inline scalar_t reduce_all(const Op& vec_fun, const scalar_t* data, int64_t size
 template <typename scalar_t, typename Op1, typename Op2>
 inline std::pair<scalar_t, scalar_t> reduce2_all(const Op1& vec_fun1, const Op2& vec_fun2,
     const scalar_t* data, int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   if (size < Vec::size()) {
     auto loaded_data = Vec::loadu(data, size);
     return std::pair<scalar_t, scalar_t>(
@@ -144,7 +144,7 @@ inline scalar_t map_reduce_all(
     const ReduceOp& red_fun,
     const scalar_t* data,
     int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   if (size < Vec::size())
     return vec_reduce_all(red_fun, map_fun(Vec::loadu(data, size)), size);
   int64_t d = Vec::size();
@@ -169,7 +169,7 @@ inline scalar_t map2_reduce_all(
     const scalar_t* data,
     const scalar_t* data2,
     int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   if (size < Vec::size()) {
     Vec data_vec = Vec::loadu(data, size);
     Vec data2_vec = Vec::loadu(data2, size);
@@ -201,7 +201,7 @@ inline scalar_t map3_reduce_all(
     const scalar_t* data2,
     const scalar_t* data3,
     int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   if (size < Vec::size()) {
     Vec data_vec = Vec::loadu(data, size);
     Vec data2_vec = Vec::loadu(data2, size);
@@ -235,7 +235,7 @@ inline void map(
     scalar_t* output_data,
     const scalar_t* input_data,
     int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   int64_t d = 0;
   for (; d < size - (size % Vec::size()); d += Vec::size()) {
     Vec output_vec = vec_fun(Vec::loadu(input_data + d));
@@ -254,7 +254,7 @@ inline void map2(
     const scalar_t* input_data,
     const scalar_t* input_data2,
     int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   int64_t d = 0;
   for (; d < size - (size % Vec::size()); d += Vec::size()) {
     Vec data_vec = Vec::loadu(input_data + d);
@@ -278,7 +278,7 @@ inline void map3(
     const scalar_t* input_data2,
     const scalar_t* input_data3,
     int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   int64_t d = 0;
   for (; d < size - (size % Vec::size()); d += Vec::size()) {
     Vec data_vec1 = Vec::loadu(input_data1 + d);
@@ -305,7 +305,7 @@ inline void map4(
     const scalar_t* input_data3,
     const scalar_t* input_data4,
     int64_t size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   int64_t d = 0;
   for (; d < size - (size % Vec::size()); d += Vec::size()) {
     Vec data_vec1 = Vec::loadu(input_data1 + d);
@@ -341,7 +341,7 @@ inline void broadcasting_map_3d_and_unsqueezed_3d(
     int64_t outer_size,
     int64_t broadcast_size,
     int64_t inner_size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   int64_t outer_stride_lhs = inner_size * broadcast_size;
   int64_t outer_stride_rhs = inner_size;
   int64_t broadcast_stride_lhs = inner_size;
@@ -398,7 +398,7 @@ inline void broadcasting_map_broadcast_last_dim(
     const scalar_t* rhs,
     int64_t outer_size,
     int64_t broadcast_size) {
-  using Vec = vec::Vectorized<scalar_t>;
+  using Vec = at::vec::Vectorized<scalar_t>;
   int64_t outer_stride_lhs = broadcast_size;
   for (int64_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
     const scalar_t* lhs_outer = lhs + outer_idx * outer_stride_lhs;
