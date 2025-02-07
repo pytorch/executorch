@@ -122,6 +122,7 @@ Tensor& opt_div_out(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     // Reason for using alpha is becasuse handle_broadcast_elementwise
     // is used for add and sub as well:
+    static constexpr const char op_name[] = "mul.out";
     if (selected_optimized_path ==
             ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
         selected_optimized_path ==
@@ -137,17 +138,17 @@ Tensor& opt_div_out(
       // creation to handle_broadcast_elementwise and it be aware of which op is
       // being executed.
       auto div_lambda = [](auto x, auto y, auto alpha) {
-        (void)alpha;
+        [[maybe_unused]] alpha;
         return y / x;
       };
-      return torch::executor::handle_broadcast_elementwise(
+      return torch::executor::handle_broadcast_elementwise<op_name>(
           ctx, div_lambda, a, b, out, selected_optimized_path);
     } else {
       auto div_lambda = [](auto x, auto y, auto alpha) {
-        (void)alpha;
+        [[maybe_unused]] alpha;
         return x / y;
       };
-      return torch::executor::handle_broadcast_elementwise(
+      return torch::executor::handle_broadcast_elementwise<op_name>(
           ctx, div_lambda, a, b, out, selected_optimized_path);
     }
   } else {

@@ -140,8 +140,9 @@ Tensor& opt_sub_out(
     }
   }
 
-  return torch::executor::kernels::impl::opt_add_sub_out_impl(
-      ctx, a, b, alpha, out, /*is_sub=*/true);
+  static constexpr const char op_name[] = "sub.out";
+  return torch::executor::kernels::impl::opt_add_sub_out_impl<true, op_name>(
+      ctx, a, b, alpha, out);
 }
 
 Tensor& opt_sub_scalar_out(
