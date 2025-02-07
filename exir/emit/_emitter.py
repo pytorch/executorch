@@ -1189,7 +1189,7 @@ class _Emitter(torch.fx.Interpreter):
                     # The runtime currently only supports tensors with offset 0.
                     storage_offset=0,
                     sizes=[0],
-                    dim_order=[],
+                    dim_order=[0],
                     requires_grad=False,
                     layout=0,
                     data_buffer_idx=0,
