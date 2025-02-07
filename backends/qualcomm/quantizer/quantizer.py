@@ -10,6 +10,9 @@ from typing import Callable, Optional, Sequence, Set
 import torch
 from executorch.backends.qualcomm._passes.decompose_einsum import DecomposeEinsum
 from executorch.backends.qualcomm._passes.decompose_silu import DecomposeSilu
+from executorch.backends.qualcomm._passes.lift_constant_scalar_operands import (
+    lift_constant_scalar_operands,
+)
 from executorch.backends.qualcomm._passes.recompose_pixel_unshuffle import (
     RecomposePixelUnshuffle,
 )
@@ -224,6 +227,7 @@ class QnnQuantizer(Quantizer):
         model = DecomposeSilu()(model).graph_module
         model = DecomposeEinsum()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
+        lift_constant_scalar_operands(model) # Turn scalar into tensor, such that we can annotate it for quantization
         return model
 
     def validate(self, model: GraphModule) -> None:
