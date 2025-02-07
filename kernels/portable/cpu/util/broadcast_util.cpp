@@ -213,13 +213,15 @@ ET_NODISCARD Error get_broadcast_target_size(
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim) {
-  if (!tensors_are_broadcastable_between(a_size, b_size)) {
+  if ET_UNLIKELY (!tensors_are_broadcastable_between(a_size, b_size)) {
+#ifdef ET_LOG_ENABLED
     const auto a_shape_str = tensor_shape_to_c_string(
         executorch::runtime::Span<const Tensor::SizesType>(
             a_size.data(), a_size.size()));
     const auto b_shape_str = tensor_shape_to_c_string(
         executorch::runtime::Span<const Tensor::SizesType>(
             b_size.data(), b_size.size()));
+#endif
     ET_LOG(
         Error,
         "Two input tensors should be broadcastable but got shapes %s and %s.",
