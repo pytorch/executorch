@@ -95,7 +95,7 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
     case TensorShapeDynamism::STATIC:
       if (!std::equal(sizes_, sizes_ + dim_, new_sizes.begin())) {
 #ifdef ET_LOG_ENABLED
-        std::array<char, 5> old_sizes_str, new_sizes_str;
+        std::array<char, 16> old_sizes_str, new_sizes_str;
 
         executorch::runtime::sizes_to_string(
             old_sizes_str.data(),

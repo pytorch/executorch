@@ -84,7 +84,7 @@ struct Params final {
   float beta;
 };
 
-void add_addmm_naive_node(
+void add_addmm_naive_texture_node(
     ComputeGraph& graph,
     const ValueRef self_data,
     const ValueRef mat1,
@@ -129,6 +129,69 @@ void add_addmm_naive_node(
        graph.hashed_layout_of(mat1),
        graph.hashed_layout_of(mat2),
        graph.hashed_layout_of(self)},
+      // Resizing Logic
+      resize_addmm_node,
+      {mat2_is_transposed}));
+}
+
+void add_addmm_naive_buffer_node(
+    ComputeGraph& graph,
+    const ValueRef self_data,
+    const ValueRef mat1,
+    const ValueRef mat2_data,
+    const ValueRef beta,
+    const ValueRef alpha,
+    const ValueRef out,
+    const Params& params,
+    const ValueRef mat2_is_transposed) {
+  (void)beta;
+  (void)alpha;
+  ValueRef mat2 = prepack_standard(
+      graph,
+      mat2_data,
+      graph.storage_type_of(out),
+      utils::kHeightPacked,
+      /*passthrough = */ true);
+  ValueRef self = prepack_standard(
+      graph,
+      self_data,
+      graph.storage_type_of(out),
+      utils::kWidthPacked,
+      /*passthrough = */ true);
+
+  std::string kernel_name = "addmm_naive_buffer";
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  utils::uvec3 global_size = {
+      graph.size_at<uint32_t>(-1, out),
+      graph.size_at<uint32_t>(-2, out),
+      graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
+
+  int mat2_is_transposed_val = (mat2_is_transposed != kDummyValueRef &&
+                                graph.get_bool(mat2_is_transposed))
+      ? 1
+      : 0;
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_size,
+      graph.create_local_wg_size(global_size),
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {{mat1, mat2, self}, vkapi::kRead}},
+      // Shader params buffers
+      {
+          graph.sizes_ubo(out),
+          graph.strides_ubo(out),
+          graph.sizes_ubo(mat1),
+          graph.strides_ubo(mat1),
+          graph.sizes_ubo(mat2),
+          graph.strides_ubo(mat2),
+          graph.numel_ubo(out),
+          graph.create_params_buffer(params),
+      },
+      // Specialization Constants
+      {mat2_is_transposed_val},
       // Resizing Logic
       resize_addmm_node,
       {mat2_is_transposed}));
@@ -246,11 +309,14 @@ void add_addmm_node(
   }
 
   Params params = {alpha_val, beta_val};
-  if (graph.packed_dim_of(mat1) == WHCN::kChannelsDim) {
+  if (graph.is_buffer_storage(out)) {
+    add_addmm_naive_buffer_node(
+        graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
+  } else if (graph.packed_dim_of(mat1) == WHCN::kChannelsDim) {
     add_addmm_optimized_node(
         graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
   } else if (graph.packed_dim_of(mat1) == WHCN::kWidthDim) {
-    add_addmm_naive_node(
+    add_addmm_naive_texture_node(
         graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
   } else {
     VK_THROW("Input should be channel packed or width packed.");
@@ -283,8 +349,6 @@ void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (graph.val_is_none(bias)) {
     return add_matmul_node(graph, input, weight, out, mat2_is_transposed);
   } else {
-    // Buffer implementation does not yet support biases
-    VK_CHECK_COND(!graph.is_buffer_storage(out));
     return add_addmm_node(
         graph,
         bias,

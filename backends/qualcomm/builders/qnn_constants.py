@@ -146,6 +146,11 @@ class OpElementWiseMultiply:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseNeg:
+    op_name: str = "ElementWiseNeg"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseNeuron:
     op_name: str = "ElementWiseNeuron"
     param_operation: str = "operation"
