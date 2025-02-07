@@ -42,16 +42,16 @@ ET_NODISCARD bool check_dim_list_is_valid(
     memset(dim_exist, false, sizeof(dim_exist));
     for (const auto& d : reduce_dims) {
       if (in.dim() == 0) {
-        ET_LOG_AND_RETURN_IF_FALSE(d == 0 || d == -1);
+        ET_LOG_AND_RETURN_UNLESS(d == 0 || d == -1);
       } else {
-        ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(d, in.dim()));
+        ET_LOG_AND_RETURN_UNLESS(dim_is_valid(d, in.dim()));
       }
 
       const size_t non_neg_d = _normalize_non_neg_d(d, in.dim());
-      ET_LOG_AND_RETURN_IF_FALSE(
+      ET_LOG_AND_RETURN_UNLESS(
           non_neg_d < kTensorDimensionLimit && non_neg_d >= 0);
 
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_LOG_MSG_AND_RETURN_UNLESS(
           dim_exist[non_neg_d] == false,
           "dim %zd appears multiple times in the list of dims",
           non_neg_d);
@@ -339,11 +339,11 @@ bool check_reduction_args(
     optional<ScalarType> dtype,
     Tensor& out) {
   if (dtype.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
+    ET_LOG_AND_RETURN_UNLESS(dtype.value() == out.scalar_type());
   }
-  ET_LOG_AND_RETURN_IF_FALSE(check_dim_list_is_valid(in, dim_list));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+  ET_LOG_AND_RETURN_UNLESS(check_dim_list_is_valid(in, dim_list));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(out));
 
   return true;
 }
@@ -360,24 +360,24 @@ bool check_reduction_args_single_dim(
     Tensor& out,
     bool allow_empty_dim) {
   if (dtype.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
+    ET_LOG_AND_RETURN_UNLESS(dtype.value() == out.scalar_type());
   }
   if (in.dim() == 0) {
     if (dim.has_value()) {
-      ET_LOG_AND_RETURN_IF_FALSE(dim.value() == 0 || dim.value() == -1);
+      ET_LOG_AND_RETURN_UNLESS(dim.value() == 0 || dim.value() == -1);
     }
     return true;
   }
 
   if (dim.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim.value(), in.dim()));
+    ET_LOG_AND_RETURN_UNLESS(dim_is_valid(dim.value(), in.dim()));
     if (!allow_empty_dim) {
-      ET_LOG_AND_RETURN_IF_FALSE(tensor_has_non_empty_dim(in, dim.value()));
+      ET_LOG_AND_RETURN_UNLESS(tensor_has_non_empty_dim(in, dim.value()));
     }
   }
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(out));
 
   return true;
 }
@@ -388,16 +388,16 @@ bool check_mean_dim_args(
     bool keepdim,
     optional<ScalarType> dtype,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       check_reduction_args(in, dim_list, keepdim, dtype, out));
 
   if (dtype) {
     ET_LOG(Info, "dtype is %hhd", static_cast<int8_t>(dtype.value()));
-    ET_LOG_AND_RETURN_IF_FALSE(torch::executor::isFloatingType(dtype.value()));
-    ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == dtype.value());
+    ET_LOG_AND_RETURN_UNLESS(torch::executor::isFloatingType(dtype.value()));
+    ET_LOG_AND_RETURN_UNLESS(out.scalar_type() == dtype.value());
   } else {
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(in));
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(out));
+    ET_LOG_AND_RETURN_UNLESS(tensor_is_floating_type(in));
+    ET_LOG_AND_RETURN_UNLESS(tensor_is_floating_type(out));
   }
 
   return true;
@@ -408,9 +408,9 @@ bool check_amin_amax_args(
     ArrayRef<int64_t> dim_list,
     bool keepdim,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       check_reduction_args(in, dim_list, keepdim, {}, out));
-  ET_LOG_AND_RETURN_IF_FALSE(in.scalar_type() == out.scalar_type());
+  ET_LOG_AND_RETURN_UNLESS(in.scalar_type() == out.scalar_type());
 
   return true;
 }
@@ -420,10 +420,10 @@ bool check_argmin_argmax_args(
     optional<int64_t> dim,
     bool keepdim,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       check_reduction_args_single_dim(in, dim, keepdim, {}, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == ScalarType::Long);
+  ET_LOG_AND_RETURN_UNLESS(out.scalar_type() == ScalarType::Long);
 
   return true;
 }
@@ -434,13 +434,13 @@ bool check_min_max_args(
     bool keepdim,
     Tensor& max,
     Tensor& max_indices) {
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       check_reduction_args_single_dim(in, dim, keepdim, {}, max));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, max));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape(max, max_indices));
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, max));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_shape(max, max_indices));
+  ET_LOG_AND_RETURN_UNLESS(
       tensor_is_default_or_channels_last_dim_order(max_indices));
-  ET_LOG_AND_RETURN_IF_FALSE(max_indices.scalar_type() == ScalarType::Long);
+  ET_LOG_AND_RETURN_UNLESS(max_indices.scalar_type() == ScalarType::Long);
 
   return true;
 }
@@ -450,11 +450,11 @@ bool check_prod_out_args(
     optional<ScalarType> dtype,
     Tensor& out) {
   if (dtype.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
+    ET_LOG_AND_RETURN_UNLESS(dtype.value() == out.scalar_type());
   } else if (isIntegralType(in.scalar_type(), /*includeBool*/ true)) {
-    ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == ScalarType::Long);
+    ET_LOG_AND_RETURN_UNLESS(out.scalar_type() == ScalarType::Long);
   } else {
-    ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == in.scalar_type());
+    ET_LOG_AND_RETURN_UNLESS(out.scalar_type() == in.scalar_type());
   }
 
   return true;

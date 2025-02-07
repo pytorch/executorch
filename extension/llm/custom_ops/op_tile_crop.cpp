@@ -19,12 +19,12 @@ bool check_tile_crop_out_args(
     const Tensor& in,
     int64_t tile_size,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 3));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, 4));
-  ET_LOG_AND_RETURN_IF_FALSE(tile_size > 0);
-  ET_LOG_AND_RETURN_IF_FALSE(in.size(in.dim() - 1) % tile_size == 0);
-  ET_LOG_AND_RETURN_IF_FALSE(in.size(in.dim() - 2) % tile_size == 0);
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(in, 3));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(out, 4));
+  ET_LOG_AND_RETURN_UNLESS(tile_size > 0);
+  ET_LOG_AND_RETURN_UNLESS(in.size(in.dim() - 1) % tile_size == 0);
+  ET_LOG_AND_RETURN_UNLESS(in.size(in.dim() - 2) % tile_size == 0);
   return true;
 }
 

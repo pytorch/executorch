@@ -22,40 +22,40 @@ bool check_quantized_mixed_linear_args(
     const executorch::aten::optional<Tensor>& opt_weight_zero_points,
     const executorch::aten::optional<ScalarType> dtype,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(in, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(weight, 2));
+  ET_LOG_AND_RETURN_UNLESS(
       tensor_is_rank(weight_scales, 1) || tensor_is_rank(weight_scales, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(out, 2));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(in, 1, weight, 1));
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_size_at_dims(in, 1, weight, 1));
+  ET_LOG_AND_RETURN_UNLESS(
       tensors_have_same_size_at_dims(weight_scales, 0, weight, 0));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(in, 1, weight, 1));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_size_at_dims(in, 1, weight, 1));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight_scales));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, weight_scales));
   if (dtype.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == dtype.value());
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_AND_RETURN_UNLESS(out.scalar_type() == dtype.value());
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         dtype.value() == ScalarType::Float || dtype.value() == ScalarType::Half,
         "dtype must be Float or Half");
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       weight.scalar_type() == ScalarType::Char, "weight dtype must be int8");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       in.scalar_type() == ScalarType::Float ||
           in.scalar_type() == ScalarType::Half,
       "input dtype must be Float or Half");
 
   if (opt_weight_zero_points.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(
+    ET_LOG_AND_RETURN_UNLESS(
         tensors_have_same_shape(opt_weight_zero_points.value(), weight_scales));
-    ET_LOG_AND_RETURN_IF_FALSE(
+    ET_LOG_AND_RETURN_UNLESS(
         tensors_have_same_dtype(opt_weight_zero_points.value(), in));
   }
 
   // Support for non-null zero points is not implemented yet.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       !opt_weight_zero_points.has_value(), "zero points not supported yet.");
   return true;
 }

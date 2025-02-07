@@ -16,7 +16,7 @@ namespace native {
 namespace {
 
 bool check_flip_args(const Tensor& in, IntArrayRef dims, const Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
   return check_dim_list_is_valid(in, dims);
 }
 

@@ -23,27 +23,27 @@ bool check_addmm_args(
     const Scalar& beta,
     const Scalar& alpha,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(mat1, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(mat2, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(mat1, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(mat2, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(out, 2));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mat1, mat2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, mat1, mat2));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(mat1, 1, mat2, 0));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_size_at_dims(mat1, 1, mat2, 0));
 
   return true;
 }
 
 bool check_bmm_args(const Tensor& in, const Tensor& mat2, Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 3));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(mat2, 3));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, 3));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(in, 3));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(mat2, 3));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(out, 3));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mat2, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, mat2, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(in, 0, mat2, 0));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(in, 2, mat2, 1));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_size_at_dims(in, 0, mat2, 0));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_size_at_dims(in, 2, mat2, 1));
 
   return true;
 }
@@ -60,25 +60,25 @@ void get_bmm_out_target_size(
 }
 
 bool check_mm_args(const Tensor& in, const Tensor& mat2, Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(mat2, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(in, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(mat2, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(out, 2));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mat2, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, mat2, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(in, 1, mat2, 0));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_size_at_dims(in, 1, mat2, 0));
 
   return true;
 }
 
 bool check_linear_args(const Tensor& in, const Tensor& mat2, Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(in.dim() == out.dim());
-  ET_LOG_AND_RETURN_IF_FALSE(in.dim() >= 2);
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(mat2, 2));
+  ET_LOG_AND_RETURN_UNLESS(in.dim() == out.dim());
+  ET_LOG_AND_RETURN_UNLESS(in.dim() >= 2);
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(mat2, 2));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mat2, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, mat2, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       tensors_have_same_size_at_dims(in, in.dim() - 1, mat2, 1));
 
   return true;

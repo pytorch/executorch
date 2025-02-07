@@ -23,9 +23,9 @@ namespace {
 bool check_sizes(
     executorch::aten::ArrayRef<int64_t> size_int64_t,
     executorch::aten::ArrayRef<int32_t> size_int32_t) {
-  ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == size_int32_t.size());
+  ET_LOG_AND_RETURN_UNLESS(size_int64_t.size() == size_int32_t.size());
   for (int i = 0; i < size_int64_t.size(); i++) {
-    ET_LOG_AND_RETURN_IF_FALSE(((int64_t)size_int32_t[i] == size_int64_t[i]));
+    ET_LOG_AND_RETURN_UNLESS(((int64_t)size_int32_t[i] == size_int64_t[i]));
   }
 
   return true;

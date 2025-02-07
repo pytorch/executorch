@@ -22,13 +22,13 @@ bool check_topk_args(
     int64_t dim,
     Tensor& values,
     Tensor& indices) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, values));
-  ET_LOG_AND_RETURN_IF_FALSE(indices.scalar_type() == ScalarType::Long);
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, values));
+  ET_LOG_AND_RETURN_UNLESS(indices.scalar_type() == ScalarType::Long);
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_dim(in, dim));
   if (dim < 0) {
     dim += nonzero_dim(in);
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       k >= 0 && k <= nonempty_size(in, dim), "selected index k out of range");
   return true;
 }

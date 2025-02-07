@@ -21,9 +21,9 @@ bool calculate_output_size(
     const executorch::aten::ArrayRef<executorch::aten::SizesType>& self_sizes,
     const executorch::aten::ArrayRef<int64_t>& repeats,
     Tensor::SizesType* out_sizes_ptr) {
-  ET_LOG_AND_RETURN_IF_FALSE(repeats.size() < kTensorDimensionLimit);
+  ET_LOG_AND_RETURN_UNLESS(repeats.size() < kTensorDimensionLimit);
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       repeats.size() >= self_sizes.size(),
       "Repeats vector size is %zu must be >= self_sizes %zu.",
       repeats.size(),
