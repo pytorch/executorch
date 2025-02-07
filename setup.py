@@ -55,7 +55,6 @@ import sys
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
 import setuptools  # noqa: F401 # usort: skip
-import logging
 import subprocess
 
 from distutils import log
