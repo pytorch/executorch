@@ -273,6 +273,7 @@ def define_common_targets():
         srcs = ["tensor_util.cpp"],
         exported_headers = ["tensor_util.h"],
         deps = [
+            "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
