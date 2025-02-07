@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: linux.large
+      runner: linux.2xlarge
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
