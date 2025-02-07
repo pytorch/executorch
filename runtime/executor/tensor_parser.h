@@ -7,6 +7,9 @@
  */
 
 #pragma once
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -130,3 +133,4 @@ using ::executorch::runtime::deserialization::parseTensorList;
 } // namespace deserialization
 } // namespace executor
 } // namespace torch
+#pragma GCC diagnostic pop

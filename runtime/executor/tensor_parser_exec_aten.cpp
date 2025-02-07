@@ -224,7 +224,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
           InvalidExternalData,
           "Expected to load %zu bytes, actually loaded %u bytes",
           nbytes,
-          static_cast<uint>(size.get()));
+          static_cast<unsigned int>(size.get()));
       return planned_ptr;
     }
   }
