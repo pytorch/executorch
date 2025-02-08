@@ -248,7 +248,16 @@ class Verifier:
                     has_dynamic_unbound_output |= has_dynamic_unbound_tensor
 
         # only check if inputs are allocated if there are user inputs:
-        user_inputs_exist = len(list(filter(lambda input: input.kind == InputKind.USER_INPUT, self.graph_signature.input_specs))) > 0
+        user_inputs_exist = (
+            len(
+                list(
+                    filter(
+                        lambda input: input.kind == InputKind.USER_INPUT,
+                        self.graph_signature.input_specs,
+                    )
+                )
+            )
+        ) > 0
 
         if "placeholder" in check_list and user_inputs_exist:
             assert graph_input_allocated is not None, "graph_input_allocated not set"

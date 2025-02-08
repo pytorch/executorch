@@ -1057,6 +1057,35 @@ class TestPasses(unittest.TestCase):
             new_ep.graph_module.code
         )
 
+    def test_pass_no_user_inputs(self) -> None:
+        class NoUserInputs(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("a", torch.ones(1))
+
+            def forward(self) -> torch.Tensor:
+                return 3 + self.a
+
+        mod = NoUserInputs()
+        exported_program = export(mod, (), strict=True)
+        edge = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
+        ep = edge.exported_program()
+        # because there is no user input, the lifted constant should be the first input.
+        FileCheck().check("_lifted_tensor_constant1").check(
+            "b_a"  # followed by the buffer input.
+        ).run(ep.graph_module.code)
+        # the graph signature should also be the same:
+        assert ep.graph_signature.input_specs[0].arg.name == "_lifted_tensor_constant1"
+        assert ep.graph_signature.input_specs[1].arg.name == "b_a"
+
+        executorch_program = edge.to_executorch()
+        # # the graph signature should also be the same:
+        # executorch_program.graph_signature.input_specs[0].arg.name == "_lifted_tensor_constant1"
+        # executorch_program.graph_signature.input_specs[1].arg.name == "b_a"
+
     def test_constant_prop_pass_for_parameter(self) -> None:
         def count_additions(gm: torch.fx.GraphModule) -> int:
             return sum(
