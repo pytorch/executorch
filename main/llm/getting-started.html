@@ -909,17 +909,17 @@ Performance Shader (MPS) backend, and GPU acceleration via the Vulkan backend.</
 to the backend(s) targeted at export. To support multiple devices, such as
 XNNPACK acceleration for Android and Core ML for iOS, export a separate PTE file
 for each backend.</p>
-<p>To delegate to a backend at export time, ExecuTorch provides the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code>
-function in the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> object, which takes a backend-specific
-partitioner object. The partitioner is responsible for finding parts of the
-computation graph that can be accelerated by the target backend，and
-<code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> function will delegate matched part to given backend for
-acceleration and optimization. Any portions of the computation graph not
-delegated will be executed by the ExecuTorch operator implementations.</p>
+<p>To delegate a model to a specific backend during export, ExecuTorch uses the
+<code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code> function. This function takes the exported program
+from <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> and a backend-specific partitioner object. The partitioner
+identifies parts of the computation graph that can be optimized by the target
+backend. Within <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code>, the exported program is
+converted to an edge dialect program. The partitioner then delegates compatible
+graph sections to the backend for acceleration and optimization. Any graph parts
+not delegated are executed by ExecuTorch’s default operator implementations.</p>
 <p>To delegate the exported model to a specific backend, we need to import its
 partitioner as well as edge compile config from ExecuTorch codebase first, then
-call <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> with an instance of partitioner on the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>
-object <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> function created.</p>
+call <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>.</p>
 <p>Here’s an example of how to delegate nanoGPT to XNNPACK (if you’re deploying to an Android phone for instance):</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
 
@@ -928,7 +928,7 @@ object <code class="docutils literal notranslate"><span class="pre">to_edge</spa
 
 <span class="c1"># Model to be delegated to specific backend should use specific edge compile config</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.utils.configs</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_xnnpack_edge_compile_config</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge_transform_and_lower</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
@@ -966,17 +966,14 @@ object <code class="docutils literal notranslate"><span class="pre">to_edge</spa
 <span class="c1"># Convert the model into a runnable ExecuTorch program.</span>
 <span class="c1"># To be further lowered to Xnnpack backend, `traced_model` needs xnnpack-specific edge compile config</span>
 <span class="n">edge_config</span> <span class="o">=</span> <span class="n">get_xnnpack_edge_compile_config</span><span class="p">()</span>
-<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">edge_config</span><span class="p">)</span>
-
-<span class="c1"># Delegate exported model to Xnnpack backend by invoking `to_backend` function with Xnnpack partitioner.</span>
-<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
+<span class="c1"># Converted to edge program and then delegate exported model to Xnnpack backend</span>
+<span class="c1"># by invoking `to` function with Xnnpack partitioner.</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span> <span class="n">compile_config</span> <span class="o">=</span> <span class="n">edge_config</span><span class="p">)</span>
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Save the Xnnpack-delegated ExecuTorch program to a file.</span>
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;nanogpt.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">et_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
-
-
 </pre></div>
 </div>
 <p>Additionally, update CMakeLists.txt to build and link the XNNPACK backend to
@@ -1104,15 +1101,16 @@ quantized operators where available.</p>
 <span class="n">traced_model</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Additionally, add or update the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> call to use <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. This instructs ExecuTorch to
-optimize the model for CPU execution via the XNNPACK backend.</p>
+<p>Additionally, add or update the <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code> call to use <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. This
+instructs ExecuTorch to optimize the model for CPU execution via the XNNPACK backend.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">XnnpackPartitioner</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
 </div>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">edge_config</span><span class="p">)</span>
-<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span> <span class="c1"># Lower to XNNPACK.</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">edge_config</span> <span class="o">=</span> <span class="n">get_xnnpack_edge_compile_config</span><span class="p">()</span>
+<span class="c1"># Convert to edge dialect and lower to XNNPack.</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span> <span class="n">compile_config</span> <span class="o">=</span> <span class="n">edge_config</span><span class="p">)</span>
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -1131,17 +1129,17 @@ optimize the model for CPU execution via the XNNPACK backend.</p>
 </div>
 <div class="section" id="profiling-and-debugging">
 <h2>Profiling and Debugging<a class="headerlink" href="#profiling-and-debugging" title="Permalink to this heading">¶</a></h2>
-<p>After lowering a model by calling <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code>, you may want to see what got delegated and what didn’t. ExecuTorch
+<p>After lowering a model by calling <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code>, you may want to see what got delegated and what didn’t. ExecuTorch
 provides utility methods to give insight on the delegation. You can use this information to gain visibility into
 the underlying computation and diagnose potential performance issues. Model authors can use this information to
 structure the model in a way that is compatible with the target backend.</p>
 <div class="section" id="visualizing-the-delegation">
 <h3>Visualizing the Delegation<a class="headerlink" href="#visualizing-the-delegation" title="Permalink to this heading">¶</a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">get_delegation_info()</span></code> method provides a summary of what happened to the model after the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> call:</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">get_delegation_info()</span></code> method provides a summary of what happened to the model after the <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code> call:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.backend_debug</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_delegation_info</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tabulate</span><span class="w"> </span><span class="kn">import</span> <span class="n">tabulate</span>
 
-<span class="c1"># ... After call to to_backend(), but before to_executorch()</span>
+<span class="c1"># ... After call to to_edge_transform_and_lower(), but before to_executorch()</span>
 <span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
 <span class="n">delegation_info</span> <span class="o">=</span> <span class="n">get_delegation_info</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">delegation_info</span><span class="o">.</span><span class="n">get_summary</span><span class="p">())</span>
@@ -1240,7 +1238,7 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <div class="section" id="etrecord-generation-optional">
 <h5>ETRecord generation (Optional)<a class="headerlink" href="#etrecord-generation-optional" title="Permalink to this heading">¶</a></h5>
 <p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference internal" href="../etrecord.html"><span class="doc std std-doc">the ETRecord docs</span></a>.</p>
-<p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> mutates the graph in-place.</p>
+<p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code> mutates the graph in-place.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
