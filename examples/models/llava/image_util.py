@@ -21,6 +21,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
+# pyre-ignore: Undefined or invalid type [11]: Annotation `Image` is not defined as a type.
 def prepare_image(image: Image, target_h: int, target_w: int) -> torch.Tensor:
     """Read image into a tensor and resize the image so that it fits in
     a target_h x target_w canvas.
