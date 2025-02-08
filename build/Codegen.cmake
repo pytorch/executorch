@@ -213,3 +213,24 @@ function(merge_yaml)
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
 endfunction()
+
+function(append_filelist name outputvar)
+  set(_rootdir "${EXECUTORCH_ROOT}/")
+  # configure_file adds its input to the list of CMAKE_RERUN dependencies
+  configure_file(
+      ${PROJECT_SOURCE_DIR}/build/build_variables.bzl
+      ${PROJECT_BINARY_DIR}/build_variables.bzl
+      COPYONLY)
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c
+            "exec(open('${PROJECT_SOURCE_DIR}/build/build_variables.bzl').read());print(';'.join(['${_rootdir}' + x for x in ${name}]))"
+    WORKING_DIRECTORY "${_rootdir}"
+    RESULT_VARIABLE _retval
+    OUTPUT_VARIABLE _tempvar)
+  if(NOT _retval EQUAL 0)
+    message(FATAL_ERROR "Failed to fetch filelist ${name} from build_variables.bzl")
+  endif()
+  string(REPLACE "\n" "" _tempvar "${_tempvar}")
+  list(APPEND ${outputvar} ${_tempvar})
+  set(${outputvar} "${${outputvar}}" PARENT_SCOPE)
+endfunction()
