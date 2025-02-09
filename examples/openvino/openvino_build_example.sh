@@ -27,7 +27,7 @@ main() {
 
 
     # Build the project
-    cmake --build cmake-openvino-out --target install --config Release -j5
+    cmake --build cmake-openvino-out --target install --config Release -j$(nproc)
 
     ## Build example
     local example_dir=examples/openvino
@@ -41,7 +41,7 @@ main() {
           -B"${example_build_dir}" \
           $EXECUTORCH_ROOT/$example_dir
 
-    cmake --build "${example_build_dir}" -j5
+    cmake --build "${example_build_dir}" -j$(nproc)
 
     # Switch back to the original directory
     cd - > /dev/null
