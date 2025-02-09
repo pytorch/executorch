@@ -44,6 +44,7 @@
 
 cmake_minimum_required(VERSION 3.19)
 project(executorch)
+include(build/Codegen.cmake)
 include(build/Utils.cmake)
 include(CMakeDependentOption)
 
@@ -384,6 +385,7 @@ if(NOT EXECUTORCH_SRCS_FILE)
   message(STATUS "executorch: Generating source lists")
   set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/executorch_srcs.cmake")
   extract_sources(${EXECUTORCH_SRCS_FILE})
+  validate_build_variables()
 endif()
 
 # This file defines the `_<target>__srcs` variables used below.
