@@ -40,9 +40,17 @@ def parse_arguments():
     parser.add_argument(
         "-p",
         "--pattern",
-        help="Pattern to match test files. Provide complete file name to run individual op tests",
+        help="Pattern to match test files. Provide complete file name to run individual tests",
         type=str,
         default="test_*.py",
+    )
+    parser.add_argument(
+        "-t",
+        "--test_type",
+        help="Specify the type of tests ('ops' or 'models')",
+        type=str,
+        default="ops",
+        choices={"ops", "models"},
     )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
@@ -50,6 +58,7 @@ def parse_arguments():
     test_params["device"] = args.device
     test_params["build_folder"] = args.build_folder
     test_params["pattern"] = args.pattern
+    test_params["test_type"] = args.test_type
     return test_params
 
 if __name__ == "__main__":
@@ -60,6 +69,6 @@ if __name__ == "__main__":
     test_params = parse_arguments()
     loader.suiteClass.test_params = test_params
     # Discover all existing op tests in "ops" folder
-    suite = loader.discover("ops", pattern=test_params['pattern'])
+    suite = loader.discover(test_params['test_type'], pattern=test_params['pattern'])
     # Start running tests
     unittest.TextTestRunner().run(suite)
