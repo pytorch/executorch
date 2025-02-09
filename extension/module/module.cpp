@@ -187,7 +187,7 @@ runtime::Error Module::load_method(
 
     if (!planned_memory) {
       const auto method_metadata =
-        ET_UNWRAP(program_->method_meta(method_name.c_str()));
+          ET_UNWRAP(program_->method_meta(method_name.c_str()));
       const auto planned_buffers_count =
           method_metadata.num_memory_planned_buffers();
       method_holder.planned_buffers.reserve(planned_buffers_count);
@@ -201,16 +201,13 @@ runtime::Error Module::load_method(
             method_holder.planned_buffers.back().data(), buffer_size);
       }
       method_holder.planned_memory =
-          std::make_unique<runtime::HierarchicalAllocator>(
-              runtime::Span(
-                  method_holder.planned_spans.data(),
-                  method_holder.planned_spans.size()));
+          std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
+              method_holder.planned_spans.data(),
+              method_holder.planned_spans.size()));
       planned_memory = method_holder.planned_memory.get();
     }
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
-        memory_allocator_.get(),
-        planned_memory,
-        temp_allocator_.get());
+        memory_allocator_.get(), planned_memory, temp_allocator_.get());
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),

@@ -167,10 +167,9 @@ class Module {
       runtime::HierarchicalAllocator* planned_memory = nullptr,
       torch::executor::EventTracer* event_tracer = nullptr);
 
-  ET_DEPRECATED ET_NODISCARD
-  runtime::Error inline load_method(
-    const std::string& method_name,
-    torch::executor::EventTracer* event_tracer) {
+  ET_DEPRECATED ET_NODISCARD runtime::Error inline load_method(
+      const std::string& method_name,
+      torch::executor::EventTracer* event_tracer) {
     return load_method(method_name, nullptr, event_tracer);
   }
 
