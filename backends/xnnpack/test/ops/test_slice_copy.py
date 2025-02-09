@@ -46,6 +46,14 @@ class TestSliceCopy(unittest.TestCase):
         inputs = (torch.randn(5, 5, 5),)
         self._test_slice_copy(SliceCopy(), inputs, 3, 3)
 
+    def test_u8_slice_copy(self):
+        class SliceCopy(torch.nn.Module):
+            def forward(self, x):
+                return x[1:3, -2:, :-1]
+
+        inputs = (torch.randint(0, 255, (5, 5, 5)).to(torch.uint8),)
+        self._test_slice_copy(SliceCopy(), inputs, 3, 3)
+
     def test_fp32_slice_copy_memory_format(self):
         class ConvSlice(torch.nn.Module):
             def __init__(self):

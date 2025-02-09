@@ -249,3 +249,10 @@ class TestCat(unittest.TestCase):
     def _test_qs8_cat_nhwc2(self):
         inputs = (torch.randn(1, 1, 3, 3), torch.randn(1, 1, 3, 3))
         self._test_cat(self.CatNhwc(), inputs, quant=True, quant_ops=4)
+
+    def test_u8_cat2(self):
+        inputs = (
+            torch.randint(0, 255, (3, 2, 3)).to(torch.uint8),
+            torch.randint(0, 255, (1, 2, 3)).to(torch.uint8),
+        )
+        self._test_cat(self.Cat(), inputs)

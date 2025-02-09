@@ -10,6 +10,9 @@ import logging
 from typing import cast, List, Optional
 
 import torch
+from executorch.backends.xnnpack._passes.replace_u8_convert_with_dq_pass import (
+    ReplaceU8ConvertWithDqPass,
+)
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
@@ -191,7 +194,11 @@ class CatConfig(GenericNodePartitionerConfig):
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
-        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+        return [
+            ConfigPrecisionType.FP32,
+            ConfigPrecisionType.U8,
+            ConfigPrecisionType.STATIC_QUANT,
+        ]
 
 
 class CeilConfig(GenericNodePartitionerConfig):
@@ -330,7 +337,7 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
-        return [ConfigPrecisionType.FP32]
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.U8]
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.upsample_bilinear2d.vec
@@ -472,7 +479,11 @@ class SliceCopyConfig(GenericNodePartitionerConfig):
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
-        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+        return [
+            ConfigPrecisionType.FP32,
+            ConfigPrecisionType.U8,
+            ConfigPrecisionType.STATIC_QUANT,
+        ]
 
 
 class SquareRootConfig(GenericNodePartitionerConfig):
@@ -543,3 +554,23 @@ class SDPAConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
+    target_name = "_to_dim_order_copy.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        if not ReplaceU8ConvertWithDqPass.can_replace_to_copy_node(node):
+            why(node, reason="Only u8 to f32 conversion is supported")
+            return False
+
+        return True
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.scaled_dot_product_attention.default
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.U8]
