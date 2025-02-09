@@ -12,9 +12,7 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
-#include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <memory>
 
 /**
  * Unwrap a Result to obtain its value (direct object, not a pointer).
@@ -180,24 +178,22 @@ runtime::Result<std::unordered_set<std::string>> Module::method_names() {
 
 runtime::Error Module::load_method(
     const std::string& method_name,
-    torch::executor::EventTracer* event_tracer,
-    runtime::HierarchicalAllocator* planned_memory_allocator) {
+    runtime::HierarchicalAllocator* planned_memory,
+    torch::executor::EventTracer* event_tracer) {
   if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
 
     MethodHolder method_holder;
-    runtime::HierarchicalAllocator* planned_memory = nullptr;
 
-    // we were not given a planned memory allocator, so we need to create one:
-    if (planned_memory_allocator == nullptr) {
+    if (!planned_memory) {
       const auto method_metadata =
-          ET_UNWRAP(program_->method_meta(method_name.c_str()));
-      const auto planned_buffersCount =
+        ET_UNWRAP(program_->method_meta(method_name.c_str()));
+      const auto planned_buffers_count =
           method_metadata.num_memory_planned_buffers();
-      method_holder.planned_buffers.reserve(planned_buffersCount);
-      method_holder.planned_spans.reserve(planned_buffersCount);
+      method_holder.planned_buffers.reserve(planned_buffers_count);
+      method_holder.planned_spans.reserve(planned_buffers_count);
 
-      for (auto index = 0; index < planned_buffersCount; ++index) {
+      for (auto index = 0; index < planned_buffers_count; ++index) {
         const auto buffer_size =
             method_metadata.memory_planned_buffer_size(index).get();
         method_holder.planned_buffers.emplace_back(buffer_size);
@@ -205,17 +201,16 @@ runtime::Error Module::load_method(
             method_holder.planned_buffers.back().data(), buffer_size);
       }
       method_holder.planned_memory =
-          std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
-              method_holder.planned_spans.data(),
-              method_holder.planned_spans.size()));
+          std::make_unique<runtime::HierarchicalAllocator>(
+              runtime::Span(
+                  method_holder.planned_spans.data(),
+                  method_holder.planned_spans.size()));
       planned_memory = method_holder.planned_memory.get();
-    } else {
-      // we were given a planned memory allocator, so we use it:
-      planned_memory = planned_memory_allocator;
     }
-
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
-        memory_allocator_.get(), planned_memory, temp_allocator_.get());
+        memory_allocator_.get(),
+        planned_memory,
+        temp_allocator_.get());
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
