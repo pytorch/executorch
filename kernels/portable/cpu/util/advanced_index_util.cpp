@@ -58,12 +58,12 @@ bool check_mask_indices(const Tensor& in, TensorOptList indices) {
             auto input_shape = executorch::runtime::tensor_shape_to_c_string(
                 executorch::runtime::Span<const Tensor::SizesType>(
                     in.sizes().data() + in_i, index.sizes().size()));
-#endif // ET_LOG_ENABLED
             ET_LOG(
                 Error,
                 "The shape of mask index %s must match the sizes of the corresponding input dimensions %s.",
                 mask_shape.data(),
                 input_shape.data());
+#endif // ET_LOG_ENABLED
             return false;
           }
         }
