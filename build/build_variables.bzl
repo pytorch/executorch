@@ -6,14 +6,12 @@
 # file. (Remember that bzl files are not exported via ShipIt by default, so you may also
 # need to update ExecuTorch's ShipIt config.)
 
-# _executorch__srcs
 EXECUTORCH_SRCS = [
     "kernels/prim_ops/et_copy_index.cpp",
     "kernels/prim_ops/et_view.cpp",
     "kernels/prim_ops/register_prim_ops.cpp",
 ]
 
-# _executorch_core__srcs
 EXECUTORCH_CORE_SRCS = [
     "runtime/backend/interface.cpp",
     "runtime/core/evalue.cpp",
@@ -35,7 +33,6 @@ EXECUTORCH_CORE_SRCS = [
     "schema/extended_header.cpp",
 ]
 
-# _portable_kernels__srcs
 PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op__empty_dim_order.cpp",
     "kernels/portable/cpu/op__to_dim_order_copy.cpp",
@@ -215,7 +212,6 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/util/upsample_util.cpp",
 ]
 
-# _optimized_kernels__srcs
 OPTIMIZED_KERNELS_SRCS = [
     "extension/parallel/thread_parallel.cpp",
     "kernels/optimized/blas/BlasKernel.cpp",
@@ -235,7 +231,6 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_sub.cpp",
 ]
 
-# _quantized_kernels__srcs
 QUANTIZED_KERNELS_SRCS = [
     "kernels/quantized/cpu/embeddingxb.cpp",
     "kernels/quantized/cpu/op_add.cpp",
@@ -249,13 +244,11 @@ QUANTIZED_KERNELS_SRCS = [
     "kernels/quantized/cpu/op_quantize.cpp",
 ]
 
-# _program_schema__srcs
 PROGRAM_SCHEMA_SRCS = [
     "schema/program.fbs",
     "schema/scalar_type.fbs",
 ]
 
-# _optimized_cpublas__srcs
 OPTIMIZED_CPUBLAS_SRCS = [
     "extension/parallel/thread_parallel.cpp",
     "extension/threadpool/threadpool.cpp",
@@ -264,7 +257,6 @@ OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/CPUBlas.cpp",
 ]
 
-# _optimized_native_cpu_ops_oss__srcs
 OPTIMIZED_NATIVE_CPU_OPS_OSS_SRCS = [
     "codegen/templates/RegisterCodegenUnboxedKernels.cpp",
     "codegen/templates/RegisterDispatchKeyCustomOps.cpp",
@@ -290,24 +282,20 @@ OPTIMIZED_NATIVE_CPU_OPS_OSS_SRCS = [
     "kernels/optimized/cpu/op_sub.cpp",
 ]
 
-# _extension_data_loader__srcs
 EXTENSION_DATA_LOADER_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
     "extension/data_loader/mmap_data_loader.cpp",
 ]
 
-# _extension_module__srcs
 EXTENSION_MODULE_SRCS = [
     "extension/module/module.cpp",
 ]
 
-# _extension_runner_util__srcs
 EXTENSION_RUNNER_UTIL_SRCS = [
     "extension/runner_util/inputs.cpp",
     "extension/runner_util/inputs_portable.cpp",
 ]
 
-# _extension_llm_runner__srcs
 EXTENSION_LLM_RUNNER_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
     "extension/data_loader/mmap_data_loader.cpp",
@@ -318,19 +306,16 @@ EXTENSION_LLM_RUNNER_SRCS = [
     "extension/tensor/tensor_ptr_maker.cpp",
 ]
 
-# _extension_tensor__srcs
 EXTENSION_TENSOR_SRCS = [
     "extension/tensor/tensor_ptr.cpp",
     "extension/tensor/tensor_ptr_maker.cpp",
 ]
 
-# _extension_threadpool__srcs
 EXTENSION_THREADPOOL_SRCS = [
     "extension/threadpool/threadpool.cpp",
     "extension/threadpool/threadpool_guard.cpp",
 ]
 
-# _extension_training__srcs
 EXTENSION_TRAINING_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
     "extension/data_loader/mmap_data_loader.cpp",
@@ -342,7 +327,6 @@ EXTENSION_TRAINING_SRCS = [
     "kernels/prim_ops/register_prim_ops.cpp",
 ]
 
-# _train_xor__srcs
 TRAIN_XOR_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
     "extension/data_loader/mmap_data_loader.cpp",
@@ -356,7 +340,6 @@ TRAIN_XOR_SRCS = [
     "extension/training/optimizer/sgd.cpp",
 ]
 
-# _executor_runner__srcs
 EXECUTOR_RUNNER_SRCS = [
     "examples/portable/executor_runner/executor_runner.cpp",
     "extension/data_loader/file_data_loader.cpp",
@@ -366,13 +349,11 @@ EXECUTOR_RUNNER_SRCS = [
     "runtime/executor/test/test_backend_compiler_lib.cpp",
 ]
 
-# _size_test__srcs
 SIZE_TEST_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
     "test/size_test.cpp",
 ]
 
-# _mps_executor_runner__srcs
 MPS_EXECUTOR_RUNNER_SRCS = [
     "backends/apple/mps/runtime/MPSBackend.mm",
     "backends/apple/mps/runtime/MPSCompiler.mm",
@@ -407,7 +388,6 @@ MPS_EXECUTOR_RUNNER_SRCS = [
     "extension/runner_util/inputs_portable.cpp",
 ]
 
-# _mps_backend__srcs
 MPS_BACKEND_SRCS = [
     "backends/apple/mps/runtime/MPSBackend.mm",
     "backends/apple/mps/runtime/MPSCompiler.mm",
@@ -434,12 +414,10 @@ MPS_BACKEND_SRCS = [
     "backends/apple/mps/runtime/operations/UnaryOps.mm",
 ]
 
-# _mps_schema__srcs
 MPS_SCHEMA_SRCS = [
     "backends/apple/mps/serialization/schema.fbs",
 ]
 
-# _xnn_executor_runner__srcs
 XNN_EXECUTOR_RUNNER_SRCS = [
     "examples/portable/executor_runner/executor_runner.cpp",
     "extension/data_loader/file_data_loader.cpp",
@@ -448,7 +426,6 @@ XNN_EXECUTOR_RUNNER_SRCS = [
     "extension/runner_util/inputs_portable.cpp",
 ]
 
-# _xnnpack_backend__srcs
 XNNPACK_BACKEND_SRCS = [
     "backends/xnnpack/runtime/XNNCompiler.cpp",
     "backends/xnnpack/runtime/XNNExecutor.cpp",
@@ -459,17 +436,14 @@ XNNPACK_BACKEND_SRCS = [
     "extension/threadpool/threadpool_guard.cpp",
 ]
 
-# _xnnpack_schema__srcs
 XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
 ]
 
-# _vulkan_schema__srcs
 VULKAN_SCHEMA_SRCS = [
     "backends/vulkan/serialization/schema.fbs",
 ]
 
-# _custom_ops__srcs
 CUSTOM_OPS_SRCS = [
     "extension/llm/custom_ops/op_fallback.cpp",
     "extension/llm/custom_ops/op_fast_hadamard_transform.cpp",
@@ -479,7 +453,6 @@ CUSTOM_OPS_SRCS = [
     "kernels/portable/cpu/util/reduce_util.cpp",
 ]
 
-# _llama_runner__srcs
 LLAMA_RUNNER_SRCS = [
     "examples/models/llama/runner/runner.cpp",
     "examples/models/llama/tokenizer/llama_tiktoken.cpp",
