@@ -1,4 +1,4 @@
-# OpenVINO Backend on ExecuTorch
+# OpenVINO Backend for ExecuTorch
 The OpenVINO backend enables optimized execution of deep learning models on Intel hardware, leveraging Intel's [OpenVINO toolkit](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/overview.html) for inference acceleration.
 
 ## Supported Hardware
@@ -9,6 +9,37 @@ OpenVINO backend supports the following hardware:
 - Intel integrated GPUs
 - Intel discrete GPUs
 - Intel NPUs
+
+## Directory Structure
+
+```
+executorch
+├── backends
+│   └── openvino
+│       ├── runtime
+│           ├── OpenvinoBackend.cpp
+│           └── OpenvinoBackend.hpp
+│       ├── scripts
+│           └── openvino_build.sh
+│       ├── tests
+│       ├── CMakeLists.txt
+│       ├── README.md
+│       ├── __init__.py
+│       ├── openvino_functions.yaml
+│       ├── partitioner.py
+│       ├── preprocess.py
+│       └── requirements.txt
+└── examples
+│   └── openvino
+│       ├── aot
+│           ├── README.md
+│           └── aot_openvino_compiler.py
+│       └── executor_runner
+│           └── openvino_executor_runner.cpp
+│       ├── CMakeLists.txt
+│       ├── README.md
+└──     └── openvino_build_example.sh
+```
 
 ## Build Instructions
 
