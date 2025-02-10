@@ -22,7 +22,9 @@ class DecomposeSilu(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        partitions = get_source_partitions(graph, [torch.nn.functional.silu])
+        partitions = get_source_partitions(
+            graph, [torch.nn.functional.silu, torch.ops.aten.silu.default]
+        )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
 
