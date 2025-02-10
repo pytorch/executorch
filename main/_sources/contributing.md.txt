@@ -9,3 +9,5 @@ The source is hosted on GitHub at
 See
 [CONTRIBUTING.md](https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md)
 for detailed information about contributing to ExecuTorch.
+
+Join us on [Discord](https://discord.com/invite/Dh43CKSAdc)!
