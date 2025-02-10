@@ -331,29 +331,38 @@ class TestEmit(unittest.TestCase):
             "aten::sin",
             "aten::relu",
             "aten::max",
-            "executorch_prim::et_view",  # aten::view_copy if ExecutorchBackendConfig.remove_view_copy = False
         ]
+
+        def expected_view_ops(config):
+            if config.remove_view_copy:
+                return []
+            else:
+                return ["aten::view_copy"]
 
         for opname in removed_ops:
             self.assertEqual(
                 self.count_node(edge.exported_program().graph_module, opname), 0
             )
         for opname in expected_ops:
-            if (
-                opname != "executorch_prim::et_view"
-            ):  # et_view appears as call_function with target = memory.view in graph
-                self.assertTrue(
-                    self.count_node(edge.exported_program().graph_module, opname) >= 1
-                )
-
-        program = edge.to_executorch().executorch_program
-        for opname in removed_ops:
             self.assertTrue(
-                all(op.name != opname for op in program.execution_plan[0].operators)
+                self.count_node(edge.exported_program().graph_module, opname) >= 1
             )
-        for opname in expected_ops:
+
+        for remove_view_copy in [True, False]:
+            config = exir.ExecutorchBackendConfig(remove_view_copy=remove_view_copy)
+            edge_copy = deepcopy(edge)
+            program = edge_copy.to_executorch(config=config).executorch_program
+            for opname in removed_ops:
+                self.assertTrue(
+                    all(op.name != opname for op in program.execution_plan[0].operators)
+                )
+            for opname in expected_ops + expected_view_ops(config):
+                self.assertTrue(
+                    any(op.name == opname for op in program.execution_plan[0].operators)
+                )
             self.assertTrue(
-                any(op.name == opname for op in program.execution_plan[0].operators)
+                len(program.execution_plan[0].operators)
+                == len(expected_ops + expected_view_ops(config))
             )
 
     def test_operators_unique(self) -> None:
