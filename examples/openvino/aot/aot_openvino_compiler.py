@@ -22,11 +22,15 @@ from torch.export import export, ExportedProgram
 from torch.export.exported_program import ExportedProgram
 import argparse
 from executorch.backends.openvino import OpenVINOQuantizer
+#from nncf.experimental.torch.fx.quantization.quantizer.openvino_quantizer import OpenVINOQuantizer
+from nncf.experimental.torch.fx.quantization.quantize_pt2e import quantize_pt2e
 from torch.ao.quantization.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
 )
-
+from sklearn.metrics import accuracy_score
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
 
 # Function to load a model based on the selected suite
 def load_model(suite: str, model_name: str):
@@ -42,20 +46,17 @@ def load_model(suite: str, model_name: str):
         raise ValueError(f"Unsupported model suite: {suite}")
 
 
-def load_calibration_dataset(dataset_path: str):
+def load_calibration_dataset(dataset_path: str, suite: str, model: torch.nn.Module):
     val_dir = f"{dataset_path}/val"
 
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    if suite == "torchvision":
+        transform = torchvision_models.get_model_weights(model.name).transforms()
+    else:
+        transform = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
 
     val_dataset = datasets.ImageFolder(
         val_dir,
-        transforms.Compose(
-            [
-                transforms.Resize(64), # for tiny imagenet
-                transforms.ToTensor(),
-                normalize,
-            ]
-        ),
+        transform=transform
     )
 
     calibration_dataset = torch.utils.data.DataLoader(
@@ -63,21 +64,6 @@ def load_calibration_dataset(dataset_path: str):
     )
 
     return calibration_dataset
-
-
-def quantize_model(model: torch.fx.GraphModule, example_args, subset_size=300):
-    #quantizer = OpenVINOQuantizer(ignored_scope=nncf.IgnoredScope(types=["__getitem__", "layer_norm"]))
-    quantizer = OpenVINOQuantizer()
-
-    print("PTQ: Annotate the model...")
-    annotated_model = prepare_pt2e(model, quantizer)
-    
-    print("PTQ: Calibrate the model...")
-    annotated_model(*example_args)
-
-    print("PTQ: Convert the quantized model...")
-    quantized_model = convert_pt2e(annotated_model, fold_quantize=False)
-    return quantized_model
 
 
 def main(suite: str, model_name: str, input_shape, quantize: bool, dataset_path: str, device: str):
@@ -98,15 +84,24 @@ def main(suite: str, model_name: str, input_shape, quantize: bool, dataset_path:
     aten_dialect: ExportedProgram = export(model, example_args)
 
     if quantize:
+        if suite == "huggingface":
+            raise ValueError("Quantization of {suite} models did not support yet.")
+
         # Quantize model
         if not dataset_path:
             raise ValueError("Quantization requires a calibration dataset.")
-        #calibration_dataset = load_calibration_dataset(dataset_path)
+        calibration_dataset = load_calibration_dataset(dataset_path, suite, model)
 
         captured_model = aten_dialect.module()
         #visualize_fx_model(captured_model, f"{model_name}_fp32.svg")
-        quantized_model = quantize_model(captured_model, example_args)
-        #visualize_fx_model(quantized_model, f"{model_name}_int8.svg")
+        quantizer = OpenVINOQuantizer()
+
+        print("PTQ: Quantize the model")
+        def transform(x):
+            return x[0]
+
+        quantized_model = quantize_pt2e(captured_model, quantizer, calibration_dataset=nncf.Dataset(calibration_dataset, transform_func=transform), fold_quantize=False)
+
         aten_dialect: ExportedProgram = export(quantized_model, example_args)
 
     # Convert to edge dialect
@@ -121,15 +116,94 @@ def main(suite: str, model_name: str, input_shape, quantize: bool, dataset_path:
     exec_prog = lowered_module.to_executorch(config=executorch.exir.ExecutorchBackendConfig())
 
     # Serialize and save it to a file
-    model_name = f"{model_name}_{'int8' if quantize else 'fp32'}.pte" 
+    model_name = f"{model_name}_{'int8' if quantize else 'fp32'}.pte"
     with open(model_name, "wb") as file:
         exec_prog.write_to_file(file)
     print(f"Model exported and saved as {model_name} on {device}.")
+
+    if quantize:
+        print("Start validation of the quantized model:")
+
+        # 1: Dump inputs
+        import os
+        import shutil
+
+        dest_path = "tmp_inputs"
+        out_path = "tmp_outputs"
+        targets, input_files = [], []
+        for d in [dest_path, out_path]:
+            if os.path.exists(d):
+                shutil.rmtree(d)
+            os.makedirs(d)
+        input_list = ""
+        for idx, data in enumerate(calibration_dataset):
+            feature, target = data
+            targets.append(target)
+            file_name = f"{dest_path}/input_{idx}_0.raw"
+            input_list += file_name + " "
+            if not isinstance(feature, torch.Tensor):
+                feature = torch.tensor(feature)
+            feature.detach().numpy().tofile(file_name)
+            input_files.append(file_name)
+
+        inp_list_file = os.path.join(dest_path, "in_list.txt")
+        with open(inp_list_file, "w") as f:
+            input_list = input_list.strip() + "\n"
+            f.write(input_list)
+
+        # 2: Run the executor
+        print("Run openvino_executor_runner...")
+        import subprocess
+        breakpoint()
+        subprocess.run(["../../../cmake-openvino-out/examples/openvino/openvino_executor_runner",
+                    f"--model_path={model_name}",
+                    f"--input_list_path={inp_list_file}",
+                    f"--output_folder_path={out_path}",
+                    #f"--num_iter={len(input_files)}"
+        ])
+
+        # 3: load the outputs and compare with the targets
+        import numpy as np
+        predictions = []
+        for i in range(len(input_files)):
+            predictions.append(
+                np.fromfile(
+                    os.path.join(out_path, f"output_{i}.raw"), dtype=np.float32
+                )
+            )
+
+        k_val = [1, 5]
+        acc_top1 = accuracy_score(predictions, targets)
+        print(f"acc@1: {acc_top1}")
+
 
 from torch.fx.passes.graph_drawer import FxGraphDrawer
 def visualize_fx_model(model: torch.fx.GraphModule, output_svg_path: str):
     g = FxGraphDrawer(model, output_svg_path)
     g.get_dot_graph().write_svg(output_svg_path)
+
+def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None):
+    input_list_file = None
+    input_files = []
+
+    # Prepare input list
+    if input_list is not None:
+        input_list_file = f"{dest_path}/{file_name}"
+        with open(input_list_file, "w") as f:
+            f.write(input_list)
+            f.flush()
+
+    # Prepare input data
+    if inputs is not None:
+        for idx, data in enumerate(inputs):
+            for i, d in enumerate(data):
+                file_name = f"{dest_path}/input_{idx}_{i}.raw"
+                if not isinstance(d, torch.Tensor):
+                    d = torch.tensor(d)
+                d.detach().numpy().tofile(file_name)
+                input_files.append(file_name)
+
+    return input_list_file, input_files
 
 if __name__ == "__main__":
     # Argument parser for dynamic inputs

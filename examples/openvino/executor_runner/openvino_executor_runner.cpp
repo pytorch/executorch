@@ -179,6 +179,7 @@ int main(int argc, char** argv) {
       std::string file_path;
       while (std::getline(input_list, file_path)) {
         auto input_files = split(file_path, " ");
+        ET_LOG(Info, "INPUT_FILES.SIZE: %ld", input_files.size());
         if (input_files.size() == 0) {
           break;
         }

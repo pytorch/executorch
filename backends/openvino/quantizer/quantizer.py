@@ -10,12 +10,11 @@
 # limitations under the License.
 
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import torch.fx
 from torch.ao.quantization.observer import HistogramObserver
 from torch.ao.quantization.observer import PerChannelMinMaxObserver
-from torch.ao.quantization.observer import MinMaxObserver
 from torch.ao.quantization.quantizer.quantizer import EdgeOrNode
 from torch.ao.quantization.quantizer.quantizer import QuantizationAnnotation
 from torch.ao.quantization.quantizer.quantizer import QuantizationSpec
@@ -24,25 +23,11 @@ from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.ao.quantization.quantizer.quantizer import SharedQuantizationSpec
 
 import nncf
+import nncf.common.quantization as q
+import nncf.experimental.torch.fx as nncf_fx
+import nncf.parameters as p
+import nncf.quantization.advanced_parameters as advanced_p
 from nncf.common.graph.graph import NNCFGraph
-from nncf.common.logging import nncf_logger
-from nncf.common.quantization.quantizer_propagation.solver import QuantizerPropagationRule
-from nncf.common.quantization.quantizer_setup import QuantizationPointBase
-from nncf.common.quantization.quantizer_setup import SingleConfigQuantizerSetup
-from nncf.common.quantization.structs import QuantizationPreset
-from nncf.common.quantization.structs import QuantizationScheme
-from nncf.experimental.torch.fx.nncf_graph_builder import GraphConverter
-from nncf.experimental.torch.fx.node_utils import get_graph_node_by_name
-from nncf.experimental.torch.fx.transformations import fold_constant_except_qdq
-from nncf.parameters import ModelType
-from nncf.parameters import QuantizationMode
-from nncf.parameters import TargetDevice
-from nncf.quantization.advanced_parameters import FP8QuantizationParameters
-from nncf.quantization.advanced_parameters import OverflowFix
-from nncf.quantization.advanced_parameters import QuantizationParameters
-from nncf.quantization.algorithms.min_max.algorithm import MinMaxQuantization
-from nncf.scopes import IgnoredScope
-from nncf.torch.model_graph_manager import get_weight_tensor_port_ids
 
 QUANT_ANNOTATION_KEY = "quantization_annotation"
 
@@ -56,16 +41,15 @@ class OpenVINOQuantizer(Quantizer):
     def __init__(
         self,
         *,
-        mode: Optional[QuantizationMode] = None,
-        preset: Optional[QuantizationPreset] = None,
-        target_device: TargetDevice = TargetDevice.ANY,
-        model_type: Optional[ModelType] = None,
-        ignored_scope: Optional[IgnoredScope] = None,
-        overflow_fix: Optional[OverflowFix] = None,
+        mode: Optional[p.QuantizationMode] = None,
+        preset: Optional[q.structs.QuantizationPreset] = None,
+        target_device: p.TargetDevice = p.TargetDevice.ANY,
+        transformer_model: bool = False,
+        ignored_scope: Optional[nncf.IgnoredScope] = None,
+        overflow_fix: Optional[advanced_p.OverflowFix] = None,
         quantize_outputs: bool = False,
-        activations_quantization_params: Optional[Union[QuantizationParameters, FP8QuantizationParameters]] = None,
-        weights_quantization_params: Optional[Union[QuantizationParameters, FP8QuantizationParameters]] = None,
-        quantizer_propagation_rule: QuantizerPropagationRule = QuantizerPropagationRule.MERGE_ALL_IN_ONE,
+        activations_quantization_params: Optional[advanced_p.QuantizationParameters] = None,
+        weights_quantization_params: Optional[advanced_p.QuantizationParameters] = None,
     ):
         """
         :param mode: Defines optimization mode for the algorithm. None by default.
@@ -89,29 +73,28 @@ class OpenVINOQuantizer(Quantizer):
         :param activations_quantization_params: Quantization parameters for model
             activations.
         :param weights_quantization_params: Quantization parameters for model weights.
-        :param quantizer_propagation_rule: The strategy to be used while propagating and merging quantizers.
-        MERGE_ALL_IN_ONE by default.
         """
-        self._min_max_algo = MinMaxQuantization(
+        self._min_max_algo = nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization(
             mode=mode,
             preset=preset,
             target_device=target_device,
-            model_type=model_type,
+            model_type=p.ModelType.TRANSFORMER if transformer_model else None,
             ignored_scope=ignored_scope,
             overflow_fix=overflow_fix,
             quantize_outputs=quantize_outputs,
             activations_quantization_params=activations_quantization_params,
             weights_quantization_params=weights_quantization_params,
-            quantizer_propagation_rule=quantizer_propagation_rule,
         )
 
-    def get_quantization_setup(self, model: torch.fx.GraphModule, nncf_graph: NNCFGraph) -> SingleConfigQuantizerSetup:
+    def get_nncf_quantization_setup(
+        self, model: torch.fx.GraphModule, nncf_graph: NNCFGraph
+    ) -> q.quantizer_setup.SingleConfigQuantizerSetup:
         self._min_max_algo._set_backend_entity(model)
         return self._min_max_algo.find_quantization_setup(model, nncf_graph)
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        nncf_graph = GraphConverter.create_nncf_graph(model)
-        quantization_setup = self.get_quantization_setup(model, nncf_graph)
+        nncf_graph = nncf_fx.nncf_graph_builder.GraphConverter.create_nncf_graph(model)
+        quantization_setup = self.get_nncf_quantization_setup(model, nncf_graph)
 
         graph = model.graph
         node_vs_torch_annotation = defaultdict(QuantizationAnnotation)
@@ -138,7 +121,9 @@ class OpenVINOQuantizer(Quantizer):
                 )
                 raise nncf.InternalError(msg)
 
-            root_target_node = get_graph_node_by_name(graph, root_qp.insertion_point.target_node_name)
+            root_target_node = nncf_fx.node_utils.get_graph_node_by_name(
+                graph, root_qp.insertion_point.target_node_name
+            )
             root_edge_or_node = self._get_edge_or_node(root_target_node, root_qp, nncf_graph)
 
             for quantizer_id in quantizer_ids:
@@ -155,10 +140,11 @@ class OpenVINOQuantizer(Quantizer):
         for node, annotation in node_vs_torch_annotation.items():
             assert QUANT_ANNOTATION_KEY not in node.meta
             node.meta[QUANT_ANNOTATION_KEY] = annotation
+        return model
 
     @staticmethod
     def _get_unified_scales_root_quantizer_id(
-        nncf_graph: NNCFGraph, quantizer_ids: List[int], quantizer_setup: SingleConfigQuantizerSetup
+        nncf_graph: NNCFGraph, quantizer_ids: List[int], quantizer_setup: q.quantizer_setup.SingleConfigQuantizerSetup
     ) -> int:
         """
         Identifies the earliest quantizer node ID based on the corresponding `nncf_node.node_id`
@@ -184,7 +170,7 @@ class OpenVINOQuantizer(Quantizer):
     def _get_edge_or_node_and_annotation(
         graph: torch.fx.Graph,
         nncf_graph: NNCFGraph,
-        qp: QuantizationPointBase,
+        qp: q.quantizer_setup.QuantizationPointBase,
         node_vs_torch_annotation: Dict[torch.fx.Node, QuantizationAnnotation],
     ) -> Tuple[EdgeOrNode, QuantizationAnnotation]:
         """
@@ -198,13 +184,15 @@ class OpenVINOQuantizer(Quantizer):
             QuantizationAnnotations.
         :return: A tuple containing the EdgeOrNode and its associated QuantizationAnnotation.
         """
-        target_node = get_graph_node_by_name(graph, qp.insertion_point.target_node_name)
+        target_node = nncf_fx.node_utils.get_graph_node_by_name(graph, qp.insertion_point.target_node_name)
         annotation = node_vs_torch_annotation[target_node]
         edge_or_node = OpenVINOQuantizer._get_edge_or_node(target_node, qp, nncf_graph)
         return edge_or_node, annotation
 
     @staticmethod
-    def _get_edge_or_node(target_node: torch.fx.Node, qp: QuantizationPointBase, nncf_graph: NNCFGraph) -> EdgeOrNode:
+    def _get_edge_or_node(
+        target_node: torch.fx.Node, qp: q.quantizer_setup.QuantizationPointBase, nncf_graph: NNCFGraph
+    ) -> EdgeOrNode:
         """
         Returns the edge or node based on the given target node and quantization point.
 
@@ -216,10 +204,10 @@ class OpenVINOQuantizer(Quantizer):
         ip = qp.insertion_point
         if qp.is_weight_quantization_point():
             nncf_node = nncf_graph.get_node_by_name(target_node.name)
-            weights_ports_ids = get_weight_tensor_port_ids(nncf_node, nncf_graph)
+            weights_ports_ids = nncf.torch.model_graph_manager.get_weight_tensor_port_ids(nncf_node, nncf_graph)
             if len(weights_ports_ids) > 1:
                 # TODO(dlyakhov): support quantization for nodes with several weights
-                nncf_logger.warning(
+                nncf.common.logging.nncf_logger.warning(
                     f"Quantization of the weighted node {target_node.name}"
                     " is not yet supported by the OpenVINOQuantizer."
                     f" Only the weight on port ID {weights_ports_ids[0]} will be quantized."
@@ -253,7 +241,7 @@ class OpenVINOQuantizer(Quantizer):
             annotation_to_update.input_qspec_map[edge_or_node[0]] = qspec
 
     @staticmethod
-    def _get_torch_ao_qspec_from_qp(qp: QuantizationPointBase) -> QuantizationSpec:
+    def _get_torch_ao_qspec_from_qp(qp: q.quantizer_setup.QuantizationPointBase) -> QuantizationSpec:
         """
         Retrieves the quantization configuration from the given quantization point and
         converts it into a QuantizationSpec.
@@ -269,15 +257,16 @@ class OpenVINOQuantizer(Quantizer):
         if qconfig.per_channel:
             torch_qscheme = (
                 torch.per_channel_symmetric
-                if qconfig.mode is QuantizationScheme.SYMMETRIC
+                if qconfig.mode is q.structs.QuantizationScheme.SYMMETRIC
                 else torch.per_channel_affine
             )
         else:
             torch_qscheme = (
-                torch.per_tensor_symmetric if qconfig.mode is QuantizationScheme.SYMMETRIC else torch.per_tensor_affine
+                torch.per_tensor_symmetric
+                if qconfig.mode is q.structs.QuantizationScheme.SYMMETRIC
+                else torch.per_tensor_affine
             )
         if is_weight:
-            observer = PerChannelMinMaxObserver if qconfig.per_channel else MinMaxObserver
             observer = PerChannelMinMaxObserver
             quant_min = -128
             quant_max = 127
@@ -307,5 +296,5 @@ class OpenVINOQuantizer(Quantizer):
         pass
 
     def transform_for_annotation(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        fold_constant_except_qdq(model)
+        nncf_fx.transformations.fold_constant_except_qdq(model)
         return model
