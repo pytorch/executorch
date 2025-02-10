@@ -218,6 +218,44 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
     return replace_linear(module)
 
 
+def dump_context_from_pte(pte_path):
+    """
+    Dump compiled binaries under the same directory of pte_path.
+    For partitioned graph, there will be multiple files with names f"{graph_name}_{index}".
+    Where 'graph_name' comes from the compiler_specs and 'index' represents the execution order.
+
+    Args:
+        pte_path (str): The path of generated pte.
+    """
+    import os
+
+    from executorch.exir._serialize._program import deserialize_pte_binary
+
+    with open(pte_path, "rb") as f:
+        program_data = f.read()
+
+    program = deserialize_pte_binary(program_data)
+
+    ctx_path = os.path.dirname(pte_path)
+    dummy_compiler_specs = generate_qnn_executorch_compiler_spec(
+        soc_model=QcomChipset.SM8650,
+        backend_options=generate_htp_compiler_spec(use_fp16=False),
+    )
+    qnn_mgr = PyQnnManagerAdaptor.QnnManager(
+        generate_qnn_executorch_option(dummy_compiler_specs)
+    )
+    qnn_mgr.Init()
+    for execution_plan in program.execution_plan:
+        for i, delegate in enumerate(execution_plan.delegates):
+            if delegate.id == "QnnBackend":
+                processed_bytes = program.backend_delegate_data[
+                    delegate.processed.index
+                ].data
+                binary = qnn_mgr.StripProtocol(processed_bytes)
+                with open(f"{ctx_path}/{execution_plan.name}_{i}.bin", "wb") as f:
+                    f.write(binary)
+
+
 def update_spill_fill_size(
     exported_program: ExportedProgram | List[LoweredBackendModule],
 ):
@@ -873,7 +911,6 @@ def generate_multi_graph_program(
     backend_config: ExecutorchBackendConfig = None,
     constant_methods: Optional[Dict[str, Any]] = None,
 ) -> ExecutorchProgramManager:
-
     # compile multiple graphs in qcir into single context binary
     (
         graph_inputs,
@@ -1060,7 +1097,7 @@ def generate_composite_llama_program(
             outputs_dict[graph_name],
             embedding_quantize,
         )
-        prog = torch.export.export(composite_llama_module, sample_inputs)
+        prog = torch.export.export(composite_llama_module, sample_inputs, strict=True)
         progs_dict[graph_name] = prog
     # leverage ExecutorchProgramManager for generating pte with multi-methods
     edge_prog_mgr = to_edge(

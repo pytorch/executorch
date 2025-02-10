@@ -183,14 +183,16 @@ class vTensor final {
       const vkapi::ScalarType dtype,
       const utils::StorageType storage_type = utils::kTexture3D,
       const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
-      const bool allocate_memory = true);
+      const bool allocate_memory = true,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   vTensor(const vTensor& other) = delete;
 
   explicit vTensor(
       Context* context,
       const vkapi::VulkanImage& image,
-      const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked);
+      const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * This constructor allows for the creation of a vTensor that references the

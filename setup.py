@@ -55,6 +55,7 @@ import sys
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
 import setuptools  # noqa: F401 # usort: skip
+import subprocess
 
 from distutils import log
 from distutils.sysconfig import get_python_lib
@@ -65,9 +66,6 @@ from setuptools import Extension, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
-
-# For information on setuptools Command subclassing see
-# https://setuptools.pypa.io/en/latest/userguide/extension.html
 
 
 class ShouldBuild:
@@ -638,7 +636,28 @@ class CustomBuild(build):
             # lists.
 
             # Generate the build system files.
-            self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
+            try:
+                subprocess.run(
+                    ["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                error = str(e.stderr)
+                # Our educated guesses from parsing the error message.
+                # Missing source file, could be related to git submodules not synced or cmake cache is outdated
+                additional_log = ""
+                if "Cannot find source file" in error:
+                    additional_log = (
+                        "\033[31;1mEither CMake cache is outdated or git submodules are not synced.\n"
+                        "Please run the following before retry:\033[0m\n"
+                        "    \033[32;1m./install_executorch.sh --clean\033[0m\n"
+                        "    \033[32;1mgit submodule sync\033[0m\n"
+                        "    \033[32;1mgit submodule update --init\033[0m\n"
+                    )
+                raise Exception(error + "\n" + additional_log) from e
 
         # Build the system.
         self.spawn(["cmake", "--build", cmake_cache_dir, *build_args])

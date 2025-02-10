@@ -6,6 +6,8 @@
 
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
+- op: _fft_r2c.out
+
 - op: _linalg_det.result
 
 - op: _linalg_svd.U
