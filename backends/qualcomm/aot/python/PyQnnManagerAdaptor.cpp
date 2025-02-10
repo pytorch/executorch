@@ -32,6 +32,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def(py::init<const py::bytes&, const py::bytes&>())
       .def(py::init<const py::bytes&, const py::list&>())
       .def("Init", &PyQnnManager::Init)
+      .def("GetQnnAPIVersion", &PyQnnManager::GetQnnAPIVersion)
       .def("IsNodeSupportedByBackend", &PyQnnManager::IsNodeSupportedByBackend)
       .def("Compile", py::overload_cast<>(&PyQnnManager::Compile))
       .def(
