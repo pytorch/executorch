@@ -1,3 +1,8 @@
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import unittest
 
 import torch
@@ -50,6 +55,22 @@ class TestScalars(unittest.TestCase):
         def forward(self, x, y):
             return x * y
 
+    class MulScalar(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.mul.Scalar(x, y)
+
+    class DivScalar(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.div.Scalar(x, y)
+
+    class AddScalar(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.add.Scalar(x, y)
+
+    class SubScalar(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.sub.Scalar(x, y)
+
     class AddInplace(torch.nn.Module):
         def forward(self, x, y):
             x += y
@@ -91,6 +112,10 @@ class TestScalars(unittest.TestCase):
         ("Sub_", SubInplace()),
         ("Mul_", MulInplace()),
         ("Div_", DivInplace()),
+        ("MulScalar", MulScalar()),
+        ("DivScalar", DivScalar()),
+        ("AddScalar", AddScalar()),
+        ("SubScalar", SubScalar()),
     ]
 
     const_ops = [("Add", AddConst())]
@@ -108,8 +133,8 @@ class TestScalars(unittest.TestCase):
                 scalar = dtype[1]
                 tensor_scalar_tests.append((test_name + "_ts", op[1], tensor, scalar))
 
-                # Don't add (scalar, tensor) test case for inplace ops.
-                if op[0][-1] == "_":
+                # Don't add (scalar, tensor) test case for inplace and .Scalar ops.
+                if op[0][-1] == "_" or op[0][-6:] == "Scalar":
                     continue
 
                 # sub(scalar, tensor) does not work in any case.
