@@ -476,7 +476,6 @@ CUSTOM_OPS_SRCS = [
     "extension/llm/custom_ops/op_sdpa.cpp",
     "extension/llm/custom_ops/op_update_cache.cpp",
     "extension/llm/custom_ops/spinquant/fast_hadamard_transform.cpp",
-    "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c",
     "kernels/portable/cpu/util/reduce_util.cpp",
 ]
 
