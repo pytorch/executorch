@@ -390,6 +390,41 @@ class PyQnnManager {
     return result;
   }
 
+  py::array_t<char> StripProtocol(const py::bytes& preprocessed_binary) {
+    py::buffer_info info(py::buffer(preprocessed_binary).request());
+
+    void* buf_ptr = nullptr;
+    size_t buf_size = 0;
+    // check if it's a qnn context binary
+    auto [status, signature, ctx_size, ctx_bin] =
+        QnnContextCustomProtocol().DeserializeContextCustomBuffer(info.ptr);
+
+    if (status == Error::Ok) {
+      buf_size = ctx_size;
+      buf_ptr = ctx_bin;
+    } else {
+      // check if it's a qcir flatbuffers, return fbs if matched
+      auto
+          [status,
+           qcir_fbs_size,
+           qcir_tensor_size,
+           qcir_fbs_ptr,
+           qcir_tensor_ptr] =
+              QnnQcirCustomProtocol().DeserializeQcirCustomBuffer(info.ptr);
+      if (status == Error::Ok) {
+        buf_size = qcir_fbs_size;
+        buf_ptr = qcir_fbs_ptr;
+      } else {
+        // the format should be DLC, return nothing here
+        return py::array_t<char>(0);
+      }
+    }
+    auto result = py::array_t<char>(buf_size);
+    auto result_buffer = result.request();
+    std::memcpy(result_buffer.ptr, buf_ptr, buf_size);
+    return result;
+  }
+
  private:
   // Store the bytes object instead of a raw pointer so that this module will
   // keep the bytes alive.
