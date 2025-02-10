@@ -238,6 +238,7 @@ _parent_shared_qspec = [
     torch.ops.aten.dropout_.default,
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp.Tensor,
+    torch.ops.aten.where,
     operator.getitem,
 ]
 
@@ -320,6 +321,13 @@ def get_quant_properties(  # noqa: C901
             _QuantProperty(
                 1, input_act_qspec if node.args[0] == node.args[1] else shared_qspec  # type: ignore[arg-type]
             ),
+        ]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+    elif node.target in (torch.ops.aten.where.self,):
+        shared_qspec = SharedQuantizationSpec(node.args[1])  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [
+            _QuantProperty(1, shared_qspec),  # type: ignore[arg-type]
+            _QuantProperty(2, shared_qspec),  # type: ignore[arg-type]
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target == torch.ops.aten.adaptive_avg_pool2d.default:
