@@ -20,6 +20,9 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
@@ -43,6 +46,13 @@ class QnnBackend(BackendDetails):
     ) -> PreprocessResult:
         option = generate_qnn_executorch_option(compile_specs)
         qnn_manager = PyQnnManager.QnnManager(option)
+        obj_options = flatbuffer_to_option(option)
+
+        core_api_version = qnn_manager.GetQnnAPIVersion()
+        assert not obj_options.online_prepare or (
+            core_api_version[0] >= 2 and core_api_version[1] >= 23
+        ), "Online prepare is disabled for Qnn API versions below 2.23.0."
+
         qnn_manager.Init()
 
         # QNN Delegate Specific Passes
@@ -107,6 +117,11 @@ class QnnBackend(BackendDetails):
             qnn_manager.GetGraphNames()[0],
             [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list],
         )
+
+        if obj_options.saver:
+            exit(
+                f"Records all QNN API calls from saver backend at: {obj_options.saver_output_dir}"
+            )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.Destroy()
         # For now, debug_handle_map is not used by QNN ExecuTorch

@@ -26,7 +26,7 @@ class HtpBackend : public QnnBackend {
         event_type == QNN_HTP_PROFILE_EVENTTYPE_GRAPH_EXECUTE_ACCEL_TIME_CYCLE);
   }
 
-  Qnn_Version_t GetExpectedBackendVersion() const override {
+  Qnn_Version_t GetExpectedBackendVersion() override {
     Qnn_Version_t backend_version;
     backend_version.major = QNN_HTP_API_VERSION_MAJOR;
     backend_version.minor = QNN_HTP_API_VERSION_MINOR;

@@ -34,7 +34,9 @@ class QnnGraph {
 
   virtual ~QnnGraph(){};
 
-  executorch::runtime::Error Configure(const std::string& graph_name);
+  executorch::runtime::Error Configure(
+      const std::string& graph_name,
+      const bool skip_create);
 
   Qnn_ErrorHandle_t GraphExecute(
       const std::string& graph_name,
@@ -64,6 +66,12 @@ class QnnGraph {
   };
   Qnn_GraphHandle_t GetHandle(const std::string& graph_name) {
     return handle_[graph_name];
+  }
+
+  void SetGraphHandle(
+      const std::string& graph_name,
+      Qnn_GraphHandle_t graph_handle) {
+    handle_[graph_name] = graph_handle;
   }
 
   QnnProfile* GetProfile(const std::string& graph_name) {
