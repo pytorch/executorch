@@ -32,6 +32,7 @@ Welcome to the ExecuTorch Documentation
 
 The ExecuTorch source is hosted on GitHub at
 https://github.com/pytorch/executorch. 
+
 Join us on `Discord <https://discord.com/invite/Dh43CKSAdc>`__ if you have questions
 about ExecuTorch or would like to become a contributor!
 
