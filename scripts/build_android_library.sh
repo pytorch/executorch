@@ -42,6 +42,7 @@ build_android_native_library() {
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
+    -DANDROID_NATIVE_API_LEVEL=30 \
     -DANDROID_PLATFORM=android-26 \
     -DBUILD_TESTING=OFF \
     -DEXECUTORCH_ENABLE_LOGGING=ON \

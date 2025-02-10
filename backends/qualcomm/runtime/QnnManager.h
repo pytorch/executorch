@@ -13,6 +13,7 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnDlcManager.h>
 #include <executorch/runtime/core/error.h>
 
 #include <memory>
@@ -71,7 +72,7 @@ class QnnManager {
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
   executorch::runtime::Error CompileQcir();
-
+  executorch::runtime::Error CompileDlc();
   executorch::runtime::Error Compile(
       const std::string& graph_name,
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
@@ -110,6 +111,22 @@ class QnnManager {
   std::string GetBinarySignature();
 
  private:
+  std::unique_ptr<const QnnSaver_Config_t*[]> GetImplementationConfig() {
+    if (options_->saver()) {
+      auto outputDirCfg = std::make_unique<QnnSaver_Config_t>();
+      outputDirCfg->option = QNN_SAVER_CONFIG_OPTION_OUTPUT_DIRECTORY;
+      outputDirCfg->outputDirectory = options_->saver_output_dir()->c_str();
+
+      auto saverCfg = std::make_unique<const QnnSaver_Config_t*[]>(2);
+      saverCfg[0] = outputDirCfg.release();
+      saverCfg[1] = nullptr;
+
+      return saverCfg;
+    } else {
+      return nullptr;
+    }
+  }
+
   executorch::runtime::Error LoadQnnLibrary();
 
   static constexpr const char* htp_library_name_ = "libQnnHtp.so";
@@ -147,6 +164,9 @@ class QnnManager {
           {Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_16,
            executorch::aten::ScalarType::UInt16},
   };
+
+  // Manager for handling DLC (Deep Learning Container)
+  std::shared_ptr<QnnDlcManager> qnn_dlc_manager_;
 };
 } // namespace qnn
 } // namespace backends
