@@ -16,6 +16,9 @@ OpenVINO backend supports the following hardware:
 
 Before you begin, ensure you have openvino installed and configured on your system:
 
+## TODO: Update with the openvino commit/Release tag once the changes in OpenVINO are merged
+## TODO: Add instructions for support with OpenVINO release package
+
 ```bash
 git clone -b executorch_ov_backend https://github.com/ynimmaga/openvino
 cd openvino
