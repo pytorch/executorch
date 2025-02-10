@@ -347,7 +347,7 @@
   } while (false)
 
 /**
- * Backward compatibility shim for the old name of ET_LOG_AND_RETURN_UNLESS.
+ * DEPRECATED: please use ET_LOG_AND_RETURN_UNLESS instead.
  */
 #define ET_LOG_AND_RETURN_IF_FALSE ET_LOG_AND_RETURN_UNLESS
 
@@ -368,7 +368,7 @@
   } while (false)
 
 /**
- * Backward compatibility shim for the old name of ET_LOG_MSG_AND_RETURN_UNLESS
+ * DEPRECATED: please use ET_LOG_AND_RETURN_UNLESS instead.
  */
 #define ET_LOG_MSG_AND_RETURN_IF_FALSE ET_LOG_MSG_AND_RETURN_UNLESS
 

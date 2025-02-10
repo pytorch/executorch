@@ -205,11 +205,13 @@ class Transformer(nn.Module):
             attn_options.get("input_pos"), seqlen
         )
 
+        # Make a shallow copy so the updates don't get captured by export
+        attn_options_ = attn_options.copy() if attn_options is not None else {}
         attn_options_update = None
         for layer in self.layers:
-            h, attn_options_update = layer(h, freqs_cos, freqs_sin, attn_options)
+            h, attn_options_update = layer(h, freqs_cos, freqs_sin, attn_options_)
             if attn_options_update is not None:
-                attn_options.update(**attn_options_update)
+                attn_options_.update(**attn_options_update)
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
