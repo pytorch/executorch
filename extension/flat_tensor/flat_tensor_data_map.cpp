@@ -8,9 +8,10 @@
 
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
-#include <executorch/extension/flat_tensor/serialize/schema_generated.h>
 
+#include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/freeable_buffer.h>

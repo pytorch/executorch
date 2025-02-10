@@ -109,6 +109,8 @@ def define_common_targets(is_fbcode = False):
             "ET_MODULE_LINEAR_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleLinear.pte])",
             "ET_MODULE_MULTI_ENTRY_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleMultipleEntry.pte])",
             "ET_MODULE_SIMPLE_TRAIN_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleSimpleTrain.pte])",
+            "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
+            "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
         }
 
         runtime.cxx_test(
@@ -135,6 +137,7 @@ def define_common_targets(is_fbcode = False):
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/extension/runner_util:inputs",
                 "//executorch/kernels/portable:generated_lib",
             ],

@@ -14,6 +14,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method_meta.h>
@@ -294,14 +295,17 @@ class Method final {
       executorch_flatbuffer::ExecutionPlan* s_plan,
       const Program* program,
       MemoryManager* memory_manager,
-      EventTracer* event_tracer);
+      EventTracer* event_tracer,
+      const NamedDataMap* named_data_map);
 
   /**
    * Initialize the method from its serialized representation.
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  ET_NODISCARD Error init(executorch_flatbuffer::ExecutionPlan* s_plan);
+  ET_NODISCARD Error init(
+      executorch_flatbuffer::ExecutionPlan* s_plan,
+      const NamedDataMap* named_data_map);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {
@@ -339,7 +343,7 @@ class Method final {
    * the number of successfully-initialized entries so that ~Method doesn't try
    * to clean up uninitialized entries.
    */
-  ET_NODISCARD Error parse_values();
+  ET_NODISCARD Error parse_values(const NamedDataMap* named_data_map);
 
   ET_NODISCARD Error resolve_operator(
       int32_t op_index,

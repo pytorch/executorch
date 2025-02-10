@@ -79,6 +79,7 @@ def define_common_targets():
                 ":memory_manager",
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core:core",
+                "//executorch/runtime/core:named_data_map",
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,

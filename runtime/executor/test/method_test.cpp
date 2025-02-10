@@ -10,6 +10,7 @@
 #include <filesystem>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/method.h>
@@ -21,6 +22,7 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
+using executorch::extension::FlatTensorDataMap;
 using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
@@ -52,6 +54,23 @@ class MethodTest : public ::testing::Test {
         {module_name, std::make_unique<Program>(std::move(program.get()))});
   }
 
+  void load_data_map(const char* path, const char* module_name) {
+    // Create a loader for the serialized data map.
+    Result<FileDataLoader> loader = FileDataLoader::from(path);
+    ASSERT_EQ(loader.error(), Error::Ok);
+    loaders_.insert(
+        {module_name,
+         std::make_unique<FileDataLoader>(std::move(loader.get()))});
+
+    Result<FlatTensorDataMap> data_map =
+        FlatTensorDataMap::load(loaders_[module_name].get());
+    EXPECT_EQ(data_map.error(), Error::Ok);
+
+    data_maps_.insert(
+        {module_name,
+         std::make_unique<FlatTensorDataMap>(std::move(data_map.get()))});
+  }
+
   void SetUp() override {
     executorch::runtime::runtime_init();
 
@@ -63,6 +82,10 @@ class MethodTest : public ::testing::Test {
     load_program(
         std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH"),
         "linear_constant_buffer");
+
+    load_program(
+        std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH"), "linear_program");
+    load_data_map(std::getenv("ET_MODULE_LINEAR_DATA_PATH"), "linear_data");
   }
 
  private:
@@ -71,6 +94,8 @@ class MethodTest : public ::testing::Test {
 
  protected:
   std::unordered_map<std::string, std::unique_ptr<Program>> programs_;
+  std::unordered_map<std::string, std::unique_ptr<FlatTensorDataMap>>
+      data_maps_;
 };
 
 TEST_F(MethodTest, MoveTest) {
@@ -296,6 +321,17 @@ TEST_F(MethodTest, ConstantBufferTest) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method =
       programs_["linear_constant_buffer"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // Can execute the method.
+  Error err = method->execute();
+  ASSERT_EQ(err, Error::Ok);
+}
+
+TEST_F(MethodTest, ProgramDataSeparationTest) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["linear_program"]->load_method(
+      "forward", &mmm.get(), nullptr, data_maps_["linear_data"].get());
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
