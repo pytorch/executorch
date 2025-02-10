@@ -157,6 +157,10 @@ def get_output_quantization_params(
 class TosaReferenceModelDispatch(TorchFunctionMode):
     """A context manager for executing call_delegate nodes using the reference model"""
 
+    def __init__(self):
+        self.ran_tosa_dispatch = False
+        super().__init__()
+
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
         compile_specs = lowered_backend_module.compile_specs
@@ -168,13 +172,21 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
         return run_tosa_graph(tosa_buffer, tosa_version, inputs)
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        super().__exit__(exc_type, exc_val, exc_tb)
+        if not self.ran_tosa_dispatch:
+            raise RuntimeError(
+                "Ran model with TosaReferenceModelDispatch but never ran ArmBackend delegate."
+            )
+
     def __torch_function__(self, func, types, args=..., kwargs=None):
         if func is torch._higher_order_ops.executorch_call_delegate:
             lowered_backend_module = cast(LoweredBackendModule, args[0])
             if lowered_backend_module.backend_id == "ArmBackend":
+                self.ran_tosa_dispatch = True
                 return self._tosa_dispatch(lowered_backend_module, args[1:])
             else:
-                logger.warning(
+                raise RuntimeError(
                     f"Ran model with TosaReferenceModelDispatch but call_delegate with {lowered_backend_module.backend_id=} != 'ArmBackend'."
                 )
 
