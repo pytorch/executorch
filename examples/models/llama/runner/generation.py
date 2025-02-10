@@ -71,7 +71,8 @@ class LlamaRunner(ABC):
         self.use_kv_cache = use_kv_cache
         self.tokenizer = get_tokenizer(tokenizer_path)
         self.device = device
-        assert vocab_size == self.tokenizer.n_words
+        # For qwen anything above 151646 is "useless": https://github.com/QwenLM/Qwen2.5/issues/466#issuecomment-2146759706
+        # assert vocab_size == self.tokenizer.n_words
 
     @abstractmethod
     def forward(

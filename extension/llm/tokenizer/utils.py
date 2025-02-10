@@ -8,12 +8,18 @@ from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tik
 from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
+from executorch.extension.llm.tokenizer.hf_tokenizer import HFTokenizer
 
 
 def get_tokenizer(tokenizer_path):
-    try:
-        tokenizer = SentencePieceTokenizer(model_path=str(tokenizer_path))
-    except Exception:
-        print("Using Tiktokenizer")
-        tokenizer = Tiktoken(model_path=str(tokenizer_path))
+    if tokenizer_path.endswith(".json"):
+        print("Using Hugging Face tokenizer")
+        tokenizer = HFTokenizer()
+        tokenizer.load(tokenizer_path)
+    else:
+        try:
+            tokenizer = SentencePieceTokenizer(model_path=str(tokenizer_path))
+        except Exception:
+            print("Using Tiktokenizer")
+            tokenizer = Tiktoken(model_path=str(tokenizer_path))
     return tokenizer
