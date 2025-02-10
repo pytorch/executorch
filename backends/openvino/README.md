@@ -87,4 +87,4 @@ Follow the steps below to setup your build environment:
 
 ### Run
 
-Please refer to `executorch/examples/openvino/` for aot optimization and execution examples of various of models.
+Please refer to [README.md](../../examples/openvino/README.md) for instructions on running examples of various of models with openvino backend.
