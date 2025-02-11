@@ -117,7 +117,7 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_argmin(self):
-        module = Conv2dArgmin()  # noqa: F405
+        module = Argmin()  # noqa: F405
         sample_input = (torch.randn(16, 3, 4, 4),)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -731,6 +731,11 @@ class TestQNNFloatingPointModel(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
+    def test_qnn_backend_argmin_view_squeeze_conv2d(self):
+        module = ArgminViewSqueezeConv2D()  # noqa: F405
+        sample_input = (torch.randn(32), torch.randn(32, 3, 32, 32))
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
         torch.manual_seed(8)
@@ -740,6 +745,11 @@ class TestQNNFloatingPointModel(TestQNN):
     def test_qnn_backend_conv1d_relu_log_softmax(self):
         module = Conv1dReluLogSoftmax()  # noqa: F405
         sample_input = (torch.rand(1, 2, 28),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_argmin(self):
+        module = Conv2dArgmin()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_avg_pool2d(self):
@@ -971,7 +981,7 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_argmin(self):
-        module = Conv2dArgmin()  # noqa: F405
+        module = Argmin()  # noqa: F405
         sample_input = (torch.randn(16, 3, 4, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -1667,6 +1677,12 @@ class TestQNNQuantizedModel(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
+    def test_qnn_backend_argmin_view_squeeze_conv2d(self):
+        module = ArgminViewSqueezeConv2D()  # noqa: F405
+        sample_input = (torch.randn(32), torch.randn(32, 3, 32, 32))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
         torch.manual_seed(8)
@@ -1677,6 +1693,12 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_conv1d_relu_log_softmax(self):
         module = Conv1dReluLogSoftmax()  # noqa: F405
         sample_input = (torch.rand(1, 2, 28),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_argmin(self):
+        module = Conv2dArgmin()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
