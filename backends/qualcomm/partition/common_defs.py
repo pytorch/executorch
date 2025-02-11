@@ -7,7 +7,6 @@ import _operator
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
-
 not_supported_operator = [
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.full.default,
@@ -18,8 +17,6 @@ not_supported_operator = [
 
 to_be_implemented_operator = [
     exir_ops.edge.aten.any.dim,
-    exir_ops.edge.aten.logical_not.default,
-    exir_ops.edge.aten.where.self,
 ]
 
 constant_operator = [

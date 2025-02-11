@@ -289,16 +289,18 @@ the checkpoint format to avoid generating faulty models.
         if self.enable_dynamic_shape:
             return (
                 torch.tensor([[2, 3, 4]], dtype=torch.long),
-                torch.tensor([0], dtype=torch.long),
+                {"input_pos": torch.tensor([0], dtype=torch.long)},
             )
         else:
             return (
                 torch.tensor(
                     [[1]], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
-                torch.tensor(
-                    [0], dtype=torch.long
-                ),  # start_pos, what token of output are we on.
+                {
+                    "input_pos": torch.tensor(
+                        [0], dtype=torch.long
+                    )  # start_pos, what token of output are we on.
+                },
             )
 
     def _transform_for_pre_quantization(self, checkpoint, model_args):
