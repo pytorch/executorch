@@ -87,6 +87,7 @@ class ExecutorchBackendConfig:
 
     # If set to true, view_copy operations will be converted to lightweight
     # view operations in the ET runtime
+    # Moreover, static views will be elided from the ExecuTorch graph
     remove_view_copy: bool = True
 
     # If set to true, all constant tensors will be stored in a separate file,

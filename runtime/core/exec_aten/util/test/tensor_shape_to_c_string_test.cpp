@@ -7,8 +7,8 @@
  */
 #include <gtest/gtest.h>
 
-#include <executorch/kernels/portable/cpu/util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <array>
 
@@ -17,7 +17,7 @@ using executorch::runtime::Span;
 using executorch::runtime::tensor_shape_to_c_string;
 using executorch::runtime::internal::kMaximumPrintableTensorShapeElement;
 
-TEST(TensorUtilTest, TensorShapeToCStringBasic) {
+TEST(TensorShapeToCStringTest, Basic) {
   std::array<executorch::aten::SizesType, 3> sizes = {123, 456, 789};
   auto str = tensor_shape_to_c_string(
       Span<const executorch::aten::SizesType>(sizes.data(), sizes.size()));
@@ -29,7 +29,7 @@ TEST(TensorUtilTest, TensorShapeToCStringBasic) {
   EXPECT_STREQ(str.data(), "(1234567890)");
 }
 
-TEST(TensorUtilTest, TensorShapeToCStringNegativeItems) {
+TEST(TensorShapeToCStringTest, NegativeItems) {
   std::array<executorch::aten::SizesType, 4> sizes = {-1, -3, -2, 4};
   auto str = tensor_shape_to_c_string(
       Span<const executorch::aten::SizesType>(sizes.data(), sizes.size()));
@@ -44,7 +44,7 @@ TEST(TensorUtilTest, TensorShapeToCStringNegativeItems) {
     EXPECT_EQ(str.data(), "(" + std::to_string(one_size[0]) + ")");
   }
 }
-TEST(TensorUtilTest, TensorShapeToCStringMaximumElement) {
+TEST(TensorShapeToCStringTest, MaximumElement) {
   std::array<executorch::aten::SizesType, 3> sizes = {
       123, std::numeric_limits<executorch::aten::SizesType>::max(), 789};
   auto str = tensor_shape_to_c_string(
@@ -60,7 +60,7 @@ TEST(TensorUtilTest, TensorShapeToCStringMaximumElement) {
   EXPECT_EQ(str.data(), expected_str);
 }
 
-TEST(TensorUtilTest, TensorShapeToCStringMaximumLength) {
+TEST(TensorShapeToCStringTest, MaximumLength) {
   std::array<executorch::aten::SizesType, kTensorDimensionLimit> sizes;
   std::fill(sizes.begin(), sizes.end(), kMaximumPrintableTensorShapeElement);
 
@@ -78,7 +78,7 @@ TEST(TensorUtilTest, TensorShapeToCStringMaximumLength) {
   EXPECT_EQ(expected_str, str.data());
 }
 
-TEST(TensorUtilTest, TensorShapeToCStringExceedsDimensionLimit) {
+TEST(TensorShapeToCStringTest, ExceedsDimensionLimit) {
   std::array<executorch::aten::SizesType, kTensorDimensionLimit + 1> sizes;
   std::fill(sizes.begin(), sizes.end(), kMaximumPrintableTensorShapeElement);
 
