@@ -17,8 +17,11 @@ def make_example_generated_op_test_target():
     """
     op_test_cpp_files = native.glob(
         ["op_*_test.cpp"],
-        # linear has no portable op.
-        exclude = ["op_linear_test.cpp"],
+        # These tests have no portable op.
+        exclude = [
+            "op_fft_r2c_test.cpp",
+            "op_linear_test.cpp",
+        ],
     )
 
     # The op name is from the beginning to the part without `_test.cpp` (:-9)
