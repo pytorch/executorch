@@ -1166,6 +1166,7 @@ def generate_qnn_executorch_compiler_spec(
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
     multiple_graphs: bool = False,
+    weight_sharing: bool = False,
     graph_name: str = "forward",
 ) -> List[CompileSpec]:
     """
@@ -1196,6 +1197,7 @@ def generate_qnn_executorch_compiler_spec(
         is_from_context_binary: True if current graph comes from pre-built context binary.
         multiple_graphs: True if multiple methods are expected to have in single .pte file.
             Please see test cases for post-processing example.
+        weight_sharing: Used with multiple_graphs, where model size will be reduced when operations have the same weights across multiple graphs.
         graph_name: Assign unique graph name if 'multiple_graphs' is used.
 
     Returns:
@@ -1213,6 +1215,12 @@ def generate_qnn_executorch_compiler_spec(
         warnings.warn(
             "It is not recommended to turn on both profiling and dump_intermediate_outputs the same time"
             ", because dump_intermediate_outputs will cause performance drop.",
+            stacklevel=1,
+        )
+
+    if weight_sharing and not multiple_graphs:
+        warnings.warn(
+            "Weight sharing is intended for multiple graphs scenario, please ensure if there are multiple graphs",
             stacklevel=1,
         )
 
@@ -1257,7 +1265,10 @@ def generate_qnn_executorch_compiler_spec(
 
     if multiple_graphs:
         # enable weight sharing mechanism if multiple graphs appear
-        if backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend:
+        if (
+            backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
+            and weight_sharing
+        ):
             backend_options.htp_options.use_weight_sharing = True
 
     return [

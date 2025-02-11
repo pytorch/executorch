@@ -182,6 +182,7 @@ class TestQNN(unittest.TestCase):
     use_16a4w: str = "16a4w"
     shared_buffer: bool = False
     enable_x86_64: bool = False
+    compile_only: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
