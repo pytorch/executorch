@@ -119,7 +119,7 @@ def _remove_platform_specific_args(kwargs):
     keys = []
     for key in kwargs:
         if (key.endswith("_platform_preprocessor_flags") or key.endswith("_platform_deps") or
-            key.startswith("fbobjc") or key.endswith("_platform_compiler_flags")):
+            key.startswith("fbobjc") or key.endswith("_platform_compiler_flags") or key == "fbcode_exported_preprocessor_flags"):
             keys.append(key)
     for key in keys:
         kwargs.pop(key)
@@ -140,7 +140,8 @@ def _patch_headers(kwargs):
 
     # header_namespace is to workaround the fact that all C++ source files are having the pattern:
     # `include <executorch/.../*.h>` but BUCK2 root is at executorch/ so the `executorch/` prefix is redundant.
-    kwargs["header_namespace"] = "executorch/" + native.package_name()
+    if "header_namespace" not in kwargs:
+        kwargs["header_namespace"] = "executorch/" + native.package_name()
     return kwargs
 
 def _patch_pp_flags(kwargs):
