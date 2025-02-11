@@ -140,32 +140,43 @@ Tensor& opt_add_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    static constexpr const char op_name[] = "add.out";
-    if (selected_optimized_path ==
-            ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
-        selected_optimized_path ==
-            ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
-        selected_optimized_path ==
-            ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
-      // Reason we swap out args here is because handle_broadcast_elementwise
-      // handles this selected_optimized_path option a bit differently.
-      // This should really be resolved in handle_broadcast_elementwise.
-      // However, the current blocker is that handle_broadcast_elementwise tries
-      // to be agnostic of op. This should be fixed, likely by moving lambda
-      // creation to handle_broadcast_elementwise and it be aware of which op is
-      // being executed.
-      auto add_lambda = [](auto x, auto y, auto alpha_val) {
-        return y + alpha_val * x;
-      };
-      return torch::executor::handle_broadcast_elementwise<op_name>(
-          ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
-    } else {
-      auto add_lambda = [](auto x, auto y, auto alpha_val) {
-        return x + alpha_val * y;
-      };
-      return torch::executor::handle_broadcast_elementwise<op_name>(
-          ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
-    }
+    ScalarType out_type = out.scalar_type();
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "add.out", CTYPE, [&]() {
+      CTYPE alpha_val;
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          utils::extract_scalar(alpha, &alpha_val),
+          InvalidArgument,
+          out,
+          "Failed to extract scalar alpha.");
+      using Vec = executorch::vec::Vectorized<CTYPE>;
+      Vec alpha_val_vec(alpha_val);
+      if (selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
+        // Reason we swap out args here is because handle_broadcast_elementwise
+        // handles this selected_optimized_path option a bit differently.
+        // This should really be resolved in handle_broadcast_elementwise.
+        // However, the current blocker is that handle_broadcast_elementwise
+        // tries to be agnostic of op. This should be fixed, likely by moving
+        // lambda creation to handle_broadcast_elementwise and it be aware of
+        // which op is being executed.
+        auto add_lambda = [&alpha_val_vec](auto x, auto y) {
+          return y + alpha_val_vec * x;
+        };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
+      } else {
+        auto add_lambda = [&alpha_val_vec](auto x, auto y) {
+          return x + alpha_val_vec * y;
+        };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
+      }
+    });
   } else {
     ScalarType common_type =
         promoteTypes(a_type, b_type, /*half_to_float*/ true);
