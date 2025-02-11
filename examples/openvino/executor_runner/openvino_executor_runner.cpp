@@ -180,6 +180,7 @@ int main(int argc, char** argv) {
       while (std::getline(input_list, file_path)) {
         auto input_files = split(file_path, " ");
         ET_LOG(Info, "INPUT_FILES.SIZE: %ld", input_files.size());
+        ET_LOG(Info, "NUM_INPUTS: %ld", num_inputs);
         if (input_files.size() == 0) {
           break;
         }
@@ -189,6 +190,7 @@ int main(int argc, char** argv) {
                 method_meta.input_tensor_meta(input_index);
             auto input_data_ptr = inputs[input_index].toTensor().data_ptr<char>();
 
+            ET_LOG(Info, "READ FILE %s", std::string(input_files[input_index]));
             std::ifstream fin(input_files[input_index], std::ios::binary);
             fin.seekg(0, fin.end);
             size_t file_size = fin.tellg();
