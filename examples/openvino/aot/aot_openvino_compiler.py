@@ -88,19 +88,20 @@ def dump_inputs(calibration_dataset, dest_path):
 
 
 def main(suite: str, model_name: str, input_shape, quantize: bool, validate: bool, dataset_path: str, device: str):
-    # Ensure input_shape is a tuple
-    if isinstance(input_shape, list):
-        input_shape = tuple(input_shape)
-    elif not isinstance(input_shape, tuple):
-        msg = "Input shape must be a list or tuple."
-        raise ValueError(msg)
-
-    calibration_dataset = None
-
     # Load the selected model
     model = load_model(suite, model_name)
     model = model.eval()
 
+    if dataset_path:
+        calibration_dataset = load_calibration_dataset(dataset_path, suite, model, model_name)
+        input_shape = tuple(next(iter(calibration_dataset))[0].shape)
+        print(f"Input shape retrieved from the model config: {input_shape}")
+    # Ensure input_shape is a tuple
+    elif isinstance(input_shape, list):
+        input_shape = tuple(input_shape)
+    else:
+        msg = "Input shape must be a list or tuple."
+        raise ValueError(msg)
     # Provide input
     example_args = (torch.randn(*input_shape),)
 
@@ -116,7 +117,6 @@ def main(suite: str, model_name: str, input_shape, quantize: bool, validate: boo
         if not dataset_path:
             msg = "Quantization requires a calibration dataset."
             raise ValueError(msg)
-        calibration_dataset = load_calibration_dataset(dataset_path, suite, model, model_name)
 
         captured_model = aten_dialect.module()
         quantizer = OpenVINOQuantizer()
@@ -154,8 +154,13 @@ def main(suite: str, model_name: str, input_shape, quantize: bool, validate: boo
     print(f"Model exported and saved as {model_file_name} on {device}.")
 
     if validate:
-        if calibration_dataset is None:
-            calibration_dataset = load_calibration_dataset(dataset_path, suite, model, model_name)
+        if suite == "huggingface":
+            msg = f"Validation of {suite} models did not support yet."
+            raise ValueError(msg)
+
+        if not dataset_path:
+            msg = "Validateion requires a calibration dataset."
+            raise ValueError(msg)
 
         print("Start validation of the quantized model:")
         # 1: Dump inputs
@@ -207,7 +212,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_shape",
         type=eval,
-        required=True,
         help="Input shape for the model as a list or tuple (e.g., [1, 3, 224, 224] or (1, 3, 224, 224)).",
     )
     parser.add_argument("--quantize", action="store_true", help="Enable model quantization.")
