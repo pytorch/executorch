@@ -19,7 +19,7 @@ from functools import partial
 from multiprocessing.connection import Client
 
 import torch
-from executorch.backends.qualcomm._passes.i64_to_i32 import I64toI32
+from executorch.backends.qualcomm._passes.constant_i64_to_i32 import ConstantI64toI32
 
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
@@ -553,9 +553,9 @@ def compile(args, pte_filename, tokenizer):
             llama_instance_list[i] = get_quant_embedding_transform(args)(
                 llama_instance_list[i]
             )
-            passes_job[I64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]["skip_node"] = {
-                "tokens"
-            }
+            passes_job[ConstantI64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+                "skip_node"
+            ] = {"tokens"}
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), pte_filename
