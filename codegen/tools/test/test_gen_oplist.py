@@ -13,6 +13,7 @@ from unittest.mock import NonCallableMock, patch
 
 import executorch.codegen.tools.gen_oplist as gen_oplist
 import yaml
+from executorch.codegen.tools.gen_oplist import ScalarType
 
 
 class TestGenOpList(unittest.TestCase):
@@ -89,7 +90,7 @@ class TestGenOpList(unittest.TestCase):
     ) -> None:
         output_path = os.path.join(self.temp_dir.name, "output.yaml")
         ops_dict = {
-            "aten::add": ["v1/3;0,1|3;0,1|3;0,1|3;0,1", "v1/6;0,1|6;0,1|6;0,1|6;0,1"],
+            "aten::add": ["v1/3;0,1|3;0,1|3;0,1|3;0,1", ScalarType.Float.name],
             "aten::mul": [],
         }
         args = [
@@ -104,7 +105,7 @@ class TestGenOpList(unittest.TestCase):
             {
                 "aten::add": [
                     "v1/3;0,1|3;0,1|3;0,1|3;0,1",
-                    "v1/6;0,1|6;0,1|6;0,1|6;0,1",
+                    "v1/6;",
                 ],
                 "aten::mul": ["default"],
             },
