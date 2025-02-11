@@ -194,16 +194,41 @@ class TestRemoveViewCopy(unittest.TestCase):
         self.assertEqual(plan.operators[2].name, "aten::view_copy")
 
         instructions = plan.chains[0].instructions
-        self.assertEqual(len(instructions), 7)
+        self.assertEqual(len(instructions), 5)
 
         self.assertEqual(instructions[0].instr_args.op_index, 0)  # view @ idx2
-        self.assertEqual(instructions[1].instr_args.op_index, 0)  # view @ idx3
-        self.assertEqual(instructions[2].instr_args.op_index, 1)  # aten:mul @ idx6
-        self.assertEqual(instructions[3].instr_args.op_index, 0)  # view @ idx7
-        self.assertEqual(instructions[4].instr_args.op_index, 1)  # aten:mul @ idx9
+        self.assertEqual(instructions[1].instr_args.op_index, 1)  # aten:mul @ idx6
+        self.assertEqual(instructions[2].instr_args.op_index, 1)  # aten:mul @ idx9
         self.assertEqual(
-            instructions[5].instr_args.op_index, 2
+            instructions[3].instr_args.op_index, 2
         )  # aten:view_copy @ idx11
         self.assertEqual(
-            instructions[6].instr_args.op_index, 2
+            instructions[4].instr_args.op_index, 2
         )  # aten:view_copy @ idx11
+
+    def test_elide_static_views_does_not_remove_dynamic_views(self) -> None:
+        class TestModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x + x
+                x = x.view(-1, 1)
+                return 2 * x
+
+        model = TestModel()
+        model.eval()
+        example_inputs = (torch.rand(5, 6),)
+        dynamic_shapes = {"x": {0: torch.export.Dim("dim0", min=1, max=10)}}
+        ep = torch.export.export(
+            model, example_inputs, strict=True, dynamic_shapes=dynamic_shapes
+        )
+        etpm = to_edge(ep).to_executorch(
+            config=ExecutorchBackendConfig(
+                remove_view_copy=True,
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+            ),
+        )
+        plan = etpm.executorch_program.execution_plan[0]
+        op_names = [op.name for op in plan.operators]
+        self.assertTrue("executorch_prim::et_view" in op_names)

@@ -182,6 +182,10 @@ option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF
 )
 
+option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension"
+       OFF
+)
+
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
@@ -240,6 +244,9 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
+if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
+  set(EXECUTORCH_BUILF_EXTENSION_DATA_LOADER ON)
+endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
@@ -692,6 +699,11 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor/serialize)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)

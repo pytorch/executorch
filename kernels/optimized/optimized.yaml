@@ -2,6 +2,11 @@
 #
 # This yaml file contains operators that have optimized kernels available.
 
+- op: _fft_r2c.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_fft_r2c_out
+
 - op: _log_softmax.out
   kernels:
     - arg_meta: null

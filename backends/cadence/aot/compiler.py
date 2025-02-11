@@ -264,6 +264,7 @@ def export_to_executorch_gen_etrecord(
     alloc_graph_output: bool = True,
     memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
+    mem_alignment: int = 1,
 ) -> ExecutorchProgramManager:
     cadence_passes = get_cadence_passes(opt_level)
     edge_prog_manager = export_to_edge(model, inputs, dump_graphs)
@@ -290,6 +291,7 @@ def export_to_executorch_gen_etrecord(
         mem_algo=mem_algo,
         alloc_graph_input=alloc_graph_input,
         alloc_graph_output=alloc_graph_output,
+        mem_alignment=mem_alignment,
     )
 
     # Get executorch program after Cadence specific passes

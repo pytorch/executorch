@@ -23,7 +23,7 @@ import pkg_resources
 import torch
 
 from executorch.backends.vulkan._passes.remove_asserts import remove_asserts
-from executorch.devtools.backend_debug import get_delegation_info
+from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
@@ -46,7 +46,6 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from tabulate import tabulate
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
@@ -800,12 +799,6 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
-
-    def print_delegation_info(graph_module: torch.fx.GraphModule):
-        delegation_info = get_delegation_info(graph_module)
-        print(delegation_info.get_summary())
-        df = delegation_info.get_operator_delegation_dataframe()
-        print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
 
     additional_passes = []
     if args.model in TORCHTUNE_DEFINED_MODELS:

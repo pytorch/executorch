@@ -31,6 +31,21 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "squeeze_int4_linear_inputs",
+    srcs = [
+        "squeeze_int4_linear_inputs.py",
+    ],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//executorch/backends/vulkan:custom_ops_lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ]
+)
+
+runtime.python_library(
     name = "remove_asserts",
     srcs = ["remove_asserts.py"],
     visibility = [
@@ -99,6 +114,7 @@ runtime.python_library(
         ":remove_asserts",
         ":remove_local_scalar_dense",
         ":remove_redundant_ops",
-        ":tag_memory_meta_pass"
+        ":squeeze_int4_linear_inputs",
+        ":tag_memory_meta_pass",
     ]
 )

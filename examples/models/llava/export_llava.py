@@ -67,6 +67,7 @@ class LlavaEdgeManager(LLMEdgeManager):
                 dynamic_shapes=dynamic_shape,
                 strict=False,
             )
+            # pyre-ignore: Incompatible attribute type [8]: Attribute `pre_autograd_graph_module` declared in class `LLMEdgeManager` has type `Optional[GraphModule]` but is used as type `Module`.
             self.pre_autograd_graph_module = self.export_program.module()
         return self
 
@@ -80,7 +81,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             self.text_model = llava.text_model
 
         def forward(self, input_pos, embeddings):
-            return self.text_model(None, input_pos, embeddings)
+            return self.text_model(None, {"input_pos": input_pos}, embeddings)
 
     llava_text_model = LlavaTextModel(llava)
 

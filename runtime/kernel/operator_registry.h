@@ -96,25 +96,21 @@ struct TensorMeta {
 
 /**
  * Describes which dtype & dim order specialized kernel to be bound to an
- * operator. If `is_fallback_` is true, it means this kernel can be used as a
- * fallback, if false, it means this kernel can only be used if all the
- * `TensorMeta` are matched. Fallback means this kernel will be used for
- * all input tensor dtypes and dim orders, if the specialized kernel is not
- * registered.
+ * operator.
  *
- * The format of a kernel key data is a string:
- *                              "v<version>/<tensor_meta>|<tensor_meta>..."
- * Size: Up to 691               1    1    1     (42     +1) * 16
- *           Assuming max number of tensors is 16               ^
- * Kernel key version is v1 for now. If the kernel key format changes,
- * update the version to avoid breaking pre-existing kernel keys.
- * Example: v1/7;0,1,2,3
- * The kernel key has only one tensor: a double tensor with dimension 0, 1, 2, 3
+ * Kernel key data is a string with the format:
+ *
+ *     "v<version>/<tensor_meta>|<tensor_meta>..."
+ *
+ * The version is v1 for now. If the kernel key format changes, update the
+ * version to avoid breaking pre-existing kernel keys.
  *
  * Each tensor_meta has the following format: "<dtype>;<dim_order,...>"
- * Size: Up to 42                               1-2   1    24 (1 byte for 0-9; 2
- * for 10-15) + 15 commas Assuming that the max number of dims is 16 ^ Example:
- * 7;0,1,2,3 for [double; 0, 1, 2, 3]
+ *
+ * Example kernel key data: "v1/7;0,1,2,3|1;0,1,2,3,4,5,6,7"
+ *
+ * This has two tensors: the first with dtype=7 and dim order 0,1,2,3, and the
+ * second with dtype=1 and dim order 0,1,2,3,4,5,6,7.
  *
  * IMPORTANT:
  * Users should not construct a kernel key manually. Instead, it should be
@@ -122,12 +118,20 @@ struct TensorMeta {
  */
 struct KernelKey {
  public:
+  /**
+   * Creates a fallback (non-specialized) kernel key: this kernel can be used
+   * for all input tensor dtypes and dim orders if the specialized kernel is not
+   * registered.
+   */
   KernelKey() : is_fallback_(true) {}
 
+  /**
+   * Creates a specialized (non-fallback) kernel key that matches a specific
+   * set of input tensor dtypes and dim orders. See the class comment for the
+   * expected format of `kernel_key_data`.
+   */
   /* implicit */ KernelKey(const char* kernel_key_data)
       : kernel_key_data_(kernel_key_data), is_fallback_(false) {}
-
-  constexpr static int MAX_SIZE = 691;
 
   bool operator==(const KernelKey& other) const {
     return this->equals(other);
@@ -144,7 +148,7 @@ struct KernelKey {
     if (is_fallback_) {
       return true;
     }
-    return strncmp(kernel_key_data_, other.kernel_key_data_, MAX_SIZE) == 0;
+    return strcmp(kernel_key_data_, other.kernel_key_data_) == 0;
   }
 
   bool is_fallback() const {
@@ -194,7 +198,23 @@ struct Kernel {
 };
 
 namespace internal {
-void make_kernel_key_string(Span<const TensorMeta> key, char* buf);
+
+/**
+ * A make_kernel_key_string buffer size that is large enough to hold a kernel
+ * key string with 16 tensors of 16 dimensions, plus the trailing NUL byte.
+ */
+constexpr size_t kKernelKeyBufSize = 659;
+
+/**
+ * Given the list of input tensor dtypes + dim orders, writes the kernel key
+ * string into the buffer. Returns an error if the buffer is too small or if the
+ * tensors cannot be represented as a valid key string.
+ */
+Error make_kernel_key_string(
+    Span<const TensorMeta> key,
+    char* buf,
+    size_t buf_size);
+
 } // namespace internal
 
 /**
