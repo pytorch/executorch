@@ -114,44 +114,106 @@ Error register_kernels(const Span<const Kernel> kernels) {
 }
 
 namespace {
-int copy_char_as_number_to_buf(char num, char* buf) {
-  if ((char)num < 10) {
+/**
+ * Writes `num` as a decimal string to `buf` and returns the number of bytes
+ * written. Returns -1 if `buf` is too small or if `num` is not supported.
+ */
+int copy_char_as_number_to_buf(int num, char* buf, size_t buf_size) {
+  if (num < 0) {
+    return -1;
+  }
+  if (num < 10) {
+    if (buf_size < 1) {
+      return -1;
+    }
     *buf = '0' + (char)num;
-    buf += 1;
     return 1;
-  } else {
-    *buf = '0' + ((char)num) / 10;
-    buf += 1;
+  }
+  if (num < 100) {
+    if (buf_size < 2) {
+      return -1;
+    }
+    *buf++ = '0' + ((char)num) / 10;
     *buf = '0' + ((char)num) % 10;
-    buf += 1;
     return 2;
   }
+  return -1;
 }
 } // namespace
 
 namespace internal {
-void make_kernel_key_string(Span<const TensorMeta> key, char* buf) {
+Error make_kernel_key_string(
+    Span<const TensorMeta> key,
+    char* buf,
+    size_t buf_size) {
   if (key.empty()) {
-    // If no tensor is present in an op, kernel key does not apply
-    return;
+    // If no tensor is present in an op, kernel key does not apply.
+    if (buf_size > 0) {
+      buf[0] = '\0';
+    }
+    return Error::Ok;
   }
-  strncpy(buf, "v1/", 3);
+
+  // Reserve one byte for null terminator.
+  if (buf_size < 1) {
+    return Error::InvalidArgument;
+  }
+  buf_size -= 1;
+
+  // Add prefix.
+  if (buf_size < 3) {
+    return Error::InvalidArgument;
+  }
+  memcpy(buf, "v1/", 3);
   buf += 3;
+  buf_size -= 3;
+
+  // Add tensor meta.
   for (size_t i = 0; i < key.size(); i++) {
     auto& meta = key[i];
-    buf += copy_char_as_number_to_buf((char)meta.dtype_, buf);
-    *buf = ';';
-    buf += 1;
+
+    // Add dtype.
+    int n = copy_char_as_number_to_buf((int)meta.dtype_, buf, buf_size);
+    if (n < 0) {
+      return Error::InvalidArgument;
+    }
+    buf += n;
+    buf_size -= n;
+
+    // Add separator between dtype and dim order.
+    if (buf_size < 1) {
+      return Error::InvalidArgument;
+    }
+    *buf++ = ';';
+    buf_size -= 1;
+
+    // Add dim order.
     for (int j = 0; j < meta.dim_order_.size(); j++) {
-      buf += copy_char_as_number_to_buf((char)meta.dim_order_[j], buf);
-      if (j != meta.dim_order_.size() - 1) {
-        *buf = ',';
-        buf += 1;
+      n = copy_char_as_number_to_buf((int)meta.dim_order_[j], buf, buf_size);
+      if (n < 0) {
+        return Error::InvalidArgument;
+      }
+      buf += n;
+      buf_size -= n;
+
+      if (j < meta.dim_order_.size() - 1) {
+        if (buf_size < 1) {
+          return Error::InvalidArgument;
+        }
+        *buf++ = ',';
+        buf_size -= 1;
       }
     }
-    *buf = (i < (key.size() - 1)) ? '|' : 0x00;
-    buf += 1;
+    if (i < key.size() - 1) {
+      if (buf_size < 1) {
+        return Error::InvalidArgument;
+      }
+      *buf++ = '|';
+      buf_size -= 1;
+    }
   }
+  *buf = '\0'; // Space for this was reserved above.
+  return Error::Ok;
 }
 } // namespace internal
 
@@ -164,10 +226,14 @@ bool registry_has_op_function(
 Result<OpFunction> get_op_function_from_registry(
     const char* name,
     Span<const TensorMeta> meta_list) {
-  // @lint-ignore CLANGTIDY facebook-hte-CArray
-  char buf[KernelKey::MAX_SIZE] = {0};
-  internal::make_kernel_key_string(meta_list, buf);
-  KernelKey kernel_key = KernelKey(buf);
+  std::array<char, internal::kKernelKeyBufSize> key_string;
+  Error err = internal::make_kernel_key_string(
+      meta_list, key_string.data(), key_string.size());
+  if (err != Error::Ok) {
+    ET_LOG(Error, "Failed to make kernel key string");
+    return err;
+  }
+  KernelKey kernel_key = KernelKey(key_string.data());
 
   int32_t fallback_idx = -1;
   for (size_t idx = 0; idx < num_registered_kernels; idx++) {

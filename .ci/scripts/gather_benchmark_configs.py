@@ -238,7 +238,7 @@ def set_output(name: str, val: Any) -> None:
     try:
         with open(github_output, "a") as env:
             env.write(f"{name}={val}\n")
-    except PermissionError:
+    except (PermissionError, FileNotFoundError):
         # Fall back to printing in case of permission error in unit tests
         print(f"::set-output name={name}::{val}")
 

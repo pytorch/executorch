@@ -26,3 +26,15 @@ python_unittest(
         "//pytorch/ao:torchao",
     ],
 )
+
+python_unittest(
+    name = "test_static_attention",
+    srcs = [
+        "test_static_attention.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/examples/models/llama:static_attention",
+    ],
+)

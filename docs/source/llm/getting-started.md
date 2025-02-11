@@ -434,18 +434,18 @@ to the backend(s) targeted at export. To support multiple devices, such as
 XNNPACK acceleration for Android and Core ML for iOS, export a separate PTE file
 for each backend.
 
-To delegate to a backend at export time, ExecuTorch provides the `to_backend()`
-function in the `EdgeProgramManager` object, which takes a backend-specific
-partitioner object. The partitioner is responsible for finding parts of the
-computation graph that can be accelerated by the target backend，and
-`to_backend()` function will delegate matched part to given backend for
-acceleration and optimization. Any portions of the computation graph not
-delegated will be executed by the ExecuTorch operator implementations.
+To delegate a model to a specific backend during export, ExecuTorch uses the
+`to_edge_transform_and_lower()` function. This function takes the exported program
+from `torch.export` and a backend-specific partitioner object. The partitioner
+identifies parts of the computation graph that can be optimized by the target
+backend. Within `to_edge_transform_and_lower()`, the exported program is
+converted to an edge dialect program. The partitioner then delegates compatible
+graph sections to the backend for acceleration and optimization. Any graph parts
+not delegated are executed by ExecuTorch's default operator implementations.
 
 To delegate the exported model to a specific backend, we need to import its
 partitioner as well as edge compile config from ExecuTorch codebase first, then
-call `to_backend` with an instance of partitioner on the `EdgeProgramManager`
-object `to_edge` function created.
+call `to_edge_transform_and_lower`.
 
 Here's an example of how to delegate nanoGPT to XNNPACK (if you're deploying to an Android phone for instance):
 
@@ -457,7 +457,7 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPar
 
 # Model to be delegated to specific backend should use specific edge compile config
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
 import torch
 from torch.export import export
@@ -495,17 +495,14 @@ with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
 # Convert the model into a runnable ExecuTorch program.
 # To be further lowered to Xnnpack backend, `traced_model` needs xnnpack-specific edge compile config
 edge_config = get_xnnpack_edge_compile_config()
-edge_manager = to_edge(traced_model, compile_config=edge_config)
-
-# Delegate exported model to Xnnpack backend by invoking `to_backend` function with Xnnpack partitioner.
-edge_manager = edge_manager.to_backend(XnnpackPartitioner())
+# Converted to edge program and then delegate exported model to Xnnpack backend
+# by invoking `to` function with Xnnpack partitioner.
+edge_manager = to_edge_transform_and_lower(traced_model, partitioner = [XnnpackPartitioner()], compile_config = edge_config)
 et_program = edge_manager.to_executorch()
 
 # Save the Xnnpack-delegated ExecuTorch program to a file.
 with open("nanogpt.pte", "wb") as file:
     file.write(et_program.buffer)
-
-
 ```
 
 Additionally, update CMakeLists.txt to build and link the XNNPACK backend to
@@ -651,8 +648,8 @@ DuplicateDynamicQuantChainPass()(m)
 traced_model = export(m, example_inputs)
 ```
 
-Additionally, add or update the `to_backend()` call to use `XnnpackPartitioner`. This instructs ExecuTorch to
-optimize the model for CPU execution via the XNNPACK backend.
+Additionally, add or update the `to_edge_transform_and_lower()` call to use `XnnpackPartitioner`. This
+instructs ExecuTorch to optimize the model for CPU execution via the XNNPACK backend.
 
 ```python
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -661,8 +658,9 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
 ```
 
 ```python
-edge_manager = to_edge(traced_model, compile_config=edge_config)
-edge_manager = edge_manager.to_backend(XnnpackPartitioner()) # Lower to XNNPACK.
+edge_config = get_xnnpack_edge_compile_config()
+# Convert to edge dialect and lower to XNNPack.
+edge_manager = to_edge_transform_and_lower(traced_model, partitioner = [XnnpackPartitioner()], compile_config = edge_config)
 et_program = edge_manager.to_executorch()
 ```
 
@@ -682,20 +680,20 @@ target_link_libraries(
 For more information, see [Quantization in ExecuTorch](../quantization-overview.md).
 
 ## Profiling and Debugging
-After lowering a model by calling `to_backend()`, you may want to see what got delegated and what didn’t. ExecuTorch
+After lowering a model by calling `to_edge_transform_and_lower()`, you may want to see what got delegated and what didn’t. ExecuTorch
 provides utility methods to give insight on the delegation. You can use this information to gain visibility into
 the underlying computation and diagnose potential performance issues. Model authors can use this information to
 structure the model in a way that is compatible with the target backend.
 
 ### Visualizing the Delegation
 
-The `get_delegation_info()` method provides a summary of what happened to the model after the `to_backend()` call:
+The `get_delegation_info()` method provides a summary of what happened to the model after the `to_edge_transform_and_lower()` call:
 
 ```python
 from executorch.devtools.backend_debug import get_delegation_info
 from tabulate import tabulate
 
-# ... After call to to_backend(), but before to_executorch()
+# ... After call to to_edge_transform_and_lower(), but before to_executorch()
 graph_module = edge_manager.exported_program().graph_module
 delegation_info = get_delegation_info(graph_module)
 print(delegation_info.get_summary())
@@ -762,7 +760,7 @@ Through the ExecuTorch Developer Tools, users are able to profile model executio
 An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../etrecord.md).
 
 
-In your export script, after calling `to_edge()` and `to_executorch()`, call `generate_etrecord()` with the `EdgeProgramManager` from `to_edge()` and the `ExecuTorchProgramManager` from `to_executorch()`. Make sure to copy the `EdgeProgramManager`, as the call to `to_backend()` mutates the graph in-place.
+In your export script, after calling `to_edge()` and `to_executorch()`, call `generate_etrecord()` with the `EdgeProgramManager` from `to_edge()` and the `ExecuTorchProgramManager` from `to_executorch()`. Make sure to copy the `EdgeProgramManager`, as the call to `to_edge_transform_and_lower()` mutates the graph in-place.
 
 ```
 # export_nanogpt.py
