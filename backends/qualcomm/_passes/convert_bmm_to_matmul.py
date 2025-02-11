@@ -52,7 +52,9 @@ class ConvertBmmToMatmul(ExportPass):
             for src_partition in src_partitions:
                 op_cnt = Counter([n.target for n in src_partition.nodes])
                 if op_cnt not in self.patterns:
-                    continue
+                    raise AssertionError(
+                        "Found a new pattern needed be converted to linear op"
+                    )
 
                 inputs = src_partition.input_nodes
                 bmm_node = [n for n in src_partition.nodes if n.target == self.bmm][0]
