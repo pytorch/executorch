@@ -524,6 +524,13 @@ def setup_common_args_and_variables():
         default=False,
     )
 
+    parser.add_argument(
+        "-x",
+        "--enable_x86_64",
+        help="Enable unittest to be executed on x86_64 platform",
+        action="store_true",
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:

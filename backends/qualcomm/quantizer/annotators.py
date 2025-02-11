@@ -110,6 +110,21 @@ def annotate_in_out_obs_sharing_op(
     )
 
 
+def annotate_single_in(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+
+    input_qspec_map = {}
+    input_act = node.args[0]
+    assert isinstance(input_act, Node)
+    input_qspec_map[input_act] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        _annotated=True,
+    )
+
+
 def annotate_single_in_single_out(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
@@ -171,7 +186,7 @@ def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
 def annotate_argmin(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
-    annotate_single_in_single_out(node, quantization_config)
+    annotate_single_in(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.sub, torch.ops.aten.sub.Tensor])
@@ -1070,3 +1085,26 @@ def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
+
+
+@register_annotator([torch.ops.aten.where.self])
+def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
+    true_input_act = node.args[1]
+    false_input_act = node.args[2]
+    if _is_annotated([node]):
+        return
+
+    _annotate_input_qspec_map(
+        node,
+        true_input_act,
+        quantization_config.input_activation,
+    )
+
+    _annotate_input_qspec_map(
+        node,
+        false_input_act,
+        quantization_config.input_activation,
+    )
+
+    _annotate_output_qspec(node, quantization_config.output_activation)
+    _mark_nodes_as_annotated([node])

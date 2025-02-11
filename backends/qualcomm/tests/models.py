@@ -66,6 +66,33 @@ class Arange(torch.nn.Module):
         )
 
 
+class Argmin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.argmin(x, dim=0, keepdim=True)
+        return x
+
+
+class ArgminViewSqueezeConv2D(torch.nn.Module):
+    def __init__(self):
+        # This model is mainly to test the PASS TensorI64toI32
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1
+        )
+
+    def forward(self, x, y):
+        argmin_out = torch.argmin(x, dim=0, keepdim=True)
+        index_out = y[argmin_out]
+        conv_out = self.conv(index_out)
+
+        view_out = argmin_out.view(-1)
+        squeeze_out = view_out.squeeze(-1)
+        return squeeze_out, conv_out
+
+
 class AvgPoolModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -793,6 +820,14 @@ class Log(torch.nn.Module):
         return torch.log(x)
 
 
+class LogicalNot(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.logical_not(x > 0)
+
+
 class LogSoftmax(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1306,3 +1341,21 @@ class ViewPermuteMatMul(torch.nn.Module):
         x = x.view(new_shape)
         x = x.permute(0, 2, 1, 3)
         return torch.matmul(x, y.transpose(-1, -2))
+
+
+class Where(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y, z):
+        return torch.where(x >= torch.zeros(x.shape), y, z)
+
+
+class WhereConstant(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.register_buffer("pos", pos)
+        self.register_buffer("neg", neg)
+
+    def forward(self, x):
+        return torch.where(x >= torch.zeros(x.shape), self.pos, self.neg)

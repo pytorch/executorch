@@ -13,6 +13,8 @@ class ForwardOptions(TypedDict, total=False):
 
     mask: Optional[torch.Tensor]
     input_pos: Optional[torch.Tensor]
+    freqs_cos_override: Optional[torch.Tensor]
+    freqs_sin_override: Optional[torch.Tensor]
     in_cache_state: Optional[Any]
     out_cache_state: Optional[Any]
 
