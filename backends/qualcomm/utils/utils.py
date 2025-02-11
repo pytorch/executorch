@@ -443,8 +443,9 @@ def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
     passes_job: OrderedDict = None,
+    dynamic_shapes: Dict = None,
 ) -> exir.ExirExportedProgram:
-    ep = torch.export.export(module, inputs, strict=True)
+    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
     # We choose call_operator by target in ConvertBinaryOpsWithScalar
     # because it is the same source_fn_stack for MultiheadAttention

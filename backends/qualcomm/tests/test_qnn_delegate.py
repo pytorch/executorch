@@ -2360,6 +2360,79 @@ class TestQNNQuantizedUtils(TestQNN):
             expected_intermediate_events=5,
         )
 
+    def test_qnn_backend_dynamic_shape(self):
+        from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
+        from executorch.backends.qualcomm.utils.constants import (
+            QCOM_DTYPE,
+            QCOM_QUANT_ATTRS,
+        )
+        from executorch.backends.qualcomm.utils.utils import tag_quant_io
+        from executorch.exir.capture._config import (
+            EdgeCompileConfig,
+            ExecutorchBackendConfig,
+        )
+        from executorch.exir.program import EdgeProgramManager
+
+        module = Add()  # noqa: F405
+        last_dim = torch.export.Dim("last_dim", min=1, max=8)
+        dynamic_shapes = {"x": {3: last_dim}, "y": {3: last_dim}}
+        # the tracing input in dynamic dimension should have maximun expected
+        # value for QNN to be setup correctly
+        input_shape = (1, 2, 3, last_dim.max)
+        sample_input = (
+            torch.randint(0, 2, input_shape, dtype=torch.float),
+            torch.randint(0, 2, input_shape, dtype=torch.float),
+        )
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_16a16w,
+            dynamic_shapes=dynamic_shapes,
+        )
+        # only few ops with 16bit are supported with dynamic shape now
+        # strip unsupported quantize / dequantize ops generated in preprocess
+        prog = capture_program(module, sample_input, dynamic_shapes=dynamic_shapes)
+        tag_quant_io(
+            prog.exported_program.graph_module,
+            lambda n: (
+                torch.uint16
+                if any(name in n.name for name in ["x", "y", "add"])
+                else None
+            ),
+        )
+        # collect encodings for ios
+        input_encodings, output_encodings = [], []
+        for n in prog.exported_program.graph.nodes:
+            if n.op == "placeholder":
+                input_encodings.append(n.meta[QCOM_QUANT_ATTRS])
+                input_encodings[-1][QCOM_DTYPE] = torch.uint16
+            elif n.op == "output":
+                for arg in n.args[0]:
+                    output_encodings.append(arg.meta[QCOM_QUANT_ATTRS])
+                    output_encodings[-1][QCOM_DTYPE] = torch.uint16
+
+        edge_prog_mgr = EdgeProgramManager(
+            edge_programs={"forward": prog.exported_program},
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        edge_prog_mgr = edge_prog_mgr.to_backend(QnnPartitioner(self.compiler_specs))
+        exec_prog = edge_prog_mgr.to_executorch(
+            ExecutorchBackendConfig(passes=[BuildQuantIo()])
+        )
+
+        for dim in range(last_dim.min, last_dim.max + 1):
+            with self.subTest(i=dim):
+                input_shape = (1, 2, 3, dim)
+                sample_input = (torch.rand(input_shape), torch.rand(input_shape))
+                self.verify_output(
+                    module,
+                    sample_input,
+                    exec_prog,
+                    input_encodings=tuple(input_encodings),
+                    output_encodings=tuple(output_encodings),
+                    check_io_shape=True,
+                )
+
     def test_qnn_backend_skip_node_id_partitioner(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
