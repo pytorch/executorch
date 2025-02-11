@@ -5,6 +5,7 @@
 # directory of this source tree for more details.
 
 from collections import defaultdict
+from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 import torch.fx
@@ -20,11 +21,23 @@ from torch.ao.quantization.quantizer.quantizer import SharedQuantizationSpec
 import nncf
 import nncf.common.quantization as q
 import nncf.experimental.torch.fx as nncf_fx
-import nncf.parameters as p
-import nncf.quantization.advanced_parameters as advanced_p
 from nncf.common.graph.graph import NNCFGraph
 
 QUANT_ANNOTATION_KEY = "quantization_annotation"
+
+
+class QuantizationMode(Enum):
+    """
+    Defines special quantization modes.
+
+    - INT8_SYM: INT8 symmetric quantization for both activations and weights.
+    - INT8_MIXED: INT8 asymmetric quantization for activations, symmetric for weights.
+    - INT8_TRANSFORMER: Optimized INT8 quantization for transformer-based models
+    """
+
+    INT8_SYM = "int8_sym"
+    INT8_MIXED = "int8_mixed"
+    INT8_TRANSFORMER = "int8_transformer"
 
 
 class OpenVINOQuantizer(Quantizer):
@@ -36,49 +49,31 @@ class OpenVINOQuantizer(Quantizer):
     def __init__(
         self,
         *,
-        mode: Optional[p.QuantizationMode] = None,
-        preset: Optional[q.structs.QuantizationPreset] = None,
-        target_device: p.TargetDevice = p.TargetDevice.ANY,
-        transformer_model: bool = False,
+        mode: Optional[QuantizationMode] = QuantizationMode.INT8_SYM,
         ignored_scope: Optional[nncf.IgnoredScope] = None,
-        overflow_fix: Optional[advanced_p.OverflowFix] = None,
-        quantize_outputs: bool = False,
-        activations_quantization_params: Optional[advanced_p.QuantizationParameters] = None,
-        weights_quantization_params: Optional[advanced_p.QuantizationParameters] = None,
+        **kwargs,
     ):
         """
-        :param mode: Defines optimization mode for the algorithm. None by default.
-        :param preset: A preset controls the quantization mode (symmetric and asymmetric).
-            It can take the following values:
-            - `performance`: Symmetric quantization of weights and activations.
-            - `mixed`: Symmetric quantization of weights and asymmetric quantization of activations.
-            Default value is None. In this case, `mixed` preset is used for `transformer`
-            model type otherwise `performance`.
-        :param target_device: A target device the specificity of which will be taken
-            into account while compressing in order to obtain the best performance
-            for this type of device, defaults to TargetDevice.ANY.
-        :param model_type: Model type is needed to specify additional patterns
-            in the model. Supported only `transformer` now.
+        :param mode: Defines special quantization modes.
+            - INT8_SYM: INT8 symmetric quantization for both activations and weights.
+            - INT8_MIXED: INT8 asymmetric quantization for activations, symmetric for weights.
+            - INT8_TRANSFORMER: Optimized INT8 quantization for transformer-based models
+            Default value is INT8_SYM.
         :param ignored_scope: An ignored scope that defined the list of model control
             flow graph nodes to be ignored during quantization.
-        :param overflow_fix: This option controls whether to apply the overflow issue
-            fix for the 8-bit quantization.
-        :param quantize_outputs: Whether to insert additional quantizers right before
-            each of the model outputs.
-        :param activations_quantization_params: Quantization parameters for model
-            activations.
-        :param weights_quantization_params: Quantization parameters for model weights.
+        :param kwargs: Arguments to pass to the NNCF MinMaxQuantization algorithm.
         """
+        if mode == QuantizationMode.INT8_SYM:
+            preset = q.structs.QuantizationPreset.PERFORMANCE
+            model_type = None
+        elif mode == QuantizationMode.INT8_MIXED:
+            preset = q.structs.QuantizationPreset.MIXED
+            model_type = None
+        else:
+            preset = None
+            model_type = nncf.parameters.ModelType.TRANSFORMER
         self._min_max_algo = nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization(
-            mode=mode,
-            preset=preset,
-            target_device=target_device,
-            model_type=p.ModelType.TRANSFORMER if transformer_model else None,
-            ignored_scope=ignored_scope,
-            overflow_fix=overflow_fix,
-            quantize_outputs=quantize_outputs,
-            activations_quantization_params=activations_quantization_params,
-            weights_quantization_params=weights_quantization_params,
+            preset=preset, model_type=model_type, ignored_scope=ignored_scope, **kwargs
         )
 
     def get_nncf_quantization_setup(
