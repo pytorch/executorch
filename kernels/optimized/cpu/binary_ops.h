@@ -191,7 +191,7 @@ std::array<int32_t, 3> inline get_normalized_tensor_size(
   return normalized_tensor_size;
 }
 
-template <typename Op>
+template <typename CTYPE, typename Op>
 Tensor& handle_last_dim_broadcast_elementwise(
     KernelRuntimeContext& ctx,
     const Op& vec_fun,
@@ -219,19 +219,17 @@ Tensor& handle_last_dim_broadcast_elementwise(
       "Failed to resize output tensor.");
   const size_t outer_size = getLeadingDims(out, out.dim() - 1);
   const auto broadcast_size = out.size(out.dim() - 1);
-  ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-    executorch::vec::broadcasting_map_broadcast_last_dim<CTYPE, Op>(
-        vec_fun,
-        out.mutable_data_ptr<CTYPE>(),
-        lhs->const_data_ptr<CTYPE>(),
-        rhs->const_data_ptr<CTYPE>(),
-        outer_size,
-        broadcast_size);
-  });
+  executorch::vec::broadcasting_map_broadcast_last_dim<CTYPE, Op>(
+      vec_fun,
+      out.mutable_data_ptr<CTYPE>(),
+      lhs->const_data_ptr<CTYPE>(),
+      rhs->const_data_ptr<CTYPE>(),
+      outer_size,
+      broadcast_size);
   return out;
 }
 
-template <typename Op>
+template <typename CTYPE, typename Op>
 Tensor& handle_broadcast_elementwise(
     KernelRuntimeContext& ctx,
     const Op& vec_fun,
@@ -243,11 +241,10 @@ Tensor& handle_broadcast_elementwise(
        ElementwiseOptimizedPath::kBroadcastLastDim) ||
       (selected_optimized_path ==
        ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments)) {
-    return handle_last_dim_broadcast_elementwise(
+    return handle_last_dim_broadcast_elementwise<CTYPE>(
         ctx, vec_fun, a, b, out, selected_optimized_path);
   }
 
-  ScalarType out_type = out.scalar_type();
   const Tensor* lhs;
   const Tensor* rhs;
   if ((selected_optimized_path ==
@@ -290,16 +287,14 @@ Tensor& handle_broadcast_elementwise(
     broadcast_size = lhs->sizes()[lhs->dim() - 2];
     inner_size = lhs->sizes()[lhs->dim() - 1];
   }
-  ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
-    executorch::vec::broadcasting_map_3d_and_unsqueezed_3d<CTYPE, Op>(
-        vec_fun,
-        out.mutable_data_ptr<CTYPE>(),
-        lhs->const_data_ptr<CTYPE>(),
-        rhs->const_data_ptr<CTYPE>(),
-        outer_size,
-        broadcast_size,
-        inner_size);
-  });
+  executorch::vec::broadcasting_map_3d_and_unsqueezed_3d<CTYPE, Op>(
+      vec_fun,
+      out.mutable_data_ptr<CTYPE>(),
+      lhs->const_data_ptr<CTYPE>(),
+      rhs->const_data_ptr<CTYPE>(),
+      outer_size,
+      broadcast_size,
+      inner_size);
   return out;
 }
 } // namespace executor

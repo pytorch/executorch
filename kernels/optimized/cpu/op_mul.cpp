@@ -130,9 +130,12 @@ Tensor& opt_mul_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    auto mul_lambda = [](auto x, auto y) { return x * y; };
-    return torch::executor::handle_broadcast_elementwise(
-        ctx, mul_lambda, a, b, out, selected_optimized_path);
+    ScalarType out_type = out.scalar_type();
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+      auto mul_lambda = [](auto x, auto y) { return x * y; };
+      return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          ctx, mul_lambda, a, b, out, selected_optimized_path);
+    });
   } else {
     ScalarType common_type =
         promoteTypes(a_type, b_type, /*half_to_float*/ true);
