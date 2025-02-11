@@ -18,6 +18,7 @@ main() {
     # Configure the project with CMake
     # Note: Add any additional configuration options you need here
     cmake -DCMAKE_INSTALL_PREFIX="${build_dir}" \
+          -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_OPENVINO=ON \
           -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
           -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \

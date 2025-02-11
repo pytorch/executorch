@@ -56,11 +56,11 @@ target_include_directories(openvino_portable_ops_lib PUBLIC ${_common_include_di
 # Build Executor Runner
 add_executable(openvino_executor_runner ${_openvino_executor_runner__srcs})
 target_include_directories(
-  openvino_executor_runner PUBLIC ${_common_include_directories} ${EXECUTORCH_ROOT}/third-party/gflags/include
+  openvino_executor_runner PUBLIC ${_common_include_directories} ${EXECUTORCH_ROOT}/cmake-openvino-out/third-party/gflags/include
 )
 
 # Set Library Directory
-set(LIBRARY_DIR "${CMAKE_CURRENT_LIST_DIR}/../../cmake-openvino-out/lib/")
+set(LIBRARY_DIR "${CMAKE_CURRENT_LIST_DIR}/../../cmake-openvino-out/lib/;${CMAKE_CURRENT_LIST_DIR}/../../cmake-openvino-out/third-party/gflags")
 message(STATUS "Library directory path: ${LIBRARY_DIR}")
 
 # Locate OpenVINO Backend Library
@@ -69,15 +69,21 @@ if(NOT OPENVINO_BACKEND_LIB)
     message(FATAL_ERROR "OpenVINO backend library not found in ${LIBRARY_DIR}")
 endif()
 
+# Locate OpenVINO Backend Library
+find_library(GFLAGS_LIB NAMES gflags_nothreads PATHS ${LIBRARY_DIR} NO_DEFAULT_PATH)
+if(NOT GFLAGS_LIB)
+    message(FATAL_ERROR "Gflags library not found in ${LIBRARY_DIR}")
+endif()
+
 # Link Libraries
 target_link_libraries(openvino_executor_runner PRIVATE
     ${OPENVINO_BACKEND_LIB}
+    ${GFLAGS_LIB}
     executorch
     executorch_core
     openvino_portable_ops_lib
     extension_data_loader
     extension_runner_util
-    gflags
     pthreadpool
 )
 
