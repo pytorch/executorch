@@ -30,8 +30,6 @@ from torch.fx.passes.graph_drawer import FxGraphDrawer
 from transformers import AutoModel
 
 import nncf
-import nncf.experimental
-import nncf.experimental.torch
 from nncf.experimental.torch.fx.quantization.quantize_pt2e import quantize_pt2e
 
 
@@ -239,7 +237,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable model validation. --dataset argument is requred for the validation.",
     )
-    parser.add_argument("--dataset", type=str, help="Path to the calibration dataset.")
+    parser.add_argument("--dataset", type=str, help="Path to the validation dataset.")
     parser.add_argument(
         "--device",
         type=str,

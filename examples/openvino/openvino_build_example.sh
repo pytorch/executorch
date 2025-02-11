@@ -34,7 +34,6 @@ main() {
     local example_dir=examples/openvino
     local example_build_dir="${build_dir}/${example_dir}"
     local cmake_prefix_path="${PWD}/${build_dir}/lib/cmake/ExecuTorch;${PWD}/${build_dir}/third-party/gflags;"
-
     rm -rf "${example_build_dir}"
 
     ## OpenVINO original
@@ -43,11 +42,10 @@ main() {
           -B"${example_build_dir}" \
           $EXECUTORCH_ROOT/$example_dir
 
+<<<<<<< HEAD:examples/openvino/openvino_build_example.sh
     cmake --build "${example_build_dir}" -j$(nproc)
-
-    # Switch back to the original directory
-    cd - > /dev/null
-
+=======
+    cmake --build "${example_build_dir}" -j5
     # Print a success message
     echo "Build successfully completed."
 }
