@@ -122,33 +122,23 @@ Tensor& opt_div_out(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     // Reason for using alpha is becasuse handle_broadcast_elementwise
     // is used for add and sub as well:
-    static constexpr const char op_name[] = "mul.out";
-    if (selected_optimized_path ==
-            ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
-        selected_optimized_path ==
-            ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
-        selected_optimized_path ==
-            ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
-      // This behavior is a bit confusing.
-      // Reason we swap out args here is because handle_broadcast_elementwise
-      // handles this selected_optimized_path option a bit differently.
-      // This should really be resoled in handle_broadcast_elementwise.
-      // However, the current blocker is that handle_broadcast_elementwise tries
-      // to be agnostic of op. This should be fixed, likely by moving lambda
-      // creation to handle_broadcast_elementwise and it be aware of which op is
-      // being executed.
-      auto div_lambda = [](auto x, auto y, [[maybe_unused]] auto alpha) {
-        return y / x;
-      };
-      return torch::executor::handle_broadcast_elementwise<op_name>(
-          ctx, div_lambda, a, b, out, selected_optimized_path);
-    } else {
-      auto div_lambda = [](auto x, auto y, [[maybe_unused]] auto alpha) {
-        return x / y;
-      };
-      return torch::executor::handle_broadcast_elementwise<op_name>(
-          ctx, div_lambda, a, b, out, selected_optimized_path);
-    }
+    static constexpr const char op_name[] = "div.out";
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+      if (selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
+        auto div_lambda = [](auto x, auto y) { return y / x; };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, div_lambda, a, b, out, selected_optimized_path);
+      } else {
+        auto div_lambda = [](auto x, auto y) { return x / y; };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, div_lambda, a, b, out, selected_optimized_path);
+      }
+    });
   } else {
     ScalarType common_type = get_compute_type(a_type, b_type);
     ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
