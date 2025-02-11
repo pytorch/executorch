@@ -7,12 +7,15 @@
 
 # Please refer to README.md in the same folder for more information.
 
-from typing import Optional
+from typing import Any, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 
-from executorch.examples.models.llama.attention import ATTENTION_REGISTRY
+from executorch.examples.models.llama.attention import (
+    ATTENTION_REGISTRY,
+    ForwardOptions,
+)
 
 from executorch.examples.models.llama.model_args import ModelArgs
 
@@ -148,9 +151,9 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
-        h = self.attention.forward(
-            self.attention_norm(x), freqs_cos, freqs_sin, input_pos=input_pos
+    def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
+        h, attn_options_update = self.attention.forward(
+            self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
 
         h = x + h
@@ -158,7 +161,7 @@ class TransformerBlock(nn.Module):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:
             out = h + self.feed_forward(self.ffn_norm(h))
-        return out
+        return out, attn_options_update
 
 
 class Transformer(nn.Module):
@@ -185,27 +188,30 @@ class Transformer(nn.Module):
     def forward(
         self,
         tokens: Optional[torch.LongTensor] = None,  # tokens
-        input_pos: Optional[
-            torch.LongTensor
-        ] = None,  # Scalar tensor indicating size of window of the caches
+        attn_options: Optional[ForwardOptions] = None,
         h: Optional[torch.FloatTensor] = None,  # embeddings
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Optional[Any]]]:
         if (tokens is None) ^ (h is not None):
             raise ValueError(
                 "You cannot specify both tokens and h at the same time, and must specify either one"
             )
         if tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
-        seqlen = h.shape[1]
-        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
 
+        if attn_options is None:
+            attn_options = {}
+        seqlen = h.shape[1]
+        freqs_cos, freqs_sin = self.rope.get_freqs(
+            attn_options.get("input_pos"), seqlen
+        )
+
+        # Make a shallow copy so the updates don't get captured by export
+        attn_options_ = attn_options.copy() if attn_options is not None else {}
+        attn_options_update = None
         for layer in self.layers:
-            h = layer(
-                h,
-                freqs_cos,
-                freqs_sin,
-                input_pos,
-            )
+            h, attn_options_update = layer(h, freqs_cos, freqs_sin, attn_options_)
+            if attn_options_update is not None:
+                attn_options_.update(**attn_options_update)
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
@@ -236,5 +242,8 @@ class Transformer(nn.Module):
                 )
                 expanded_logits[:, list(self.output_prune_map.values())] = logits
             logits = expanded_logits
+
+        if attn_options_update is not None:
+            return logits, attn_options_update
 
         return logits

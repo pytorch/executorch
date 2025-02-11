@@ -3,6 +3,8 @@
 
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
 
 oncall("executorch")
 
@@ -20,6 +22,15 @@ python_binary(
         "//executorch/examples/models:models",
         "//executorch/extension/export_util:export_util",
     ],
+)
+
+runtime.command_alias(
+    name = "export_example_qnn",
+    env = {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_verision()),
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_verision()),
+    },
+    exe = ":export_example",
 )
 
 python_library(

@@ -328,6 +328,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:fuse_dequant_linear",
                 "//executorch/backends/transforms:fuse_view_copy",
                 "//executorch/backends/transforms:remove_clone_ops",
+                "//executorch/backends/transforms:view_copy_to_squeeze_unsqueeze",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
                 "//executorch/backends/vulkan/serialization:lib",
                 "//executorch/exir/backend:backend_details",
