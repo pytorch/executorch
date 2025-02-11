@@ -4,13 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Any, Callable, Generic, List, TypeVar
+from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
+from executorch.exir.pass_base import ExportPass
+from torch._export.pass_base import PassType
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -430,3 +431,79 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
                 qtol=1,
                 inputs=self.test_data,
             )
+
+
+class TestPassPipeline(BasePipelineMaker, Generic[T]):
+    """
+    Runs single passes directly on an edge_program and checks operators before/after.
+
+    Attributes:
+        module: The module which the pipeline is applied to.
+        test_data: Data used for quantizing and testing the module.
+        tosa_version: The TOSA-version which to test for.
+
+        ops_before_pass : Ops expected to be found in the graph before passes.
+        ops_not_before_pass : Ops expected not to be found in the graph before passes.
+        ops_after_pass : Ops expected to be found in the graph after passes.
+        ops_notafter_pass : Ops expected not to be found in the graph after passes.
+
+        pass_list: List of regular passes.
+        pass_functions: List of functions applied directly to the exported program.
+        passes_with_exported_program: List of passes initiated with an exported_program.
+
+    Passes are run in order pass_list -> pass_functions -> passes_with_exported_program.
+    See arm_tester.RunPasses() for more information.
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        tosa_version: str,
+        ops_before_pass: Optional[Dict[str, int]] = None,
+        ops_not_before_pass: Optional[list[str]] = None,
+        ops_after_pass: Optional[Dict[str, int]] = None,
+        ops_not_after_pass: Optional[list[str]] = None,
+        pass_list: Optional[List[Type[PassType]]] = None,
+        pass_functions: Optional[List[Callable]] = None,
+        passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
+    ):
+        compile_spec = common.get_tosa_compile_spec(
+            tosa_version,
+        )
+        super().__init__(
+            module,
+            test_data,
+            None,
+            None,
+            compile_spec,
+            use_to_edge_transform_and_lower=False,
+        )
+
+        # Delete most of the pipeline
+        self.pop_stage("check.exir")
+        self.pop_stage("partition")
+        self.pop_stage("check_not.exir")
+        self.pop_stage("check_count.exir")
+        self.pop_stage("to_executorch")
+        self.pop_stage("check.aten")
+
+        if "BI" in tosa_version:
+            self.add_stage(self.tester.quantize, pos=0)
+
+        # Add checks/check_not's if given
+        if ops_before_pass:
+            self.add_stage(self.tester.check_count, ops_before_pass, suffix="before")
+        if ops_not_before_pass:
+            self.add_stage(self.tester.check_not, ops_not_before_pass, suffix="before")
+        test_pass_stage = RunPasses(
+            pass_list, pass_functions, passes_with_exported_program
+        )
+
+        self.add_stage(self.tester.run_passes, test_pass_stage)
+
+        if ops_after_pass:
+            self.add_stage(self.tester.check_count, ops_after_pass, suffix="after")
+        if ops_not_after_pass:
+            self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
+        self.add_stage(self.tester.run_method_and_compare_outputs)
