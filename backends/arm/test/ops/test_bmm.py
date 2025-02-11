@@ -124,6 +124,7 @@ class TestBMM(unittest.TestCase):
         self._test_bmm_tosa_MI_pipeline(self.BMM(), test_data)
 
     @parameterized.expand(BMMSingleInput.test_data_generators)
+    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
     def test_bmm_single_input_tosa_MI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_tosa_MI_pipeline(self.BMMSingleInput(), test_data)
@@ -144,6 +145,7 @@ class TestBMM(unittest.TestCase):
         self._test_bmm_tosa_BI_pipeline(self.BMM(), test_data)
 
     @parameterized.expand(BMMSingleInput.test_data_generators)
+    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
     def test_bmm_single_input_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_bmm_tosa_BI_pipeline(self.BMMSingleInput(), test_data)
