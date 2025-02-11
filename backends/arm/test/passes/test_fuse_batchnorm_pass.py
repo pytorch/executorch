@@ -1,15 +1,16 @@
 # Copyright 2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import unittest
+
+from typing import Tuple
 
 import torch
 from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
-from parameterized import parameterized
+from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
+
+input_t = Tuple[torch.Tensor]  # Input x
 
 
 class MergeOneOfTwoBN(torch.nn.Module):
@@ -35,7 +36,7 @@ class MergeOneOfTwoBN(torch.nn.Module):
             self.batch_norm2d.bias = torch.nn.Parameter(torch.rand(3))
         self.relu6 = torch.nn.ReLU6()
 
-    def get_inputs(self) -> tuple[torch.Tensor]:
+    def get_inputs(self) -> input_t:
         return (torch.randn(1, 3, 256, 256),)
 
     def forward(self, x):
@@ -72,7 +73,7 @@ class MergeTwosOfTwoBN(torch.nn.Module):
             self.batch_norm2d.bias = torch.nn.Parameter(torch.rand(3))
         self.relu6 = torch.nn.ReLU6()
 
-    def get_inputs(self) -> tuple[torch.Tensor]:
+    def get_inputs(self) -> input_t:
         return (torch.randn(1, 3, 256, 256),)
 
     def forward(self, x):
@@ -110,7 +111,7 @@ class MergeNoBN(torch.nn.Module):
             self.batch_norm2d.bias = torch.nn.Parameter(torch.rand(3))
         self.relu6 = torch.nn.ReLU6()
 
-    def get_inputs(self) -> tuple[torch.Tensor]:
+    def get_inputs(self) -> input_t:
         return (torch.randn(1, 3, 256, 256),)
 
     def forward(self, x):
@@ -126,33 +127,23 @@ class MergeNoBN(torch.nn.Module):
         return z, a
 
 
-modules = [
-    MergeOneOfTwoBN(True),
-    MergeOneOfTwoBN(False),
-    MergeTwosOfTwoBN(True),
-    MergeNoBN(True),
-]
+modules = {
+    "merge_one_of_two_bn_affine": MergeOneOfTwoBN(True),
+    "merge_one_of_two_bn": MergeOneOfTwoBN(False),
+    "merge_two_of_two_bn_affine": MergeTwosOfTwoBN(True),
+    "merge_no_bn_affine": MergeNoBN(True),
+}
 
 
-class TestFuseBatchnormPass(unittest.TestCase):
-
-    @parameterized.expand(modules)
-    def test_fuse_batchnorm_tosa_MI(self, module):
-        """Test various cases where the batchnorm should and shouldn't be fused."""
-        inputs = module.get_inputs()
-        test_pass_stage = RunPasses(passes_with_exported_program=[FuseBatchnorm2DPass])
-        (
-            (
-                ArmTester(
-                    module,
-                    example_inputs=inputs,
-                    compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-                )
-                .export()
-                .to_edge()
-                .check_count(module.ops_before_pass)
-                .run_passes(test_pass_stage)
-                .check_count(module.ops_after_pass)
-                .run_method_and_compare_outputs()
-            )
-        )
+@common.parametrize("module", modules)
+def test_fuse_batchnorm_tosa_MI(module):
+    """Test various cases where the batchnorm should and shouldn't be fused."""
+    pipeline = TestPassPipeline[input_t](
+        module,
+        module.get_inputs(),
+        tosa_version="TOSA-0.80+MI",
+        ops_before_pass=module.ops_before_pass,
+        ops_after_pass=module.ops_after_pass,
+        passes_with_exported_program=[FuseBatchnorm2DPass],
+    )
+    pipeline.run()
