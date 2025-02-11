@@ -1077,14 +1077,15 @@ class TestPasses(unittest.TestCase):
         FileCheck().check("_lifted_tensor_constant1").check(
             "b_a"  # followed by the buffer input.
         ).run(ep.graph_module.code)
-        # the graph signature should also be the same:
-        assert ep.graph_signature.input_specs[0].arg.name == "_lifted_tensor_constant1"
-        assert ep.graph_signature.input_specs[1].arg.name == "b_a"
 
-        executorch_program = edge.to_executorch()
-        # # the graph signature should also be the same:
-        # executorch_program.graph_signature.input_specs[0].arg.name == "_lifted_tensor_constant1"
-        # executorch_program.graph_signature.input_specs[1].arg.name == "b_a"
+        # the graph signature should also be the same:
+        self.assertEqual(
+            ep.graph_signature.input_specs[0].arg.name, "_lifted_tensor_constant1"
+        )
+        self.assertEqual(ep.graph_signature.input_specs[1].arg.name, "b_a")
+
+        # Validate that the program successfully passes validation to executorch:
+        edge.to_executorch()
 
     def test_constant_prop_pass_for_parameter(self) -> None:
         def count_additions(gm: torch.fx.GraphModule) -> int:
