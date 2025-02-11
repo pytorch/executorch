@@ -1,0 +1,57 @@
+name: Weekly issue metrics
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: issue metrics
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Get dates for last month
+        shell: bash
+        run: |
+          # Calculate the first day of the previous week
+          first_day=$(date -d "last week" +%Y-%m-01)
+
+          # Calculate the last day of the previous week
+          last_day=$(date -d "$first_day +1 week -1 day" +%Y-%m-%d)
+
+          #Set an environment variable with the date range
+          echo "$first_day..$last_day"
+          echo "last_week=$first_day..$last_day" >> "$GITHUB_ENV"
+
+      - name: Run issue-metrics tool
+        uses: github/issue-metrics@v3
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEARCH_QUERY: 'repo:pytorch/executorch is:issue created:${{ env.last_week }}"'
+          LABELS_TO_MEASURE: "module: android,module: ios,module: benchmark,module: build/install,module: vulkan,module: llm,module: ci,module: training, module: user experience"
+          OUTPUT_FILE: issue_metrics.md
+      - name: Create issue
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: Weekly issue metrics report - ${{ env.last_week }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          content-filepath: ./issue_metrics.md
+
+      - name: Run issue-metrics tool on PRs
+        uses: github/issue-metrics@v3
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEARCH_QUERY: 'repo:pytorch/executorch is:pr created:${{ env.last_month }}"'
+          OUTPUT_FILE: pr_metrics.md
+      - name: Create issue
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: Weekly pr metrics report - ${{ env.last_week }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          content-filepath: ./pr_metrics.md
+
