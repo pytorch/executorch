@@ -102,7 +102,8 @@ class LlamaRunner(ABC):
         )
 
         current_token = next_token(logits, temperature, top_p)
-        print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
+        # print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
+        print(f"{self.tokenizer.decode([current_token])}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
         while len(tokens) < max_seq_len:
@@ -132,7 +133,8 @@ class LlamaRunner(ABC):
             ):
                 break
 
-            print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
+            # print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
+            print(f"{self.tokenizer.decode([current_token])}", end="", flush=True)
         print("\n")
 
         return tokens if echo else tokens[len(prompt_tokens) :]
@@ -160,7 +162,8 @@ class LlamaRunner(ABC):
             This method generates text completion for the provided prompt, employing nucleus sampling to introduce controlled randomness.
         """
         return self.generate(
-            prompt_tokens=self.tokenizer.encode(prompt, bos=True, eos=False),
+            # prompt_tokens=self.tokenizer.encode(prompt, bos=True, eos=False),
+            prompt_tokens=self.tokenizer.encode(prompt).ids,
             max_seq_len=self.max_seq_len,
             temperature=temperature,
             top_p=top_p,
@@ -194,9 +197,12 @@ class LlamaRunner(ABC):
         prompt = input("Me: ")
         while prompt and prompt != exit_prompt:
             print("LLM: ", end="", flush=True)
+            # prompt_tokens = self.tokenizer.encode(
+            #     self._format_prompt(prompt), bos=True, eos=False
+            # )
             prompt_tokens = self.tokenizer.encode(
-                self._format_prompt(prompt), bos=True, eos=False
-            )
+                self._format_prompt(prompt)
+            ).ids
             generated_tokens = self.generate(
                 prompt_tokens=pre_stop_token + prompt_tokens,
                 max_seq_len=max_seq_len,
