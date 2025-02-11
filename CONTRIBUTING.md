@@ -215,6 +215,14 @@ must work with threading**
 
 ## Testing
 
+### Running Tests Locally
+
+CI is run automatically on all pull requests. However, if you want to run tests locally, here are some example commands (not exhaustive):
+
+- The `sh test/build_size_test.sh` script will compile the C++runtime along with portable kernels.
+- The `test/run_oss_cpp_tests.sh` script will build and run C++ tests locally
+- Running `pytest` from the root directory will run Python tests locally.
+
 ### Writing Tests
 To help keep code quality high, ExecuTorch uses a combination of unit tests and
 end-to-end (e2e) tests. If you add a new feature or fix a bug, please add tests
@@ -228,8 +236,6 @@ that it did actually run.
 If it's not clear how to add a test for your PR, take a look at the blame for
 the code you're modifying and find an author who has more context. Ask them
 for their help in the PR comments.
-
-The `test/run_oss_cpp_tests.sh` script will build and run C++ tests locally.
 
 ### Continuous Integration
 See https://hud.pytorch.org/hud/pytorch/executorch/main for the current state of
