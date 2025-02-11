@@ -328,17 +328,16 @@ TEST_F(MethodTest, ConstantBufferTest) {
   ASSERT_EQ(err, Error::Ok);
 }
 
-// TODO(T214866301): Test is disabled due to CMake issues. 
-// TEST_F(MethodTest, ProgramDataSeparationTest) {
-//   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-//   Result<Method> method = programs_["linear_program"]->load_method(
-//       "forward", &mmm.get(), nullptr, data_maps_["linear_data"].get());
-//   ASSERT_EQ(method.error(), Error::Ok);
+TEST_F(MethodTest, ProgramDataSeparationTest) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["linear_program"]->load_method(
+      "forward", &mmm.get(), nullptr, data_maps_["linear_data"].get());
+  ASSERT_EQ(method.error(), Error::Ok);
 
-//   // Can execute the method.
-//   Error err = method->execute();
-//   ASSERT_EQ(err, Error::Ok);
-// }
+  // Can execute the method.
+  Error err = method->execute();
+  ASSERT_EQ(err, Error::Ok);
+}
 
 /*
  * TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
