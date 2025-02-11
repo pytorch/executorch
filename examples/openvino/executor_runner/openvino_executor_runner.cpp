@@ -82,7 +82,6 @@ void dump_outputs(Result<Method> &method, const char *output_folder_path,
     std::ofstream fout(output_file_name.c_str(), std::ios::binary);
     fout.write(output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
     fout.close();
-    ET_LOG(Info, "Write outputs to file %s", output_file_name.c_str());
   }
 }
 
@@ -135,8 +134,6 @@ ProcessInputsResult process_inputs(Result<Method> &method,
             method_meta.input_tensor_meta(input_index);
         auto input_data_ptr = inputs[input_index].toTensor().data_ptr<char>();
 
-        ET_LOG(Info, "Read inputs from file %s",
-               input_files[input_index].c_str());
         std::ifstream fin(input_files[input_index], std::ios::binary);
         fin.seekg(0, fin.end);
         size_t file_size = fin.tellg();
