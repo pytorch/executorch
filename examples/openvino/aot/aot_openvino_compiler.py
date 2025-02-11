@@ -8,6 +8,7 @@ import argparse
 import os
 import shutil
 import subprocess
+from itertools import islice
 from pathlib import Path
 
 import executorch
@@ -24,6 +25,8 @@ from executorch.exir.backend.backend_details import CompileSpec
 from sklearn.metrics import accuracy_score
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
+from torch.ao.quantization.quantize_pt2e import convert_pt2e
+from torch.ao.quantization.quantize_pt2e import prepare_pt2e
 from torch.export import export
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.graph_drawer import FxGraphDrawer
@@ -54,8 +57,11 @@ def load_calibration_dataset(dataset_path: str, batch_size: int, suite: str, mod
 
     if suite == "torchvision":
         transform = torchvision_models.get_model_weights(model_name).DEFAULT.transforms()
-    else:
+    elif suite == "timm":
         transform = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
+    else:
+        msg = f"Validation is not supported yet for the suite {suite}"
+        raise ValueError(msg)
 
     val_dataset = datasets.ImageFolder(val_dir, transform=transform)
 
@@ -85,6 +91,76 @@ def dump_inputs(calibration_dataset, dest_path):
     return input_files, targets
 
 
+def quantize_model(
+    captured_model: torch.fx.GraphModule, calibration_dataset: torch.utils.data.DataLoader, use_nncf: bool
+) -> torch.fx.GraphModule:
+    quantizer = OpenVINOQuantizer()
+
+    print("PTQ: Quantize the model")
+    default_subset_size = 300
+    batch_size = calibration_dataset.batch_size
+    subset_size = (default_subset_size // batch_size) + int(default_subset_size % batch_size > 0)
+
+    def transform(x):
+        return x[0]
+
+    if use_nncf:
+
+        quantized_model = quantize_pt2e(
+            captured_model,
+            quantizer,
+            subset_size=subset_size,
+            calibration_dataset=nncf.Dataset(calibration_dataset, transform_func=transform),
+            fold_quantize=False,
+        )
+    else:
+        annotated_model = prepare_pt2e(captured_model, quantizer)
+
+        print("PTQ: Calibrate the model...")
+        for data in islice(calibration_dataset, subset_size):
+            annotated_model(transform(data))
+
+        print("PTQ: Convert the quantized model...")
+        quantized_model = convert_pt2e(annotated_model, fold_quantize=False)
+
+    return quantized_model
+
+
+def validate_model(model_file_name: str, calibration_dataset: torch.utils.data.DataLoader) -> float:
+    # 1: Dump inputs
+    dest_path = Path("tmp_inputs")
+    out_path = Path("tmp_outputs")
+    for d in [dest_path, out_path]:
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        os.makedirs(d)
+
+    input_files, targets = dump_inputs(calibration_dataset, dest_path)
+    inp_list_file = dest_path / "in_list.txt"
+    with open(inp_list_file, "w") as f:
+        f.write("\n".join(input_files) + "\n")
+
+    # 2: Run the executor
+    print("Run openvino_executor_runner...")
+
+    subprocess.run(
+        [
+            "../../../cmake-openvino-out/examples/openvino/openvino_executor_runner",
+            f"--model_path={model_file_name}",
+            f"--input_list_path={inp_list_file}",
+            f"--output_folder_path={out_path}",
+        ]
+    )
+
+    # 3: load the outputs and compare with the targets
+    predictions = []
+    for i in range(len(input_files)):
+        tensor = np.fromfile(out_path / f"output_{i}_0.raw", dtype=np.float32)
+        predictions.extend(torch.tensor(tensor).reshape(-1, 1000).argmax(-1))
+
+    return accuracy_score(predictions, targets)
+
+
 def main(
     suite: str,
     model_name: str,
@@ -94,6 +170,7 @@ def main(
     dataset_path: str,
     device: str,
     batch_size: int,
+    quantization_flow: str,
 ):
     # Load the selected model
     model = load_model(suite, model_name)
@@ -104,7 +181,7 @@ def main(
         input_shape = tuple(next(iter(calibration_dataset))[0].shape)
         print(f"Input shape retrieved from the model config: {input_shape}")
     # Ensure input_shape is a tuple
-    elif isinstance(input_shape, list):
+    elif isinstance(input_shape, (list, tuple)):
         input_shape = tuple(input_shape)
     else:
         msg = "Input shape must be a list or tuple."
@@ -124,23 +201,8 @@ def main(
         if not dataset_path:
             msg = "Quantization requires a calibration dataset."
             raise ValueError(msg)
-
-        captured_model = aten_dialect.module()
-        quantizer = OpenVINOQuantizer()
-
-        print("PTQ: Quantize the model")
-
-        def transform(x):
-            return x[0]
-
-        default_subset_size = 300
-        batch_size = calibration_dataset.batch_size
-        quantized_model = quantize_pt2e(
-            captured_model,
-            quantizer,
-            subset_size=(default_subset_size // batch_size) + int(default_subset_size % batch_size > 0),
-            calibration_dataset=nncf.Dataset(calibration_dataset, transform_func=transform),
-            fold_quantize=False,
+        quantized_model = quantize_model(
+            aten_dialect.module(), calibration_dataset, use_nncf=quantization_flow == "nncf"
         )
         visualize_fx_model(quantized_model, f"{model_name}_int8.svg")
 
@@ -172,39 +234,8 @@ def main(
             msg = "Validateion requires a calibration dataset."
             raise ValueError(msg)
 
-        print("Start validation of the quantized model:")
-        # 1: Dump inputs
-        dest_path = Path("tmp_inputs")
-        out_path = Path("tmp_outputs")
-        for d in [dest_path, out_path]:
-            if os.path.exists(d):
-                shutil.rmtree(d)
-            os.makedirs(d)
-
-        input_files, targets = dump_inputs(calibration_dataset, dest_path)
-        inp_list_file = dest_path / "in_list.txt"
-        with open(inp_list_file, "w") as f:
-            f.write("\n".join(input_files) + "\n")
-
-        # 2: Run the executor
-        print("Run openvino_executor_runner...")
-
-        subprocess.run(
-            [
-                "../../../cmake-openvino-out/examples/openvino/openvino_executor_runner",
-                f"--model_path={model_file_name}",
-                f"--input_list_path={inp_list_file}",
-                f"--output_folder_path={out_path}",
-            ]
-        )
-
-        # 3: load the outputs and compare with the targets
-        predictions = []
-        for i in range(len(input_files)):
-            tensor = np.fromfile(out_path / f"output_{i}_0.raw", dtype=np.float32)
-            predictions.extend(torch.tensor(tensor).reshape(-1, 1000).argmax(-1))
-
-        acc_top1 = accuracy_score(predictions, targets)
+        print("Start validation of the model:")
+        acc_top1 = validate_model(model_file_name, calibration_dataset)
         print(f"acc@1: {acc_top1}")
 
 
@@ -244,10 +275,20 @@ if __name__ == "__main__":
         default="CPU",
         help="Target device for compiling the model (e.g., CPU, GPU). Default is CPU.",
     )
+    parser.add_argument(
+        "--quantization_flow",
+        type=str,
+        choices=["pt2e", "nncf"],
+        default="nncf",
+        help="Select the quantization flow (nncf or pt2e):"
+        " pt2e is the default torch.ao quantization flow, while"
+        " nncf is a custom method with additional algorithms to improve model performance.",
+    )
 
     args = parser.parse_args()
 
     # Run the main function with parsed arguments
+    # Disable nncf patching as export of the patched model is not supported.
     with nncf.torch.disable_patching():
         main(
             args.suite,
@@ -258,4 +299,5 @@ if __name__ == "__main__":
             args.dataset,
             args.device,
             args.batch_size,
+            args.quantization_flow,
         )
