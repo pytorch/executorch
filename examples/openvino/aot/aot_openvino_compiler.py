@@ -51,7 +51,7 @@ def load_model(suite: str, model_name: str):
         raise ValueError(msg)
 
 
-def load_calibration_dataset(dataset_path: str, suite: str, model: torch.nn.Module, model_name: str):
+def load_calibration_dataset(dataset_path: str, batch_size: int, suite: str, model: torch.nn.Module, model_name: str):
     val_dir = f"{dataset_path}/val"
 
     if suite == "torchvision":
@@ -62,7 +62,7 @@ def load_calibration_dataset(dataset_path: str, suite: str, model: torch.nn.Modu
     val_dataset = datasets.ImageFolder(val_dir, transform=transform)
 
     calibration_dataset = torch.utils.data.DataLoader(
-        val_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True
+        val_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True
     )
 
     return calibration_dataset
@@ -77,7 +77,7 @@ def dump_inputs(calibration_dataset, dest_path):
     input_files, targets = [], []
     for idx, data in enumerate(calibration_dataset):
         feature, target = data
-        targets.append(target)
+        targets.extend(target)
         file_name = f"{dest_path}/input_{idx}_0.raw"
         if not isinstance(feature, torch.Tensor):
             feature = torch.tensor(feature)
@@ -87,13 +87,22 @@ def dump_inputs(calibration_dataset, dest_path):
     return input_files, targets
 
 
-def main(suite: str, model_name: str, input_shape, quantize: bool, validate: bool, dataset_path: str, device: str):
+def main(
+    suite: str,
+    model_name: str,
+    input_shape,
+    quantize: bool,
+    validate: bool,
+    dataset_path: str,
+    device: str,
+    batch_size: int,
+):
     # Load the selected model
     model = load_model(suite, model_name)
     model = model.eval()
 
     if dataset_path:
-        calibration_dataset = load_calibration_dataset(dataset_path, suite, model, model_name)
+        calibration_dataset = load_calibration_dataset(dataset_path, batch_size, suite, model, model_name)
         input_shape = tuple(next(iter(calibration_dataset))[0].shape)
         print(f"Input shape retrieved from the model config: {input_shape}")
     # Ensure input_shape is a tuple
@@ -192,7 +201,7 @@ def main(suite: str, model_name: str, input_shape, quantize: bool, validate: boo
         predictions = []
         for i in range(len(input_files)):
             tensor = np.fromfile(out_path / f"output_{i}_0.raw", dtype=np.float32)
-            predictions.append(torch.argmax(torch.tensor(tensor)))
+            predictions.extend(torch.tensor(tensor).reshape(-1, 1000).argmax(-1))
 
         acc_top1 = accuracy_score(predictions, targets)
         print(f"acc@1: {acc_top1}")
@@ -214,6 +223,13 @@ if __name__ == "__main__":
         type=eval,
         help="Input shape for the model as a list or tuple (e.g., [1, 3, 224, 224] or (1, 3, 224, 224)).",
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Batch size for the validation. Default batch_size == 1."
+        " The dataset length must be evenly divisible by the batch size.",
+    )
     parser.add_argument("--quantize", action="store_true", help="Enable model quantization.")
     parser.add_argument(
         "--validate",
@@ -232,4 +248,13 @@ if __name__ == "__main__":
 
     # Run the main function with parsed arguments
     with nncf.torch.disable_patching():
-        main(args.suite, args.model, args.input_shape, args.quantize, args.validate, args.dataset, args.device)
+        main(
+            args.suite,
+            args.model,
+            args.input_shape,
+            args.quantize,
+            args.validate,
+            args.dataset,
+            args.device,
+            args.batch_size,
+        )
