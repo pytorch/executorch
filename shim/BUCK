@@ -1,3 +1,4 @@
+load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
 load("@prelude//platforms:defs.bzl", "execution_platform")
 load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
 load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
@@ -72,5 +73,10 @@ execution_platform(
     os_configuration = "prelude//os:android",
     # REVIEW: not sure if this is correct
     use_windows_path_separators = host_info().os.is_windows,
+    visibility = ["PUBLIC"],
+)
+
+noop_test_toolchain(
+    name = "test",
     visibility = ["PUBLIC"],
 )
