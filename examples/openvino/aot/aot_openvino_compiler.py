@@ -135,9 +135,12 @@ def main(
         def transform(x):
             return x[0]
 
+        default_subset_size = 300
+        batch_size = calibration_dataset.batch_size
         quantized_model = quantize_pt2e(
             captured_model,
             quantizer,
+            subset_size=(default_subset_size // batch_size) + int(default_subset_size % batch_size > 0),
             calibration_dataset=nncf.Dataset(calibration_dataset, transform_func=transform),
             fold_quantize=False,
         )
