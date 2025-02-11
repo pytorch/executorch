@@ -150,6 +150,7 @@ the checkpoint format to avoid generating faulty models.
             input_prune_map=input_prune_map,
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
+            use_hf_rope=True,
             **params,
         )
 
@@ -170,7 +171,7 @@ the checkpoint format to avoid generating faulty models.
 
         # Within the device="meta" context, tensors that are created do not carry data.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
-        with torch.device("meta"):
+        with torch.device("cpu"):
             self.model_ = Transformer(model_args)
 
         if "int8" in str(checkpoint_path):

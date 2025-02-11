@@ -175,9 +175,10 @@ class AttentionMHA(Attention):
         self.max_batch_size = args.max_batch_size
         self.max_context_len = args.max_context_len
         self.dim = args.dim
-        self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
+        # TODO: parametrize bias for attention and feedforward.
+        self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=True)
+        self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=True)
+        self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=True)
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
 
         self.layer_id = layer_id
