@@ -228,7 +228,7 @@ class ArmTester(Tester):
     def __init__(
         self,
         model: torch.nn.Module,
-        example_inputs: Tuple[torch.Tensor],
+        example_inputs: Tuple,
         compile_spec: List[CompileSpec],
     ):
         """

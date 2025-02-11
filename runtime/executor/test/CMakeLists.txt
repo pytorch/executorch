@@ -26,11 +26,11 @@ add_custom_command(
          "${CMAKE_BINARY_DIR}/ModuleMultipleEntry.pte"
          "${CMAKE_BINARY_DIR}/ModuleSimpleTrain.pte"
   COMMAND
-    python3 -m test.models.export_program --modules
+    python -m test.models.export_program --modules
     "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain"
     --outdir "${CMAKE_BINARY_DIR}" 2> /dev/null
   COMMAND
-    python3 -m test.models.export_delegated_program --modules "ModuleAddMul"
+    python -m test.models.export_delegated_program --modules "ModuleAddMul"
     --backend_id "StubBackend" --outdir "${CMAKE_BINARY_DIR}" || true
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )

@@ -115,7 +115,7 @@ class TestBundle(unittest.TestCase):
 
             self.assertEqual(
                 bundled_program.serialize_to_schema().program,
-                bytes(_serialize_pte_binary(executorch_program.executorch_program)),
+                executorch_program.buffer,
             )
 
     def test_bundled_miss_methods(self) -> None:

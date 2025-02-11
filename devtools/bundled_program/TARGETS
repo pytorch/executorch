@@ -21,7 +21,6 @@ runtime.python_library(
         "//executorch/devtools/bundled_program/schema:bundled_program_schema_py",
         "//executorch/exir:schema",
         "//executorch/exir:tensor",
-        "//executorch/exir/_serialize:lib",
     ],
 )
 

@@ -1070,3 +1070,26 @@ def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
+
+
+@register_annotator([torch.ops.aten.where.self])
+def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
+    true_input_act = node.args[1]
+    false_input_act = node.args[2]
+    if _is_annotated([node]):
+        return
+
+    _annotate_input_qspec_map(
+        node,
+        true_input_act,
+        quantization_config.input_activation,
+    )
+
+    _annotate_input_qspec_map(
+        node,
+        false_input_act,
+        quantization_config.input_activation,
+    )
+
+    _annotate_output_qspec(node, quantization_config.output_activation)
+    _mark_nodes_as_annotated([node])

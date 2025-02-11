@@ -5,6 +5,11 @@
 # log_softmax, due to the OSS build not currently including sleef.
 # TODO (T183193812)
 
+- op: _fft_r2c.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_fft_r2c_out
+
 - op: add.out
   kernels:
     - arg_meta: null
