@@ -793,6 +793,14 @@ class Log(torch.nn.Module):
         return torch.log(x)
 
 
+class LogicalNot(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.logical_not(x > 0)
+
+
 class LogSoftmax(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1306,3 +1314,21 @@ class ViewPermuteMatMul(torch.nn.Module):
         x = x.view(new_shape)
         x = x.permute(0, 2, 1, 3)
         return torch.matmul(x, y.transpose(-1, -2))
+
+
+class Where(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y, z):
+        return torch.where(x >= torch.zeros(x.shape), y, z)
+
+
+class WhereConstant(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.register_buffer("pos", pos)
+        self.register_buffer("neg", neg)
+
+    def forward(self, x):
+        return torch.where(x >= torch.zeros(x.shape), self.pos, self.neg)
