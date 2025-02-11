@@ -42,7 +42,7 @@ class EagerLlamaRunner(LlamaRunner):
         tokens: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        return self.model.forward(tokens=tokens, input_pos=input_pos)
+        return self.model.forward(tokens, {"input_pos": input_pos})
 
 
 def build_args_parser() -> argparse.ArgumentParser:

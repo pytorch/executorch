@@ -36,6 +36,7 @@ class AnnotateAndQuantScalar(ExportPass):
         torch.ops.aten.sub.Scalar,
         torch.ops.aten.mul.Scalar,
         torch.ops.aten.div.Scalar,
+        torch.ops.aten.mul.Tensor,
         "add",
         "sub",
         "mul",

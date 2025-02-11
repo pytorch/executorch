@@ -943,6 +943,16 @@ class _Emitter(torch.fx.Interpreter):
     def _emit_view(self, args: Tuple[_Argument, ...]) -> _EmitterValue:
         assert len(args) == 2
 
+        # Elide the view if it is static and memory planned
+        spec = self.node.meta["spec"]
+        is_static = spec.is_static_shape_tensor
+        is_memory_planned = (spec.mem_id is not None) and (spec.mem_offset is not None)
+        is_memory_planned = is_memory_planned or (
+            spec.const and spec.storage is not None
+        )
+        if is_static and is_memory_planned:
+            return self._emit_spec(spec)
+
         self_arg = self._emit_argument(args[0], torch.TensorType)  # pyre-ignore[6]
         size_arg = self._emit_argument(args[1], torch.ListType.ofInts())
         out_arg = self._emit_argument(
@@ -1189,7 +1199,7 @@ class _Emitter(torch.fx.Interpreter):
                     # The runtime currently only supports tensors with offset 0.
                     storage_offset=0,
                     sizes=[0],
-                    dim_order=[],
+                    dim_order=[0],
                     requires_grad=False,
                     layout=0,
                     data_buffer_idx=0,

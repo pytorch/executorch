@@ -156,7 +156,7 @@ Tensor& scatter_value_out(
 
   ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, name, CTYPE_VAL, [&] {
     CTYPE_VAL val;
-    utils::extract_scalar(value, &val);
+    ET_KERNEL_CHECK(ctx, utils::extract_scalar(value, &val), InvalidArgument, );
 
     ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
       scatter_value_helper<CTYPE>(in, dim, index, val, out);
