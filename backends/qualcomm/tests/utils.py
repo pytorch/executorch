@@ -108,6 +108,57 @@ def generate_context_binary(
     assert os.path.isfile(f"{artifact_dir}/model_ctx.bin"), print(result.stderr)
 
 
+def validate_context_binary(ctx_bin: bytes):
+    qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
+    assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+
+    # flow of qnn tools
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with open(f"{tmp_dir}/ctx.bin", "wb") as binary_file:
+            binary_file.write(ctx_bin)
+
+        target = "x86_64-linux-clang"
+        cmds = [
+            # qnn-context-binary-utility
+            f"{qnn_sdk}/bin/{target}/qnn-context-binary-utility",
+            "--context_binary",
+            f"{tmp_dir}/ctx.bin",
+            "--json_file",
+            f"{tmp_dir}/ctx.json",
+        ]
+        result = subprocess.run(
+            " ".join(cmds),
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+        )
+        assert os.path.isfile(f"{tmp_dir}/ctx.json"), print(result.stderr)
+
+
+def validate_qcir(qcir: bytes):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with open(f"{tmp_dir}/qcir.bin", "wb") as binary_file:
+            binary_file.write(qcir)
+
+        cmds = [
+            "flatc",
+            "-o",
+            tmp_dir,
+            "--raw-binary",
+            "-t",
+            f"{os.path.dirname(__file__)}/../aot/ir/qcir.fbs",
+            "--",
+            f"{tmp_dir}/qcir.bin",
+        ]
+        result = subprocess.run(
+            " ".join(cmds),
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+        )
+        assert os.path.isfile(f"{tmp_dir}/qcir.json"), print(result.stderr)
+
+
 class TestQNN(unittest.TestCase):
     rtol: float = 0
     atol: float = 0

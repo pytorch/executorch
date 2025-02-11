@@ -42,6 +42,39 @@ CUSTOM_OPS_SCHEMA_REGISTRATION_SOURCES = [
     "RegisterSchema.cpp",
 ]
 
+ScalarType = enum(
+    "Byte",
+    "Char",
+    "Short",
+    "Int",
+    "Long",
+    "Half",
+    "Float",
+    "Double",
+    "ComplexHalf",
+    "ComplexFloat",
+    "ComplexDouble",
+    "Bool",
+    "QInt8",
+    "QUInt8",
+    "QInt32",
+    "BFloat16",
+    "QUInt4x2",
+    "QUInt2x4",
+    "Bits1x8",
+    "Bits2x4",
+    "Bits4x2",
+    "Bits8",
+    "Bits16",
+    "Float8_e5m2",
+    "Float8_e4m3fn",
+    "Float8_e5m2fnuz",
+    "Float8_e4m3fnuz",
+    "UInt16",
+    "UInt32",
+    "Uint64",
+)
+
 # Hide the dependency to caffe2 internally.
 def et_operator_library(
         name,

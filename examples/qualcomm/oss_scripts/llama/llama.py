@@ -51,6 +51,8 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_chipset_map,
     update_spill_fill_size,
 )
+
+from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
@@ -389,6 +391,7 @@ class SingleLlama:
         num_sharding=1,
         passes_job=OrderedDict(),
         shared_buffer=False,
+        verbose=False,
     ):
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -440,6 +443,10 @@ class SingleLlama:
             edge_prog_mgr = edge_prog_mgr.to_backend(partitioner)
             if num_sharding > 1:
                 update_spill_fill_size(edge_prog_mgr.exported_program())
+
+            if verbose:
+                print_delegation_info(edge_prog_mgr.exported_program().graph_module)
+
             exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
             with open(f"{work_space}/{self.pte_filename}.pte", "wb") as file:
                 exec_prog_mgr.write_to_file(file)
@@ -666,6 +673,10 @@ def compile(args, pte_filename, tokenizer):
                 max_sf_size
             )
             compiler_specs[0][0].value = option_to_flatbuffer(qnn_executorch_options)
+
+        if args.verbose:
+            for exported_program in exported_programs:
+                print_delegation_info(exported_program.graph_module)
 
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -979,6 +990,8 @@ def _build_parser():
         type=str,
         help="Fallback to cpu embedding operator and type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '4,32'.",
     )
+
+    parser.add_argument("-v", "--verbose", action="store_true")
 
     return parser
 

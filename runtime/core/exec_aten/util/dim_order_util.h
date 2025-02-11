@@ -260,35 +260,6 @@ ET_NODISCARD inline Error stride_to_dim_order(
   return Error::Ok;
 }
 
-/**
- * Print a string representation of an ArrayRef of tensor sizes into a
- * user-provided string buffer. If the user buffer is too small, the string
- * will be truncated. The output is of the format (1,2,3,4).
- *
- * Note that we cannot use ArrayRef here due to a circular dependency (see
- * above comments).
- */
-template <class SizesType>
-inline void sizes_to_string(
-    char* output,
-    size_t output_size,
-    SizesType* sizes,
-    size_t rank) {
-  auto remaining_size = output_size;
-  for (auto i = 0; remaining_size > 0 && i < rank; i++) {
-    snprintf(
-        output,
-        remaining_size,
-        "%s%zd",
-        i == 0 ? "(" : ",",
-        static_cast<size_t>(sizes[i]));
-    auto len = strlen(output);
-    output += len;
-    remaining_size -= len;
-  }
-  snprintf(output, remaining_size, ")");
-}
-
 } // namespace runtime
 } // namespace executorch
 

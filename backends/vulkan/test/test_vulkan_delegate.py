@@ -1711,3 +1711,26 @@ class TestBackends(unittest.TestCase):
             (torch.ones(size=[5, 4, 1, 2, 6]),),
             expect_no_delegates=True,
         )
+
+    def test_vulkan_backend_large_linear_layer(self):
+        class LinearModel(torch.nn.Module):
+            def __init__(
+                self, n_pca_basis: int, n_sh_basis: int, n_gaussians: int
+            ) -> None:
+                super(LinearModel, self).__init__()
+                self.fc1 = torch.nn.Linear(
+                    n_pca_basis, (n_sh_basis + 3 + 3 + 4) * n_gaussians
+                )
+
+            def forward(self, x: torch.Tensor):
+                out = self.fc1(x)
+                return out
+
+        n_pca_basis = 64
+        n_sh_basis = 6
+        n_gaussians = 2**16
+
+        self.lower_module_and_test_output(
+            LinearModel(n_pca_basis, n_sh_basis, n_gaussians),
+            (torch.ones(n_pca_basis),),
+        )
