@@ -87,7 +87,6 @@ probe_additional_tests() {
   # CMakeLists.txt rules, that are buildable using build_and_run_test
   dirs=(
     examples/models/llama/tokenizer
-    extension/llm/custom_ops
     extension/llm/tokenizer
   )
 
