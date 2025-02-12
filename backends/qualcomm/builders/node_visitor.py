@@ -250,6 +250,18 @@ class NodeVisitor:
 
         return QNN_TENSOR_TYPE_MAP[tensor.dtype]
 
+    def get_dynamic_dimension(self, dims):
+        dynamic_dims, nominal_dims = [], []
+        for dim in dims:
+            if isinstance(dim, torch.SymInt):
+                nominal_dims.append(dim.node.hint)
+                dynamic_dims.append(1)
+            else:
+                nominal_dims.append(dim)
+                dynamic_dims.append(0)
+
+        return dynamic_dims, nominal_dims
+
     def define_custom_tensor_wrapper(
         self,
         node_name: str,
@@ -266,14 +278,16 @@ class NodeVisitor:
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
         if is_fake_tensor:
+            dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 node_name,
                 tensor_type,
                 dtype,
                 quant_encoding,
                 quant_configs,
-                len(dims),
-                dims,
+                len(nominal_dims),
+                nominal_dims,
+                dynamic_dims,
                 np.array([]),
                 False,
             )
@@ -319,7 +333,8 @@ class NodeVisitor:
             )
         if is_graph_output(tensor_source_node):
             tensor_name = "output_" + tensor_name
-        dims = [1] if len(tensor.size()) == 0 else tensor.size()
+        dims = torch.Size([1]) if len(tensor.size()) == 0 else tensor.size()
+        dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
         tensor_type = self.get_tensor_type(tensor_source_node, tensor_type)
         quant_encoding, quant_configs = self.get_quant_encoding_conf(
             tensor_source_node, target_build_node
@@ -332,8 +347,9 @@ class NodeVisitor:
                 dtype,
                 quant_encoding,
                 quant_configs,
-                len(dims),
-                dims,
+                len(nominal_dims),
+                nominal_dims,
+                dynamic_dims,
                 np.array([]),
                 False,
             )
@@ -350,8 +366,9 @@ class NodeVisitor:
                 dtype,
                 quant_encoding,
                 quant_configs,
-                len(dims),
-                dims,
+                len(nominal_dims),
+                nominal_dims,
+                dynamic_dims,
                 tensor.detach().numpy(),
                 True,
             )

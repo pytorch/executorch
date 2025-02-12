@@ -54,13 +54,13 @@ class DrawGraph:
             op_wrapper = py_op_wrapper.GetOpWrapper()
             # TODO: multi output
             for i in range(op_wrapper.GetOpConfig()["numOfOutputs"]):
-                if op_wrapper.GetOpConfig()["outputTensors"][0].version == 1:
-                    node = op_wrapper.GetOpConfig()["outputTensors"][i].v1
+                if op_wrapper.GetOpConfig()["outputTensors"][0].version == 2:
+                    node = op_wrapper.GetOpConfig()["outputTensors"][i].v2
                     node_name = node.name
                     input_list = []
                     for j in range(op_wrapper.GetOpConfig()["numOfInputs"]):
-                        if op_wrapper.GetOpConfig()["inputTensors"][j].version == 1:
-                            input_node = op_wrapper.GetOpConfig()["inputTensors"][j].v1
+                        if op_wrapper.GetOpConfig()["inputTensors"][j].version == 2:
+                            input_node = op_wrapper.GetOpConfig()["inputTensors"][j].v2
                             input_node_name = input_node.name
                             if input_node_name not in node_list:
                                 node_list[input_node_name] = {
@@ -68,16 +68,14 @@ class DrawGraph:
                                     "input_list": [],
                                 }
                             input_list.append(input_node_name)
-                            # TODO: tensor v2
-                        elif op_wrapper.GetOpConfig()["outputTensors"][j].version == 2:
-                            raise ValueError("Unsupported tensor version: 2")
+                        else:
+                            raise ValueError("Unsupported tensor version")
                     if node_name not in node_list:
                         node_list[node_name] = {"node": node, "input_list": input_list}
                     else:
                         node_list[node_name]["input_list"] = input_list
-                # TODO: tensor v2
-                elif op_wrapper.GetOpConfig()["outputTensors"][i].version == 2:
-                    raise ValueError("Unsupported tensor version: 2")
+                else:
+                    raise ValueError("Unsupported tensor version")
 
     def add_node(self, node_list, excel_data):
         for node_name, tensor in node_list.items():
@@ -170,7 +168,10 @@ class DrawGraph:
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_directory = f"{tmp_dir}/outputs"
             graph.render(
-                self.filename, temp_directory, format="svg", cleanup=not self.dot_string
+                self.filename,
+                directory=temp_directory,
+                format="svg",
+                cleanup=not self.dot_string,
             )
             source_file = os.path.join(temp_directory, f"{self.filename}.svg")
             destination_file = os.path.join(".", f"{self.filename}.svg")

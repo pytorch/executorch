@@ -70,7 +70,9 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     )
     POSSIBLE_TYPE_CONVERSIONS = {torch.int64: torch.int32}
 
-    def is_node_supported(self, node: fx.Node, tosa_spec: TosaSpecification) -> bool:
+    def is_node_tosa_supported(
+        self, node: fx.Node, tosa_spec: TosaSpecification
+    ) -> bool:
         assert node.target in self.targets
 
         if tosa_spec not in self.tosa_specs:
