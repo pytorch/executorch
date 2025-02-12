@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -49,9 +50,22 @@ bool check_mask_indices(const Tensor& in, TensorOptList indices) {
         ET_LOG_MSG_AND_RETURN_IF_FALSE(
             index.dim() > 0, "Zero-dimensional mask index not allowed");
         for (auto j = 0; j < index.dim(); j++) {
-          ET_LOG_MSG_AND_RETURN_IF_FALSE(
-              index.size(j) == in.size(in_i + j),
-              "The shape of mask index must match the sizes of the corresponding input dimensions.");
+          if (index.size(j) != in.size(in_i + j)) {
+#if ET_LOG_ENABLED
+            auto mask_shape = executorch::runtime::tensor_shape_to_c_string(
+                executorch::runtime::Span<const Tensor::SizesType>(
+                    index.sizes().data(), index.sizes().size()));
+            auto input_shape = executorch::runtime::tensor_shape_to_c_string(
+                executorch::runtime::Span<const Tensor::SizesType>(
+                    in.sizes().data() + in_i, index.sizes().size()));
+            ET_LOG(
+                Error,
+                "The shape of mask index %s must match the sizes of the corresponding input dimensions %s.",
+                mask_shape.data(),
+                input_shape.data());
+#endif // ET_LOG_ENABLED
+            return false;
+          }
         }
         in_i += index.dim();
       } else {
