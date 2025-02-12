@@ -79,7 +79,7 @@ Follow the steps below to setup your build environment:
 
 3. Navigate to `scripts/` directory.
 
-4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-openvino-out/backends/openvino/` as `libneuron_backend.so`
+4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-openvino-out/backends/openvino/` as `libopenvino_backend.so`
 
    ```bash
    ./openvino_build.sh
