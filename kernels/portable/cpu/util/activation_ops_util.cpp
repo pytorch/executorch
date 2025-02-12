@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 
 namespace torch {
 namespace executor {
@@ -45,9 +46,22 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
 
   for (size_t i = 0; i < in.dim(); ++i) {
     if (i != non_negative_dim) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
-          out.size(i) == in.size(i),
-          "output tensor must have the same size as the input tensor in all dimensions except for the specified dimension.");
+      if (out.size(i) != in.size(i)) {
+#ifdef ET_LOG_ENABLED
+        auto out_shape_str = executorch::runtime::tensor_shape_to_c_string(
+            executorch::runtime::Span<const Tensor::SizesType>(
+                out.sizes().data(), out.sizes().size()));
+        auto in_shape_str = executorch::runtime::tensor_shape_to_c_string(
+            executorch::runtime::Span<const Tensor::SizesType>(
+                in.sizes().data(), in.sizes().size()));
+        ET_LOG(
+            Error,
+            "output tensor must have the same size as the input tensor in all dimensions except for the specified dimension. (output shape: %s input shape: %s)",
+            out_shape_str.data(),
+            in_shape_str.data());
+#endif // ET_LOG_ENABLED
+        return false;
+      }
     }
   }
 
