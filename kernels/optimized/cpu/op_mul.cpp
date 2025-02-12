@@ -130,7 +130,6 @@ Tensor& opt_mul_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    ScalarType out_type = out.scalar_type();
     ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
       auto mul_lambda = [](auto x, auto y) { return x * y; };
       return torch::executor::handle_broadcast_elementwise<CTYPE>(
