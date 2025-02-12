@@ -119,7 +119,7 @@ target_include_directories(
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(xnnpack_backend)
 
-list(APPEND xnn_executor_runner_libs xnnpack_backend)
+list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)
 
 # ios can only build library but not binary
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
