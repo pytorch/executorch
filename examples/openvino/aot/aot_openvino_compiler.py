@@ -12,7 +12,7 @@ from transformers import AutoModel
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.backends.openvino.preprocess import OpenvinoBackend
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
-from executorch.exir import EdgeProgramManager, to_edge
+from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from torch.export import export, ExportedProgram
 from torch.export.exported_program import ExportedProgram
 import argparse
@@ -47,13 +47,9 @@ def main(suite: str, model_name: str, input_shape, device: str):
     # Export to aten dialect using torch.export
     aten_dialect: ExportedProgram = export(model, example_args)
 
-    # Convert to edge dialect
-    edge_program: EdgeProgramManager = to_edge(aten_dialect)
-    to_be_lowered_module = edge_program.exported_program()
-
-    # Lower the module to the backend with a custom partitioner
+    # Convert to edge dialect and lower the module to the backend with a custom partitioner
     compile_spec = [CompileSpec("device", device.encode())]
-    lowered_module = edge_program.to_backend(OpenvinoPartitioner(compile_spec))
+    lowered_module: EdgeProgramManager = to_edge_transform_and_lower(aten_dialect, partitioner=[OpenvinoPartitioner(compile_spec),])
 
     # Apply backend-specific passes
     exec_prog = lowered_module.to_executorch(config=executorch.exir.ExecutorchBackendConfig())
