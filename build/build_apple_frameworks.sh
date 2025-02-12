@@ -211,7 +211,7 @@ sed -i '' '1i\
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
 ' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/macros/Export.h
-ln -s $HEADERS_PATH/executorch/runtime/core/portable_type/c10 "$HEADERS_PATH/"
+cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10 "$HEADERS_PATH/"
 
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"
