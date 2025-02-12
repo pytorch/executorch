@@ -38,27 +38,27 @@ bool check_convolution_backward_args(
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       transposed == false, "Transposed Convolution Backward not supported yet");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       weight.dim() == 4, "Only 2D Convolution Backward supported for now");
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, input));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_output, input));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(weight, input));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(grad_output, input));
 
   if (output_mask[0]) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_input, input));
+    ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(grad_input, input));
   }
 
   if (output_mask[1]) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_weight, input));
+    ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(grad_weight, input));
   }
 
   if (output_mask[2]) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_bias, input));
+    ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(grad_bias, input));
   }
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       check_convolution_args(
           input,
           weight,
@@ -86,14 +86,14 @@ bool check_convolution_backward_args(
       output_sizes,
       &output_ndim);
 
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       output_size_is_valid({output_sizes, output_ndim}, input.dim() - 2));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       grad_output.dim() == input.dim(),
       "grad_output should have same number of dimensions as input");
 
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       tensor_has_expected_size(grad_output, {output_sizes, output_ndim}));
 
   return true;

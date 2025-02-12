@@ -19,15 +19,15 @@ bool check_roll_args(
     IntArrayRef shifts,
     IntArrayRef dims,
     const Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 1));
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_rank_greater_or_equal_to(in, 1));
   if (in.numel() > 0) {
     for (const auto& d : dims) {
-      ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(d, in.dim()));
+      ET_LOG_AND_RETURN_UNLESS(dim_is_valid(d, in.dim()));
     }
   }
-  ET_LOG_AND_RETURN_IF_FALSE(!shifts.empty());
-  ET_LOG_AND_RETURN_IF_FALSE(shifts.size() == dims.size());
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(!shifts.empty());
+  ET_LOG_AND_RETURN_UNLESS(shifts.size() == dims.size());
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
   return true;
 }
 

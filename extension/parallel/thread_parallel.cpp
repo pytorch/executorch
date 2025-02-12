@@ -53,9 +53,9 @@ bool parallel_for(
     const int64_t end,
     const int64_t grain_size,
     const std::function<void(int64_t, int64_t)>& f) {
-  ET_LOG_AND_RETURN_IF_FALSE(begin >= 0 && end >= 0);
-  ET_LOG_AND_RETURN_IF_FALSE(end >= begin);
-  ET_LOG_AND_RETURN_IF_FALSE(grain_size > 0);
+  ET_LOG_AND_RETURN_UNLESS(begin >= 0 && end >= 0);
+  ET_LOG_AND_RETURN_UNLESS(end >= begin);
+  ET_LOG_AND_RETURN_UNLESS(grain_size > 0);
   int64_t num_tasks = 0, chunk_size = 0;
   std::tie(num_tasks, chunk_size) =
       calc_num_tasks_and_chunk_size(begin, end, grain_size);

@@ -12,9 +12,9 @@ namespace torch {
 namespace executor {
 
 bool check_pdist_args(const Tensor& in, double p, const Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(in, 2));
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       p >= 0, "pdist only supports non-negative p values");
   return true;
 }
@@ -34,17 +34,17 @@ bool check_cdist_args(
     double p,
     optional<int64_t> compute_mode,
     const Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(x1, x2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(x1, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(x1, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(x2, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(x1, x2));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(x1, out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_rank_greater_or_equal_to(x1, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_rank_greater_or_equal_to(x2, 2));
+  ET_LOG_AND_RETURN_UNLESS(
       tensors_have_same_size_at_dims(x1, x1.dim() - 1, x2, x2.dim() - 1));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       p >= 0, "cdist only supports non-negative p values");
   if (compute_mode.has_value()) {
     int64_t mode = compute_mode.value();
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         mode >= 0 && mode <= 2,
         "possible modes: 0, 1, 2, but was: %" PRId64,
         mode);

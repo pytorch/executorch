@@ -136,8 +136,8 @@ void transpose_tensors(
 }
 
 inline bool check_t_copy_args(const Tensor& in, Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_smaller_or_equal_to(in, 2));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_rank_smaller_or_equal_to(in, 2));
   return true;
 }
 
@@ -146,9 +146,9 @@ inline bool check_transpose_copy_args(
     int64_t dim0,
     int64_t dim1,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim0));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim1));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_dim(in, dim0));
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_dim(in, dim1));
   return true;
 }
 

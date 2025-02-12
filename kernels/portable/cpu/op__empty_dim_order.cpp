@@ -30,20 +30,20 @@ bool _check__empty_out_dim_order(OptionalIntArrayRef dim_order, Tensor& out) {
     // out tensor's dim order shall equal to input dim order
     IntArrayRef dim_order_ref = dim_order.value();
 
-    ET_LOG_AND_RETURN_IF_FALSE(
+    ET_LOG_AND_RETURN_UNLESS(
         is_channels_last_dim_order(
             dim_order.value().data(), dim_order.value().size()) ||
         is_contiguous_dim_order(
             dim_order.value().data(), dim_order.value().size()));
 
     // Out tensor shall have same dim order as dim_order
-    ET_LOG_AND_RETURN_IF_FALSE(out_dim_order.size() == dim_order_ref.size());
+    ET_LOG_AND_RETURN_UNLESS(out_dim_order.size() == dim_order_ref.size());
     for (size_t i = 0; i < dim_order_ref.size(); i++) {
-      ET_LOG_AND_RETURN_IF_FALSE(out_dim_order[i] == dim_order_ref[i]);
+      ET_LOG_AND_RETURN_UNLESS(out_dim_order[i] == dim_order_ref[i]);
     }
   } else { // dim_order is not set, out tensor should be contiguous memory
            // format
-    ET_LOG_AND_RETURN_IF_FALSE(
+    ET_LOG_AND_RETURN_UNLESS(
         is_contiguous_dim_order(out_dim_order.data(), out_dim_order.size()));
   }
   return true;

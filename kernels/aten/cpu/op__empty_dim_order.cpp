@@ -44,13 +44,13 @@ inline bool _check__empty_out_dim_order(
   }
 
   // dim order size shall equal to input dim
-  ET_LOG_AND_RETURN_IF_FALSE(dim_order_ref.size() == out.dim());
+  ET_LOG_AND_RETURN_UNLESS(dim_order_ref.size() == out.dim());
 
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       is_channels_last_dim_order(dim_order_ref.data(), dim_order_ref.size()) ||
       is_contiguous_dim_order(dim_order_ref.data(), dim_order_ref.size()));
 
-  ET_LOG_AND_RETURN_IF_FALSE(kMaxNumOfDimensions >= out.dim());
+  ET_LOG_AND_RETURN_UNLESS(kMaxNumOfDimensions >= out.dim());
   executorch::aten::StridesType target_strides[kMaxNumOfDimensions];
   dim_order_to_stride_nocheck(
       out.sizes().data(),
@@ -59,7 +59,7 @@ inline bool _check__empty_out_dim_order(
       target_strides);
 
   for (size_t i = 0; i < dim_order_ref.size(); i++) {
-    ET_LOG_AND_RETURN_IF_FALSE(target_strides[i] == out.strides()[i]);
+    ET_LOG_AND_RETURN_UNLESS(target_strides[i] == out.strides()[i]);
   }
 
   return true;

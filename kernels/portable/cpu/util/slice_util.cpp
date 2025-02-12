@@ -21,16 +21,16 @@ bool check_narrow_copy_args(
     int64_t start,
     int64_t lenth,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(lenth >= 0, "lenth must be non-negative");
-  ET_LOG_AND_RETURN_IF_FALSE(start >= -in.size(dim));
-  ET_LOG_AND_RETURN_IF_FALSE(start <= in.size(dim));
+  ET_LOG_AND_RETURN_UNLESS(in.dim() > 0);
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_dim(in, dim));
+  ET_LOG_MSG_AND_RETURN_UNLESS(lenth >= 0, "lenth must be non-negative");
+  ET_LOG_AND_RETURN_UNLESS(start >= -in.size(dim));
+  ET_LOG_AND_RETURN_UNLESS(start <= in.size(dim));
   if (start < 0) {
     start += in.size(dim);
   }
-  ET_LOG_AND_RETURN_IF_FALSE(start + lenth <= in.size(dim));
+  ET_LOG_AND_RETURN_UNLESS(start + lenth <= in.size(dim));
   return true;
 }
 
@@ -53,10 +53,10 @@ bool check_slice_copy_args(
     int64_t dim,
     int64_t step,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(in.dim() > 0);
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_has_dim(in, dim));
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       step > 0, "slice step must be greater than zero");
   return true;
 }
@@ -77,19 +77,19 @@ bool check_slice_scatter_args(
     int64_t num_values,
     int64_t step,
     Tensor output) {
-  ET_LOG_AND_RETURN_IF_FALSE(input.dim() > 0);
+  ET_LOG_AND_RETURN_UNLESS(input.dim() > 0);
 
   // Check dim. The dim planed to be selected on shall exist in input
-  ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, input.dim()));
+  ET_LOG_AND_RETURN_UNLESS(dim_is_valid(dim, input.dim()));
 
   // Input and output tensors should be the same shape and dtype
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape_and_dtype(input, output));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_shape_and_dtype(input, output));
 
   // The input.dim() shall equal to src.dim()
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(input, src));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_rank(input, src));
 
   // Check step. Step must be greater than zero
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       step > 0, "slice step must be greater than zero");
 
   // The size of src tensor should follow these rules:
@@ -97,10 +97,10 @@ bool check_slice_scatter_args(
   // - src.size(dim) shall equal to num_values
   for (size_t d = 0; d < input.dim() - 1; d++) {
     if (d != dim) {
-      ET_LOG_AND_RETURN_IF_FALSE(
+      ET_LOG_AND_RETURN_UNLESS(
           tensors_have_same_size_at_dims(input, d, src, d));
     } else {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_LOG_MSG_AND_RETURN_UNLESS(
           src.size(d) == num_values,
           "input.size(%zu) %zd != num_values %" PRId64 " | dim = %" PRId64 ")",
           d,

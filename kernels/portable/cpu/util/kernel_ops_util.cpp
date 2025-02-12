@@ -26,21 +26,21 @@ bool param_array_is_valid(
     bool allow_empty) {
   auto size = array.size();
   if (allow_empty) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         size == 0 || size == 1 || size == length,
         "Expected %s to have size 0, 1 or %zu but got %zd",
         name,
         length,
         size);
   } else {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         size == 1 || size == length,
         "Expected %s to have size 1 or %zu but got %zd",
         name,
         length,
         size);
   }
-  ET_LOG_AND_RETURN_IF_FALSE(int_array_all_ge(array, min_val));
+  ET_LOG_AND_RETURN_UNLESS(int_array_all_ge(array, min_val));
   return true;
 }
 
@@ -115,7 +115,7 @@ bool output_padding_is_valid(
     IntArrayRef stride,
     IntArrayRef dilation,
     size_t kernel_ndim) {
-  ET_LOG_AND_RETURN_IF_FALSE(param_array_is_valid(
+  ET_LOG_AND_RETURN_UNLESS(param_array_is_valid(
       "output_padding",
       output_padding,
       /*min_val=*/0,
@@ -126,7 +126,7 @@ bool output_padding_is_valid(
     const int64_t op_i = val_at(output_padding, i);
     const int64_t s_i = val_at(stride, i);
     const int64_t d_i = val_at(dilation, i);
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         op_i < s_i || op_i < d_i,
         "output padding must be smaller than either stride or dilation");
   }
@@ -246,12 +246,12 @@ void calculate_kernel_output_sizes(
 }
 
 bool check_arange_args(double start, double end, double step, Tensor& out) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       out.dim() == 1,
       "out should be a 1-d tensor, but got a %zu-d tensor",
       out.dim());
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       (step > 0 && (end >= start)) || (step < 0 && (end <= start)),
       "upper bound and larger bound inconsistent with step sign");
 
@@ -267,25 +267,25 @@ bool check_avg_pool2d_args(
     const bool count_include_pad,
     const executorch::aten::optional<int64_t>& divisor_override,
     const Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
       "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
 
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       kernel_size_is_valid(kernel_size, /*kernel_ndim=*/2));
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       stride_is_valid(kernel_size, /*kernel_ndim=*/2, /*allow_empty=*/true));
-  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(
+  ET_LOG_AND_RETURN_UNLESS(padding_is_valid(
       padding, kernel_size, /*kernel_ndim=*/2, /*enforce_half_kernel=*/true));
 
   if (divisor_override.has_value()) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         divisor_override.value() != 0,
         "divisor_override must be non-zero, but found %" PRId64,
         divisor_override.value());
@@ -327,23 +327,23 @@ bool check_convolution_args(
     IntArrayRef output_padding,
     int64_t groups,
     const Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, weight, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_UNLESS(
       tensor_is_default_or_channels_last_dim_order(weight));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       in.dim() == 3 || in.dim() == 4,
       "Expect input tensor to be 3-D or 4-D, but got, %zu.",
       static_cast<size_t>(in.dim()));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, in.dim()));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, in.dim()));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(weight, in.dim()));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(out, in.dim()));
 
   if (bias.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_AND_RETURN_UNLESS(tensor_is_rank(bias.value(), 1));
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         bias.value().size(0) == transposed ? groups * weight.size(1)
                                            : weight.size(0),
         "bias length must equal number of output channels, but got %zd",
@@ -359,24 +359,24 @@ bool check_convolution_args(
     kernel_size[0] = weight.size(2);
     kernel_size[1] = weight.size(3);
   }
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       stride_is_valid(stride, kernel_ndim, /*allow_empty=*/false));
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       padding_is_valid(padding, {kernel_size, kernel_ndim}, kernel_ndim));
-  ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, kernel_ndim));
+  ET_LOG_AND_RETURN_UNLESS(dilation_is_valid(dilation, kernel_ndim));
   if (transposed) {
-    ET_LOG_AND_RETURN_IF_FALSE(
+    ET_LOG_AND_RETURN_UNLESS(
         output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
   }
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       weight.size(0) >= groups,
       "Given groups=%" PRId64 ", expected weight to be at least %" PRId64
       " at dimension 0, but got weight.size(0) = %zd instead",
       groups,
       groups,
       weight.size(0));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       weight.size(0) % groups == 0,
       "Given groups=%" PRId64 ", expected weight to be divisible by %" PRId64
       " at dimension 0, but got weight.size(0) = %zd instead",
@@ -385,7 +385,7 @@ bool check_convolution_args(
       weight.size(0));
 
   if (!transposed) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         in.size(1) == groups * weight.size(1),
         "Given groups=%" PRId64
         " and weight.size(1) = %zd, expected input to have %" PRId64
@@ -395,7 +395,7 @@ bool check_convolution_args(
         groups * weight.size(1),
         in.size(1));
   } else {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_LOG_MSG_AND_RETURN_UNLESS(
         in.size(1) == weight.size(0),
         "input channels must match weight.size(0) in transposed convolution");
   }
@@ -453,10 +453,10 @@ bool check_cumsum_args(
     int64_t dim,
     optional<ScalarType> dtype,
     Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, in.dim()));
+  ET_LOG_AND_RETURN_UNLESS(dim_is_valid(dim, in.dim()));
 
   if (dtype.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
+    ET_LOG_AND_RETURN_UNLESS(dtype.value() == out.scalar_type());
   }
 
   return true;
@@ -471,27 +471,27 @@ bool check_max_pool2d_with_indices_args(
     bool ceil_mode,
     Tensor& out,
     Tensor& indices) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       indices.scalar_type() == ScalarType::Long,
       "Expected indices to have type of Long, but found %s",
       toString(indices.scalar_type()));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_UNLESS(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
       "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
 
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       kernel_size_is_valid(kernel_size, /*kernel_ndim=*/2));
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       stride_is_valid(kernel_size, /*kernel_ndim=*/2, /*allow_empty=*/true));
-  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(
+  ET_LOG_AND_RETURN_UNLESS(padding_is_valid(
       padding, kernel_size, /*kernel_ndim=*/2, /*enforce_half_kernel=*/true));
-  ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(kernel_size, /*kernel_ndim=*/2));
+  ET_LOG_AND_RETURN_UNLESS(dilation_is_valid(kernel_size, /*kernel_ndim=*/2));
 
   return true;
 }
@@ -526,8 +526,8 @@ bool check_masked_fill_args(
     Tensor& out) {
   (void)value;
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(mask.scalar_type() == ScalarType::Bool);
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(mask.scalar_type() == ScalarType::Bool);
 
   return true;
 }
@@ -539,14 +539,14 @@ bool check_constant_pad_args(
     Tensor& out) {
   (void)value;
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(in, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(in, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_rank(in, out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       pad.size() % 2 == 0, "Padding array must be a multiple of 2");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       pad.size() / 2 <= in.dim(), "Padding array contains too many elements");
 
   return true;
@@ -578,20 +578,20 @@ bool check_embedding_args(
     const Tensor& indices,
     const Tensor& out) {
   // Ensure weight is 2-D. It could be empty.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       weight.dim() == 2, "weight.dim() %zd != 2", weight.dim());
 
   // Ensure out is k+1 dimension tensor where k is the indices.dim()
   // out's first k dimension shall be same as indices, and the last dim shall
   // equal weight's last dim
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_LOG_MSG_AND_RETURN_UNLESS(
       out.dim() == indices.dim() + 1,
       "out.dim() %zd != indices.dim() %zd + 1",
       out.dim(),
       indices.dim());
 
   // Ensure dtype is the same for out and weight
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, out));
+  ET_LOG_AND_RETURN_UNLESS(tensors_have_same_dtype(weight, out));
 
   return true;
 }
@@ -618,7 +618,7 @@ bool check_alpha_type(
     const ScalarType common_type) {
   // Verify that alpha type is compatible with common type,
   // as used by ops such as add and sub.
-  ET_LOG_AND_RETURN_IF_FALSE(
+  ET_LOG_AND_RETURN_UNLESS(
       canCast(alpha_type, common_type) ||
       (common_type == ScalarType::Bool && isIntegralType(alpha_type, true)));
 
