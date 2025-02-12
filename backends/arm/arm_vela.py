@@ -51,6 +51,7 @@ def vela_compile(tosa_graph, args: List[str], shape_order=None):
         output_dir = os.path.join(tmpdir, "output")
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
+        args.append("--verbose-all")
         vela.main(" ".join(args).split(" "))
 
         if any("ethos-u85" in arg for arg in args) or any(
