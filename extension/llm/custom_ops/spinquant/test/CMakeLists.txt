@@ -26,5 +26,5 @@ set(_test_srcs
 
 et_cxx_test(
   extension_llm_custom_ops_spinquant_test SOURCES ${_test_srcs} EXTRA_LIBS
-  custom_ops
+  custom_ops dumb_fht
 )

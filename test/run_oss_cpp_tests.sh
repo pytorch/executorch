@@ -37,6 +37,7 @@ build_executorch() {
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
+    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -86,6 +87,7 @@ probe_additional_tests() {
   # CMakeLists.txt rules, that are buildable using build_and_run_test
   dirs=(
     examples/models/llama/tokenizer
+    extension/llm/custom_ops
     extension/llm/tokenizer
   )
 
