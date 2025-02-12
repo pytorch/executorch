@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -371,7 +370,7 @@ def test_conv2d_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.change_args("run_method_and_compare_outputs.0", qtol=1)
     pipeline.run()
 
 
