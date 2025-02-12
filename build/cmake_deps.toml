@@ -148,6 +148,27 @@ deps = [
   "executorch",
 ]
 
+[targets.extension_flat_tensor_schema]
+buck_targets = [
+  "//extension/flat_tensor/serialize:generated_headers",
+]
+filters = [
+  ".fbs$",
+]
+
+[targets.extension_flat_tensor]
+buck_targets = [
+  "//extension/flat_tensor:flat_tensor_data_map",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "extension_flat_tensor_schema",
+  "executorch_core",
+  "executorch",
+]
+
 [targets.extension_module]
 buck_targets = [
   "//extension/module:module",

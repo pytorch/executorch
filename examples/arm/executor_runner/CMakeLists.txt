@@ -382,8 +382,9 @@ target_link_options( arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.
 
 # ET headers and generated headers includes
 target_include_directories(
-  arm_executor_runner PRIVATE ${ET_INCLUDE_PATH} ${CMAKE_CURRENT_BINARY_DIR}
+  arm_executor_runner PRIVATE ${ET_INCLUDE_PATH} ${ET_DIR_PATH}/runtime/core/portable_type ${CMAKE_CURRENT_BINARY_DIR}
 )
+target_compile_definitions(arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
 
 if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)

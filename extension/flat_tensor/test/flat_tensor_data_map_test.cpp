@@ -8,8 +8,8 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
-#include <executorch/extension/flat_tensor/serialize/schema_generated.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -35,7 +35,7 @@ class FlatTensorDataMapTest : public ::testing::Test {
 
     // Load data map. The eager linear model is defined at:
     // //executorch/test/models/linear_model.py
-    const char* path = std::getenv("ET_MODULE_LINEAR_DATA");
+    const char* path = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
 
