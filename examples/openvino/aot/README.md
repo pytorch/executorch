@@ -16,7 +16,7 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
   Supported values:
   - `timm` (e.g., VGG16, ResNet50)
   - `torchvision` (e.g., resnet18, mobilenet_v2)
-  - `huggingface` (e.g., bert-base-uncased)
+  - `huggingface` (e.g., bert-base-uncased). NB: Quantization and validation is not supported yet.
 
 - **`--model`** (required):
   Name of the model to export.
@@ -36,10 +36,12 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
   The dataset length must be evenly divisible by the batch size.
 
 - **`--quantize`** (optional):
-  Enable model quantization: Default is False.
+  Enable model quantization. --dataset argument is requred for the quantization. `huggingface` suite  does not supported yet.
 
-- **`--quantize`** (optional):
-  Enable model validation. --dataset argument is requred for the validation.
+
+- **`--validate`** (optional):
+  Enable model validation. --dataset argument is requred for the validation. `huggingface` suite does not supported yet.
+
 
 - **`--dataset`** (optional):
   Path to the imagenet-like calibration dataset.

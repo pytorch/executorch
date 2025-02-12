@@ -42,10 +42,11 @@ main() {
           -B"${example_build_dir}" \
           $EXECUTORCH_ROOT/$example_dir
 
-<<<<<<< HEAD:examples/openvino/openvino_build_example.sh
     cmake --build "${example_build_dir}" -j$(nproc)
-=======
-    cmake --build "${example_build_dir}" -j5
+
+    # Switch back to the original directory
+    cd - > /dev/null
+
     # Print a success message
     echo "Build successfully completed."
 }

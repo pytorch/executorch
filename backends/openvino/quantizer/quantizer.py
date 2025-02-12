@@ -19,7 +19,7 @@ from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.ao.quantization.quantizer.quantizer import SharedQuantizationSpec
 
 import nncf
-import nncf.common.quantization as q
+import nncf.common.quantization as quantization
 import nncf.experimental.torch.fx as nncf_fx
 from nncf.common.graph.graph import NNCFGraph
 
@@ -50,7 +50,6 @@ class OpenVINOQuantizer(Quantizer):
         self,
         *,
         mode: Optional[QuantizationMode] = QuantizationMode.INT8_SYM,
-        ignored_scope: Optional[nncf.IgnoredScope] = None,
         **kwargs,
     ):
         """
@@ -59,26 +58,53 @@ class OpenVINOQuantizer(Quantizer):
             - INT8_MIXED: INT8 asymmetric quantization for activations, symmetric for weights.
             - INT8_TRANSFORMER: Optimized INT8 quantization for transformer-based models
             Default value is INT8_SYM.
-        :param ignored_scope: An ignored scope that defined the list of model control
-            flow graph nodes to be ignored during quantization.
         :param kwargs: Arguments to pass to the NNCF MinMaxQuantization algorithm.
         """
         if mode == QuantizationMode.INT8_SYM:
-            preset = q.structs.QuantizationPreset.PERFORMANCE
+            preset = quantization.structs.QuantizationPreset.PERFORMANCE
             model_type = None
         elif mode == QuantizationMode.INT8_MIXED:
-            preset = q.structs.QuantizationPreset.MIXED
+            preset = quantization.structs.QuantizationPreset.MIXED
             model_type = None
         else:
             preset = None
             model_type = nncf.parameters.ModelType.TRANSFORMER
         self._min_max_algo = nncf.quantization.algorithms.min_max.algorithm.MinMaxQuantization(
-            preset=preset, model_type=model_type, ignored_scope=ignored_scope, **kwargs
+            preset=preset, model_type=model_type, **kwargs
+        )
+
+    def set_ignored_scope(
+        self,
+        names: Optional[List[str]] = None,
+        patterns: Optional[List[str]] = None,
+        types: Optional[List[str]] = None,
+        subgraphs: Optional[List[Tuple[List[str], List[str]]]] = None,
+        validate: bool = True,
+    ) -> None:
+        """
+        Provides an option to specify portions of model to be excluded from compression.
+        The ignored scope defines model sub-graphs that should be excluded from the quantization process.
+
+        :param names: List of ignored node names.
+        :param patterns: List of regular expressions that define patterns for names of ignored nodes.
+        :param types: List of ignored operation types.
+        :param subgraphs: List of ignored subgraphs.
+        :param validate: If set to True, then a RuntimeError will be raised if any ignored scope does not match
+          in the model graph.
+        """
+        self._min_max_algo.set_ignored_scope(
+            nncf.IgnoredScope(
+                names=names or [],
+                patterns=patterns or [],
+                types=types or [],
+                subgraphs=subgraphs or [],
+                validate=validate,
+            )
         )
 
     def get_nncf_quantization_setup(
         self, model: torch.fx.GraphModule, nncf_graph: NNCFGraph
-    ) -> q.quantizer_setup.SingleConfigQuantizerSetup:
+    ) -> quantization.quantizer_setup.SingleConfigQuantizerSetup:
         self._min_max_algo._set_backend_entity(model)
         return self._min_max_algo.find_quantization_setup(model, nncf_graph)
 
@@ -134,7 +160,9 @@ class OpenVINOQuantizer(Quantizer):
 
     @staticmethod
     def _get_unified_scales_root_quantizer_id(
-        nncf_graph: NNCFGraph, quantizer_ids: List[int], quantizer_setup: q.quantizer_setup.SingleConfigQuantizerSetup
+        nncf_graph: NNCFGraph,
+        quantizer_ids: List[int],
+        quantizer_setup: quantization.quantizer_setup.SingleConfigQuantizerSetup,
     ) -> int:
         """
         Identifies the earliest quantizer node ID based on the corresponding `nncf_node.node_id`
@@ -160,7 +188,7 @@ class OpenVINOQuantizer(Quantizer):
     def _get_edge_or_node_and_annotation(
         graph: torch.fx.Graph,
         nncf_graph: NNCFGraph,
-        qp: q.quantizer_setup.QuantizationPointBase,
+        qp: quantization.quantizer_setup.QuantizationPointBase,
         node_vs_torch_annotation: Dict[torch.fx.Node, QuantizationAnnotation],
     ) -> Tuple[EdgeOrNode, QuantizationAnnotation]:
         """
@@ -181,7 +209,7 @@ class OpenVINOQuantizer(Quantizer):
 
     @staticmethod
     def _get_edge_or_node(
-        target_node: torch.fx.Node, qp: q.quantizer_setup.QuantizationPointBase, nncf_graph: NNCFGraph
+        target_node: torch.fx.Node, qp: quantization.quantizer_setup.QuantizationPointBase, nncf_graph: NNCFGraph
     ) -> EdgeOrNode:
         """
         Returns the edge or node based on the given target node and quantization point.
@@ -231,7 +259,7 @@ class OpenVINOQuantizer(Quantizer):
             annotation_to_update.input_qspec_map[edge_or_node[0]] = qspec
 
     @staticmethod
-    def _get_torch_ao_qspec_from_qp(qp: q.quantizer_setup.QuantizationPointBase) -> QuantizationSpec:
+    def _get_torch_ao_qspec_from_qp(qp: quantization.quantizer_setup.QuantizationPointBase) -> QuantizationSpec:
         """
         Retrieves the quantization configuration from the given quantization point and
         converts it into a QuantizationSpec.
@@ -247,13 +275,13 @@ class OpenVINOQuantizer(Quantizer):
         if qconfig.per_channel:
             torch_qscheme = (
                 torch.per_channel_symmetric
-                if qconfig.mode is q.structs.QuantizationScheme.SYMMETRIC
+                if qconfig.mode is quantization.structs.QuantizationScheme.SYMMETRIC
                 else torch.per_channel_affine
             )
         else:
             torch_qscheme = (
                 torch.per_tensor_symmetric
-                if qconfig.mode is q.structs.QuantizationScheme.SYMMETRIC
+                if qconfig.mode is quantization.structs.QuantizationScheme.SYMMETRIC
                 else torch.per_tensor_affine
             )
         if is_weight:
