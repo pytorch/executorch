@@ -883,4 +883,5 @@ endif()
 include(Test.cmake)
 
 # Print all summary
+#
 executorch_print_configuration_summary()
