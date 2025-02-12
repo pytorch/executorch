@@ -48,7 +48,9 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
 class LlamaRunner(ABC):
     def __init__(
         self,
+        *,
         tokenizer_path: str,
+        tokenizer_config_path: Optional[str] = None,
         max_seq_len: int,
         max_batch_size: int,
         use_kv_cache: bool,
@@ -59,20 +61,23 @@ class LlamaRunner(ABC):
         Constructor.
 
         Args:
-        tokenizer_path: path to tokenizer.model file.
-        max_seq_len: max length of the output sequence, after which the output will be clipped.
-        max_batch_size: max batch size.
-        use_kv_cache: whether to use a KV cache.
-        vocab_size: number of items in the vocab.
-        device: device to run the runner on.
+            tokenizer_path: path to tokenizer.model file.
+            max_seq_len: max length of the output sequence, after which the output will be clipped.
+            max_batch_size: max batch size.
+            use_kv_cache: whether to use a KV cache.
+            vocab_size: number of items in the vocab.
+            device: device to run the runner on.
         """
         self.max_seq_len = max_seq_len
         self.max_batch_size = max_batch_size
         self.use_kv_cache = use_kv_cache
-        self.tokenizer = get_tokenizer(tokenizer_path)
+        self.tokenizer = get_tokenizer(tokenizer_path, tokenizer_config_path)
         self.device = device
-        # For qwen anything above 151646 is "useless": https://github.com/QwenLM/Qwen2.5/issues/466#issuecomment-2146759706
-        # assert vocab_size == self.tokenizer.n_words
+        # For some models like qwen, mismatch is acceptable: https://github.com/QwenLM/Qwen2.5/issues/466#issuecomment-2146759706
+        if vocab_size != self.tokenizer.n_words:
+            print(
+                "Warning - given vocab_size in params is unequal to tokenizer vocab size."
+            )
 
     @abstractmethod
     def forward(
@@ -102,8 +107,7 @@ class LlamaRunner(ABC):
         )
 
         current_token = next_token(logits, temperature, top_p)
-        # print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
-        print(f"{self.tokenizer.decode([current_token])}", end="", flush=True)
+        print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
         while len(tokens) < max_seq_len:
@@ -133,8 +137,7 @@ class LlamaRunner(ABC):
             ):
                 break
 
-            # print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
-            print(f"{self.tokenizer.decode([current_token])}", end="", flush=True)
+            print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         print("\n")
 
         return tokens if echo else tokens[len(prompt_tokens) :]
@@ -200,9 +203,7 @@ class LlamaRunner(ABC):
             # prompt_tokens = self.tokenizer.encode(
             #     self._format_prompt(prompt), bos=True, eos=False
             # )
-            prompt_tokens = self.tokenizer.encode(
-                self._format_prompt(prompt)
-            ).ids
+            prompt_tokens = self.tokenizer.encode(self._format_prompt(prompt)).ids
             generated_tokens = self.generate(
                 prompt_tokens=pre_stop_token + prompt_tokens,
                 max_seq_len=max_seq_len,

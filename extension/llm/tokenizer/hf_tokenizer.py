@@ -3,6 +3,7 @@ import os
 import re
 from typing import Dict, List, Optional
 
+
 class HFTokenizer:
     def __init__(self):
         self.special_token_encoder: Dict[str, int] = {}

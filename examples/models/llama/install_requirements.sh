@@ -5,14 +5,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Install sentencepiece for llama tokenizer.
+# Install tiktoken for tokenizer.
+# Install tokenizers for hf .json tokenizer.
 # Install snakeviz for cProfile flamegraph
-# Install sentencepiece for llama tokenizer
-pip install snakeviz sentencepiece
-
-# Install lm-eval for Model Evaluation with lm-evalution-harness
-# Install tiktoken for tokenizer
-pip install lm_eval==0.4.5
-pip install tiktoken blobfile
+# Install lm-eval for Model Evaluation with lm-evalution-harness.
+pip install tiktoken sentencepiece tokenizers snakeviz lm_eval==0.4.5 blobfile
 
 # Call the install helper for further setup
 python examples/models/llama/install_requirement_helper.py
