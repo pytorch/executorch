@@ -1,9 +1,10 @@
 from typing import Dict
 
-from torchtune.training import FullModelHFCheckpointer
-# from torchtune.models import convert_weights
-from torchtune.models.convert_weights import get_mapped_key
 import torch
+
+from torchtune.models.convert_weights import get_mapped_key
+
+from torchtune.training import FullModelHFCheckpointer
 
 # Standard _FROM_META weight mapping of Meta weights to TorchTune + additional bias weight mappings.
 _QWEN_2_FROM_META = {
@@ -22,6 +23,7 @@ _QWEN_2_FROM_META = {
     "layers.{}.feed_forward.w2.weight": "layers.{}.mlp.w2.weight",
     "layers.{}.feed_forward.w3.weight": "layers.{}.mlp.w3.weight",
 }
+
 
 def qwen_2_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
     """
@@ -43,32 +45,26 @@ def qwen_2_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
         converted_state_dict[new_key] = value
 
     # 0.5b and 1.5b models share the same weights for tok_embeddings and output embeddings, see https://github.com/QwenLM/Qwen2.5/issues/733.
-    converted_state_dict["output.weight"] = converted_state_dict["tok_embeddings.weight"]
+    converted_state_dict["output.weight"] = converted_state_dict[
+        "tok_embeddings.weight"
+    ]
 
     return converted_state_dict
 
+
 # TODO: no need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
 checkpointer = FullModelHFCheckpointer(
-    checkpoint_dir='/home/jackzhxng/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323/',
-    checkpoint_files=['model.safetensors'],
-    output_dir='.' ,
-    model_type='QWEN2'
+    checkpoint_dir="/home/jackzhxng/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323/",
+    checkpoint_files=["model.safetensors"],
+    output_dir=".",
+    model_type="QWEN2",
 )
 
 print("Loading checkpoint")
 sd = checkpointer.load_checkpoint()
 
-print("HF weights:")
-for weight in sd["model"].keys():
-    print(weight)
-print()
-
-# Convert from TorchTune to Meta (PyTorch native)
-sd = qwen_2_tune_to_meta(sd['model'])
-
-print("Meta weights:")
-for weight in sd.keys():
-    print(weight)
+# Convert from TorchTune to Meta (PyTorch native).
+sd = qwen_2_tune_to_meta(sd["model"])
 
 print("Saving checkpoint")
-torch.save(sd, "/home/jackzhxng/models/qwen2_5-1_5b.pth") 
+torch.save(sd, "/home/jackzhxng/models/qwen2_5-1_5b.pth")

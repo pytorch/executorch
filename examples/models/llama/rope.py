@@ -233,6 +233,7 @@ def qwen_apply_rotary_emb(
     """
     Apply Qwen2-style RoPE to query and key tensors.
     """
+
     def rotate_half(x):
         """Rotates half the hidden dims of the input."""
         x1 = x[..., : x.shape[-1] // 2]
