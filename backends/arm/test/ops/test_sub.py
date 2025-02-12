@@ -1,155 +1,219 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
 from typing import Tuple
 
-import pytest
-
 import torch
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
+
+aten_op = "torch.ops.aten.sub.Tensor"
+exir_op = "executorch_exir_dialects_edge__ops_aten_sub_Tensor"
+
+# Single-input subtraction (x - x)
+sub_test_data = {
+    "ones_1D_5": (torch.ones(5),),
+    "ones_1D_50": (torch.ones(50),),
+    "rand_1D_10": (torch.rand(10),),
+    "rand_2D_5x5": (torch.rand(5, 5),),
+    "rand_3D_5x5x5": (torch.rand(5, 5, 5),),
+    "rand_4D_2x3x4x5": (torch.rand(2, 3, 4, 5),),
+    "zeros": (torch.zeros(10),),
+}
+
+fvp_sub_xfails = {"rand_4D_2x3x4x5": "MLETORCH-517 : Multiple batches not supported"}
+
+# Two-input subtraction (x - y)
+sub2_test_data = {
+    "rand_2D_4x4": (torch.rand(4, 4), torch.rand(4, 4)),
+    "rand_3D_4x4x4": (torch.rand(4, 2, 2), torch.rand(4, 2, 2)),
+    "rand_4D_2x2x4x4": (torch.rand(2, 2, 4, 4), torch.rand(2, 2, 4, 4)),
+    "zeros": (torch.rand(4, 4), torch.zeros(4, 4)),
+}
+fvp_sub2_xfails = {"rand_4D_2x2x4x4": "MLETORCH-517 : Multiple batches not supported"}
 
 
-class TestSub(unittest.TestCase):
-    class Sub(torch.nn.Module):
-        test_parameters = [
-            (torch.ones(5),),
-            (3 * torch.ones(8),),
-            (10 * torch.randn(8),),
-        ]
+class Sub(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return x - x
 
-        def forward(self, x):
-            return x - x
 
-    class Sub2(torch.nn.Module):
-        test_parameters = [
-            (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
-        ]
+class Sub2(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return x - y
 
-        def forward(self, x, y):
-            return x - y
 
-    def _test_sub_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["torch.ops.aten.sub.Tensor"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+input_t1 = Tuple[torch.Tensor]  # Input x
+input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
-    def _test_sub_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
 
-    def _test_sub_ethosu_BI_pipeline(
-        self,
-        compile_spec: list[CompileSpec],
-        module: torch.nn.Module,
-        test_data: Tuple[torch.Tensor],
-    ):
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+@common.parametrize("test_data", sub_test_data)
+def test_sub_tosa_MI(test_data):
+    """Test Subtraction (TOSA MI)"""
+    pipeline = TosaPipelineMI[input_t1](
+        Sub(),
+        test_data,
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
 
-    @parameterized.expand(Sub.test_parameters)
-    def test_sub_tosa_MI(self, test_data: torch.Tensor):
-        test_data = (test_data,)
-        self._test_sub_tosa_MI_pipeline(self.Sub(), test_data)
 
-    @parameterized.expand(Sub.test_parameters)
-    def test_sub_tosa_BI(self, test_data: torch.Tensor):
-        test_data = (test_data,)
-        self._test_sub_tosa_BI_pipeline(self.Sub(), test_data)
+@common.parametrize("test_data", sub2_test_data)
+def test_sub_2_tosa_MI(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction (TOSA MI)"""
+    pipeline = TosaPipelineMI[input_t2](
+        Sub2(),
+        test_data,
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
 
-    @parameterized.expand(Sub.test_parameters)
-    @pytest.mark.corstone_fvp
-    def test_sub_u55_BI(self, test_data: torch.Tensor):
-        test_data = (test_data,)
-        self._test_sub_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Sub(), test_data
-        )
 
-    @parameterized.expand(Sub.test_parameters)
-    @pytest.mark.corstone_fvp
-    def test_sub_u85_BI(self, test_data: torch.Tensor):
-        test_data = (test_data,)
-        self._test_sub_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Sub(), test_data
-        )
+@common.parametrize("test_data", sub_test_data)
+def test_sub_tosa_BI(test_data):
+    """Test Subtraction (TOSA BI)"""
+    pipeline = TosaPipelineBI[input_t1](
+        Sub(),
+        test_data,
+        aten_op,
+        exir_op,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
 
-    @parameterized.expand(Sub2.test_parameters)
-    def test_sub2_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
-        self._test_sub_tosa_MI_pipeline(self.Sub2(), test_data)
 
-    @parameterized.expand(Sub2.test_parameters)
-    def test_sub2_tosa_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
-        self._test_sub_tosa_BI_pipeline(self.Sub2(), test_data)
+@common.parametrize("test_data", sub2_test_data)
+def test_sub_2_tosa_BI(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction (TOSA BI)"""
+    pipeline = TosaPipelineBI[input_t2](
+        Sub2(),
+        test_data,
+        aten_op,
+        exir_op,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
 
-    @parameterized.expand(Sub2.test_parameters)
-    @pytest.mark.corstone_fvp
-    def test_sub2_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
-        self._test_sub_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Sub2(), test_data
-        )
 
-    @parameterized.expand(Sub2.test_parameters)
-    @pytest.mark.corstone_fvp
-    def test_sub2_u85_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
-        self._test_sub_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Sub2(), test_data
-        )
+@common.parametrize("test_data", sub_test_data)
+def test_sub_u55_BI(test_data):
+    """Test Subtraction on Ethos-U55"""
+    pipeline = EthosU55PipelineBI[input_t1](
+        Sub(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub2_test_data)
+def test_sub_2_u55_BI(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction on Ethos-U55"""
+    pipeline = EthosU55PipelineBI[input_t2](
+        Sub2(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_test_data)
+def test_sub_u85_BI(test_data):
+    """Test Subtraction on Ethos-U85 (Quantized Mode)"""
+    pipeline = EthosU85PipelineBI[input_t1](
+        Sub(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub2_test_data)
+def test_sub_2_u85_BI(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction on Ethos-U85"""
+    pipeline = EthosU85PipelineBI[input_t2](
+        Sub2(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_test_data, fvp_sub_xfails)
+@common.SkipIfNoCorstone300
+def test_sub_u55_BI_on_fvp(test_data):
+    """Test Subtraction on Ethos-U55 (FVP Mode)"""
+    pipeline = EthosU55PipelineBI[input_t1](
+        Sub(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub2_test_data, fvp_sub2_xfails)
+@common.SkipIfNoCorstone300
+def test_sub_2_u55_BI_on_fvp(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction on Ethos-U55 (FVP Mode)"""
+    pipeline = EthosU55PipelineBI[input_t2](
+        Sub2(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_test_data, fvp_sub_xfails)
+@common.SkipIfNoCorstone320
+def test_sub_u85_BI_on_fvp(test_data):
+    """Test Subtraction on Ethos-U85 (FVP Mode)"""
+    pipeline = EthosU85PipelineBI[input_t1](
+        Sub(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub2_test_data, fvp_sub2_xfails)
+@common.SkipIfNoCorstone320
+def test_sub_2_u85_BI_on_fvp(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction on Ethos-U85 (FVP Mode)"""
+    pipeline = EthosU85PipelineBI[input_t2](
+        Sub2(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
