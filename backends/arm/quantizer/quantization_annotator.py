@@ -125,6 +125,7 @@ def _match_pattern(
 
 
 _one_to_one = [
+    torch.ops.aten.abs.default,
     torch.ops.aten.exp.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,

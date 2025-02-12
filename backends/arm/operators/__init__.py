@@ -7,6 +7,7 @@
 
 from . import (  # noqa
     node_visitor,
+    op_abs,
     op_add,
     op_avg_pool2d,
     op_bmm,
