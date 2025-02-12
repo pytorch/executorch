@@ -140,7 +140,6 @@ Tensor& opt_add_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    ScalarType out_type = out.scalar_type();
     ET_SWITCH_REALB_TYPES(out_type, ctx, "add.out", CTYPE, [&]() {
       CTYPE alpha_val;
       ET_KERNEL_CHECK_MSG(
