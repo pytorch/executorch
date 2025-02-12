@@ -199,7 +199,6 @@ Tensor& handle_last_dim_broadcast_elementwise(
     const Tensor& b,
     Tensor& out,
     const ElementwiseOptimizedPath selected_optimized_path) {
-  ScalarType out_type = out.scalar_type();
   const Tensor* lhs;
   const Tensor* rhs;
   if (selected_optimized_path ==
