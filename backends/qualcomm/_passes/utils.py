@@ -60,18 +60,19 @@ def get_passes_dependency_for_capture_program():
         AnnotateAndQuantScalar,
         AnnotateDecomposed,
         AnnotateQuantAttrs,
+        ConstantI64toI32,
         ConvertBmmToMatmul,
         ConvertInterpolateWithUpsample2D,
         ConvertPReLU,
         ConvertToLinear,
         ExpandBroadcastTensorShape,
         FoldQDQ,
-        I64toI32,
         LayoutTransform,
         RecomposePixelUnshuffle,
         RecomposeRmsNorm,
         RemoveRedundancy,
         ReplaceIndexPutInput,
+        TensorI64toI32,
     )
 
     return {
@@ -81,7 +82,8 @@ def get_passes_dependency_for_capture_program():
         ConvertPReLU: [RemoveRedundancy],
         ConvertBmmToMatmul: [ConvertToLinear],
         ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
-        I64toI32: [RemoveRedundancy],
+        ConstantI64toI32: [RemoveRedundancy],
+        TensorI64toI32: [RemoveRedundancy],
         AnnotateQuantAttrs: [
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
