@@ -175,6 +175,11 @@ int main(int argc, char** argv) {
     // iterate each raw input tensor file to read values
     std::ifstream input_list(input_list_path);
     if (input_list.is_open()) {
+      std::string inputs_dir = "";
+      size_t last_pos = std::string(input_list_path).rfind('/');
+      if (last_pos != std::string::npos) {
+          inputs_dir = std::string(input_list_path).substr(0, last_pos+1);
+      }
       size_t num_inputs = method->inputs_size();
       std::string file_path;
       while (std::getline(input_list, file_path)) {
@@ -188,7 +193,12 @@ int main(int argc, char** argv) {
                 method_meta.input_tensor_meta(input_index);
             auto input_data_ptr = inputs[input_index].toTensor().data_ptr<char>();
 
-            std::ifstream fin(input_files[input_index], std::ios::binary);
+            std::ifstream fin(inputs_dir+input_files[input_index], std::ios::binary);
+            if (!(fin.good())) {
+              ET_CHECK_MSG(false,
+                  "Failed to read input tensor file: %s",
+                  inputs_dir+input_files[input_index]);
+            }
             fin.seekg(0, fin.end);
             size_t file_size = fin.tellg();
 
