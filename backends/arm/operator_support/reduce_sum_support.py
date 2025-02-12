@@ -23,7 +23,7 @@ class SumSupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
-    def is_node_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
+    def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
         if not (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset):
             return True
 
