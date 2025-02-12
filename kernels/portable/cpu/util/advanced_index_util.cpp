@@ -51,7 +51,7 @@ bool check_mask_indices(const Tensor& in, TensorOptList indices) {
             index.dim() > 0, "Zero-dimensional mask index not allowed");
         for (auto j = 0; j < index.dim(); j++) {
           if (index.size(j) != in.size(in_i + j)) {
-#ifdef ET_LOG_ENABLED
+#if ET_LOG_ENABLED
             auto mask_shape = executorch::runtime::tensor_shape_to_c_string(
                 executorch::runtime::Span<const Tensor::SizesType>(
                     index.sizes().data(), index.sizes().size()));
