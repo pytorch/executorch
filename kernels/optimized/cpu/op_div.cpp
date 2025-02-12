@@ -122,8 +122,7 @@ Tensor& opt_div_out(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     // Reason for using alpha is becasuse handle_broadcast_elementwise
     // is used for add and sub as well:
-    static constexpr const char op_name[] = "div.out";
-    ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "div.out", CTYPE, [&]() {
       if (selected_optimized_path ==
               ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
           selected_optimized_path ==
