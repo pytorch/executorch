@@ -115,7 +115,6 @@ Tensor& opt_add_sub_out_impl(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     // Cannot apply the trick of -alpha here because alpha is Scalar without
     // support for - operator. At least not right now.
-    ScalarType out_type = out.scalar_type();
     ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
       CTYPE alpha_val;
       ET_KERNEL_CHECK_MSG(
