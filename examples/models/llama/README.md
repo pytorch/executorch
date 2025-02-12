@@ -198,6 +198,7 @@ python -m examples.models.llama.export_llama \
    --preq_mode 8da4w_output_8da8w \
    --preq_group_size 32 \
    --max_seq_length 2048 \
+   --max_context_length 2048 \
    --output_name "llama3_2.pte" \
    -kv \
    -d fp32 \
@@ -229,6 +230,7 @@ python -m examples.models.llama.export_llama \
    --xnnpack-extended-ops \
    -d fp32 \
    --max_seq_length 2048 \
+   --max_context_length 2048 \
    --output_name "llama3_2.pte" \
    --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 ```
@@ -396,6 +398,7 @@ python -m examples.models.llama.eval_llama \
 	-kv \
 	-d <checkpoint dtype> \
 	--max_seq_len <max sequence length> \
+	--max_context_len <max context length> \
 	--limit <number of samples>
 ```
 
@@ -410,6 +413,7 @@ python -m examples.models.llama.eval_llama \
 	--tasks mmlu \
 	--num_fewshot 5 \
 	--max_seq_len <max sequence length>
+	--max_context_len <max context length>
 ```
 
 See [Llama utils page](./UTILS.md) page for more advanced use-cases such as fine-tuning and running smaller models for educational purposes, and quick iteration and verification.
