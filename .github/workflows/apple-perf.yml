@@ -298,6 +298,23 @@ jobs:
                 --coreml-compute-units cpu_and_ne \
                 --output_name="${OUT_ET_MODEL_NAME}.pte"
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            elif [[ ${{ matrix.config }} == "llama3_mps_8da4w" ]]; then
+              # MPS 8da4w
+              DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+              ${CONDA_RUN} python -m examples.models.llama.export_llama \
+                --model "llama3_2" \
+                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
+                --params "${DOWNLOADED_PATH}/params.json" \
+                -kv \
+                --use_sdpa_with_kv_cache \
+                --disable_dynamic_shape \
+                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+                --mps \
+                -qmode 8da4w \
+                --group_size 32 \
+                --embedding-quantize 4,32 \
+                --output_name="${OUT_ET_MODEL_NAME}.pte"
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
             else
               # By default, test with the Hugging Face model and the xnnpack recipe
               DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model")
