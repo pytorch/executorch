@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from logging import logger
+
 from pathlib import Path
 
 from typing import cast, Dict, List, Literal, Optional, Tuple
@@ -18,6 +18,7 @@ from typing import cast, Dict, List, Literal, Optional, Tuple
 import numpy as np
 import torch
 
+logger = logging.getLogger(__name__)
 try:
     import tosa_reference_model
 except ImportError:
