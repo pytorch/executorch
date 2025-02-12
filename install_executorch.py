@@ -165,6 +165,8 @@ def main(args):
                 if pybind_arg == "training":
                     CMAKE_ARGS += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
                     os.environ["EXECUTORCH_BUILD_TRAINING"] = "ON"
+                elif pybind_arg == "mps":
+                    CMAKE_ARGS += " -DEXECUTORCH_BUILD_MPS=ON"
                 else:
                     CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
                 EXECUTORCH_BUILD_PYBIND = "ON"

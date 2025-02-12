@@ -596,7 +596,7 @@ endif()
 # any backends.
 #
 add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE executorch_core)
+target_link_libraries(executorch PUBLIC executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
@@ -614,6 +614,8 @@ if(BUILD_EXECUTORCH_PORTABLE_OPS)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  # find pytorch lib here to make it available to all sub-directories
+  find_package_torch_headers()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
@@ -750,7 +752,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
-  find_package(Torch CONFIG REQUIRED)
+  if(NOT TARGET torch)
+    find_package(Torch CONFIG REQUIRED)
+  endif()
   find_library(
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )
