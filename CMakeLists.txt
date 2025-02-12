@@ -603,13 +603,6 @@ target_compile_options(executorch PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(executorch)
 
 #
-# find pytorch lib here to make it available to all sub-directories, trying to
-# call find_package(Torch) multiple times doesn't work because it brings in MKL
-# which is defined once globally
-#
-find_package(Torch CONFIG REQUIRED)
-
-#
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
 # see kernels/portable/CMakeLists.txt.
 #
@@ -756,7 +749,8 @@ if(EXECUTORCH_BUILD_PYBIND)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
 
-  # to allow pybind to take at::Tensor as input/output
+  # find pytorch lib, to allow pybind to take at::Tensor as input/output
+  find_package(Torch CONFIG REQUIRED)
   find_library(
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )
