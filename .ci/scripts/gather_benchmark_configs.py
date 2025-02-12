@@ -43,6 +43,7 @@ BENCHMARK_CONFIGS = {
         "coreml_fp16",
         "mps",
         "llama3_coreml_ane",
+        "llama3_mps_8da4w",
     ],
 }
 
