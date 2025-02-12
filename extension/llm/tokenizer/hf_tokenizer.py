@@ -15,6 +15,7 @@ class HuggingFaceTokenizer:
     """
     Tokenizing and encoding/decoding text using the Hugging face tokenizer.
     """
+
     def __init__(self, model_path: str, config_path: Optional[str] = None):
         """
         Initializes the Tokenizer with a tokenizer.json from HuggingFace.
@@ -30,7 +31,11 @@ class HuggingFaceTokenizer:
         if config_path:
             with open(config_path) as f:
                 tokenizer_config = json.load(f)
-                self.bos_id = self.model.token_to_id(tokenizer_config["bos_token"])if tokenizer_config["bos_token"] else None
+                self.bos_id = (
+                    self.model.token_to_id(tokenizer_config["bos_token"])
+                    if tokenizer_config["bos_token"]
+                    else None
+                )
                 self.eos_id = self.model.token_to_id(tokenizer_config["eos_token"])
         else:  # Fallback guess.
             self.bos_id = self.model.token_to_id("<|begin_of_text|>")
@@ -49,4 +54,3 @@ class HuggingFaceTokenizer:
 
     def decode_token(self, t: int) -> str:
         return self.model.decode([t])
-

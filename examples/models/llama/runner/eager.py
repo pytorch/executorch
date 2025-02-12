@@ -28,7 +28,7 @@ class EagerLlamaRunner(LlamaRunner):
             params = json.loads(f.read())
         super().__init__(
             tokenizer_path=args.tokenizer_path,
-            tokenizer_config_path=args.tokenizer_config_path
+            tokenizer_config_path=args.tokenizer_config_path,
             max_seq_len=args.max_seq_length,
             max_batch_size=1,
             use_kv_cache=args.use_kv_cache,
@@ -73,12 +73,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Have multi-turn chat with the model",
-    )p
+    )
 
     parser.add_argument(
         "--tokenizer_config_path",
         type=str,
-        deafult=None,
+        default=None,
     )
 
     return parser
