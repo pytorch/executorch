@@ -173,7 +173,6 @@ python -m examples.models.llama.export_llama \
   --params "${LLAMA_PARAMS:?}" \
   -kv \
   --use_sdpa_with_kv_cache \
-  -X \
   -d bf16 \
   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
   --output_name="llama3_2.pte"

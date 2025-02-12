@@ -14,7 +14,8 @@ endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type)
+add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 # Third-party folder and Ethos-U driver inclued
 set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
