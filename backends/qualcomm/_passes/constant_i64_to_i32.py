@@ -12,9 +12,10 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch._subclasses.fake_tensor import FakeTensor
 
 
-class I64toI32(ExportPass):
+class ConstantI64toI32(ExportPass):
     """
     Cast unsupported int64 datatype into int32.
+    This will only be applied on constant nodes such as weights.
     """
 
     def __init__(
@@ -22,7 +23,7 @@ class I64toI32(ExportPass):
         edge_program: torch.export.ExportedProgram,
         skip_node: FrozenSet[str] = frozenset(),
     ):
-        super(I64toI32, self).__init__()
+        super(ConstantI64toI32, self).__init__()
         self.edge_program = edge_program
         self.skip_node = skip_node
         # pyre-ignore[4]
