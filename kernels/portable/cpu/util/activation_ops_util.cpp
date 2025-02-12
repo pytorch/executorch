@@ -54,12 +54,12 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
         auto in_shape_str = executorch::runtime::tensor_shape_to_c_string(
             executorch::runtime::Span<const Tensor::SizesType>(
                 in.sizes().data(), in.sizes().size()));
-#endif // ET_LOG_ENABLED
         ET_LOG(
             Error,
             "output tensor must have the same size as the input tensor in all dimensions except for the specified dimension. (output shape: %s input shape: %s)",
             out_shape_str.data(),
             in_shape_str.data());
+#endif // ET_LOG_ENABLED
         return false;
       }
     }

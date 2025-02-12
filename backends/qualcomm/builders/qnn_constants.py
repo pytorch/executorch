@@ -159,6 +159,11 @@ class OpElementWiseNeuron:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseNot:
+    op_name: str = "ElementWiseNot"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWisePower:
     op_name: str = "ElementWisePower"
 
@@ -171,6 +176,11 @@ class OpElementWiseRsqrt:
 @dataclass(init=False, frozen=True)
 class OpElementWiseSin:
     op_name: str = "ElementWiseSin"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseSelect:
+    op_name = "ElementWiseSelect"
 
 
 @dataclass(init=False, frozen=True)
