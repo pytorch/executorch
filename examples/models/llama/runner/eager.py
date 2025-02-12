@@ -79,6 +79,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--tokenizer_config_path",
         type=str,
         default=None,
+        help="Path to an accompanying tokenizer_config.json, which provides metadata for the main tokenizer.json",
     )
 
     return parser
