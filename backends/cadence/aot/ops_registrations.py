@@ -576,7 +576,7 @@ def quantized_relu_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
-    return input.new_empty(input.size(), dtype=torch.uint8)
+    return input.new_empty(input.size(), dtype=input.dtype)
 
 
 @register_fake("cadence::fully_connected")

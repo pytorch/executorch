@@ -214,7 +214,7 @@ ET_NODISCARD Error get_broadcast_target_size(
     const size_t out_sizes_len,
     size_t* out_dim) {
   if ET_UNLIKELY (!tensors_are_broadcastable_between(a_size, b_size)) {
-#ifdef ET_LOG_ENABLED
+#if ET_LOG_ENABLED
     executorch::runtime::Span<const Tensor::SizesType> a_size_span(
         a_size.data(), a_size.size());
     executorch::runtime::Span<const Tensor::SizesType> b_size_span(
