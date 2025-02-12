@@ -614,6 +614,8 @@ if(BUILD_EXECUTORCH_PORTABLE_OPS)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  # find pytorch lib here to make it available to all sub-directories
+  find_package_torch_headers()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
