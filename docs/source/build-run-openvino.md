@@ -77,10 +77,10 @@ cd openvino
 git submodule update --init --recursive
 mkdir build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON -DENABLE_WHEEL=ON
+cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
 make -j<N>
 
-cd ../..
+cd ..
 cmake --install build --prefix <your_preferred_install_location>
 cd <your_preferred_install_location>
 source setupvars.sh
