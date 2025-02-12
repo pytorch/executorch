@@ -15,20 +15,9 @@ from executorch.extension.llm.tokenizer.tokenizer import (
 
 def get_tokenizer(tokenizer_path: str, tokenizer_config_path: Optional[str] = None):
     if tokenizer_path.endswith(".json"):
-        from tokenizers import Tokenizer
+        from executorch.extension.llm.tokenizer.hf_tokenizer import HuggingFaceTokenizer
 
-        tokenizer = Tokenizer.from_file(tokenizer_path)
-
-        # Keep in line with internal tokenizer apis.
-        tokenizer.n_words = tokenizer.get_vocab_size()
-        tokenizer.decode_token = lambda token: tokenizer.decode([token])
-        original_encode = tokenizer.encode
-        tokenizer.encode = lambda prompt, **kwargs: original_encode(prompt).ids
-
-        if tokenizer_config_path:
-            with open(tokenizer_config_path) as f:
-                tokenizer_config = json.load(f)
-                tokenizer.eos_id = tokenizer.token_to_id(tokenizer_config["eos_token"])
+        tokenizer = HuggingFaceTokenizer(tokenizer_path, tokenizer_config_path)
     else:
         try:
             tokenizer = SentencePieceTokenizer(model_path=str(tokenizer_path))
