@@ -60,6 +60,7 @@ def define_common_targets():
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             exported_deps = [
+                ":tensor_dimension_limit",
                 "//executorch/runtime/core:core",
             ] + [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
