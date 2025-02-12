@@ -8,7 +8,6 @@ import json
 from typing import Optional
 
 from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tiktoken
-from executorch.extension.llm.tokenizer.hf_tokenizer import HFTokenizer
 from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
@@ -25,6 +24,8 @@ def get_tokenizer(tokenizer_path: str, tokenizer_config_path: Optional[str] = No
         tokenizer.n_words = tokenizer.get_vocab_size()
         # Keep in line with internal tokenizer apis.
         tokenizer.decode_token = lambda token: tokenizer.decode([token])
+        original_encode = tokenizer.encode
+        tokenizer.encode = lambda prompt, **kwargs: original_encode(prompt).ids
 
         if tokenizer_config_path:
             with open(tokenizer_config_path) as f:
