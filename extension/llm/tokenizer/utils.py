@@ -17,12 +17,10 @@ def get_tokenizer(tokenizer_path: str, tokenizer_config_path: Optional[str] = No
     if tokenizer_path.endswith(".json"):
         from tokenizers import Tokenizer
 
-        # Load the tokenizer from the tokenizer.json file
         tokenizer = Tokenizer.from_file(tokenizer_path)
 
-        # export_llama expects n_words attribute.
-        tokenizer.n_words = tokenizer.get_vocab_size()
         # Keep in line with internal tokenizer apis.
+        tokenizer.n_words = tokenizer.get_vocab_size()
         tokenizer.decode_token = lambda token: tokenizer.decode([token])
         original_encode = tokenizer.encode
         tokenizer.encode = lambda prompt, **kwargs: original_encode(prompt).ids
