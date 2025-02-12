@@ -71,4 +71,8 @@ if __name__ == "__main__":
     # Discover all existing op tests in "ops" folder
     suite = loader.discover(test_params['test_type'], pattern=test_params['pattern'])
     # Start running tests
-    unittest.TextTestRunner().run(suite)
+    result = unittest.TextTestRunner().run(suite)
+    if result.wasSuccessful():
+        print("OpenVINO backend tests completed successfully")
+    else:
+        print("OpenVINO backend tests completed with failures")

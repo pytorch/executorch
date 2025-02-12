@@ -97,13 +97,12 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     env=env,
-                    cwd=tmp_dir,
                 )
 
                 stdout_str = proc.stdout.decode('utf-8')
 
                 # Check if execution completed successfully
-                self.assertIn("Model executed successfully.", stdout_str)
+                self.assertTrue(proc.returncode == 0)
 
                 # Read the outputs from the temporary files
                 output_dir = f"{tmp_dir}/outputs"
