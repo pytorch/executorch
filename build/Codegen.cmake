@@ -146,7 +146,9 @@ function(gen_custom_ops_aot_lib)
     ${_out_dir}/CustomOpsNativeFunctions.h "${GEN_KERNEL_SOURCES}"
   )
   # Find `Torch`.
-  find_package(Torch REQUIRED)
+  if(NOT TARGET torch)
+    find_package(Torch REQUIRED)
+  endif()
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
