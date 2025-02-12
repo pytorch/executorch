@@ -8,9 +8,9 @@
 
 #include <executorch/extension/flat_tensor/serialize/serialize.h>
 
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/extension/flat_tensor/serialize/scalar_type_generated.h>
-#include <executorch/extension/flat_tensor/serialize/schema_generated.h>
 
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/core/result.h>
