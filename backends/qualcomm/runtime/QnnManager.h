@@ -23,6 +23,7 @@ namespace backends {
 namespace qnn {
 class QnnManager {
  public:
+  void print_profile();
   // Construct QnnManager
   explicit QnnManager(
       const QnnExecuTorchOptions* options,
@@ -147,6 +148,12 @@ class QnnManager {
           {Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_16,
            executorch::aten::ScalarType::UInt16},
   };
+  std::chrono::high_resolution_clock::time_point qnn_backend_cache_ptr_configure_start;
+  std::chrono::high_resolution_clock::time_point qnn_backend_ptr_configure_start;
+  std::chrono::high_resolution_clock::time_point qnn_device_ptr_configure_start;
+  std::chrono::high_resolution_clock::time_point qnn_context_ptr_configure_start;
+  std::chrono::high_resolution_clock::time_point qnn_graph_ptr_configure_start;
+  std::chrono::high_resolution_clock::time_point qnn_graph_ptr_configure_end;
 };
 } // namespace qnn
 } // namespace backends

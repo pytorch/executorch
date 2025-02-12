@@ -19,6 +19,8 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <chrono>
+#include <iostream>
 
 namespace executorch {
 namespace backends {
@@ -96,6 +98,15 @@ QnnManager::QnnManager(
   }
   qnn_loaded_backend_ = QnnImplementation(library_path);
   backend_params_ptr_ = std::make_unique<BackendConfigParameters>();
+}
+
+void QnnManager::print_profile() {
+  std::cout << "=================QnnManager.cpp Profiling Time=================" << std::endl;
+  std::cout << "backend_params_ptr_->qnn_backend_cache_ptr_->Configure(): " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_backend_ptr_configure_start - qnn_backend_cache_ptr_configure_start).count() << " ms" << std::endl;
+  std::cout << "backend_params_ptr_->qnn_backend_ptr_->Configure(): " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_device_ptr_configure_start - qnn_backend_ptr_configure_start).count() << " ms" << std::endl;
+  std::cout << "backend_params_ptr_->qnn_device_ptr_->Configure(): " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_context_ptr_configure_start - qnn_device_ptr_configure_start).count() << " ms" << std::endl;
+  std::cout << "backend_params_ptr_->qnn_context_ptr_->Configure(): " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_graph_ptr_configure_start - qnn_context_ptr_configure_start).count() << " ms" << std::endl;
+  std::cout << "backend_params_ptr_->qnn_graph_ptr_->Configure(): " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_graph_ptr_configure_end - qnn_graph_ptr_configure_start).count() << " ms" << std::endl;
 }
 
 Error QnnManager::LoadQnnLibrary() {
@@ -291,22 +302,27 @@ Error QnnManager::Init() {
         backend_params_ptr_ != nullptr,
         Internal,
         "Failed to load Qnn backend.");
+    qnn_backend_cache_ptr_configure_start = std::chrono::high_resolution_clock::now();
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
         Internal,
         "Fail to configure Qnn backend cache");
+    qnn_backend_ptr_configure_start = std::chrono::high_resolution_clock::now();
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
+    qnn_device_ptr_configure_start = std::chrono::high_resolution_clock::now();
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_device_ptr_->Configure() == Error::Ok,
         Internal,
         "Fail to configure Qnn device");
+    qnn_context_ptr_configure_start = std::chrono::high_resolution_clock::now();
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_context_ptr_->Configure() == Error::Ok,
         Internal,
         "Fail to configure Qnn context");
+    qnn_graph_ptr_configure_start = std::chrono::high_resolution_clock::now();
     for (const std::string& graph_name :
          backend_params_ptr_->qnn_context_ptr_->GetGraphNames()) {
       ET_CHECK_OR_RETURN_ERROR(
@@ -315,6 +331,7 @@ Error QnnManager::Init() {
           Internal,
           "Fail to configure Qnn graph");
     }
+    qnn_graph_ptr_configure_end = std::chrono::high_resolution_clock::now();
 
     backend_params_ptr_->backend_init_state_ =
         BackendInitializeState::INITIALIZED;
@@ -444,6 +461,7 @@ Error QnnManager::ProfileExecuteData(
 }
 
 void QnnManager::Destroy() {
+  print_profile();
   QNN_EXECUTORCH_LOG_INFO("Destroy Qnn backend parameters");
   backend_params_ptr_.reset(new BackendConfigParameters());
   logger_.reset();

@@ -11,6 +11,8 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
+#include <chrono>
+#include <iostream>
 
 namespace executorch {
 namespace backends {
@@ -27,12 +29,22 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 
+void QnnExecuTorchBackend::print_profile() const {
+  std::cout << "=================QnnExecuTorchBackend.cpp Profiling Time=================" << std::endl;
+  std::cout << "QnnExecuTorchBackend::init(): " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_executorch_backend_init_end - qnn_executorch_backend_init_start).count() << " ms" << std::endl;
+  std::cout << "Create QNN Manager: " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_manager_create_end - qnn_manager_create_start).count() << " ms" << std::endl;
+  std::cout << "qnn_manager->Init(): " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_manager_init_end - qnn_manager_init_start).count() << " ms" << std::endl;
+  std::cout << "qnn_manager->AllocateTensor(): " << std::chrono::duration_cast<std::chrono::milliseconds>(qnn_manager_allocate_tensor_end - qnn_manager_allocate_tensor_start).count() << " ms" << std::endl;
+}
+
 // ========== Public method implementations =========================
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
+  qnn_executorch_backend_init_start = std::chrono::high_resolution_clock::now();
+  QNN_EXECUTORCH_LOG_INFO("QnnExecuTorchBackend::init start");
   // covert SizedBuffer to qnn ExecuTorch option
   QnnExecuTorchContextBinary qnn_context_blob;
   const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options = nullptr;
@@ -64,6 +76,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
       QNN_EXECUTORCH_LOG_WARN("unknown argument: %s", compile_spec.key);
   }
 
+  qnn_manager_create_start = std::chrono::high_resolution_clock::now();
   // Create QnnManager
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
   QnnManager* qnn_manager =
@@ -72,7 +85,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   // NOTE: Since we use placement new and since this type is not trivially
   // destructible, we must call the destructor manually in destroy().
   new (qnn_manager) QnnManager(qnn_executorch_options, qnn_context_blob);
-
+  qnn_manager_create_end = std::chrono::high_resolution_clock::now();
   // TODO: this is a temporal solution for multi-graph support, will be
   //       removed once framework starts to accept runtime configuration
   // ---
@@ -84,13 +97,17 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     QNN_EXECUTORCH_LOG_INFO(
         "Use cached delegate handle for current method: %s",
         context.get_method_name());
+    qnn_executorch_backend_init_end = std::chrono::high_resolution_clock::now();
+    print_profile();
     return iter->second;
   }
 
+  qnn_manager_init_start = std::chrono::high_resolution_clock::now();
   ET_CHECK_OR_RETURN_ERROR(
       qnn_manager->Init() == Error::Ok,
       Internal,
       "Fail to initialize Qnn Manager");
+  qnn_manager_init_end = std::chrono::high_resolution_clock::now();
 
   if (qnn_manager->IsOnlinePrepare()) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -98,16 +115,20 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
         Internal,
         "Fail to compile binary in qcir format");
   } else {
+    qnn_manager_allocate_tensor_start = std::chrono::high_resolution_clock::now();
     for (const std::string& graph_name : qnn_manager->GetGraphNames()) {
       ET_CHECK_OR_RETURN_ERROR(
           qnn_manager->AllocateTensor(graph_name) == Error::Ok,
           Internal,
           "Fail to allocate tensor");
     }
+    qnn_manager_allocate_tensor_end = std::chrono::high_resolution_clock::now();
   }
   add_cached_delegate(signature, qnn_manager);
   // This backend does not need its processed data after Init.
   processed->Free();
+  qnn_executorch_backend_init_end = std::chrono::high_resolution_clock::now();
+  print_profile();
   return qnn_manager;
 }
 

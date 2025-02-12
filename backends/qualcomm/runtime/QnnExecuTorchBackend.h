@@ -23,6 +23,8 @@ class QnnExecuTorchBackend final
  public:
   ~QnnExecuTorchBackend(){};
 
+  void print_profile() const;
+
   executorch::runtime::Result<executorch::runtime::DelegateHandle*> init(
       executorch::runtime::BackendInitContext& context,
       executorch::runtime::FreeableBuffer* processed,
@@ -49,6 +51,15 @@ class QnnExecuTorchBackend final
       delegate_map_;
   mutable std::unordered_map<executorch::runtime::DelegateHandle*, std::int64_t>
       delegate_map_rev_;
+  mutable std::chrono::high_resolution_clock::time_point qnn_executorch_backend_init_start;
+  mutable std::chrono::high_resolution_clock::time_point qnn_executorch_backend_init_end;
+  mutable std::chrono::high_resolution_clock::time_point qnn_manager_create_start;
+  mutable std::chrono::high_resolution_clock::time_point qnn_manager_create_end;
+  mutable std::chrono::high_resolution_clock::time_point qnn_manager_init_start;
+  mutable std::chrono::high_resolution_clock::time_point qnn_manager_init_end;
+  mutable std::chrono::high_resolution_clock::time_point qnn_manager_allocate_tensor_start;
+  mutable std::chrono::high_resolution_clock::time_point qnn_manager_allocate_tensor_end;
+
 };
 
 } // namespace qnn
