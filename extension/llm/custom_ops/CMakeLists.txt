@@ -85,7 +85,9 @@ install(TARGETS custom_ops DESTINATION lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   # Add a AOT library
-  find_package(Torch CONFIG REQUIRED)
+  if(NOT TARGET torch)
+    find_package(Torch CONFIG REQUIRED)
+  endif()
   add_library(
     custom_ops_aot_lib SHARED
     ${_custom_ops__srcs}
@@ -136,4 +138,9 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   install(TARGETS custom_ops_aot_lib
           LIBRARY DESTINATION executorch/extension/llm/custom_ops
   )
+endif()
+
+add_subdirectory(spinquant/third-party/FFHT)
+if(BUILD_TESTING)
+  add_subdirectory(spinquant/test)
 endif()
