@@ -9,7 +9,6 @@ import torch
 _QWEN_2_FROM_META = {
     "tok_embeddings.weight": "tok_embeddings.weight",
     "norm.weight": "norm.scale",
-    "output.weight": "output.weight",
     "layers.{}.attention.wk.weight": "layers.{}.attn.k_proj.weight",
     "layers.{}.attention.wk.bias": "layers.{}.attn.k_proj.bias",
     "layers.{}.attention.wq.weight": "layers.{}.attn.q_proj.weight",
@@ -22,7 +21,6 @@ _QWEN_2_FROM_META = {
     "layers.{}.feed_forward.w1.weight": "layers.{}.mlp.w1.weight",
     "layers.{}.feed_forward.w2.weight": "layers.{}.mlp.w2.weight",
     "layers.{}.feed_forward.w3.weight": "layers.{}.mlp.w3.weight",
-    
 }
 
 def qwen_2_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -43,6 +41,9 @@ def qwen_2_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
     for key, value in state_dict.items():
         new_key = get_mapped_key(key, inverted_mapping_dict)
         converted_state_dict[new_key] = value
+
+    # 0.5b and 1.5b models share the same weights for tok_embeddings and output embeddings, see https://github.com/QwenLM/Qwen2.5/issues/733.
+    converted_state_dict["output.weight"] = converted_state_dict["tok_embeddings.weight"]
 
     return converted_state_dict
 
