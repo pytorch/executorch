@@ -80,6 +80,7 @@ int main(int argc, char** argv) {
 
   // Load the model using FileDataLoader
   Result<FileDataLoader> loader = FileDataLoader::from(model_path);
+  std::cout << "AAA - 1" << std::endl;
   ET_CHECK_MSG(
       loader.ok(),
       "FileDataLoader::from() failed: 0x%" PRIx32,
@@ -88,22 +89,27 @@ int main(int argc, char** argv) {
   // Load the program from the loaded model
   Result<Program> program = Program::load(&loader.get());
   if (!program.ok()) {
+    std::cout << "AAA - 2" << std::endl;
     ET_LOG(Error, "Failed to parse model file %s", model_path);
     return 1;
   }
+  std::cout << "AAA - 3" << std::endl;
   ET_LOG(Info, "Model file %s is loaded.", model_path);
 
   // Retrieve the method name from the program (assumes the first method is used)
   const char* method_name = nullptr;
   {
     const auto method_name_result = program->get_method_name(0);
+    std::cout << "AAA - 4" << std::endl;
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     method_name = *method_name_result;
   }
+  std::cout << "AAA - 5" << std::endl;
   ET_LOG(Info, "Using method %s", method_name);
 
   // Retrieve metadata about the method
   Result<MethodMeta> method_meta = program->method_meta(method_name);
+  std::cout << "AAA - 6" << std::endl;
   ET_CHECK_MSG(
       method_meta.ok(),
       "Failed to get method_meta for %s: 0x%" PRIx32,
@@ -121,6 +127,7 @@ int main(int argc, char** argv) {
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
+    std::cout << "AAA - 7" << std::endl;
     ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
     planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
     planned_spans.push_back({planned_buffers.back().get(), buffer_size});
@@ -133,15 +140,18 @@ int main(int argc, char** argv) {
 
   // Load the method into the program
   Result<Method> method = program->load_method(method_name, &memory_manager);
+  std::cout << "AAA - 8" << std::endl;
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
       static_cast<uint32_t>(method.error()));
+  std::cout << "AAA - 9" << std::endl;
   ET_LOG(Info, "Method loaded.");
 
   // Prepare the input tensors for the method
   auto inputs = prepare_input_tensors(*method);
+  std::cout << "AAA - 10" << std::endl;
   ET_CHECK_MSG(
       inputs.ok(),
       "Could not prepare inputs: 0x%" PRIx32,
@@ -150,11 +160,14 @@ int main(int argc, char** argv) {
   // If the input path list is provided, read input tensors from the files
   if (!(FLAGS_input_list_path.empty())) {
     const char* input_list_path = FLAGS_input_list_path.c_str();
+    std::cout << "AAA - 11" << std::endl;
     ET_LOG(Info, "Loading input tensors from the list provided in %s.", input_list_path);
     Error status = Error::Ok;
     std::vector<EValue> inputs(method->inputs_size());
+    std::cout << "AAA - 12" << std::endl;
     ET_LOG(Info, "%zu inputs: ", inputs.size());
     status = method->get_inputs(inputs.data(), inputs.size());
+    std::cout << "AAA - 13" << std::endl;
     ET_CHECK(status == Error::Ok);
 
     auto split = [](std::string s, std::string delimiter) {
@@ -195,6 +208,7 @@ int main(int argc, char** argv) {
 
             std::ifstream fin(inputs_dir+input_files[input_index], std::ios::binary);
             if (!(fin.good())) {
+              std::cout << "AAA - 14" << std::endl;
               ET_CHECK_MSG(false,
                   "Failed to read input tensor file: %s",
                   inputs_dir+input_files[input_index]);
@@ -202,6 +216,7 @@ int main(int argc, char** argv) {
             fin.seekg(0, fin.end);
             size_t file_size = fin.tellg();
 
+            std::cout << "AAA - 15" << std::endl;
             ET_CHECK_MSG(
                 file_size == tensor_meta->nbytes(),
                 "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
@@ -217,11 +232,13 @@ int main(int argc, char** argv) {
         }
       }
     } else {
+      std::cout << "AAA - 16" << std::endl;
       ET_CHECK_MSG(false,
           "Failed to read input list file: %s",
           input_list_path);
     }
   }
+  std::cout << "AAA - 17" << std::endl;
   ET_LOG(Info, "Inputs prepared.");
 
   // Measure execution time for inference
@@ -236,29 +253,35 @@ int main(int argc, char** argv) {
                             .count() / 1000.0;
 
   // Log execution time and average time per iteration
+  std::cout << "AAA - 18" << std::endl;
   ET_LOG(
       Info,
       "%d inference took %f ms, avg %f ms",
       num_iterations,
       elapsed_time,
       elapsed_time / static_cast<float>(num_iterations));
+  std::cout << "AAA - 19" << std::endl;
   ET_CHECK_MSG(
       status == Error::Ok,
       "Execution of method %s failed with status 0x%" PRIx32,
       method_name,
       static_cast<uint32_t>(status));
+  std::cout << "AAA - 20" << std::endl;
   ET_LOG(Info, "Model executed successfully.");
 
   // Retrieve and print the method outputs
   std::vector<EValue> outputs(method->outputs_size());
+  std::cout << "AAA - 21" << std::endl;
   ET_LOG(Info, "%zu Number of outputs: ", outputs.size());
   status = method->get_outputs(outputs.data(), outputs.size());
+  std::cout << "AAA - 22" << std::endl;
   ET_CHECK(status == Error::Ok);
 
   // If output folder path is provided, save output tensors
   // into raw tensor files.
   if (!(FLAGS_output_folder_path.empty())) {
     const char* output_folder_path = FLAGS_output_folder_path.c_str();
+    std::cout << "AAA - 23" << std::endl;
     ET_LOG(Info, "Saving output tensors into the output folder: %s.", output_folder_path);
     for (size_t output_index = 0; output_index < method->outputs_size();
          output_index++) {
@@ -271,6 +294,7 @@ int main(int argc, char** argv) {
       fout.close();
     }
   }
+  std::cout << "AAA - 24" << std::endl;
 
   return 0;
 }
