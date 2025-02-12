@@ -236,7 +236,9 @@ def is_debug_output(value: Value) -> bool:
 
 
 def gen_graphs_from_etrecord(
-    etrecord: ETRecord, enable_module_hierarchy: bool = False, edge_dialect_graph_key: str = EDGE_DIALECT_GRAPH_KEY
+    etrecord: ETRecord,
+    enable_module_hierarchy: bool = False,
+    edge_dialect_graph_key: str = EDGE_DIALECT_GRAPH_KEY,
 ) -> Mapping[str, OperatorGraph]:
     op_graph_map = {}
     if etrecord.graph_map is not None:

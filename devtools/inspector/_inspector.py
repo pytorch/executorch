@@ -1065,7 +1065,11 @@ class Inspector:
         self._enable_module_hierarchy = enable_module_hierarchy
         self._consume_etrecord(module_name, method_name)
 
-    def _consume_etrecord(self,  module_name: Optional[str] = None, method_name: Optional[str] = None,) -> None:
+    def _consume_etrecord(
+        self,
+        module_name: Optional[str] = None,
+        method_name: Optional[str] = None,
+    ) -> None:
         """
         If an ETRecord is provided, connect it to the EventBlocks and populate the Event metadata.
 
@@ -1089,7 +1093,9 @@ class Inspector:
             method_name = FORWARD
             edge_dialect_graph_key = EDGE_DIALECT_GRAPH_KEY
         elif method_name is None or module_name is None:
-            raise ValueError("Either both method_name and module_name should be provided or neither should be provided")
+            raise ValueError(
+                "Either both method_name and module_name should be provided or neither should be provided"
+            )
         else:
             method_name = method_name
             edge_dialect_graph_key = f"{module_name}/{method_name}"
