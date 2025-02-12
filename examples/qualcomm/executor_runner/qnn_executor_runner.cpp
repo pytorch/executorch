@@ -32,6 +32,7 @@
 #include <chrono>
 #include <fstream>
 #include <memory>
+#include <numeric>
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
@@ -66,6 +67,26 @@ DEFINE_string(
     debug_output_path,
     "debug_output.bin",
     "Path to dump debug outputs to.");
+
+DEFINE_string(
+    input_shape_path,
+    "",
+    "Path to file with input shapes specified (used in dynamic shape scenario).");
+
+DEFINE_string(
+    output_shape_path,
+    "",
+    "Path to file with output shapes specified (used in dynamic shape scenario).");
+
+DEFINE_string(
+    input_type_size_path,
+    "",
+    "Path to file with input dtype sizes specified.");
+
+DEFINE_string(
+    output_type_size_path,
+    "",
+    "Path to file with output dtype sizes specified.");
 
 DEFINE_int32(
     debug_buffer_size,
@@ -323,6 +344,48 @@ int main(int argc, char** argv) {
       return res;
     };
 
+    // dynamic shape related
+    std::vector<std::vector<int32_t>> expected_input_shapes,
+        expected_output_shapes;
+    if (!FLAGS_input_shape_path.empty() && !FLAGS_output_shape_path.empty()) {
+      std::ifstream input_shape_list(FLAGS_input_shape_path);
+      std::ifstream output_shape_list(FLAGS_output_shape_path);
+      std::string shape_content;
+      while (std::getline(input_shape_list, shape_content)) {
+        auto dims = split(shape_content, ", ");
+        std::vector<int32_t> shape;
+        for (std::string& dim : dims) {
+          shape.push_back(std::stoi(dim));
+        }
+        expected_input_shapes.emplace_back(std::move(shape));
+      }
+      while (std::getline(output_shape_list, shape_content)) {
+        auto dims = split(shape_content, ", ");
+        std::vector<int32_t> shape;
+        for (std::string& dim : dims) {
+          shape.push_back(std::stoi(dim));
+        }
+        expected_output_shapes.emplace_back(std::move(shape));
+      }
+    }
+    // currently only expected_output_type_sizes is used
+    // TODO: remove following when meta could be correctly propagated
+    std::vector<int32_t> expected_input_type_sizes, expected_output_type_sizes;
+    if (!FLAGS_input_type_size_path.empty() &&
+        !FLAGS_output_type_size_path.empty()) {
+      std::ifstream input_type_size_list(FLAGS_input_type_size_path);
+      std::ifstream output_type_size_list(FLAGS_output_type_size_path);
+      std::string type_sizes_content;
+      while (std::getline(input_type_size_list, type_sizes_content)) {
+        expected_input_type_sizes.push_back(
+            std::stoi(split(type_sizes_content, ", ")[0]));
+      }
+      while (std::getline(output_type_size_list, type_sizes_content)) {
+        expected_output_type_sizes.push_back(
+            std::stoi(split(type_sizes_content, ", ")[0]));
+      }
+    }
+
     std::string file_path;
     int inference_index = 0;
     double elapsed_time = 0;
@@ -337,6 +400,15 @@ int main(int argc, char** argv) {
           num_inputs,
           input_files.size());
 
+      // dynamic shape related
+      if (!expected_input_shapes.empty()) {
+        ET_CHECK_MSG(
+            expected_input_shapes.size() == num_inputs,
+            "Number of inputs (%zu) mismatch with input shapes (%zu)",
+            num_inputs,
+            expected_input_shapes.size());
+      }
+
       for (int input_index = 0; input_index < num_inputs; ++input_index) {
         MethodMeta method_meta = method->method_meta();
         Result<TensorInfo> tensor_meta =
@@ -346,18 +418,20 @@ int main(int argc, char** argv) {
         fin.seekg(0, fin.end);
         size_t file_size = fin.tellg();
 
-        ET_CHECK_MSG(
-            file_size == tensor_meta->nbytes(),
-            "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
-            input_index,
-            file_size,
-            tensor_meta->nbytes());
-
         fin.seekg(0, fin.beg);
         fin.read(
             static_cast<char*>(in_custom_mem[input_index]->GetPtr()),
             file_size);
         fin.close();
+
+        if (expected_input_shapes.empty()) {
+          ET_CHECK_MSG(
+              file_size == tensor_meta->nbytes(),
+              "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
+              input_index,
+              file_size,
+              tensor_meta->nbytes());
+        }
 
         // For pre-allocated use case, we need to call set_input
         // to copy data for the input tensors since they doesn't
@@ -365,7 +439,10 @@ int main(int argc, char** argv) {
         TensorImpl impl = TensorImpl(
             tensor_meta->scalar_type(),
             /*dim=*/tensor_meta->sizes().size(),
-            const_cast<TensorImpl::SizesType*>(tensor_meta->sizes().data()),
+            const_cast<TensorImpl::SizesType*>(
+                expected_input_shapes.empty()
+                    ? tensor_meta->sizes().data()
+                    : expected_input_shapes[input_index].data()),
             in_custom_mem[input_index]->GetPtr(),
             const_cast<TensorImpl::DimOrderType*>(
                 tensor_meta->dim_order().data()));
@@ -410,20 +487,25 @@ int main(int argc, char** argv) {
       std::vector<EValue> outputs(method->outputs_size());
       status = method->get_outputs(outputs.data(), method->outputs_size());
       ET_CHECK(status == Error::Ok);
-      // The following code assumes all output EValues are floating point
-      // tensors. We need to handle other types of EValues and tensor
-      // dtypes. Furthermore, we need a util to print tensors in a more
-      // interpretable (e.g. size, dtype) and readable way.
-      // TODO for the above at T159700776
       for (size_t output_index = 0; output_index < method->outputs_size();
            output_index++) {
         auto output_tensor = outputs[output_index].toTensor();
+        size_t nbytes = output_tensor.nbytes();
+        if (!expected_output_shapes.empty()) {
+          nbytes = std::accumulate(
+              expected_output_shapes[output_index].begin(),
+              expected_output_shapes[output_index].end(),
+              !expected_output_type_sizes.empty()
+                  ? expected_output_type_sizes[output_index]
+                  : executorch::runtime::elementSize(
+                        output_tensor.scalar_type()),
+              std::multiplies<int>());
+        }
         auto output_file_name = FLAGS_output_folder_path + "/output_" +
             std::to_string(inference_index) + "_" +
             std::to_string(output_index) + ".raw";
         std::ofstream fout(output_file_name.c_str(), std::ios::binary);
-        fout.write(
-            output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
+        fout.write(output_tensor.const_data_ptr<char>(), nbytes);
         fout.close();
       }
 
