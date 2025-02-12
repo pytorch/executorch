@@ -69,10 +69,10 @@ source setupvars.sh
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) guide for detailed instructions on setting up the ExecuTorch environment.
+1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](https://pytorch.org/executorch/stable/getting-started-setup#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup OpenVINO Backend Environment**
-- Install the dependent libs. Ensure that you are inside backends/openvino/ directory
+- Install the dependent libs. Ensure that you are inside `executorch/backends/openvino/` directory
    ```bash
    pip install -r requirements.txt
    ```
