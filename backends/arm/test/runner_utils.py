@@ -10,13 +10,20 @@ import re
 import shutil
 import subprocess
 import tempfile
+
 from pathlib import Path
 
 from typing import cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
-import tosa_reference_model
+
+logger = logging.getLogger(__name__)
+try:
+    import tosa_reference_model
+except ImportError:
+    logger.warning("tosa_reference_model not found, can't run reference model tests")
+    tosa_reference_model = None
 from executorch.backends.arm.arm_backend import get_tosa_version, is_tosa
 
 from executorch.backends.arm.test.conftest import is_option_enabled
