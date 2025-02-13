@@ -77,7 +77,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                     exec_prog.write_to_file(file)
 
                 # Save inputs into a temporary file
-                #self.generate_inputs(tmp_dir, "input_list.txt", [sample_inputs], input_list)
+                self.generate_inputs(tmp_dir, "input_list.txt", [sample_inputs], input_list)
                 self.make_output_dir(output_dir)
 
                 # Start a subprocess to execute model with openvino_executor_runner
