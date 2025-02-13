@@ -41,6 +41,10 @@ from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .meandim_to_averagepool_pass import ConvertMeanDimToAveragePoolPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
 from .remove_clone_pass import RemoveClonePass  # noqa
+from .replace_scalar_with_tensor_pass import (  # noqa
+    ReplaceScalarWithTensorArgPassTOSABI,
+    ReplaceScalarWithTensorArgPassTOSAMI,
+)
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_conv2d_pass import SizeAdjustConv2DPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
