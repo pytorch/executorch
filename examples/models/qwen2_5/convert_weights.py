@@ -52,7 +52,7 @@ def qwen_2_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
     return converted_state_dict
 
 
-# TODO: no need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
+# Don't necessarily need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
 checkpointer = FullModelHFCheckpointer(
     checkpoint_dir="/home/jackzhxng/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323/",
     checkpoint_files=["model.safetensors"],
