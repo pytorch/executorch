@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,6 +17,9 @@ from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
 from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
+)
+from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
+    ConvertFullLikeToFullPass,
 )
 from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
@@ -97,6 +100,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(ConvertMeanDimToAveragePoolPass())
+        self.add_pass(ConvertFullLikeToFullPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
@@ -135,7 +139,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxesPass())
-
+        self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
