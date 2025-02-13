@@ -27,6 +27,10 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(name = "op_exp"),
     op_target(
         name = "op_fft_r2c",
+        compiler_flags = [] if runtime.is_oss else [
+            "-Wno-global-constructors",
+            "-Wno-shadow",
+        ],
         deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
     ),
     op_target(name = "op_sigmoid"),

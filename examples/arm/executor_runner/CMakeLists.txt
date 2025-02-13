@@ -45,6 +45,8 @@ set(PYTHON_EXECUTABLE
 )
 
 # Download ethos_u dependency if needed.
+file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
+
 include(FetchContent)
 set(ethos_u_base_rev "24.08")
 FetchContent_Declare(
@@ -69,7 +71,7 @@ endif()
 
 # Always patch the core_platform repo since this is fast enough.
 set(core_platform_base_rev "b728c774158248ba2cad8e78a515809e1eb9b77f")
-set(patch_dir "examples/arm/ethos-u-setup")
+set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
 execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
   WORKING_DIRECTORY ${ET_DIR_PATH}
   COMMAND_ECHO STDOUT

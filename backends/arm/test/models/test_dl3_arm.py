@@ -17,7 +17,7 @@ class TestDl3(unittest.TestCase):
     """Tests DeepLabv3."""
 
     dl3 = deeplab_v3.DeepLabV3ResNet50Model()
-    model_inputs = dl3.get_example_inputs()
+    model_example_inputs = dl3.get_example_inputs()
     dl3 = dl3.get_eager_model()
 
     @unittest.expectedFailure
@@ -25,13 +25,13 @@ class TestDl3(unittest.TestCase):
         (
             ArmTester(
                 self.dl3,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge_transform_and_lower()
             .to_executorch()
-            .run_method_and_compare_outputs(self.model_inputs)
+            .run_method_and_compare_outputs(inputs=self.dl3.get_example_inputs())
         )
 
     @unittest.expectedFailure
@@ -39,14 +39,16 @@ class TestDl3(unittest.TestCase):
         (
             ArmTester(
                 self.dl3,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
             .to_edge_transform_and_lower()
             .to_executorch()
-            .run_method_and_compare_outputs(atol=1.0, qtol=1, inputs=self.model_inputs)
+            .run_method_and_compare_outputs(
+                atol=1.0, qtol=1, inputs=self.dl3.get_example_inputs()
+            )
         )
 
     @pytest.mark.slow
@@ -56,7 +58,7 @@ class TestDl3(unittest.TestCase):
         tester = (
             ArmTester(
                 self.dl3,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
@@ -67,7 +69,7 @@ class TestDl3(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs
+                atol=1.0, qtol=1, inputs=self.dl3.get_example_inputs()
             )
 
     @pytest.mark.slow
@@ -77,7 +79,7 @@ class TestDl3(unittest.TestCase):
         tester = (
             ArmTester(
                 self.dl3,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_u85_compile_spec(),
             )
             .quantize()
@@ -88,5 +90,5 @@ class TestDl3(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs
+                atol=1.0, qtol=1, inputs=self.dl3.get_example_inputs()
             )

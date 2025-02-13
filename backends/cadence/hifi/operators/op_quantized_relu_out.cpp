@@ -26,8 +26,8 @@ void quantized_relu_per_tensor_out(
     const int64_t out_multiplier,
     const int64_t out_shift,
     Tensor& output) {
-    const int32_t _out_multiplier = static_cast<int32_t>(out_multiplier);
-    const int32_t _out_shift = static_cast<int32_t>(out_shift);
+  const int32_t _out_multiplier = static_cast<int32_t>(out_multiplier);
+  const int32_t _out_shift = static_cast<int32_t>(out_shift);
 
   if (input.scalar_type() == executorch::aten::ScalarType::Byte) {
     const uint8_t _in_zero_point = static_cast<uint8_t>(in_zero_point);
