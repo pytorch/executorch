@@ -19,8 +19,8 @@ backends/openvino/tests
 
 ### Prerequisites
 
-Before you begin, refer to instructions provided in [OpenVINO Backend for ExecuTorch](./README.md) to install openvino and setup executorch environment.
-Once openvino is installed and executorch environment is set, refer to [asdfasdf](asdfasdf) to build openvino_example_runner.
+Before you begin, refer to instructions provided in [OpenVINO Backend for ExecuTorch](../README.md) to install openvino and setup executorch environment.
+Once openvino is installed and executorch environment is set, refer to [OpenVINO Backend Examples](../../../examples/openvino/README.md) to build openvino_example_runner.
 
 ### Usage
 
@@ -28,7 +28,7 @@ test_openvino_delegate.py allows to run op or model tests for openvino backend.
 
 ### **Arguments**
 - **`--build_folder`** (required):  
-  Path to cmake binary directory. (Refer to [asdf](asdf))   
+  Path to cmake binary directory. (Refer to [OpenVINO Backend Examples](../../../examples/openvino/README.md))   
   Examples:
   - `../../../cmake-openvino-out` (Relative path from `backends/openvino/tests` directory)
   - `<executorch_root>/cmake-openvino-out` (Absolute path to the default build folder)
@@ -50,3 +50,18 @@ test_openvino_delegate.py allows to run op or model tests for openvino backend.
   Examples: `CPU`, `GPU`
 
 
+## **Examples**
+
+### Execute Tests for All Ops on CPU
+```bash
+python test_openvino_delegate.py --build_folder ../../../cmake-openvino-out --device CPU --test_type ops
+```
+
+### Execute Convolution Op Tests on CPU
+```bash
+python test_openvino_delegate.py --build_folder ../../../cmake-openvino-out --device CPU --test_type ops --pattern test_convolution.py
+```
+
+### Execute Tests for all Models on GPU
+```bash
+python test_openvino_delegate.py --build_folder ../../../cmake-openvino-out --device GPU --test_type models
