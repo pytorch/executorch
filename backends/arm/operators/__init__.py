@@ -31,6 +31,7 @@ from . import (  # noqa
     op_reciprocal,
     op_relu,
     op_repeat,
+    op_rescale,
     op_rshift,
     op_rsqrt,
     op_sigmoid,

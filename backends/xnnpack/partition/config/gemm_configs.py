@@ -334,6 +334,18 @@ class ConvolutionConfig(GEMMConfig):
         is_transpose = node.args[6]
         groups = cast(int, node.args[8])
 
+        # XNNPack does not support non-zero output padding in transposed
+        # convolutions.
+        if is_transpose and any(
+            out_pad != 0 for out_pad in cast(List[int], node.args[7])
+        ):
+            why(
+                node,
+                "XNNPACK does not support transposed convolutions with"
+                "non-zero output padding",
+            )
+            return False
+
         if (
             is_transpose
             and weight_quant_params is not None
