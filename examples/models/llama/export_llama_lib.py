@@ -978,8 +978,6 @@ def _load_llama_model(
     model = model.to(dtype=torch_dtype)
     dtype = dtype_override
 
-    breakpoint()
-
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
