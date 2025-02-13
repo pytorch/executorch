@@ -15,4 +15,4 @@ pip install lm_eval==0.4.5
 pip install tiktoken blobfile
 
 # Call the install helper for further setup
-python examples/models/llama/install_requirement_helper.py
+python install_requirement_helper.py
