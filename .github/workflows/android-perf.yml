@@ -301,11 +301,8 @@ jobs:
           # The model will be exported in the next step to this S3 path
           MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/model.zip"
 
-          # Check if the model artifact is successfully uploaded from previous step, failed to upload the test-spec if it does not exist.
-          if ! curl -s --head -f ${MODEL_PATH}; then
-            echo "failed to retrieve ${MODEL_PATH}"
-            exit 1;
-          fi
+          # Check if the model artifact exists, fail this step skip generating test-spec.
+          curl -s --head -f ${MODEL_PATH}
 
           # We could write a script to properly use jinja here, but there is only one variable,
           # so let's just sed it
