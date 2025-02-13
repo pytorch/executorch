@@ -25,6 +25,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
+    get_elf_path,
     get_output_nodes,
     get_output_quantization_params,
     get_target_board,
@@ -140,11 +141,8 @@ class Serialize(tester.Serialize):
         inputs_flattened, _ = tree_flatten(inputs)
         intermediate_path = get_intermediate_path(self.compile_spec)
         target_board = get_target_board(self.compile_spec)
-        elf_path = os.path.join(
-            "cmake-out",
-            f"arm_semihosting_executor_runner_{target_board}",
-            "arm_executor_runner",
-        )
+        elf_path = get_elf_path(target_board)
+
         if not os.path.exists(elf_path):
             raise FileNotFoundError(
                 f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
@@ -230,7 +228,7 @@ class ArmTester(Tester):
     def __init__(
         self,
         model: torch.nn.Module,
-        example_inputs: Tuple[torch.Tensor],
+        example_inputs: Tuple,
         compile_spec: List[CompileSpec],
     ):
         """

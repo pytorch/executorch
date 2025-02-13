@@ -11,10 +11,10 @@ import torch
 from executorch import exir
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.canonical_partitioners.all_node_partitioner import AllNodePartitioner
 from executorch.exir.backend.test.backend_with_delegate_mapping_demo import (
     BackendWithDelegateMappingDemo,
 )
-from executorch.exir.backend.partitioner import DelegationSpec
 from executorch.exir.lowered_backend_module import get_lowered_submodules
 
 from executorch.exir.backend.utils import DelegateMappingBuilder
@@ -164,22 +164,6 @@ class TestDelegateMapBuilder(unittest.TestCase):
         exir.capture(
             composite_model, inputs, exir.CaptureConfig()
         ).to_edge().to_executorch()
-
-    def test_backend_with_delegate_mapping_delegation_spec(self) -> None:
-        model, inputs = BackendWithDelegateMappingDemo.get_test_model_and_inputs()
-        edgeir_m = to_edge(torch.export.export(model, inputs))
-        lowered_m = edgeir_m.to_backend(
-            DelegationSpec("BackendWithDelegateMappingDemo", [])
-        )
-        lowered_submodule = get_lowered_submodules(lowered_m.exported_program().graph_module)[0][1]
-        debug_handle_map = lowered_submodule.meta.get("debug_handle_map")
-        self.assertIsNotNone(debug_handle_map)
-        # There should be 3 backend ops in this model.
-        self.assertEqual(len(debug_handle_map), 5)
-        # Check to see that all the delegate debug indexes in the range [0,2] are present.
-        self.assertTrue(
-            all(element in debug_handle_map.keys() for element in [1, 2, 3, 4])
-        )
 
     def test_passing_both_nodes_and_handles(self):
         delegate_builder = DelegateMappingBuilder()

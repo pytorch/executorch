@@ -67,6 +67,9 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}"
   )
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR : "
+                 "${EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR}"
+  )
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
                  "${EXECUTORCH_BUILD_EXTENSION_MODULE}"
   )
@@ -321,3 +324,22 @@ function(resolve_python_executable)
     )
   endif()
 endfunction()
+
+# find_package(Torch CONFIG REQUIRED) replacement for targets that
+# have a header-only Torch dependency. Because find_package sets
+# variables in the parent scope, we use a macro to preserve this
+# rather than maintaining our own list of those variables.
+macro(find_package_torch_headers)
+  # We cannot simply use CMAKE_FIND_ROOT_PATH_BOTH, because that does
+  # not propagate into TorchConfig.cmake.
+  foreach(mode_kind IN ITEMS PACKAGE LIBRARY INCLUDE)
+    set(OLD_CMAKE_FIND_ROOT_PATH_MODE_${mode_kind} ${CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}})
+    set(CMAKE_FIND_ROOT_PATH_MODE_${mode_kind} BOTH)
+  endforeach()
+  if(NOT TARGET torch)
+    find_package(Torch CONFIG REQUIRED)
+  endif()
+  foreach(mode_kind IN ITEMS PACKAGE LIBRARY INCLUDE)
+    set(CMAKE_FIND_ROOT_PATH_MODE_${mode_kind} ${OLD_CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}})
+  endforeach()
+endmacro()

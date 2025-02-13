@@ -26,7 +26,6 @@ class TestGraphBuilder(TestCase):
         channels_last = False
         im2row = builder.call_operator(
             exir_ops.edge.cadence.im2row.default,
-            # pyre-ignore
             (
                 x,
                 (2, 2),
@@ -80,7 +79,7 @@ class TestHigherOrderOps(TestCase):
         x = builder.placeholder("x", torch.randn(*x_shape))
         add = builder.call_operator(
             exir_ops.edge.aten.add.Tensor,
-            (x, x),  # pyre-ignore
+            (x, x),
         )
         builder.output([x, add])
         gm = builder.get_graph_module()

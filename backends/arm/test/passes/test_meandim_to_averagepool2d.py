@@ -1,79 +1,78 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
+
+from typing import Tuple
 
 import torch
 from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePoolPass,
 )
-
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
 
-from executorch.backends.xnnpack.test.tester.tester import RunPasses
+
+input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x
 
 
 class MeanDim(torch.nn.Module):
     def forward(self, x):
         return torch.mean(x, dim=[-1, -2], keepdim=True)
 
-    def get_inputs(self):
+    def get_inputs(self) -> input_t:
         return (torch.rand(1, 1280, 7, 7),)
+
+    ops_before_pass = {"executorch_exir_dialects_edge__ops_aten_mean_dim": 1}
+    ops_after_pass = {"executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1}
+    ops_not_after_pass = [
+        "aten_sum_dim_int_list",
+        "aten_full_default",
+        "aten_mul_tensor",
+    ]
 
 
 class MeanDim2(torch.nn.Module):
     def forward(self, x):
         return torch.mean(x, dim=1)
 
-    def get_inputs(self):
+    def get_inputs(self) -> input_t:
         return (torch.rand(1, 1280, 7, 7),)
 
+    ops_before_pass = {
+        "aten_sum_dim_int_list": 3,
+        "aten_full_default": 4,
+        "aten_mul_tensor": 3,
+    }
+    ops_after_pass = {
+        "aten_sum_dim_int_list": 3,
+        "aten_full_default": 4,
+        "aten_mul_tensor": 3,
+    }
+    ops_not_after_pass = ["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"]
 
-class TestMeandimToAveragePool2dPass(unittest.TestCase):
+
+modules = {
+    "meandim_to_averagepool": MeanDim(),
+    "meandim_no_modification": MeanDim2(),
+}
+
+
+@common.parametrize("module", modules)
+def test_meandim_to_avgpool_tosa_BI(module):
     """
     Tests the MeanDimToAveragePool2dPass which converts mean.dim to average_pool2d
     for the special case where dim is [-1, -2] and keepdim is True.
     """
-
-    def test_tosa_BI_meandim_to_averagepool(self):
-        module = MeanDim()
-        test_pass_stage = RunPasses([ConvertMeanDimToAveragePoolPass])
-        (
-            ArmTester(
-                module,
-                example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .check(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
-            .run_passes(test_pass_stage)
-            .check(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
-        )
-
-    def test_tosa_BI_meandim_no_modification(self):
-        module = MeanDim2()
-        test_pass_stage = RunPasses([ConvertMeanDimToAveragePoolPass])
-        (
-            ArmTester(
-                module,
-                example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .check(["aten_sum_dim_int_list"])
-            .check(["aten_full_default"])
-            .check(["aten_mul_tensor"])
-            .run_passes(test_pass_stage)
-            .check(["aten_sum_dim_int_list"])
-            .check(["aten_full_default"])
-            .check(["aten_mul_tensor"])
-            .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
-        )
+    pipeline = TestPassPipeline[input_t](
+        module,
+        module.get_inputs(),
+        tosa_version="TOSA-0.80+BI",
+        ops_before_pass=module.ops_before_pass,
+        ops_after_pass=module.ops_after_pass,
+        ops_not_after_pass=module.ops_not_after_pass,
+        pass_list=[ConvertMeanDimToAveragePoolPass],
+    )
+    pipeline.pop_stage(-1)  # Do not compare output
+    pipeline.run()

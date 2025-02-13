@@ -12,6 +12,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
+from executorch.exir.backend.canonical_partitioners.all_node_partitioner import AllNodePartitioner
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -1282,10 +1283,10 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         max_value = model_inputs[0].shape[0]
 
-        del_spec = DelegationSpec("BackendWithCompilerDemo", [CompileSpec("max_value", bytes([max_value]))])
+        partitioner = AllNodePartitioner("BackendWithCompilerDemo", [CompileSpec("max_value", bytes([max_value]))])
 
         edgeir_m =  to_edge(torch.export.export(sin_module, model_inputs))
-        edgeir_m = edgeir_m.to_backend(del_spec)
+        edgeir_m = edgeir_m.to_backend(partitioner)
         exec_prog = edgeir_m.to_executorch()
         graph_module = exec_prog.exported_program().graph_module
         # Check that there is not an aten.sin node.
@@ -1368,11 +1369,11 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         max_value_sin = sin_module.inputs()[0].shape[0]
-        del_spec_sin = DelegationSpec("BackendWithCompilerDemo", [CompileSpec("max_value", bytes([max_value_sin]))])
+        sin_partitioner = AllNodePartitioner("BackendWithCompilerDemo", [CompileSpec("max_value", bytes([max_value_sin]))])
 
         add_mul_module = AddMulModule()
         max_value_add_mul = add_mul_module.inputs()[0].shape[0]
-        del_spec_add_mul = DelegationSpec("BackendWithCompilerDemo", [CompileSpec("max_value", bytes([max_value_add_mul]))])
+        add_mul_partitioner = AllNodePartitioner("BackendWithCompilerDemo", [CompileSpec("max_value", bytes([max_value_add_mul]))])
 
         edgeir_m = to_edge(
             {
@@ -1382,8 +1383,8 @@ class TestBackends(unittest.TestCase):
         )
         edgeir_m = edgeir_m.to_backend(
             {
-                "sin": del_spec_sin,
-                "add_mul": del_spec_add_mul,
+                "sin": sin_partitioner,
+                "add_mul": add_mul_partitioner,
             }
         )
         exec_prog = edgeir_m.to_executorch()

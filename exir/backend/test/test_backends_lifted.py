@@ -11,6 +11,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
+from executorch.exir.backend.canonical_partitioners.all_node_partitioner import AllNodePartitioner
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -140,7 +141,7 @@ class TestBackends(unittest.TestCase):
 
         # Test same flow but through edge_program_manager
         edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
-        loweredir_m = edgeir_m.to_backend(DelegationSpec(BackendWithCompilerDemo.__name__, []))
+        loweredir_m = edgeir_m.to_backend(AllNodePartitioner(BackendWithCompilerDemo.__name__, []))
         lowered_sin_module = get_lowered_submodules(loweredir_m.exported_program().graph_module)[0][1]
 
         new_res = lowered_sin_module(*model_inputs)[0]

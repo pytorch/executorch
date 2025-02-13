@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import Dict, List
 
 import torch
 from executorch.exir.backend.backend_details import ExportedProgram
@@ -14,6 +14,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 def is_non_tensor_placeholder(node: torch.fx.Node, ep: ExportedProgram) -> bool:
     """
@@ -28,14 +29,15 @@ def is_non_tensor_placeholder(node: torch.fx.Node, ep: ExportedProgram) -> bool:
 class AllNodePartitioner(Partitioner):
     def __init__(
         self,
-        delegation_spec: DelegationSpec,
+        backend_id: str,
+        compile_specs: List[CompileSpec],
     ):
         """
         Partitioner that lowers every single node in the graph module to the
         specified backend_id
         """
         super().__init__()
-        self.delegation_spec = delegation_spec
+        self.delegation_spec = DelegationSpec(backend_id, compile_specs)
 
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:

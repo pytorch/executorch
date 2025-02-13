@@ -32,8 +32,9 @@ def define_common_targets():
             ":scalar_type",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:tensor_shape_dynamism",
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:dim_order_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/core:tag",
         ],
     )
@@ -49,6 +50,9 @@ def define_common_targets():
             "scalar_type.h",
             "qint_types.h",
             "bits_types.h",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type/c10:c10",
         ],
         visibility = [
             "//executorch/extension/...",

@@ -12,15 +12,12 @@ from typing import Optional
 
 import torch
 
-from executorch.examples.models.llama.llama_transformer import (
-    Attention,
-    KVCache,
-    ModelArgs,
-    Rope,
-)
+from executorch.examples.models.llama.attention import AttentionMHA, KVCache
+from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import (
     apply_rotary_emb_to_k,
     hf_apply_rotary_emb_to_k,
+    Rope,
 )
 from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
 
@@ -266,7 +263,7 @@ def _replace_attention(
                 eviction_batch_size=eviction_batch_size,
             )
 
-        if isinstance(child_module, Attention):
+        if isinstance(child_module, AttentionMHA):
             kv_cache = child_module.kv_cache
             kv_cache_with_attention_sink = KVCacheWithAttentionSink(
                 n_heads=kv_cache.n_heads,
