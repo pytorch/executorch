@@ -10,7 +10,8 @@ import torch
 from executorch.exir import to_edge
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
+from executorch.exir.backend.canonical_partitioners.all_node_partitioner import 
+(
     AllNodePartitioner,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
