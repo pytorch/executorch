@@ -36,6 +36,7 @@ class AnnotateAndQuantScalar(ExportPass):
         torch.ops.aten.sub.Scalar,
         torch.ops.aten.mul.Scalar,
         torch.ops.aten.div.Scalar,
+        torch.ops.aten.mul.Tensor,
         "add",
         "sub",
         "mul",
@@ -53,7 +54,9 @@ class AnnotateAndQuantScalar(ExportPass):
         if node.op == "placeholder":
             if not (shape := node.meta["val"].size()):
                 return node
-            assert f"The output of node {node} is not a scalar, but a tensor with shape {shape}"
+            assert (
+                not shape
+            ), f"The output of node {node} is not a scalar, but a tensor with shape {shape}"
         return self._get_source_scalar_node(node.args[0])
 
     def _update_scalar_node_attrs(self, node: torch.fx.Node, quant_attrs: Dict) -> Dict:

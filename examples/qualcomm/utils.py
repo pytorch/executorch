@@ -11,6 +11,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from typing import Callable, List, Optional
@@ -54,6 +55,10 @@ class SimpleADB:
         error_only (bool): Redirect stdio and leave error messages only
         shared_buffer (bool): Apply zero-copy mechanism in runtime
         runner (str): Runtime executor binary
+        expected_input_shape (Tuple[torch.Size]): input shape of dynamic graph
+        expected_output_shape (Tuple[torch.Size]): output shape of dynamic graph
+        expected_input_dtype (Tuple[torch.dtype]): input dtype
+        expected_output_sdtype (Tuple[torch.dtype]): output dtype
     """
 
     def __init__(
@@ -69,6 +74,10 @@ class SimpleADB:
         shared_buffer=False,
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
+        expected_input_shape=None,
+        expected_output_shape=None,
+        expected_input_dtype=None,
+        expected_output_dtype=None,
     ):
         self.qnn_sdk = qnn_sdk
         self.build_path = build_path
@@ -86,6 +95,11 @@ class SimpleADB:
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
+        self.expected_input_shape = expected_input_shape
+        self.expected_output_shape = expected_output_shape
+        self.expected_input_dtype = expected_input_dtype
+        self.expected_output_dtype = expected_output_dtype
+        self.extra_cmds = ""
 
     def _adb(self, cmd):
         if not self.host_id:
@@ -134,6 +148,32 @@ class SimpleADB:
         for file_name in input_files:
             self._adb(["push", file_name, self.workspace])
 
+        # dynamic shape related
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            if self.expected_input_shape and self.expected_output_shape:
+                shape_info = {
+                    "input_shape": self.expected_input_shape,
+                    "output_shape": self.expected_output_shape,
+                }
+                for name, shapes in shape_info.items():
+                    with open(f"{tmp_dir}/{name}.txt", "w") as f:
+                        for s in shapes:
+                            f.write(str(tuple(s)).strip("()") + "\n")
+                    self._adb(["push", f"{tmp_dir}/{name}.txt", self.workspace])
+                    self.extra_cmds += f" --{name}_path {name}.txt"
+
+            if self.expected_input_dtype and self.expected_output_dtype:
+                dtype_info = {
+                    "input_type_size": self.expected_input_dtype,
+                    "output_type_size": self.expected_output_dtype,
+                }
+                for name, dtypes in dtype_info.items():
+                    with open(f"{tmp_dir}/{name}.txt", "w") as f:
+                        for dtype in dtypes:
+                            f.write(f"{torch.tensor([], dtype=dtype).element_size()}\n")
+                    self._adb(["push", f"{tmp_dir}/{name}.txt", self.workspace])
+                    self.extra_cmds += f" --{name}_path {name}.txt"
+
         # custom files
         if files is not None:
             for file_name in files:
@@ -143,21 +183,24 @@ class SimpleADB:
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
-            qnn_executor_runner_args = " ".join(
-                [
-                    f"--model_path {os.path.basename(self.pte_path[0])}",
-                    f"--output_folder_path {self.output_folder}",
-                    f"--input_list_path {self.input_list_filename}",
-                    f"--etdump_path {self.etdump_path}",
-                    "--shared_buffer" if self.shared_buffer else "",
-                    f"--debug_output_path {self.debug_output_path}",
-                    (
-                        "--dump_intermediate_outputs"
-                        if self.dump_intermediate_outputs
-                        else ""
-                    ),
-                    f"--method_index {method_index}",
-                ]
+            qnn_executor_runner_args = (
+                " ".join(
+                    [
+                        f"--model_path {os.path.basename(self.pte_path[0])}",
+                        f"--output_folder_path {self.output_folder}",
+                        f"--input_list_path {self.input_list_filename}",
+                        f"--etdump_path {self.etdump_path}",
+                        "--shared_buffer" if self.shared_buffer else "",
+                        f"--debug_output_path {self.debug_output_path}",
+                        (
+                            "--dump_intermediate_outputs"
+                            if self.dump_intermediate_outputs
+                            else ""
+                        ),
+                        f"--method_index {method_index}",
+                    ]
+                )
+                + self.extra_cmds
             )
             qnn_executor_runner_cmds = " ".join(
                 [
@@ -256,7 +299,7 @@ def build_executorch_binary(
     shared_buffer=False,
     metadata=None,
     dump_intermediate_outputs=False,
-    custom_pass_config=frozenset(),
+    passes_job=None,
     qat_training_data=None,
 ):
     """
@@ -296,9 +339,9 @@ def build_executorch_binary(
             annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
 
         quantized_model = convert_pt2e(annotated_model)
-        edge_prog = capture_program(quantized_model, inputs, custom_pass_config)
+        edge_prog = capture_program(quantized_model, inputs, passes_job)
     else:
-        edge_prog = capture_program(model, inputs, custom_pass_config)
+        edge_prog = capture_program(model, inputs, passes_job)
 
     backend_options = generate_htp_compiler_spec(
         use_fp16=False if quant_dtype else True
@@ -522,6 +565,13 @@ def setup_common_args_and_variables():
         help="If specified, enable dump intermediate outputs",
         action="store_true",
         default=False,
+    )
+
+    parser.add_argument(
+        "-x",
+        "--enable_x86_64",
+        help="Enable unittest to be executed on x86_64 platform",
+        action="store_true",
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.

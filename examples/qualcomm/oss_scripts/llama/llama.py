@@ -12,12 +12,15 @@ import getpass
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
+from collections import OrderedDict
 from functools import partial
 from multiprocessing.connection import Client
 
 import torch
+from executorch.backends.qualcomm._passes.constant_i64_to_i32 import ConstantI64toI32
 
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
@@ -29,7 +32,15 @@ from executorch.backends.qualcomm.quantizer.custom_annotation import (
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
-from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
+
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+    option_to_flatbuffer,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
+    QCOM_QUANTIZED_IO,
+)
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     convert_linear_to_conv2d,
@@ -37,8 +48,14 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_multi_graph_program,
     generate_qnn_executorch_compiler_spec,
+    get_capture_program_passes,
     get_soc_to_chipset_map,
     update_spill_fill_size,
+)
+
+from executorch.devtools.backend_debug import print_delegation_info
+from executorch.examples.models.llama.source_transformation.quantize import (
+    get_quant_embedding_transform,
 )
 from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tiktoken
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
@@ -108,6 +125,7 @@ def _kv_calibrate(
     tokenizer,
     max_seq_len=512,
     updator=smart_mask_updator,
+    use_i64_token=False,
 ):
     _, atten_mask, _, k_caches, v_caches = example_inputs
 
@@ -128,8 +146,10 @@ def _kv_calibrate(
 
     with torch.no_grad():
         while token_list[-1] != tokenizer.eos_id and pos < max_cache_len:
+            dtype = torch.int64 if use_i64_token else torch.int32
+            token = torch.full((1, 1), token_list[pos], dtype=dtype)
             logits, new_k_caches, new_v_caches = module(
-                torch.full((1, 1), token_list[pos], dtype=torch.int32),
+                token,
                 atten_mask,
                 torch.full((1, 1), pos),
                 *k_caches,
@@ -150,6 +170,7 @@ def _prefill_calibrate(
     module: torch.fx.GraphModule,
     tokenizer,
     max_seq_len=512,
+    use_i64_token=False,
 ):
     _, atten_mask = example_inputs
     max_cache_len = max_seq_len - 1
@@ -168,15 +189,16 @@ def _prefill_calibrate(
         raise RuntimeError("Unkown tokenizer")
 
     pos = len(token_list)
+    dtype = torch.int64 if use_i64_token else torch.int32
 
     with torch.no_grad():
         while token_list[-1] != tokenizer.eos_id and pos < max_cache_len:
-            tmp_token_list = torch.tensor(token_list).reshape(1, -1)
+            tmp_token_list = torch.tensor(token_list, dtype=dtype).reshape(1, -1)
             if pos < max_cache_len:
                 tmp_token_list = torch.cat(
                     [
                         tmp_token_list,
-                        torch.zeros((1, max_cache_len - pos), dtype=torch.int32),
+                        torch.zeros((1, max_cache_len - pos), dtype=dtype),
                     ],
                     dim=1,
                 )
@@ -197,6 +219,7 @@ def calibrate(
     tokenizer,
     max_seq_len=512,
     kv_updator=smart_mask_updator,
+    use_i64_token=False,
 ):
     if len(example_inputs) == 2:
         _prefill_calibrate(
@@ -205,6 +228,7 @@ def calibrate(
             module,
             tokenizer,
             max_seq_len,
+            use_i64_token,
         )
     elif len(example_inputs) == 5:
         _kv_calibrate(
@@ -214,6 +238,7 @@ def calibrate(
             tokenizer,
             max_seq_len,
             updator=kv_updator,
+            use_i64_token=use_i64_token,
         )
     else:
         raise RuntimeError("Get wrong inputs")
@@ -235,6 +260,7 @@ class SingleLlama:
         else:
             tokens, atten_mask = self.get_example_inputs(use_kv_cache=False)
             self.inputs = (tokens, atten_mask)
+        self.llama_graph_module = llama_model
 
     def _tag_ios(self, gm: torch.fx.GraphModule, fixed_point_type):
         if not self.has_quant_io:
@@ -340,7 +366,7 @@ class SingleLlama:
 
         with torch.no_grad():
             fx_graph_module = torch.export.export(
-                self.llama_model, self.inputs, strict=True
+                self.llama_graph_module, self.inputs, strict=True
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
 
@@ -352,9 +378,10 @@ class SingleLlama:
             tokenizer=tokenizer,
             max_seq_len=self.llama_meta["get_max_seq_len"],
             kv_updator=args.kv_updator,
+            use_i64_token=args.embedding_quantize is not None,
         )
 
-        self.llama_model = convert_pt2e(fx_graph_module)
+        self.llama_graph_module = convert_pt2e(fx_graph_module)
 
     def lowering_modules(
         self,
@@ -362,8 +389,10 @@ class SingleLlama:
         fixed_point_type,
         use_fp16=False,
         soc_model=QcomChipset.SM8650,
-        num_sharding=0,
+        num_sharding=1,
+        passes_job=OrderedDict(),
         shared_buffer=False,
+        verbose=False,
     ):
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -379,7 +408,7 @@ class SingleLlama:
         with torch.no_grad():
             # backend option
             backend_options = generate_htp_compiler_spec(
-                use_fp16=use_fp16, use_multi_contexts=num_sharding > 0
+                use_fp16=use_fp16, use_multi_contexts=num_sharding > 1
             )
             compiler_specs = generate_qnn_executorch_compiler_spec(
                 soc_model=soc_model,
@@ -391,10 +420,12 @@ class SingleLlama:
                 compiler_specs, skip_node_op_set=skip_node_op_set
             )
             edge_prog = capture_program(
-                self.llama_model, self.inputs, custom_pass_config=frozenset()
+                self.llama_graph_module,
+                self.inputs,
+                passes_job,
             )
 
-            if num_sharding > 0:
+            if num_sharding > 1:
                 model_sharding.split_graph(
                     edge_prog.exported_program,
                     self.llama_meta["get_n_layers"],
@@ -411,8 +442,12 @@ class SingleLlama:
                 compile_config=EdgeCompileConfig(_check_ir_validity=False),
             )
             edge_prog_mgr = edge_prog_mgr.to_backend(partitioner)
-            if num_sharding > 0:
+            if num_sharding > 1:
                 update_spill_fill_size(edge_prog_mgr.exported_program())
+
+            if verbose:
+                print_delegation_info(edge_prog_mgr.exported_program().graph_module)
+
             exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
             with open(f"{work_space}/{self.pte_filename}.pte", "wb") as file:
                 exec_prog_mgr.write_to_file(file)
@@ -444,21 +479,34 @@ def compile(args, pte_filename, tokenizer):
     )
 
     llama_instance_list = []
+    use_i64_token = args.embedding_quantize is not None
     with torch.device("meta"):
         if args.model_mode == "kv":
             llama_instance_list.append(
-                LlamaModel(kv_config, output_new_cache_only=True)
+                LlamaModel(
+                    kv_config, output_new_cache_only=True, use_i64_token=use_i64_token
+                )
             )
         elif args.model_mode == "prefill":
             llama_instance_list.append(
-                LlamaModel(prefill_config, output_new_cache_only=False)
+                LlamaModel(
+                    prefill_config,
+                    output_new_cache_only=False,
+                    use_i64_token=use_i64_token,
+                )
             )
         elif args.model_mode == "hybrid":
             llama_instance_list.append(
-                LlamaModel(kv_config, output_new_cache_only=True)
+                LlamaModel(
+                    kv_config, output_new_cache_only=True, use_i64_token=use_i64_token
+                )
             )
             llama_instance_list.append(
-                LlamaModel(prefill_config, output_new_cache_only=False)
+                LlamaModel(
+                    prefill_config,
+                    output_new_cache_only=False,
+                    use_i64_token=use_i64_token,
+                )
             )
         else:
             raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
@@ -500,6 +548,7 @@ def compile(args, pte_filename, tokenizer):
 
     assert args.tokenizer_model is not None, "Need tokenizer model for calibration"
 
+    passes_job = get_capture_program_passes()
     if args.dtype_override is not None:
         dtype_override = DType[args.dtype_override]
         for i in range(len(llama_instance_list)):
@@ -508,6 +557,13 @@ def compile(args, pte_filename, tokenizer):
             )
 
     for i in range(len(llama_instance_list)):
+        if args.embedding_quantize:
+            llama_instance_list[i] = get_quant_embedding_transform(args)(
+                llama_instance_list[i]
+            )
+            passes_job[ConstantI64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+                "skip_node"
+            ] = {"tokens"}
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), pte_filename
@@ -532,7 +588,7 @@ def compile(args, pte_filename, tokenizer):
                 # If hybrid mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
                 if i == 0 and args.model_mode == "hybrid":
                     output_indices = 0
-                    for node in llama_instance.llama_model.graph.nodes:
+                    for node in llama_instance.llama_graph_module.graph.nodes:
                         if node.op == "output":
                             for output in node.args[0]:
                                 kv_quant_attrs[output_indices] = output.args[1:]
@@ -550,28 +606,33 @@ def compile(args, pte_filename, tokenizer):
     start_lowering_ts = time.time()
     quant_attrs = None
 
-    if len(llama_instance_list) == 1:
+    if args.model_mode in ["kv", "prefill"]:
         llama_instance_list[0].lowering_modules(
             args.artifact,
             fixed_point_type,
             use_fp16=use_fp16,
             soc_model=get_soc_to_chipset_map()[args.model],
             num_sharding=args.num_sharding,
+            passes_job=passes_job,
             shared_buffer=args.shared_buffer,
         )
         quant_attrs = llama_instance_list[0].get_quant_attrs()
-    else:
+    elif args.model_mode == "hybrid":
         sample_inputs_list = [
             llama_instace.inputs for llama_instace in llama_instance_list
         ]
         edge_progs = [
-            capture_program(llama_instance.llama_model, sample_input)
+            capture_program(
+                llama_instance.llama_graph_module,
+                sample_input,
+                passes_job=passes_job,
+            )
             for llama_instance, sample_input in zip(
                 llama_instance_list, sample_inputs_list
             )
         ]
 
-        if args.num_sharding > 0:
+        if args.num_sharding > 1:
             for i in range(len(llama_instance_list)):
                 model_sharding.split_graph(
                     edge_progs[i].exported_program,
@@ -585,7 +646,7 @@ def compile(args, pte_filename, tokenizer):
                 fixed_point_type,
             )
         backend_options = generate_htp_compiler_spec(
-            use_fp16=use_fp16, use_multi_contexts=args.num_sharding > 0
+            use_fp16=use_fp16, use_multi_contexts=args.num_sharding > 1
         )
         graph_names = ["kv_forward", "prefill_forward"]
         compiler_specs = [
@@ -594,6 +655,7 @@ def compile(args, pte_filename, tokenizer):
                 backend_options=backend_options,
                 shared_buffer=args.shared_buffer,
                 multiple_graphs=True,
+                weight_sharing=not args.enable_x86_64,  # x86 emulator does not support weight sharing
                 graph_name=graph_name,
             )
             for graph_name in graph_names
@@ -606,9 +668,17 @@ def compile(args, pte_filename, tokenizer):
             )
             for i, edge_prog in enumerate(edge_progs)
         ]
-        if args.num_sharding > 0:
+        if args.num_sharding > 1:
+            max_sf_size = update_spill_fill_size(exported_programs)
+            qnn_executorch_options = flatbuffer_to_option(compiler_specs[0][0].value)
+            qnn_executorch_options.backend_options.htp_options.max_sf_buf_size = (
+                max_sf_size
+            )
+            compiler_specs[0][0].value = option_to_flatbuffer(qnn_executorch_options)
+
+        if args.verbose:
             for exported_program in exported_programs:
-                update_spill_fill_size(exported_program)
+                print_delegation_info(exported_program.graph_module)
 
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -622,6 +692,7 @@ def compile(args, pte_filename, tokenizer):
             extract_delegate_segments=True,
         )
 
+        bundle_progs_list = []
         lower_module_dict = {name: [] for name in graph_names}
         call_delegate_inputs_dict = {name: [] for name in graph_names}
         call_delegate_node_name_dict = {name: [] for name in graph_names}
@@ -637,11 +708,17 @@ def compile(args, pte_filename, tokenizer):
                     call_delegate_inputs_list = []
                     for arg in node.args:
                         if arg.op == "call_function":
-                            while "getitem" not in arg.name:
-                                arg = arg.args[0]
-                            call_delegate_inputs_list.append(
-                                (arg.args[0].name, arg.args[1])
-                            )
+                            if (
+                                arg.target
+                                == exir_ops.edge.quantized_decomposed.embedding_4bit.dtype
+                            ):
+                                call_delegate_inputs_list.append((arg.name, None))
+                            else:
+                                while "getitem" not in arg.name:
+                                    arg = arg.args[0]
+                                call_delegate_inputs_list.append(
+                                    (arg.args[0].name, arg.args[1])
+                                )
                         elif arg.op == "placeholder":
                             call_delegate_inputs_list.append((arg.name, None))
                         # No extra needs to do for get_attr node
@@ -651,88 +728,52 @@ def compile(args, pte_filename, tokenizer):
                 elif node.op == "output":
                     for arg in node.args[0]:
                         outputs_dict[graph_name].append((arg.args[0].name, arg.args[1]))
-
-        if args.num_sharding > 0:
-            bundle_progs_list = []
-            for num in range(args.num_sharding - 1, -1, -1):
-                processed_bytes = []
-                for prog, graph_name in zip(exported_programs, graph_names):
-                    processed_bytes.append(
-                        getattr(
-                            prog.graph_module, f"lowered_module_{num}"
-                        ).processed_bytes
-                    )
-
-                    call_delegate_node = [
-                        list(node.users.keys())[0]
-                        for node in prog.graph_module.graph.nodes
-                        if node.op == "get_attr"
-                        and node.name == f"lowered_module_{num}"
-                    ]
-                    input_nodes_dict[graph_name] = [
-                        node
-                        for node in call_delegate_node[0].args
-                        if node.op == "placeholder"
-                    ]
-
-                prog_mgr, bundle_progs = generate_multi_graph_program(
-                    compiler_specs=compiler_specs[0],
-                    processed_bytes=processed_bytes,
-                    input_nodes_dict=input_nodes_dict,
-                    backend_config=executorch_config,
-                    constant_methods=llama_instance_list[
-                        1
-                    ].llama_meta,  # kv method meta
-                )
-                bundle_progs_list.append(bundle_progs)
-                for graph_name in graph_names:
-                    lower_module_dict[graph_name].append(
-                        prog_mgr.exported_program(graph_name).graph_module._modules.get(
-                            "lowered_module_0"
-                        )
-                    )
-
-            exec_prog = generate_composite_llama_program(
-                graph_names=graph_names,
-                sample_inputs_list=sample_inputs_list,
-                lower_module_dict=lower_module_dict,
-                call_delegate_node_name_dict=call_delegate_node_name_dict,
-                call_delegate_inputs_dict=call_delegate_inputs_dict,
-                outputs_dict=outputs_dict,
-                backend_config=executorch_config,
-                constant_methods=llama_instance_list[0].llama_meta,  # kv method meta
-            )
-            with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
-                exec_prog.write_to_file(file)
-        else:
+        for num in range(args.num_sharding - 1, -1, -1):
             processed_bytes = []
-            input_nodes_dict = {name: [] for name in graph_names}
-            output_nodes_dict = {name: [] for name in graph_names}
             for prog, graph_name in zip(exported_programs, graph_names):
                 processed_bytes.append(
-                    prog.graph_module.lowered_module_0.processed_bytes
+                    getattr(prog.graph_module, f"lowered_module_{num}").processed_bytes
                 )
+                call_delegate_node = [
+                    list(node.users.keys())[0]
+                    for node in prog.graph_module.graph.nodes
+                    if node.op == "get_attr" and node.name == f"lowered_module_{num}"
+                ]
                 input_nodes_dict[graph_name] = [
                     node
-                    for node in prog.graph_module.graph.nodes
+                    for node in call_delegate_node[0].args
                     if node.op == "placeholder"
+                    or node.target
+                    == exir_ops.edge.quantized_decomposed.embedding_4bit.dtype
                 ]
-                output_nodes_dict[graph_name] = [
-                    node
-                    for node in prog.graph_module.graph.nodes
-                    if node.op == "output"
-                ]
-
-            prog_mgr, _ = generate_multi_graph_program(
+            prog_mgr, bundle_progs = generate_multi_graph_program(
                 compiler_specs=compiler_specs[0],
                 processed_bytes=processed_bytes,
                 input_nodes_dict=input_nodes_dict,
-                output_nodes_dict=output_nodes_dict,
                 backend_config=executorch_config,
                 constant_methods=llama_instance_list[0].llama_meta,  # kv method meta
             )
-            with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
-                prog_mgr.write_to_file(file)
+            bundle_progs_list.append(bundle_progs)
+            for graph_name in graph_names:
+                lower_module_dict[graph_name].append(
+                    prog_mgr.exported_program(graph_name).graph_module._modules.get(
+                        "lowered_module_0"
+                    )
+                )
+        exec_prog = generate_composite_llama_program(
+            llama_model=llama_instance_list[1].llama_model,
+            graph_names=graph_names,
+            sample_inputs_list=sample_inputs_list,
+            lower_module_dict=lower_module_dict,
+            call_delegate_node_name_dict=call_delegate_node_name_dict,
+            call_delegate_inputs_dict=call_delegate_inputs_dict,
+            outputs_dict=outputs_dict,
+            embedding_quantize=args.embedding_quantize,
+            backend_config=executorch_config,
+            constant_methods=llama_instance_list[1].llama_meta,  # kv method meta
+        )
+        with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
+            exec_prog.write_to_file(file)
 
     end_lowering_ts = time.time()
     logging.info(f"Time for compiling: {end_lowering_ts - start_lowering_ts}")
@@ -751,48 +792,11 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
-    seq_len = args.prefill_seq_len if args.model_mode == "prefill" else args.kv_seq_len
-    runner_args = " ".join(
-        [
-            f"--model_path {pte_filename}.pte",
-            "--output_path outputs/outputs.txt",
-            f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
-            f'--prompt "{args.prompt}"',
-            f"--seq_len {seq_len}",
-            f"--eval_mode {eval_mode}",
-            f"--temperature {args.temperature}",
-            f"--system_prompt '{args.system_prompt}'",
-            f"--logits_scale {quant_attrs['scale']}",
-            f"--logits_offset {quant_attrs['zero_point']}",
-            f"--kv_updator {'SmartMask' if args.kv_updator == smart_mask_updator else 'ShiftPointer'}",
-        ]
-    )
-    runner_cmd = " ".join(
-        [
-            f"cd {workspace} &&",
-            f"./qnn_llama_runner {runner_args}",
-        ]
-    )
-
     pte_path = (
         f"{pre_gen_pte}/{pte_filename}.pte"
         if pre_gen_pte
         else f"{args.artifact}/{pte_filename}.pte"
     )
-    adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
-        pte_path=pte_path,
-        workspace=workspace,
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
-    )
-    # No pregen inputs, input_list is not required
-    adb.push(inputs=[], input_list="", files=[runtime_tokenizer_path])
-    adb.execute(custom_runner_cmd=runner_cmd)
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
@@ -803,14 +807,87 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
         with open(f"{args.artifact}/outputs/outputs.txt", "r") as f:
             outputs.append(f.read())
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    seq_len = args.prefill_seq_len if args.model_mode == "prefill" else args.kv_seq_len
+    runner_args = " ".join(
+        [
+            f'--prompt "{args.prompt}"',
+            f"--eval_mode {eval_mode}",
+            f"--temperature {args.temperature}",
+            f"--system_prompt '{args.system_prompt}'",
+            f"--logits_scale {quant_attrs['scale']}",
+            f"--logits_offset {quant_attrs['zero_point']}",
+        ]
+    )
 
+    runner_cmd = ""
+    if args.enable_x86_64:
+        # x86 emulator is intended for CI and not performance. Check only the first few tokens.
+        seq_len = min(seq_len, 16)
+
+        if args.kv_updator == smart_mask_updator:
+            logging.warning(
+                "x86 only support ShiftPointer, overwrite kv_updator to ShiftPointer"
+            )
+
+        qnn_sdk = os.getenv("QNN_SDK_ROOT")
+        target = "x86_64-linux-clang"
+        runner_cmd = " ".join(
+            [
+                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
+                f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+                f"--tokenizer_path {runtime_tokenizer_path}",
+                f"--model_path {pte_path}",
+                f"--seq_len {seq_len}",
+                f"--output_path {args.artifact}/outputs/outputs.txt",
+                f"--kv_updator ShiftPointer",
+                runner_args,
+            ]
+        )
+        subprocess.run(
+            runner_cmd,
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+        )
+        post_process()
+    else:
+        runner_cmd = " ".join(
+            [
+                f"cd {workspace} &&",
+                f"./qnn_llama_runner",
+                f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
+                f"--model_path {pte_filename}.pte",
+                f"--seq_len {seq_len}",
+                "--output_path outputs/outputs.txt",
+                f"--kv_updator {'SmartMask' if args.kv_updator == smart_mask_updator else 'ShiftPointer'}",
+                runner_args,
+            ]
+        )
+
+        adb = SimpleADB(
+            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
+            build_path=f"{args.build_folder}",
+            pte_path=pte_path,
+            workspace=workspace,
+            device_id=args.device,
+            host_id=args.host,
+            soc_model=args.model,
+            shared_buffer=args.shared_buffer,
+            runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+        )
+        # No pregen inputs, input_list is not required
+        adb.push(inputs=[], input_list="", files=[runtime_tokenizer_path])
+        adb.execute(custom_runner_cmd=runner_cmd)
+
+        adb.pull(output_path=args.artifact, callback=post_process)
     if args.ip and args.port != -1:
+        pte_size = os.path.getsize(pte_path)
         with Client((args.ip, args.port)) as conn:
             conn.send(
                 json.dumps(
                     {
                         "result": outputs,
+                        "pte_size": pte_size,
                     }
                 )
             )
@@ -819,7 +896,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
             logging.info(f"Results[{idx}]:\n{output}")
 
 
-def main():
+def _build_parser():
     parser = setup_common_args_and_variables()
     parser.add_argument(
         "-a",
@@ -910,7 +987,7 @@ def main():
     parser.add_argument(
         "--num_sharding",
         type=int,
-        default=0,
+        default=1,
         help="Specify the number of splits by inserting the fallback custom op. The graph will be split evenly by layers.",
     )
 
@@ -944,7 +1021,23 @@ def main():
         type=str,
     )
 
-    args = parser.parse_args()
+    parser.add_argument(
+        "-E",
+        "--embedding-quantize",
+        default=None,
+        type=str,
+        help="Fallback to cpu embedding operator and type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '4,32'.",
+    )
+
+    parser.add_argument("-v", "--verbose", action="store_true")
+
+    return parser
+
+
+def main(args) -> None:
+    parser = _build_parser()
+
+    args = parser.parse_args(args)
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")
 
@@ -1007,6 +1100,18 @@ def main():
             )
         else:
             logging.warning("Quant attributes of the logit is None.")
+
+        if args.ip and args.port != -1:
+            pte_path = f"{args.artifact}/{pte_filename}.pte"
+            pte_size = os.path.getsize(pte_path)
+            with Client((args.ip, args.port)) as conn:
+                conn.send(
+                    json.dumps(
+                        {
+                            "pte_size": pte_size,
+                        }
+                    )
+                )
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
@@ -1035,4 +1140,4 @@ def main():
 
 # flake8: noqa: C901
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

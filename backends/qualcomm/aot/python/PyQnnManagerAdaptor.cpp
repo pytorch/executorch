@@ -49,7 +49,8 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def("GetSpillFillBufferSize", &PyQnnManager::GetSpillFillBufferSize)
       .def(
           "MakeBinaryInfo",
-          py::overload_cast<const py::bytes&>(&PyQnnManager::MakeBinaryInfo));
+          py::overload_cast<const py::bytes&>(&PyQnnManager::MakeBinaryInfo))
+      .def("StripProtocol", &PyQnnManager::StripProtocol);
 }
 } // namespace qnn
 } // namespace backends

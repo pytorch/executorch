@@ -190,7 +190,9 @@ class ConvertToLinear(ExportPass):
         return ret
 
     def _convert(self, graph_module: torch.fx.GraphModule):
-        partitions = get_source_partitions(graph_module.graph, [torch.nn.Linear])
+        partitions = get_source_partitions(
+            graph_module.graph, [torch.nn.Linear, torch.ops.aten.linear.default]
+        )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
                 op_cnt = Counter(

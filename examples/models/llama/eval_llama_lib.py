@@ -65,7 +65,9 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
                 result_logits = []
                 for pos in range(inps.shape[-1]):
                     pos_tensor = torch.tensor([pos], dtype=torch.int64)
-                    logits = self._model(inps[:, pos : pos + 1], pos_tensor)
+                    logits = self._model(
+                        inps[:, pos : pos + 1], {"input_pos": pos_tensor}
+                    )
                     result_logits.append(logits)
                 if self._generate_full_logits:
                     return torch.cat(result_logits, dim=1)
@@ -74,7 +76,9 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
             else:
                 pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
                 # Batch process the whole sequence.
-                logits = self._model(inps[:, : self._max_seq_length], pos_tensor)
+                logits = self._model(
+                    inps[:, : self._max_seq_length], {"input_pos": pos_tensor}
+                )
                 return logits
 
         else:

@@ -42,6 +42,39 @@ CUSTOM_OPS_SCHEMA_REGISTRATION_SOURCES = [
     "RegisterSchema.cpp",
 ]
 
+ScalarType = enum(
+    "Byte",
+    "Char",
+    "Short",
+    "Int",
+    "Long",
+    "Half",
+    "Float",
+    "Double",
+    "ComplexHalf",
+    "ComplexFloat",
+    "ComplexDouble",
+    "Bool",
+    "QInt8",
+    "QUInt8",
+    "QInt32",
+    "BFloat16",
+    "QUInt4x2",
+    "QUInt2x4",
+    "Bits1x8",
+    "Bits2x4",
+    "Bits4x2",
+    "Bits8",
+    "Bits16",
+    "Float8_e5m2",
+    "Float8_e4m3fn",
+    "Float8_e5m2fnuz",
+    "Float8_e4m3fnuz",
+    "UInt16",
+    "UInt32",
+    "Uint64",
+)
+
 # Hide the dependency to caffe2 internally.
 def et_operator_library(
         name,
@@ -116,7 +149,8 @@ def _prepare_genrule_and_lib(
         custom_ops_yaml_path = None,
         custom_ops_requires_runtime_registration = True,
         manual_registration = False,
-        aten_mode = False):
+        aten_mode = False,
+        support_exceptions = True):
     """
     This function returns two dicts `genrules` and `libs`, derived from the arguments being passed
     to `executorch_generated_lib`. `genrules` contains all information related to what genrules to
@@ -155,6 +189,10 @@ def _prepare_genrule_and_lib(
         # TODO(dbort): Add a second step that verifies that the set of
         # actually-generated files matches GENERATED_FILES.
     ]
+
+    if support_exceptions:
+        genrule_cmd.append("--add-exception-boundary")
+
 
     # Sources for generated kernel registration lib
     sources = MANUAL_REGISTRATION_SOURCES if manual_registration else GENERATED_SOURCES
@@ -217,6 +255,7 @@ def _prepare_genrule_and_lib(
 def _prepare_custom_ops_genrule_and_lib(
         name,
         custom_ops_yaml_path = None,
+        support_exceptions = True,
         deps = [],
         kernels = []):
     """Similar to _prepare_genrule_and_lib but for custom ops."""
@@ -250,6 +289,8 @@ def _prepare_custom_ops_genrule_and_lib(
             "--install_dir=${OUT}",
             "--op_selection_yaml_path=$(location :{}[selected_operators.yaml])".format(oplist_dir_name),
         ]
+        if support_exceptions:
+            genrule_cmd.append("--add-exception-boundary")
 
         # Determine what sources custom_ops_<name> target should include
         custom_ops_sources = CUSTOM_OPS_SCHEMA_REGISTRATION_SOURCES + (
@@ -281,6 +322,7 @@ def exir_custom_ops_aot_lib(
         deps = [],
         compiler_flags = [],
         define_static_target = False,
+        support_exceptions = True,
         platforms = get_default_executorch_platforms()):
     """Generates a C++ library that helps to register the custom ops into PyTorch,
     so they are visible to EXIR. To use this, we need to load the generated so file:
@@ -297,11 +339,13 @@ def exir_custom_ops_aot_lib(
         visibility: visibility of the generated library.
         kernels: C++ kernels for these custom ops. They need to be implemented using ATen/c10 basics.
         deps: dependencies of the generated library.
+        support_exceptions: enable try/catch wrapper around operator implemntations to make sure exceptions thrown will not bring down the process. Disable if your use case disables exceptions in the build.
     """
     genrules, libs = _prepare_custom_ops_genrule_and_lib(
         name = name,
         custom_ops_yaml_path = selects.apply(yaml_target, lambda y: "$(location {})".format(y)),
         kernels = kernels,
+        support_exceptions = support_exceptions,
         deps = deps,
     )
     for genrule in genrules:
@@ -368,7 +412,7 @@ def copy_portable_header_files(name):
     )
 
 def build_portable_lib(name, oplist_header_name, feature = None, expose_operator_symbols = False):
-    """Build portable lib from source. We build from source so that the generated header file, 
+    """Build portable lib from source. We build from source so that the generated header file,
     selected_op_variants.h, can be used to selectively build the lib for different dtypes.
     """
 
@@ -446,7 +490,8 @@ def executorch_generated_lib(
         kernel_deps = [],
         dtype_selective_build = False,
         feature = None,
-        expose_operator_symbols = False):
+        expose_operator_symbols = False,
+        support_exceptions = True):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -495,6 +540,7 @@ def executorch_generated_lib(
         compiler_flags: compiler_flags args to runtime.cxx_library
         dtype_selective_build: In additional to operator selection, dtype selective build further selects the dtypes for each operator. Can be used with model or dict selective build APIs, where dtypes can be specified. Note: this is only available in xplat.
         feature: Product-Feature Hierarchy (PFH). For internal use only, required for FoA in production. See: https://fburl.com/wiki/2wzjpyqy
+        support_exceptions: enable try/catch wrapper around operator implemntations to make sure exceptions thrown will not bring down the process. Disable if your use case disables exceptions in the build.
     """
     if functions_yaml_target and aten_mode:
         fail("{} is providing functions_yaml_target in ATen mode, it will be ignored. `native_functions.yaml` will be the source of truth.".format(name))
@@ -534,6 +580,7 @@ def executorch_generated_lib(
         custom_ops_requires_runtime_registration = custom_ops_requires_runtime_registration,
         aten_mode = aten_mode,
         manual_registration = manual_registration,
+        support_exceptions = support_exceptions,
     )
 
     # genrule for selective build from static operator list
@@ -672,7 +719,7 @@ def executorch_generated_lib(
             platforms = platforms,
         )
 
-# Util macro that takes in a binary or a shared library, find targets ending with `_et_oplist` in the transitive closure of deps, 
+# Util macro that takes in a binary or a shared library, find targets ending with `_et_oplist` in the transitive closure of deps,
 # get the `selected_operators.yaml` from those targets, try to merge them into a single yaml. This target will fail to build, if
 # there are intersections of all `selected_operators.yaml` the `target` is depending on.
 #
@@ -692,6 +739,7 @@ def executorch_ops_check(
                "--model_file_list_path $(@query_outputs \"filter('.*_et_oplist', deps(set({deps})))\") " +
                "--allow_include_all_overloads " +
                "--check_ops_not_overlapping " +
+               "--DEBUG_ONLY_check_prim_ops $(@query_targets \"filter('prim_ops_registry(?:_static|_aten)?$', deps(set({deps})))\") " +
                "--output_dir $OUT ").format(deps = " ".join(["\'{}\'".format(d) for d in deps])),
         define_static_target = False,
         platforms = kwargs.pop("platforms", get_default_executorch_platforms()),

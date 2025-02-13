@@ -13,6 +13,7 @@
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <executorch/runtime/core/portable_type/qint_types.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/platform/assert.h>
@@ -94,27 +95,19 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   switch (shape_dynamism_) {
     case TensorShapeDynamism::STATIC:
       if (!std::equal(sizes_, sizes_ + dim_, new_sizes.begin())) {
-#ifdef ET_LOG_ENABLED
-        std::array<char, 5> old_sizes_str, new_sizes_str;
-
-        executorch::runtime::sizes_to_string(
-            old_sizes_str.data(),
-            old_sizes_str.size(),
-            sizes().data(),
-            sizes().size());
-        executorch::runtime::sizes_to_string(
-            new_sizes_str.data(),
-            new_sizes_str.size(),
-            new_sizes.data(),
-            new_sizes.size());
-#endif
-
-        ET_CHECK_OR_RETURN_ERROR(
-            false,
-            NotSupported,
+#if ET_LOG_ENABLED
+        executorch::runtime::Span<const SizesType> sizes_span(
+            sizes().data(), sizes().size());
+        executorch::runtime::Span<const SizesType> new_sizes_span(
+            new_sizes.data(), new_sizes.size());
+        ET_LOG(
+            Error,
             "Attempted to resize a static tensor. Expected shape %s, but received %s.",
-            old_sizes_str.data(),
-            new_sizes_str.data())
+            executorch::runtime::tensor_shape_to_c_string(sizes_span).data(),
+            executorch::runtime::tensor_shape_to_c_string(new_sizes_span)
+                .data());
+#endif
+        return executorch::runtime::Error::NotSupported;
       }
 
       break;
