@@ -74,7 +74,7 @@ endif()
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
   ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
-  ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type
+  ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
 
 set(_qnn_schema__srcs
