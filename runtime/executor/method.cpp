@@ -289,42 +289,6 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
 
 } // namespace
 
-Result<size_t> Method::get_num_external_constants() {
-  auto flatbuffer_values = serialization_plan_->values();
-  size_t n_value = flatbuffer_values->size();
-
-  size_t num_external_constants = 0;
-  for (size_t i = 0; i < n_value; ++i) {
-    auto serialization_value = flatbuffer_values->Get(i);
-    // Ensure that the `val_as_X()` calls will return non-null pointers.
-    ET_CHECK_OR_RETURN_ERROR(
-        serialization_value != nullptr &&
-            (serialization_value->val_type() ==
-                 executorch_flatbuffer::KernelTypes::Null ||
-             serialization_value->val() != nullptr),
-        InvalidProgram,
-        "Null value at index %" ET_PRIsize_t,
-        i);
-    // Ignore non-tensor types.
-    if (serialization_value->val_type() !=
-        executorch_flatbuffer::KernelTypes::Tensor) {
-      continue;
-    }
-    const auto s_tensor = static_cast<const executorch_flatbuffer::Tensor*>(
-        serialization_value->val());
-
-    // An external constant is tagged with EXTERNAL and has no
-    // allocation_info.
-    if (s_tensor->extra_tensor_info() != nullptr &&
-        s_tensor->extra_tensor_info()->location() ==
-            executorch_flatbuffer::TensorDataLocation::EXTERNAL &&
-        s_tensor->allocation_info() == nullptr) {
-      num_external_constants++;
-    }
-  }
-  return num_external_constants;
-}
-
 bool key_exists(const char* key, NamedData* external_constants, int num_keys) {
   for (int i = 0; i < num_keys; i++) {
     if (strcmp(key, external_constants[i].key) == 0) {
@@ -342,6 +306,15 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
   int index = 0;
   for (size_t i = 0; i < n_value; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
+    // Ensure that the `val_as_X()` calls will return non-null pointers.
+    ET_CHECK_OR_RETURN_ERROR(
+        serialization_value != nullptr &&
+            (serialization_value->val_type() ==
+                 executorch_flatbuffer::KernelTypes::Null ||
+             serialization_value->val() != nullptr),
+        InvalidProgram,
+        "Null value at index %" ET_PRIsize_t,
+        i);
     // Ignore non-tensor types.
     if (serialization_value->val_type() !=
         executorch_flatbuffer::KernelTypes::Tensor) {
@@ -412,11 +385,7 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
   }
 
   // Check if there are any external constants.
-  Result<size_t> num_external_constants = get_num_external_constants();
-  if (!num_external_constants.ok()) {
-    return num_external_constants.error();
-  }
-  num_external_constants_ = *num_external_constants;
+  num_external_constants_ = serialization_plan_->num_external_constants();
   if (num_external_constants_ > 0) {
     // Allocate space for external tensors.
     external_constants_ =

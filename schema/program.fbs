@@ -386,6 +386,8 @@ table ExecutionPlan {
   // constants memory buffer size, and ignore non_const_buffer_sizes[0].
   non_const_buffer_sizes: [int64];
 
+  // Number of external constants used in this ExecutionPlan.
+  num_external_constants: uint32;
 }
 
 // Constant tensor data stored directly in the flatbuffer.

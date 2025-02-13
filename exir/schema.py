@@ -276,6 +276,7 @@ class ExecutionPlan:
     # Runtime should use the len(constant_buffer) as the ground truch of
     # constant memory buffer size, and ignore non_const_buffer_sizes[0].
     non_const_buffer_sizes: List[int]
+    num_external_constants: int
 
 
 @dataclass
