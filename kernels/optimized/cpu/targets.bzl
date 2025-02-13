@@ -34,7 +34,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_gelu",
         deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
-            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(
