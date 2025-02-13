@@ -12,8 +12,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
-from executorch.exir.backend.canonical_partitioners.all_node_partitioner import 
-(
+from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
     AllNodePartitioner,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
