@@ -562,12 +562,10 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
     # dtype override
-    if args.dtype_override is not None:
-        dtype_override = DType[args.dtype_override]
-    elif args.quantization_mode in ["8da4w", "8da4w-gptq"]:
+    if args.quantization_mode in ["8da4w", "8da4w-gptq"]:
         dtype_override = DType["fp16"]
     else:
-        dtype_override = None
+        dtype_override = DType[args.dtype_override]
 
     return (
         _load_llama_model(
@@ -971,32 +969,16 @@ def _load_llama_model(
             args=args,
         )
     )
-    if dtype_override:
-        assert isinstance(
-            dtype_override, DType
-        ), "Override dtype needs to be of type <DType>"
-        torch_dtype = dtype_override.to_torch_dtype()
-        logging.info(f"model.to {torch_dtype}")
-        model = model.to(dtype=torch_dtype)
-        dtype = dtype_override
-    else:
-        state_dict = model.state_dict()
-        dtype = state_dict[next(iter(state_dict))].dtype
-        assert dtype in [
-            torch.bfloat16,
-            torch.float16,
-            torch.float32,
-        ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
-        logging.info(f"Loaded model with dtype={dtype}")
 
-        if dtype == torch.bfloat16:
-            dtype = DType.bf16
-        elif dtype == torch.float16:
-            dtype = DType.fp16
-        elif dtype == torch.float32:
-            dtype = DType.fp32
-        else:
-            raise ValueError(f"Unsupported dtype {dtype}")
+    assert isinstance(
+        dtype_override, DType
+    ), "Override dtype needs to be of type <DType>"
+    torch_dtype = dtype_override.to_torch_dtype()
+    logging.info(f"model.to {torch_dtype}")
+    model = model.to(dtype=torch_dtype)
+    dtype = dtype_override
+
+    breakpoint()
 
     return LLMEdgeManager(
         model=model,

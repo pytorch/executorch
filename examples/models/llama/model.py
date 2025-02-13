@@ -12,7 +12,6 @@ from typing import Dict, Tuple
 
 import torch
 from executorch.examples.models.checkpoint import (
-    get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
 from executorch.examples.models.llama.llama_transformer import Transformer
@@ -121,9 +120,6 @@ the checkpoint format to avoid generating faulty models.
 ************************************************************
 """
             )
-
-        # Get checkpoint dtype.
-        self.dtype = get_checkpoint_dtype(checkpoint)
 
         with open(params_path, "r") as f:
             params = json.loads(f.read())
@@ -265,14 +261,7 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
     def get_eager_model(self) -> torch.nn.Module:
-        if self.dtype:
-            # convert to the type of the provided checkpoint
-            # input and output are torch.long, so signature unchanged
-            return self.model_.to(self.dtype)
-        else:
-            # int8 quantization code has some bf16,
-            # switch all to FP32
-            return self.model_.to(torch.float32)
+        return self.model_
 
     def get_example_inputs(self):
         if self.use_kv_cache:
