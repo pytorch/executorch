@@ -19,13 +19,6 @@
         ]
     },
     {
-        "directory": "extension/flat_tensor/test",
-        "sources": [
-            "flat_tensor_data_map_test.cpp",
-            "flat_tensor_header_test.cpp"
-        ]
-    },
-    {
         "directory": "extension/kernel_util/test",
         "sources": [
             "make_boxed_from_unboxed_functor_test.cpp"
