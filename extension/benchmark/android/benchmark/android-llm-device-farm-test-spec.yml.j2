@@ -11,12 +11,6 @@ phases:
       # Print this so that the upload script can read and process the benchmark config
       - echo "The benchmark config is {{ benchmark_config_id }}"
 
-      - echo "Checking if model exists in S3..."
-      - |
-        if ! curl -s --fail -I '{{ model_path }}'; then
-          echo "model file not found in S3. Exiting test."
-          exit 1
-        fi
       # Download the model from S3
       - curl -s --fail '{{ model_path }}' -o model.zip
       - unzip model.zip && ls -la
