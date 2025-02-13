@@ -6,7 +6,7 @@
 
 # Example script for exporting simple models to flatbuffer
 
-#pyre-unsafe
+# pyre-unsafe
 
 import logging
 import tempfile
