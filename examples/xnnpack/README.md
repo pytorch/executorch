@@ -31,7 +31,7 @@ Once we have the model binary (pte) file, then let's run it with ExecuTorch runt
 cd executorch
 
 # Get a clean cmake-out directory
-./install_requiements.sh --clean
+./install_executorch.sh --clean
 mkdir cmake-out
 
 # Configure cmake
