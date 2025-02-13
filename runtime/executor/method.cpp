@@ -325,8 +325,6 @@ Result<size_t> Method::get_num_external_constants() {
   return num_external_constants;
 }
 
-// Check if key exists in external_constants_.
-// Helper function for parse_external_constants.
 bool key_exists(const char* key, NamedData* external_constants, int num_keys) {
   for (int i = 0; i < num_keys; i++) {
     if (strcmp(key, external_constants[i].key) == 0) {
@@ -340,7 +338,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   size_t n_value = flatbuffer_values->size();
 
-  // Stores the number of unique external tensors that have been resolved.
+  // The number of unique external tensors that have been resolved.
   int index = 0;
   for (size_t i = 0; i < n_value; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
@@ -351,8 +349,8 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
     }
     const auto s_tensor = static_cast<const executorch_flatbuffer::Tensor*>(
         serialization_value->val());
-    // Note: tensors with allocation_info are mutable, and resolved in
-    // parse_values.
+    // Constant tensors are resolved here; tensors with allocation_info are
+    // mutable and are resolved in parse_values.
     if (s_tensor->extra_tensor_info() != nullptr &&
         s_tensor->extra_tensor_info()->location() ==
             executorch_flatbuffer::TensorDataLocation::EXTERNAL &&
@@ -413,7 +411,7 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
     return Error::MemoryAllocationFailed;
   }
 
-  // Check if there are external constants.
+  // Check if there are any external constants.
   Result<size_t> num_external_constants = get_num_external_constants();
   if (!num_external_constants.ok()) {
     return num_external_constants.error();

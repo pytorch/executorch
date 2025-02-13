@@ -50,6 +50,10 @@ struct NamedData {
   FreeableBuffer* buffer;
 };
 
+// Check if key exists in external_constants.
+// A helper function for parse_external_constants.
+bool key_exists(const char* key, NamedData* external_constants, int num_keys);
+
 /**
  * An executable method of an executorch program. Maps to a python method like
  * `forward()` on the original nn.Module.
@@ -355,7 +359,7 @@ class Method final {
   size_t num_external_constants_ = 0;
 
   /**
-   * Counts the number of external constants in flatbuffer.
+   * Counts the number of external constants for this method.
    */
   ET_NODISCARD Result<size_t> get_num_external_constants();
 
