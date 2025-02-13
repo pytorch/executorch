@@ -34,8 +34,12 @@ if __name__ == "__main__":
     output_dir = str(args.output_dir)
 
     if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
+        raise Exception(f"Output directory {output_dir} already exists.  Please make delete it before running script.")
     os.makedirs(output_dir)
+
+    coreml_extract_path = os.path.join(os.getcwd(), "extracted_coreml_models")
+    if os.path.exists(coreml_extract_path):
+        raise Exception(f"{coreml_extract_path} already exists.  Please delete it before running script.")
 
     extract_script_path = os.path.join(os.path.dirname(__file__), "../scripts/extract_coreml_models.py")
     extracted_path = "extracted_coreml_models/model_1/lowered_module/model.mlpackage"
@@ -44,14 +48,11 @@ if __name__ == "__main__":
     items = os.listdir("extracted_coreml_models")
     assert len(items) == 1, "Expected one CoreML partition"
     shutil.copytree(extracted_path, f"{output_dir}/model1.mlpackage")
-    shutil.rmtree("extracted_coreml_models")
 
     subprocess.run(["python", extract_script_path, "--model", model2_path])
     items = os.listdir("extracted_coreml_models")
     assert len(items) == 1, "Expected one CoreML partition"
     shutil.copytree(extracted_path, f"{output_dir}/model2.mlpackage")
-    shutil.rmtree("extracted_coreml_models")
-
 
     desc = ct.utils.MultiFunctionDescriptor()
 
