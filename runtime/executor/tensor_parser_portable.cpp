@@ -13,6 +13,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
@@ -21,6 +22,8 @@ namespace executorch {
 namespace runtime {
 namespace deserialization {
 
+using executorch::runtime::NamedData;
+using executorch::runtime::Span;
 using torch::executor::ScalarType;
 using torch::executor::Tensor;
 using torch::executor::TensorImpl;
@@ -29,7 +32,8 @@ Result<Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor,
-    const NamedDataMap* named_data_map) {
+    const NamedDataMap* named_data_map,
+    Span<NamedData> external_constants) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
   auto method_allocator = memory_manager->method_allocator();
 
@@ -149,7 +153,8 @@ Result<Tensor> parseTensor(
       program,
       tensor_impl->nbytes(),
       memory_manager->planned_memory(),
-      named_data_map);
+      named_data_map,
+      external_constants);
   if (!data_ptr.ok()) {
     ET_LOG(
         Error,

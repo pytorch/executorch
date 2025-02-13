@@ -16,6 +16,9 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
+        exported_deps = [
+            "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
+        ],
         visibility = [
             "//executorch/...",
         ],
