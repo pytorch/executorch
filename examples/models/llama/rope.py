@@ -210,46 +210,6 @@ def hf_apply_rotary_emb_to_k(k, cos, sin, position_ids=None, unsqueeze_dim=1):
     return k_embed
 
 
-# ======================= Qwen2 Implementation ========================
-
-
-def qwen_precompute_freqs_cis(dim: int, end: int, theta: float = 1_000_000.0):
-    """
-    Precompute frequency tensor for Qwen2-style RoPE.
-    """
-    freqs = 1.0 / (
-        theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
-    )
-    t = torch.arange(end, device=freqs.device)
-    freqs = torch.outer(t, freqs).float()
-    freqs_cos = torch.cos(freqs)
-    freqs_sin = torch.sin(freqs)
-    return freqs_cos, freqs_sin
-
-
-def qwen_apply_rotary_emb(
-    q: torch.Tensor, k: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Apply Qwen2-style RoPE to query and key tensors.
-    """
-
-    def rotate_half(x):
-        """Rotates half the hidden dims of the input."""
-        x1 = x[..., : x.shape[-1] // 2]
-        x2 = x[..., x.shape[-1] // 2 :]
-        return torch.cat((-x2, x1), dim=-1)
-
-    # Reshape cos and sin for broadcasting
-    cos = freqs_cos.unsqueeze(1)  # [seq_len, 1, head_dim]
-    sin = freqs_sin.unsqueeze(1)  # [seq_len, 1, head_dim]
-
-    # Apply rotation
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed, k_embed
-
-
 class Rope(torch.nn.Module):
     def __init__(self, params: ModelArgs):
         super().__init__()
@@ -259,9 +219,6 @@ class Rope(torch.nn.Module):
         if self.params.use_hf_rope:
             self.precompute_freqs_cis = hf_precompute_freqs_cis
             self.apply_rotary_emb = hf_apply_rotary_emb
-        # elif self.params.use_qwen_rope:
-        #     self.precompute_freqs_cis = qwen_precompute_freqs_cis
-        #     self.apply_rotary_emb = qwen_apply_rotary_emb
         else:
             self.precompute_freqs_cis = partial(
                 precompute_freqs_cis,
