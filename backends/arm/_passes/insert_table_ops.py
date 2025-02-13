@@ -5,7 +5,8 @@
 
 # pyre-unsafe
 
-from typing import Callable, Dict
+from itertools import chain
+from typing import Callable, cast, Dict, Iterator, Set
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
@@ -17,7 +18,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule
-
+from torch.fx.node import Node
 from torch.library import impl, Library
 
 lib = Library("tosa", "DEF")
@@ -32,15 +33,13 @@ def _table_impl(*args, **kwargs):  # pyre-ignore
     return args[0].to(dtype=torch.int32)
 
 
-class InsertTableOpsPass(ExportPass):
+class TableOps:
     """
-    For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
-    edge ops with a tosa._table(input: Tensor, target_str: str) where target_str == str(node.target).
-    When lowering the _table node target_str will be used to find the corresponding torch operator
-    which will be used to produce the table values in operators/op_table.py.
+    Helper class for finding the corresponding table operator for a given Node.
     """
 
-    table_ops: Dict[EdgeOpOverload, Callable[[torch.Tensor], torch.Tensor]] = {
+    # Targets that follow a straigtforward one-to-one mapping to their table op
+    unary_table_ops: Dict[EdgeOpOverload, Callable[[torch.Tensor], torch.Tensor]] = {
         exir_ops.edge.aten.ceil.default: torch.ceil,
         exir_ops.edge.aten.exp.default: torch.exp,
         exir_ops.edge.aten.floor.default: torch.floor,
@@ -53,9 +52,52 @@ class InsertTableOpsPass(ExportPass):
         exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
     }
 
+    # Targets that must be treated explicitly
+    special_table_ops: Set[EdgeOpOverload] = {
+        exir_ops.edge.aten.pow.Tensor_Scalar,
+    }
+
+    def __init__(self, exported_program: ExportedProgram):
+        self.exported_program = exported_program
+
+    def __contains__(self, node: Node) -> bool:
+        return (
+            node.target in self.unary_table_ops or node.target in self.special_table_ops
+        )
+
+    def __getitem__(self, node: Node):
+        target = cast(EdgeOpOverload, node.target)
+        if target in self.unary_table_ops:
+            return self.unary_table_ops[target]
+        elif target in self.special_table_ops:
+            match target:
+                case exir_ops.edge.aten.pow.Tensor_Scalar:
+                    # Exponent is a constant. Embed it into a lambda.
+                    exp = cast(int, node.args[1])
+                    return lambda x: torch.pow(x, exp).flatten()
+                case _:
+                    # Op must be handled if it's inside self.special_ops
+                    raise AssertionError("Unhandled table operation")
+        else:
+            raise KeyError("Table op for {target} does not exist")
+
+    @staticmethod
+    def included_ops() -> Iterator[EdgeOpOverload]:
+        return chain(TableOps.unary_table_ops, TableOps.special_table_ops)
+
+
+class InsertTableOpsPass(ExportPass):
+    """
+    For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
+    edge ops with a tosa._table(input: Tensor, target_str: str) where target_str == str(node.target).
+    When lowering the _table node target_str will be used to find the corresponding torch operator
+    which will be used to produce the table values in operators/op_table.py.
+    """
+
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
         self.exported_program = exported_program
+        self.table_ops = TableOps(exported_program)
 
     def register_buffer(self, buffer_name: str, buffer: torch.Tensor) -> None:
         """
@@ -166,7 +208,7 @@ class InsertTableOpsPass(ExportPass):
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in self.table_ops:
+            if node.op != "call_function" or node not in self.table_ops:
                 continue
             input_qparams = node.meta["input_qparams"]
             output_qparams = node.meta["output_qparams"]
@@ -186,7 +228,7 @@ class InsertTableOpsPass(ExportPass):
 
                 # Generate table buffer and how much to lshift the table output.
                 buffer, lshift = self.generate_table_values(
-                    torch_op=self.table_ops[node.target],
+                    torch_op=self.table_ops[node],
                     in_quantargs=input_qparams[0],
                     out_quantargs=output_qparams[0],
                 )
@@ -207,7 +249,9 @@ class InsertTableOpsPass(ExportPass):
                     output_node = rescale_node
 
                 node.replace_all_uses_with(output_node)
+
             graph_module.graph.erase_node(node)
+
             output_node.meta["input_qparams"] = input_qparams
             output_node.meta["output_qparams"] = output_qparams
             modified = True
