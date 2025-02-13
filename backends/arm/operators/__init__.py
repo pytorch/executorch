@@ -31,6 +31,7 @@ from . import (  # noqa
     op_minimum,
     op_mul,
     op_permute,
+    op_pow,
     op_reciprocal,
     op_repeat,
     op_rescale,

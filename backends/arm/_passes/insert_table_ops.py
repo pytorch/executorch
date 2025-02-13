@@ -6,11 +6,12 @@
 
 # pyre-unsafe
 
-from typing import Callable, Dict
+from typing import Callable, cast, Dict, Set
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm.tosa_quant_utils import QuantArgs
+from executorch.backends.transforms.utils import delete_constant_placeholder
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -18,6 +19,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule
+from torch.fx.node import Node
 from torch.library import impl, Library
 
 lib = Library("tosa", "DEF")
@@ -29,6 +31,59 @@ def _table_impl(*args, **kwargs):  # pyre-ignore
     return args[0]
 
 
+class TableOps:
+    """
+    Helper class for finding the corresponding table operator for a given Node.
+    """
+
+    def __init__(self, exported_program: ExportedProgram):
+        self.exported_program = exported_program
+
+        # Targets that follow a straigtforward one-to-one mapping to their table op
+        self.unary_table_ops: Dict[
+            EdgeOpOverload, Callable[[torch.Tensor], torch.Tensor]
+        ] = {
+            exir_ops.edge.aten.exp.default: torch.exp,
+            exir_ops.edge.aten.floor.default: torch.floor,
+            exir_ops.edge.aten.log.default: torch.log,
+            exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
+            exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
+            exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
+            exir_ops.edge.aten.tanh.default: torch.tanh,
+            exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
+            exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
+        }
+
+        # Targets that must be treated explicitly
+        self.special_table_ops: Set[EdgeOpOverload] = {
+            exir_ops.edge.aten.pow.Tensor_Tensor,
+        }
+
+    def __contains__(self, node: Node) -> bool:
+        return (
+            node.target in self.unary_table_ops or node.target in self.special_table_ops
+        )
+
+    def __getitem__(self, node: Node):
+        target = cast(EdgeOpOverload, node.target)
+        if target in self.unary_table_ops:
+            return self.unary_table_ops[target]
+        elif target in self.special_table_ops:
+            match target:
+                case exir_ops.edge.aten.pow.Tensor_Tensor:
+                    # Exponent is a constant. Retrieve it from the graph and embed it into a lambda.
+                    exp_node = cast(Node, node.args[1])
+                    exp_name = self.exported_program.graph_signature.inputs_to_buffers[
+                        exp_node.name
+                    ]
+                    exp = self.exported_program.state_dict[exp_name]
+                    return lambda x: torch.pow(x, exp).flatten()
+                case _:
+                    raise NotImplementedError("Unhandled table operation")
+        else:
+            raise KeyError("Table op for {target} does not exist")
+
+
 class InsertTableOpsPass(ExportPass):
     """
     For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
@@ -37,21 +92,10 @@ class InsertTableOpsPass(ExportPass):
     which will be used to produce the table values in operators/op_table.py.
     """
 
-    table_ops: Dict[EdgeOpOverload, Callable[[torch.Tensor], torch.Tensor]] = {
-        exir_ops.edge.aten.exp.default: torch.exp,
-        exir_ops.edge.aten.floor.default: torch.floor,
-        exir_ops.edge.aten.log.default: torch.log,
-        exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
-        exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
-        exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
-        exir_ops.edge.aten.tanh.default: torch.tanh,
-        exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
-        exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
-    }
-
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
         self.exported_program = exported_program
+        self.table_ops = TableOps(exported_program)
 
     def register_buffer(self, buffer_name: str, buffer: torch.Tensor) -> None:
         """
@@ -86,7 +130,7 @@ class InsertTableOpsPass(ExportPass):
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in self.table_ops:
+            if node.op != "call_function" or node not in self.table_ops:
                 continue
             input_qparams = node.meta["input_qparams"]
             output_qparams = node.meta["output_qparams"]
@@ -104,7 +148,7 @@ class InsertTableOpsPass(ExportPass):
                 assert len(output_qparams) == 1
                 # Generate table buffer
                 buffer = self.generate_table_values(
-                    torch_op=self.table_ops[node.target],
+                    torch_op=self.table_ops[node],
                     in_quantargs=input_qparams[0],
                     out_quantargs=output_qparams[0],
                 )
@@ -115,7 +159,19 @@ class InsertTableOpsPass(ExportPass):
                     buffer_name=table_node.name.replace("_default", ""), buffer=buffer
                 )
                 node.replace_all_uses_with(table_node)
-            graph_module.graph.erase_node(node)
+
+            if node.target in self.table_ops.special_table_ops:
+                # The node must be treated explicitly
+                match node.target:
+                    case exir_ops.edge.aten.pow.Tensor_Tensor:
+                        exp_node = node.args[1]
+                        graph_module.graph.erase_node(node)
+                        delete_constant_placeholder(self.exported_program, exp_node)
+                    case _:
+                        raise NotImplementedError("Unhandled table operation")
+            else:
+                graph_module.graph.erase_node(node)
+
             table_node.meta["input_qparams"] = input_qparams
             table_node.meta["output_qparams"] = output_qparams
             modified = True
