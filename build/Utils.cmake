@@ -353,11 +353,11 @@ function(add_torch_to_cmake_prefix_path)
     resolve_python_executable()
   endif()
   execute_process(
-    COMMAND "${PYTHON_EXECUTABLE}" -c "import torch as _; print(_.__path__[0], end='')"
+    COMMAND "${PYTHON_EXECUTABLE}" -c
+            "import torch as _; print(_.__path__[0], end='')"
     OUTPUT_VARIABLE _tmp_torch_path
     ERROR_VARIABLE _tmp_torch_path_error
-    RESULT_VARIABLE _tmp_torch_path_result
-    COMMAND_ECHO STDERR
+    RESULT_VARIABLE _tmp_torch_path_result COMMAND_ECHO STDERR
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
   if(NOT _tmp_torch_path_result EQUAL 0)
@@ -368,16 +368,18 @@ function(add_torch_to_cmake_prefix_path)
     message(FATAL_ERROR "Error:\n${_tmp_torch_path_error}")
   endif()
   list(APPEND CMAKE_PREFIX_PATH "${_tmp_torch_path}")
-  set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}" PARENT_SCOPE)
+  set(CMAKE_PREFIX_PATH
+      "${CMAKE_PREFIX_PATH}"
+      PARENT_SCOPE
+  )
 endfunction()
 
-# Replacement for find_package(Torch CONFIG REQUIRED); sets up
-# CMAKE_PREFIX_PATH first and only does the find once. If you have a
-# header-only Torch dependency, use find_package_torch_headers
-# instead!
-function(find_package_torch)
+# Replacement for find_package(Torch CONFIG REQUIRED); sets up CMAKE_PREFIX_PATH
+# first and only does the find once. If you have a header-only Torch dependency,
+# use find_package_torch_headers instead!
+macro(find_package_torch)
   if(NOT TARGET torch)
     add_torch_to_cmake_prefix_path()
     find_package(Torch CONFIG REQUIRED)
   endif()
-endfunction()
+endmacro()
