@@ -16,6 +16,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/platform_memory_allocator.h>
@@ -288,7 +289,7 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
 
 } // namespace
 
-Error Method::parse_values() {
+Error Method::parse_values(const NamedDataMap* named_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_values != nullptr, InvalidProgram, "Missing values");
@@ -414,7 +415,8 @@ Error Method::parse_values() {
         auto t = deserialization::parseTensor(
             program_,
             memory_manager_,
-            static_cast<const executorch_flatbuffer::Tensor*>(val));
+            static_cast<const executorch_flatbuffer::Tensor*>(val),
+            named_data_map);
         if (!t.ok()) {
           ET_LOG(
               Error,
@@ -607,7 +609,8 @@ Result<Method> Method::load(
     executorch_flatbuffer::ExecutionPlan* s_plan,
     const Program* program,
     MemoryManager* memory_manager,
-    EventTracer* event_tracer) {
+    EventTracer* event_tracer,
+    const NamedDataMap* named_data_map) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -621,7 +624,7 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
 
-  Error err = method.init(s_plan);
+  Error err = method.init(s_plan, named_data_map);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -630,7 +633,9 @@ Result<Method> Method::load(
   }
 }
 
-Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
+Error Method::init(
+    executorch_flatbuffer::ExecutionPlan* s_plan,
+    const NamedDataMap* named_data_map) {
   EXECUTORCH_SCOPE_PROF("Method::init");
   internal::EventTracerProfileMethodScope event_tracer_profile_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
@@ -647,7 +652,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
   {
     // Parse the elements of the values_ array.
-    Error err = parse_values();
+    Error err = parse_values(named_data_map);
     if (err != Error::Ok) {
       return err;
     }

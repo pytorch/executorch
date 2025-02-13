@@ -1,4 +1,5 @@
 load("@prelude//platforms:defs.bzl", "execution_platform")
+load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
 load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
 load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
 load("@prelude//toolchains:go.bzl", "system_go_toolchain")
@@ -7,6 +8,10 @@ load("@prelude//toolchains:ocaml.bzl", "system_ocaml_toolchain")
 load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "system_python_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//toolchains:rust.bzl", "system_rust_toolchain")
+
+# TODO: sync this directory with https://github.com/facebook/buck2-shims-meta.
+# Internal context:
+# https://fb.workplace.com/groups/222849770514616/posts/600883896044533/
 
 oncall("executorch")
 
@@ -72,5 +77,10 @@ execution_platform(
     os_configuration = "prelude//os:android",
     # REVIEW: not sure if this is correct
     use_windows_path_separators = host_info().os.is_windows,
+    visibility = ["PUBLIC"],
+)
+
+noop_test_toolchain(
+    name = "test",
     visibility = ["PUBLIC"],
 )
