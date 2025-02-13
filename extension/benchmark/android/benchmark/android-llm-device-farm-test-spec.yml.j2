@@ -17,6 +17,7 @@ phases:
           echo "model file not found in S3. Exiting test."
           exit 1
         fi
+      # Download the model from S3
       - curl -s --fail '{{ model_path }}' -o model.zip
       - unzip model.zip && ls -la
 
