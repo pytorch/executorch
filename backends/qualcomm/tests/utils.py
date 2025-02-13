@@ -188,6 +188,8 @@ class TestQNN(unittest.TestCase):
     shared_buffer: bool = False
     enable_x86_64: bool = False
     compile_only: bool = False
+    pre_gen_pte: str = ""
+    llama_artifacts: str = ""
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
