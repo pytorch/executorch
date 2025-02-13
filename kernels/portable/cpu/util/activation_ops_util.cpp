@@ -47,7 +47,7 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   for (size_t i = 0; i < in.dim(); ++i) {
     if (i != non_negative_dim) {
       if (out.size(i) != in.size(i)) {
-#ifdef ET_LOG_ENABLED
+#if ET_LOG_ENABLED
         auto out_shape_str = executorch::runtime::tensor_shape_to_c_string(
             executorch::runtime::Span<const Tensor::SizesType>(
                 out.sizes().data(), out.sizes().size()));
