@@ -11,9 +11,6 @@ build_type="Release"
 
 build_type=${1:-$build_type}
 
-SITE_PACKAGES="$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
-
 echo "--------------------------------------------------------------------------------"
 echo "Build .so library to register quant ops with AoT flow ${build_type} into '$(echo $(pwd))/cmake-out-aot-lib'"
 echo "--------------------------------------------------------------------------------"
@@ -23,7 +20,6 @@ echo "--------------------------------------------------------------------------
 rm -f cmake-out-aot-lib/CMakeCache.txt
 
 CXXFLAGS="-fno-exceptions -fno-rtti" cmake \
-    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH"    \
     -DCMAKE_BUILD_TYPE=${build_type}            \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON      \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
