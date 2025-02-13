@@ -10,7 +10,9 @@ import torch
 from executorch.exir import to_edge
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.canonical_partitioners.all_node_partitioner import AllNodePartitioner
+from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
+    AllNodePartitioner,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
@@ -80,7 +82,9 @@ class TestCompatibility(unittest.TestCase):
         edgeir_m = to_edge(export(sin_module, model_inputs, strict=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
-        lowered_edge_irm = edgeir_m.to_backend(AllNodePartitioner("BackendWithCompilerDemo", compile_specs))
+        lowered_edge_irm = edgeir_m.to_backend(
+            AllNodePartitioner("BackendWithCompilerDemo", compile_specs)
+        )
         exec_prog = lowered_edge_irm.to_executorch()
 
         buff = exec_prog.buffer

@@ -8,23 +8,23 @@ from typing import Dict, List
 
 import torch
 from executorch.exir.backend.backend_details import ExportedProgram
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
     PartitionResult,
 )
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+
 
 def is_non_tensor_placeholder(node: torch.fx.Node, ep: ExportedProgram) -> bool:
     """
     Returns true if the node is a placeholder node and it is not a tensor
     """
     return node.op == "placeholder" and not (
-        is_param(ep, node)
-        or is_buffer(ep, node)
-        or is_lifted_tensor_constant(ep, node)
+        is_param(ep, node) or is_buffer(ep, node) or is_lifted_tensor_constant(ep, node)
     )
+
 
 class AllNodePartitioner(Partitioner):
     def __init__(
@@ -38,7 +38,6 @@ class AllNodePartitioner(Partitioner):
         """
         super().__init__()
         self.delegation_spec = DelegationSpec(backend_id, compile_specs)
-
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # tag all nodes
