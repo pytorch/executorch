@@ -10,14 +10,21 @@ import re
 import shutil
 import subprocess
 import tempfile
+
 from pathlib import Path
 
 from typing import cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
-import tosa_reference_model
-from executorch.backends.arm.arm_backend import get_tosa_version, is_tosa
+
+logger = logging.getLogger(__name__)
+try:
+    import tosa_reference_model
+except ImportError:
+    logger.warning("tosa_reference_model not found, can't run reference model tests")
+    tosa_reference_model = None
+from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
 
 from executorch.backends.arm.test.conftest import is_option_enabled
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -157,6 +164,10 @@ def get_output_quantization_params(
 class TosaReferenceModelDispatch(TorchFunctionMode):
     """A context manager for executing call_delegate nodes using the reference model"""
 
+    def __init__(self):
+        self.ran_tosa_dispatch = False
+        super().__init__()
+
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
         compile_specs = lowered_backend_module.compile_specs
@@ -164,18 +175,26 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
             raise RuntimeError(
                 "Model needs to be compiled to tosa to run reference model."
             )
-        tosa_version = get_tosa_version(compile_specs)
+        tosa_spec = get_tosa_spec(compile_specs)
 
-        return run_tosa_graph(tosa_buffer, tosa_version, inputs)
+        return run_tosa_graph(tosa_buffer, tosa_spec, inputs)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        super().__exit__(exc_type, exc_val, exc_tb)
+        if not self.ran_tosa_dispatch:
+            raise RuntimeError(
+                "Ran model with TosaReferenceModelDispatch but never ran TOSABackend delegate."
+            )
 
     def __torch_function__(self, func, types, args=..., kwargs=None):
-        if isinstance(func, torch._higher_order_ops.executorch_call_delegate.ExecutorchCallDelegate):  # type: ignore
+        if func is torch._higher_order_ops.executorch_call_delegate:
             lowered_backend_module = cast(LoweredBackendModule, args[0])
-            if lowered_backend_module.backend_id == "ArmBackend":
+            if lowered_backend_module.backend_id == "TOSABackend":
+                self.ran_tosa_dispatch = True
                 return self._tosa_dispatch(lowered_backend_module, args[1:])
             else:
-                logger.warning(
-                    f"Ran model with TosaReferenceModelDispatch but call_delegate with {lowered_backend_module.backend_id=} != 'ArmBackend'."
+                raise RuntimeError(
+                    f"Ran model with TosaReferenceModelDispatch but call_delegate with {lowered_backend_module.backend_id=} != 'TOSABackend'."
                 )
 
         kwargs = kwargs or {}
@@ -484,6 +503,47 @@ def _tosa_refmodel_loglevel(loglevel: int) -> str:
     }
     clamped_logging_level = max(min(loglevel // 10 * 10, 50), 0)
     return loglevel_map[clamped_logging_level]
+
+
+def corstone300_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
+def corstone320_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-320", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
+def get_elf_path(target_board):
+    elf_path = os.path.join(
+        "cmake-out",
+        f"arm_semihosting_executor_runner_{target_board}",
+        "arm_executor_runner",
+    )
+    if not os.path.exists(elf_path):
+        raise RuntimeError(
+            f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+        )
+    else:
+        return elf_path
+
+
+def arm_executor_runner_exists(target_board):
+    try:
+        get_elf_path(target_board)
+    except:
+        return False
+    else:
+        return True
 
 
 def run_tosa_graph(

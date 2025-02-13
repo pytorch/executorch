@@ -25,16 +25,20 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(name = "op_exp"),
+    op_target(
+        name = "op_fft_r2c",
+        compiler_flags = [] if runtime.is_oss else [
+            "-Wno-global-constructors",
+            "-Wno-shadow",
+        ],
+        deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
+    ),
     op_target(name = "op_sigmoid"),
     op_target(
         name = "op_gelu",
-        deps = select({
-            "DEFAULT": [],
-            "ovr_config//cpu:arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
-            ],
-        }) + [
+        deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
+            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(
@@ -95,6 +99,13 @@ _OPTIMIZED_ATEN_OPS = (
         ],
     ),
 )
+
+
+def get_sleef_preprocessor_flags():
+    if runtime.is_oss:
+        return []
+    return ["-DAT_BUILD_ARM_VEC256_WITH_SLEEF"]
+
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.

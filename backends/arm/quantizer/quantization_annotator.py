@@ -132,6 +132,9 @@ _one_to_one = [
     torch.ops.aten.sigmoid.default,
     torch.ops.aten.tanh.default,
     torch.ops.aten.sum.dim_IntList,
+    torch.ops.aten.hardsigmoid.default,
+    torch.ops.aten.hardswish.default,
+    torch.ops.aten.full_like.default,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -186,6 +189,8 @@ _parent_shared_qspec = [
     torch.ops.aten.full.default,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
+    torch.ops.aten.clamp.default,
+    torch.ops.aten.clamp.Tensor,
     operator.getitem,
 ]
 
@@ -375,3 +380,11 @@ def annotate_graph(  # type: ignore[return]
             _annotate_output(node, quant_properties.quant_output)
 
         arm_quantizer_utils.mark_node_as_annotated(node)  # type: ignore[attr-defined]
+
+        # Quantization does not allow kwargs for some reason.
+        # Remove from ops we know have and where we know it does not break anything.
+        if node.target in [
+            torch.ops.aten.full_like.default,
+            torch.ops.aten.full.default,
+        ]:
+            node.kwargs = {}

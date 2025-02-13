@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,7 +14,6 @@
 import re
 from typing import List
 
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from packaging.version import Version
 
 
@@ -52,21 +51,6 @@ class TosaSpecification:
 
     def __init__(self, version: Version):
         self.version = version
-
-    @staticmethod
-    def create_from_compilespecs(
-        compile_specs: List[CompileSpec],
-    ) -> "TosaSpecification":
-        """
-        Search the CompileSpec list for 'tosa_version' and instantiate a
-        class from the found value or return None on failure.
-        """
-        for spec in compile_specs:
-            if spec.key == "tosa_version":
-                return TosaSpecification.create_from_string(spec.value.decode())
-        raise ValueError(
-            "No TOSA version key found in any of the supplied CompileSpecs"
-        )
 
     @staticmethod
     def create_from_string(repr: str) -> "TosaSpecification":
@@ -131,7 +115,7 @@ class Tosa_0_80(TosaSpecification):
     def __repr__(self):
         extensions = ""
         if self.level_8k:
-            extensions += "+8K"
+            extensions += "+8k"
         if self.is_U55_subset:
             extensions += "+u55"
         return f"TOSA-{str(self.version)}+{self.profile}{extensions}"
@@ -207,7 +191,10 @@ class Tosa_1_00(TosaSpecification):
         return "".join(["+" + e for e in self.extensions])
 
     def __repr__(self):
-        return f"TOSA-{self.version}{self._get_profiles_string()}{self._get_profiles_string()}"
+        extensions = self._get_extensions_string()
+        if self.level_8k:
+            extensions += "+8k"
+        return f"TOSA-{self.version}{self._get_profiles_string()}{extensions}"
 
     def __hash__(self) -> int:
         return hash(str(self.version) + self._get_profiles_string())

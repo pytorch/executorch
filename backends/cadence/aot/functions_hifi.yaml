@@ -71,11 +71,11 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::HiFi::full_out
-      
+
 - op: gt.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::gt_scalar_out      
+      kernel_name: torch::executor::gt_scalar_out
 
 - op: gelu.out
   kernels:
@@ -218,3 +218,13 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::HiFi::quantized_linear_per_tensor_out
+
+- func: cadence::quantized_fully_connected.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::quantized_fully_connected_out
+
+- func: cadence::quantized_fully_connected.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::quantized_fully_connected_per_tensor_out

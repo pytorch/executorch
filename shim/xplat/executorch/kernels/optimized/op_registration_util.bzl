@@ -12,7 +12,7 @@ load(
     "get_vec_preprocessor_flags",
 )
 
-def op_target(name, deps = []):
+def op_target(name, deps = [], compiler_flags = []):
     """Registers an optimized implementation for an operator overload group.
 
     An operator overload group is a set of operator overloads with a common
@@ -39,11 +39,13 @@ def op_target(name, deps = []):
               dependencies manageable. If two op targets would like to share
               code, define a separate runtime.cxx_library that they both depend
               on.
+        compiler_flags: Optional compiler flags to add to the cxx_library().
     """
 
     # Note that this doesn't actually define the target, but helps register
     # it in a table that's used to define the target.
     return {
+        "compiler_flags": compiler_flags,
         "deps": deps,
         "name": name,
     }
@@ -66,7 +68,7 @@ def _enforce_deps(deps, name):
                 dep,
             ))
 
-def define_op_library(name, deps):
+def define_op_library(name, compiler_flags, deps):
     """Defines a cxx_library target for the named operator overload group.
 
     Args:
@@ -116,7 +118,7 @@ def define_op_library(name, deps):
         link_whole = True,
     )
 
-def define_op_target(name, deps):
+def define_op_target(name, compiler_flags, deps):
     """Possibly defines cxx_library targets for the named operator group.
 
     Args:
@@ -129,10 +131,11 @@ def define_op_target(name, deps):
     # versions defined here.
     define_op_library(
         name = name,
+        compiler_flags = compiler_flags,
         deps = deps,
     )
 
 def is_op_disabled(name):
     # TODO (gjcomer) Enable ops with sleef dependency in OSS
-    disabled_ops = ["op_gelu", "op_log_softmax"]
+    disabled_ops = ["op_log_softmax"]
     return name in disabled_ops

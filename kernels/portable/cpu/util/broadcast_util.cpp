@@ -9,7 +9,7 @@
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <string.h>
 
 namespace torch {
@@ -213,10 +213,20 @@ ET_NODISCARD Error get_broadcast_target_size(
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim) {
-  ET_CHECK_OR_RETURN_ERROR(
-      tensors_are_broadcastable_between(a_size, b_size),
-      InvalidArgument,
-      "Two input tensors should be broadcastable.\n");
+  if ET_UNLIKELY (!tensors_are_broadcastable_between(a_size, b_size)) {
+#if ET_LOG_ENABLED
+    executorch::runtime::Span<const Tensor::SizesType> a_size_span(
+        a_size.data(), a_size.size());
+    executorch::runtime::Span<const Tensor::SizesType> b_size_span(
+        b_size.data(), b_size.size());
+    ET_LOG(
+        Error,
+        "Two input tensors should be broadcastable but got shapes %s and %s.",
+        tensor_shape_to_c_string(a_size_span).data(),
+        tensor_shape_to_c_string(b_size_span).data());
+#endif
+    return executorch::runtime::Error::InvalidArgument;
+  }
 
   auto a_dim = a_size.size();
   auto b_dim = b_size.size();

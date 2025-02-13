@@ -61,6 +61,15 @@ def flatbuffer_to_vk_graph(flatbuffers: bytes) -> VkGraph:
             return _json_to_dataclass(json.load(output_file), VkGraph)
 
 
+def extract_vk_flatbuffer(data: bytes) -> bytes:
+    h: VulkanDelegateHeader = VulkanDelegateHeader.from_bytes(
+        data[: VulkanDelegateHeader.EXPECTED_LENGTH]
+    )
+    start = h.flatbuffer_offset
+    end = h.flatbuffer_offset + h.flatbuffer_size
+    return data[start:end]
+
+
 @dataclass
 class VulkanDelegateHeader:
     # Defines the byte region that each component of the header corresponds to

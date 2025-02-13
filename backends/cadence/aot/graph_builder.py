@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
@@ -6,10 +10,16 @@ import logging
 from typing import Optional, Sequence, Union
 
 import torch
-from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
+from executorch.exir.pass_base import (
+    Argument,
+    ExportPass,
+    NodeMetadata,
+    PassResult,
+    ProxyValue,
+)
 from torch._dispatch.python import enable_python_dispatcher
 from torch._subclasses import FakeTensor, FakeTensorMode
-from torch.fx.node import Argument, Target
+from torch.fx.node import Target
 from torch.utils import _pytree as pytree
 
 

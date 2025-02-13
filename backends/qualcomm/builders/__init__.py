@@ -10,6 +10,7 @@ from . import (
     op_adaptive_avg_pool2d,
     op_add,
     op_arange,
+    op_argmin,
     op_avg_pool2d,
     op_batch_norm,
     op_bmm,
@@ -39,6 +40,7 @@ from . import (
     op_linear,
     op_log,
     op_log_softmax,
+    op_logical_not,
     op_lt,
     op_matmul,
     op_max,
@@ -46,6 +48,7 @@ from . import (
     op_mean_dim,
     op_min,
     op_mul,
+    op_neg,
     op_pad,
     op_pow,
     op_prelu,
@@ -74,6 +77,7 @@ from . import (
     op_unsqueeze,
     op_upsample_bilinear2d,
     op_upsample_nearest2d,
+    op_where,
 )
 
 __all__ = [
@@ -82,6 +86,7 @@ __all__ = [
     op_adaptive_avg_pool2d,
     op_add,
     op_arange,
+    op_argmin,
     op_avg_pool2d,
     op_batch_norm,
     op_bmm,
@@ -110,6 +115,7 @@ __all__ = [
     op_le,
     op_linear,
     op_log,
+    op_logical_not,
     op_log_softmax,
     op_lt,
     op_matmul,
@@ -118,6 +124,7 @@ __all__ = [
     op_mean_dim,
     op_min,
     op_mul,
+    op_neg,
     op_pad,
     op_pow,
     op_prelu,
@@ -146,4 +153,5 @@ __all__ = [
     op_unsqueeze,
     op_upsample_bilinear2d,
     op_upsample_nearest2d,
+    op_where,
 ]

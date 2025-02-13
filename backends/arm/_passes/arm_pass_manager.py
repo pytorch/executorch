@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,11 +18,17 @@ from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueez
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
+from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
+    ConvertFullLikeToFullPass,
+)
 from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
 from executorch.backends.arm._passes.convert_squeezes_to_view import (  # type: ignore[import-not-found]
     ConvertSqueezesToViewPass,
+)
+from executorch.backends.arm._passes.decompose_batchnorm_pass import (
+    DecomposeBatchNormPass,
 )
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_layernorm_pass import (
@@ -39,12 +45,14 @@ from executorch.backends.arm._passes.decompose_softmaxes_pass import (
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
-    QuantizeFullArgument,
+    QuantizeOperatorArguments,
     RetraceFoldedDtypesPass,
 )
+from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (  # type: ignore[import-not-found]
     FuseQuantizedActivationPass,
 )
+from executorch.backends.arm._passes.insert_rescales_pass import InsertRescalePass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
     KeepDimsFalseToSqueezePass,
@@ -68,6 +76,7 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
+
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
@@ -86,13 +95,15 @@ class ArmPassManager(PassManager):
     def _tosa_080_BI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
+        self.add_pass(DecomposeBatchNormPass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(ConvertMeanDimToAveragePoolPass())
+        self.add_pass(ConvertFullLikeToFullPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
-        self.add_pass(QuantizeFullArgument())
+        self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
@@ -110,7 +121,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(AnnotateChannelsLastDimOrder())
-
+        self.add_pass(InsertRescalePass())
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
@@ -118,17 +129,19 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
+        self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeBatchNormPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxesPass())
-
+        self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
-        self.add_pass(QuantizeFullArgument())
+        self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(InsertTableOpsPass(exported_program))
@@ -146,6 +159,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(AnnotateChannelsLastDimOrder())
+        self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)
 

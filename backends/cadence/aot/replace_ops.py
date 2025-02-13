@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 
 # This file contains all the functions that replace one op with another in the
@@ -2071,10 +2075,32 @@ class ReplaceIm2RowWithViewPass(ExportPass):
         )
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplaceEmptyTensorsWithFullPass(ExportPass):
+    """Replaces nodes that produce empty tensors with full nodes."""
+
+    def call_operator(self, op, args, kwargs, meta):
+        val = meta.data.get("val", None)
+        if isinstance(val, torch.Tensor) and val.numel() == 0:
+            return super().call_operator(
+                exir_ops.edge.aten.full.default,
+                args=(val.shape, 0),
+                kwargs={"dtype": val.dtype},
+                meta=meta,
+            )
+        return super().call_operator(op, args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        ret = super().call(graph_module)
+        modified = ret.graph_module.graph.eliminate_dead_code() or ret.modified
+        return PassResult(ret.graph_module, modified)
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
     passes = [
+        ReplaceEmptyTensorsWithFullPass,
         ReplaceFunctionallyEquivalentOpTargets,
         ReplaceTCopyWithTransposePass,
         ReplacePermuteWithTransposePass,

@@ -44,6 +44,7 @@ def define_common_targets():
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
@@ -74,6 +75,7 @@ def define_common_targets():
         deps = [
             ":repeat_util",
             "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
@@ -116,6 +118,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             ":broadcast_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],

@@ -109,7 +109,7 @@ class TestLayerNorm(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
+            .run_method_and_compare_outputs(qtol=1, inputs=test_data)
         )
 
     def _test_layernorm_ethosu_BI_pipeline(

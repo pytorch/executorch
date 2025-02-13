@@ -215,13 +215,13 @@ class PyQnnManager {
           Qnn_Tensor_t qnn_tensor = wrapper->CloneTensorStruct();
           fb_tensors.emplace_back(
               ToTensor(qnn_tensor, offsets.back(), &builder_));
-          uint8_t* data_ptr =
-              static_cast<uint8_t*>(QNN_VER_PTR(qnn_tensor)->clientBuf.data);
+          uint8_t* data_ptr = static_cast<uint8_t*>(
+              QNN_TENSOR_VER_PTR(qnn_tensor)->clientBuf.data);
           if (data_ptr != nullptr) {
             tensor_data.insert(
                 tensor_data.end(),
                 data_ptr,
-                data_ptr + QNN_VER_PTR(qnn_tensor)->clientBuf.dataSize);
+                data_ptr + QNN_TENSOR_VER_PTR(qnn_tensor)->clientBuf.dataSize);
           }
         }
       };
@@ -251,22 +251,23 @@ class PyQnnManager {
               return py::array_t<char>(0);
             }
             Qnn_Param_t p = param->GetQnnParam();
-            Qnn_Tensor_t t = QNN_TENSOR_INIT;
-            QNN_VER_PTR(t)->name = p.name;
-            QNN_VER_PTR(t)->dataType = p.scalarParam.dataType;
-            QNN_VER_PTR(t)->clientBuf.data =
+            Qnn_Tensor_t t(
+                {.version = QNN_TENSOR_VERSION_2, .v2 = QNN_TENSOR_V2_INIT});
+            QNN_TENSOR_VER_PTR(t)->name = p.name;
+            QNN_TENSOR_VER_PTR(t)->dataType = p.scalarParam.dataType;
+            QNN_TENSOR_VER_PTR(t)->clientBuf.data =
                 static_cast<void*>(&p.scalarParam.uint8Value);
-            QNN_VER_PTR(t)->clientBuf.dataSize =
-                GetDataTypeSize(QNN_VER_PTR(t)->dataType);
+            QNN_TENSOR_VER_PTR(t)->clientBuf.dataSize =
+                GetDataTypeSize(QNN_TENSOR_VER_PTR(t)->dataType);
 
             // collect tensor data
             offsets.push_back(tensor_data.size());
             const uint8_t* data_ptr =
-                static_cast<uint8_t*>(QNN_VER_PTR(t)->clientBuf.data);
+                static_cast<uint8_t*>(QNN_TENSOR_VER_PTR(t)->clientBuf.data);
             tensor_data.insert(
                 tensor_data.end(),
                 data_ptr,
-                data_ptr + QNN_VER_PTR(t)->clientBuf.dataSize);
+                data_ptr + QNN_TENSOR_VER_PTR(t)->clientBuf.dataSize);
             params.push_back(fb_tensors.size());
             fb_tensors.emplace_back(ToTensor(t, offsets.back(), &builder_));
           }
@@ -275,9 +276,9 @@ class PyQnnManager {
         Qnn_OpConfig_t op_config = op_wrapper->GetOpConfig();
         fb_ops.emplace_back(qcir::CreateOperatorDirect(
             builder_,
-            QNN_VER_PTR(op_config)->name,
-            QNN_VER_PTR(op_config)->packageName,
-            QNN_VER_PTR(op_config)->typeName,
+            QNN_OP_VER_PTR(op_config)->name,
+            QNN_OP_VER_PTR(op_config)->packageName,
+            QNN_OP_VER_PTR(op_config)->typeName,
             &inputs,
             &outputs,
             &params));
@@ -387,6 +388,41 @@ class PyQnnManager {
     auto result = py::array_t<char>(custom_buffer_size);
     auto result_buffer = result.request();
     std::memcpy(result_buffer.ptr, custom_buffer_ptr, custom_buffer_size);
+    return result;
+  }
+
+  py::array_t<char> StripProtocol(const py::bytes& preprocessed_binary) {
+    py::buffer_info info(py::buffer(preprocessed_binary).request());
+
+    void* buf_ptr = nullptr;
+    size_t buf_size = 0;
+    // check if it's a qnn context binary
+    auto [status, signature, ctx_size, ctx_bin] =
+        QnnContextCustomProtocol().DeserializeContextCustomBuffer(info.ptr);
+
+    if (status == Error::Ok) {
+      buf_size = ctx_size;
+      buf_ptr = ctx_bin;
+    } else {
+      // check if it's a qcir flatbuffers, return fbs if matched
+      auto
+          [status,
+           qcir_fbs_size,
+           qcir_tensor_size,
+           qcir_fbs_ptr,
+           qcir_tensor_ptr] =
+              QnnQcirCustomProtocol().DeserializeQcirCustomBuffer(info.ptr);
+      if (status == Error::Ok) {
+        buf_size = qcir_fbs_size;
+        buf_ptr = qcir_fbs_ptr;
+      } else {
+        // the format should be DLC, return nothing here
+        return py::array_t<char>(0);
+      }
+    }
+    auto result = py::array_t<char>(buf_size);
+    auto result_buffer = result.request();
+    std::memcpy(result_buffer.ptr, buf_ptr, buf_size);
     return result;
   }
 

@@ -14,8 +14,9 @@ import pytest
 
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
+    EthosUQuantizer,
     get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -89,7 +90,7 @@ class TestMaxPool2d(unittest.TestCase):
     ):
         tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
         compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
             ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
@@ -115,8 +116,9 @@ class TestMaxPool2d(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.tensor],
     ):
-        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = EthosUQuantizer(compile_spec).set_io(
+            get_symmetric_quantization_config()
+        )
         tester = (
             ArmTester(
                 module,
@@ -216,23 +218,6 @@ class TestMaxPool2d(unittest.TestCase):
     @parameterized.expand(test_data_suite_mult_batches)
     @pytest.mark.corstone_fvp
     @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
-    def test_maxpool2d_tosa_u55_BI_mult_batches(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        tester = self._test_maxpool2d_tosa_ethos_BI_pipeline(
-            self.MaxPool2d(*model_params),
-            common.get_u55_compile_spec(),
-            (test_data,),
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
-
-    @parameterized.expand(test_data_suite_mult_batches)
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
     def test_maxpool2d_tosa_u85_BI_mult_batches(
         self,
         test_name: str,
@@ -246,3 +231,40 @@ class TestMaxPool2d(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
+
+    reject_data_suite = [
+        (MaxPool2d(1, 1, 0), torch.rand(2, 5, 5, 5)),
+        (MaxPool2d(1, 4, 0), torch.rand(1, 10, 10, 10)),
+        (MaxPool2d((1, 257), 1, 0), torch.rand(1, 16, 5, 300)),
+        (MaxPool2d((800, 90), 1, 0), torch.rand(1, 16, 850, 100)),
+    ]
+
+    @parameterized.expand(reject_data_suite)
+    def test_reject_maxpool2d_u55_BI(
+        self,
+        module: torch.nn.Module,
+        test_data: torch.tensor,
+    ):
+        compile_spec = common.get_u55_compile_spec()
+        quantizer = EthosUQuantizer(compile_spec).set_io(
+            get_symmetric_quantization_config()
+        )
+
+        (
+            ArmTester(
+                module,
+                example_inputs=(test_data,),
+                compile_spec=compile_spec,
+            )
+            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
+            .export()
+            .check_count({"torch.ops.aten.max_pool2d.default": 1})
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge_transform_and_lower()
+            .check(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default"
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+        )

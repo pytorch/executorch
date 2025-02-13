@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
@@ -22,7 +26,16 @@ def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> N
             tensor_constraints.extend(
                 [
                     cp.Dtype.In(lambda deps: [torch.float]),
-                    cp.Rank.Le(lambda deps: 2**3),
+                    cp.Rank.Le(lambda deps: 2**2),
+                    cp.Value.Ge(lambda deps, dtype, struct: -2),
+                    cp.Value.Le(lambda deps, dtype, struct: 2),
+                ]
+            )
+        case "mean.dim":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float]),
+                    cp.Rank.Le(lambda deps: 2**2),
                 ]
             )
         case "exp.default":
@@ -86,8 +99,27 @@ def facto_testcase_gen(op_name: str) -> List[Tuple[List[str], OrderedDict[str, s
                         cp.Value.Le(lambda deps, dtype: 2),
                     ]
                 )
+        elif in_spec.type.is_scalar_type():
+            spec.inspec[index].constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: apply_scalar_contraints(op_name)),
+                ]
+            )
         elif in_spec.type.is_tensor():
             spec.inspec[index].constraints.extend(tensor_constraints)
+        elif in_spec.type.is_dim_list():
+            spec.inspec[index].constraints.extend(
+                [
+                    cp.Length.Ge(lambda deps: 1),
+                    cp.Optional.Eq(lambda deps: False),
+                ]
+            )
+        elif in_spec.type.is_bool():
+            spec.inspec[index].constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.bool]),
+                ]
+            )
 
     return [
         (posargs, inkwargs)

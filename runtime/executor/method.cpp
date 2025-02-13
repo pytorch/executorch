@@ -16,6 +16,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/platform_memory_allocator.h>
@@ -24,6 +25,7 @@
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
@@ -238,7 +240,7 @@ Result<InstructionArgs> gen_instruction_arguments(
     ET_CHECK_OR_RETURN_ERROR(
         arg_idx < num_values,
         InvalidProgram,
-        "Arg index %d >= %zu",
+        "Arg index %d >= %" ET_PRIsize_t,
         arg_idx,
         num_values);
     arg_list[i] = &values[arg_idx];
@@ -287,7 +289,7 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
 
 } // namespace
 
-Error Method::parse_values() {
+Error Method::parse_values(const NamedDataMap* named_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_values != nullptr, InvalidProgram, "Missing values");
@@ -311,7 +313,7 @@ Error Method::parse_values() {
                  executorch_flatbuffer::KernelTypes::Null ||
              serialization_value->val() != nullptr),
         InvalidProgram,
-        "Null value at index %zu",
+        "Null value at index %" ET_PRIsize_t,
         i);
 
     const auto val = serialization_value->val();
@@ -340,7 +342,10 @@ Error Method::parse_values() {
         const auto items =
             static_cast<const executorch_flatbuffer::IntList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
-            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
+            items != nullptr,
+            InvalidProgram,
+            "Missing list at index %" ET_PRIsize_t,
+            i);
         // Allocate space for boxed and unboxed list representations using
         // values_ as source of truth
         auto* evalp_list =
@@ -356,7 +361,8 @@ Error Method::parse_values() {
           ET_CHECK_OR_RETURN_ERROR(
               value_index >= 0 && value_index < n_value,
               InvalidProgram,
-              "Invalid value index %" PRId64 " for IntList %zu index %zu",
+              "Invalid value index %" PRId64 " for IntList %" ET_PRIsize_t
+              " index %" ET_PRIsize_t,
               value_index,
               i,
               j);
@@ -369,7 +375,10 @@ Error Method::parse_values() {
         const auto items =
             static_cast<const executorch_flatbuffer::BoolList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
-            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
+            items != nullptr,
+            InvalidProgram,
+            "Missing list at index %" ET_PRIsize_t,
+            i);
         // NOTE: This is technically not portable. A platform could technically
         // define boolean as something longer than a byte. This would be an
         // exceptionally rare case, and this type is currently unused in any
@@ -384,7 +393,10 @@ Error Method::parse_values() {
         const auto items =
             static_cast<const executorch_flatbuffer::DoubleList*>(val)->items();
         ET_CHECK_OR_RETURN_ERROR(
-            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
+            items != nullptr,
+            InvalidProgram,
+            "Missing list at index %" ET_PRIsize_t,
+            i);
         new (&values_[i]) EValue(
             executorch::aten::ArrayRef<double>(items->data(), items->size()));
       } break;
@@ -395,7 +407,7 @@ Error Method::parse_values() {
         ET_CHECK_OR_RETURN_ERROR(
             fb_str != nullptr,
             InvalidProgram,
-            "Missing string at index %zu",
+            "Missing string at index %" ET_PRIsize_t,
             i);
         new (&values_[i]) EValue(fb_str->c_str(), fb_str->size());
       } break;
@@ -403,11 +415,12 @@ Error Method::parse_values() {
         auto t = deserialization::parseTensor(
             program_,
             memory_manager_,
-            static_cast<const executorch_flatbuffer::Tensor*>(val));
+            static_cast<const executorch_flatbuffer::Tensor*>(val),
+            named_data_map);
         if (!t.ok()) {
           ET_LOG(
               Error,
-              "Failed parsing tensor at index %zu: 0x%" PRIx32,
+              "Failed parsing tensor at index %" ET_PRIsize_t ": 0x%" PRIx32,
               i,
               static_cast<uint32_t>(t.error()));
           return t.error();
@@ -429,7 +442,8 @@ Error Method::parse_values() {
         if (!tensors.ok()) {
           ET_LOG(
               Error,
-              "Failed parsing tensor list at index %zu: 0x%" PRIx32,
+              "Failed parsing tensor list at index %" ET_PRIsize_t
+              ": 0x%" PRIx32,
               i,
               static_cast<uint32_t>(tensors.error()));
           return tensors.error();
@@ -452,7 +466,8 @@ Error Method::parse_values() {
         if (!tensors.ok()) {
           ET_LOG(
               Error,
-              "Failed parsing optional tensor list at index %zu: 0x%" PRIx32,
+              "Failed parsing optional tensor list at index %" ET_PRIsize_t
+              ": 0x%" PRIx32,
               i,
               static_cast<uint32_t>(tensors.error()));
           return tensors.error();
@@ -467,7 +482,7 @@ Error Method::parse_values() {
         // schema.fbs
         ET_LOG(
             Error,
-            "Unknown KernelTypes value %" PRIu32 " at index %zu",
+            "Unknown KernelTypes value %" PRIu32 " at index %" ET_PRIsize_t,
             static_cast<uint32_t>(serialization_value->val_type()) - 1,
             i);
         return Error::InvalidProgram;
@@ -509,7 +524,7 @@ Error populate_operator_name(
       cx < operator_name_size,
       Internal,
       "Operator name %s%s%s with length %d "
-      "truncated to %zu due to internal buffer limit.",
+      "truncated to %" ET_PRIsize_t " due to internal buffer limit.",
       op->name()->c_str(),
       has_overload ? "." : "",
       has_overload ? op->overload()->c_str() : "",
@@ -570,7 +585,7 @@ Error Method::resolve_operator(
       ET_CHECK_OR_RETURN_ERROR(
           err == Error::Ok,
           InvalidArgument,
-          "Error setting dim_order %zu: 0x%" PRIx32,
+          "Error setting dim_order %" ET_PRIsize_t ": 0x%" PRIx32,
           i,
           static_cast<uint32_t>(err));
       meta[count].dim_order_ =
@@ -594,7 +609,8 @@ Result<Method> Method::load(
     executorch_flatbuffer::ExecutionPlan* s_plan,
     const Program* program,
     MemoryManager* memory_manager,
-    EventTracer* event_tracer) {
+    EventTracer* event_tracer,
+    const NamedDataMap* named_data_map) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -608,7 +624,7 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
 
-  Error err = method.init(s_plan);
+  Error err = method.init(s_plan, named_data_map);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -617,7 +633,9 @@ Result<Method> Method::load(
   }
 }
 
-Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
+Error Method::init(
+    executorch_flatbuffer::ExecutionPlan* s_plan,
+    const NamedDataMap* named_data_map) {
   EXECUTORCH_SCOPE_PROF("Method::init");
   internal::EventTracerProfileMethodScope event_tracer_profile_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
@@ -634,7 +652,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
   {
     // Parse the elements of the values_ array.
-    Error err = parse_values();
+    Error err = parse_values(named_data_map);
     if (err != Error::Ok) {
       return err;
     }
@@ -695,7 +713,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
       ET_CHECK_OR_RETURN_ERROR(
           s_instructions != nullptr,
           InvalidProgram,
-          "Missing instructions in chain %zu",
+          "Missing instructions in chain %" ET_PRIsize_t,
           i);
       auto num_instructions = s_instructions->size();
       auto chain_instruction_kernels =
@@ -718,7 +736,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
         ET_CHECK_OR_RETURN_ERROR(
             instruction != nullptr && instruction->instr_args() != nullptr,
             InvalidProgram,
-            "Null instruction at index %zu",
+            "Null instruction at index %" ET_PRIsize_t,
             instr_idx);
 
         const void* instr_args = instruction->instr_args();
@@ -784,7 +802,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             ET_CHECK_OR_RETURN_ERROR(
                 index >= 0 && index < n_value_,
                 InvalidProgram,
-                "Index %d negative or >= %zu",
+                "Index %d negative or >= %" ET_PRIsize_t,
                 index,
                 n_value_);
             chain_instruction_arg_lists[instr_idx] = InstructionArgs();
@@ -832,7 +850,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       input_idx < inputs_size(),
       InvalidArgument,
-      "Input index (%zu) must be less than the number of inputs in method (%zu).",
+      "Input index (%" ET_PRIsize_t
+      ") must be less than the number of inputs in method (%" ET_PRIsize_t ").",
       input_idx,
       inputs_size());
 
@@ -844,7 +863,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     tag_to_string(e.tag, tag_name.data(), tag_name.size());
     ET_LOG(
         Error,
-        "Input %zu was expected to be a Tensor or primitive but was %s.",
+        "Input %" ET_PRIsize_t
+        " was expected to be a Tensor or primitive but was %s.",
         input_idx,
         tag_name.data());
 #endif
@@ -877,7 +897,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         t_dst.scalar_type() == t_src.scalar_type(),
         InvalidArgument,
-        "Input %zu has unexpected scalar type: expected %s but was %s.",
+        "Input %" ET_PRIsize_t
+        " has unexpected scalar type: expected %s but was %s.",
         input_idx,
         executorch::runtime::toString(t_dst.scalar_type()),
         executorch::runtime::toString(t_src.scalar_type()));
@@ -887,7 +908,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         err == Error::Ok,
         InvalidArgument,
-        "Error setting input %zu: 0x%" PRIx32,
+        "Error setting input %" ET_PRIsize_t ": 0x%" PRIx32,
         input_idx,
         static_cast<uint32_t>(err));
     Error error;
@@ -900,7 +921,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         error == Error::Ok,
         InvalidArgument,
-        "Error setting data_ptr %zu: 0x%" PRIx32,
+        "Error setting data_ptr %" ET_PRIsize_t ": 0x%" PRIx32,
         input_idx,
         static_cast<uint32_t>(error));
     // Prims have to be the same as what was traced
@@ -908,7 +929,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         e.toInt() == input_evalue.toInt(),
         InvalidArgument,
-        "The %zu-th input of method should have the same value as the input_evalue, but got %" PRId64
+        "The %" ET_PRIsize_t
+        "-th input of method should have the same value as the input_evalue, but got %" PRId64
         " and %" PRId64,
         input_idx,
         e.toInt(),
@@ -917,7 +939,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         e.toBool() == input_evalue.toBool(),
         InvalidArgument,
-        "The %zu-th input of method should have the same value as the input_evalue, but got %" PRId64
+        "The %" ET_PRIsize_t
+        "-th input of method should have the same value as the input_evalue, but got %" PRId64
         " and %" PRId64,
         input_idx,
         (int64_t)e.toBool(),
@@ -945,7 +968,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         is_equal,
         InvalidArgument,
-        "The %zu-th input of method should have the same value as the input_evalue, but get %f and %f",
+        "The %" ET_PRIsize_t
+        "-th input of method should have the same value as the input_evalue, but get %f and %f",
         input_idx,
         lhs,
         rhs);
@@ -953,7 +977,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         e.toString() == input_evalue.toString(),
         InvalidArgument,
-        "The %zu-th input of method should have the same value as the input_evalue, but get %s and %s",
+        "The %" ET_PRIsize_t
+        "-th input of method should have the same value as the input_evalue, but get %s and %s",
         input_idx,
         e.toString().data(),
         input_evalue.toString().data());
@@ -985,7 +1010,8 @@ Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
   ET_CHECK_OR_RETURN_ERROR(
       input_size == input_evalues.size(),
       InvalidArgument,
-      "The length of given input array (%zu) must be same as the number of inputs in method (%zu).",
+      "The length of given input array (%" ET_PRIsize_t
+      ") must be same as the number of inputs in method (%" ET_PRIsize_t ").",
       input_evalues.size(),
       input_size);
 
@@ -1010,7 +1036,7 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       output_idx < outputs_size(),
       InvalidArgument,
-      "output_idx: %zu > num_outputs: %zu",
+      "output_idx: %" ET_PRIsize_t " > num_outputs: %" ET_PRIsize_t,
       output_idx,
       outputs_size());
 
@@ -1029,7 +1055,8 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   if (tensor_meta->is_memory_planned()) {
     ET_LOG(
         Error,
-        "Output %zu is memory planned, or is a constant. Cannot override "
+        "Output %" ET_PRIsize_t
+        " is memory planned, or is a constant. Cannot override "
         "the existing data pointer.",
         output_idx);
     return Error::InvalidState;
@@ -1049,7 +1076,8 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       t.nbytes() <= size,
       InvalidArgument,
-      "buffer size: %zu is smaller then expected tensor size: %zu",
+      "buffer size: %" ET_PRIsize_t
+      " is smaller then expected tensor size: %" ET_PRIsize_t,
       size,
       t.nbytes());
 
@@ -1108,7 +1136,8 @@ Error Method::execute_instruction() {
   ET_CHECK_OR_RETURN_ERROR(
       step_state_.instr_idx < instructions->size(),
       Internal,
-      "Instr index %zu >= chain[%zu] instr count %zu",
+      "Instr index %" ET_PRIsize_t " >= chain[%" ET_PRIsize_t
+      "] instr count %" ET_PRIsize_t,
       step_state_.instr_idx,
       step_state_.chain_idx,
       (size_t)instructions->size());
@@ -1135,7 +1164,8 @@ Error Method::execute_instruction() {
         ET_UNUSED auto op = serialization_plan_->operators()->Get(op_index);
         ET_LOG(
             Error,
-            "KernelCall failed at instruction %zu:%zu in operator %s.%s: 0x%x",
+            "KernelCall failed at instruction %" ET_PRIsize_t ":%" ET_PRIsize_t
+            " in operator %s.%s: 0x%x",
             step_state_.chain_idx,
             step_state_.instr_idx,
             op->name()->c_str(),
@@ -1164,8 +1194,8 @@ Error Method::execute_instruction() {
       ET_CHECK_OR_RETURN_ERROR(
           delegate_idx < n_delegate_,
           Internal,
-          "DELEGATE_CALL index %" PRIu32
-          " >= num delegates %zu at instruction %zu",
+          "DELEGATE_CALL index %" PRIu32 " >= num delegates %" ET_PRIsize_t
+          " at instruction %" ET_PRIsize_t,
           delegate_idx,
           n_delegate_,
           step_state_.instr_idx);
@@ -1179,7 +1209,8 @@ Error Method::execute_instruction() {
       if (err != Error::Ok) {
         ET_LOG(
             Error,
-            "CALL_DELEGATE execute failed at instruction %zu: 0x%" PRIx32,
+            "CALL_DELEGATE execute failed at instruction %" ET_PRIsize_t
+            ": 0x%" PRIx32,
             step_state_.instr_idx,
             static_cast<uint32_t>(err));
       }
@@ -1352,7 +1383,7 @@ Error Method::execute() {
     ET_CHECK_OR_RETURN_ERROR(
         instructions != nullptr,
         Internal,
-        "chain %zu has no instructions field",
+        "chain %" ET_PRIsize_t " has no instructions field",
         step_state_.chain_idx);
 
     // Loop over instructions
@@ -1392,12 +1423,14 @@ MethodMeta Method::method_meta() const {
 }
 
 const EValue& Method::get_value(size_t i) const {
-  ET_CHECK_MSG(i < n_value_, "%zu >= %zu", i, n_value_);
+  ET_CHECK_MSG(
+      i < n_value_, "%" ET_PRIsize_t " >= %" ET_PRIsize_t, i, n_value_);
   return values_[i];
 }
 
 EValue& Method::mutable_value(size_t i) {
-  ET_CHECK_MSG(i < n_value_, "%zu >= %zu", i, n_value_);
+  ET_CHECK_MSG(
+      i < n_value_, "%" ET_PRIsize_t " >= %" ET_PRIsize_t, i, n_value_);
   return values_[i];
 }
 
@@ -1407,7 +1440,11 @@ size_t Method::inputs_size() const {
 }
 
 size_t Method::get_input_index(size_t i) const {
-  ET_CHECK_MSG(i < inputs_size(), "%zu >= %zu", i, inputs_size());
+  ET_CHECK_MSG(
+      i < inputs_size(),
+      "%" ET_PRIsize_t " >= %" ET_PRIsize_t,
+      i,
+      inputs_size());
   return static_cast<size_t>(serialization_plan_->inputs()->Get(i));
 }
 
@@ -1425,7 +1462,11 @@ size_t Method::outputs_size() const {
 }
 
 size_t Method::get_output_index(size_t i) const {
-  ET_CHECK_MSG(i < outputs_size(), "%zu >= %zu", i, outputs_size());
+  ET_CHECK_MSG(
+      i < outputs_size(),
+      "%" ET_PRIsize_t " >= %" ET_PRIsize_t,
+      i,
+      outputs_size());
   return static_cast<size_t>(serialization_plan_->outputs()->Get(i));
 }
 

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import copy
 
 from typing import cast, Dict, Set, Tuple
@@ -129,6 +131,9 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             n = cast(Node, n)
             if n.op != "call_function":
                 continue
+            # Don't fold chains of quant-ops into each other.
+            if n.target in (q_op, dq_op):
+                continue
 
             # Make sure we haven't already set qparams meta information on the node
             assert "input_qparams" not in n.meta.keys()
@@ -167,11 +172,14 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         return PassResult(graph_module, True)
 
 
-class QuantizeFullArgument(ExportPass):
+class QuantizeOperatorArguments(ExportPass):
     """
-    Make sure the fill_value for full.default is quantized. This pass needs to be run before
-    the folding pass above to make sure that the retraced output of the full.default op is
-    the right dtype.
+    This pass makes sure that the arguments to full.default and clamp.default are quantized correctly.
+    More specifically, this pass:
+        - Makes sure the fill_value for full.default is quantized. This pass needs to be run before
+        the folding pass above to make sure that the retraced output of the full.default op is
+        the right dtype.
+        - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -179,7 +187,10 @@ class QuantizeFullArgument(ExportPass):
         # Loop over the graph nodes and find full.default nodes.
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
-            if n.target != exir_ops.edge.aten.full.default:
+            if n.target not in {
+                exir_ops.edge.aten.clamp.default,
+                exir_ops.edge.aten.full.default,
+            }:
                 continue
 
             # Make sure we have a quantized operator
@@ -188,13 +199,29 @@ class QuantizeFullArgument(ExportPass):
                 continue
 
             qargs = QuantArgs.from_operator(user.target, user.args)
-            if "dtype" not in n.kwargs.keys() or n.kwargs["dtype"] != qargs.dtype:
-                # replace the node arg with a quantized dito and also set dtype
-                # to get the right output according to the Edge IR specification:
-                # exir/dialects/edge/edge.yaml:3596
-                quantized_full_value = qargs.quantize_value(n.args[1]).item()
-                n.update_arg(1, quantized_full_value)
-                n.update_kwarg("dtype", qargs.dtype)
+
+            if n.target == exir_ops.edge.aten.full.default:
+                if "dtype" not in n.kwargs.keys() or n.kwargs["dtype"] != qargs.dtype:
+                    # replace the node arg with a quantized dito and also set dtype
+                    # to get the right output according to the Edge IR specification:
+                    # exir/dialects/edge/edge.yaml:3596
+                    quantized_full_value = qargs.quantize_value(n.args[1]).item()
+                    n.update_arg(1, quantized_full_value)
+                    n.update_kwarg("dtype", qargs.dtype)
+                    modified = True
+            elif n.target == exir_ops.edge.aten.clamp.default:
+                # Quantize the min and max arguments of clamp, if they are not None
+                min_val = n.args[1]
+                max_val = None if len(n.args) <= 2 else n.args[2]
+
+                if min_val is not None:
+                    quantized_min_val = qargs.quantize_value(min_val).item()
+                    n.update_arg(1, quantized_min_val)
+
+                if max_val is not None:
+                    quantized_max_val = qargs.quantize_value(max_val).item()
+                    n.update_arg(2, quantized_max_val)
+
                 modified = True
 
         return PassResult(graph_module, modified)

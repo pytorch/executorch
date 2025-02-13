@@ -8,7 +8,7 @@ import logging
 import os
 from collections import Counter
 from pprint import pformat
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Callable, Iterable, List, Optional, Tuple, Type, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
@@ -17,14 +17,21 @@ import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
 import torch.fx
 import torch.utils._pytree as pytree
 
-from executorch.backends.arm.arm_backend import get_intermediate_path
-from executorch.backends.arm.arm_partitioner import ArmPartitioner
+from executorch.backends.arm.arm_backend import (
+    get_intermediate_path,
+    get_tosa_spec,
+    is_ethosu,
+    is_tosa,
+)
+from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
+    EthosUQuantizer,
     get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
+    get_elf_path,
     get_output_nodes,
     get_output_quantization_params,
     get_target_board,
@@ -37,14 +44,22 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     print_error_diffs,
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    ExportedProgram,
+)
+from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.pass_base import ExportPass
+from executorch.exir.program._program import _update_exported_program_graph_module
 
 from tabulate import tabulate
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
@@ -132,11 +147,8 @@ class Serialize(tester.Serialize):
         inputs_flattened, _ = tree_flatten(inputs)
         intermediate_path = get_intermediate_path(self.compile_spec)
         target_board = get_target_board(self.compile_spec)
-        elf_path = os.path.join(
-            "cmake-out",
-            f"arm_semihosting_executor_runner_{target_board}",
-            "arm_executor_runner",
-        )
+        elf_path = get_elf_path(target_board)
+
         if not os.path.exists(elf_path):
             raise FileNotFoundError(
                 f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
@@ -156,6 +168,44 @@ class ToExecutorch(tester.ToExecutorch):
     def run_artifact(self, inputs):
         with TosaReferenceModelDispatch():
             return super().run_artifact(inputs)
+
+
+class RunPasses(tester.RunPasses):
+
+    def __init__(
+        self,
+        pass_list: Optional[List[Type[ExportPass]]] = None,
+        pass_functions: Optional[List[Callable]] = None,
+        passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
+    ):
+        """Passes are run in the order they are passed: first pass_list, second pass_functions,
+        and lastly passes_with_exported_program."""
+        self.pass_with_exported_program = passes_with_exported_program
+        super().__init__(pass_list, pass_functions)
+
+    def run(
+        self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
+    ) -> None:
+        if self.pass_with_exported_program is not None:
+            self.pass_functions = self.pass_functions or []  # type: ignore
+
+            # pass_function list from superclass expects functions that take in
+            # and return ExportedPrograms.
+            # Create a wrapper to fit pass_with_exported_program into this.
+            def wrap_ep_pass(ep_pass: Type[ExportPass]):
+                def wrapped_ep_pass(ep: ExportedProgram) -> ExportedProgram:
+                    pass_result = ep_pass(ep).call(ep.graph_module)
+                    with validation_disabled():
+                        return _update_exported_program_graph_module(
+                            ep, pass_result.graph_module
+                        )
+
+                return wrapped_ep_pass
+
+            self.pass_functions.extend(
+                [wrap_ep_pass(ep_pass) for ep_pass in self.pass_with_exported_program]
+            )
+        super().run(artifact, inputs)
 
 
 class InitialModel(tester.Stage):
@@ -184,7 +234,7 @@ class ArmTester(Tester):
     def __init__(
         self,
         model: torch.nn.Module,
-        example_inputs: Tuple[torch.Tensor],
+        example_inputs: Tuple,
         compile_spec: List[CompileSpec],
     ):
         """
@@ -207,11 +257,14 @@ class ArmTester(Tester):
 
     def quantize(self, quantize_stage: Optional[tester.Quantize] = None):
         if quantize_stage is None:
-            tosa_spec: TosaSpecification = TosaSpecification.create_from_compilespecs(
-                compile_specs=self.compile_spec
-            )
+            quantizer = None
+            if is_tosa(self.compile_spec):
+                tosa_spec = get_tosa_spec(self.compile_spec)
+                quantizer = TOSAQuantizer(tosa_spec)
+            elif is_ethosu(self.compile_spec):
+                quantizer = EthosUQuantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
-                ArmQuantizer(tosa_spec),
+                quantizer,
                 get_symmetric_quantization_config(is_per_channel=False),
             )
         return super().quantize(quantize_stage)
@@ -231,7 +284,12 @@ class ArmTester(Tester):
 
     def partition(self, partition_stage: Optional[Partition] = None):
         if partition_stage is None:
-            arm_partitioner = ArmPartitioner(compile_spec=self.compile_spec)
+            if is_tosa(self.compile_spec):
+                arm_partitioner = TOSAPartitioner(compile_spec=self.compile_spec)
+            elif is_ethosu(self.compile_spec):
+                arm_partitioner = EthosUPartitioner(compile_spec=self.compile_spec)
+            else:
+                raise ValueError("compile spec doesn't target any Arm Partitioner")
             partition_stage = Partition(arm_partitioner)
         return super().partition(partition_stage)
 
@@ -243,7 +301,14 @@ class ArmTester(Tester):
     ):
         if to_edge_and_lower_stage is None:
             if partitioners is None:
-                partitioners = [ArmPartitioner(compile_spec=self.compile_spec)]
+                arm_partitioner = None
+                if is_tosa(self.compile_spec):
+                    arm_partitioner = TOSAPartitioner(compile_spec=self.compile_spec)
+                elif is_ethosu(self.compile_spec):
+                    arm_partitioner = EthosUPartitioner(compile_spec=self.compile_spec)
+                else:
+                    raise ValueError("compile spec doesn't target any Arm Partitioner")
+                partitioners = [arm_partitioner]
             to_edge_and_lower_stage = ToEdgeTransformAndLower(
                 partitioners, edge_compile_config
             )

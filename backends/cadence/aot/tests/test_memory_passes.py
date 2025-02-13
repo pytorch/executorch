@@ -1,4 +1,10 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 
 import logging
 import math
@@ -12,11 +18,12 @@ from executorch.backends.cadence.aot.memory_planning import find_peak_memory_usa
 from executorch.backends.cadence.aot.pass_utils import count_node
 from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.memory_planning import collect_specs_from_nodes
 from executorch.exir.tests.models import MultiLayerPerceptron
 
 
 class TestMemPlanningPasses(unittest.TestCase):
-    def test_calculate_peak_memory_pass(self):
+    def test_calculate_peak_memory_pass(self) -> None:
         class PeakMemoryTestModel(torch.nn.Module):
             def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
                 super().__init__()
@@ -30,7 +37,7 @@ class TestMemPlanningPasses(unittest.TestCase):
                 x = self.linear2(x)
                 return x
 
-        def calculate_aligned_num_bytes(num: int, alignment: int = 16):
+        def calculate_aligned_num_bytes(num: int, alignment: int = 16) -> int:
             return math.ceil(num / alignment) * alignment
 
         # model 1
@@ -84,7 +91,7 @@ class TestMemPlanningPasses(unittest.TestCase):
         )  # Align data on a 16 byte boundary
         self.assertEqual(peak_usage, expected_peak_usage)
 
-    def test_zero_memory_pass(self):
+    def test_zero_memory_pass(self) -> None:
         class ZeroMem(torch.nn.Module):
             def forward(self, x):
                 return x[:, 2::3, ...]
@@ -186,7 +193,7 @@ class TestMemTransform(unittest.TestCase):
             f"{spec=} {arg_spec=}",
         )
 
-    def verify_nop_memory_alloc(self, graph_module):
+    def verify_nop_memory_alloc(self, graph_module: torch.fx.GraphModule) -> None:
         for node in graph_module.graph.find_nodes(
             op="call_function", target=torch.ops.aten._cat_nop.out
         ):
@@ -202,7 +209,7 @@ class TestMemTransform(unittest.TestCase):
         ):
             self._verify_select_nop_memory_alloc(node)
 
-    def test_optimize_cat_on_placeholders(self):
+    def test_optimize_cat_on_placeholders(self) -> None:
         class Cat(torch.nn.Module):
             def forward(self, x, y):
                 return torch.ops.aten.cat((x, y))
@@ -226,7 +233,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_cat_outermost(self):
+    def test_optimize_cat_outermost(self) -> None:
         class OptimizeCatFeasible1(torch.nn.Module):
             def forward(self, x, y):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -253,7 +260,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_cat_non_outermost(self):
+    def test_optimize_cat_non_outermost(self) -> None:
         class OptimizeCatFeasible2(torch.nn.Module):
             def forward(self, x, y):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -280,7 +287,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_no_optimize_cat_non_outermost(self):
+    def test_no_optimize_cat_non_outermost(self) -> None:
         class OptimizeCatInfeasible1(torch.nn.Module):
             def forward(self, x, y):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -306,7 +313,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_no_optimize_cat_non_outermost1(self):
+    def test_no_optimize_cat_non_outermost1(self) -> None:
         class OptimizeCatInfeasible2(torch.nn.Module):
             def forward(self, x, y):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -333,7 +340,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_cat_with_slice(self):
+    def test_optimize_cat_with_slice(self) -> None:
         class OptimizeCatSliceFeasible(torch.nn.Module):
             def forward(self, x):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -362,7 +369,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_cat_with_slice_infeasible(self):
+    def test_optimize_cat_with_slice_infeasible(self) -> None:
         class OptimizeCatSliceInfeasible(torch.nn.Module):
             def forward(self, x, y):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -388,7 +395,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_slice_Tensor(self):
+    def test_optimize_slice_Tensor(self) -> None:
         class SliceTensor(torch.nn.Module):
             def forward(self, x, y, z):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -450,7 +457,7 @@ class TestMemTransform(unittest.TestCase):
         )
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_select_Tensor(self):
+    def test_optimize_select_Tensor(self) -> None:
         class SelectTensor(torch.nn.Module):
             def forward(self, x, y, z):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -517,7 +524,7 @@ class TestMemTransform(unittest.TestCase):
 
     # TODO: Test fails due to memory planning
     @unittest.expectedFailure
-    def test_optimize_cat_with_param(self):
+    def test_optimize_cat_with_param(self) -> None:
         class CatWithPadding(torch.nn.Module):
             def __init__(self, padding_shape):
                 super().__init__()
@@ -545,7 +552,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_cat_then_slice_on_mutable_buffer(self):
+    def test_optimize_cat_then_slice_on_mutable_buffer(self) -> None:
         class CatWithPadding(torch.nn.Module):
             def __init__(self, padding_shape):
                 super().__init__()
@@ -570,7 +577,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_optimize_cat_with_view(self):
+    def test_optimize_cat_with_view(self) -> None:
         class CatViewFeasible(torch.nn.Module):
             def forward(self, x, y):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -597,7 +604,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 0)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_no_optimize_cat_with_repeated_args(self):
+    def test_no_optimize_cat_with_repeated_args(self) -> None:
         class CatViewInfeasible(torch.nn.Module):
             def forward(self, x):
                 x1 = torch.add(x, 2.4, 3.1)
@@ -621,7 +628,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 0)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_no_optimize_cat_with_placeholder(self):
+    def test_no_optimize_cat_with_placeholder(self) -> None:
         class CatViewInfeasible(torch.nn.Module):
             def forward(self, x, y):
                 # Repeat will be decomposed into a cat. The cat cannot be optimized
@@ -739,7 +746,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 0)
         self.verify_nop_memory_alloc(graph_module)
 
-    def test_view_for_unallocated_output(self):
+    def test_view_for_unallocated_output(self) -> None:
         class Model(torch.nn.Module):
             def __init__(self, padding_shape):
                 super().__init__()
@@ -762,3 +769,40 @@ class TestMemTransform(unittest.TestCase):
         )
         self.assertEqual(count_node(graph_module, memory.view), 1)
         self.verify_nop_memory_alloc(graph_module)
+
+    def test_start_alignment_constraints(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x: torch.Tensor, y: torch.Tensor):
+                add_0 = torch.add(x, y)
+                add_1 = torch.add(x, add_0)
+                add_2 = torch.add(add_0, add_1)
+                add_3 = torch.add(add_1, add_2)
+                return add_3
+
+        model = Model()
+        inputs = (torch.randn(4, 17), torch.randn(4, 17))
+        for mem_algo in range(0, 2):
+            graph_module = (
+                compiler.export_to_executorch_gen_etrecord(
+                    model,
+                    inputs,
+                    opt_level=1,
+                    mem_algo=mem_algo,
+                    alloc_graph_input=False,
+                    alloc_graph_output=False,
+                    mem_alignment=37,
+                )
+                .exported_program()
+                .graph_module
+            )
+            # Assert that all memory allocations are aligned to 32B start address
+            for spec in collect_specs_from_nodes(
+                graph_module.graph.nodes,
+                ignore_graph_input=True,
+                ignore_graph_output=True,
+            ):
+                if spec and spec.mem_offset:
+                    self.assertEqual(spec.mem_offset % 37, 0)
