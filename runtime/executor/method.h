@@ -43,6 +43,17 @@ using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
 
+/// Data structure to hold key and data buffer for external data used
+/// in a method.
+struct NamedData {
+  const char* key;
+  FreeableBuffer* buffer;
+};
+
+// Check if key exists in external_constants.
+// A helper function for parse_external_constants.
+bool key_exists(const char* key, NamedData* external_constants, int num_keys);
+
 /**
  * An executable method of an executorch program. Maps to a python method like
  * `forward()` on the original nn.Module.
@@ -66,7 +77,9 @@ class Method final {
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
         chains_(rhs.chains_),
-        init_state_(rhs.init_state_) {
+        init_state_(rhs.init_state_),
+        external_constants_(rhs.external_constants_),
+        num_external_constants_(rhs.num_external_constants_) {
     // Required: clear out fields that the dtor looks at, so that we don't free
     // anything twice.
     rhs.n_value_ = 0;
@@ -84,6 +97,8 @@ class Method final {
     rhs.event_tracer_ = nullptr;
     rhs.n_chains_ = 0;
     rhs.chains_ = nullptr;
+    rhs.external_constants_ = nullptr;
+    rhs.num_external_constants_ = 0;
   }
 
   /**
@@ -288,7 +303,9 @@ class Method final {
         delegates_(nullptr),
         n_chains_(0),
         chains_(nullptr),
-        init_state_(InitializationState::Uninitialized) {}
+        init_state_(InitializationState::Uninitialized),
+        external_constants_(nullptr),
+        num_external_constants_(0) {}
 
   /// Static factory used by Program.
   ET_NODISCARD static Result<Method> load(
@@ -338,6 +355,23 @@ class Method final {
 
   InitializationState init_state_;
 
+  NamedData* external_constants_;
+  size_t num_external_constants_ = 0;
+
+  /**
+   * Counts the number of external constants for this method.
+   */
+  ET_NODISCARD Result<size_t> get_num_external_constants();
+
+  /**
+   * Parses the flatbuffer for constant tensors tagged as EXTERNAL.
+   * Retrieves the external constants using the named_data_map and places them
+   * into `external_constants_`.
+   * FreeableBuffers returned by the named_data_map are owned by the
+   * method and are freed on method destruction.
+   */
+  ET_NODISCARD Error
+  parse_external_constants(const NamedDataMap* named_data_map);
   /**
    * Parses the elements of the values_ array. On error, n_value_ will be set to
    * the number of successfully-initialized entries so that ~Method doesn't try
