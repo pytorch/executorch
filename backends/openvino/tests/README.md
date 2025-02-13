@@ -1,0 +1,52 @@
+# Unit Tests for OpenVINO Backend
+
+## Directory Structure
+
+Below is the layout of the `backends/openvino/tests` directory, which includes the necessary files for the example applications:
+
+```
+backends/openvino/tests
+├── ops                                 # Directory with base op test script and individual op tests.
+    ├── base_openvino_op_test.py        # Script which contains the base class for all op tests.
+    └── test_<op_name>.py               # Individual op tests scripts.
+├── models                              # Directory with model test scripts.
+    └── test_classification.py          # Test script for classification models.
+├── README.md                           # Documentation for unit tests (this file)
+└── test_openvino_delegate.py           # Script to execute unit tests.
+```
+
+## Executing Unit Tests
+
+### Prerequisites
+
+Before you begin, refer to instructions provided in [OpenVINO Backend for ExecuTorch](./README.md) to install openvino and setup executorch environment.
+Once openvino is installed and executorch environment is set, refer to [asdfasdf](asdfasdf) to build openvino_example_runner.
+
+### Usage
+
+test_openvino_delegate.py allows to run op or model tests for openvino backend.
+
+### **Arguments**
+- **`--build_folder`** (required):  
+  Path to cmake binary directory. (Refer to [asdf](asdf))   
+  Examples:
+  - `../../../cmake-openvino-out` (Relative path from `backends/openvino/tests` directory)
+  - `<executorch_root>/cmake-openvino-out` (Absolute path to the default build folder)
+
+- **`--test_type`** (optional):  
+  Type of the tests to run.  
+  Supported values:
+  - `ops` (default)
+  - `models`
+
+- **`--pattern`** (optional):  
+  Pattern to match test files. Provide complete file name to run individual tests. The default value is `test_*.py`
+  Examples:
+  - `test_convolution.py` (Assuming `--test_type` parameter is provided as `ops`, this will run only convolution tests)
+  - `test_add*.py` (Assuming `--test_type` parameter is provided as `ops`, this will run add and addmm op tests)
+
+- **`--device`** (optional):  
+  Target device to compile and run tests. Default is `CPU`.
+  Examples: `CPU`, `GPU`
+
+
