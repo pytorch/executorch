@@ -657,3 +657,42 @@ class TestConv2d(unittest.TestCase):
                     quant_config=None,
                     conv_count=1,
                 )
+
+    def test_padded_output_tconv(self):
+        class TConv2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.ConvTranspose2d(
+                    in_channels=2,
+                    out_channels=1,
+                    kernel_size=(3, 3),
+                    stride=(2, 2),
+                    padding=(1, 1),
+                    output_padding=(0, 1),
+                    dilation=(1, 1),
+                    groups=1,
+                    bias=True,
+                ).to(torch.float)
+
+            def forward(self, x):
+                return self.conv(x)
+
+        m = TConv2d()
+        inputs = (torch.randn(1, 2, 8, 8),)
+        tester = Tester(m.eval(), inputs)
+
+        conv_count: int = 1
+        op = "torch.ops.aten.conv_transpose2d"
+
+        (tester.export().check_count({op: conv_count}).to_edge_transform_and_lower())
+
+        # tconv should not be offloaded to XNNPack, since output padding is not
+        (
+            tester.check(
+                ["executorch_exir_dialects_edge__ops_aten_convolution_default"]
+            )
+            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(qtol=1)
+        )
