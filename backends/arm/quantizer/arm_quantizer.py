@@ -29,6 +29,11 @@ from executorch.backends.arm.quantizer.quantization_annotator import (  # type: 
 
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.arm_backend import (
+    get_tosa_spec,
+    is_ethosu,
+)  # usort: skip
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.ao.quantization.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
@@ -50,7 +55,8 @@ from torch.ao.quantization.quantizer.utils import (
 from torch.fx import GraphModule, Node
 
 __all__ = [
-    "ArmQuantizer",
+    "TOSAQuantizer",
+    "EthosUQuantizer",
     "get_symmetric_quantization_config",
 ]
 
@@ -209,7 +215,7 @@ def _get_not_module_type_or_name_filter(
     return not_module_type_or_name_filter
 
 
-class ArmQuantizer(Quantizer):
+class TOSAQuantizer(Quantizer):
 
     def __init__(self, tosa_spec: TosaSpecification) -> None:
         super().__init__()
@@ -219,14 +225,14 @@ class ArmQuantizer(Quantizer):
         self.module_type_config: Dict[Callable, Optional[QuantizationConfig]] = {}
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
-    def set_global(self, quantization_config: QuantizationConfig) -> ArmQuantizer:
+    def set_global(self, quantization_config: QuantizationConfig) -> TOSAQuantizer:
         """Set quantization_config for submodules that are not already annotated by name or type filters."""
         self.global_config = quantization_config
         return self
 
     def set_module_type(
         self, module_type: Callable, quantization_config: QuantizationConfig
-    ) -> ArmQuantizer:
+    ) -> TOSAQuantizer:
         """Set quantization_config for a submodule with type: `module_type`, for example:
         quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
         patterns in the submodule with this module type with the given `quantization_config`
@@ -236,7 +242,7 @@ class ArmQuantizer(Quantizer):
 
     def set_module_name(
         self, module_name: str, quantization_config: Optional[QuantizationConfig]
-    ) -> ArmQuantizer:
+    ) -> TOSAQuantizer:
         """Set quantization_config for a submodule with name: `module_name`, for example:
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
@@ -346,3 +352,12 @@ class ArmQuantizer(Quantizer):
 
     def validate(self, model: GraphModule) -> None:
         pass
+
+
+class EthosUQuantizer(TOSAQuantizer):
+    def __init__(self, compile_spec: list[CompileSpec]) -> None:
+        if not is_ethosu(compile_spec):
+            raise RuntimeError("compile spec is not targeting Ethos-U")
+
+        tosa_spec = get_tosa_spec(compile_spec)
+        super().__init__(tosa_spec)
