@@ -24,7 +24,7 @@ Once openvino is installed and executorch environment is set, refer to [OpenVINO
 
 ### Usage
 
-test_openvino_delegate.py allows to run op or model tests for openvino backend.
+`test_openvino_delegate.py` allows to run op or model tests for openvino backend.
 
 ### **Arguments**
 - **`--build_folder`** (required):  
