@@ -359,11 +359,6 @@ class Method final {
   size_t num_external_constants_ = 0;
 
   /**
-   * Counts the number of external constants for this method.
-   */
-  ET_NODISCARD Result<size_t> get_num_external_constants();
-
-  /**
    * Parses the flatbuffer for constant tensors tagged as EXTERNAL.
    * Retrieves the external constants using the named_data_map and places them
    * into `external_constants_`.

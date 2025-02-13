@@ -143,6 +143,7 @@ class _EmitterState:
     """
 
     values: List[EValue]
+    num_external_constants: int
     operators: List[Operator]
     delegates: List[BackendDelegate]
     operator_cache: Dict[Tuple[str, str], int]
@@ -407,6 +408,7 @@ class _Emitter(torch.fx.Interpreter):
             self.program_state.external_constant_map[constant_tag][
                 spec.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`.
             ] = buffer_idx
+            self.emitter_state.num_external_constants += 1
         # Tensor is mutable with initial state. Place into mutable segment
         elif allocation_info:
             buffer_idx = len(self.program_state.mutable_buffer)
@@ -1358,6 +1360,7 @@ class _Emitter(torch.fx.Interpreter):
                     delegates=[],
                     non_const_buffer_sizes=[0],
                     container_meta_type=ContainerMetadata("", spec),
+                    num_external_constants=0,
                 )
             )
         return plans
@@ -1739,4 +1742,5 @@ class _TopLevelEmitter(_Emitter):
                 self.module.meta["non_const_buffer_sizes"],
             ),
             container_meta_type=self.container_meta_type,
+            num_external_constants=self.emitter_state.num_external_constants,
         )
