@@ -99,10 +99,6 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                     env=env,
                 )
 
-                stdout_str = proc.stdout.decode('utf-8')
-                print("STDOUT:")
-                print(stdout_str)
-
                 # Check if execution completed successfully
                 self.assertTrue(proc.returncode == 0)
 
