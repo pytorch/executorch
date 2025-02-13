@@ -150,7 +150,6 @@ the checkpoint format to avoid generating faulty models.
             input_prune_map=input_prune_map,
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
-            use_hf_rope=True,
             **params,
         )
 
