@@ -270,7 +270,7 @@ class ArmBackend(BackendDetails):
         # preprocess and some consume TOSA fb directly.
         if output_format == "vela":
             # Emit vela_bin_stream format
-            binary = vela_compile(tosa_graph, compile_flags, input_order)
+            binary = vela_compile(tosa_graph, compile_flags, input_order, verbose = logger.getEffectiveLevel() == logging.INFO)
         elif output_format == "tosa":
             # Emit TOSA flatbuffer
             binary = bytes(tosa_graph.serialize())
