@@ -163,6 +163,7 @@ def emit_program(
             operator_cache={},
             delegate_cache={},
             emit_stacktrace=emit_stacktrace,
+            num_external_constants=0,
         )
 
         gm = _remove_non_user_outputs(exported_program)
