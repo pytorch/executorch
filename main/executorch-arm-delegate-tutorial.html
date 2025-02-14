@@ -578,7 +578,7 @@ uname<span class="w"> </span>-m
 <div class="section" id="download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain">
 <h3>Download and Install the Arm GNU AArch32 Bare-Metal Toolchain<a class="headerlink" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain" title="Permalink to this heading">¶</a></h3>
 <p>Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55/M85 CPU available on the Corstone-300/Corstone-320 platform.</p>
-<p>These toolchains are available <a class="reference external" href="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads">here</a>. We will be using GCC 12.3 targeting <code class="docutils literal notranslate"><span class="pre">arm-none-eabi</span></code> here for our tutorial. Just like FVP, <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will down the toolchain for you. See <code class="docutils literal notranslate"><span class="pre">setup_toolchain</span></code> function.</p>
+<p>These toolchains are available <a class="reference external" href="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads">here</a>. We will be using GCC 13.3.rel1 targeting <code class="docutils literal notranslate"><span class="pre">arm-none-eabi</span></code> here for our tutorial. Just like FVP, <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will down the toolchain for you. See <code class="docutils literal notranslate"><span class="pre">setup_toolchain</span></code> function.</p>
 </div>
 <div class="section" id="setup-the-arm-ethos-u-software-development">
 <h3>Setup the Arm Ethos-U Software Development<a class="headerlink" href="#setup-the-arm-ethos-u-software-development" title="Permalink to this heading">¶</a></h3>
@@ -594,23 +594,22 @@ uname<span class="w"> </span>-m
 <p>This is the last step of the setup process, using <code class="docutils literal notranslate"><span class="pre">setup_tosa_reference_model</span></code> function <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will install TOSA reference model for you.</p>
 <p>At the end of the setup, if everything goes well, your top level devlopement dir might look something like this,</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>.
-├──<span class="w"> </span>arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi<span class="w"> </span><span class="c1"># for x86-64 hosts</span>
+├──<span class="w"> </span>arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi<span class="w"> </span><span class="c1"># for x86-64 hosts</span>
+├──<span class="w"> </span>arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
 ├──<span class="w"> </span>ethos-u
 │<span class="w">   </span>├──<span class="w"> </span>core_platform
 │<span class="w">   </span>├──<span class="w"> </span>core_software
 │<span class="w">   </span>├──<span class="w"> </span>fetch_externals.py
 │<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
-├──<span class="w"> </span>ethos-u-vela
 ├──<span class="w"> </span>FVP-corstone300
 │<span class="w">   </span>├──<span class="w"> </span>FVP_Corstone_SSE-300.sh
 │<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
 ├──<span class="w"> </span>FVP-corstone320
 │<span class="w">   </span>├──<span class="w"> </span>FVP_Corstone_SSE-320.sh
 │<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
-├──<span class="w"> </span>FVP_cs300.tgz
-├──<span class="w"> </span>FVP_cs320.tgz
-├──<span class="w"> </span>gcc.tar.xz
-└──<span class="w"> </span>reference_model
+├──<span class="w"> </span>FVP_corstone300.tgz
+├──<span class="w"> </span>FVP_corstone320.tgz
+└──<span class="w"> </span>setup_path.sh
 </pre></div>
 </div>
 </div>
