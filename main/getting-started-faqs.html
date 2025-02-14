@@ -503,6 +503,17 @@
 <h1>FAQs and Common Issues<a class="headerlink" href="#faqs-and-common-issues" title="Permalink to this heading">¶</a></h1>
 <p>This page summarizes frequently asked questions and provides guidance on issues that commonly occur when adopting ExecuTorch.</p>
 <p>If a specific issue is not covered here, consider searching for or creating an issue on GitHub under <a class="reference external" href="https://github.com/pytorch/executorch/issues">Issues</a> or <a class="reference external" href="https://github.com/pytorch/executorch/discussions">Discussions</a>.</p>
+<div class="section" id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="missing-usr-include-python3-x">
+<h3>Missing /usr/include/python3.x<a class="headerlink" href="#missing-usr-include-python3-x" title="Permalink to this heading">¶</a></h3>
+<p>Most likely <code class="docutils literal notranslate"><span class="pre">python-dev</span></code> library needs to be installed. Please run</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">apt</span> <span class="n">install</span> <span class="n">python</span><span class="o">&lt;</span><span class="n">version</span><span class="o">&gt;-</span><span class="n">dev</span>
+</pre></div>
+</div>
+<p>if you are using Ubuntu, or use an equivalent install command.</p>
+</div>
+</div>
 <div class="section" id="export">
 <h2>Export<a class="headerlink" href="#export" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="missing-out-variants">
@@ -598,6 +609,10 @@
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">FAQs and Common Issues</a><ul>
+<li><a class="reference internal" href="#installation">Installation</a><ul>
+<li><a class="reference internal" href="#missing-usr-include-python3-x">Missing /usr/include/python3.x</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#export">Export</a><ul>
 <li><a class="reference internal" href="#missing-out-variants">Missing out variants: { _ }</a></li>
 <li><a class="reference internal" href="#runtimeerror-pytorch-convert-function-for-op-not-implemented">RuntimeError: PyTorch convert function for op _ not implemented</a></li>
