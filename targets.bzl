@@ -94,3 +94,16 @@ def define_common_targets():
             "nlohmann_json",
         ],
     )
+
+    runtime.cxx_library(
+        name = "llama2c_tokenizer",
+        srcs = [
+            "src/llama2c_tokenizer.cpp",
+        ],
+        exported_deps = [
+            ":headers",
+        ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )

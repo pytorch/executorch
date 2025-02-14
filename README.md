@@ -6,7 +6,13 @@ C++ implementations for various tokenizers (sentencepiece, tiktoken etc). Useful
 Depend on https://github.com/google/sentencepiece from Google.
 
 ## Tiktoken tokenizer
-Adopted from https://github.com/sewenew/tokenizer.
+Adapted from https://github.com/sewenew/tokenizer.
+
+## Huggingface tokenizer
+Compatible with https://github.com/huggingface/tokenizers/.
+
+## Llama2.c tokenizer
+Adapted from https://github.com/karpathy/llama2.c.
 
 ## License
 
