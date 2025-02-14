@@ -29,7 +29,6 @@ from torch.ao.quantization.quantize_pt2e import convert_pt2e
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e
 from torch.export import export
 from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.graph_drawer import FxGraphDrawer
 from transformers import AutoModel
 
 import nncf
@@ -70,11 +69,6 @@ def load_calibration_dataset(dataset_path: str, batch_size: int, suite: str, mod
     )
 
     return calibration_dataset
-
-
-def visualize_fx_model(model: torch.fx.GraphModule, output_svg_path: str):
-    g = FxGraphDrawer(model, output_svg_path)
-    g.get_dot_graph().write_svg(output_svg_path)
 
 
 def dump_inputs(calibration_dataset, dest_path):
@@ -204,7 +198,6 @@ def main(
         quantized_model = quantize_model(
             aten_dialect.module(), calibration_dataset, use_nncf=quantization_flow == "nncf"
         )
-        visualize_fx_model(quantized_model, f"{model_name}_int8.svg")
 
         aten_dialect: ExportedProgram = export(quantized_model, example_args)
 
