@@ -25,7 +25,7 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
   - For `torchvision`: `resnet18`, `mobilenet_v2`
   - For `huggingface`: `bert-base-uncased`, `distilbert-base-uncased`
 
-- **`--input_shape`**:
+- **`--input_shape`**(optional):
   Input shape for the model. Provide this as a **list** or **tuple**.
   Examples:
   - `[1, 3, 224, 224]` (Zsh users: wrap in quotes)
@@ -38,10 +38,14 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
 - **`--quantize`** (optional):
   Enable model quantization. --dataset argument is requred for the quantization. `huggingface` suite  does not supported yet.
 
+- **`--quantization_flow`** (optional):
+  Specifies the way to quantize torch.fx.GraphModule.
+  Supported values:
+  - `nncf`: `nncf quantize_pt2e` API (default)
+  - `pt2e`: torch ao quantization pipeline.
 
 - **`--validate`** (optional):
   Enable model validation. --dataset argument is requred for the validation. `huggingface` suite does not supported yet.
-
 
 - **`--dataset`** (optional):
   Path to the imagenet-like calibration dataset.
