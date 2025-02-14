@@ -231,7 +231,7 @@ def main(
             raise ValueError(msg)
 
         if not dataset_path:
-            msg = "Validateion requires a calibration dataset."
+            msg = "Validation requires a calibration dataset."
             raise ValueError(msg)
 
         print("Start validation of the model:")
@@ -266,7 +266,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--validate",
         action="store_true",
-        help="Enable model validation. --dataset argument is requred for the validation.",
+        help="Enable model validation. --dataset argument is required for the validation.",
     )
     parser.add_argument("--dataset", type=str, help="Path to the validation dataset.")
     parser.add_argument(
