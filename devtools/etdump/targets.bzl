@@ -103,7 +103,7 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "data_sink_base" + aten_suffix,
-            headers = [
+            exported_headers = [
                 "data_sink_base.h",
             ],
             exported_deps = [
