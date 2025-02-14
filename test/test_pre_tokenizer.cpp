@@ -19,7 +19,7 @@ using namespace tokenizers;
 
 // Helpers /////////////////////////////////////////////////////////////////////
 
-void assert_split_match(
+static void assert_split_match(
     const PreTokenizer& ptok,
     const std::string& prompt,
     const std::vector<std::string>& expected) {

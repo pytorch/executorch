@@ -5,6 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
+
 #pragma once
 
 // Standard
@@ -41,6 +43,8 @@ class PreTokenizer {
    */
   virtual std::vector<std::string> pre_tokenize(
       re2::StringPiece input) const = 0;
+
+  virtual ~PreTokenizer() = default;
 }; // end class PreTokenizer
 
 // -- Factory ------------------------------------------------------------------

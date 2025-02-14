@@ -5,11 +5,15 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
 
 // Base class for all BPE tokenizer implementations
 #pragma once
 
 // Standard
+#include <memory>
+#include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 

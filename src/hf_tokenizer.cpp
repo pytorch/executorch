@@ -5,6 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
+
 #include "hf_tokenizer.h"
 
 // Standard
@@ -127,17 +129,17 @@ Error HFTokenizer::load(const std::string& path) {
   // If a tokenizer config file is found, parse it to look up the eos/bos tokens
   if (!model_config_json.empty()) {
     // Load it and parse it as json
-    std::ifstream file(model_config_json);
-    if (!file) {
+    std::ifstream config_file(model_config_json);
+    if (!config_file) {
       fprintf(stderr, "failed to open encoder file: %s\n", path.c_str());
       return Error::LoadFailure;
     }
-    std::string contents(
-        (std::istreambuf_iterator<char>(file)),
+    std::string config_contents(
+        (std::istreambuf_iterator<char>(config_file)),
         std::istreambuf_iterator<char>());
-    json parsed_json;
+    json parsed_config_json;
     try {
-      parsed_json = json::parse(contents);
+      parsed_config_json = json::parse(config_contents);
     } catch (const json::exception& e) {
       std::cout << "Error parsing model config json json file: " << e.what()
                 << std::endl;
@@ -146,8 +148,8 @@ Error HFTokenizer::load(const std::string& path) {
 
     // Pull out the token strings
     try {
-      const std::string bos_token = parsed_json.at("bos_token");
-      const std::string eos_token = parsed_json.at("eos_token");
+      const std::string bos_token = parsed_config_json.at("bos_token");
+      const std::string eos_token = parsed_config_json.at("eos_token");
       const auto& bos_it = special_token_encoder_.find(bos_token);
       const auto& eos_it = special_token_encoder_.find(eos_token);
       if (bos_it == special_token_encoder_.end()) {
@@ -256,7 +258,11 @@ void HFTokenizer::_decode(re2::StringPiece input, std::string& ret) const {
   if (_decoder) {
     ret += _decoder->decode(input);
   } else {
+#ifdef _USE_INTERNAL_STRING_VIEW
+    ret += input.as_string();
+#else
     ret += input;
+#endif
   }
 }
 

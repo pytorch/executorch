@@ -53,13 +53,14 @@ size_t unicode_len_utf8(char src) {
   return lookup[highbits];
 }
 
-static std::string unicode_cpts_to_utf8(const std::vector<uint32_t> &cps) {
-  std::string result;
-  for (size_t i = 0; i < cps.size(); ++i) {
-    result.append(unicode_cpt_to_utf8(cps[i]));
-  }
-  return result;
-}
+// Unused function
+// static std::string unicode_cpts_to_utf8(const std::vector<uint32_t> &cps) {
+//   std::string result;
+//   for (size_t i = 0; i < cps.size(); ++i) {
+//     result.append(unicode_cpt_to_utf8(cps[i]));
+//   }
+//   return result;
+// }
 
 uint32_t unicode_cpt_from_utf8(const std::string &utf8, size_t &offset) {
   assert(offset < utf8.size());

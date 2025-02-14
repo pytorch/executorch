@@ -5,8 +5,9 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
 
-// A tokenizer that works with sentencepiece.
+// A tokenizer that works with sentencepiece. Used by Llama2.
 #pragma once
 
 #include <memory>

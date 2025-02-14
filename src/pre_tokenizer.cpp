@@ -129,7 +129,7 @@ namespace {
 
 // Standard GPT2 regex
 // https://github.com/openai/gpt-2/blob/master/src/encoder.py#L53
-static const std::string GPT2_EXPR =
+constexpr char GPT2_EXPR[] =
     R"('s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+)";
 
 } // namespace

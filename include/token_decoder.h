@@ -5,6 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
+
 #pragma once
 
 // Standard
@@ -44,6 +46,9 @@ class TokenDecoder {
    * @returns decoded: The decoded token string
    */
   virtual std::string decode(re2::StringPiece token) const = 0;
+
+  // virtual destructor
+  virtual ~TokenDecoder() = default;
 
 }; // end class TokenDecoder
 

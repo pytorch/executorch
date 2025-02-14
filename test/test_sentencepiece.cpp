@@ -5,11 +5,27 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
 
-#include "gtest/gtest.h"
+#ifdef TOKENIZERS_FB_BUCK
+#include <TestResourceUtils/TestResourceUtils.h>
+#endif
+#include <gtest/gtest.h>
 #include "sentencepiece.h"
 
 namespace tokenizers {
+
+namespace {
+static inline std::string _get_resource_path(const std::string& name) {
+#ifdef TOKENIZERS_FB_BUCK
+  return facebook::xplat::testing::getPathForTestResource(
+      "test/resources/" + name);
+#else
+  return std::getenv("RESOURCES_PATH") + std::string("/") + name;
+#endif
+}
+
+} // namespace
 
 TEST(SPTokenizerTest, TestEncodeWithoutLoad) {
   SPTokenizer tokenizer;
@@ -26,7 +42,7 @@ TEST(SPTokenizerTest, TestDecodeWithoutLoad) {
 
 TEST(SPTokenizerTest, TestLoad) {
   SPTokenizer tokenizer;
-  auto path = RESOURCES_PATH + std::string("/test_sentencepiece.model");
+  auto path = _get_resource_path("test_sentencepiece.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
 }
@@ -39,7 +55,7 @@ TEST(SPTokenizerTest, TestLoadInvalidPath) {
 
 TEST(SPTokenizerTest, TestEncode) {
   SPTokenizer tokenizer;
-  auto path = RESOURCES_PATH + std::string("/test_sentencepiece.model");
+  auto path = _get_resource_path("test_sentencepiece.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
   std::string text = "Hello world!";
@@ -54,7 +70,7 @@ TEST(SPTokenizerTest, TestEncode) {
 
 TEST(SPTokenizerTest, TestDecode) {
   SPTokenizer tokenizer;
-  auto path = RESOURCES_PATH + std::string("/test_sentencepiece.model");
+  auto path = _get_resource_path("test_sentencepiece.model");
   auto error = tokenizer.load(path);
   EXPECT_EQ(error, Error::Ok);
   std::vector<uint64_t> tokens = {1, 15043, 3186, 29991};

@@ -5,6 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
+
 #include "token_decoder.h"
 
 // Standard
@@ -60,7 +62,7 @@ static std::string format(const char* fmt, ...) {
   int size = vsnprintf(NULL, 0, fmt, ap);
   // GGML_ASSERT(size >= 0 && size < INT_MAX); // NOLINT
   std::vector<char> buf(size + 1);
-  int size2 = vsnprintf(buf.data(), size + 1, fmt, ap2);
+  // int size2 = vsnprintf(buf.data(), size + 1, fmt, ap2);
   // GGML_ASSERT(size2 == size);
   va_end(ap2);
   va_end(ap);

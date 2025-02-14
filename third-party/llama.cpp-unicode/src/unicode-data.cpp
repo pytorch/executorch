@@ -797,13 +797,6 @@ const std::initializer_list<std::pair<uint32_t, uint16_t>>
         {0x10FFFE, 0x0001}, {0x110000, 0x0000},
 };
 
-const std::unordered_set<uint32_t> unicode_set_whitespace = {
-    0x000009, 0x00000A, 0x00000B, 0x00000C, 0x00000D, 0x000020, 0x000085,
-    0x0000A0, 0x001680, 0x002000, 0x002001, 0x002002, 0x002003, 0x002004,
-    0x002005, 0x002006, 0x002007, 0x002008, 0x002009, 0x00200A, 0x002028,
-    0x002029, 0x00202F, 0x00205F, 0x003000,
-};
-
 // list is always in ascending order, to enable binary search
 const std::initializer_list<std::pair<uint32_t, uint32_t>>
     unicode_map_lowercase = {
