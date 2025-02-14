@@ -11,8 +11,15 @@ namespace etdump {
 
 class DataSink : public DataSinkBase {
  public:
-  explicit DataSink(::executorch::runtime::Span<uint8_t> buffer)
+  /// Construct an empty DataSink.
+  /* implicit */ constexpr DataSink() noexcept
+      : debug_buffer_({}), offset_(0) {}
+
+  DataSink(::executorch::runtime::Span<uint8_t> buffer)
       : debug_buffer_(buffer), offset_(0) {}
+
+  DataSink(void* ptr, size_t size)
+      : debug_buffer_((uint8_t*)ptr, size), offset_(0) {}
 
   size_t write_tensor(const executorch::aten::Tensor& tensor) override;
   size_t get_storage_size() const override;
