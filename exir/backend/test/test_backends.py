@@ -1278,7 +1278,6 @@ class TestBackends(unittest.TestCase):
 
             def forward(self, x):
                 return [torch.sin(x)]
- 
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
@@ -1353,7 +1352,7 @@ class TestBackends(unittest.TestCase):
 
             def forward(self, x):
                 return torch.sin(x)
- 
+
             def inputs(self):
                 return (torch.ones(1),)
 
@@ -1365,7 +1364,7 @@ class TestBackends(unittest.TestCase):
                 y = torch.mm(a, x)
                 z = torch.add(y, b)
                 return z
- 
+
             def inputs(self):
                 return (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
 
