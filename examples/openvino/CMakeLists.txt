@@ -55,6 +55,7 @@ target_include_directories(openvino_portable_ops_lib PUBLIC ${_common_include_di
 
 # Build Executor Runner
 add_executable(openvino_executor_runner ${_openvino_executor_runner__srcs})
+
 target_include_directories(
   openvino_executor_runner PUBLIC ${_common_include_directories} ${EXECUTORCH_ROOT}/cmake-openvino-out/third-party/gflags/include
 )
