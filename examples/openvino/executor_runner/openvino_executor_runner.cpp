@@ -9,6 +9,7 @@
 #include <chrono>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <tuple>
@@ -52,56 +53,53 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
 
-std::pair<double, Error> benchmark_method(Result<Method> &method,
-                                          int num_iterations) {
-  Error status = Error::Ok;
-  auto before_exec = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < num_iterations; ++i) {
-    status = method->execute();
-  }
-  auto after_exec = std::chrono::high_resolution_clock::now();
-  double elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                            after_exec - before_exec)
-                            .count() /
-                        1000.0;
-  return std::make_pair(elapsed_time, status);
+std::function<void(size_t)> build_set_input_tensor(
+    Result<Method> &method, std::vector<EValue> &inputs,
+    const std::vector<std::vector<std::string>> input_paths) {
+  return [&inputs, &method, input_paths](size_t idx) -> void {
+    const MethodMeta method_meta = method->method_meta();
+    for (int input_index = 0; input_index < method->inputs_size();
+         ++input_index) {
+
+      Result<TensorInfo> tensor_meta =
+          method_meta.input_tensor_meta(input_index);
+      auto input_data_ptr = inputs[input_index].toTensor().data_ptr<char>();
+
+      std::ifstream fin(input_paths[idx][input_index], std::ios::binary);
+      fin.seekg(0, fin.end);
+      size_t file_size = fin.tellg();
+
+      ET_CHECK_MSG(
+          file_size == tensor_meta->nbytes(),
+          "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
+          input_index, file_size, tensor_meta->nbytes());
+
+      fin.seekg(0, fin.beg);
+      fin.read(static_cast<char *>(input_data_ptr), file_size);
+      fin.close();
+    }
+  };
 }
 
-void dump_outputs(Result<Method> &method, const char *output_folder_path,
-                  size_t index = 0) {
-  std::vector<EValue> outputs(method->outputs_size());
-  Error status = Error::Ok;
-  status = method->get_outputs(outputs.data(), outputs.size());
-  ET_CHECK(status == Error::Ok);
-  for (size_t output_index = 0; output_index < method->outputs_size();
-       output_index++) {
-    auto output_tensor = outputs[output_index].toTensor();
-    auto output_file_name = std::string(output_folder_path) + "/output_" +
-                            std::to_string(index) + "_" +
-                            std::to_string(output_index) + ".raw";
-    std::ofstream fout(output_file_name.c_str(), std::ios::binary);
-    fout.write(output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
-    fout.close();
-  }
+std::function<void(size_t)>
+build_dump_outputs(std::vector<EValue> &outputs, const size_t output_size,
+                   const std::string output_folder_path) {
+  return [&outputs, output_folder_path, output_size](size_t idx) -> void {
+    for (size_t output_index = 0; output_index < output_size; output_index++) {
+      auto output_tensor = outputs[output_index].toTensor();
+      auto output_file_name = output_folder_path + "/output_" +
+                              std::to_string(idx) + "_" +
+                              std::to_string(output_index) + ".raw";
+      std::ofstream fout(output_file_name.c_str(), std::ios::binary);
+      fout.write(output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
+      fout.close();
+    }
+  };
 }
 
-struct ProcessInputsResult {
-  double total_time;
-  size_t num_iter;
-  Error status;
-};
-
-ProcessInputsResult process_inputs(Result<Method> &method,
-                                   const char *input_list_path,
-                                   const char *output_folder_path) {
-  std::vector<EValue> inputs(method->inputs_size());
-  ET_LOG(Info, "%zu inputs: ", inputs.size());
-  double total_time_elapsed = 0.;
+std::vector<std::vector<std::string>>
+get_inputs_paths(const char *input_list_path) {
   size_t idx = 0;
-
-  Error status = Error::Ok;
-  status = method->get_inputs(inputs.data(), inputs.size());
-  ET_CHECK(status == Error::Ok);
 
   auto split = [](std::string s, std::string delimiter) {
     size_t pos_start = 0, pos_end, delim_len = delimiter.length();
@@ -120,45 +118,19 @@ ProcessInputsResult process_inputs(Result<Method> &method,
   // Read raw input tensor file names from input list file and
   // iterate each raw input tensor file to read values
   std::ifstream input_list(input_list_path);
-  if (input_list.is_open()) {
-    size_t num_inputs = method->inputs_size();
-    std::string file_path;
-    while (std::getline(input_list, file_path)) {
-      auto input_files = split(file_path, " ");
-      if (input_files.size() == 0) {
-        break;
-      }
-      for (int input_index = 0; input_index < num_inputs; ++input_index) {
-        MethodMeta method_meta = method->method_meta();
-        Result<TensorInfo> tensor_meta =
-            method_meta.input_tensor_meta(input_index);
-        auto input_data_ptr = inputs[input_index].toTensor().data_ptr<char>();
-
-        std::ifstream fin(input_files[input_index], std::ios::binary);
-        fin.seekg(0, fin.end);
-        size_t file_size = fin.tellg();
-
-        ET_CHECK_MSG(
-            file_size == tensor_meta->nbytes(),
-            "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
-            input_index, file_size, tensor_meta->nbytes());
-
-        fin.seekg(0, fin.beg);
-        fin.read(static_cast<char *>(input_data_ptr), file_size);
-        fin.close();
-      }
-      double time_elapsed;
-      std::tie(time_elapsed, status) = benchmark_method(method, 1);
-      if (status != Error::Ok) {
-        return {total_time_elapsed, idx, status};
-      }
-      total_time_elapsed += time_elapsed;
-      dump_outputs(method, output_folder_path, idx++);
-    }
-  } else {
+  if (!input_list.is_open()) {
     ET_CHECK_MSG(false, "Failed to read input list file: %s", input_list_path);
   }
-  return {total_time_elapsed, idx, status};
+  std::string file_path;
+  auto retval = std::vector<std::vector<std::string>>();
+  while (std::getline(input_list, file_path)) {
+    auto input_files = split(file_path, " ");
+    if (input_files.size() == 0) {
+      break;
+    }
+    retval.push_back(input_files);
+  }
+  return retval;
 }
 
 int main(int argc, char **argv) {
@@ -240,43 +212,77 @@ int main(int argc, char **argv) {
   ET_LOG(Info, "Method loaded.");
 
   // Prepare the input tensors for the method
-  auto inputs = prepare_input_tensors(*method);
-  ET_CHECK_MSG(inputs.ok(), "Could not prepare inputs: 0x%" PRIx32,
-               static_cast<uint32_t>(inputs.error()));
+  auto method_inputs = prepare_input_tensors(*method);
+  ET_CHECK_MSG(method_inputs.ok(), "Could not prepare inputs: 0x%" PRIx32,
+               static_cast<uint32_t>(method_inputs.error()));
 
-  double elapsed_time;
   Error status = Error::Ok;
+  std::vector<EValue> inputs(method->inputs_size());
+  ET_LOG(Info, "Number of input layers: %zu", inputs.size());
+
+  status = method->get_inputs(inputs.data(), inputs.size());
+  ET_CHECK(status == Error::Ok);
 
   // If the input path list is provided, read input tensors from the files
-  if (!(FLAGS_input_list_path.empty()) and
-      !(FLAGS_output_folder_path.empty())) {
+  std::function<void(size_t)> set_input_tensor;
+  if (!FLAGS_input_list_path.empty()) {
     const char *input_list_path = FLAGS_input_list_path.c_str();
     ET_LOG(Info, "Loading input tensors from the list provided in %s.",
            input_list_path);
-    const char *output_folder_path = FLAGS_output_folder_path.c_str();
-    auto res = process_inputs(method, input_list_path, output_folder_path);
-    elapsed_time = res.total_time;
-    status = res.status;
-    num_iterations = res.num_iter;
-  } else {
+    const auto input_paths = get_inputs_paths(input_list_path);
+    num_iterations = input_paths.size();
+    ET_LOG(Info, "Number of iters is set to the len of the inputs: %u.",
+           num_iterations);
 
-    // Measure execution time for inference
-    std::tie(elapsed_time, status) = benchmark_method(method, num_iterations);
+    set_input_tensor = build_set_input_tensor(method, inputs, input_paths);
+  } else {
+    set_input_tensor = [](size_t idx) -> void {};
+  }
+
+  ET_LOG(Info, "%zu Number of output layers: ", method->outputs_size());
+
+  std::vector<EValue> outputs(method->outputs_size());
+  status = method->get_outputs(outputs.data(), outputs.size());
+  ET_CHECK(status == Error::Ok);
+
+  std::function<void(size_t)> dump_outputs;
+  if (!FLAGS_output_folder_path.empty()) {
     // Retrieve and print the method outputs
-    ET_LOG(Info, "%zu Number of outputs: ", method->outputs_size());
 
     // If output folder path is provided, save output tensors
     // into raw tensor files.
-    if (!(FLAGS_output_folder_path.empty())) {
-      const char *output_folder_path = FLAGS_output_folder_path.c_str();
-      ET_LOG(Info, "Saving output tensors into the output folder: %s.",
-             output_folder_path);
-      dump_outputs(method, output_folder_path);
-    }
+    const char *output_folder_path = FLAGS_output_folder_path.c_str();
+    ET_LOG(Info, "Saving output tensors into the output folder: %s.",
+           output_folder_path);
+    dump_outputs = build_dump_outputs(outputs, outputs.size(),
+                                      std::string(output_folder_path));
+
+  } else {
+    dump_outputs = [](size_t idx) {};
   }
+
+  // Measure execution time for inference
+
+  double total_time_elapsed = 0.;
+  for (int i = 0; (i < num_iterations and status == Error::Ok); ++i) {
+    set_input_tensor(i);
+    auto before_exec = std::chrono::high_resolution_clock::now();
+    status = method->execute();
+    auto after_exec = std::chrono::high_resolution_clock::now();
+    if (status == Error::Ok) {
+      dump_outputs(i);
+    }
+    double elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(
+                              after_exec - before_exec)
+                              .count() /
+                          1000.0;
+    total_time_elapsed += elapsed_time;
+  }
+
   // Log execution time and average time per iteration
   ET_LOG(Info, "%d inference took %f ms, avg %f ms", num_iterations,
-         elapsed_time, elapsed_time / static_cast<float>(num_iterations));
+         total_time_elapsed,
+         total_time_elapsed / static_cast<float>(num_iterations));
   ET_CHECK_MSG(status == Error::Ok,
                "Execution of method %s failed with status 0x%" PRIx32,
                method_name, static_cast<uint32_t>(status));
