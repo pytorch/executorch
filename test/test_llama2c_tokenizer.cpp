@@ -10,7 +10,7 @@
 #include <TestResourceUtils/TestResourceUtils.h>
 #endif
 #include <gtest/gtest.h>
-#include "llama2c_tokenizer.h"
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 using namespace ::testing;
 

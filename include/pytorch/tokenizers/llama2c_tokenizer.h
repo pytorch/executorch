@@ -5,15 +5,11 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-// @lint-ignore-every LICENSELINT
-
-// A tokenizer that works with sentencepiece. Used by Llama2.
+// @lint-ignore-every CLANGTIDY facebook-hte-RelativeInclude
 #pragma once
-
+#include <pytorch/tokenizers/tokenizer.h>
 #include <memory>
-#include <vector>
-#include "sentencepiece_processor.h"
-#include "tokenizer.h"
+
 namespace tokenizers {
 
 struct TokenIndex {
@@ -21,10 +17,12 @@ struct TokenIndex {
   int32_t id;
 };
 
-class SPTokenizer : public Tokenizer {
+// A simple Byte Pair Encoding (BPE) Tokenizer. Note that the current C++ code
+// won't work with this class, it needs to go through tokenizer.py first.
+class Llama2cTokenizer : public Tokenizer {
  public:
-  explicit SPTokenizer();
-  ~SPTokenizer() override;
+  explicit Llama2cTokenizer();
+  ~Llama2cTokenizer() override;
 
   Error load(const std::string& tokenizer_path) override;
 
@@ -35,7 +33,11 @@ class SPTokenizer : public Tokenizer {
       const override;
 
  private:
-  std::unique_ptr<sentencepiece::SentencePieceProcessor> _processor;
+  std::unique_ptr<char*[]> vocab_ = nullptr;
+  std::unique_ptr<float[]> vocab_scores_ = nullptr;
+  std::unique_ptr<TokenIndex[]> sorted_vocab_ = nullptr;
+  unsigned int max_token_length_ = 0;
+  unsigned char byte_pieces_[512]; // stores all single-byte strings
 };
 
 } // namespace tokenizers

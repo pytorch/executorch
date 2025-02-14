@@ -8,7 +8,7 @@
 
 // A tokenizer that works with sentencepiece.
 
-#include "sentencepiece.h"
+#include <pytorch/tokenizers/sentencepiece.h>
 #include <cinttypes>
 #include <string>
 #include "third_party/absl/strings/str_replace.h"

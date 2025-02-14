@@ -7,7 +7,7 @@
  */
 // @lint-ignore-every LICENSELINT
 
-#include "detail/bpe_tokenizer_base.h"
+#include <pytorch/tokenizers/bpe_tokenizer_base.h>
 
 // Standard
 #include <inttypes.h>

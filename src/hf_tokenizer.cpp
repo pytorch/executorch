@@ -7,7 +7,7 @@
  */
 // @lint-ignore-every LICENSELINT
 
-#include "hf_tokenizer.h"
+#include <pytorch/tokenizers/hf_tokenizer.h>
 
 // Standard
 #include <filesystem>

@@ -12,7 +12,7 @@
 #include <re2/re2.h>
 
 // Local
-#include "pre_tokenizer.h"
+#include <pytorch/tokenizers/pre_tokenizer.h>
 
 using json = nlohmann::json;
 using namespace tokenizers;

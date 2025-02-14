@@ -29,8 +29,8 @@ SOFTWARE.
 #define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
 #endif
 
-#include "unicode.h"
-#include "unicode-data.h"
+#include <pytorch/tokenizers/third-party/llama.cpp-unicode/unicode.h>
+#include <pytorch/tokenizers/third-party/llama.cpp-unicode/unicode-data.h>
 
 #include <algorithm>
 #include <cassert>

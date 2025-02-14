@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 // @lint-ignore-every CLANGTIDY facebook-hte-RelativeInclude
-#include "llama2c_tokenizer.h"
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
 #include <cstring>
 
 namespace tokenizers {

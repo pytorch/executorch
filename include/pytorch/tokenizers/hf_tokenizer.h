@@ -19,11 +19,11 @@
 #include <re2/re2.h>
 
 // Local
-#include "detail/bpe_tokenizer_base.h"
-#include "error.h"
-#include "pre_tokenizer.h"
-#include "result.h"
-#include "token_decoder.h"
+#include <pytorch/tokenizers/bpe_tokenizer_base.h>
+#include <pytorch/tokenizers/error.h>
+#include <pytorch/tokenizers/pre_tokenizer.h>
+#include <pytorch/tokenizers/result.h>
+#include <pytorch/tokenizers/token_decoder.h>
 
 namespace tokenizers {
 class HFTokenizer : public detail::BPETokenizerBase {

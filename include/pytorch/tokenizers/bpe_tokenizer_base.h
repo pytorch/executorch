@@ -21,8 +21,8 @@
 #include <re2/re2.h>
 
 // Local
-#include "result.h"
-#include "tokenizer.h"
+#include <pytorch/tokenizers/result.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace tokenizers {
 namespace detail {

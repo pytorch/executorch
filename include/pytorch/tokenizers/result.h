@@ -13,10 +13,10 @@
 
 #pragma once
 
+#include <pytorch/tokenizers/error.h>
 #include <cassert>
 #include <new>
 #include <utility>
-#include "error.h"
 
 namespace tokenizers {
 

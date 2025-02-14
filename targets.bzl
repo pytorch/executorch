@@ -11,13 +11,12 @@ def define_common_targets():
     runtime.cxx_library(
         name = "headers",
         exported_headers = subdir_glob([
-            ("include", "*.h"),
-            ("include", "**/*.h"),
+            ("include", "pytorch/tokenizers/*.h"),
         ]),
-        header_namespace = "",
         visibility = [
             "@EXECUTORCH_CLIENTS",
         ],
+        header_namespace = "",
     )
 
     runtime.cxx_library(
@@ -66,7 +65,7 @@ def define_common_targets():
             "third-party/llama.cpp-unicode/src/unicode-data.cpp",
         ],
         exported_headers = subdir_glob([
-            ("third-party/llama.cpp-unicode/include", "*.h"),
+            ("include", "pytorch/tokenizers/third-party/llama.cpp-unicode/*.h"),
         ]),
         header_namespace = "",
     )

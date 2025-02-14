@@ -25,11 +25,11 @@
    limitations under the License.
  *************************************************************************/
 
-#include "tiktoken.h"
+#include <pytorch/tokenizers/base64.h>
+#include <pytorch/tokenizers/tiktoken.h>
 #include <cinttypes>
 #include <fstream>
 #include <limits>
-#include "base64.h"
 #include "re2/re2.h"
 
 namespace tokenizers {

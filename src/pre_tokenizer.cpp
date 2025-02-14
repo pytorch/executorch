@@ -5,7 +5,10 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#include "pre_tokenizer.h"
+
+// Local
+#include <pytorch/tokenizers/pre_tokenizer.h>
+#include <pytorch/tokenizers/third-party/llama.cpp-unicode/unicode.h>
 
 // Standard
 #include <algorithm>
@@ -14,9 +17,6 @@
 
 // Third Party
 #include <nlohmann/json.hpp>
-
-// Local
-#include "unicode.h"
 
 using json = nlohmann::json;
 

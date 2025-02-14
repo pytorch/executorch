@@ -7,7 +7,7 @@
  */
 // @lint-ignore-every LICENSELINT
 
-#include "token_decoder.h"
+#include <pytorch/tokenizers/token_decoder.h>
 
 // Standard
 #include <cstdarg>
@@ -16,7 +16,7 @@
 #include <nlohmann/json.hpp>
 
 // Local
-#include "unicode.h"
+#include <pytorch/tokenizers/third-party/llama.cpp-unicode/unicode.h>
 
 using json = nlohmann::json;
 

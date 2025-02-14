@@ -11,7 +11,7 @@
 #include <TestResourceUtils/TestResourceUtils.h>
 #endif
 #include <gtest/gtest.h>
-#include "sentencepiece.h"
+#include <pytorch/tokenizers/sentencepiece.h>
 
 namespace tokenizers {
 

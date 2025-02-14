@@ -11,7 +11,7 @@
 #include <TestResourceUtils/TestResourceUtils.h>
 #endif
 #include <gtest/gtest.h>
-#include "tiktoken.h"
+#include <pytorch/tokenizers/tiktoken.h>
 
 using namespace ::testing;
 
