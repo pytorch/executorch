@@ -27,6 +27,10 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(name = "op_exp"),
     op_target(
         name = "op_fft_r2c",
+        compiler_flags = [] if runtime.is_oss else [
+            "-Wno-global-constructors",
+            "-Wno-shadow",
+        ],
         deps = [] if runtime.is_oss else ["fbsource//third-party/pocket_fft:pocketfft"],
     ),
     op_target(name = "op_sigmoid"),
@@ -34,7 +38,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_gelu",
         deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
-            "//executorch/runtime/core/portable_type/c10:aten_headers_for_executorch",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(

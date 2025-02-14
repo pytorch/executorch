@@ -127,6 +127,22 @@ using ::executorch::runtime::error_code_t;
   }
 
 /**
+ * A convenience macro to be used in utility functions that check whether input
+ * tensor(s) are valid, which are expected to return a boolean. Checks whether
+ * `cond` is true; if not, log the failed check with `message` and return false.
+ *
+ * @param[in] cond the condition to check
+ * @param[in] message an additional message to log with `cond`
+ */
+#define ET_CHECK_OR_RETURN_FALSE(cond__, message__, ...)                      \
+  {                                                                           \
+    if (!(cond__)) {                                                          \
+      ET_LOG(Error, "Check failed (%s): " message__, #cond__, ##__VA_ARGS__); \
+      return false;                                                           \
+    }                                                                         \
+  }
+
+/**
  * If error__ is not Error::Ok, optionally log a message and return the error
  * from the current function, which must be of return type
  * executorch::runtime::Error.

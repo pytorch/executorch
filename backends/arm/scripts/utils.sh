@@ -30,12 +30,12 @@ function verify_md5() {
 
 function patch_repo() {
     # Patch git repo found in $repo_dir, starting from patch $base_rev and applying patches found in $patch_dir/$name.
-    
+
     # Arg 1: Directory of repo to patch
     # Arg 2: Rev to start patching at
     # Arg 3: Directory 'setup-dir' containing patches in 'setup-dir/$name'
     # Exits with return code 1 if the number of arguments is incorrect.
-    # Does not do any error handling if the base_rev or patch_dir is not found etc.     
+    # Does not do any error handling if the base_rev or patch_dir is not found etc.
 
     [[ $# -ne 3 ]]  \
         && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 3, but got $#"; exit 1; }
@@ -45,7 +45,7 @@ function patch_repo() {
     local name="$(basename $repo_dir)"
     local patch_dir="${3}/$name"
 
-    echo -e "[${FUNCNAME[0]}] Patching ${name}..."
+    echo -e "[${FUNCNAME[0]}] Patching ${name} repo_dir:${repo_dir} base_rev:${base_rev} patch_dir:${patch_dir}"
     cd $repo_dir
     git fetch
     git reset --hard ${base_rev}
