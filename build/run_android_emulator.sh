@@ -18,6 +18,7 @@ $ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; d
 echo "List all running emulators"
 $ADB_PATH devices
 
+adb uninstall com.example.executorchllamademo || true
 adb install -t app-debug.apk
 adb install -t app-debug-androidTest.apk
 
