@@ -1278,7 +1278,7 @@ class TestBackends(unittest.TestCase):
 
             def forward(self, x):
                 return [torch.sin(x)]
-            
+ 
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
@@ -1372,14 +1372,14 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         max_value_sin = sin_module.inputs()[0].shape[0]
         sin_partitioner = AllNodePartitioner(
-            "BackendWithCompilerDemo", 
+            "BackendWithCompilerDemo",
             [CompileSpec("max_value", bytes([max_value_sin]))],
         )
 
         add_mul_module = AddMulModule()
         max_value_add_mul = add_mul_module.inputs()[0].shape[0]
         add_mul_partitioner = AllNodePartitioner(
-            "BackendWithCompilerDemo", 
+            "BackendWithCompilerDemo",
             [CompileSpec("max_value", bytes([max_value_add_mul]))],
         )
 
@@ -1430,8 +1430,8 @@ class TestBackends(unittest.TestCase):
         executorch_module = _load_for_executorch_from_buffer(buff)
 
         for method_name, module in {
-            "sin": sin_module, 
-            "add_mul": add_mul_module
+            "sin": sin_module,
+            "add_mul": add_mul_module,
         }.items():
             inputs_flattened, _ = tree_flatten(module.inputs())
             model_outputs = executorch_module.run_method(

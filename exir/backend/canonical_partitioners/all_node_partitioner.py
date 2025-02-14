@@ -16,6 +16,7 @@ from executorch.exir.backend.partitioner import (
 )
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 
+
 def is_non_tensor_placeholder(node: torch.fx.Node, ep: ExportedProgram) -> bool:
     """
     Returns true if the node is a placeholder node and it is not a tensor
