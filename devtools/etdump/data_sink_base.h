@@ -3,7 +3,9 @@
 #pragma once
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <cstdlib>
+#include <executorch/runtime/core/result.h>
+
+using ::executorch::runtime::Result;
 
 namespace executorch {
 namespace etdump {
@@ -11,7 +13,7 @@ namespace etdump {
 /**
  * DataSinkBase is an abstract class that users can inherit and implement
  * to customize the storage and management of debug data in ETDumpGen. This
- * class provides an basic and essential interface for writing tensor data to a
+ * class provides an basic and essential interface for writing datablob to a
  * user-defined storage, retrieving storage capacity, and tracking the amount of
  * data stored.
  */
@@ -22,21 +24,24 @@ class DataSinkBase {
    */
   virtual ~DataSinkBase() = default;
   /**
-   * Write tensor data into the debug storage. This method should be implemented
+   * Write data into the debug storage. This method should be implemented
    * by derived classes to handle the specifics of data storage.
    *
-   * @param[in] tensor The tensor data to be written into the storage.
-   * @return The offset of the starting location of the tensor data within the
-   *         debug storage, which will be recorded in corresponding tensor
-   * metadata of ETDump.
+   * @param[in] ptr A pointer to the data to be written into the storage.
+   * @param[in] length The size of the data in bytes.
+   * @return The offset of the starting location of the data within the
+   *         debug storage, which will be recorded in the corresponding
+   *         metadata of ETDump.
    */
-  virtual size_t write_tensor(const executorch::aten::Tensor& tensor) = 0;
+  virtual Result<size_t> write(const void* ptr, size_t length) = 0;
   /**
    * Get the maximum capacity of the debug storage in bytes.
+   * Should return Error::NotSupported if the capacity is not available
+   * (e.g. unbounded storage like internet or file)
    *
    * @return The total size of the debug storage.
    */
-  virtual size_t get_storage_size() const = 0;
+  virtual Result<size_t> get_storage_size() const = 0;
   /**
    * Get the number of bytes currently used in the debug storage.
    *

@@ -9,13 +9,14 @@
 namespace executorch {
 namespace etdump {
 
-class DataSink : public DataSinkBase {
+class BufferDataSink : public DataSinkBase {
  public:
-  explicit DataSink(::executorch::runtime::Span<uint8_t> buffer)
+  explicit BufferDataSink(::executorch::runtime::Span<uint8_t> buffer)
       : debug_buffer_(buffer), offset_(0) {}
 
-  size_t write_tensor(const executorch::aten::Tensor& tensor) override;
-  size_t get_storage_size() const override;
+  Result<size_t> write(const void* ptr, size_t length) override;
+  Result<size_t> write_tensor(const executorch::aten::Tensor& tensor);
+  Result<size_t> get_storage_size() const override;
   size_t get_used_bytes() const override;
 
  private:
