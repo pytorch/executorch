@@ -53,12 +53,14 @@ get_shared_lib_ext() {
 
 test_cmake_custom_op_2() {
   local model_name='custom_ops_2'
+  CMAKE_PREFIX_PATH="$PWD/cmake-out/lib/cmake/ExecuTorch"
 
   local example_dir=examples/portable/custom_ops
   local build_dir=cmake-out/${example_dir}
   rm -rf ${build_dir}
   retry cmake \
         -DREGISTER_EXAMPLE_CUSTOM_OP=2 \
+        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -B${build_dir} \
         ${example_dir}
