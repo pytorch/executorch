@@ -332,35 +332,22 @@
   })
 
 /**
+ * DEPRECATED: Please use ET_CHECK_OR_RETURN_FALSE instead and provide
+ * an informative message. (For example, the values of any variables used in
+ * `cond` would not be reported automatically by this macro.)
+ *
  * A convenience macro to be used in utility functions that check whether input
  * tensor(s) are valid, which are expected to return a boolean. Checks whether
  * `cond` is true; if not, log the failed check and return false.
  *
  * @param[in] cond the condition to check
  */
-#define ET_LOG_AND_RETURN_IF_FALSE(cond)           \
-  do {                                             \
-    if (!(cond)) {                                 \
-      ET_LOG(Error, "Check failed (%s): ", #cond); \
-      return false;                                \
-    }                                              \
-  } while (false)
+#define ET_LOG_AND_RETURN_IF_FALSE(cond) ET_CHECK_OR_RETURN_FALSE(cond, "")
 
 /**
- * A convenience macro to be used in utility functions that check whether input
- * tensor(s) are valid, which are expected to return a boolean. Checks whether
- * `cond` is true; if not, log the failed check with `message` and return false.
- *
- * @param[in] cond the condition to check
- * @param[in] message an additional message to log with `cond`
+ * DEPRECATED: Please use ET_CHECK_OR_RETURN_FALSE instead.
  */
-#define ET_LOG_MSG_AND_RETURN_IF_FALSE(cond, message, ...)                \
-  do {                                                                    \
-    if (!(cond)) {                                                        \
-      ET_LOG(Error, "Check failed (%s): " message, #cond, ##__VA_ARGS__); \
-      return false;                                                       \
-    }                                                                     \
-  } while (false)
+#define ET_LOG_MSG_AND_RETURN_IF_FALSE ET_CHECK_OR_RETURN_FALSE
 
 /**
  * If `cond` is false, log `cond` and return from the kernel with a failure
