@@ -13,6 +13,7 @@
 #include <executorch/devtools/etdump/emitter.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
+#include <executorch/devtools/etdump/utils.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/assert.h>
@@ -94,16 +95,6 @@ etdump_Tensor_ref_t add_tensor_entry(
   return etdump_Tensor_end(builder_);
 }
 
-static uint8_t* alignPointer(void* ptr, size_t alignment) {
-  intptr_t addr = reinterpret_cast<intptr_t>(ptr);
-  if ((addr & (alignment - 1)) == 0) {
-    // Already aligned.
-    return reinterpret_cast<uint8_t*>(ptr);
-  }
-  addr = (addr | (alignment - 1)) + 1;
-  return reinterpret_cast<uint8_t*>(addr);
-}
-
 } // namespace
 
 // Constructor implementation
@@ -113,9 +104,10 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
   // Initialize the flatcc builder_ using the buffer and buffer size.
 
   if (buffer.data() != nullptr) {
-    builder_ = (struct flatcc_builder*)alignPointer(buffer.data(), 64);
-    uintptr_t buffer_with_builder =
-        (uintptr_t)alignPointer(builder_ + sizeof(struct flatcc_builder), 64);
+    builder_ =
+        (struct flatcc_builder*)internal::alignPointer(buffer.data(), 64);
+    uintptr_t buffer_with_builder = (uintptr_t)internal::alignPointer(
+        builder_ + sizeof(struct flatcc_builder), 64);
     size_t builder_size =
         (size_t)(buffer_with_builder - (uintptr_t)buffer.data());
     size_t min_buf_size = max_alloc_buf_size + builder_size;
@@ -513,7 +505,7 @@ size_t ETDumpGen::copy_tensor_to_debug_buffer(executorch::aten::Tensor tensor) {
     return static_cast<size_t>(-1);
   }
   uint8_t* offset_ptr =
-      alignPointer(debug_buffer_.data() + debug_buffer_offset_, 64);
+      internal::alignPointer(debug_buffer_.data() + debug_buffer_offset_, 64);
   debug_buffer_offset_ = (offset_ptr - debug_buffer_.data()) + tensor.nbytes();
   ET_CHECK_MSG(
       debug_buffer_offset_ <= debug_buffer_.size(),
