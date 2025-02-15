@@ -4,6 +4,16 @@ This page summarizes frequently asked questions and provides guidance on issues 
 
 If a specific issue is not covered here, consider searching for or creating an issue on GitHub under [Issues](https://github.com/pytorch/executorch/issues) or [Discussions](https://github.com/pytorch/executorch/discussions).
 
+## Installation
+
+### Missing /usr/include/python3.x
+
+Most likely `python-dev` library needs to be installed. Please run
+```
+sudo apt install python<version>-dev
+```
+if you are using Ubuntu, or use an equivalent install command.
+
 ## Export
 
 ### Missing out variants: { _ }
