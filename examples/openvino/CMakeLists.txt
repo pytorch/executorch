@@ -94,5 +94,3 @@ set_target_properties(openvino_executor_runner PROPERTIES INSTALL_RPATH "$ORIGIN
 get_filename_component(
   EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
 )
-
-

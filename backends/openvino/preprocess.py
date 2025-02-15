@@ -7,7 +7,7 @@
 import contextlib
 import struct
 
-from typing import final, List, cast
+from typing import cast, final, List
 
 import torch
 from executorch.exir.backend.backend_details import (
@@ -17,8 +17,6 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from openvino.frontend.pytorch.torchdynamo.compile import openvino_compile
-
-SKIP_COMPILE_SPEC_KEYS = {"ImportForever"}
 
 
 @final
@@ -34,8 +32,8 @@ class OpenvinoBackend(BackendDetails):
         output_names = edge_program.graph_signature.user_outputs
         args = []
         for node in edge_program.graph.nodes:
-            if (node.target in input_names):
-                args.append( node.meta["val"])
+            if node.target in input_names:
+                args.append(node.meta["val"])
 
         input_shapes = []
         output_shapes = []

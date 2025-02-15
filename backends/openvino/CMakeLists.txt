@@ -69,4 +69,3 @@ target_link_options(openvino_backend PRIVATE -Wl,-rpath=${OPENVINO_LIB_PATH})
 
 # Install OpenVINO backend library to the lib directory
 install(TARGETS openvino_backend DESTINATION lib)
-

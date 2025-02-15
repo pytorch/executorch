@@ -7,6 +7,7 @@
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
+import torch.fx as fx
 from executorch.backends.openvino.preprocess import OpenvinoBackend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -15,12 +16,12 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data
+from openvino.frontend.pytorch.torchdynamo.op_support import OperatorSupport
 
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
-import torch.fx as fx
-from openvino.frontend.pytorch.torchdynamo.op_support import OperatorSupport
+
 
 class OpenvinoOperatorsSupport(OperatorSupportBase):
 
@@ -44,10 +45,10 @@ class OpenvinoOperatorsSupport(OperatorSupportBase):
         options = []
         op_type = node.target.__name__
         supported_ops = OperatorSupport(options)._support_dict
-        if (op_type == "getitem"):
+        if op_type == "getitem":
             return True
 
-        if ("torch.ops." + str(op_type) in supported_ops):
+        if "torch.ops." + str(op_type) in supported_ops:
             return True
         else:
             print("Op not supported: ", "torch.ops." + str(op_type))
@@ -58,7 +59,7 @@ class OpenvinoOperatorsSupport(OperatorSupportBase):
             )
             return False
 
-        return False 
+        return False
 
 
 @final
@@ -88,13 +89,12 @@ class OpenvinoPartitioner(Partitioner):
         return (ops_not_decompose, None)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
-        options = {}
         gm = fx.symbolic_trace(exported_program.graph_module)
 
         partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             OpenvinoOperatorsSupport(self._op_types_to_skip, self._op_names_to_skip),
-            allows_single_node_partition=True
+            allows_single_node_partition=True,
         )
         partition_list = partitioner.propose_partitions()
 

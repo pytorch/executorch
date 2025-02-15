@@ -206,7 +206,9 @@ def main(
     lowered_module: EdgeProgramManager = to_edge_transform_and_lower(aten_dialect, partitioner=[OpenvinoPartitioner(compile_spec),])
 
     # Apply backend-specific passes
-    exec_prog = lowered_module.to_executorch(config=executorch.exir.ExecutorchBackendConfig())
+    exec_prog = lowered_module.to_executorch(
+        config=executorch.exir.ExecutorchBackendConfig()
+    )
 
     # Serialize and save it to a file
     model_file_name = f"{model_name}_{'int8' if quantize else 'fp32'}.pte"
@@ -226,6 +228,7 @@ def main(
         print("Start validation of the model:")
         acc_top1 = validate_model(model_file_name, calibration_dataset)
         print(f"acc@1: {acc_top1}")
+
 
 
 if __name__ == "__main__":

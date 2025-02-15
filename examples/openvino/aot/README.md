@@ -113,5 +113,3 @@ python aot_openvino_compiler.py --suite timm --model vgg16 --input_shape [1, 3, 
 
 - **Unsupported Input Shape**:
   Ensure `--input_shape` is provided as a valid list or tuple.
-
-
