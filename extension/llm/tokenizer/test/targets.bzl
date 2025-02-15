@@ -1,3 +1,8 @@
+load(
+    "@fbsource//tools/build_defs:default_platform_defs.bzl",
+    "ANDROID",
+    "CXX",
+)
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -28,6 +33,7 @@ def define_common_targets():
         env = {
             "RESOURCES_PATH": "$(location :resources)/resources",
         },
+        platforms = [CXX, ANDROID],  # Cannot bundle resources on Apple platform.
     )
 
     runtime.cxx_test(
@@ -41,6 +47,7 @@ def define_common_targets():
         env = {
             "RESOURCES_PATH": "$(location :resources)/resources",
         },
+        platforms = [CXX, ANDROID],  # Cannot bundle resources on Apple platform.
         external_deps = [
             "re2",
         ],
