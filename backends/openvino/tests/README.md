@@ -12,7 +12,7 @@ backends/openvino/tests
 ├── models                              # Directory with model test scripts.
     └── test_classification.py          # Test script for classification models.
 ├── README.md                           # Documentation for unit tests (this file)
-└── test_openvino_delegate.py           # Script to execute unit tests.
+└── test_runner.py                      # Script to execute unit tests.
 ```
 
 ## Executing Unit Tests
@@ -24,7 +24,7 @@ Once openvino is installed and executorch environment is set, refer to [OpenVINO
 
 ### Usage
 
-`test_openvino_delegate.py` allows to run op or model tests for openvino backend.
+`test_runner.py` allows to run op or model tests for openvino backend.
 
 ### **Arguments**
 - **`--build_folder`** (required):  
@@ -54,14 +54,14 @@ Once openvino is installed and executorch environment is set, refer to [OpenVINO
 
 ### Execute Tests for All Ops on CPU
 ```bash
-python test_openvino_delegate.py --build_folder ../../../cmake-openvino-out --device CPU --test_type ops
+python test_runner.py --build_folder ../../../cmake-openvino-out --device CPU --test_type ops
 ```
 
 ### Execute Convolution Op Tests on CPU
 ```bash
-python test_openvino_delegate.py --build_folder ../../../cmake-openvino-out --device CPU --test_type ops --pattern test_convolution.py
+python test_runner.py --build_folder ../../../cmake-openvino-out --device CPU --test_type ops --pattern test_convolution.py
 ```
 
 ### Execute Tests for all Models on GPU
 ```bash
-python test_openvino_delegate.py --build_folder ../../../cmake-openvino-out --device GPU --test_type models
+python test_runner.py --build_folder ../../../cmake-openvino-out --device GPU --test_type models
