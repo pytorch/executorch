@@ -78,7 +78,7 @@ To download, we can either download `Corstone-300 Ecosystem FVP` and `Corstone-3
 
 Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55/M85 CPU available on the Corstone-300/Corstone-320 platform.
 
-These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 12.3 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
+These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 13.3.rel1 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
 
 ### Setup the Arm Ethos-U Software Development
 
@@ -96,23 +96,22 @@ At the end of the setup, if everything goes well, your top level devlopement dir
 
 ```bash
 .
-├── arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
+├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
+├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
 ├── ethos-u
 │   ├── core_platform
 │   ├── core_software
 │   ├── fetch_externals.py
 │   └── [...]
-├── ethos-u-vela
 ├── FVP-corstone300
 │   ├── FVP_Corstone_SSE-300.sh
 │   └── [...]
 ├── FVP-corstone320
 │   ├── FVP_Corstone_SSE-320.sh
 │   └── [...]
-├── FVP_cs300.tgz
-├── FVP_cs320.tgz
-├── gcc.tar.xz
-└── reference_model
+├── FVP_corstone300.tgz
+├── FVP_corstone320.tgz
+└── setup_path.sh
 ```
 
 ## Convert the PyTorch Model to the `.pte` File
