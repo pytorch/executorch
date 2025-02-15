@@ -298,7 +298,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = (
                                 	"$(SRCROOT)/include",
-                                	"$(SRCROOT)/include/executorch/runtime/core/portable_type",
+                                	"$(SRCROOT)/include/executorch/runtime/core/portable_type/c10",
                                 );
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = (
@@ -320,7 +320,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = (
                                 	"$(SRCROOT)/include",
-                                	"$(SRCROOT)/include/executorch/runtime/core/portable_type",
+                                	"$(SRCROOT)/include/executorch/runtime/core/portable_type/c10",
                                 );
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = (
