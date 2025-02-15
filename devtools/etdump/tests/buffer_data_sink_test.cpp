@@ -54,7 +54,8 @@ TEST_F(BufferDataSinkTest, WriteOneTensorAndCheckData) {
   TensorFactory<ScalarType::Float> tf;
   Tensor tensor = tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0});
 
-  Result<size_t> ret = data_sink_->write_tensor(tensor);
+  Result<size_t> ret =
+      data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
   ASSERT_EQ(ret.error(), Error::Ok);
 
   size_t offset = ret.get();
@@ -75,7 +76,8 @@ TEST_F(BufferDataSinkTest, WriteMultiTensorsAndCheckData) {
       tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0}),
       tf.make({1, 4}, {5.0, 6.0, 7.0, 8.0})};
   for (const auto& tensor : tensors) {
-    Result<size_t> ret = data_sink_->write_tensor(tensor);
+    Result<size_t> ret =
+        data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
     ASSERT_EQ(ret.error(), Error::Ok);
 
     size_t offset = ret.get();
@@ -92,7 +94,8 @@ TEST_F(BufferDataSinkTest, WriteMultiTensorsAndCheckData) {
 TEST_F(BufferDataSinkTest, PointerAlignmentCheck) {
   TensorFactory<ScalarType::Float> tf;
   Tensor tensor = tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0});
-  Result<size_t> ret = data_sink_->write_tensor(tensor);
+  Result<size_t> ret =
+      data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
   ASSERT_EQ(ret.error(), Error::Ok);
 
   size_t offset = ret.get();
@@ -108,11 +111,13 @@ TEST_F(BufferDataSinkTest, WriteUntilOverflow) {
 
   // Write tensors until we run out of space
   for (size_t i = 0; i < 2; i++) {
-    Result<size_t> ret = data_sink_->write_tensor(tensor);
+    Result<size_t> ret =
+        data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
     ASSERT_EQ(ret.error(), Error::Ok);
   }
 
   // Attempting to write another tensor should raise an error
-  Result<size_t> ret = data_sink_->write_tensor(tensor);
+  Result<size_t> ret =
+      data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
   ASSERT_EQ(ret.error(), Error::AccessFailed);
 }

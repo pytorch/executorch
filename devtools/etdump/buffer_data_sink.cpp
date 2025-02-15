@@ -37,11 +37,6 @@ Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
   return (size_t)(offset_ptr - debug_buffer_.data());
 }
 
-Result<size_t> BufferDataSink::write_tensor(
-    const executorch::aten::Tensor& tensor) {
-  return write(tensor.const_data_ptr(), tensor.nbytes());
-}
-
 Result<size_t> BufferDataSink::get_storage_size() const {
   return debug_buffer_.size();
 }

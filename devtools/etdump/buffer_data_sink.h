@@ -35,34 +35,23 @@ class BufferDataSink : public DataSinkBase {
 
   BufferDataSink(const BufferDataSink&) = delete;
   BufferDataSink& operator=(const BufferDataSink&) = delete;
+  BufferDataSink(BufferDataSink&&) = default;
+  BufferDataSink& operator=(BufferDataSink&&) = default;
 
   /**
    * Write data into the debug buffer and return the offset of the starting
    * location of the data within the buffer.
    *
    * @param[in] ptr A pointer to the data to be written into the storage.
-   * @param[in] length The size of the data in bytes.
+   * @param[in] size The size of the data in bytes.
    * @return A Result object containing either:
    *         - The offset of the starting location of the data within the
    *           debug buffer, or
    *         - An error code indicating the failure reason, if any issue
    *           occurs during the write process.
    */
-  ::executorch::runtime::Result<size_t> write(const void* ptr, size_t length)
+  ::executorch::runtime::Result<size_t> write(const void* ptr, size_t size)
       override;
-
-  /**
-   * Write tensor into the debug buffer and return the offset of the starting
-   * location of the data within the buffer.
-   * @param[in] tensor A reference to the tensor whose data is to be written.
-   * @return A Result object containing either:
-   *         - The offset of the starting location of the data within the
-   *           debug buffer, or
-   *         - An error code indicating the failure reason, if any issue
-   *           occurs during the write process.
-   */
-  ::executorch::runtime::Result<size_t> write_tensor(
-      const executorch::aten::Tensor& tensor);
 
   /**
    * Retrieves the total size of the buffer.
