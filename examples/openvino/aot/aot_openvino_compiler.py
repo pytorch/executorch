@@ -20,7 +20,7 @@ import torchvision.models as torchvision_models
 from executorch.backends.openvino import OpenVINOQuantizer
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.exir import EdgeProgramManager
-from executorch.exir import to_edge
+from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 from sklearn.metrics import accuracy_score
 from timm.data import resolve_data_config
@@ -201,13 +201,9 @@ def main(
 
         aten_dialect: ExportedProgram = export(quantized_model, example_args)
 
-    # Convert to edge dialect
-    edge_program: EdgeProgramManager = to_edge(aten_dialect)
-    to_be_lowered_module = edge_program.exported_program()
-
-    # Lower the module to the backend with a custom partitioner
+    # Convert to edge dialect and lower the module to the backend with a custom partitioner
     compile_spec = [CompileSpec("device", device.encode())]
-    lowered_module = edge_program.to_backend(OpenvinoPartitioner(compile_spec))
+    lowered_module: EdgeProgramManager = to_edge_transform_and_lower(aten_dialect, partitioner=[OpenvinoPartitioner(compile_spec),])
 
     # Apply backend-specific passes
     exec_prog = lowered_module.to_executorch(config=executorch.exir.ExecutorchBackendConfig())
