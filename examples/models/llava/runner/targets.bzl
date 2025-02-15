@@ -21,5 +21,7 @@ def define_common_targets():
             "//executorch/kernels/quantized:generated_lib",
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/configurations:optimized_native_cpu_ops", 
+            "//executorch/extension/llm/custom_ops:custom_ops",
         ],
     )
