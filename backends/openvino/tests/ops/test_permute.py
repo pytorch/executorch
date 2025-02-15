@@ -1,9 +1,13 @@
-from executorch.backends.openvino.tests.ops.base_openvino_op_test import BaseOpenvinoOpTest
 import torch
+from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
+    BaseOpenvinoOpTest,
+)
 
-op_params = [{'order': [0, 2, 3, 1]   },
-             {'order': [0, 3, 1, 2]   },
-             ]
+op_params = [
+    {"order": [0, 2, 3, 1]},
+    {"order": [0, 3, 1, 2]},
+]
+
 
 class TestPermuteOperator(BaseOpenvinoOpTest):
 
@@ -19,11 +23,10 @@ class TestPermuteOperator(BaseOpenvinoOpTest):
 
         return Permute(order)
 
-
     def test_permute(self):
         for params in op_params:
             with self.subTest(params=params):
-                module = self.create_model(order=params['order'])
+                module = self.create_model(order=params["order"])
 
                 sample_input = (torch.randn(1, 3, 224, 224),)
 

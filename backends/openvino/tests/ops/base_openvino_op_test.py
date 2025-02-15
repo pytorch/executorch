@@ -3,14 +3,15 @@ import subprocess
 import tempfile
 import unittest
 
+import executorch
+
 import numpy as np
 import torch
-import executorch
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+from executorch.backends.openvino.preprocess import OpenvinoBackend
+from executorch.exir import EdgeProgramManager, to_edge
 from executorch.exir.backend.backend_details import CompileSpec
 from torch.export import export, ExportedProgram
-from executorch.exir import EdgeProgramManager, to_edge
-from executorch.backends.openvino.preprocess import OpenvinoBackend
 
 
 class BaseOpenvinoOpTest(unittest.TestCase):
@@ -41,7 +42,9 @@ class BaseOpenvinoOpTest(unittest.TestCase):
         lowered_module = edge_program.to_backend(OpenvinoPartitioner(compile_spec))
 
         # Apply backend-specific passes
-        exec_prog = lowered_module.to_executorch(config=executorch.exir.ExecutorchBackendConfig())
+        exec_prog = lowered_module.to_executorch(
+            config=executorch.exir.ExecutorchBackendConfig()
+        )
 
         # Check if the number of partitions created matches the expected number of partitions
         self.assertEqual(
@@ -56,7 +59,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
             )
 
         # Execute the model and compare the outputs with the reference outputs
-        if (assert_output_equal):
+        if assert_output_equal:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 input_list = ""
                 for idx, _ in enumerate(sample_inputs):
@@ -69,7 +72,9 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                 # Execute the module in eager mode to calculate the reference outputs
                 ref_output = module(*sample_inputs)
                 if isinstance(ref_output, torch.Tensor):
-                    ref_output = [ref_output,]
+                    ref_output = [
+                        ref_output,
+                    ]
 
                 # Serialize the executorch model and save into a temporary file
                 pte_fname = f"{tmp_dir}/openvino_executorch_test.pte"
@@ -77,7 +82,9 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                     exec_prog.write_to_file(file)
 
                 # Save inputs into a temporary file
-                self.generate_inputs(tmp_dir, "input_list.txt", [sample_inputs], input_list)
+                self.generate_inputs(
+                    tmp_dir, "input_list.txt", [sample_inputs], input_list
+                )
                 self.make_output_dir(output_dir)
 
                 # Start a subprocess to execute model with openvino_executor_runner
@@ -108,7 +115,9 @@ class BaseOpenvinoOpTest(unittest.TestCase):
 
                 for i, f in enumerate(sorted(os.listdir(output_dir))):
                     filename = os.path.join(output_dir, f)
-                    output = np.fromfile(filename, dtype=ref_output[i].detach().numpy().dtype)
+                    output = np.fromfile(
+                        filename, dtype=ref_output[i].detach().numpy().dtype
+                    )
                     output = torch.from_numpy(output).reshape(ref_output[i].shape)
                     outputs.append(output)
 
@@ -117,22 +126,28 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                 for i in range(len(ref_output)):
                     self.assertTrue(
                         torch.allclose(
-                            outputs[i], ref_output[i], atol=self.atol, rtol=self.rtol, equal_nan=True
+                            outputs[i],
+                            ref_output[i],
+                            atol=self.atol,
+                            rtol=self.rtol,
+                            equal_nan=True,
                         ),
                         msg=f"ref_output:\n{ref_output[i]}\n\ntest_output:\n{outputs[i]}",
                     )
 
-    def generate_inputs(self, dest_path: str, file_name: str, inputs=None, input_list=None):
+    def generate_inputs(
+        self, dest_path: str, file_name: str, inputs=None, input_list=None
+    ):
         input_list_file = None
         input_files = []
-    
+
         # Prepare input list
         if input_list is not None:
             input_list_file = f"{dest_path}/{file_name}"
             with open(input_list_file, "w") as f:
                 f.write(input_list)
                 f.flush()
-    
+
         # Prepare input data
         if inputs is not None:
             for idx, data in enumerate(inputs):
@@ -140,7 +155,7 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                     file_name = f"{dest_path}/input_{idx}_{i}.raw"
                     d.detach().numpy().tofile(file_name)
                     input_files.append(file_name)
-    
+
         return input_list_file, input_files
 
     def make_output_dir(self, path: str):

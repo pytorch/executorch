@@ -1,5 +1,8 @@
-from executorch.backends.openvino.tests.ops.base_openvino_op_test import BaseOpenvinoOpTest
 import torch
+from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
+    BaseOpenvinoOpTest,
+)
+
 
 class TestAddOperator(BaseOpenvinoOpTest):
 
@@ -7,7 +10,7 @@ class TestAddOperator(BaseOpenvinoOpTest):
         class Add(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-        
+
             def forward(self, x, y):
                 return torch.add(x, y)
 

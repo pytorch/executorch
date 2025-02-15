@@ -29,14 +29,19 @@ static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
 // Define command-line flags for model path, the number of iterations, input
 // list path, and output folder path
-DEFINE_string(model_path, "",
-              "Path to the model serialized in flatbuffer format (required).");
-DEFINE_int32(num_iter, 1, "Number of inference iterations (default is 1).");
-DEFINE_string(input_list_path, "",
-              "Path to the input list file which includes the list of raw "
-              "input tensor files (optional).");
 DEFINE_string(
-    output_folder_path, "",
+    model_path,
+    "",
+    "Path to the model serialized in flatbuffer format (required).");
+DEFINE_int32(num_iter, 1, "Number of inference iterations (default is 1).");
+DEFINE_string(
+    input_list_path,
+    "",
+    "Path to the input list file which includes the list of raw "
+    "input tensor files (optional).");
+DEFINE_string(
+    output_folder_path,
+    "",
     "Path to the output folder to save raw output tensor files (optional).");
 
 using executorch::extension::FileDataLoader;
@@ -54,13 +59,13 @@ using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
 
 std::function<void(size_t)> build_set_input_tensor(
-    Result<Method> &method, std::vector<EValue> &inputs,
+    Result<Method>& method,
+    std::vector<EValue>& inputs,
     const std::vector<std::vector<std::string>> input_paths) {
   return [&inputs, &method, input_paths](size_t idx) -> void {
     const MethodMeta method_meta = method->method_meta();
     for (int input_index = 0; input_index < method->inputs_size();
          ++input_index) {
-
       Result<TensorInfo> tensor_meta =
           method_meta.input_tensor_meta(input_index);
       auto input_data_ptr = inputs[input_index].toTensor().data_ptr<char>();
@@ -72,24 +77,26 @@ std::function<void(size_t)> build_set_input_tensor(
       ET_CHECK_MSG(
           file_size == tensor_meta->nbytes(),
           "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
-          input_index, file_size, tensor_meta->nbytes());
+          input_index,
+          file_size,
+          tensor_meta->nbytes());
 
       fin.seekg(0, fin.beg);
-      fin.read(static_cast<char *>(input_data_ptr), file_size);
+      fin.read(static_cast<char*>(input_data_ptr), file_size);
       fin.close();
     }
   };
 }
 
-std::function<void(size_t)>
-build_dump_outputs(std::vector<EValue> &outputs, const size_t output_size,
-                   const std::string output_folder_path) {
+std::function<void(size_t)> build_dump_outputs(
+    std::vector<EValue>& outputs,
+    const size_t output_size,
+    const std::string output_folder_path) {
   return [&outputs, output_folder_path, output_size](size_t idx) -> void {
     for (size_t output_index = 0; output_index < output_size; output_index++) {
       auto output_tensor = outputs[output_index].toTensor();
       auto output_file_name = output_folder_path + "/output_" +
-                              std::to_string(idx) + "_" +
-                              std::to_string(output_index) + ".raw";
+          std::to_string(idx) + "_" + std::to_string(output_index) + ".raw";
       std::ofstream fout(output_file_name.c_str(), std::ios::binary);
       fout.write(output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
       fout.close();
@@ -97,23 +104,24 @@ build_dump_outputs(std::vector<EValue> &outputs, const size_t output_size,
   };
 }
 
-std::vector<std::vector<std::string>>
-get_inputs_paths(const char *input_list_path) {
+std::vector<std::vector<std::string>> get_inputs_paths(
+    const char* input_list_path) {
   size_t idx = 0;
 
-  auto split_and_add_prefix = [](std::string s, std::string delimiter, std::string prefix = "") {
-    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
-    std::string token;
-    std::vector<std::string> res;
+  auto split_and_add_prefix =
+      [](std::string s, std::string delimiter, std::string prefix = "") {
+        size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+        std::string token;
+        std::vector<std::string> res;
 
-    while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
-      token = s.substr(pos_start, pos_end - pos_start);
-      pos_start = pos_end + delim_len;
-      res.push_back(prefix + token);
-    }
-    res.push_back(prefix + s.substr(pos_start));
-    return res;
-  };
+        while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
+          token = s.substr(pos_start, pos_end - pos_start);
+          pos_start = pos_end + delim_len;
+          res.push_back(prefix + token);
+        }
+        res.push_back(prefix + s.substr(pos_start));
+        return res;
+      };
 
   // Read raw input tensor file names from input list file and
   // iterate each raw input tensor file to read values
@@ -124,7 +132,7 @@ get_inputs_paths(const char *input_list_path) {
   std::string inputs_dir = "";
   size_t last_pos = std::string(input_list_path).rfind('/');
   if (last_pos != std::string::npos) {
-      inputs_dir = std::string(input_list_path).substr(0, last_pos+1);
+    inputs_dir = std::string(input_list_path).substr(0, last_pos + 1);
   }
   std::string file_path;
   auto retval = std::vector<std::vector<std::string>>();
@@ -138,7 +146,7 @@ get_inputs_paths(const char *input_list_path) {
   return retval;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   // Initialize the runtime environment
   executorch::runtime::runtime_init();
 
@@ -155,15 +163,17 @@ int main(int argc, char **argv) {
   }
 
   // Retrieve the model path and number of iterations
-  const char *model_path = FLAGS_model_path.c_str();
+  const char* model_path = FLAGS_model_path.c_str();
   int num_iterations = FLAGS_num_iter;
   std::cout << "Model path: " << model_path << std::endl;
   std::cout << "Number of iterations: " << num_iterations << std::endl;
 
   // Load the model using FileDataLoader
   Result<FileDataLoader> loader = FileDataLoader::from(model_path);
-  ET_CHECK_MSG(loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32,
-               static_cast<uint32_t>(loader.error()));
+  ET_CHECK_MSG(
+      loader.ok(),
+      "FileDataLoader::from() failed: 0x%" PRIx32,
+      static_cast<uint32_t>(loader.error()));
 
   // Load the program from the loaded model
   Result<Program> program = Program::load(&loader.get());
@@ -175,7 +185,7 @@ int main(int argc, char **argv) {
 
   // Retrieve the method name from the program (assumes the first method is
   // used)
-  const char *method_name = nullptr;
+  const char* method_name = nullptr;
   {
     const auto method_name_result = program->get_method_name(0);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
@@ -185,8 +195,11 @@ int main(int argc, char **argv) {
 
   // Retrieve metadata about the method
   Result<MethodMeta> method_meta = program->method_meta(method_name);
-  ET_CHECK_MSG(method_meta.ok(), "Failed to get method_meta for %s: 0x%" PRIx32,
-               method_name, static_cast<uint32_t>(method_meta.error()));
+  ET_CHECK_MSG(
+      method_meta.ok(),
+      "Failed to get method_meta for %s: 0x%" PRIx32,
+      method_name,
+      static_cast<uint32_t>(method_meta.error()));
 
   // Set up a memory allocator for the method
   MemoryAllocator method_allocator{
@@ -211,15 +224,19 @@ int main(int argc, char **argv) {
 
   // Load the method into the program
   Result<Method> method = program->load_method(method_name, &memory_manager);
-  ET_CHECK_MSG(method.ok(),
-               "Loading of method %s failed with status 0x%" PRIx32,
-               method_name, static_cast<uint32_t>(method.error()));
+  ET_CHECK_MSG(
+      method.ok(),
+      "Loading of method %s failed with status 0x%" PRIx32,
+      method_name,
+      static_cast<uint32_t>(method.error()));
   ET_LOG(Info, "Method loaded.");
 
   // Prepare the input tensors for the method
   auto method_inputs = prepare_input_tensors(*method);
-  ET_CHECK_MSG(method_inputs.ok(), "Could not prepare inputs: 0x%" PRIx32,
-               static_cast<uint32_t>(method_inputs.error()));
+  ET_CHECK_MSG(
+      method_inputs.ok(),
+      "Could not prepare inputs: 0x%" PRIx32,
+      static_cast<uint32_t>(method_inputs.error()));
 
   Error status = Error::Ok;
   std::vector<EValue> inputs(method->inputs_size());
@@ -231,13 +248,17 @@ int main(int argc, char **argv) {
   // If the input path list is provided, read input tensors from the files
   std::function<void(size_t)> set_input_tensor;
   if (!FLAGS_input_list_path.empty()) {
-    const char *input_list_path = FLAGS_input_list_path.c_str();
-    ET_LOG(Info, "Loading input tensors from the list provided in %s.",
-           input_list_path);
+    const char* input_list_path = FLAGS_input_list_path.c_str();
+    ET_LOG(
+        Info,
+        "Loading input tensors from the list provided in %s.",
+        input_list_path);
     const auto input_paths = get_inputs_paths(input_list_path);
     num_iterations = input_paths.size();
-    ET_LOG(Info, "Number of iters is set to the len of the inputs: %u.",
-           num_iterations);
+    ET_LOG(
+        Info,
+        "Number of iters is set to the len of the inputs: %u.",
+        num_iterations);
 
     set_input_tensor = build_set_input_tensor(method, inputs, input_paths);
   } else {
@@ -256,11 +277,13 @@ int main(int argc, char **argv) {
 
     // If output folder path is provided, save output tensors
     // into raw tensor files.
-    const char *output_folder_path = FLAGS_output_folder_path.c_str();
-    ET_LOG(Info, "Saving output tensors into the output folder: %s.",
-           output_folder_path);
-    dump_outputs = build_dump_outputs(outputs, outputs.size(),
-                                      std::string(output_folder_path));
+    const char* output_folder_path = FLAGS_output_folder_path.c_str();
+    ET_LOG(
+        Info,
+        "Saving output tensors into the output folder: %s.",
+        output_folder_path);
+    dump_outputs = build_dump_outputs(
+        outputs, outputs.size(), std::string(output_folder_path));
 
   } else {
     dump_outputs = [](size_t idx) {};
@@ -280,17 +303,22 @@ int main(int argc, char **argv) {
     double elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(
                               after_exec - before_exec)
                               .count() /
-                          1000.0;
+        1000.0;
     total_time_elapsed += elapsed_time;
   }
 
   // Log execution time and average time per iteration
-  ET_LOG(Info, "%d inference took %f ms, avg %f ms", num_iterations,
-         total_time_elapsed,
-         total_time_elapsed / static_cast<float>(num_iterations));
-  ET_CHECK_MSG(status == Error::Ok,
-               "Execution of method %s failed with status 0x%" PRIx32,
-               method_name, static_cast<uint32_t>(status));
+  ET_LOG(
+      Info,
+      "%d inference took %f ms, avg %f ms",
+      num_iterations,
+      total_time_elapsed,
+      total_time_elapsed / static_cast<float>(num_iterations));
+  ET_CHECK_MSG(
+      status == Error::Ok,
+      "Execution of method %s failed with status 0x%" PRIx32,
+      method_name,
+      static_cast<uint32_t>(status));
   ET_LOG(Info, "Model executed successfully.");
 
   return 0;
