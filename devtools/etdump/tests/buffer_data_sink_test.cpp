@@ -17,6 +17,7 @@ using namespace ::testing;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
 using torch::executor::testing::TensorFactory;
 

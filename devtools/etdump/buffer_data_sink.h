@@ -33,6 +33,9 @@ class BufferDataSink : public DataSinkBase {
   explicit BufferDataSink(::executorch::runtime::Span<uint8_t> buffer)
       : debug_buffer_(buffer), offset_(0) {}
 
+  BufferDataSink(const BufferDataSink&) = delete;
+  BufferDataSink& operator=(const BufferDataSink&) = delete;
+
   /**
    * Write data into the debug buffer and return the offset of the starting
    * location of the data within the buffer.
@@ -45,7 +48,8 @@ class BufferDataSink : public DataSinkBase {
    *         - An error code indicating the failure reason, if any issue
    *           occurs during the write process.
    */
-  Result<size_t> write(const void* ptr, size_t length) override;
+  ::executorch::runtime::Result<size_t> write(const void* ptr, size_t length)
+      override;
 
   /**
    * Write tensor into the debug buffer and return the offset of the starting
@@ -57,14 +61,15 @@ class BufferDataSink : public DataSinkBase {
    *         - An error code indicating the failure reason, if any issue
    *           occurs during the write process.
    */
-  Result<size_t> write_tensor(const executorch::aten::Tensor& tensor);
+  ::executorch::runtime::Result<size_t> write_tensor(
+      const executorch::aten::Tensor& tensor);
 
   /**
    * Retrieves the total size of the buffer.
    *
    * @return A Result object containing the total size of the buffer in bytes.
    */
-  Result<size_t> get_storage_size() const override;
+  ::executorch::runtime::Result<size_t> get_storage_size() const override;
 
   /**
    * Retrieves the number of bytes currently used in the buffer.

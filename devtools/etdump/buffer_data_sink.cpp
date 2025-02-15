@@ -10,6 +10,7 @@
 #include <executorch/devtools/etdump/utils.h>
 
 using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
 
 namespace executorch {
 namespace etdump {
