@@ -1,7 +1,15 @@
-// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 #include <executorch/devtools/etdump/buffer_data_sink.h>
 #include <executorch/devtools/etdump/utils.h>
+
+using ::executorch::runtime::Error;
 
 namespace executorch {
 namespace etdump {
@@ -18,9 +26,12 @@ Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
   memset(debug_buffer_.data() + offset_, 0, n_zero_pad);
 
   offset_ = (offset_ptr - debug_buffer_.data()) + length;
-  ET_CHECK_MSG(
-      offset_ <= debug_buffer_.size(),
-      "Ran out of space to store tensor data.");
+
+  // Raise access error if offset_ is out of range.
+  if (offset_ > debug_buffer_.size()) {
+    return Error::AccessFailed;
+  }
+
   memcpy(offset_ptr, ptr, length);
   return (size_t)(offset_ptr - debug_buffer_.data());
 }

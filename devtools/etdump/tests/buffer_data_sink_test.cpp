@@ -14,8 +14,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ScalarType;
-using executorch::aten::Tensor;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::Error;
 using ::executorch::runtime::Span;
 using torch::executor::testing::TensorFactory;
 
@@ -42,12 +43,8 @@ class BufferDataSinkTest : public ::testing::Test {
 
 TEST_F(BufferDataSinkTest, StorageSizeCheck) {
   Result<size_t> ret = data_sink_->get_storage_size();
-  if (!ret.ok()) {
-    ET_LOG(
-        Info,
-        "Get storage size failed with 0x%" PRIx32,
-        (unsigned int)ret.error());
-  }
+  ASSERT_EQ(ret.error(), Error::Ok);
+
   size_t storage_size = ret.get();
   EXPECT_EQ(storage_size, buffer_size_);
 }
@@ -57,12 +54,7 @@ TEST_F(BufferDataSinkTest, WriteOneTensorAndCheckData) {
   Tensor tensor = tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0});
 
   Result<size_t> ret = data_sink_->write_tensor(tensor);
-  if (!ret.ok()) {
-    ET_LOG(
-        Info,
-        "Write tensor into debug storage failed with 0x%" PRIx32,
-        (unsigned int)ret.error());
-  }
+  ASSERT_EQ(ret.error(), Error::Ok);
 
   size_t offset = ret.get();
 
@@ -83,12 +75,7 @@ TEST_F(BufferDataSinkTest, WriteMultiTensorsAndCheckData) {
       tf.make({1, 4}, {5.0, 6.0, 7.0, 8.0})};
   for (const auto& tensor : tensors) {
     Result<size_t> ret = data_sink_->write_tensor(tensor);
-    if (!ret.ok()) {
-      ET_LOG(
-          Info,
-          "Write tensor into debug storage failed with 0x%" PRIx32,
-          (unsigned int)ret.error());
-    }
+    ASSERT_EQ(ret.error(), Error::Ok);
 
     size_t offset = ret.get();
     EXPECT_NE(offset, static_cast<size_t>(-1));
@@ -105,12 +92,7 @@ TEST_F(BufferDataSinkTest, PointerAlignmentCheck) {
   TensorFactory<ScalarType::Float> tf;
   Tensor tensor = tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0});
   Result<size_t> ret = data_sink_->write_tensor(tensor);
-  if (!ret.ok()) {
-    ET_LOG(
-        Info,
-        "Write tensor into debug storage failed with 0x%" PRIx32,
-        (unsigned int)ret.error());
-  }
+  ASSERT_EQ(ret.error(), Error::Ok);
 
   size_t offset = ret.get();
   EXPECT_NE(offset, static_cast<size_t>(-1));
@@ -125,11 +107,11 @@ TEST_F(BufferDataSinkTest, WriteUntilOverflow) {
 
   // Write tensors until we run out of space
   for (size_t i = 0; i < 2; i++) {
-    data_sink_->write_tensor(tensor);
+    Result<size_t> ret = data_sink_->write_tensor(tensor);
+    ASSERT_EQ(ret.error(), Error::Ok);
   }
 
   // Attempting to write another tensor should raise an error
-  ET_EXPECT_DEATH(
-      data_sink_->write_tensor(tensor),
-      "Ran out of space to store tensor data.");
+  Result<size_t> ret = data_sink_->write_tensor(tensor);
+  ASSERT_EQ(ret.error(), Error::AccessFailed);
 }

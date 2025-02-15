@@ -5,41 +5,52 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.exir import to_edge
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.fx.experimental.proxy_tensor import make_fx
 
 
-class DecomposeEinsum(ExportPass):
+class Any(torch.nn.Module):
+    def __init__(self, dim, keepdim):
+        super().__init__()
+        self.dim = tuple(dim) if isinstance(dim, list) else dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        if self.dim is None:
+            x = torch.flatten(x)
+            self.dim = 0
+
+        x = x.to(torch.bool).to(torch.int32)
+        x = torch.sum(x, dim=self.dim, keepdim=self.keepdim, dtype=torch.int32)
+        return torch.not_equal(x, torch.zeros(1, dtype=torch.int32))
+
+
+class DecomposeAny(ExportPass):
     """
-    Decompose einsum for quantization annotation to work properly.
+    Decompose for math equivalent op.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, quantization_capture=False) -> None:
         super().__init__()
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         for node in graph.nodes:
-            if node.target == torch.ops.aten.einsum.default:
-                decomposed_module = make_fx(
-                    node.target,
-                    tracing_mode="fake",
-                )(node.args[0], [arg.meta["val"] for arg in node.args[1]])
+            if "any.dim" in str(node.target):
+                dim = node.args[1] if len(node.args) > 1 else None
+                keepdim = node.args[2] if len(node.args) > 2 else False
+                model = Any(dim, keepdim)
+                edge_mgr = to_edge(
+                    torch.export.export(model, (node.args[0].meta["val"],))
+                )
+                decomposed_module = edge_mgr.exported_program()
 
                 with graph.inserting_before(node):
                     # remap is used to map original node values to new node values,
                     # which ensures that reference to nodes are correctly updated in the new graph
-                    remap = {}
-                    # Different from other nodes, einsum args[0] is the einsum equation,
-                    # while input nodes are stored in args[1]
-                    for i, arg in enumerate(node.args[1]):
-                        remap[f"arg1_{i+1}"] = arg
+                    remap = {"x": node.args[0]}
 
                     for decomposed_node in decomposed_module.graph.nodes:
-                        # This is the arg[0] equation string, which is not required anymore after decomposition
-                        if "arg0" in decomposed_node.name:
-                            continue
-
                         # no need to copy existent 'output'
                         if decomposed_node.op == "output":
                             for user in node.users.copy():
