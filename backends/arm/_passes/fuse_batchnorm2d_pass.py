@@ -114,6 +114,7 @@ class FuseBatchnorm2DPass(ExportPass):
             if not try_set_param(conv_bias_node, fused_conv_bias) and try_set_param(
                 bn_bias_node, fused_conv_bias
             ):
+                # pyre-ignore[60]
                 # Conv didn't have bias but batchnorm did, steal bias from batchnorm.
                 conv_args = (*conv.args[0:2], bn_bias_node, *conv.args[3:])
                 conv.args = conv_args
