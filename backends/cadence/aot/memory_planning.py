@@ -9,6 +9,7 @@
 import collections
 import itertools
 import logging
+import math
 import typing
 from functools import partial
 from typing import Iterable, List, Optional, Tuple
@@ -37,6 +38,10 @@ def get_num_memories(memory_config: MemoryConfig) -> int:
 # memory_space module provides num_memories indexed 0..num_memories-1.
 def get_size(memory_config: MemoryConfig, exir_id: int) -> int:
     return memory_config.memory_sizes[exir_id - 1]
+
+
+def get_aligned_offset(pre_aligned_offset: int, alignment: int) -> int:
+    return int(math.ceil(pre_aligned_offset / alignment) * alignment)
 
 
 def collect_specs_from_graph_module(
@@ -95,9 +100,9 @@ def position_based_greedy_with_hierarchy(
         return None
 
     def memory_available(spec: TensorSpec) -> bool:
-        return spec.mem_offset + spec.allocated_memory <= get_size(
-            memory_config, spec.mem_id
-        )
+        return get_aligned_offset(
+            spec.mem_offset + spec.allocated_memory, alignment
+        ) <= get_size(memory_config, spec.mem_id)
 
     # Iterate over all the specs in sorted order
     for spec in sorted(
@@ -116,7 +121,9 @@ def position_based_greedy_with_hierarchy(
                 continue
             spec.mem_offset = 0
             while memory_available(spec) and (overlapped := overlap(spec)):
-                spec.mem_offset = overlapped.mem_offset + overlapped.allocated_memory
+                spec.mem_offset = get_aligned_offset(
+                    overlapped.mem_offset + overlapped.allocated_memory, alignment
+                )
             if memory_available(spec):
                 allocated_buffers[spec.mem_id].append(spec)
                 bufsizes[spec.mem_id] = max(
@@ -202,13 +209,16 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
                     # calculation of gap incorrect. Moving it out will make the algorithm degenerate
                     # to the naive one, reusing 0 tensor. The paper may have a typo here.
                     prev_offset = max(
-                        allocated_spec.mem_offset + allocated_spec.allocated_memory,
+                        get_aligned_offset(
+                            allocated_spec.mem_offset + allocated_spec.allocated_memory,
+                            alignment,
+                        ),
                         prev_offset,
                     )
             if spec.mem_offset is None:
-                if prev_offset + spec.allocated_memory > get_size(
-                    memory_config, spec.mem_id
-                ):
+                if get_aligned_offset(
+                    prev_offset + spec.allocated_memory, alignment
+                ) > get_size(memory_config, spec.mem_id):
                     continue
                 else:
                     spec.mem_offset = prev_offset
@@ -423,6 +433,7 @@ class CadenceMemoryPlanning:
                 ]
             ]
         ] = None,
+        mem_alignment: int = 1,
     ) -> None:
         self._init_mem_algos()
 
@@ -432,6 +443,9 @@ class CadenceMemoryPlanning:
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
         self.additional_constraint_gen_passes = additional_constraint_gen_passes
+
+        assert mem_alignment > 0, "mem_alignment must be positive"
+        self.mem_alignment = mem_alignment
 
     def _init_mem_algos(self) -> None:
         self.available_mem_algos = [
@@ -459,6 +473,7 @@ class CadenceMemoryPlanning:
             allow_lifetime_and_storage_overlap=(self.opt_level >= 2),
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
+            alignment=self.mem_alignment,
         )
         mem_planning(graph_module)
 

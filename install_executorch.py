@@ -9,6 +9,7 @@
 import argparse
 import glob
 import itertools
+import logging
 import os
 import shutil
 import subprocess
@@ -19,6 +20,12 @@ from install_requirements import (
     python_is_compatible,
     TORCH_NIGHTLY_URL,
 )
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [ExecuTorch] %(levelname)s: %(message)s"
+)
+logger = logging.getLogger()
 
 
 def clean():
@@ -32,7 +39,84 @@ def clean():
     print("Done cleaning build artifacts.")
 
 
-VALID_PYBINDS = ["coreml", "mps", "xnnpack"]
+VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
+
+
+################################################################################
+# Git submodules
+################################################################################
+# The following submodules are required to be able to build ExecuTorch. If any of
+# these folders are missing or missing CMakeLists.txt, we will run
+# `git submodule update` to try to fix it. If the command fails, we will raise an
+# error.
+# An alternative to this would be to run `git submodule status` and run
+# `git submodule update` if there's any local changes. However this is a bit
+# too restrictive for users who modifies and tests the dependencies locally.
+
+# keep sorted
+REQUIRED_SUBMODULES = {
+    "ao": "LICENSE",  # No CMakeLists.txt, choose a sort of stable file to check.
+    "cpuinfo": "CMakeLists.txt",
+    "eigen": "CMakeLists.txt",
+    "flatbuffers": "CMakeLists.txt",
+    "FP16": "CMakeLists.txt",
+    "FXdiv": "CMakeLists.txt",
+    "gflags": "CMakeLists.txt",
+    "prelude": "BUCK",
+    "pthreadpool": "CMakeLists.txt",
+    "pybind11": "CMakeLists.txt",
+    "XNNPACK": "CMakeLists.txt",
+}
+
+
+def get_required_submodule_paths():
+    gitmodules_path = os.path.join(os.getcwd(), ".gitmodules")
+
+    if not os.path.isfile(gitmodules_path):
+        logger.error(".gitmodules file not found.")
+        exit(1)
+
+    with open(gitmodules_path, "r") as file:
+        lines = file.readlines()
+
+    # Extract paths of required submodules
+    required_paths = {}
+    for line in lines:
+        if line.strip().startswith("path ="):
+            path = line.split("=")[1].strip()
+            for submodule, file_name in REQUIRED_SUBMODULES.items():
+                if submodule in path:
+                    required_paths[path] = file_name
+    return required_paths
+
+
+def check_and_update_submodules():
+    def check_folder(folder: str, file: str) -> bool:
+        return os.path.isdir(folder) and os.path.isfile(os.path.join(folder, file))
+
+    # Check if the directories exist for each required submodule
+    missing_submodules = {}
+    for path, file in get_required_submodule_paths().items():
+        if not check_folder(path, file):
+            missing_submodules[path] = file
+
+    # If any required submodule directories are missing, update them
+    if missing_submodules:
+        logger.warning("Some required submodules are missing. Updating submodules...")
+        try:
+            subprocess.check_call(["git", "submodule", "sync"])
+            subprocess.check_call(["git", "submodule", "update", "--init"])
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error updating submodules: {e}")
+            exit(1)
+
+        # After updating submodules, check again
+        for path, file in missing_submodules.items():
+            if not check_folder(path, file):
+                logger.error(f"{file} not found in {path}.")
+                logger.error("Please run `git submodule update --init`.")
+                exit(1)
+    logger.info("All required submodules are present.")
 
 
 def main(args):
@@ -78,8 +162,12 @@ def main(args):
                     raise Exception(
                         f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
                     )
+                if pybind_arg == "training":
+                    CMAKE_ARGS += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
+                    os.environ["EXECUTORCH_BUILD_TRAINING"] = "ON"
+                else:
+                    CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
                 EXECUTORCH_BUILD_PYBIND = "ON"
-                CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
 
     if args.clean:
         clean()
@@ -90,8 +178,6 @@ def main(args):
         # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
         # latest PT commit otherwise
         use_pytorch_nightly = False
-
-    install_requirements(use_pytorch_nightly)
 
     # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
     # or is not turned off explicitly (--pybind off)
@@ -115,6 +201,11 @@ def main(args):
     # Set environment variables
     os.environ["EXECUTORCH_BUILD_PYBIND"] = EXECUTORCH_BUILD_PYBIND
     os.environ["CMAKE_ARGS"] = CMAKE_ARGS
+
+    # Check if the required submodules are present and update them if not
+    check_and_update_submodules()
+
+    install_requirements(use_pytorch_nightly)
 
     # Run the pip install command
     subprocess.run(

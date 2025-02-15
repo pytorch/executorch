@@ -29,6 +29,23 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "static_attention",
+    srcs = [
+        "static_attention.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":llama_transformer",
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
     name = "llama2_model",
     srcs = [
         "__init__.py",
@@ -109,6 +126,7 @@ runtime.python_library(
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
         "//executorch/backends/vulkan/_passes:vulkan_passes",
+        "//executorch/exir/passes:init_mutable_pass",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
         "//executorch/exir/passes:init_mutable_pass",

@@ -62,7 +62,8 @@ ShiftPointerIoMgr::ShiftPointerIoMgr(
     int32_t num_heads,
     EvalMode eval_mode,
     const std::string& prefill_forward_name,
-    const std::string& kv_forward_name)
+    const std::string& kv_forward_name,
+    const bool use_int64_token)
     : IoMgrBase(modules),
       shard_layers_({num_layers}),
       kv_cache_len_(kv_cache_len),
@@ -73,7 +74,8 @@ ShiftPointerIoMgr::ShiftPointerIoMgr(
       num_heads_(num_heads),
       eval_mode_(eval_mode),
       prefill_forward_name_(prefill_forward_name),
-      kv_forward_name_(kv_forward_name) {
+      kv_forward_name_(kv_forward_name),
+      use_int64_token_(use_int64_token) {
   if (!prefill_forward_name_.empty()) {
     input_tensors_[prefill_forward_name_] =
         std::vector<std::vector<executorch::aten::TensorImpl*>>(modules.size());
@@ -399,7 +401,8 @@ void ShiftPointerIoMgr::update_prefill_to_kv_io(
       prefill_cache_len_ != 0, "prefill_cache_len_ should not equal to 0");
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
-  ptr->input_tok = static_cast<int32_t>(cur_token);
+  ptr->input_tok =
+      use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   ptr->input_pos = static_cast<int32_t>(pos);
   // If prompt len is 30, prefill will handle to pos = 30.
   // At this point, pos should be 31.
@@ -455,7 +458,8 @@ void ShiftPointerIoMgr::update_kv_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   // update input_tok
-  ptr->input_tok = static_cast<int32_t>(cur_token);
+  ptr->input_tok =
+      use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   // update position_ids
   ptr->input_pos = static_cast<int32_t>(pos);
   // update causal mask for next token
@@ -503,20 +507,39 @@ void ShiftPointerIoMgr::update_prefill_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   (void)output_tensors;
   IO* ptr = static_cast<IO*>(data_ptr_.get());
-  ptr->prefill_input_toks[pos] = static_cast<int32_t>(cur_token);
+  // Support CPU 4-bit embedding, which requires int64 input.
+  // However, for QNN embedding, only int32 input is needed.
+  // Therefore, we need to cast to the correct type to write the data.
+  if (use_int64_token_) {
+    ptr->prefill_input_toks[pos] = cur_token;
+  } else {
+    int32_t* prefill_input_toks_ptr =
+        reinterpret_cast<int32_t*>(ptr->prefill_input_toks.data());
+    prefill_input_toks_ptr[pos] = static_cast<int32_t>(cur_token);
+  }
 }
 
 void ShiftPointerIoMgr::fill_prefill_toks(
     std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
   for (int i = 0; i < prompt_tokens.size(); i++) {
-    ptr->prefill_input_toks[i] = static_cast<int32_t>(prompt_tokens[i]);
+    // Support CPU 4-bit embedding, which requires int64 input.
+    // However, for QNN embedding, only int32 input is needed.
+    // Therefore, we need to cast to the correct type to write the data.
+    if (use_int64_token_) {
+      ptr->prefill_input_toks[i] = prompt_tokens[i];
+    } else {
+      int32_t* prefill_input_toks_ptr =
+          reinterpret_cast<int32_t*>(ptr->prefill_input_toks.data());
+      prefill_input_toks_ptr[i] = static_cast<int32_t>(prompt_tokens[i]);
+    }
   }
 }
 
 void ShiftPointerIoMgr::fill_kv_tok_mask(int64_t pos, int64_t cur_token) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
-  ptr->input_tok = static_cast<int32_t>(cur_token);
+  ptr->input_tok =
+      use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   ptr->kv_attention_mask[kv_cache_len_] = 65535;
 }
 
@@ -530,18 +553,20 @@ SmartMaskIoMgr::SmartMaskIoMgr(
     int32_t num_heads,
     EvalMode eval_mode,
     const std::string& prefill_forward_name,
-    const std::string& kv_forward_name)
+    const std::string& kv_forward_name,
+    const bool use_int64_token)
     : IoMgrBase(modules),
       shard_layers_({num_layers}),
-      prefill_cache_len_(prefill_cache_len),
       kv_cache_len_(kv_cache_len),
+      prefill_cache_len_(prefill_cache_len),
       vocab_size_(vocab_size),
       num_layers_(num_layers),
       head_dim_(head_dim),
       num_heads_(num_heads),
       eval_mode_(eval_mode),
       prefill_forward_name_(prefill_forward_name),
-      kv_forward_name_(kv_forward_name) {
+      kv_forward_name_(kv_forward_name),
+      use_int64_token_(use_int64_token) {
   if (!prefill_forward_name_.empty()) {
     input_tensors_[prefill_forward_name_] =
         std::vector<std::vector<executorch::aten::TensorImpl*>>(modules.size());
@@ -630,7 +655,7 @@ void SmartMaskIoMgr::IO::init_io_ptrs(
     std::string key = iter.first;
     size_t size = iter.second;
     if (key == "input_tok_bytes") {
-      input_tok = reinterpret_cast<int32_t*>(cur_ptr);
+      input_tok = reinterpret_cast<int64_t*>(cur_ptr);
     } else if (key == "input_pos_bytes") {
       input_pos = reinterpret_cast<int32_t*>(cur_ptr);
     } else if (key == "cache_in_bytes" || key == "cache_out_bytes") {
@@ -659,7 +684,7 @@ void SmartMaskIoMgr::IO::init_io_ptrs(
     } else if (key == "kv_logits_bytes") {
       kv_logits = reinterpret_cast<uint16_t*>(cur_ptr);
     } else if (key == "prefill_input_toks_bytes") {
-      prefill_input_toks = reinterpret_cast<int32_t*>(cur_ptr);
+      prefill_input_toks = reinterpret_cast<int64_t*>(cur_ptr);
     } else if (key == "prefill_atten_mask_bytes") {
       prefill_atten_mask = reinterpret_cast<uint16_t*>(cur_ptr);
     } else if (key == "prefill_logits_bytes") {
@@ -681,7 +706,7 @@ void SmartMaskIoMgr::IO::add_custom_mem_info(
     executorch::runtime::TensorInfo& tensor_info) {
   if (auto it = io_pos_map.find(static_cast<std::byte*>(ptr));
       it == io_pos_map.end()) {
-    ET_LOG(Error, "Shared buffer pointer %p is not found %p", ptr);
+    ET_LOG(Error, "Shared buffer pointer %p is not found", ptr);
   }
   size_t pos = io_pos_map[static_cast<std::byte*>(ptr)];
   uint32_t rank = tensor_info.sizes().size();
@@ -890,7 +915,8 @@ void SmartMaskIoMgr::update_kv_io(
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   size_t cache_len = std::max(kv_cache_len_, prefill_cache_len_);
   // update input_tok
-  *ptr->input_tok = static_cast<int32_t>(cur_token);
+  *ptr->input_tok =
+      use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   // update position_ids
   *ptr->input_pos = static_cast<int32_t>(pos);
   // update smart mask for previous cache
@@ -976,7 +1002,7 @@ void SmartMaskIoMgr::prepare_prefill_io(
 
   // [O]: logits
   int logit_index = 0;
-  Result<TensorInfo> logits = methods_meta[0]->output_tensor_meta(0);
+  Result<TensorInfo> logits = methods_meta[0]->output_tensor_meta(logit_index);
   prefill_logits_ = std::make_unique<TensorImpl>(
       logits->scalar_type(),
       logits->sizes().size(),
@@ -1033,7 +1059,8 @@ void SmartMaskIoMgr::update_prefill_to_kv_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
-  *ptr->input_tok = static_cast<int32_t>(cur_token);
+  *ptr->input_tok =
+      use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   *ptr->input_pos = static_cast<int32_t>(pos);
   // pos means the cur_token pos
   for (int i = 0; i < pos; i++) {
@@ -1061,19 +1088,38 @@ void SmartMaskIoMgr::update_prefill_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   (void)output_tensors;
   IO* ptr = static_cast<IO*>(data_ptr_.get());
-  ptr->prefill_input_toks[pos] = static_cast<int32_t>(cur_token);
+  // Support CPU 4-bit embedding, which requires int64 input.
+  // However, for QNN embedding, only int32 input is needed.
+  // Therefore, we need to cast to the correct type to write the data.
+  if (use_int64_token_) {
+    ptr->prefill_input_toks[pos] = cur_token;
+  } else {
+    int32_t* prefill_input_toks_ptr =
+        reinterpret_cast<int32_t*>(ptr->prefill_input_toks);
+    prefill_input_toks_ptr[pos] = static_cast<int32_t>(cur_token);
+  }
 }
 
 void SmartMaskIoMgr::fill_prefill_toks(std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
   for (int i = 0; i < prompt_tokens.size(); i++) {
-    ptr->prefill_input_toks[i] = static_cast<int32_t>(prompt_tokens[i]);
+    // Support CPU 4-bit embedding, which requires int64 input.
+    // However, for QNN embedding, only int32 input is needed.
+    // Therefore, we need to cast to the correct type to write the data.
+    if (use_int64_token_) {
+      ptr->prefill_input_toks[i] = prompt_tokens[i];
+    } else {
+      int32_t* prefill_input_toks_ptr =
+          reinterpret_cast<int32_t*>(ptr->prefill_input_toks);
+      prefill_input_toks_ptr[i] = static_cast<int32_t>(prompt_tokens[i]);
+    }
   }
 }
 
 void SmartMaskIoMgr::fill_kv_tok_mask(int64_t pos, int64_t cur_token) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
-  *ptr->input_tok = static_cast<int32_t>(cur_token);
+  *ptr->input_tok =
+      use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
   ptr->kv_attention_mask[kv_cache_len_] = 65535;
 }
 

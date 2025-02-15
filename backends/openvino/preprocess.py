@@ -42,10 +42,7 @@ class OpenvinoBackend(BackendDetails):
         for spec in module_compile_spec:
             compile_options[spec.key] = spec.value.decode()
 
-        compiled = openvino_compile(
-            edge_program.module(), *args, options=compile_options, executorch=True
-        )
-
+        compiled = openvino_compile(edge_program.module(), *args, options=compile_options)
         model_bytes = compiled.export_model()
 
         return PreprocessResult(processed_bytes=model_bytes)
