@@ -39,6 +39,7 @@ class ConvertToLinear(ExportPass):
     mm = exir_ops.edge.aten.mm.default
 
     addmm_patterns = [
+        {view_copy: 1, permute_copy: 1, addmm: 1},
         {view_copy: 2, permute_copy: 1, addmm: 1},
         {permute_copy: 1, addmm: 1},
     ]
