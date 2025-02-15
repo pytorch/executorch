@@ -13,8 +13,8 @@ from .node_visitor import NodeVisitor, register_node_visitor
 
 
 @register_node_visitor
-class Arange(NodeVisitor):
-    target = ["aten.arange.start_step"]
+class Full(NodeVisitor):
+    target = ["aten.full.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -24,9 +24,9 @@ class Arange(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        start, end = node.args[0:2]
-        step = node.args[2] if len(node.args) > 2 else 1
-        out_tensor = torch.arange(start, end, step)
+        out_tensor = torch.full(
+            node.args[0], node.args[1], dtype=node.meta["val"].dtype
+        )
 
         # since we can derive the constant value of current op in AoT stage
         # we only build static tensor here for consumers of current node
