@@ -9,8 +9,6 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import get_tosa_version
-from executorch.backends.arm.quantizer import arm_quantizer
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
@@ -18,10 +16,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineBI,
     TosaPipelineMI,
 )
-from executorch.backends.xnnpack.test.tester import Quantize
-from torch.ao.quantization.observer import HistogramObserver
-from torch.ao.quantization.quantizer import QuantizationSpec
-
 
 aten_op = "torch.ops.aten.add.Tensor"
 exir_op = "executorch_exir_dialects_edge__ops_aten_add_Tensor"
@@ -70,38 +64,6 @@ def test_add_tosa_MI(test_data: input_t1):
 @common.parametrize("test_data", Add.test_data)
 def test_add_tosa_BI(test_data: input_t1):
     pipeline = TosaPipelineBI[input_t1](Add(), test_data, aten_op, exir_op)
-    pipeline.run()
-
-
-@common.parametrize("test_data", Add.test_data)
-def test_add_i32_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](Add(), test_data, aten_op, exir_op)
-
-    # Create a  quantizer with int8 quantization on the input and output but int32 on everything else.
-    quantizer = arm_quantizer.ArmQuantizer(
-        get_tosa_version(common.get_tosa_compile_spec("TOSA-0.80+BI"))
-    )
-    quantizer.set_io(arm_quantizer.get_symmetric_quantization_config())
-    observer_options = {"eps": 2**-16}
-    observer = HistogramObserver.with_args(**observer_options)
-    input_act_qspec = QuantizationSpec(
-        torch.int32,
-        observer,
-        qscheme=torch.per_tensor_symmetric,
-        quant_max=2**31 - 1,
-        quant_min=-(2**31),
-    )
-    # This quantization_config will be set as global config.
-    quantization_config = arm_quantizer.QuantizationConfig(
-        input_act_qspec, None, None, None
-    )
-    quantize_stage = Quantize(quantizer, quantization_config)
-    pipeline.change_args("quantize", quantize_stage)
-
-    # Check that we get the additional (dq -> q
-    pipeline.add_stage_after(
-        "export", pipeline.tester.check_count, {"torch.ops.quantized_decomposed": 8}
-    )
     pipeline.run()
 
 

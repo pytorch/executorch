@@ -131,9 +131,6 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             n = cast(Node, n)
             if n.op != "call_function":
                 continue
-            # Don't fold chains of quant-ops into each other.
-            if n.target in (q_op, dq_op):
-                continue
 
             # Make sure we haven't already set qparams meta information on the node
             assert "input_qparams" not in n.meta.keys()

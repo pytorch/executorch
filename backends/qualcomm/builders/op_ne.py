@@ -18,12 +18,12 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpElementWiseGreater, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpElementWiseNotEqual, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class GreaterThan(NodeVisitor):
-    target = ["aten.gt.Tensor", "aten.gt.Scalar"]
+class NotEqual(NodeVisitor):
+    target = ["aten.ne.Tensor", "aten.ne.Scalar"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -63,7 +63,7 @@ class GreaterThan(NodeVisitor):
                     (),  # args
                     {},  # kwargs
                 )
-                # Because the output data type of the gt node is boolean.
+                # Because the output data type of the ne node is boolean.
                 # We need to take the quant attr from the non-scalar node.
                 if quant_attrs := node.args[index ^ 1].meta.get(QCOM_QUANT_ATTRS):
                     quant_attrs = quant_attrs.copy()
@@ -87,12 +87,12 @@ class GreaterThan(NodeVisitor):
             )
             input_tensors.append(input_tensor_wrapper)
 
-        gt_op = PyQnnWrapper.PyQnnOpWrapper(
+        ne_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpElementWiseGreater.op_name,
+            OpElementWiseNotEqual.op_name,
         )
-        gt_op.AddInputTensors(input_tensors)
-        gt_op.AddOutputTensors(output_tensors)
+        ne_op.AddInputTensors(input_tensors)
+        ne_op.AddOutputTensors(output_tensors)
 
-        return gt_op
+        return ne_op
