@@ -101,7 +101,7 @@ std::vector<std::vector<std::string>>
 get_inputs_paths(const char *input_list_path) {
   size_t idx = 0;
 
-  auto split = [](std::string s, std::string delimiter) {
+  auto split_and_add_prefix = [](std::string s, std::string delimiter, std::string prefix = "") {
     size_t pos_start = 0, pos_end, delim_len = delimiter.length();
     std::string token;
     std::vector<std::string> res;
@@ -109,9 +109,9 @@ get_inputs_paths(const char *input_list_path) {
     while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
       token = s.substr(pos_start, pos_end - pos_start);
       pos_start = pos_end + delim_len;
-      res.push_back(token);
+      res.push_back(prefix + token);
     }
-    res.push_back(s.substr(pos_start));
+    res.push_back(prefix + s.substr(pos_start));
     return res;
   };
 
@@ -121,10 +121,15 @@ get_inputs_paths(const char *input_list_path) {
   if (!input_list.is_open()) {
     ET_CHECK_MSG(false, "Failed to read input list file: %s", input_list_path);
   }
+  std::string inputs_dir = "";
+  size_t last_pos = std::string(input_list_path).rfind('/');
+  if (last_pos != std::string::npos) {
+      inputs_dir = std::string(input_list_path).substr(0, last_pos+1);
+  }
   std::string file_path;
   auto retval = std::vector<std::vector<std::string>>();
   while (std::getline(input_list, file_path)) {
-    auto input_files = split(file_path, " ");
+    auto input_files = split_and_add_prefix(file_path, " ", inputs_dir);
     if (input_files.size() == 0) {
       break;
     }
