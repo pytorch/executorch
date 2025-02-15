@@ -1,5 +1,7 @@
-from executorch.backends.openvino.tests.ops.base_openvino_op_test import BaseOpenvinoOpTest
 import torch
+from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
+    BaseOpenvinoOpTest,
+)
 
 
 OPS = [
@@ -16,14 +18,13 @@ class TestUnaryOperator(BaseOpenvinoOpTest):
                 super().__init__()
                 self.dtype = dtype
                 self.op = op
-        
+
             def forward(self, x):
                 x1 = x.to(self.dtype)
                 y = self.op(x1)
                 return y, x1
 
         return UnaryOp(op, dtype)
-
 
     def test_unary_op(self):
         for op in OPS:

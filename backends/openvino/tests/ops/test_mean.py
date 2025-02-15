@@ -1,13 +1,40 @@
-from executorch.backends.openvino.tests.ops.base_openvino_op_test import BaseOpenvinoOpTest
 import torch
+from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
+    BaseOpenvinoOpTest,
+)
 
-op_params = [{'axes': None,   'keep_dim': None,  'dtype': None,     },
-             {'axes': None,   'keep_dim': None,  'dtype': "float64",},
-             {'axes': None,   'keep_dim': None,  'dtype': "float32",},
-             {'axes': None,   'keep_dim': None,  'dtype': "int32",  },
-             {'axes': 0,      'keep_dim': False, 'dtype': None,     },
-             {'axes': 0,      'keep_dim': False, 'dtype': None,     },
-             ]
+op_params = [
+    {
+        "axes": None,
+        "keep_dim": None,
+        "dtype": None,
+    },
+    {
+        "axes": None,
+        "keep_dim": None,
+        "dtype": "float64",
+    },
+    {
+        "axes": None,
+        "keep_dim": None,
+        "dtype": "float32",
+    },
+    {
+        "axes": None,
+        "keep_dim": None,
+        "dtype": "int32",
+    },
+    {
+        "axes": 0,
+        "keep_dim": False,
+        "dtype": None,
+    },
+    {
+        "axes": 0,
+        "keep_dim": False,
+        "dtype": None,
+    },
+]
 
 dtypes = {
     "float32": torch.float32,
@@ -15,8 +42,9 @@ dtypes = {
     "int32": torch.int32,
     "int64": torch.int64,
     "int8": torch.int8,
-    "uint8": torch.uint8
+    "uint8": torch.uint8,
 }
+
 
 class TestMeanOperator(BaseOpenvinoOpTest):
 
@@ -46,14 +74,17 @@ class TestMeanOperator(BaseOpenvinoOpTest):
 
         return Mean(axes, keep_dims, pt_dtype)
 
-
     def test_mean(self):
         for params in op_params:
             with self.subTest(params=params):
-                module = self.create_model(axes=params['axes'],
-                                           keep_dims=params['keep_dim'],
-                                           dtype=params['dtype'])
+                module = self.create_model(
+                    axes=params["axes"],
+                    keep_dims=params["keep_dim"],
+                    dtype=params["dtype"],
+                )
 
-                sample_input = (torch.randint(-10, 10, (1, 3, 224, 224)).to(dtype=torch.float32),)
+                sample_input = (
+                    torch.randint(-10, 10, (1, 3, 224, 224)).to(dtype=torch.float32),
+                )
 
                 self.execute_layer_test(module, sample_input)

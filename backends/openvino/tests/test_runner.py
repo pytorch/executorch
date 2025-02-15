@@ -1,5 +1,6 @@
-import unittest
 import argparse
+import unittest
+
 
 class OpenvinoTestSuite(unittest.TestSuite):
 
@@ -10,7 +11,10 @@ class OpenvinoTestSuite(unittest.TestSuite):
 
     def addTest(self, test):
         # Set test parameters if this is an instance of TestOpenvino
-        from executorch.backends.openvino.tests.ops.base_openvino_op_test import BaseOpenvinoOpTest
+        from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
+            BaseOpenvinoOpTest,
+        )
+
         if isinstance(test, BaseOpenvinoOpTest):
             if "device" in self.test_params:
                 test.device = self.test_params["device"]
@@ -61,6 +65,7 @@ def parse_arguments():
     test_params["test_type"] = args.test_type
     return test_params
 
+
 if __name__ == "__main__":
     loader = unittest.TestLoader()
     # Replace the default test suite with a custom test suite to be able to
@@ -69,7 +74,7 @@ if __name__ == "__main__":
     test_params = parse_arguments()
     loader.suiteClass.test_params = test_params
     # Discover all existing op tests in "ops" folder
-    suite = loader.discover(test_params['test_type'], pattern=test_params['pattern'])
+    suite = loader.discover(test_params["test_type"], pattern=test_params["pattern"])
     # Start running tests
     result = unittest.TextTestRunner().run(suite)
     if result.wasSuccessful():

@@ -1,5 +1,8 @@
-from executorch.backends.openvino.tests.ops.base_openvino_op_test import BaseOpenvinoOpTest
 import torch
+from executorch.backends.openvino.tests.ops.base_openvino_op_test import (
+    BaseOpenvinoOpTest,
+)
+
 
 class TestArangeOperator(BaseOpenvinoOpTest):
 
@@ -8,7 +11,7 @@ class TestArangeOperator(BaseOpenvinoOpTest):
             def __init__(self, x):
                 super().__init__()
                 self.x = x
-        
+
             def forward(self, y):
                 return torch.arange(self.x, dtype=torch.float32) + y
 
