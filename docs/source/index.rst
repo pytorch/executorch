@@ -53,7 +53,7 @@ Topics in this section will help you get started with ExecuTorch.
      .. grid-item-card:: :octicon:`file-code;1em`
         Getting started with ExecuTorch
         :img-top: _static/img/card-background.svg
-        :link: getting-started-setup.html
+        :link: getting-started.html
         :link-type: url
 
         A step-by-step tutorial on how to get started with
@@ -190,6 +190,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    backend-delegates-integration
    backend-delegates-dependencies
+   compiler-delegate-and-partitioner
    debug-backend-delegate
 
 .. toctree::
@@ -207,7 +208,6 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Compiler Entry Points
    :hidden:
 
-   compiler-delegate-and-partitioner
    compiler-backend-dialect
    compiler-custom-compiler-passes
    compiler-memory-planning
