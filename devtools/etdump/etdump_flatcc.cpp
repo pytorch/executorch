@@ -10,7 +10,7 @@
 
 #include <cstring>
 
-#include <executorch/devtools/etdump/data_sink.h>
+#include <executorch/devtools/etdump/buffer_data_sink.h>
 #include <executorch/devtools/etdump/emitter.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
@@ -29,6 +29,7 @@ using ::executorch::runtime::DebugHandle;
 using ::executorch::runtime::DelegateDebugIdType;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
+using ::executorch::runtime::Result;
 using ::executorch::runtime::LoggedEValueType;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
@@ -368,7 +369,7 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
 
   // Check the type of `output` then call the corresponding logging functions
   if constexpr (std::is_same<T, Tensor>::value) {
-    long offset = data_sink_->write_tensor(output);
+    long offset = write_tensor_or_raise_error(output);
     etdump_Tensor_ref_t tensor_ref = add_tensor_entry(builder_, output, offset);
 
     etdump_Value_start(builder_);
@@ -378,7 +379,8 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
   } else if constexpr (std::is_same<T, ArrayRef<Tensor>>::value) {
     etdump_Tensor_vec_start(builder_);
     for (size_t i = 0; i < output.size(); ++i) {
-      long offset = data_sink_->write_tensor(output[i]);
+
+      long offset = write_tensor_or_raise_error(output[i]);
       etdump_Tensor_vec_push(
           builder_, add_tensor_entry(builder_, output[i], offset));
     }
@@ -498,11 +500,11 @@ ETDumpResult ETDumpGen::get_etdump_data() {
 }
 
 void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
-  data_sink_ = std::make_shared<DataSink>(buffer);
+  data_sink_ = std::make_shared<BufferDataSink>(buffer);
 }
 
-void ETDumpGen::set_data_sink(std::shared_ptr<DataSinkBase> data_sink) {
-  data_sink_ = data_sink;
+void ETDumpGen::set_data_sink(std::shared_ptr<DataSinkBase> buffer_data_sink) {
+  data_sink_ = buffer_data_sink;
 }
 
 void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
@@ -518,7 +520,7 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
   switch (evalue.tag) {
     case Tag::Tensor: {
       executorch::aten::Tensor tensor = evalue.toTensor();
-      long offset = data_sink_->write_tensor(tensor);
+      long offset = write_tensor_or_raise_error(tensor);
       etdump_Tensor_ref_t tensor_ref =
           add_tensor_entry(builder_, tensor, offset);
 
@@ -540,7 +542,7 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
           evalue.toTensorList();
       etdump_Tensor_vec_start(builder_);
       for (size_t i = 0; i < tensors.size(); ++i) {
-        long offset = data_sink_->write_tensor(tensors[i]);
+        long offset = write_tensor_or_raise_error(tensors[i]);
         etdump_Tensor_vec_push(
             builder_, add_tensor_entry(builder_, tensors[i], offset));
       }
@@ -625,13 +627,21 @@ bool ETDumpGen::is_static_etdump() {
 }
 
 size_t ETDumpGen::get_debug_buffer_size() const {
-  ET_CHECK_MSG(data_sink_, "Must set data sink before checking its size\n");
-  return data_sink_->get_storage_size();
+  return ETDumpGen::get_data_sink_size();
 }
 
 size_t ETDumpGen::get_data_sink_size() const {
   ET_CHECK_MSG(data_sink_, "Must set data sink before checking its size\n");
-  return data_sink_->get_storage_size();
+  Result<size_t> ret = data_sink_->get_storage_size();
+  ET_CHECK_MSG(ret.ok(), "Failed to get storage size with error 0x%" PRIx32, static_cast<uint32_t>(ret.error()));
+  return ret.get();
+}
+
+long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
+  ET_CHECK_MSG(data_sink_, "Must set data sink before writing data\n");
+  Result<size_t> ret = data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+  ET_CHECK_MSG(ret.ok(), "Failed to write tensor with error 0x%" PRIx32, static_cast<uint32_t>(ret.error()));
+  return static_cast<long>(ret.get());
 }
 
 } // namespace etdump

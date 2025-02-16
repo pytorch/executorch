@@ -143,7 +143,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const double& output) override;
   void set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
-  void set_data_sink(std::shared_ptr<DataSinkBase> data_sink);
+  void set_data_sink(std::shared_ptr<DataSinkBase> buffer_data_sink);
   ETDumpResult get_etdump_data();
   size_t get_debug_buffer_size() const;
   size_t get_data_sink_size() const;
@@ -172,6 +172,8 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const T& output);
+
+    long write_tensor_or_raise_error(executorch::aten::Tensor tensor);
 
   struct flatcc_builder* builder_;
   size_t num_blocks_ = 0;

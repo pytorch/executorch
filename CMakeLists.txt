@@ -186,6 +186,10 @@ option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension"
        OFF
 )
 
+option(EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension"
+       OFF
+)
+
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
@@ -716,6 +720,10 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor/serialize)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizer)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)

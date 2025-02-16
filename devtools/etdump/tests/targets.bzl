@@ -21,12 +21,12 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "data_sink_test",
+        name = "buffer_data_sink_test",
         srcs = [
-            "data_sink_test.cpp",
+            "buffer_data_sink_test.cpp",
         ],
         deps = [
-            "//executorch/devtools/etdump:data_sink",
+            "//executorch/devtools/etdump:buffer_data_sink",
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )

@@ -9,7 +9,7 @@
 #include <gtest/gtest.h>
 #include <cstdio>
 
-#include <executorch/devtools/etdump/data_sink.h>
+#include <executorch/devtools/etdump/buffer_data_sink.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
@@ -35,7 +35,7 @@ using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
 using ::executorch::runtime::testing::TensorFactory;
 
-using ::executorch::etdump::DataSink;
+using ::executorch::etdump::BufferDataSink;
 
 class ProfilerETDumpTest : public ::testing::Test {
  protected:
@@ -186,7 +186,7 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
       ;
-      auto data_sink = std::make_shared<DataSink>(ptr, 2048);
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
 
       // using span to record debug data
       if (j == 0) {
@@ -194,7 +194,7 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
       }
       // using data sink to record debug data
       else {
-        etdump_gen[i]->set_data_sink(data_sink);
+        etdump_gen[i]->set_data_sink(buffer_data_sink);
       }
 
       etdump_gen[i]->log_evalue(evalue);
@@ -234,7 +234,7 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
       ;
-      auto data_sink = std::make_shared<DataSink>(ptr, 2048);
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
 
       // using span to record debug data
       if (j == 0) {
@@ -242,7 +242,7 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
       }
       // using data sink to record debug data
       else {
-        etdump_gen[i]->set_data_sink(data_sink);
+        etdump_gen[i]->set_data_sink(buffer_data_sink);
       }
 
       etdump_gen[i]->log_evalue(evalue);
@@ -263,7 +263,7 @@ TEST_F(ProfilerETDumpTest, VerifyLogging) {
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
       ;
-      auto data_sink = std::make_shared<DataSink>(ptr, 2048);
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
 
       // using span to record debug data
       if (j == 0) {
@@ -271,7 +271,7 @@ TEST_F(ProfilerETDumpTest, VerifyLogging) {
       }
       // using data sink to record debug data
       else {
-        etdump_gen[i]->set_data_sink(data_sink);
+        etdump_gen[i]->set_data_sink(buffer_data_sink);
       }
 
       etdump_gen[i]->log_evalue(evalue);
@@ -474,14 +474,14 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
 
-      auto data_sink = std::make_shared<DataSink>(ptr, 2048);
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
 
       etdump_gen[i]->create_event_block("test_block");
       TensorFactory<ScalarType::Float> tf;
 
       // using span to record debug data
       if (j == 0) {
-        // TODO(gasoonjia): add similar ET_EXPECT_DEATH on datasink branch
+        // TODO(gasoonjia): add similar ET_EXPECT_DEATH on BufferDataSink branch
         ET_EXPECT_DEATH(
             etdump_gen[i]->log_intermediate_output_delegate(
                 "test_event_tensor",
@@ -492,7 +492,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       }
       // using data sink to record debug data
       else {
-        etdump_gen[i]->set_data_sink(data_sink);
+        etdump_gen[i]->set_data_sink(buffer_data_sink);
       }
 
       // Log a tensor
@@ -549,7 +549,7 @@ TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
       ;
-      auto data_sink = std::make_shared<DataSink>(ptr, 2048);
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
 
       // using span to record debug data
       if (j == 0) {
@@ -557,7 +557,7 @@ TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
       }
       // using data sink to record debug data
       else {
-        etdump_gen[i]->set_data_sink(data_sink);
+        etdump_gen[i]->set_data_sink(buffer_data_sink);
       }
 
       // Event 0

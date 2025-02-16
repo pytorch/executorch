@@ -116,12 +116,12 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
-            name = "data_sink" + aten_suffix,
-            headers = [
-                "data_sink.h",
+            name = "buffer_data_sink" + aten_suffix,
+            exported_headers = [
+                "buffer_data_sink.h",
             ],
             srcs = [
-                "data_sink.cpp",
+                "buffer_data_sink.cpp",
             ],
             deps = [
                 ":utils",
@@ -149,13 +149,12 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/runtime/platform:platform",
-                ":utils",
             ],
             exported_deps = [
                 ":etdump_schema_flatcc",
                 ":utils",
                 ":data_sink_base" + aten_suffix,
-                ":data_sink" + aten_suffix,
+                ":buffer_data_sink" + aten_suffix,
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
