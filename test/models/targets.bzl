@@ -92,10 +92,10 @@ def define_common_targets():
     )
     
     runtime.genrule(
-        name = "exported_programs_with_data_separated",
+        name = "exported_program_and_data",
         cmd = "$(exe :export_program) --modules ModuleLinear --external-constants --outdir $OUT",
         outs = {
-            "ModuleLinear.pte": ["ModuleLinear.pte"],
+            "ModuleLinear.pte": ["ModuleLinearProgram.pte"],
             "ModuleLinear.ptd": ["_default_external_constant.ptd"],
         },
         default_outs = ["."],

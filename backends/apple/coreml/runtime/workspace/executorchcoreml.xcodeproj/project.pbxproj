@@ -830,6 +830,7 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
+                                        "C10_USING_CUSTOM_GENERATED_MACROS",
 					"$(inherited)",
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -911,6 +912,7 @@
 				DEVELOPMENT_TEAM = "";
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
+                                        "C10_USING_CUSTOM_GENERATED_MACROS",
 					"ET_EVENT_TRACER_ENABLED=1",
 					"$(inherited)",
 				);
@@ -920,6 +922,7 @@
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
 					"$(SRCROOT)/../include",
+					"$(SRCROOT)/../include/executorch/runtime/core/portable_type/c10",
 					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
 					"$(SRCROOT)/../../third-party/nlohmann_json/single_include",
@@ -951,6 +954,7 @@
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
 					"$(SRCROOT)/../include",
+					"$(SRCROOT)/../include/executorch/runtime/core/portable_type/c10",
 					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
 					"$(SRCROOT)/../../third-party/nlohmann_json/single_include",

@@ -16,36 +16,27 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAd
 import executorch.exir as exir
 
 import torch
-from executorch.backends.qualcomm._passes.annotate_and_quant_scalar import (
+from executorch.backends.qualcomm._passes import (
     AnnotateAndQuantScalar,
-)
-from executorch.backends.qualcomm._passes.annotate_decomposed import AnnotateDecomposed
-from executorch.backends.qualcomm._passes.annotate_quant_attrs import AnnotateQuantAttrs
-from executorch.backends.qualcomm._passes.convert_binary_op_with_scalar import (
+    AnnotateDecomposed,
+    AnnotateQuantAttrs,
+    ConstantI64toI32,
     ConvertBinaryOpsWithScalar,
-)
-from executorch.backends.qualcomm._passes.convert_bmm_to_matmul import (
     ConvertBmmToMatmul,
-)
-from executorch.backends.qualcomm._passes.convert_interpolate_with_upsample2d import (
     ConvertInterpolateWithUpsample2D,
-)
-from executorch.backends.qualcomm._passes.convert_prelu import ConvertPReLU
-from executorch.backends.qualcomm._passes.convert_to_linear import ConvertToLinear
-from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
+    ConvertPReLU,
+    ConvertToLinear,
+    DecomposeAny,
+    DecomposeLinalgVectorNorm,
     ExpandBroadcastTensorShape,
-)
-from executorch.backends.qualcomm._passes.fold_qdq import FoldQDQ
-from executorch.backends.qualcomm._passes.i64_to_i32 import I64toI32
-from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
-from executorch.backends.qualcomm._passes.recompose_pixel_unshuffle import (
+    FoldQDQ,
+    LayoutTransform,
     RecomposePixelUnshuffle,
-)
-from executorch.backends.qualcomm._passes.recompose_rms_norm import RecomposeRmsNorm
-from executorch.backends.qualcomm._passes.remove_redundancy import RemoveRedundancy
-from executorch.backends.qualcomm._passes.replace_index_put_input import (
+    RecomposeRmsNorm,
+    RemoveRedundancy,
     ReplaceIndexPutInput,
 )
+from executorch.backends.qualcomm._passes.tensor_i64_to_i32 import TensorI64toI32
 from executorch.backends.qualcomm._passes.utils import (
     get_passes_dependency_for_capture_program,
 )
@@ -334,6 +325,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     # The below super ops are supported by QNN
     skip_decompositions = [
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.instance_norm.default,
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.hardsigmoid.default,
@@ -358,21 +350,24 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
-        (RemoveRedundancy, True),
-        (RecomposePixelUnshuffle, True),
-        (RecomposeRmsNorm, True),
-        (ConvertToLinear, True),
-        (ConvertPReLU, True),
-        (ConvertBmmToMatmul, True),
-        (ConvertInterpolateWithUpsample2D, True),
-        (I64toI32, True),
-        (AnnotateQuantAttrs, True),
         (AnnotateAndQuantScalar, True),
         (AnnotateDecomposed, True),
-        (FoldQDQ, True),
+        (AnnotateQuantAttrs, True),
+        (ConstantI64toI32, True),
+        (ConvertBmmToMatmul, True),
+        (ConvertInterpolateWithUpsample2D, True),
+        (ConvertPReLU, True),
+        (ConvertToLinear, True),
+        (DecomposeAny, True),
+        (DecomposeLinalgVectorNorm, True),
         (ExpandBroadcastTensorShape, False),
+        (FoldQDQ, True),
         (LayoutTransform, True),
+        (RecomposePixelUnshuffle, True),
+        (RecomposeRmsNorm, True),
+        (RemoveRedundancy, True),
         (ReplaceIndexPutInput, True),
+        (TensorI64toI32, True),
     ]
 
     passes = OrderedDict()
@@ -441,17 +436,19 @@ def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
     passes_job: OrderedDict = None,
+    dynamic_shapes: Dict = None,
 ) -> exir.ExirExportedProgram:
-    ep = torch.export.export(module, inputs, strict=True)
+    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
     # We choose call_operator by target in ConvertBinaryOpsWithScalar
     # because it is the same source_fn_stack for MultiheadAttention
     # TODO: Should modify the scalar op in the op builder instead of
     #       using transformation
     core_ep = ExirExportedProgram(decomposed_ep, False)
-    core_ep.transform(ConvertBinaryOpsWithScalar())
+    core_ep.transform(
+        TensorI64toI32(edge_program=core_ep), ConvertBinaryOpsWithScalar()
+    )
     edge_ep = core_ep.to_edge(qnn_edge_config())
-
     _transform(edge_ep.exported_program, passes_job)
     return edge_ep
 
@@ -1163,6 +1160,7 @@ def generate_qnn_executorch_compiler_spec(
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
     multiple_graphs: bool = False,
+    weight_sharing: bool = False,
     graph_name: str = "forward",
 ) -> List[CompileSpec]:
     """
@@ -1193,6 +1191,7 @@ def generate_qnn_executorch_compiler_spec(
         is_from_context_binary: True if current graph comes from pre-built context binary.
         multiple_graphs: True if multiple methods are expected to have in single .pte file.
             Please see test cases for post-processing example.
+        weight_sharing: Used with multiple_graphs, where model size will be reduced when operations have the same weights across multiple graphs.
         graph_name: Assign unique graph name if 'multiple_graphs' is used.
 
     Returns:
@@ -1210,6 +1209,12 @@ def generate_qnn_executorch_compiler_spec(
         warnings.warn(
             "It is not recommended to turn on both profiling and dump_intermediate_outputs the same time"
             ", because dump_intermediate_outputs will cause performance drop.",
+            stacklevel=1,
+        )
+
+    if weight_sharing and not multiple_graphs:
+        warnings.warn(
+            "Weight sharing is intended for multiple graphs scenario, please ensure if there are multiple graphs",
             stacklevel=1,
         )
 
@@ -1254,7 +1259,10 @@ def generate_qnn_executorch_compiler_spec(
 
     if multiple_graphs:
         # enable weight sharing mechanism if multiple graphs appear
-        if backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend:
+        if (
+            backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
+            and weight_sharing
+        ):
             backend_options.htp_options.use_weight_sharing = True
 
     return [
