@@ -240,7 +240,8 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
 Result<Method> Program::load_method(
     const char* method_name,
     MemoryManager* memory_manager,
-    EventTracer* event_tracer) const {
+    EventTracer* event_tracer,
+    const NamedDataMap* named_data_map) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -257,7 +258,8 @@ Result<Method> Program::load_method(
   if (!plan.ok()) {
     return plan.error();
   }
-  return Method::load(plan.get(), this, memory_manager, event_tracer);
+  return Method::load(
+      plan.get(), this, memory_manager, event_tracer, named_data_map);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {
@@ -292,7 +294,12 @@ Result<const void*> Program::get_constant_buffer_data(
   // loaded during Program::load, or stored inside the flatbuffer data
   // (constant_buffer).
   if (constant_segment_data_.data() != nullptr) {
-    size_t num_elems = internal_program->constant_segment()->offsets()->size();
+    const auto* constant_segment = internal_program->constant_segment();
+    size_t num_elems = constant_segment == nullptr
+        ? 0
+        : (constant_segment->offsets() == nullptr
+               ? 0
+               : constant_segment->offsets()->size());
     ET_CHECK_OR_RETURN_ERROR(
         buffer_index < num_elems,
         InvalidArgument,
@@ -324,7 +331,9 @@ Result<const void*> Program::get_constant_buffer_data(
         offset);
   } else {
     // Otherwise, the constant data is stored inside Program.constant_buffer.
-    size_t num_elems = internal_program->constant_buffer()->size();
+    const auto* constant_buffer_ptr = internal_program->constant_buffer();
+    size_t num_elems =
+        constant_buffer_ptr == nullptr ? 0 : constant_buffer_ptr->size();
     ET_CHECK_OR_RETURN_ERROR(
         buffer_index < num_elems,
         InvalidArgument,
@@ -332,17 +341,17 @@ Result<const void*> Program::get_constant_buffer_data(
         buffer_index,
         num_elems);
 
-    const auto& constant_buffer = *internal_program->constant_buffer();
-
+    const auto& constant_buffer = *constant_buffer_ptr;
+    const auto* storage = constant_buffer[buffer_index]->storage();
+    auto storage_size = storage == nullptr ? 0 : storage->size();
     ET_CHECK_OR_RETURN_ERROR(
-        constant_buffer[buffer_index]->storage()->size() <= nbytes,
+        storage_size <= nbytes,
         InvalidArgument,
         "Constant buffer size %u larger than allocated nbytes %zu",
-        constant_buffer[buffer_index]->storage()->size(),
+        storage_size,
         nbytes);
 
-    return static_cast<const void*>(
-        constant_buffer[buffer_index]->storage()->data());
+    return storage->data();
   }
 }
 

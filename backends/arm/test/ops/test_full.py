@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -36,8 +35,8 @@ class TestFull(unittest.TestCase):
             return torch.full((2, 2, 3, 3), 4.5, dtype=torch.float32) + x
 
     class AddVariableFull(torch.nn.Module):
-        sizes = [
-            (5),
+        sizes: list[tuple[int, ...]] = [
+            (5,),
             (5, 5),
             (5, 5, 5),
             (1, 5, 5, 5),
@@ -47,6 +46,21 @@ class TestFull(unittest.TestCase):
         def forward(self, x: torch.Tensor, y):
             # Input + a full with the shape from the input and a given value 'y'.
             return x + torch.full(x.shape, y)
+
+    class FullLike(torch.nn.Module):
+        """Since full_like is replaced with full, we only need to test on reference model, not FVP."""
+
+        test_parameters = [
+            ((torch.randn(2, 2, 2, 2) * 50, 3.2),),
+            ((torch.randn(2, 2, 2, 2) * 50, 3),),
+            (((torch.randn(2, 2, 2, 2) * 50).to(torch.int32), 3.2),),
+            (((torch.randn(2, 2, 2, 2) * 50).to(torch.int32), 3),),
+        ]
+
+        def forward(self, input_tensor: torch.Tensor, value):
+            # Our backend can't handle tensors without users, which input_tensor doesn't have
+            # when the full_like is converted to a full. Therefore involve it in the output.
+            return input_tensor + torch.full_like(input_tensor, value)
 
     def _test_full_tosa_MI_pipeline(
         self,
@@ -63,9 +77,7 @@ class TestFull(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
-            .check_count({"torch.ops.aten.full.default": 1})
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(["executorch_exir_dialects_edge__ops_aten_full_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -85,9 +97,7 @@ class TestFull(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.full.default": 1})
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(["executorch_exir_dialects_edge__ops_aten_full_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -101,9 +111,7 @@ class TestFull(unittest.TestCase):
             ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.full.default": 1})
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(["executorch_exir_dialects_edge__ops_aten_full_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -129,6 +137,10 @@ class TestFull(unittest.TestCase):
         _input = torch.rand((2, 2, 3, 3)) * 10
         self._test_full_tosa_MI_pipeline(self.AddConstFull(), (_input,))
 
+    @parameterized.expand(FullLike.test_parameters)
+    def test_full_like_tosa_MI(self, test_tensor: Tuple):
+        self._test_full_tosa_MI_pipeline(self.FullLike(), test_tensor)
+
     def test_const_full_nhwc_tosa_BI(self):
         _input = torch.rand((2, 2, 3, 3)) * 10
         self._test_full_tosa_BI_pipeline(self.AddConstFull(), (_input,))
@@ -142,6 +154,10 @@ class TestFull(unittest.TestCase):
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_tosa_BI(self, test_tensor: Tuple):
         self._test_full_tosa_BI_pipeline(self.AddVariableFull(), test_tensor)
+
+    @parameterized.expand(FullLike.test_parameters)
+    def test_full_like_tosa_BI(self, test_tensor: Tuple):
+        self._test_full_tosa_BI_pipeline(self.FullLike(), test_tensor)
 
     @parameterized.expand(AddVariableFull.test_parameters)
     @pytest.mark.corstone_fvp

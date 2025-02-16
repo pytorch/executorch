@@ -244,13 +244,16 @@ the checkpoint format to avoid generating faulty models.
             strict=False,
             assign=True,
         )  # self.model_ = Transformer(gptconf)
-        if kwargs.get("verbose", False):
-            print("============= missing keys ================")
-            print(missing)
-            print("============= /missing ================")
-            print("============= unexpected keys ================")
-            print(unexpected)
-            print("============= /unexpected ================")
+
+        if missing:
+            missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
+            if missing_weights:
+                raise ValueError(
+                    f"The provided checkpoint is missing the following weights that are expected by the model: {missing_weights}. Please fix the fqn's in your checkpoint to match."
+                )
+        if unexpected:
+            if kwargs.get("verbose", False):
+                print(f"Unexpected keys: {unexpected}")
 
         # Prune the input layer if input_prune_map is provided
         if input_prune_map is not None:

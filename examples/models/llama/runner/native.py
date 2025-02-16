@@ -37,6 +37,7 @@ class NativeLlamaRunner(LlamaRunner):
             params = json.loads(f.read())
         super().__init__(
             tokenizer_path=args.tokenizer,
+            tokenizer_config_path=args.tokenizer_config,
             max_seq_len=args.max_len,
             max_batch_size=1,
             use_kv_cache=args.kv_cache,
@@ -54,6 +55,14 @@ class NativeLlamaRunner(LlamaRunner):
             if input_pos is not None
             else self.model.forward((tokens,))
         )[0]
+
+
+def validate_args(args) -> None:
+    if args.tokenizer and args.tokenizer.endswith(".json"):
+        if not args.tokenizer_config:
+            raise TypeError(
+                "Json tokenizers require an accompanying tokenizer config (--tokenizer_config) to be specified."
+            )
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -83,6 +92,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--tokenizer",
         type=str,
         default=None,
+    )
+
+    parser.add_argument(
+        "--tokenizer_config",
+        type=str,
+        default=None,
+        help="Path to an accompanying tokenizer_config.json, which provides metadata for the main tokenizer.json",
     )
 
     parser.add_argument(
@@ -116,6 +132,7 @@ def build_args_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_args_parser()
     args = parser.parse_args()
+    validate_args(args)
     runner = NativeLlamaRunner(args)
     generated_tokens = runner.text_completion(
         prompt=args.prompt,
