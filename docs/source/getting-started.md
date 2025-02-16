@@ -59,7 +59,7 @@ with open(“model.pte”, “wb”) as f:
 	f.write(et_program.buffer)
 ```
 
-If the model requires varying input sizes, you will need to specify the varying dimensions and bounds as part of the `export` call. See [Exporting a Model for ExecuTorch](/TODO.md) for more information.
+If the model requires varying input sizes, you will need to specify the varying dimensions and bounds as part of the `export` call. See [Model Export and Lowering](using-executorch-export.md) for more information.
 
 The hardware backend to target is controlled by the partitioner parameter to to\_edge\_transform\_and\_lower. In this example, the XnnpackPartitioner is used to target mobile CPUs. See the delegate-specific documentation for a full description of the partitioner and available options.
 
@@ -198,7 +198,7 @@ For more information on the C++ APIs, see [Running an ExecuTorch Model Using the
 ## Next Steps
 ExecuTorch provides a high-degree of customizability to support diverse hardware targets. Depending on your use cases, consider exploring one or more of the following pages:
 
-- [Exporting a Model to ExecuTorch](/TODO.md) for advanced model conversion options.
+- [Export and Lowering](using-executorch-export.md) for advanced model conversion options.
 - [Delegates](/TODO.md) for available backends and configuration options.
 - [Using ExecuTorch on Android](/TODO.md) and [Using ExecuTorch on iOS](TODO.md) for mobile runtime integration.
 - [Using ExecuTorch with C++](/TODO.md) for embedded and mobile native development.
