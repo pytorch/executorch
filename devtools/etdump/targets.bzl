@@ -116,12 +116,12 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
-            name = "data_sink" + aten_suffix,
+            name = "buffer_data_sink" + aten_suffix,
             headers = [
-                "data_sink.h",
+                "buffer_data_sink.h",
             ],
             srcs = [
-                "data_sink.cpp",
+                "buffer_data_sink.cpp",
             ],
             deps = [
                 ":utils",
@@ -149,7 +149,6 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/runtime/platform:platform",
-                ":utils",
             ],
             exported_deps = [
                 ":etdump_schema_flatcc",
