@@ -4,8 +4,10 @@ name: Build Linux Wheels
 on:
   pull_request:
     paths:
-      - build/packaging/**
       - .github/workflows/build-wheels-linux.yml
+      - build/packaging/**
+      - pyproject.toml
+      - setup.py
   push:
     branches:
       - nightly

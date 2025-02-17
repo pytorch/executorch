@@ -4,8 +4,10 @@ name: Build M1 Wheels
 on:
   pull_request:
     paths:
-      - build/packaging/**
       - .github/workflows/build-wheels-m1.yml
+      - build/packaging/**
+      - pyproject.toml
+      - setup.py
   push:
     branches:
       - nightly
