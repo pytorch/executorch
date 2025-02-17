@@ -94,6 +94,7 @@ if __name__ == "__main__":
         model = quantize(model, example_inputs)
         ep = torch.export.export_for_training(model, example_inputs)
 
+    breakpoint()
     edge = to_edge_transform_and_lower(
         ep,
         partitioner=[XnnpackPartitioner()],
@@ -110,6 +111,8 @@ if __name__ == "__main__":
     exec_prog = edge.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
+
+    breakpoint()
 
     if args.etrecord is not None:
         generate_etrecord(args.etrecord, edge_copy, exec_prog)

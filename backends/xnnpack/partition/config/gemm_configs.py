@@ -139,6 +139,7 @@ class GEMMConfig(XNNPartitionerConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         gemm_deps = []
+        breakpoint()
         if precision == ConfigPrecisionType.FP32:
             # First find the weight
             weight_node = get_input_node(node, self.weight_idx)
@@ -296,6 +297,17 @@ class LinearConfig(GEMMConfig):
 
         return super()._get_weight_deps(node, ep, precision)
 
+    def _get_bias_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            breakpoint()
+            return (True, [])
+
+        return super()._get_bias_deps(node, ep, precision)
+
     def supported_precision_types(self):
         return [
             ConfigPrecisionType.DYNAMIC_QUANT,
@@ -425,6 +437,27 @@ class AddmmConfig(GEMMConfig):
             return self.get_deps_from_src_partition(node, ep, src_partition)
 
         return super().get_deps(node, ep)
+
+    def _get_weight_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            return (True, [])
+
+        return super()._get_weight_deps(node, ep, precision)
+
+    def _get_bias_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            breakpoint()
+            return (True, [])
+
+        return super()._get_bias_deps(node, ep, precision)
 
     def get_deps_from_src_partition(
         self, node: torch.fx.Node, ep: ExportedProgram, src_partition: SourcePartition
