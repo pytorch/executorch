@@ -40,17 +40,29 @@ public class Module {
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
    * @param loadMode load mode for the module. See constants in {@link Module}.
+   * @param numThreads number of threads to use for the module.
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
-  public static Module load(final String modelPath, int loadMode) {
+  public static Module load(final String modelPath, int loadMode, int numThreads) {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
-    return new Module(new NativePeer(modelPath, loadMode));
+    return new Module(new NativePeer(modelPath, loadMode, numThreads));
   }
 
   /**
-   * Loads a serialized ExecuTorch module from the specified path on the disk to run on CPU.
+   * Loads a serialized ExecuTorch module from the specified path on the disk.
+   *
+   * @param modelPath path to file that contains the serialized ExecuTorch module.
+   * @param loadMode load mode for the module. See constants in {@link Module}.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
+   */
+  public static Module load(final String modelPath, int loadMode) {
+    return load(modelPath, loadMode, 0);
+  }
+
+  /**
+   * Loads a serialized ExecuTorch module from the specified path on the disk.
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
