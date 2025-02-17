@@ -647,7 +647,7 @@ class TestEventBlock(unittest.TestCase):
                 self.assertEqual(event.delegate_backend_name, metadata["name"])
                 self.assertEqual(
                     event.debug_handles,
-                    metadata["delegate_map"][delegate_debug_identifier],  # pyre-ignore
+                    metadata["delegate_map"][delegate_debug_identifier],
                 )
             else:
                 # Non Delegated
