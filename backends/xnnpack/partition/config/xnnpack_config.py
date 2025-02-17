@@ -25,6 +25,7 @@ class ConfigPrecisionType(Enum):
     FP32 = 1
     STATIC_QUANT = 2
     DYNAMIC_QUANT = 3
+    U8 = 4
 
 
 class XNNPartitionerConfig(PartitionerConfig):
@@ -170,6 +171,9 @@ class XNNPartitionerConfig(PartitionerConfig):
                 return False
 
             if arg_val.dtype not in valid_dtypes:
+                logger.warn(
+                    f"Input {node} has invalid dtype {arg_val.dtype} ({valid_dtypes})"
+                )
                 return False
 
         return True
@@ -188,6 +192,9 @@ class XNNPartitionerConfig(PartitionerConfig):
                 return False
 
             if val.dtype not in valid_dtypes:
+                logger.warn(
+                    f"Output {node} has invalid dtype {val.dtype} ({valid_dtypes})"
+                )
                 return False
 
         return True
@@ -199,6 +206,10 @@ class XNNPartitionerConfig(PartitionerConfig):
             torch.int8,
             torch.qint8,
         }
+
+        if ConfigPrecisionType.U8 in self.enabled_precision_types:
+            valid_dtypes.add(torch.uint8)
+
         if (
             node.op != "placeholder"
             and node.op != "call_function"

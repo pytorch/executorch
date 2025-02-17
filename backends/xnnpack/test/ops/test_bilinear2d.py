@@ -94,6 +94,30 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    def test_u8_static_resize_bilinear2d(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.nn.functional.interpolate(
+                    x,
+                    scale_factor=2.0,
+                    mode="bilinear",
+                    align_corners=False,
+                    antialias=False,
+                )
+
+        example_inputs = (torch.randint(0, 255, (1, 3, 1024, 1024)).to(torch.uint8),)
+        print(f"Inputs: {example_inputs}")
+        (
+            Tester(Model(), example_inputs)
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not(self.ops)
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(inputs=example_inputs, atol=1)
+        )
+
     def test_fp32_static_resize_bilinear2d_with_align_corners(self):
         example_inputs = (torch.randn(2, 3, 4, 5),)
         (

@@ -470,6 +470,13 @@ class Tester:
         # Artifact output from stage
         self.stage_output = None
 
+    @staticmethod
+    def generate_random_input(shape: Sequence[int], dtype: torch.dtype) -> torch.Tensor:
+        if dtype == torch.uint8:
+            return torch.randint(0, 255, shape).to(dtype)
+        else:
+            return torch.randn(shape).to(dtype)
+
     def generate_random_inputs(self):
         # Get shapes of inputs
         input_shapes = []
@@ -518,8 +525,8 @@ class Tester:
         random_inputs = []
         for arg_idx in range(len(self.example_inputs)):
             random_inputs.append(
-                torch.randn(input_shapes[arg_idx]).to(
-                    dtype=self.example_inputs[arg_idx].dtype
+                Tester.generate_random_input(
+                    input_shapes[arg_idx], self.example_inputs[arg_idx].dtype
                 )
             )
 
@@ -695,6 +702,13 @@ class Tester:
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
+
+            # Convert U8 to float so we can compute mean.
+            if model.dtype == torch.uint8:
+                model = model.to(torch.float)
+            if ref.dtype == torch.uint8:
+                ref = ref.to(torch.float)
+
             assert (
                 ref.shape == model.shape
             ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"

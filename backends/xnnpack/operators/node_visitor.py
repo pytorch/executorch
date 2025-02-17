@@ -203,7 +203,7 @@ class NodeVisitor:
 
         return ext_id, id_out, flag
 
-    def get_serialized_dtype(
+    def get_serialized_dtype(  # noqa: 14
         self,
         quant_params: Optional[QuantParams],
         node: torch.fx.Node,
@@ -254,11 +254,12 @@ class NodeVisitor:
                 if quant_params.per_channel:
                     dtype = get_per_channel_dtype(quant_params)
                 else:
-                    dtype = (
-                        XNNDatatype.xnn_datatype_qint32
-                        if quant_params.dtype == torch.int32
-                        else XNNDatatype.xnn_datatype_qint8
-                    )
+                    if quant_params.dtype == torch.int32:
+                        dtype = XNNDatatype.xnn_datatype_qint32
+                    elif quant_params.dtype == torch.uint8:
+                        dtype = XNNDatatype.xnn_datatype_quint8
+                    else:
+                        dtype = XNNDatatype.xnn_datatype_qint8
         else:
             node_dtype = get_node_dtype(node)
             if node_dtype is not None and node_dtype == torch.float16:
@@ -337,6 +338,20 @@ class NodeVisitor:
         # For now group quantization is only supported for 4b weights
         assert quant_params.is_qc4w, "Only 4b group quantization is supported"
 
+    def _create_qparams_for_u8(self, tensor: torch.fx.Node) -> QuantParams:
+        return QuantParams(
+            per_channel=False,
+            q_input=tensor,
+            scale=1.0,
+            zp=0,
+            axis=0,
+            dtype=torch.uint8,
+            qmin=0,
+            qmax=255,
+            is_output=self.is_graph_output(tensor),
+            is_input=self.is_graph_input(tensor),
+        )
+
     def define_tensor(  # noqa: C901
         self,
         tensor: torch.fx.Node,
@@ -384,6 +399,15 @@ class NodeVisitor:
         convert_to_nhwc |= tensor.meta.get(
             ChannelsLastTaggedReshapePass.XNN_NHWC_NODE, False
         )
+
+        # Support U8 tensors by treating them as asymmetric quantized tensors with
+        # scale=1 and zero_point=0.
+        if (
+            "val" in tensor.meta
+            and tensor.meta["val"].dtype == torch.uint8
+            and quant_params is None
+        ):
+            quant_params = self._create_qparams_for_u8(tensor)
 
         # Get new xnn id for tensor value
         ext_id, id_out, flag = self.gen_ids_and_flags(tensor, xnn_graph, quant_params)

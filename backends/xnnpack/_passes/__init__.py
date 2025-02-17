@@ -24,6 +24,9 @@ from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
 )
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.xnnpack._passes.replace_u8_convert_with_dq_pass import (
+    ReplaceU8ConvertWithDqPass,
+)
 from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
     TagImplicitQDqPass,
 )
@@ -70,6 +73,7 @@ class XNNPACKPassManager:
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,
                 TagImplicitQDqPass,
+                ReplaceU8ConvertWithDqPass,
             ]
         else:
             self.passes = passes
