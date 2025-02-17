@@ -30,7 +30,7 @@ Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
 
   // Raise access error if offset_ is out of range.
   if (offset_ > debug_buffer_.size()) {
-    return Error::AccessFailed;
+    return Error::OutOfResources;
   }
 
   memcpy(offset_ptr, ptr, length);
