@@ -106,6 +106,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
             exir_ops.edge.aten.full.default,
+            exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.ge.Tensor,
             exir_ops.edge.aten.gt.Tensor,
             exir_ops.edge.aten.le.Tensor,
@@ -138,6 +139,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.aten.constant_pad_nd.default,
         ]
 
         return supported

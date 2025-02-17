@@ -207,11 +207,11 @@ check_command "$BUCK2"
 # So, just patch our generated framework to do that.
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
-' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/macros/Macros.h
+' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
-' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/macros/Export.h
-cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10 "$HEADERS_PATH/"
+' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h
+cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_PATH/"
 
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"

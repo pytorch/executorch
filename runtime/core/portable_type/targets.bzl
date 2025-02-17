@@ -52,7 +52,7 @@ def define_common_targets():
             "bits_types.h",
         ],
         exported_deps = [
-            "//executorch/runtime/core/portable_type/c10:c10",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         visibility = [
             "//executorch/extension/...",

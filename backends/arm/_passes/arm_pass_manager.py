@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,6 +17,9 @@ from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
 from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
+)
+from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
+    ConvertFullLikeToFullPass,
 )
 from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
@@ -49,6 +52,7 @@ from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (  # type: ignore[import-not-found]
     FuseQuantizedActivationPass,
 )
+from executorch.backends.arm._passes.insert_rescales_pass import InsertRescalePass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
     KeepDimsFalseToSqueezePass,
@@ -72,6 +76,7 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
+
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
@@ -95,6 +100,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMmToBmmPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(ConvertMeanDimToAveragePoolPass())
+        self.add_pass(ConvertFullLikeToFullPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
@@ -115,7 +121,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(AnnotateChannelsLastDimOrder())
-
+        self.add_pass(InsertRescalePass())
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
@@ -133,7 +139,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxesPass())
-
+        self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
@@ -153,6 +159,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(AnnotateChannelsLastDimOrder())
+        self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)
 
