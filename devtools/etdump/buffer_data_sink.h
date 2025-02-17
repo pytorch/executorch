@@ -48,6 +48,8 @@ class BufferDataSink : public DataSinkBase {
   BufferDataSink(BufferDataSink&&) = default;
   BufferDataSink& operator=(BufferDataSink&&) = default;
 
+  ~BufferDataSink() override = default;
+
   /**
    * Write data into the debug buffer and return the offset of the starting
    * location of the data within the buffer.

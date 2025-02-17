@@ -18,6 +18,8 @@ $ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; d
 echo "List all running emulators"
 $ADB_PATH devices
 
+adb uninstall com.example.executorchllamademo || true
+adb uninstall com.example.executorchllamademo.test || true
 adb install -t app-debug.apk
 adb install -t app-debug-androidTest.apk
 
@@ -26,6 +28,8 @@ adb push model.pte /data/local/tmp/llama
 adb push tokenizer.bin /data/local/tmp/llama
 adb shell am instrument -w -r com.example.executorchllamademo.test/androidx.test.runner.AndroidJUnitRunner
 
+adb uninstall org.pytorch.executorch || true
+adb uninstall org.pytorch.executorch.test || true
 adb install -t android-test-debug.apk
 adb install -t android-test-debug-androidTest.apk
 
