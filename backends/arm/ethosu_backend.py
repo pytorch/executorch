@@ -61,8 +61,8 @@ class EthosUBackend(BackendDetails):
         binary = vela_compile(
             tosa_flatbuffer,
             compile_flags,
-            input_order, 
-            verbose = logger.getEffectiveLevel() == logging.INFO,
+            input_order,
+            verbose=logger.getEffectiveLevel() == logging.INFO,
         )
         return binary
 
