@@ -66,9 +66,10 @@ public class Module {
   /**
    * Runs the 'forward' method of this module with the specified arguments.
    *
-   * @param inputs arguments for the ExecuTorch module's 'forward' method. Note: if method 'forward'
-   *     requires inputs but no inputs are given, the function will not error out, but run 'forward'
-   *     with sample inputs.
+   * @param inputs arguments for the ExecuTorch module's 'forward' method. This function is not
+   *     thread safe and must not be called while a previous inference is in progress. Additionally,
+   *     if method 'forward' requires inputs but no inputs are given, the function will not error
+   *     out, but run 'forward' with sample inputs.
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {
@@ -76,7 +77,8 @@ public class Module {
   }
 
   /**
-   * Runs the specified method of this module with the specified arguments.
+   * Runs the specified method of this module with the specified arguments. This function is not
+   * thread safe and must not be called while a previous inference is in progress.
    *
    * @param methodName name of the ExecuTorch method to run.
    * @param inputs arguments that will be passed to ExecuTorch method.
