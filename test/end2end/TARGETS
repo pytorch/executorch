@@ -1,5 +1,3 @@
-# @noautodeps
-
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
@@ -17,7 +15,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:dynamic_shape",
         "//executorch/exir:lib",
-        "//executorch/exir:pass_manager",
+        "//executorch/exir:pass_manager",  # @manual
         "//executorch/exir/passes:lib",
     ],
 )
@@ -28,11 +26,14 @@ python_library(
         "register_scratch_meta_fns.py",
     ],
     deps = [
+        "//caffe2:torch",
+        "//executorch/exir:tensor",
         "//executorch/exir/operator:manip",
     ],
 )
 
 python_unittest(
+    # @autodeps-skip
     name = "end2end_aten",
     srcs = [
         "test_end2end.py",
@@ -64,6 +65,7 @@ python_unittest(
 )
 
 python_unittest(
+    # @autodeps-skip
     name = "end2end",
     srcs = [
         "test_end2end.py",
