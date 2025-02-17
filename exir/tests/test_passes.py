@@ -1053,9 +1053,7 @@ class TestPasses(unittest.TestCase):
             "_prop_tensor_constant0"
         ).check_not(
             "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
-        ).run(
-            new_ep.graph_module.code
-        )
+        ).run(new_ep.graph_module.code)
 
     def test_constant_prop_pass_for_parameter(self) -> None:
         def count_additions(gm: torch.fx.GraphModule) -> int:
