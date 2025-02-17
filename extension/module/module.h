@@ -38,6 +38,15 @@ class Module {
     MmapUseMlockIgnoreErrors,
   };
 
+  struct MethodHolder {
+    std::vector<std::vector<uint8_t>> planned_buffers;
+    std::vector<runtime::Span<uint8_t>> planned_spans;
+    std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
+    std::unique_ptr<runtime::MemoryManager> memory_manager;
+    std::unique_ptr<runtime::Method> method;
+    std::vector<runtime::EValue> inputs;
+  };
+
   /**
    * Constructs an instance by loading a program from a file with specified
    * memory locking behavior.
@@ -422,16 +431,6 @@ class Module {
   inline runtime::EventTracer* event_tracer() const {
     return event_tracer_.get();
   }
-
- private:
-  struct MethodHolder {
-    std::vector<std::vector<uint8_t>> planned_buffers;
-    std::vector<runtime::Span<uint8_t>> planned_spans;
-    std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
-    std::unique_ptr<runtime::MemoryManager> memory_manager;
-    std::unique_ptr<runtime::Method> method;
-    std::vector<runtime::EValue> inputs;
-  };
 
  private:
   std::string file_path_;
