@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/devtools/etdump/data_sink_base.h>
+#include <executorch/devtools/etdump/data_sinks/data_sink_base.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/span.h>
 
