@@ -138,6 +138,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.aten.constant_pad_nd.default,
         ]
 
         return supported
