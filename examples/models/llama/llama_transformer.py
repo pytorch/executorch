@@ -177,7 +177,6 @@ class Transformer(nn.Module):
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params, self.rope))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
-        self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
@@ -219,7 +218,7 @@ class Transformer(nn.Module):
 
         h = self.norm(h)
 
-        logits = self.output(h)
+        logits = torch.nn.functional.linear(h, self.tok_embeddings.weight)
 
         if self.output_prune_map is not None:
             # expand to original size so that downstream applications can use the logits as-is.
