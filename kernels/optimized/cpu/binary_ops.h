@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/kernels/optimized/vec/functional.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -235,7 +236,8 @@ Tensor& handle_broadcast_elementwise(
     const Tensor& a,
     const Tensor& b,
     Tensor& out,
-    const ElementwiseOptimizedPath selected_optimized_path) {
+    const ElementwiseOptimizedPath selected_optimized_path,
+    const executorch::aten::optional<Scalar>& alpha = {}) {
   if ((selected_optimized_path ==
        ElementwiseOptimizedPath::kBroadcastLastDim) ||
       (selected_optimized_path ==
