@@ -82,6 +82,10 @@ enum class Error : error_code_t {
   /// Error caused by the contents of external data.
   InvalidExternalData = 0x24,
 
+  /// Does not have enough resources to perform the requested operation.
+  OutOfResources = 0x25,
+
+
   /*
    * Delegate errors.
    */
