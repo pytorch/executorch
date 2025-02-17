@@ -52,6 +52,7 @@ from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (  # type: ignore[import-not-found]
     FuseQuantizedActivationPass,
 )
+from executorch.backends.arm._passes.insert_rescales_pass import InsertRescalePass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.keep_dims_false_to_squeeze_pass import (
     KeepDimsFalseToSqueezePass,
@@ -75,6 +76,7 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
+
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
@@ -119,7 +121,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(AnnotateChannelsLastDimOrder())
-
+        self.add_pass(InsertRescalePass())
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
@@ -157,6 +159,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(AnnotateChannelsLastDimOrder())
+        self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)
 
