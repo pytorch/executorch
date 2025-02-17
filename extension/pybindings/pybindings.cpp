@@ -975,6 +975,18 @@ py::list get_operator_names() {
   return res;
 }
 
+// Redirect std::cout to sys.stdout
+py::scoped_ostream_redirect stdout_redirect(
+    std::cout,                               // C++ stream
+    py::module_::import("sys").attr("stdout") // Python stream
+);
+
+// Redirect std::cerr to sys.stderr
+py::scoped_estream_redirect stderr_redirect(
+    std::cerr,                               // C++ error stream
+    py::module_::import("sys").attr("stderr") // Python error stream
+);
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
