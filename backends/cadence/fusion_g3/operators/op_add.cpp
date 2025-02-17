@@ -29,6 +29,15 @@ namespace impl {
 namespace G3 {
 namespace native {
 
+#define XT_KERNEL_CHECK(ctx, out, kernel, ...) \
+  const auto ret = kernel(__VA_ARGS__);        \
+  ET_KERNEL_CHECK_MSG(                         \
+      ctx,                                     \
+      ret == 0,                                \
+      InvalidArgument,                         \
+      out,                                     \
+      "Failed to run kernel: " #kernel "(" #__VA_ARGS__ ")");
+
 Tensor& add_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
