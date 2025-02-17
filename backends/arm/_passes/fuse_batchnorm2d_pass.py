@@ -6,7 +6,7 @@
 # pyre-unsafe
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import (
+from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     delete_constant_placeholder,
 )
