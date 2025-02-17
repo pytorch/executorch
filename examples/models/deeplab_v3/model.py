@@ -11,6 +11,7 @@ from torchvision.models.segmentation import (
     deeplabv3,
     deeplabv3_resnet101,
     deeplabv3_resnet50,
+    deeplabv3_mobilenet_v3_large
 )
 
 from ..model_base import EagerModelBase
@@ -43,6 +44,23 @@ class DeepLabV3ResNet101Model(EagerModelBase):
             weights=deeplabv3.DeepLabV3_ResNet101_Weights.DEFAULT
         )
         logging.info("loaded deeplabv3_resnet101 model")
+        return deeplabv3_model
+
+    def get_example_inputs(self):
+        input_shape = (1, 3, 224, 224)
+        return (torch.randn(input_shape),)
+
+
+class DeepLabV3MobileNetV3LargeModel(EagerModelBase):
+    def __init__(self):
+        pass
+
+    def get_eager_model(self) -> torch.nn.Module:
+        logging.info("loading deeplabv3_mobilenet_v3_large model")
+        deeplabv3_model = deeplabv3_mobilenet_v3_large(
+            weights=deeplabv3.DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
+        )
+        logging.info("loaded deeplabv3_mobilenet_v3_large model")
         return deeplabv3_model
 
     def get_example_inputs(self):
