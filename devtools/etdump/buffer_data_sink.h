@@ -33,8 +33,9 @@ class BufferDataSink : public DataSinkBase {
   explicit BufferDataSink(::executorch::runtime::Span<uint8_t> buffer)
       : debug_buffer_(buffer), offset_(0) {}
 
-/**
-   * Constructs a BufferDataSink with a given ptr to data blob, and the size of data blob.
+  /**
+   * Constructs a BufferDataSink with a given ptr to data blob, and the size of
+   * data blob.
    *
    * @param[in] ptr A pointer to the data blob where data will be stored.
    * @param[in] size The size of the data blob in bytes.
@@ -46,7 +47,6 @@ class BufferDataSink : public DataSinkBase {
   BufferDataSink& operator=(const BufferDataSink&) = delete;
   BufferDataSink(BufferDataSink&&) = default;
   BufferDataSink& operator=(BufferDataSink&&) = default;
-
 
   /**
    * Write data into the debug buffer and return the offset of the starting

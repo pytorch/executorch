@@ -173,7 +173,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const T& output);
 
-    long write_tensor_or_raise_error(executorch::aten::Tensor tensor);
+  long write_tensor_or_raise_error(executorch::aten::Tensor tensor);
 
   struct flatcc_builder* builder_;
   size_t num_blocks_ = 0;

@@ -29,8 +29,8 @@ using ::executorch::runtime::DebugHandle;
 using ::executorch::runtime::DelegateDebugIdType;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerEntry;
-using ::executorch::runtime::Result;
 using ::executorch::runtime::LoggedEValueType;
+using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
 
@@ -379,7 +379,6 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
   } else if constexpr (std::is_same<T, ArrayRef<Tensor>>::value) {
     etdump_Tensor_vec_start(builder_);
     for (size_t i = 0; i < output.size(); ++i) {
-
       long offset = write_tensor_or_raise_error(output[i]);
       etdump_Tensor_vec_push(
           builder_, add_tensor_entry(builder_, output[i], offset));
@@ -633,14 +632,21 @@ size_t ETDumpGen::get_debug_buffer_size() const {
 size_t ETDumpGen::get_data_sink_size() const {
   ET_CHECK_MSG(data_sink_, "Must set data sink before checking its size\n");
   Result<size_t> ret = data_sink_->get_storage_size();
-  ET_CHECK_MSG(ret.ok(), "Failed to get storage size with error 0x%" PRIx32, static_cast<uint32_t>(ret.error()));
+  ET_CHECK_MSG(
+      ret.ok(),
+      "Failed to get storage size with error 0x%" PRIx32,
+      static_cast<uint32_t>(ret.error()));
   return ret.get();
 }
 
 long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
   ET_CHECK_MSG(data_sink_, "Must set data sink before writing data\n");
-  Result<size_t> ret = data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
-  ET_CHECK_MSG(ret.ok(), "Failed to write tensor with error 0x%" PRIx32, static_cast<uint32_t>(ret.error()));
+  Result<size_t> ret =
+      data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+  ET_CHECK_MSG(
+      ret.ok(),
+      "Failed to write tensor with error 0x%" PRIx32,
+      static_cast<uint32_t>(ret.error()));
   return static_cast<long>(ret.get());
 }
 
