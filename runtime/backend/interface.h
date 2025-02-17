@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstring>
+#include <vector>
 
 #include <executorch/runtime/backend/backend_execution_context.h>
 #include <executorch/runtime/backend/backend_init_context.h>
@@ -119,6 +120,12 @@ class BackendInterface {
  *         Nullptr if it can't find anything with the given name.
  */
 BackendInterface* get_backend_class(const char* name);
+
+/**
+ * Returns the vector of pointers to all the registered backends.
+ * The mapping is populated using register_backend method.
+ */
+std::vector<BackendInterface*> get_all_backend_classes();
 
 /**
  * A named instance of a backend.
