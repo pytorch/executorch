@@ -25,9 +25,9 @@ install_executorch() {
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
   if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
-    ./install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
+    EXECUTORCH_USE_SHARED_CMAKE_OUT_FOR_SETUP=1 ./install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
   else
-    ./install_executorch.sh --pybind xnnpack
+    EXECUTORCH_USE_SHARED_CMAKE_OUT_FOR_SETUP=1 ./install_executorch.sh --pybind xnnpack
   fi
   # Just print out the list of packages for debugging
   pip list
