@@ -107,7 +107,7 @@ static uint8_t* alignPointer(void* ptr, size_t alignment) {
 } // namespace
 
 // Constructor implementation
-ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
+ETDumpGenBase::ETDumpGenBase(Span<uint8_t> buffer) {
   constexpr size_t max_alloc_buf_size = 128 * 1024;
 
   // Initialize the flatcc builder_ using the buffer and buffer size.
@@ -140,14 +140,14 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
   reset();
 }
 
-ETDumpGen::~ETDumpGen() {
+ETDumpGenBase::~ETDumpGenBase() {
   flatcc_builder_clear(builder_);
   if (!is_static_etdump()) {
     free(builder_);
   }
 }
 
-void ETDumpGen::reset() {
+void ETDumpGenBase::reset() {
   state_ = State::Init;
   num_blocks_ = 0;
   flatcc_builder_reset(builder_);
@@ -158,7 +158,7 @@ void ETDumpGen::reset() {
   etdump_ETDump_run_data_push_start(builder_);
 }
 
-void ETDumpGen::create_event_block(const char* name) {
+void ETDumpGenBase::create_event_block(const char* name) {
   if (state_ == State::AddingEvents) {
     etdump_RunData_events_end(builder_);
   } else if (state_ == State::Done) {
@@ -176,24 +176,24 @@ void ETDumpGen::create_event_block(const char* name) {
   state_ = State::BlockCreated;
 }
 
-int64_t ETDumpGen::create_string_entry(const char* name) {
+int64_t ETDumpGenBase::create_string_entry(const char* name) {
   return flatbuffers_string_create_str(builder_, name);
 }
 
-// ETDumpGen has the following possible states, ETDumpGen_Init,
-// ETDumpGen_Block_Created, ETDumpGen_Adding_Allocators,
+// ETDumpGenBase family classes has the following possible states,
+// ETDumpGen_Init, ETDumpGen_Block_Created, ETDumpGen_Adding_Allocators,
 // ETDumpGen_Adding_Events. Right after boot-up the state of ETDump will be
 // ETDumpGen_Init. At this point we have an option of adding allocators that
 // we want to track. Once we've completed adding the allocators we want to track
-// we will close the allocators table and move ETDumpGen to the
-// ETDumpGen_Adding_Events state. After this point we can start adding events to
-// ETDump as we wish.
-// The reason we need to maintain this state machine inside of ETDumpGen is
-// because, once a table of one type has been closed and another table of a
-// different type is opened after it we cannot open another table of the first
-// type again. In this case once we close the allocators table and start pushing
-// to the events table we cannot push to the allocators table again.
-void ETDumpGen::check_ready_to_add_events() {
+// we will close the allocators table and move ETDumpGenBase family classes to
+// the ETDumpGen_Adding_Events state. After this point we can start adding
+// events to ETDump as we wish. The reason we need to maintain this state
+// machine inside of ETDumpGenBase family classes is because, once a table of
+// one type has been closed and another table of a different type is opened
+// after it we cannot open another table of the first type again. In this case
+// once we close the allocators table and start pushing to the events table we
+// cannot push to the allocators table again.
+void ETDumpGenBase::check_ready_to_add_events() {
   if (state_ != State::AddingEvents) {
     ET_CHECK_MSG(
         (state_ == State::AddingAllocators || state_ == State::BlockCreated),
@@ -206,7 +206,7 @@ void ETDumpGen::check_ready_to_add_events() {
   }
 }
 
-EventTracerEntry ETDumpGen::start_profiling(
+EventTracerEntry ETDumpGenBase::start_profiling(
     const char* name,
     ChainID chain_id,
     DebugHandle debug_handle) {
@@ -227,7 +227,7 @@ EventTracerEntry ETDumpGen::start_profiling(
 
 // TODO: Update all occurrences of the ProfileEvent calls once the
 // EventTracerEntry struct is updated.
-EventTracerEntry ETDumpGen::start_profiling_delegate(
+EventTracerEntry ETDumpGenBase::start_profiling_delegate(
     const char* name,
     DebugHandle delegate_debug_index) {
   ET_CHECK_MSG(
@@ -247,7 +247,7 @@ EventTracerEntry ETDumpGen::start_profiling_delegate(
   return prof_entry;
 }
 
-void ETDumpGen::end_profiling_delegate(
+void ETDumpGenBase::end_profiling_delegate(
     EventTracerEntry event_tracer_entry,
     const void* metadata,
     size_t metadata_len) {
@@ -280,7 +280,7 @@ void ETDumpGen::end_profiling_delegate(
   etdump_RunData_events_push_end(builder_);
 }
 
-void ETDumpGen::log_profiling_delegate(
+void ETDumpGenBase::log_profiling_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     et_timestamp_t start_time,
@@ -312,35 +312,35 @@ void ETDumpGen::log_profiling_delegate(
   etdump_RunData_events_push_end(builder_);
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+void ETDumpGenBase::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const Tensor& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+void ETDumpGenBase::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const ArrayRef<Tensor> output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+void ETDumpGenBase::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const int& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+void ETDumpGenBase::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const bool& output) {
   log_intermediate_output_delegate_helper(name, delegate_debug_index, output);
 }
 
-void ETDumpGen::log_intermediate_output_delegate(
+void ETDumpGenBase::log_intermediate_output_delegate(
     const char* name,
     DebugHandle delegate_debug_index,
     const double& output) {
@@ -348,7 +348,7 @@ void ETDumpGen::log_intermediate_output_delegate(
 }
 
 template <typename T>
-void ETDumpGen::log_intermediate_output_delegate_helper(
+void ETDumpGenBase::log_intermediate_output_delegate_helper(
     const char* name,
     DebugHandle delegate_debug_index,
     const T& output) {
@@ -430,7 +430,7 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
   etdump_RunData_events_push_end(builder_);
 }
 
-void ETDumpGen::end_profiling(EventTracerEntry prof_entry) {
+void ETDumpGenBase::end_profiling(EventTracerEntry prof_entry) {
   et_timestamp_t end_time = et_pal_current_ticks();
   ET_CHECK_MSG(
       prof_entry.delegate_event_id_type == DelegateDebugIdType::kNone,
@@ -451,7 +451,7 @@ void ETDumpGen::end_profiling(EventTracerEntry prof_entry) {
   etdump_RunData_events_push_end(builder_);
 }
 
-AllocatorID ETDumpGen::track_allocator(const char* name) {
+AllocatorID ETDumpGenBase::track_allocator(const char* name) {
   ET_CHECK_MSG(
       (state_ == State::BlockCreated || state_ == State::AddingAllocators),
       "Allocators can only be added immediately after a new block is created and before any events are added.");
@@ -464,7 +464,7 @@ AllocatorID ETDumpGen::track_allocator(const char* name) {
   return etdump_RunData_allocators_reserved_len(builder_);
 }
 
-void ETDumpGen::track_allocation(
+void ETDumpGenBase::track_allocation(
     AllocatorID allocator_id,
     size_t allocation_size) {
   check_ready_to_add_events();
@@ -474,7 +474,7 @@ void ETDumpGen::track_allocation(
   etdump_RunData_events_push_end(builder_);
 }
 
-ETDumpResult ETDumpGen::get_etdump_data() {
+ETDumpResult ETDumpGenBase::get_etdump_data() {
   ETDumpResult result;
   if (state_ == State::AddingEvents) {
     etdump_RunData_events_end(builder_);
@@ -504,25 +504,13 @@ ETDumpResult ETDumpGen::get_etdump_data() {
   return result;
 }
 
-void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
+void ETDumpGenBase::set_debug_buffer(Span<uint8_t> buffer) {
   debug_buffer_ = buffer;
 }
 
-size_t ETDumpGen::copy_tensor_to_debug_buffer(executorch::aten::Tensor tensor) {
-  if (tensor.nbytes() == 0) {
-    return static_cast<size_t>(-1);
-  }
-  uint8_t* offset_ptr =
-      alignPointer(debug_buffer_.data() + debug_buffer_offset_, 64);
-  debug_buffer_offset_ = (offset_ptr - debug_buffer_.data()) + tensor.nbytes();
-  ET_CHECK_MSG(
-      debug_buffer_offset_ <= debug_buffer_.size(),
-      "Ran out of space to store intermediate outputs.");
-  memcpy(offset_ptr, tensor.const_data_ptr(), tensor.nbytes());
-  return (size_t)(offset_ptr - debug_buffer_.data());
-}
-
-void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
+void ETDumpGenBase::log_evalue(
+    const EValue& evalue,
+    LoggedEValueType evalue_type) {
   if (debug_buffer_.empty()) {
     return;
   }
@@ -635,16 +623,31 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
   etdump_RunData_events_push_end(builder_);
 }
 
-size_t ETDumpGen::get_num_blocks() {
+size_t ETDumpGenBase::get_num_blocks() {
   return num_blocks_;
 }
 
-bool ETDumpGen::is_static_etdump() {
+bool ETDumpGenBase::is_static_etdump() {
   return alloc_.data != nullptr;
 }
 
-size_t ETDumpGen::get_debug_buffer_size() const {
+size_t ETDumpGenBase::get_debug_buffer_size() const {
   return debug_buffer_.size();
+}
+
+size_t ETDumpGen::copy_tensor_to_debug_buffer(
+    const executorch::aten::Tensor& tensor) {
+  if (tensor.nbytes() == 0) {
+    return static_cast<size_t>(-1);
+  }
+  uint8_t* offset_ptr =
+      alignPointer(debug_buffer_.data() + debug_buffer_offset_, 64);
+  debug_buffer_offset_ = (offset_ptr - debug_buffer_.data()) + tensor.nbytes();
+  ET_CHECK_MSG(
+      debug_buffer_offset_ <= debug_buffer_.size(),
+      "Ran out of space to store intermediate outputs.");
+  memcpy(offset_ptr, tensor.const_data_ptr(), tensor.nbytes());
+  return (size_t)(offset_ptr - debug_buffer_.data());
 }
 
 } // namespace etdump
