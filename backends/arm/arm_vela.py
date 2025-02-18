@@ -39,7 +39,9 @@ def vela_bin_pack_io(prefix, data, shape_order=None):
 # Output via Vela to binary stream for ArmBackendEthosU
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
-def vela_compile(tosa_flatbuffer: bytes, args: List[str], shape_order=None, verbose: bool = False):
+def vela_compile(
+    tosa_flatbuffer: bytes, args: List[str], shape_order=None, verbose: bool = False
+):
     """
     Compile a TOSA graph to a binary stream for ArmBackendEthosU using Vela.
     """
