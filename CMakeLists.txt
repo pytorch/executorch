@@ -204,7 +204,7 @@ option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
 
-option(EXECUTORCH_BUILD_OPENVINO "Build the Openvino backend" ON)
+option(EXECUTORCH_BUILD_OPENVINO "Build the Openvino backend" OFF)
 
 option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
