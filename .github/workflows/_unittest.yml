@@ -7,6 +7,10 @@ on:
         required: true
         type: string
         description: Name of the docker image to use.
+      build-mode:
+        required: true
+        type: string
+        description: Build mode to use, Debug or Release.
       build-tool:
         required: true
         type: string
