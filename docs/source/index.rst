@@ -89,6 +89,7 @@ Topics in this section will help you get started with ExecuTorch.
    using-executorch-android
    using-executorch-ios
    using-executorch-cpp
+   using-executorch-runtime-integration
    using-executorch-troubleshooting
    using-executorch-faqs
    using-executorch-building-from-source
