@@ -14,7 +14,6 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
 fi
 which "${PYTHON_EXECUTABLE}"
-CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
 
 install_executorch_and_backend_lib() {
   echo "Installing executorch and xnnpack backend"
@@ -28,7 +27,6 @@ install_executorch_and_backend_lib() {
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -54,7 +52,6 @@ build_llama_runner() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -Bcmake-android-out/examples/models/llama examples/models/llama
 
     cmake --build cmake-android-out/examples/models/llama -j4 --config Release
