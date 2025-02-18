@@ -91,6 +91,15 @@ test_model() {
     # Install requirements for llama vision.
     bash examples/models/llama3_2_vision/install_requirements.sh
   fi
+  if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
+      # Install requirements for export_llama
+      bash examples/models/llama/install_requirements.sh
+      # Test export_llama script: python3 -m examples.models.llama.export_llama.
+      # Use Llama random checkpoint with Qwen 2.5 1.5b model configuration.
+      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/qwen2_5/1_5b_config.json
+      run_portable_executor_runner
+      rm "./${MODEL_NAME}.pte"
+  fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
