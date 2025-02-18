@@ -1,3 +1,0 @@
-# MPS Backend
-
-Placeholder

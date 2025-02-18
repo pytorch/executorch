@@ -1,3 +1,0 @@
-# Cadence Backend
-
-Placeholder

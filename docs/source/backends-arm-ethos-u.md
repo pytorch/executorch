@@ -1,5 +1,5 @@
 <!---- Name is a WIP - this reflects better what it can do today ----->
-# Building and Running ExecuTorch with ARM Ethos-U Backend
+# ARM Ethos-U Backend
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
