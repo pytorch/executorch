@@ -77,6 +77,9 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
+from executorch.backends.transforms.replace_scalar_with_tensor import (
+    ReplaceScalarWithTensorArgPass,
+)
 from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
@@ -102,6 +105,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(ConvertFullLikeToFullPass())
 
+        self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
@@ -125,7 +129,7 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
-
+        self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
@@ -176,6 +180,7 @@ class ArmPassManager(PassManager):
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
         self.add_pass(ScalarsToAttributePass())
+        self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())

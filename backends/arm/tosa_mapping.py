@@ -11,6 +11,8 @@
 # the standardised TOSA representation.
 #
 
+from typing import Sequence
+
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
@@ -99,7 +101,7 @@ class TosaArg:
         if isinstance(argument, torch.fx.Node):
             self.__process_node(argument)
             return
-        if isinstance(argument, list):
+        if isinstance(argument, Sequence):
             self.__process_list(argument)
             return
         if isinstance(argument, (int, float)):
