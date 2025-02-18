@@ -119,5 +119,5 @@ TEST_F(BufferDataSinkTest, WriteUntilOverflow) {
   // Attempting to write another tensor should raise an error
   Result<size_t> ret =
       data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
-  ASSERT_EQ(ret.error(), Error::AccessFailed);
+  ASSERT_EQ(ret.error(), Error::OutOfResources);
 }
