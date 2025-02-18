@@ -9,7 +9,7 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import get_tosa_version
+from executorch.backends.arm.arm_backend import get_tosa_spec
 from executorch.backends.arm.quantizer import arm_quantizer
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -78,8 +78,8 @@ def test_add_i32_tosa_BI(test_data: input_t1):
     pipeline = TosaPipelineBI[input_t1](Add(), test_data, aten_op, exir_op)
 
     # Create a  quantizer with int8 quantization on the input and output but int32 on everything else.
-    quantizer = arm_quantizer.ArmQuantizer(
-        get_tosa_version(common.get_tosa_compile_spec("TOSA-0.80+BI"))
+    quantizer = arm_quantizer.TOSAQuantizer(
+        get_tosa_spec(common.get_tosa_compile_spec("TOSA-0.80+BI"))
     )
     quantizer.set_io(arm_quantizer.get_symmetric_quantization_config())
     observer_options = {"eps": 2**-16}

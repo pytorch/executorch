@@ -4,7 +4,10 @@ load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 python_library(
     name = "arm_partitioner",
     srcs = [
-        "arm_partitioner.py",
+        "ethosu_backend.py",
+        "ethosu_partitioner.py",
+        "tosa_backend.py",
+        "tosa_partitioner.py",
     ],
     typing = True,
     deps = [

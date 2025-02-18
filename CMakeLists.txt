@@ -186,6 +186,10 @@ option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension"
        OFF
 )
 
+option(EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension"
+       OFF
+)
+
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
@@ -245,7 +249,7 @@ cmake_dependent_option(
 )
 
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
-  set(EXECUTORCH_BUILF_EXTENSION_DATA_LOADER ON)
+  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
@@ -348,6 +352,7 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
 endif()
 
 if(EXECUTORCH_BUILD_TESTS)
+  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
   include(CTest)
 endif()
 
@@ -373,7 +378,7 @@ if(NOT "${_repo_dir_name}" STREQUAL "executorch")
       "fix for this restriction."
   )
 endif()
-set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type)
+set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -715,6 +720,10 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor/serialize)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizer)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
