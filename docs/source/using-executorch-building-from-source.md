@@ -1,6 +1,6 @@
-# Building with CMake
+# Building from Source
 
-ExecuTorch uses [CMake](https://cmake.org/)  as its primary build system.
+ExecuTorch uses [CMake](https://cmake.org/) as the primary build system.
 Even if you don't use CMake directly, CMake can emit scripts for other format
 like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
 
