@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -680,11 +680,11 @@ class TestBatchNorm2d(unittest.TestCase):
             self.BatchNorm2d(*model_params), (test_data,)
         )
 
-    # Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer
+    # Expected to fail since TOSAQuantizer cannot quantize a BatchNorm layer
     # TODO(MLETORCH-100)
     @parameterized.expand(test_data_suite)
     @unittest.skip(
-        reason="Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer"
+        reason="Expected to fail since TOSAQuantizer (for BI) cannot quantize a BatchNorm layer"
     )
     def test_batchnorm2d_tosa_BI(
         self,
@@ -701,11 +701,11 @@ class TestBatchNorm2d(unittest.TestCase):
             self.BatchNorm2d(*model_params), (test_data,)
         )
 
-    # Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer
+    # Expected to fail since EthosUQuantizer (TOSAQuantizer (BI)) cannot quantize a BatchNorm layer
     # TODO(MLETORCH-100)
     @parameterized.expand(test_data_suite)
     @unittest.skip(
-        reason="Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer"
+        reason="Expected to fail since EthosUQuantizer cannot quantize a BatchNorm layer"
     )
     @unittest.expectedFailure
     def test_batchnorm2d_u55_BI(

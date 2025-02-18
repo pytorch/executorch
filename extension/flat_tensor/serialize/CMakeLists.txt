@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Flatbuffer schema header lib. Please this file formatted by running:
+# Flatbuffer schema header lib. Please keep this file formatted by running:
 # ~~~
 # cmake-format -i CMakeLists.txt
 # ~~~
