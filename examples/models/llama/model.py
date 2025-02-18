@@ -251,6 +251,8 @@ the checkpoint format to avoid generating faulty models.
                 "Could not load checkpoint into mode, defaulting to random uninitialized weights."
             )
             print(f"Error: {e}")
+            # Need to provide concrete (empty) values for meta-initialized tensors for quantization.
+            self.model_.to_empty(device="cpu")
 
         if missing:
             missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
