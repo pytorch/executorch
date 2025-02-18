@@ -159,6 +159,16 @@ class OpElementWiseNeuron:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseNot:
+    op_name: str = "ElementWiseNot"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseNotEqual:
+    op_name: str = "ElementWiseNotEqual"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWisePower:
     op_name: str = "ElementWisePower"
 
@@ -171,6 +181,11 @@ class OpElementWiseRsqrt:
 @dataclass(init=False, frozen=True)
 class OpElementWiseSin:
     op_name: str = "ElementWiseSin"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseSelect:
+    op_name = "ElementWiseSelect"
 
 
 @dataclass(init=False, frozen=True)
@@ -216,6 +231,15 @@ class OpGroupNorm:
 @dataclass(init=False, frozen=True)
 class OpHardSwish:
     op_name: str = "HardSwish"
+
+
+@dataclass(init=False, frozen=True)
+class OpInstanceNorm:
+    op_name: str = "InstanceNorm"
+    param_epsilon = "epsilon"
+    param_mode = "mode"
+    param_normalize_variance = "normalize_variance"
+    param_region = "region"
 
 
 @dataclass(init=False, frozen=True)

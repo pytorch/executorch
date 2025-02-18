@@ -148,6 +148,27 @@ deps = [
   "executorch",
 ]
 
+[targets.extension_flat_tensor_schema]
+buck_targets = [
+  "//extension/flat_tensor/serialize:generated_headers",
+]
+filters = [
+  ".fbs$",
+]
+
+[targets.extension_flat_tensor]
+buck_targets = [
+  "//extension/flat_tensor:flat_tensor_data_map",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "extension_flat_tensor_schema",
+  "executorch_core",
+  "executorch",
+]
+
 [targets.extension_module]
 buck_targets = [
   "//extension/module:module",
@@ -379,6 +400,22 @@ deps = [
   "optimized_kernels",
   "extension_threadpool",
   "xnnpack_backend",
+]
+
+[targets.extension_llm_tokenizer]
+buck_targets = [
+  "//extension/llm/tokenizer:bpe_tokenizer",
+  "//extension/llm/tokenizer:tiktoken",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "executorch_core",
 ]
 
 [targets.llama_runner]

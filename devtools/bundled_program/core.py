@@ -19,7 +19,6 @@ from executorch.devtools.bundled_program.config import ConfigValue, MethodTestSu
 from executorch.devtools.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
 
 from executorch.exir import ExecutorchProgram, ExecutorchProgramManager
-from executorch.exir._serialize import _deserialize_pte_binary, _serialize_pte_binary
 from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
 
 # pyre-ignore
@@ -92,14 +91,6 @@ class BundledProgram:
         if self._bundled_program_in_schema is not None:
             return self._bundled_program_in_schema
 
-        if self.executorch_program:
-            program = self._extract_program(self.executorch_program)
-        else:
-            assert self._pte_file_path is not None
-            with open(self._pte_file_path, "rb") as f:
-                p_bytes = f.read()
-            program = _deserialize_pte_binary(p_bytes)
-
         bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
 
         # Emit data and metadata of bundled tensor
@@ -149,8 +140,13 @@ class BundledProgram:
                 )
             )
 
-        # TODO(T181463742): avoid calling bytes(..) which may incur large copies.
-        program_bytes: bytes = bytes(_serialize_pte_binary(program))
+        if self.executorch_program:
+            program_bytes = self.executorch_program.buffer
+        else:
+            assert self._pte_file_path is not None
+            with open(self._pte_file_path, "rb") as f:
+                program_bytes = f.read()
+
         self._bundled_program_in_schema = bp_schema.BundledProgram(
             version=BUNDLED_PROGRAM_SCHEMA_VERSION,
             method_test_suites=bundled_method_test_suites,
