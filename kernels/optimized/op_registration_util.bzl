@@ -10,7 +10,7 @@ load(
     "get_compiler_optimization_flags",
 )
 
-def op_target(name, deps = []):
+def op_target(name, deps = [], compiler_flags = []):
     """Registers an optimized implementation for an operator overload group.
 
     An operator overload group is a set of operator overloads with a common
@@ -37,11 +37,13 @@ def op_target(name, deps = []):
               dependencies manageable. If two op targets would like to share
               code, define a separate runtime.cxx_library that they both depend
               on.
+        compiler_flags: Optional compiler flags to add to the cxx_library().
     """
 
     # Note that this doesn't actually define the target, but helps register
     # it in a table that's used to define the target.
     return {
+        "compiler_flags": compiler_flags,
         "deps": deps,
         "name": name,
     }
@@ -64,7 +66,7 @@ def _enforce_deps(deps, name):
                 dep,
             ))
 
-def define_op_library(name, deps):
+def define_op_library(name, compiler_flags, deps):
     """Defines a cxx_library target for the named operator overload group.
 
     Args:
@@ -90,9 +92,14 @@ def define_op_library(name, deps):
             "//executorch/kernels/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        # kernels often have helpers with no prototypes just disabling the warning here as the headers
-        # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes"] + get_compiler_optimization_flags(),
+        compiler_flags = [
+            # kernels often have helpers with no prototypes just disabling the warning here as the headers
+            # are codegend and linked in later
+            "-Wno-missing-prototypes",
+            # pragma unroll fails with -Os, don't need to warn us and
+            # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
+            "-Wno-pass-failed",
+        ] + compiler_flags + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps + get_vec_deps(),
@@ -114,7 +121,7 @@ def define_op_library(name, deps):
         link_whole = True,
     )
 
-def define_op_target(name, deps):
+def define_op_target(name, compiler_flags, deps):
     """Possibly defines cxx_library targets for the named operator group.
 
     Args:
@@ -127,6 +134,7 @@ def define_op_target(name, deps):
     # versions defined here.
     define_op_library(
         name = name,
+        compiler_flags = compiler_flags,
         deps = deps,
     )
 

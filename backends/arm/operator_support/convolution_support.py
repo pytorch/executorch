@@ -24,7 +24,7 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
-    def is_node_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
+    def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
 
         # Not implemented
         transposed = cast(bool, node.args[6])

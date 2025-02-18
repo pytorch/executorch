@@ -61,3 +61,16 @@ def define_common_targets():
                 "libtorch",
             ] if aten else [],
         )
+
+    runtime.cxx_library(
+        name = "static_attention_io_manager",
+        exported_headers = [
+            "static_attention_io_manager.h",
+        ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/runtime/executor:program",
+        ]
+    )
