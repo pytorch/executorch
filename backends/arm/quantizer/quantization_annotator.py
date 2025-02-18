@@ -183,6 +183,7 @@ _parent_shared_qspec = [
     torch.ops.aten.hardtanh.default,
     torch.ops.aten.hardtanh_.default,
     torch.ops.aten.relu.default,
+    torch.ops.aten.relu_.default,
     torch.ops.aten.mean.default,
     torch.ops.aten.mean.dim,
     torch.ops.aten.permute.default,
