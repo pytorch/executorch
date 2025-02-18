@@ -1,3 +1,0 @@
-# Qualcomm Backend
-
-Placeholder

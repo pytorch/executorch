@@ -1,4 +1,4 @@
-# Building and Running ExecuTorch on Xtensa HiFi4 DSP
+# Cadence Xtensa Backend
 
 
 In this tutorial we will walk you through the process of getting setup to build ExecuTorch for an Xtensa HiFi4 DSP and running a simple model on it.
