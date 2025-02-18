@@ -19,11 +19,13 @@ endif()
 list(TRANSFORM _extension_flat_tensor__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_flat_tensor ${_extension_flat_tensor__srcs})
 target_link_libraries(extension_flat_tensor executorch extension_data_loader)
-target_include_directories(extension_flat_tensor PUBLIC
-  ${EXECUTORCH_ROOT}/..
-  "${CMAKE_BINARY_DIR}/extension/flat_tensor/include"
-  "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
-  ${_common_include_directories})
+target_include_directories(
+  extension_flat_tensor
+  PUBLIC ${EXECUTORCH_ROOT}/..
+         "${CMAKE_BINARY_DIR}/extension/flat_tensor/include"
+         "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
+         ${_common_include_directories}
+)
 target_compile_options(extension_flat_tensor PUBLIC ${_common_compile_options})
 
 # Install libraries

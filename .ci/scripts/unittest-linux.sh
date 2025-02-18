@@ -32,7 +32,7 @@ PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.
 if [[ "$BUILD_TOOL" == "cmake" ]]; then
     .ci/scripts/unittest-linux-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
-    .ci/scripts/unittest-linux-buck2.sh
+    .ci/scripts/unittest-buck2.sh
 else
     echo "Unknown build tool $BUILD_TOOL"
     exit 1

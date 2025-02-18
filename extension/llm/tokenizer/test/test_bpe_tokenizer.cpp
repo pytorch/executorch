@@ -6,13 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#ifdef EXECUTORCH_FB_BUCK
-#include <TestResourceUtils/TestResourceUtils.h>
-#endif
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
-#include <vector>
 
 using namespace ::testing;
 
@@ -26,13 +22,8 @@ class TokenizerExtensionTest : public Test {
   void SetUp() override {
     executorch::runtime::runtime_init();
     tokenizer_ = std::make_unique<BPETokenizer>();
-#ifdef EXECUTORCH_FB_BUCK
-    modelPath_ = facebook::xplat::testing::getPathForTestResource(
-        "resources/test_bpe_tokenizer.bin");
-#else
     modelPath_ =
         std::getenv("RESOURCES_PATH") + std::string("/test_bpe_tokenizer.bin");
-#endif
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
@@ -50,7 +41,7 @@ TEST_F(TokenizerExtensionTest, DecodeWithoutLoadFails) {
 }
 
 TEST_F(TokenizerExtensionTest, DecodeOutOfRangeFails) {
-  Error res = tokenizer_->load(modelPath_.c_str());
+  Error res = tokenizer_->load(modelPath_);
   EXPECT_EQ(res, Error::Ok);
   auto result = tokenizer_->decode(0, 64000);
   // The vocab size is 32000, and token 64000 is out of vocab range.
@@ -58,7 +49,7 @@ TEST_F(TokenizerExtensionTest, DecodeOutOfRangeFails) {
 }
 
 TEST_F(TokenizerExtensionTest, TokenizerMetadataIsExpected) {
-  Error res = tokenizer_->load(modelPath_.c_str());
+  Error res = tokenizer_->load(modelPath_);
   EXPECT_EQ(res, Error::Ok);
   // test_bpe_tokenizer.bin has vocab_size 0, bos_id 0, eos_id 0 recorded.
   EXPECT_EQ(tokenizer_->vocab_size(), 0);
