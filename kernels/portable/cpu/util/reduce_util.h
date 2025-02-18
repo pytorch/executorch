@@ -573,6 +573,15 @@ size_t compute_reduced_out_size(
     bool keepdim,
     executorch::aten::SizesType* sizes_arr);
 
+inline size_t compute_reduced_out_size(
+    const exec_aten::Tensor& in,
+    int64_t dim,
+    bool keepdim,
+    exec_aten::SizesType* sizes_arr) {
+  return compute_reduced_out_size(
+      in, exec_aten::optional<int64_t>(dim), keepdim, sizes_arr);
+}
+
 inline ssize_t compute_reduced_out_dim(
     const executorch::aten::Tensor& in,
     const executorch::aten::optional<int64_t>& dim,
@@ -597,6 +606,14 @@ inline ssize_t compute_reduced_out_dim(
           : 0);
 }
 
+inline ssize_t compute_reduced_out_dim(
+    const exec_aten::Tensor& in,
+    int64_t dim,
+    bool keepdim) {
+  return compute_reduced_out_dim(
+      in, exec_aten::optional<int64_t>(dim), keepdim);
+}
+
 //
 // Resize out tensor of reduction op
 //
@@ -613,6 +630,15 @@ Error resize_reduction_out(
         dim_list,
     bool keepdim,
     executorch::aten::Tensor& out);
+
+inline Error resize_reduction_out(
+    const exec_aten::Tensor& in,
+    int64_t dim,
+    bool keepdim,
+    exec_aten::Tensor& out) {
+  return resize_reduction_out(
+      in, exec_aten::optional<int64_t>(dim), keepdim, out);
+}
 
 #ifndef USE_ATEN_LIB
 bool check_reduction_args(
