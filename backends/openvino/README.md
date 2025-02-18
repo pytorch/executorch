@@ -53,8 +53,7 @@ Before you begin, ensure you have openvino installed and configured on your syst
 git clone https://github.com/openvinotoolkit/openvino.git
 cd openvino && git checkout 20ad7cb
 git submodule update --init --recursive
-mkdir build
-cd build
+mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
 make -j<N>
 
