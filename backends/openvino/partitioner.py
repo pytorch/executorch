@@ -7,7 +7,6 @@
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
-import torch.fx as fx
 from executorch.backends.openvino.preprocess import OpenvinoBackend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -89,8 +88,6 @@ class OpenvinoPartitioner(Partitioner):
         return (ops_not_decompose, None)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
-        gm = fx.symbolic_trace(exported_program.graph_module)
-
         partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             OpenvinoOperatorsSupport(self._op_types_to_skip, self._op_names_to_skip),

@@ -78,9 +78,6 @@ class TestPoolingOperator(BaseOpenvinoOpTest):
     def test_pooling2d(self):
         for params in d2_params:
             with self.subTest(params=params):
-                bias_shape = None
-                if "bias_shape" in params:
-                    bias_shape = params["bias_shape"]
                 module = self.create_model(
                     op_type="MaxPool2D",
                     kernel_size=params["kernel_size"],

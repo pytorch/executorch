@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.preprocess import OpenvinoBackend
-from executorch.exir import EdgeProgramManager, to_edge
+from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 from torch.export import export, ExportedProgram
 
@@ -33,13 +33,14 @@ class BaseOpenvinoOpTest(unittest.TestCase):
         # Export to aten dialect using torch.export
         aten_dialect: ExportedProgram = export(module, sample_inputs)
 
-        # Convert to edge dialect
-        edge_program: EdgeProgramManager = to_edge(aten_dialect)
-        to_be_lowered_module = edge_program.exported_program()
-
-        # Lower the module to the backend with a custom partitioner
+        # Convert to edge dialect and lower the module to the backend with a custom partitioner
         compile_spec = [CompileSpec("device", self.device.encode())]
-        lowered_module = edge_program.to_backend(OpenvinoPartitioner(compile_spec))
+        lowered_module: EdgeProgramManager = to_edge_transform_and_lower(
+            aten_dialect,
+            partitioner=[
+                OpenvinoPartitioner(compile_spec),
+            ],
+        )
 
         # Apply backend-specific passes
         exec_prog = lowered_module.to_executorch(
