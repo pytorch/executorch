@@ -93,6 +93,8 @@ Topics in this section will help you get started with ExecuTorch.
    using-executorch-ios
    using-executorch-cpp
    using-executorch-troubleshooting
+   using-executorch-faqs
+   using-executorch-building-from-source
 
 .. toctree::
    :glob:
