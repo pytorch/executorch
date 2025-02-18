@@ -716,16 +716,12 @@ It’s also available as a default model in <a class="reference external" href="
 <div class="section" id="delegated-quantized-workflow">
 <h3>Delegated Quantized Workflow<a class="headerlink" href="#delegated-quantized-workflow" title="Permalink to this heading">¶</a></h3>
 <p>Before generating the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file for delegated quantized networks like MobileNetV2, we need to build the <code class="docutils literal notranslate"><span class="pre">quantized_ops_aot_lib</span></code></p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">SITE_PACKAGES</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;from distutils.sysconfig import get_python_lib; print(get_python_lib())&#39;</span><span class="k">)</span><span class="s2">&quot;</span>
-<span class="nv">CMAKE_PREFIX_PATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">SITE_PACKAGES</span><span class="si">}</span><span class="s2">/torch&quot;</span>
-
-<span class="nb">cd</span><span class="w"> </span>&lt;executorch_root_dir&gt;
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;executorch_root_dir&gt;
 mkdir<span class="w"> </span>-p<span class="w"> </span>cmake-out-aot-lib
 cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$CMAKE_PREFIX_PATH</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
 -Bcmake-out-aot-lib<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">et_root_dir</span><span class="si">}</span><span class="s2">&quot;</span>
