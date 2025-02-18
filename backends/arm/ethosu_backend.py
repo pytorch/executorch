@@ -58,7 +58,12 @@ class EthosUBackend(BackendDetails):
             )
 
         # Pass on the TOSA flatbuffer to the vela compiler.
-        binary = vela_compile(tosa_flatbuffer, compile_flags, input_order)
+        binary = vela_compile(
+            tosa_flatbuffer,
+            compile_flags,
+            input_order,
+            verbose=logger.getEffectiveLevel() == logging.INFO,
+        )
         return binary
 
     @staticmethod
