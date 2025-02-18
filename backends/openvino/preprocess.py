@@ -4,12 +4,8 @@
 # except in compliance with the License. See the license file in the root
 # directory of this source tree for more details.
 
-import contextlib
-import struct
+from typing import final, List
 
-from typing import cast, final, List
-
-import torch
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
@@ -36,16 +32,11 @@ class OpenvinoBackend(BackendDetails):
         Returns:
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
-        name_to_node_mappings = {node.name: node for node in edge_program.graph.nodes}
         input_names = edge_program.graph_signature.user_inputs
-        output_names = edge_program.graph_signature.user_outputs
         args = []
         for node in edge_program.graph.nodes:
             if node.target in input_names:
                 args.append(node.meta["val"])
-
-        input_shapes = []
-        output_shapes = []
 
         compile_options = {}
         for spec in module_compile_spec:
