@@ -15,6 +15,7 @@ else
 fi
 
 bash .ci/scripts/setup-conda.sh
+eval "$(conda shell.bash hook)"
 
 # Create temp directory for sccache shims
 export TMP_DIR=$(mktemp -d)

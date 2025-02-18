@@ -38,13 +38,13 @@ bool get_view_target_size(
   int64_t numel_without_minus_1 = 1;
   for (int i = 0; i < dim; i++) {
     if (size[i] == -1) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           minus1_dim == -1, "At most one view dim can be -1.");
       minus1_dim = i;
     } else {
       // The size[i] must be non-negative now, but we check size[i] >= -1
       // in case code is reordered in the future.
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           size[i] >= -1, "Negative sizes are not allowed.");
 
       numel_without_minus_1 *= size[i];
@@ -56,7 +56,7 @@ bool get_view_target_size(
     }
   }
   if (minus1_dim >= 0) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         n_zero == 0, "Cannot infer dimension size if there is a zero dim.");
     out_size[minus1_dim] = self.numel() / numel_without_minus_1;
   }

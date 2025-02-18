@@ -15,6 +15,7 @@ else
 fi
 
 # The generic Linux job chooses to use base env, not the one setup by the image
+eval "$(conda shell.bash hook)"
 CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
 conda activate "${CONDA_ENV}"
 
