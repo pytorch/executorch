@@ -53,8 +53,7 @@ get_shared_lib_ext() {
 
 test_cmake_custom_op_2() {
   local model_name='custom_ops_2'
-  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  CMAKE_PREFIX_PATH="$PWD/cmake-out/lib/cmake/ExecuTorch;${SITE_PACKAGES}/torch"
+  CMAKE_PREFIX_PATH="$PWD/cmake-out/lib/cmake/ExecuTorch"
 
   local example_dir=examples/portable/custom_ops
   local build_dir=cmake-out/${example_dir}

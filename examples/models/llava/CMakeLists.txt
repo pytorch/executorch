@@ -79,7 +79,7 @@ if(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
   add_definitions(-DLLAVA_NO_TORCH_DUMMY_IMAGE=1)
   message("Buidling the runner without Torch, feeding a dummy image!")
 else()
-  find_package(Torch CONFIG REQUIRED)
+  find_package_torch()
 endif()
 
 #

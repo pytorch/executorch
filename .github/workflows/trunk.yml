@@ -394,7 +394,6 @@ jobs:
         rm -rf cmake-out
         cmake \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
-            -DCMAKE_PREFIX_PATH="$(python -c 'import torch as _; print(_.__path__[0])')" \
             -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
             -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -412,7 +411,6 @@ jobs:
         cmake \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$(python -c 'import torch as _; print(_.__path__[0])')" \
             -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
             -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
             -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \

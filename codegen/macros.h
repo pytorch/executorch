@@ -8,6 +8,6 @@
 
 #pragma once
 // TODO(T157709949) remove this file
-#ifndef USE_ATEN_LIB
+#if !defined(USE_ATEN_LIB) && !defined(TORCH_API)
 #define TORCH_API
 #endif

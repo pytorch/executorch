@@ -228,8 +228,6 @@ python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
 Before generating the `.pte` file for delegated quantized networks like MobileNetV2, we need to build the `quantized_ops_aot_lib`
 
 ```bash
-SITE_PACKAGES="$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
 cd <executorch_root_dir>
 mkdir -p cmake-out-aot-lib
@@ -237,7 +235,6 @@ cmake -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
     -DPYTHON_EXECUTABLE=python3 \
 -Bcmake-out-aot-lib \
     "${et_root_dir}"

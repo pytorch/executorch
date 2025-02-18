@@ -46,4 +46,5 @@ from . import (  # noqa
     op_transpose,
     op_upsample_nearest2d,
     op_view,
+    ops_binary,
 )

@@ -1,3 +1,8 @@
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import unittest
 
 import torch
@@ -9,11 +14,6 @@ from parameterized import parameterized
 """
 Summary of non-working cases.
 MI:
-    Any case with int scalar: A to_copy is inserted to cast the value which we don't partition.
-        This makes the constant end up outside our partition and the input to the delegate becomes
-        a to_copy placeholder. In ArmTester, the placeholder is then interpreted as an input.
-        Potential fix: partition int -> float to_copy-ops in ArmBackend.
-        # MLETORCH-407
     Op(scalar, tensor):
         One issue is that lift_constant_tensor_pass looks for a fake_tensor in the meta of the first
         node which does not work the first node is a scalar.
@@ -22,17 +22,12 @@ MI:
         somewhere in _transform in the to_edge step. This makes ArmPartitioner miss tagging the
         data in tag_constant_data.
         # MLETORCH-408
-
-BI:
-    sub(Scalar, Tensor) becomes rsub, which either fails since the scalar does not become an attribute
-        in scalars_to_attribute_pass, or, if added to targeted_ops in that pass, fails since rsub expects a
-        Scalar.
-        Potential fix: Create pass to convert rsub.Scalar to sub.Tensor
+    Sub or inplace-sub with an integer input.
 """
 
 
 class TestScalars(unittest.TestCase):
-    """Tests various scalar cases for for"""
+    """Tests various scalar cases"""
 
     class Add(torch.nn.Module):
         def forward(self, x, y):
@@ -49,6 +44,22 @@ class TestScalars(unittest.TestCase):
     class Mul(torch.nn.Module):
         def forward(self, x, y):
             return x * y
+
+    class MulScalar(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.mul.Scalar(x, y)
+
+    class DivScalar(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.div.Scalar(x, y)
+
+    class AddScalar(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.add.Scalar(x, y)
+
+    class SubScalar(torch.nn.Module):
+        def forward(self, x, y):
+            return torch.ops.aten.sub.Scalar(x, y)
 
     class AddInplace(torch.nn.Module):
         def forward(self, x, y):
@@ -91,6 +102,10 @@ class TestScalars(unittest.TestCase):
         ("Sub_", SubInplace()),
         ("Mul_", MulInplace()),
         ("Div_", DivInplace()),
+        ("MulScalar", MulScalar()),
+        ("DivScalar", DivScalar()),
+        ("AddScalar", AddScalar()),
+        ("SubScalar", SubScalar()),
     ]
 
     const_ops = [("Add", AddConst())]
@@ -108,13 +123,10 @@ class TestScalars(unittest.TestCase):
                 scalar = dtype[1]
                 tensor_scalar_tests.append((test_name + "_ts", op[1], tensor, scalar))
 
-                # Don't add (scalar, tensor) test case for inplace ops.
-                if op[0][-1] == "_":
+                # Don't add (scalar, tensor) test case for .Scalar ops.
+                if op[0][-6:] == "Scalar":
                     continue
 
-                # sub(scalar, tensor) does not work in any case.
-                if op[0][0:3] == "Sub":
-                    continue
                 tensor_scalar_tests.append((test_name + "_st", op[1], scalar, tensor))
 
     tensor_const_tests = []
@@ -157,8 +169,8 @@ class TestScalars(unittest.TestCase):
     def test_MI(self, test_name: str, op: torch.nn.Module, x, y):
         expected_exception = None
         if any(token in test_name for token in ("Sub_int", "Sub__int")):
-            expected_exception = (AssertionError, ValueError)
-        elif test_name.endswith("_st"):
+            expected_exception = AssertionError
+        if test_name.endswith("_st"):
             expected_exception = AttributeError
 
         if expected_exception:
@@ -179,5 +191,13 @@ class TestScalars(unittest.TestCase):
     def test_BI(self, test_name: str, op: torch.nn.Module, x, y):
         self._test_add_tosa_BI_pipeline(op, (x, y))
 
+    # op(Scalar float, tensor) works if the scalar is constant.
+    @parameterized.expand(tensor_const_tests)
+    def test_BI_const(self, test_name: str, op: torch.nn.Module, x):
+        self._test_add_tosa_BI_pipeline(op, (x,))
+
     def test_shift_sub_inplace_tosa_MI(self):
         self._test_add_tosa_MI_pipeline(self.ShiftInplaceSub(), (torch.IntTensor(5),))
+
+    def test_shift_sub_inplace_tosa_BI(self):
+        self._test_add_tosa_BI_pipeline(self.ShiftInplaceSub(), (torch.IntTensor(5),))

@@ -32,10 +32,8 @@ build_executorch() {
   if [ -x "$(command -v glslc)" ]; then
     BUILD_VULKAN="ON"
   fi
-  CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \

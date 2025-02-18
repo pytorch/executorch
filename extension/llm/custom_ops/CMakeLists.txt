@@ -69,9 +69,7 @@ install(TARGETS custom_ops DESTINATION lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   # Add a AOT library
-  if(NOT TARGET torch)
-    find_package(Torch CONFIG REQUIRED)
-  endif()
+  find_package_torch()
   add_library(
     custom_ops_aot_lib SHARED
     ${_custom_ops__srcs}
