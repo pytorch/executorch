@@ -64,7 +64,9 @@ def get_registered_tosa_support_checks(
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
 
     if tosa_spec not in _tosa_spec_support:
-        raise RuntimeError
+        raise RuntimeError(
+            f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support.keys())}"
+        )
 
     return _tosa_spec_support[tosa_spec]
 
