@@ -102,14 +102,14 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Backends
    :hidden:
 
-   native-delegates-executorch-xnnpack-delegate
-   native-delegates-executorch-coreml-delegate
-   native-delegates-executorch-mps-delegate
-   native-delegates-executorch-vulkan-delegate
-   native-delegates-executorch-arm-ethos-u-delegate
-   native-delegates-executorch-qualcomm-delegate
-   native-delegates-executorch-mediatek-delegate
-   native-delegates-executorch-cadence-delegate
+   backends-xnnpack
+   backends-coreml
+   backends-mps
+   backends-vulkan
+   backends-arm-ethos-u
+   backends-qualcomm
+   backends-mediatek
+   backends-cadence
 
 .. toctree::
    :glob:

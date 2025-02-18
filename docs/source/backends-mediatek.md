@@ -1,4 +1,4 @@
-# Building and Running ExecuTorch with MediaTek Backend
+# MediaTek Backend
 
 MediaTek backend empowers ExecuTorch to speed up PyTorch models on edge devices that equips with MediaTek Neuron Processing Unit (NPU). This document offers a step-by-step guide to set up the build environment for the MediaTek ExecuTorch libraries.
 

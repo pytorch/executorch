@@ -1,3 +1,0 @@
-# MediaTek Backend
-
-Placeholder

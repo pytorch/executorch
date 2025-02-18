@@ -1,4 +1,4 @@
-# Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend
+# Qualcomm AI Engine Backend
 
 In this tutorial we will walk you through the process of getting started to
 build ExecuTorch for Qualcomm AI Engine Direct and running a model on it.
