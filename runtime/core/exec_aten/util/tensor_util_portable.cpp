@@ -125,7 +125,7 @@ bool tensors_have_same_dim_order(
                             tensor_list[i].dim_order().size());
   }
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       all_contiguous || all_channels_last,
       "%zd input tensors have different dim orders",
       tensor_list.size());

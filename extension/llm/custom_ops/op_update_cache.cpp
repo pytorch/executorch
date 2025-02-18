@@ -25,17 +25,17 @@ bool validate_cache_params(
     const Tensor& quantized_cache,
     int64_t start_pos,
     int64_t seq_length) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       quantized_cache.dim() == 4, "quantized cache must be a 4D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       quantized_value.dim() == 4, "quantized_value must be a 4D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       start_pos < quantized_cache.size(1),
       "start_pos must be less than cache size at dim 1");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (start_pos + seq_length) <= quantized_cache.size(1),
       "start_post + seq_length must be less than max seq length supported by cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
@@ -46,12 +46,12 @@ bool validate_cache_params(
       quantized_cache.size(1));
 
   // Make sure they are in contiguous dim order
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(
           quantized_cache.dim_order().data(), quantized_cache.dim()),
       "quantized cache must be in contiguous dim order");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(
           quantized_value.dim_order().data(), quantized_value.dim()),
       "quantized value must be in contiguous dim order");

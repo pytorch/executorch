@@ -26,14 +26,14 @@ bool param_array_is_valid(
     bool allow_empty) {
   auto size = array.size();
   if (allow_empty) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         size == 0 || size == 1 || size == length,
         "Expected %s to have size 0, 1 or %zu but got %zd",
         name,
         length,
         size);
   } else {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         size == 1 || size == length,
         "Expected %s to have size 1 or %zu but got %zd",
         name,
@@ -126,7 +126,7 @@ bool output_padding_is_valid(
     const int64_t op_i = val_at(output_padding, i);
     const int64_t s_i = val_at(stride, i);
     const int64_t d_i = val_at(dilation, i);
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         op_i < s_i || op_i < d_i,
         "output padding must be smaller than either stride or dilation");
   }
@@ -246,12 +246,12 @@ void calculate_kernel_output_sizes(
 }
 
 bool check_arange_args(double start, double end, double step, Tensor& out) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() == 1,
       "out should be a 1-d tensor, but got a %zu-d tensor",
       out.dim());
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (step > 0 && (end >= start)) || (step < 0 && (end <= start)),
       "upper bound and larger bound inconsistent with step sign");
 
@@ -272,7 +272,7 @@ bool check_avg_pool2d_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
       "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
@@ -285,7 +285,7 @@ bool check_avg_pool2d_args(
       padding, kernel_size, /*kernel_ndim=*/2, /*enforce_half_kernel=*/true));
 
   if (divisor_override.has_value()) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         divisor_override.value() != 0,
         "divisor_override must be non-zero, but found %" PRId64,
         divisor_override.value());
@@ -334,7 +334,7 @@ bool check_convolution_args(
       tensor_is_default_or_channels_last_dim_order(weight));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       in.dim() == 3 || in.dim() == 4,
       "Expect input tensor to be 3-D or 4-D, but got, %zu.",
       static_cast<size_t>(in.dim()));
@@ -343,7 +343,7 @@ bool check_convolution_args(
 
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         bias.value().size(0) == transposed ? groups * weight.size(1)
                                            : weight.size(0),
         "bias length must equal number of output channels, but got %zd",
@@ -369,14 +369,14 @@ bool check_convolution_args(
         output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
   }
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.size(0) >= groups,
       "Given groups=%" PRId64 ", expected weight to be at least %" PRId64
       " at dimension 0, but got weight.size(0) = %zd instead",
       groups,
       groups,
       weight.size(0));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.size(0) % groups == 0,
       "Given groups=%" PRId64 ", expected weight to be divisible by %" PRId64
       " at dimension 0, but got weight.size(0) = %zd instead",
@@ -385,7 +385,7 @@ bool check_convolution_args(
       weight.size(0));
 
   if (!transposed) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         in.size(1) == groups * weight.size(1),
         "Given groups=%" PRId64
         " and weight.size(1) = %zd, expected input to have %" PRId64
@@ -395,7 +395,7 @@ bool check_convolution_args(
         groups * weight.size(1),
         in.size(1));
   } else {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         in.size(1) == weight.size(0),
         "input channels must match weight.size(0) in transposed convolution");
   }
@@ -472,7 +472,7 @@ bool check_max_pool2d_with_indices_args(
     Tensor& out,
     Tensor& indices) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       indices.scalar_type() == ScalarType::Long,
       "Expected indices to have type of Long, but found %s",
       toString(indices.scalar_type()));
@@ -480,7 +480,7 @@ bool check_max_pool2d_with_indices_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
       "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
@@ -543,10 +543,10 @@ bool check_constant_pad_args(
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(in, out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       pad.size() % 2 == 0, "Padding array must be a multiple of 2");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       pad.size() / 2 <= in.dim(), "Padding array contains too many elements");
 
   return true;
@@ -578,13 +578,13 @@ bool check_embedding_args(
     const Tensor& indices,
     const Tensor& out) {
   // Ensure weight is 2-D. It could be empty.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.dim() == 2, "weight.dim() %zd != 2", weight.dim());
 
   // Ensure out is k+1 dimension tensor where k is the indices.dim()
   // out's first k dimension shall be same as indices, and the last dim shall
   // equal weight's last dim
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() == indices.dim() + 1,
       "out.dim() %zd != indices.dim() %zd + 1",
       out.dim(),

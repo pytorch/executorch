@@ -40,13 +40,13 @@ bool check_linear_scratch_example_args(
     const optional<Tensor>& bias,
     Tensor& out,
     Tensor& scratch) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       input.size(1) == weight.size(1), "Unexpected weight size 1");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       scratch.size(0) == input.size(0), "Unexpected scratch size 0");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       scratch.size(1) == weight.size(0), "Unexpected scratch size 1");
 
   return true;

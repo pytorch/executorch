@@ -20,11 +20,11 @@ bool check_gather_args(
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       index.scalar_type() == ScalarType::Long,
       "Expected dypte int64 for index");
   if (index.numel() != 0) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         nonzero_dim(in) == nonzero_dim(index),
         "self and index should have the same dimensionality when index is not empty "
         "except for the case when one has dimension 0 and the other has dimension 1");
@@ -37,7 +37,7 @@ bool check_gather_args(
 
   for (size_t d = 0; d < nonzero_dim(in); ++d) {
     if (d != dim) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           nonempty_size(index, d) <= nonempty_size(in, d),
           "size of dimension %zd of index should be smaller than the size of that dimension of input if dimension %zd != dim %zd",
           d,
@@ -47,7 +47,7 @@ bool check_gather_args(
   }
   const long* index_data = index.const_data_ptr<long>();
   for (size_t i = 0; i < index.numel(); ++i) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         index_data[i] >= 0 && index_data[i] < nonempty_size(in, dim),
         "Index is out of bounds for dimension %zd with size %zd",
         (size_t)dim,
@@ -64,12 +64,12 @@ bool check_index_select_args(
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
   dim = dim < 0 ? dim + nonzero_dim(in) : dim;
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       nonempty_size(in, dim) > 0,
       "index_select: Indexing axis dim should be positive");
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       index.scalar_type() == ScalarType::Long ||
           index.scalar_type() == ScalarType::Int,
       "Expected index to have type of Long or Int, but found %s",
@@ -77,7 +77,7 @@ bool check_index_select_args(
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_smaller_or_equal_to(index, 1));
   if (index.dim() > 0 && in.dim() == 0) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         index.numel() == 1,
         "index_select: Index to scalar must have exactly 1 value");
   }
@@ -85,7 +85,7 @@ bool check_index_select_args(
   if (index.scalar_type() == ScalarType::Long) {
     const int64_t* const index_ptr = index.const_data_ptr<int64_t>();
     for (size_t i = 0; i < index.numel(); ++i) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           index_ptr[i] >= 0 && index_ptr[i] < nonempty_size(in, dim),
           "index[%zu] = %" PRId64 " is out of range [0, %zd)",
           i,
@@ -95,7 +95,7 @@ bool check_index_select_args(
   } else {
     const int32_t* const index_ptr = index.const_data_ptr<int32_t>();
     for (size_t i = 0; i < index.numel(); ++i) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           index_ptr[i] >= 0 && index_ptr[i] < nonempty_size(in, dim),
           "index[%zu] = %" PRId32 " is out of range [0, %zd)",
           i,
@@ -126,12 +126,12 @@ void get_index_select_out_target_size(
 bool check_nonzero_args(const Tensor& in, const Tensor& out) {
   (void)in;
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.scalar_type() == ScalarType::Long,
       "Expected out to be a Long tensor but received %" PRId8,
       static_cast<int8_t>(out.scalar_type()));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() == 2,
       "Expected out to be a 2d tensor received %zd",
       ssize_t(out.dim()));
@@ -147,7 +147,7 @@ bool check_scatter_add_args(
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, src));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       index.scalar_type() == ScalarType::Long,
       "Expected dypte int64 for index");
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(self, dim));
@@ -156,7 +156,7 @@ bool check_scatter_add_args(
     return true;
   }
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       nonzero_dim(self) == nonzero_dim(src) &&
           nonzero_dim(self) == nonzero_dim(index),
       "self, index and src should have same number of dimensions.");
@@ -167,12 +167,12 @@ bool check_scatter_add_args(
   }
 
   for (size_t d = 0; d < nonzero_dim(self); ++d) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         nonempty_size(index, d) <= nonempty_size(src, d),
         "size of dimension %zd of index should be smaller than the size of that dimension of src",
         d);
     if (d != dim) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           nonempty_size(index, d) <= nonempty_size(self, d),
           "size of dimension %zd of index should be smaller than the size of that dimension of self if dimension %zd != dim %zd",
           d,
@@ -182,7 +182,7 @@ bool check_scatter_add_args(
   }
   const long* index_data = index.const_data_ptr<long>();
   for (size_t i = 0; i < index.numel(); ++i) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         index_data[i] >= 0 && index_data[i] < nonempty_size(self, dim),
         "Index is out of bounds for dimension %zd with size %zd",
         (size_t)dim,
@@ -228,7 +228,7 @@ bool check_select_scatter_args(
   ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, in.dim()));
 
   // The index shall be valid in the given dimenson
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       index >= 0 && index < in.size(dim),
       "index %" PRId64 " out of range [-%zd,%zd) at in.size( %" PRId64 ")",
       index,
@@ -239,7 +239,7 @@ bool check_select_scatter_args(
   // The src.dim() shall be one lower than in.dim() since src needs to fit
   // into the selected data on one dim of input
   // https://pytorch.org/docs/stable/generated/torch.select_scatter.html
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       in.dim() == src.dim() + 1,
       "in.dim() %zd != src.dim() + 1 %zd",
       in.dim(),

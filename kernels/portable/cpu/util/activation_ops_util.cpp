@@ -17,7 +17,7 @@ namespace executor {
 bool check_gelu_args(const Tensor& in, string_view approximate, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(in.scalar_type() != ScalarType::Bool);
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       approximate == "tanh" || approximate == "none",
       "Invalid approximation format: %.*s for gelu",
       static_cast<int>(approximate.length()),
@@ -32,7 +32,7 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
   const size_t dim_size = in.size(non_negative_dim);
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       dim_size % 2 == 0,
       "Halving dimension must be even, but dimension %zd is size %zd",
       non_negative_dim,
@@ -40,7 +40,7 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(out));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(in, out));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.size(non_negative_dim) == dim_size / 2,
       "output tensor must have half the size of the input tensor along the specified dimension.");
 
@@ -73,7 +73,7 @@ bool check_log_softmax_args(
     int64_t dim,
     bool half_to_float,
     Tensor& out) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !half_to_float, "half to float conversion is not supported on CPU");
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));

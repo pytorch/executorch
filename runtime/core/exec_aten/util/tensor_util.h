@@ -406,7 +406,7 @@ namespace runtime {
  * upper_bound - 1, inclusive.
  */
 inline bool dim_is_valid(int64_t dim, int64_t upper_bound) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       dim >= -upper_bound && dim < upper_bound,
       "Dimension %" PRId64
       " is out of range. Dimension should be between %" PRId64 " and %" PRId64
@@ -443,7 +443,7 @@ inline ssize_t nonempty_size(
 inline bool tensor_can_cast_to(
     executorch::aten::Tensor a,
     executorch::aten::ScalarType dtype) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       torch::executor::canCast(a.scalar_type(), dtype),
       "Tensor of dtype %s cannot cast to dtype %s",
       torch::executor::toString(a.scalar_type()),
@@ -453,7 +453,7 @@ inline bool tensor_can_cast_to(
 }
 
 inline bool tensor_is_bool_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       t.scalar_type() == executorch::aten::ScalarType::Bool,
       "Expected to find bool type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -464,7 +464,7 @@ inline bool tensor_is_bool_type(executorch::aten::Tensor t) {
 inline bool tensor_is_type(
     executorch::aten::Tensor t,
     executorch::aten::ScalarType dtype) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       t.scalar_type() == dtype,
       "Expected to find %s type, but tensor has type %s",
       torch::executor::toString(dtype),
@@ -476,7 +476,7 @@ inline bool tensor_is_type(
 inline bool tensor_is_integral_type(
     executorch::aten::Tensor t,
     bool includeBool = false) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       torch::executor::isIntegralType(t.scalar_type(), includeBool),
       "Expected to find a integral type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -485,7 +485,7 @@ inline bool tensor_is_integral_type(
 }
 
 inline bool tensor_is_floating_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       torch::executor::isFloatingType(t.scalar_type()),
       "Expected to find a floating type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -494,7 +494,7 @@ inline bool tensor_is_floating_type(executorch::aten::Tensor t) {
 }
 
 inline bool tensor_is_real_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       torch::executor::isRealType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -503,7 +503,7 @@ inline bool tensor_is_real_type(executorch::aten::Tensor t) {
 }
 
 inline bool tensor_is_realh_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       torch::executor::isRealHType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -512,7 +512,7 @@ inline bool tensor_is_realh_type(executorch::aten::Tensor t) {
 }
 
 inline bool tensor_is_realhbf16_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       executorch::runtime::isRealHBF16Type(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -521,7 +521,7 @@ inline bool tensor_is_realhbf16_type(executorch::aten::Tensor t) {
 }
 
 inline bool tensor_is_realhb_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       torch::executor::isRealHBType(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -530,7 +530,7 @@ inline bool tensor_is_realhb_type(executorch::aten::Tensor t) {
 }
 
 inline bool tensor_is_realhbbf16_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       executorch::runtime::isRealHBBF16Type(t.scalar_type()),
       "Expected to find a real type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -539,7 +539,7 @@ inline bool tensor_is_realhbbf16_type(executorch::aten::Tensor t) {
 }
 
 inline bool tensor_is_complex_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       torch::executor::isComplexType(t.scalar_type()),
       "Expected to find a complex type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -548,7 +548,7 @@ inline bool tensor_is_complex_type(executorch::aten::Tensor t) {
 }
 
 inline bool tensor_is_bits_type(executorch::aten::Tensor t) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       torch::executor::isBitsType(t.scalar_type()),
       "Expected to find a bits type, but tensor has type %s",
       torch::executor::toString(t.scalar_type()));
@@ -559,7 +559,7 @@ inline bool tensor_is_bits_type(executorch::aten::Tensor t) {
 inline bool tensors_have_same_dtype(
     executorch::aten::Tensor a,
     executorch::aten::Tensor b) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       a.scalar_type() == b.scalar_type(),
       ET_TENSOR_CHECK_PREFIX__ ": dtype={%s, %s}",
       torch::executor::toString(a.scalar_type()),
@@ -571,7 +571,7 @@ inline bool tensors_have_same_dtype(
     executorch::aten::Tensor a,
     executorch::aten::Tensor b,
     executorch::aten::Tensor c) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       a.scalar_type() == b.scalar_type() && b.scalar_type() == c.scalar_type(),
       ET_TENSOR_CHECK_PREFIX__ ": dtype={%s, %s, %s}",
       torch::executor::toString(a.scalar_type()),
@@ -581,7 +581,7 @@ inline bool tensors_have_same_dtype(
 }
 
 inline bool tensor_is_rank(executorch::aten::Tensor t, size_t rank) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       t.dim() == rank,
       "Expected tensor.dim() to be %zu, but got %zu",
       static_cast<size_t>(rank),
@@ -593,7 +593,7 @@ inline bool tensor_is_rank(executorch::aten::Tensor t, size_t rank) {
 inline bool tensor_has_rank_greater_or_equal_to(
     executorch::aten::Tensor t,
     size_t rank) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       t.dim() >= rank,
       "Expected tensor.dim() to be >= %zu, but got %zu",
       static_cast<size_t>(rank),
@@ -605,7 +605,7 @@ inline bool tensor_has_rank_greater_or_equal_to(
 inline bool tensor_has_rank_smaller_or_equal_to(
     executorch::aten::Tensor t,
     size_t rank) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       t.dim() <= rank,
       "Expected tensor.dim() to be <= %zu, but got %zu",
       static_cast<size_t>(rank),
@@ -616,12 +616,12 @@ inline bool tensor_has_rank_smaller_or_equal_to(
 
 inline bool tensor_has_dim(executorch::aten::Tensor t, int64_t d) {
   if (t.dim() == 0) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         d == 0 || d == -1,
         "dim must be 0 or -1 for 0-dim tensor, got %" PRId64,
         d);
   } else {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         d > 0 ? d < t.dim() : t.dim() + d >= 0,
         "%zu-dim tensor does not have dim at index %zu",
         static_cast<size_t>(t.dim()),
@@ -647,7 +647,7 @@ tensor_dim_has_index(executorch::aten::Tensor t, int64_t d, int64_t ix) {
   // Dimension must have been already checked by tensor_has_dim
   ET_CHECK(d >= 0 && d < t.dim());
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       ix >= -t.size(d) && ix < t.size(d),
       "index %" PRId64 " out of range [-%zu,%zu) at dimension %" PRId64 ")",
       ix,
@@ -662,17 +662,17 @@ inline bool tensors_have_same_size_at_dims(
     size_t dim_a,
     executorch::aten::Tensor b,
     size_t dim_b) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       dim_a < a.dim(),
       "Cannot retrieve dim %zu from tensor with dim %zu",
       static_cast<size_t>(dim_a),
       static_cast<size_t>(a.dim()));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       dim_b < b.dim(),
       "Cannot retrieve dim %zu from tensor with dim %zu",
       static_cast<size_t>(dim_b),
       static_cast<size_t>(b.dim()));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       a.size(dim_a) == b.size(dim_b),
       ET_TENSOR_CHECK_PREFIX__
       ": a.size(%zu) = %zu does not match b.size(%zu) = %zu",
@@ -847,13 +847,13 @@ inline bool tensor_is_contiguous(executorch::aten::Tensor t) {
   if (strides.size() == 0) {
     return true;
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       strides[strides.size() - 1] == 1,
       "Tensor is not contiguous; the stride of the last dimension must be 1, "
       "but got %zu",
       static_cast<size_t>(strides[strides.size() - 1]));
   for (int i = strides.size() - 1; i > 0; --i) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         strides[i - 1] == strides[i] * sizes[i],
         "Tensor is not contiguous; the stride of dim %zu should be equal to "
         "strides[%zu] * sizes[%zu] = %zu, but found %zu",
@@ -869,7 +869,7 @@ inline bool tensor_is_contiguous(executorch::aten::Tensor t) {
 inline bool tensors_have_same_rank(
     executorch::aten::Tensor a,
     executorch::aten::Tensor b) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       a.dim() == b.dim(),
       ET_TENSOR_CHECK_PREFIX__ ": rank={%zd, %zd}",
       ssize_t(a.dim()),

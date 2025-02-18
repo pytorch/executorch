@@ -36,13 +36,13 @@ bool check_quantized_mixed_linear_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight_scales));
   if (dtype.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == dtype.value());
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         dtype.value() == ScalarType::Float || dtype.value() == ScalarType::Half,
         "dtype must be Float or Half");
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.scalar_type() == ScalarType::Char, "weight dtype must be int8");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       in.scalar_type() == ScalarType::Float ||
           in.scalar_type() == ScalarType::Half,
       "input dtype must be Float or Half");
@@ -55,7 +55,7 @@ bool check_quantized_mixed_linear_args(
   }
 
   // Support for non-null zero points is not implemented yet.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !opt_weight_zero_points.has_value(), "zero points not supported yet.");
   return true;
 }

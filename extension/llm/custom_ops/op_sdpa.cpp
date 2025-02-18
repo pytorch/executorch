@@ -594,46 +594,46 @@ bool validate_flash_attention_args(
     const Tensor& key,
     const Tensor& value,
     const optional<Tensor>& attn_mask) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(query.dim() == 4, "query must be a 4D tensor");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(key.dim() == 4, "key must be a 4D tensor");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(value.dim() == 4, "value must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(query.dim() == 4, "query must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(key.dim() == 4, "key must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(value.dim() == 4, "value must be a 4D tensor");
 
   // Sizes
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (query.size(3) == value.size(3)) && (key.size(3) == value.size(3)),
       "scaled_dot_product_attention_flash_attention: Q/K/V should have the same head size");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == ScalarType::Float), "Query must be Float type");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == key.scalar_type()) &&
           (query.scalar_type() == value.scalar_type()),
       "Key and Value must have the same data type as Query");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !attn_mask.has_value() || attn_mask.value().dim() == 2,
       "Attention mask must be a 2D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !attn_mask.has_value() ||
           attn_mask.value().scalar_type() == query.scalar_type(),
       "Attention mask must be a 2D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(query.dim_order().data(), query.dim()),
       "key cache must be in contiguous dim order");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(key.dim_order().data(), key.dim()),
       "value cache must be in contiguous dim order");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(value.dim_order().data(), value.dim()),
       "value cache must be in contiguous dim order");
 
   if (attn_mask.has_value()) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         is_contiguous_dim_order(
             attn_mask.value().dim_order().data(), attn_mask.value().dim()),
         "value cache must be in contiguous dim order");
@@ -647,21 +647,19 @@ bool validate_cache_params(
     const Tensor& v_cache,
     int64_t start_pos,
     int64_t seq_length) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      k_cache.dim() == 4, "kcache must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(k_cache.dim() == 4, "kcache must be a 4D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      v_cache.dim() == 4, "v_cache must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(v_cache.dim() == 4, "v_cache must be a 4D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       start_pos < k_cache.size(1),
       "start_pos must be less than key cache at dim 1");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       start_pos < v_cache.size(1),
       "start_pos must be less than value cache at dim 1");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (start_pos + seq_length) <= k_cache.size(1),
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
@@ -671,7 +669,7 @@ bool validate_cache_params(
       seq_length,
       k_cache.size(1));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (start_pos + seq_length) <= v_cache.size(1),
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
@@ -682,11 +680,11 @@ bool validate_cache_params(
       v_cache.size(1));
 
   // Make sure they are in contiguous dim order
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(k_cache.dim_order().data(), k_cache.dim()),
       "key cache must be in contiguous dim order");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(v_cache.dim_order().data(), v_cache.dim()),
       "value cache must be in contiguous dim order");
 
