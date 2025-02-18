@@ -72,8 +72,8 @@ Before you begin, ensure you have openvino installed and configured on your syst
 #### TODO: Add instructions for support with OpenVINO release package
 
 ```bash
-git clone -b executorch_ov_backend https://github.com/ynimmaga/openvino
-cd openvino
+git clone https://github.com/openvinotoolkit/openvino.git
+cd openvino && git checkout 20ad7cb
 git submodule update --init --recursive
 mkdir build
 cd build
