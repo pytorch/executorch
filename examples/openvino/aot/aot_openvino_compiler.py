@@ -35,6 +35,17 @@ from transformers import AutoModel
 
 # Function to load a model based on the selected suite
 def load_model(suite: str, model_name: str):
+    """
+    Loads a pre-trained model from the specified model suite.
+
+    :param suite: The suite from which to load the model. Supported values are:
+        - "timm": Uses `timm.create_model` to load the model.
+        - "torchvision": Loads a model from `torchvision.models`. Raises an error if the model does not exist.
+        - "huggingface": Loads a transformer model using `AutoModel.from_pretrained`.
+    :param model_name: The name of the model to load.
+    :return: The loaded model instance.
+    :raises ValueError: If the specified model suite is unsupported or the model is not found.
+    """
     if suite == "timm":
         return timm.create_model(model_name, pretrained=True)
     elif suite == "torchvision":
@@ -56,6 +67,19 @@ def load_calibration_dataset(
     model: torch.nn.Module,
     model_name: str,
 ):
+    """
+    Loads a calibration dataset for model quantization.
+
+    :param dataset_path: Path to the dataset directory.
+    :param batch_size: Number of samples per batch.
+    :param suite: The model suite used for preprocessing transformations. Supported values are:
+        - "torchvision": Uses predefined transformations for torchvision models.
+        - "timm": Uses dataset transformations based on the model's pretrained configuration.
+    :param model: The model instance, required for timm transformation resolution.
+    :param model_name: The model name, required for torchvision transformations.
+    :return: A DataLoader instance for the calibration dataset.
+    :raises ValueError: If the suite is unsupported for validation.
+    """
     val_dir = f"{dataset_path}/val"
 
     if suite == "torchvision":
@@ -84,6 +108,13 @@ def load_calibration_dataset(
 
 
 def dump_inputs(calibration_dataset, dest_path):
+    """
+    Dumps the input data from a calibration dataset to raw files.
+
+    :param calibration_dataset: The dataset containing calibration inputs.
+    :param dest_path: The destination directory to save the raw input files.
+    :return: A tuple containing a list of input file paths and the corresponding target labels.
+    """
     input_files, targets = [], []
     for idx, data in enumerate(calibration_dataset):
         feature, target = data
@@ -103,6 +134,14 @@ def quantize_model(
     calibration_dataset: torch.utils.data.DataLoader,
     use_nncf: bool,
 ) -> torch.fx.GraphModule:
+    """
+    Quantizes a model using either NNCF-based or PTQ-based quantization.
+
+    :param captured_model: The model to be quantized, represented as a torch.fx.GraphModule.
+    :param calibration_dataset: A DataLoader containing calibration data for quantization.
+    :param use_nncf: Whether to use NNCF-based quantization (True) or standard PTQ (False).
+    :return: The quantized model as a torch.fx.GraphModule.
+    """
     quantizer = OpenVINOQuantizer()
 
     print("PTQ: Quantize the model")
@@ -142,6 +181,13 @@ def quantize_model(
 def validate_model(
     model_file_name: str, calibration_dataset: torch.utils.data.DataLoader
 ) -> float:
+    """
+    Validates the model using the calibration dataset.
+
+    :param model_file_name: The path to the quantized model file.
+    :param calibration_dataset: A DataLoader containing calibration data.
+    :return: The accuracy score of the model.
+    """
     # 1: Dump inputs
     dest_path = Path("tmp_inputs")
     out_path = Path("tmp_outputs")
@@ -187,6 +233,20 @@ def main(
     batch_size: int,
     quantization_flow: str,
 ):
+    """
+    Main function to load, quantize, and validate a model.
+
+    :param suite: The model suite to use (e.g., "timm", "torchvision", "huggingface").
+    :param model_name: The name of the model to load.
+    :param input_shape: The input shape for the model.
+    :param quantize: Whether to quantize the model.
+    :param validate: Whether to validate the model.
+    :param dataset_path: Path to the dataset for calibration/validation.
+    :param device: The device to run the model on (e.g., "cpu", "gpu").
+    :param batch_size: Batch size for dataset loading.
+    :param quantization_flow: The quantization method to use.
+    """
+
     # Load the selected model
     model = load_model(suite, model_name)
     model = model.eval()

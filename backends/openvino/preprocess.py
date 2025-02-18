@@ -22,7 +22,16 @@ class OpenvinoBackend(BackendDetails):
     def preprocess(
         cls, edge_program: ExportedProgram, module_compile_spec: List[CompileSpec]
     ) -> PreprocessResult:
+        """
+        Preprocesses the exported program and compiles it for the OpenVINO backend.
 
+        Args:
+            edge_program (ExportedProgram): The exported program representing the model.
+            module_compile_spec (List[CompileSpec]): A list of compile specifications for the OpenVINO backend.
+
+        Returns:
+            PreprocessResult: The result of preprocessing, including the compiled model bytes.
+        """
         input_names = edge_program.graph_signature.user_inputs
         args = []
         for node in edge_program.graph.nodes:

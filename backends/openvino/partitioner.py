@@ -29,6 +29,12 @@ class OpenvinoOperatorsSupport(OperatorSupportBase):
         op_types_to_skip: Optional[set] = None,
         op_names_to_skip: Optional[set] = None,
     ) -> None:
+        """
+        Initializes the OpenvinoOperatorsSupport class.
+
+        :param op_types_to_skip: A set of operator types to skip during support checking.
+        :param op_names_to_skip: A set of operator names to skip during support checking.
+        """
         if op_types_to_skip is None:
             op_types_to_skip = set()
         if op_names_to_skip is None:
@@ -38,6 +44,12 @@ class OpenvinoOperatorsSupport(OperatorSupportBase):
         self._op_names_to_skip = op_names_to_skip
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
+        """
+        Checks if a given node is supported by OpenVINO.
+
+        :param node: The FX graph node representing an operation.
+        :return: True if the node is supported, otherwise False.
+        """
         if node.op != "call_function":
             return False
 
@@ -70,6 +82,13 @@ class OpenvinoPartitioner(Partitioner):
         op_types_to_skip: Optional[set] = None,
         op_names_to_skip: Optional[set] = None,
     ) -> None:
+        """
+        Initializes the OpenvinoPartitioner class.
+
+        :param compile_spec: A list of compile specifications for OpenVINO.
+        :param op_types_to_skip: A set of operator types to skip during partitioning.
+        :param op_names_to_skip: A set of operator names to skip during partitioning.
+        """
         self.delegation_spec = DelegationSpec(OpenvinoBackend.__name__, compile_spec)
         self._op_types_to_skip = op_types_to_skip
         self._op_names_to_skip = op_names_to_skip
@@ -78,6 +97,13 @@ class OpenvinoPartitioner(Partitioner):
         self,
         ep: ExportedProgram,
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        """
+        Returns a tuple containing a list of operations that should not be decomposed
+        and an optional function to filter nodes.
+
+        :param ep: The exported program.
+        :return: A tuple consisting of a list of ops to keep and an optional filtering function.
+        """
         ops_not_decompose = [
             torch.ops.aten.pixel_shuffle.default,
             torch.ops.aten.upsample_bilinear2d.default,
@@ -88,6 +114,12 @@ class OpenvinoPartitioner(Partitioner):
         return (ops_not_decompose, None)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        """
+        Partitions an exported program into supported and unsupported segments.
+
+        :param exported_program: The exported program.
+        :return: A PartitionResult containing the partitioned graph and delegation tags.
+        """
         partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             OpenvinoOperatorsSupport(self._op_types_to_skip, self._op_names_to_skip),
