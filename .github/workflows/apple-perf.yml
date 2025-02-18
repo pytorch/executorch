@@ -475,7 +475,7 @@ jobs:
       fail-fast: false
     with:
       # Due to scheduling a job may be pushed beyond the default 60m threshold
-      timeout: 120
+      timeout: 240
       device-type: ios
       # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
       runner: linux.2xlarge
