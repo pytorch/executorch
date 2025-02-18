@@ -194,6 +194,15 @@ Tensor& _softmax_out(
   return out;
 }
 
+Tensor& softmax_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    int64_t dim,
+    bool half_to_float,
+    Tensor& out) {
+  _softmax_out(ctx, in, dim, half_to_float, out);
+}
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl
