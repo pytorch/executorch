@@ -88,10 +88,11 @@ def dump_inputs(calibration_dataset, dest_path):
     for idx, data in enumerate(calibration_dataset):
         feature, target = data
         targets.extend(target)
-        file_name = f"{dest_path}/input_{idx}_0.raw"
+        file_name = f"input_{idx}_0.raw"
+        file_path = f"{dest_path}/{file_name}"
         if not isinstance(feature, torch.Tensor):
             feature = torch.tensor(feature)
-        feature.detach().numpy().tofile(file_name)
+        feature.detach().numpy().tofile(file_path)
         input_files.append(file_name)
 
     return input_files, targets
