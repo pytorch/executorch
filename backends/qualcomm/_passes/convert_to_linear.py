@@ -39,6 +39,7 @@ class ConvertToLinear(ExportPass):
     mm = exir_ops.edge.aten.mm.default
 
     addmm_patterns = [
+        {view_copy: 1, permute_copy: 1, addmm: 1},
         {view_copy: 2, permute_copy: 1, addmm: 1},
         {permute_copy: 1, addmm: 1},
     ]
@@ -190,7 +191,9 @@ class ConvertToLinear(ExportPass):
         return ret
 
     def _convert(self, graph_module: torch.fx.GraphModule):
-        partitions = get_source_partitions(graph_module.graph, [torch.nn.Linear])
+        partitions = get_source_partitions(
+            graph_module.graph, [torch.nn.Linear, torch.ops.aten.linear.default]
+        )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
                 op_cnt = Counter(

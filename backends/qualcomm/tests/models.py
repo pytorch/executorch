@@ -49,6 +49,16 @@ class AddConstantLong(torch.nn.Module):
         return 10 + x
 
 
+class Any(torch.nn.Module):
+    def __init__(self, dim=None, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.any(x, dim=self.dim, keepdim=self.keepdim)
+
+
 class Arange(torch.nn.Module):
     def __init__(self, start, end, step, dtype):
         super().__init__()
@@ -66,6 +76,33 @@ class Arange(torch.nn.Module):
         )
 
 
+class Argmin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.argmin(x, dim=0, keepdim=True)
+        return x
+
+
+class ArgminViewSqueezeConv2D(torch.nn.Module):
+    def __init__(self):
+        # This model is mainly to test the PASS TensorI64toI32
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1
+        )
+
+    def forward(self, x, y):
+        argmin_out = torch.argmin(x, dim=0, keepdim=True)
+        index_out = y[argmin_out]
+        conv_out = self.conv(index_out)
+
+        view_out = argmin_out.view(-1)
+        squeeze_out = view_out.squeeze(-1)
+        return squeeze_out, conv_out
+
+
 class AvgPoolModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -81,9 +118,9 @@ class AvgPoolModule(torch.nn.Module):
 
 
 class BatchNorm(torch.nn.Module):
-    def __init__(self, n_features):
+    def __init__(self, n_features, affine=True):
         super().__init__()
-        self.native_batchnorm = torch.nn.BatchNorm2d(n_features)
+        self.native_batchnorm = torch.nn.BatchNorm2d(n_features, affine=affine)
         self.eval()
 
     def forward(self, x):
@@ -161,6 +198,24 @@ class Clamp(torch.nn.Module):
 
     def forward(self, x):
         return torch.clamp(x, max=0)
+
+
+class ClampMax(torch.nn.Module):
+    def __init__(self, max):
+        super().__init__()
+        self.max = max
+
+    def forward(self, x):
+        return torch.clamp_max(x, max=self.max)
+
+
+class ClampMin(torch.nn.Module):
+    def __init__(self, min):
+        super().__init__()
+        self.min = min
+
+    def forward(self, x):
+        return torch.clamp_min(x, min=self.min)
 
 
 class CompositeDelegateModule(torch.nn.Module):
@@ -573,6 +628,26 @@ class ExpandCopy(torch.nn.Module):
         return x.expand(3, 4)
 
 
+class ExpandAs(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        y = torch.linalg.vector_norm(x)
+        y = torch.clamp_min(y, min=1e-10)
+        return y.expand_as(x)
+
+
+class Full(torch.nn.Module):
+    def __init__(self, fill, shape):
+        super().__init__()
+        self.fill = fill
+        self.shape = shape
+
+    def forward(self, x):
+        return torch.min(x, torch.full(self.shape, self.fill))
+
+
 class FullLike(torch.nn.Module):
     def __init__(self, fill):
         super().__init__()
@@ -693,6 +768,16 @@ class IndexPut(torch.nn.Module):
         return k_out
 
 
+class InstanceNorm2d(torch.nn.Module):
+    def __init__(self, n_features, affine=True):
+        super().__init__()
+        self.instance_norm = torch.nn.InstanceNorm2d(n_features, affine=affine)
+        self.eval()
+
+    def forward(self, x):
+        return self.instance_norm(x)
+
+
 class LargeTensorLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -783,6 +868,19 @@ class Linear(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class LinalgVectorNorm(torch.nn.Module):
+    def __init__(self, ord=2.0, dim=None, keepdim=False):
+        super().__init__()
+        self.ord = ord
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.linalg.vector_norm(
+            x, ord=self.ord, dim=self.dim, keepdim=self.keepdim
+        )
 
 
 class Log(torch.nn.Module):
@@ -908,6 +1006,23 @@ class Neg(torch.nn.Module):
 
     def forward(self, x):
         return torch.neg(x)
+
+
+class NotEqual(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return x != y
+
+
+class NotEqualConstant(torch.nn.Module):
+    def __init__(self, constant):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return x != self.constant
 
 
 class Pad(torch.nn.Module):
