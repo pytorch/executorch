@@ -469,7 +469,7 @@ class CadenceMemoryPlanning:
         # (output) tensors if alloc_graph_input (alloc_graph_output) is
         # True.
         mem_planning = MemoryPlanningPass(
-            algo,
+            [algo],
             allow_lifetime_and_storage_overlap=(self.opt_level >= 2),
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,

@@ -19,6 +19,7 @@ from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
     greedy,
+    MemoryAlgoResult,
     naive,
     Verifier,
 )
@@ -234,7 +235,7 @@ class MultiplePoolsToyModel(torch.nn.Module):
 
 def maketest(
     module_cls: Type[torch.nn.Module],
-    criteria: Optional[List[Tuple[Callable[..., List[int]], bool]]] = None,
+    criteria: Optional[List[Tuple[Callable[..., MemoryAlgoResult], bool]]] = None,
     extra_check: Optional[Callable[..., None]] = None,
     use_functionalization: bool = True,
     alloc_graph_input: bool = True,
@@ -272,7 +273,7 @@ def maketest(
                     SpecPropPass(),
                     ToOutVarPass(),
                     MemoryPlanningPass(
-                        algo,
+                        [algo],
                         alloc_graph_input=alloc_graph_input,
                         alloc_graph_output=alloc_graph_output,
                     ),
@@ -522,7 +523,7 @@ class TestMisc(unittest.TestCase):
         edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=CustomPoolMemoryPlanningPass(
-                    memory_planning_algo=algo,
+                    memory_planning_algo=[algo],
                     alignment=1,
                 ),
             )
@@ -708,10 +709,10 @@ class TestMisc(unittest.TestCase):
         et_program = et.executorch_program
         inputs = et_program.execution_plan[0].inputs
         self.assertNotEqual(
-            et_program.execution_plan[0]  # pyre-ignore
+            et_program.execution_plan[0]
             .values[inputs[0]]
             .val.allocation_info.memory_offset_low,
-            et_program.execution_plan[0]  # pyre-ignore
+            et_program.execution_plan[0]
             .values[inputs[1]]
             .val.allocation_info.memory_offset_low,
         )

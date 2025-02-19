@@ -203,7 +203,7 @@ class VulkanBackend(BackendDetails):
             program,
             [
                 ConstraintBasedSymShapeEvalPass(),
-                MemoryPlanningPass(memory_planning_algo=greedy_memory_planning),
+                MemoryPlanningPass(memory_planning_algo=[greedy_memory_planning]),
             ],
         )
 

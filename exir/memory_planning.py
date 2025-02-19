@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import collections
 import itertools
 import logging
 import operator
@@ -503,6 +504,17 @@ class SharedObject:
     def __repr__(self) -> str:
         return f"SharedObject(idx={self.idx}, offset={self.offset}, size={self.size}, lifetime=[{self.first_used_index, self.last_used_index}])"
 
+@dataclass
+class SpecAllocResult:
+    mem_id: int
+    mem_obj_id: int
+    mem_offset: int
+
+@dataclass
+class MemoryAlgoResult:
+    spec_dict: Dict[TensorSpec, SpecAllocResult]
+    bufsizes: List[int]
+
 
 def materialize_buffer(
     shared_objects: List[SharedObject], input_total_size: int = 0
@@ -692,7 +704,7 @@ def greedy(
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
     allow_overlapping_allocations: bool = True,
-) -> List[int]:
+) -> MemoryAlgoResult:
     r"""Greedy algorithm to allocate memory for tensors in the graph.
     alloc_graph_input: If set to true, the algorithm will allocate memory for graph input.
     alloc_graph_output: If set to true, the algorithm will allocate memory for graph output.
@@ -701,6 +713,7 @@ def greedy(
     This flag is added to allow for Vulkan to use MemoryPlanningPass with overlapping
     allocations disabled
     """
+    greedy_result = MemoryAlgoResult({}, [])
     # padding allocation with 64 bytes.
     # this requirement is really for XNNPACK backend which can read tensors
     # beyond the end of the tensor. This is done for performance
@@ -735,12 +748,14 @@ def greedy(
     sorted_specs.reverse()
 
     for spec in sorted_specs:
+        spec_alloc_result = greedy_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         if spec.mem_id is None:
-            spec.mem_id = 1
+            spec_alloc_result.mem_id = 1
+        else:
+            spec_alloc_result.mem_id = spec.mem_id
+        greedy_result.spec_dict[spec] = spec_alloc_result
         spec.realign(alignment)
-        spec2obj[spec] = pick_shared_obj(
-            shared_objects[spec.mem_id], spec, allow_overlapping_allocations
-        )
+        spec2obj[spec] = pick_shared_obj(shared_objects[spec_alloc_result.mem_id], spec, allow_overlapping_allocations)
 
     if len(shared_objects) == 0:
         # Cannot find any tensor in the graph that needs to be allocated.
@@ -768,15 +783,18 @@ def greedy(
             for sobj in shared_objects[mem_id]:
                 for alloc in sobj.allocations:
                     spec = alloc.spec
-                    alloc.spec.mem_obj_id = sobj.idx
-                    alloc.spec.mem_offset = sobj.offset + alloc.offset
+                    spec_alloc_result = greedy_result.spec_dict.get(spec, None)
+                    assert spec_alloc_result is not None, f"Spec {spec} not found."
+                    spec_alloc_result.mem_obj_id = sobj.idx
+                    spec_alloc_result.mem_offset = sobj.offset + alloc.offset
                     num_specs_processed += 1
         assert (
             len(spec2obj) == num_specs_processed
         ), f"All specs should be processed but there were {len(spec2obj)} specs and processed {num_specs_processed} specs"
 
     logging.debug(f"greedy algorithm returns bufsizes: {total_sizes}")
-    return total_sizes
+    greedy_result.bufsizes = total_sizes
+    return greedy_result
 
 
 def naive(
@@ -785,7 +803,9 @@ def naive(
     graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
-) -> List[int]:
+) -> MemoryAlgoResult:
+
+    naive_result = MemoryAlgoResult({}, [])
 
     # allocate 'allocated' bytes from buffer with id mem_id.
     # return the starting offset of the allocated buffer.
@@ -807,16 +827,22 @@ def naive(
         ignore_graph_input=not alloc_graph_input,
         ignore_graph_output=not alloc_graph_output,
     ):
+        spec_alloc_result = naive_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         # assume a single memory layer which has mem_id 1
         if spec.mem_id is None:
-            spec.mem_id = 1
+            spec_alloc_result.mem_id = 1
+        else:
+            spec_alloc_result.mem_id = spec.mem_id
+        naive_result.spec_dict[spec] = spec_alloc_result
+
         # allocate spec.allocated_memory bytes in the buffer
         # with the corresponding mem_id
         spec.realign(alignment)
-        spec.mem_offset = _allocate_buf(bufsizes, spec.mem_id, spec.allocated_memory)
+        spec_alloc_result.mem_offset = _allocate_buf(bufsizes, spec.mem_id, spec.allocated_memory)
 
     logging.debug(f"naive algorithm returns bufsizes: {bufsizes}")
-    return bufsizes
+    naive_result.bufsizes = bufsizes
+    return naive_result
 
 
 def get_cond_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
@@ -899,10 +925,10 @@ def insert_calls_to_free(
 
 
 def apply_algo(
-    algo: Callable[
+    algo_list: List[Callable[
         [torch.fx.GraphModule, int, Optional[ExportGraphSignature], bool, bool],
-        List[int],
-    ],
+        MemoryAlgoResult,
+    ]],
     graph_module: torch.fx.GraphModule,
     alignment: int,
     graph_signature: Optional[ExportGraphSignature] = None,
@@ -922,9 +948,24 @@ def apply_algo(
     """
 
     specs = update_all_tensors_lifetime(graph_module, graph_signature)
-    bufsizes: List[int] = algo(
-        graph_module, alignment, graph_signature, alloc_graph_input, alloc_graph_output
-    )
+    mem_algo_results = {}
+    for algo in algo_list:
+        mem_algo_results[getattr(algo, "__name__")] = algo(
+            graph_module, alignment, graph_signature, alloc_graph_input, alloc_graph_output
+        )
+    
+    assert len({len(mem_algo_result.bufsizes) for mem_algo_result in mem_algo_results.values()}) == 1, "Different memory planning algorithms should have the same number of buffers allocated."
+
+    best_algo = min(mem_algo_results, key=lambda k: sum(mem_algo_results[k].bufsizes))
+    logging.debug(f"Best memory planning algo for this model is {best_algo}")
+    bufsizes = mem_algo_results[best_algo].bufsizes
+
+    for spec in mem_algo_results[best_algo].spec_dict:
+        spec_alloc_result = mem_algo_results[best_algo].spec_dict[spec]
+        spec.mem_id = spec_alloc_result.mem_id
+        spec.mem_offset = spec_alloc_result.mem_offset
+        spec.mem_obj_id = spec_alloc_result.mem_obj_id
+
     insert_calls_to_free(graph_module, specs)
 
     def handle_submodule(
@@ -937,7 +978,7 @@ def apply_algo(
         # buffer already allocated.
         submodule.input_mem_buffer_sizes = bufsizes
         bufsizes = apply_algo(
-            algo,
+            algo_list,
             submodule,
             alignment,
             graph_signature,
@@ -961,5 +1002,4 @@ def apply_algo(
         )
 
     graph_module.meta.update({"non_const_buffer_sizes": bufsizes})
-
     return bufsizes
