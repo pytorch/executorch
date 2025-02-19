@@ -185,7 +185,7 @@ class SoftmaxModule(torch.nn.Module):
         return z
 
     example_input = (torch.ones(2, 2),)
-    can_delegate = False
+    can_delegate = True
 
 
 class MultipleOutputsModule(torch.nn.Module):
