@@ -367,6 +367,7 @@ class Transformer(nn.Module):
         self,
         tokens: torch.LongTensor,  # tokens
         input_pos: torch.LongTensor,
+        input_length: torch.LongTensor,  # input_length
         k_cache: torch.FloatTensor,
         v_cache: torch.FloatTensor,
         attn_mask: torch.LongTensor,
@@ -383,14 +384,13 @@ class Transformer(nn.Module):
 
         k_out = []
         v_out = []
-
         for i, layer in enumerate(self.layers):
             h, new_k, new_v = layer(
                 h,
                 freqs_cos,
                 freqs_sin,
-                k_cache[i,:,:,:,:],
-                v_cache[i,:,:,:,:],
+                k_cache[i, :, :, :, :],
+                v_cache[i, :, :, :, :],
                 attn_mask,
             )
             k_out.append(new_k)
@@ -398,10 +398,98 @@ class Transformer(nn.Module):
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
-            h = h[:, - 1, :]
+            h = h[:, input_length - 1, :]
 
         h = self.norm(h)
 
         logits = self.output(h)
 
-        return logits, torch.stack(k_out, dim=0), torch.stack(v_out, dim=0)
+        return (
+            logits,
+            torch.stack(k_out, dim=0),
+            torch.stack(v_out, dim=0),
+        )
+
+
+class InputManager:
+    def __init__(
+        self,
+        model_args: ModelArgs,
+        seq_length,
+        dtype=torch.float16,
+        minus_infinity=-torch.inf,
+    ):
+        self.n_layers = model_args.n_layers
+        self.max_batch_size = model_args.max_batch_size
+        self.n_kv_heads = model_args.n_kv_heads
+        self.head_dim = model_args.head_dim
+
+        self.seq_length = seq_length
+        self.max_seq_length = model_args.max_seq_len
+
+        self.k_cache = torch.zeros(
+            self.get_cache_shape(self.max_seq_length - self.seq_length)
+        ).to(dtype)
+        self.v_cache = torch.zeros(
+            self.get_cache_shape(self.max_seq_length - self.seq_length)
+        ).to(dtype)
+
+        attn_cache = minus_infinity * torch.ones(
+            seq_length, self.max_seq_length - self.seq_length
+        )  # attn for past tokens
+        attn_seq = torch.triu(
+            minus_infinity * torch.ones(self.seq_length, self.seq_length), diagonal=1
+        )  # attn for current tokens
+        self.attn_mask = torch.concat([attn_cache, attn_seq], dim=-1).to(dtype)
+        assert self.attn_mask.shape == (self.seq_length, self.max_seq_length)
+
+        self.input_pos = 0
+
+    def get_cache_shape(self, length):
+        return (
+            self.n_layers,
+            self.max_batch_size,
+            self.n_kv_heads,
+            length,
+            self.head_dim,
+        )
+
+    def update(self, input_length, new_k_cache, new_v_cache):
+        assert new_k_cache.shape == self.get_cache_shape(self.seq_length)
+        assert new_v_cache.shape == self.get_cache_shape(self.seq_length)
+
+        self.k_cache[:, :, :, (self.input_pos) : (self.input_pos + input_length), :] = (
+            new_k_cache[:, :, :, 0:input_length, :]
+        )
+        self.v_cache[:, :, :, (self.input_pos) : (self.input_pos + input_length), :] = (
+            new_v_cache[:, :, :, 0:input_length, :]
+        )
+        self.attn_mask[:, (self.input_pos) : (self.input_pos + input_length)] = 0.0
+        self.input_pos += input_length
+
+    def get_inputs(self, tokens):
+        assert tokens.dim() == 1
+        assert tokens.dtype == torch.int64
+        input_length = len(tokens)
+        assert input_length <= self.seq_length
+
+        return (
+            # tokens
+            torch.concat(
+                [
+                    tokens,
+                    torch.zeros(self.seq_length - input_length, dtype=torch.int64),
+                ],
+                axis=-1,
+            ).reshape(1, -1),
+            # input_pos
+            torch.tensor([self.input_pos], dtype=torch.long),
+            # input_length
+            torch.tensor([input_length], dtype=torch.long),
+            # k_cache
+            self.k_cache,
+            # v_cache
+            self.v_cache,
+            # attn_mask
+            self.attn_mask,
+        )
