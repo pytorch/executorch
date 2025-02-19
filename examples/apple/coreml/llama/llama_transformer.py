@@ -97,6 +97,8 @@ class ModelArgs:
     quantization_args: Optional[dict] = None
     lora_args: Optional[dict] = None
 
+    use_cache_list: bool = True
+
     def __post_init__(self):
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
@@ -362,14 +364,15 @@ class Transformer(nn.Module):
         self.max_seq_len = params.max_seq_len
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
+        self.use_cache_list = params.use_cache_list
 
     def forward(
         self,
         tokens: torch.LongTensor,  # tokens
         input_pos: torch.LongTensor,
         input_length: torch.LongTensor,  # input_length
-        k_cache: torch.FloatTensor,
-        v_cache: torch.FloatTensor,
+        k_caches: List[torch.FloatTensor],
+        v_caches: List[torch.FloatTensor],
         attn_mask: torch.LongTensor,
         h: Optional[torch.FloatTensor] = None,  # embeddings
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -389,8 +392,8 @@ class Transformer(nn.Module):
                 h,
                 freqs_cos,
                 freqs_sin,
-                k_cache[i, :, :, :, :],
-                v_cache[i, :, :, :, :],
+                k_caches[i] if self.use_cache_list else k_caches[i,:,:,:,:],
+                v_caches[i] if self.use_cache_list else v_caches[i,:,:,:,:],
                 attn_mask,
             )
             k_out.append(new_k)
@@ -404,11 +407,10 @@ class Transformer(nn.Module):
 
         logits = self.output(h)
 
-        return (
-            logits,
-            torch.stack(k_out, dim=0),
-            torch.stack(v_out, dim=0),
-        )
+        if not self.use_cache_list:
+            k_out = torch.stack(k_out, dim=0)
+            v_out = torch.stack(v_out, dim=0)
+        return logits, k_out, v_out
 
 
 class InputManager:
@@ -418,34 +420,59 @@ class InputManager:
         seq_length,
         dtype=torch.float16,
         minus_infinity=-torch.inf,
+        cache_size = None,
     ):
+        if cache_size is None:
+            cache_size = model_args.max_seq_len - seq_length
+        self.cache_size = cache_size
+        assert self.cache_size + seq_length <= model_args.max_seq_len
+        
+        
         self.n_layers = model_args.n_layers
         self.max_batch_size = model_args.max_batch_size
         self.n_kv_heads = model_args.n_kv_heads
         self.head_dim = model_args.head_dim
 
         self.seq_length = seq_length
-        self.max_seq_length = model_args.max_seq_len
+        self.use_cache_list = model_args.use_cache_list
 
-        self.k_cache = torch.zeros(
-            self.get_cache_shape(self.max_seq_length - self.seq_length)
-        ).to(dtype)
-        self.v_cache = torch.zeros(
-            self.get_cache_shape(self.max_seq_length - self.seq_length)
-        ).to(dtype)
+        if self.use_cache_list:
+            self.k_caches = [
+                torch.zeros(self.get_cache_shape(self.cache_size)).to(
+                    dtype
+                )
+                for _ in range(self.n_layers)
+            ]
+            self.v_caches = [
+                torch.zeros(self.get_cache_shape(self.cache_size)).to(
+                    dtype
+                )
+                for _ in range(self.n_layers)
+            ]
+        else:
+            self.k_caches = torch.zeros(self.get_cache_shape(self.cache_size)).to(dtype)
+            self.v_caches = torch.zeros(self.get_cache_shape(self.cache_size)).to(dtype)
 
         attn_cache = minus_infinity * torch.ones(
-            seq_length, self.max_seq_length - self.seq_length
+            seq_length, self.cache_size
         )  # attn for past tokens
         attn_seq = torch.triu(
             minus_infinity * torch.ones(self.seq_length, self.seq_length), diagonal=1
         )  # attn for current tokens
         self.attn_mask = torch.concat([attn_cache, attn_seq], dim=-1).to(dtype)
-        assert self.attn_mask.shape == (self.seq_length, self.max_seq_length)
+        assert self.attn_mask.shape == (self.seq_length, self.cache_size + self.seq_length)
 
         self.input_pos = 0
+        self.cache_pos = 0
 
     def get_cache_shape(self, length):
+        if self.use_cache_list:
+            return (
+                self.max_batch_size,
+                self.n_kv_heads,
+                length,
+                self.head_dim,
+            )
         return (
             self.n_layers,
             self.max_batch_size,
@@ -454,18 +481,52 @@ class InputManager:
             self.head_dim,
         )
 
-    def update(self, input_length, new_k_cache, new_v_cache):
-        assert new_k_cache.shape == self.get_cache_shape(self.seq_length)
-        assert new_v_cache.shape == self.get_cache_shape(self.seq_length)
-        assert self.input_pos + input_length <= self.max_seq_length - self.seq_length
+    def _update_cache(self, start, length, new_k_caches, new_v_caches):
+        """
+        Copies new cache data from start to start + length to cache
+        """
+        assert self.cache_pos + length <= self.cache_size
+        assert start + length <= self.seq_length
 
-        self.k_cache[:, :, :, (self.input_pos) : (self.input_pos + input_length), :] = (
-            new_k_cache[:, :, :, 0:input_length, :]
-        )
-        self.v_cache[:, :, :, (self.input_pos) : (self.input_pos + input_length), :] = (
-            new_v_cache[:, :, :, 0:input_length, :]
-        )
-        self.attn_mask[:, (self.input_pos) : (self.input_pos + input_length)] = 0.0
+        if self.use_cache_list:
+            for i in range(self.n_layers):
+                assert new_k_caches[i].shape == self.get_cache_shape(self.seq_length)
+                assert new_v_caches[i].shape == self.get_cache_shape(self.seq_length)
+
+                self.k_caches[i][
+                    :, :, (self.cache_pos) : (self.cache_pos + length), :
+                ] = new_k_caches[i][:, :, start:(start+length), :]
+                self.v_caches[i][
+                    :, :, (self.cache_pos) : (self.cache_pos + length), :
+                ] = new_v_caches[i][:, :, start:(start+length), :]
+        else:
+            assert new_k_caches.shape == self.get_cache_shape(self.seq_length)
+            assert new_v_caches.shape == self.get_cache_shape(self.seq_length)
+            self.k_caches[
+                :, :, :, (self.cache_pos) : (self.cache_pos + length), :
+            ] = new_k_caches[:, :, :, start:(start+length), :]
+            self.v_caches[
+                :, :, :, (self.cache_pos) : (self.cache_pos + length), :
+            ] = new_v_caches[:, :, :, start:(start+length), :]
+
+        self.cache_pos += length
+        if self.cache_pos == self.cache_size:
+            self.cache_pos = 0
+
+
+    def update(self, input_length, new_k_caches, new_v_caches):
+        # Copy as much new cache data into cache as possible without wrapping
+        amount_to_copy = min(input_length, self.cache_size - self.cache_pos)
+        self._update_cache(0, amount_to_copy, new_k_caches, new_v_caches)
+        if self.input_pos <= self.cache_size:
+            self.attn_mask[:, (self.input_pos) : (self.input_pos + amount_to_copy)] = 0.0
+
+        # Copy remainder (cache is now wrapped around and has more room)
+        # Attention mask needs no further updates.  Attention is paid to the whole cache
+        remaining_to_copy = min(input_length - amount_to_copy, self.cache_size - self.cache_pos)
+        if remaining_to_copy > 0:
+            self._update_cache(amount_to_copy, remaining_to_copy, new_k_caches, new_v_caches)
+
         self.input_pos += input_length
 
     def get_inputs(self, tokens: List[int]):
@@ -486,9 +547,9 @@ class InputManager:
             # input_length
             torch.tensor([input_length], dtype=torch.long),
             # k_cache
-            self.k_cache,
+            self.k_caches,
             # v_cache
-            self.v_cache,
+            self.v_caches,
             # attn_mask
             self.attn_mask,
         )
@@ -497,6 +558,5 @@ class InputManager:
         processed_tokens = min(self.seq_length, len(tokens))
         return (
             self.get_inputs(tokens[0:processed_tokens]),
-            processed_tokens,
             tokens[processed_tokens:],
         )
