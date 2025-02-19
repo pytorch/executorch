@@ -17,7 +17,7 @@ from numbers import Number
 from typing import cast, Sequence
 
 # Import these for the cadence function signatures.
-import executorch.backends.cadence.aot.ops_registrations # noqa: F401
+import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
 
 import torch
 import torch.fx
