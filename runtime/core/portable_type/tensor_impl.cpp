@@ -32,7 +32,7 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
       dim == 0 || sizes != nullptr,
       "Sizes must be provided for non-scalar tensors");
   ssize_t numel = 1; // Zero-dimensional tensors (scalars) have numel == 1.
-  for (auto i : c10::irange(dim)) {
+  for (const auto i : c10::irange(dim)) {
     ET_CHECK_MSG(
         sizes[i] >= 0,
         "Size must be non-negative, got %d at dimension %zd",
