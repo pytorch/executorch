@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -23,7 +24,7 @@ bool check_indices_dtypes(TensorOptList indices) {
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       ScalarType ix_type = index.scalar_type();
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           ix_type == ScalarType::Long || ix_type == ScalarType::Int ||
               ix_type == ScalarType::Byte || ix_type == ScalarType::Bool,
           "Index tensors should be Long, Int, Byte or Bool");
@@ -46,12 +47,25 @@ bool check_mask_indices(const Tensor& in, TensorOptList indices) {
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       if (is_mask_index(index)) {
-        ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        ET_CHECK_OR_RETURN_FALSE(
             index.dim() > 0, "Zero-dimensional mask index not allowed");
         for (auto j = 0; j < index.dim(); j++) {
-          ET_LOG_MSG_AND_RETURN_IF_FALSE(
-              index.size(j) == in.size(in_i + j),
-              "The shape of mask index must match the sizes of the corresponding input dimensions.");
+          if (index.size(j) != in.size(in_i + j)) {
+#if ET_LOG_ENABLED
+            auto mask_shape = executorch::runtime::tensor_shape_to_c_string(
+                executorch::runtime::Span<const Tensor::SizesType>(
+                    index.sizes().data(), index.sizes().size()));
+            auto input_shape = executorch::runtime::tensor_shape_to_c_string(
+                executorch::runtime::Span<const Tensor::SizesType>(
+                    in.sizes().data() + in_i, index.sizes().size()));
+            ET_LOG(
+                Error,
+                "The shape of mask index %s must match the sizes of the corresponding input dimensions %s.",
+                mask_shape.data(),
+                input_shape.data());
+#endif // ET_LOG_ENABLED
+            return false;
+          }
         }
         in_i += index.dim();
       } else {
@@ -142,7 +156,7 @@ int64_t query_integral_index(
 bool check_index_args(const Tensor& in, TensorOptList indices, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(check_indices_dtypes(indices));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       indices.size() <= in.dim(), "Indexing too many dimensions");
   ET_LOG_AND_RETURN_IF_FALSE(check_mask_indices(in, indices));
   return true;
@@ -183,8 +197,7 @@ bool get_indices_broadcast_shape(
         } else if (rev_ix_sizes[0] == 1) {
           rev_ix_sizes[0] = len;
         } else if (len != 1 && rev_ix_sizes[0] != len) {
-          ET_LOG_MSG_AND_RETURN_IF_FALSE(
-              false, "Broadcast of mask index failed.");
+          ET_CHECK_OR_RETURN_FALSE(false, "Broadcast of mask index failed.");
         }
       } else {
         for (size_t j = 0; j < index.dim(); j++) {
@@ -195,7 +208,7 @@ bool get_indices_broadcast_shape(
           } else if (rev_ix_sizes[j] == 1) {
             rev_ix_sizes[j] = rev_j_size;
           } else if (rev_j_size != 1 && rev_ix_sizes[j] != rev_j_size) {
-            ET_LOG_MSG_AND_RETURN_IF_FALSE(false, "Broadcast of index failed.");
+            ET_CHECK_OR_RETURN_FALSE(false, "Broadcast of index failed.");
           }
         }
       }
@@ -276,11 +289,11 @@ bool get_index_out_target_size(
   size_t num_null_indices = get_num_null_indices(indices);
   size_t num_indexed_dims = get_num_indexed_dims(indices);
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       num_null_indices + num_indexed_dims <= in.dim(),
       "Indexing too many dimensions");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       in.dim() + broadcast_ndim - num_indexed_dims <= kTensorDimensionLimit,
       "Out tensor would exceed number of allowed dimensions");
 
@@ -427,7 +440,7 @@ bool get_in_coord(
         if (index_val < 0) {
           index_val += in.size(i);
         }
-        ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        ET_CHECK_OR_RETURN_FALSE(
             index_val >= 0 && index_val < in.size(i),
             "Index %" PRId64
             " is out of bounds for input dimension %zd with size %zd.",

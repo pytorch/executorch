@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <executorch/kernels/optimized/vec/functional.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -190,5 +192,111 @@ std::array<int32_t, 3> inline get_normalized_tensor_size(
   return normalized_tensor_size;
 }
 
+template <typename CTYPE, typename Op>
+Tensor& handle_last_dim_broadcast_elementwise(
+    KernelRuntimeContext& ctx,
+    const Op& vec_fun,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out,
+    const ElementwiseOptimizedPath selected_optimized_path) {
+  const Tensor* lhs;
+  const Tensor* rhs;
+  if (selected_optimized_path ==
+      ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments) {
+    lhs = &b;
+    rhs = &a;
+  } else {
+    lhs = &a;
+    rhs = &b;
+  }
+  auto error = resize_tensor(out, lhs->sizes());
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      error == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+  const size_t outer_size = getLeadingDims(out, out.dim() - 1);
+  const auto broadcast_size = out.size(out.dim() - 1);
+  executorch::vec::broadcasting_map_broadcast_last_dim<CTYPE, Op>(
+      vec_fun,
+      out.mutable_data_ptr<CTYPE>(),
+      lhs->const_data_ptr<CTYPE>(),
+      rhs->const_data_ptr<CTYPE>(),
+      outer_size,
+      broadcast_size);
+  return out;
+}
+
+template <typename CTYPE, typename Op>
+Tensor& handle_broadcast_elementwise(
+    KernelRuntimeContext& ctx,
+    const Op& vec_fun,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out,
+    const ElementwiseOptimizedPath selected_optimized_path,
+    const executorch::aten::optional<Scalar>& alpha = {}) {
+  if ((selected_optimized_path ==
+       ElementwiseOptimizedPath::kBroadcastLastDim) ||
+      (selected_optimized_path ==
+       ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments)) {
+    return handle_last_dim_broadcast_elementwise<CTYPE>(
+        ctx, vec_fun, a, b, out, selected_optimized_path);
+  }
+
+  const Tensor* lhs;
+  const Tensor* rhs;
+  if ((selected_optimized_path ==
+       ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) ||
+      (selected_optimized_path ==
+       ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments)) {
+    lhs = &b;
+    rhs = &a;
+  } else {
+    // Catch failure to update logic when adding new broadcasting possibility.
+    ET_DCHECK(
+        (selected_optimized_path ==
+         ElementwiseOptimizedPath::kBroadcast2dBy1d) ||
+        (selected_optimized_path ==
+         ElementwiseOptimizedPath::kBroadcastNdByNd));
+    lhs = &a;
+    rhs = &b;
+  }
+  auto error = resize_tensor(out, lhs->sizes());
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      error == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+  int64_t outer_size = 1;
+  int64_t broadcast_size;
+  int64_t inner_size;
+  if ((selected_optimized_path == ElementwiseOptimizedPath::kBroadcastNdByNd) ||
+      (selected_optimized_path ==
+       ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments)) {
+    int32_t broadcast_dim = internal::get_broadcast_dim(*lhs, *rhs);
+    int32_t broadcast_dim_lhs = lhs->dim() + broadcast_dim;
+    auto normalized_tensor_size_lhs =
+        get_normalized_tensor_size(*lhs, broadcast_dim_lhs);
+    outer_size = normalized_tensor_size_lhs[0];
+    broadcast_size = normalized_tensor_size_lhs[1];
+    inner_size = normalized_tensor_size_lhs[2];
+  } else {
+    broadcast_size = lhs->sizes()[lhs->dim() - 2];
+    inner_size = lhs->sizes()[lhs->dim() - 1];
+  }
+  executorch::vec::broadcasting_map_3d_and_unsqueezed_3d<CTYPE, Op>(
+      vec_fun,
+      out.mutable_data_ptr<CTYPE>(),
+      lhs->const_data_ptr<CTYPE>(),
+      rhs->const_data_ptr<CTYPE>(),
+      outer_size,
+      broadcast_size,
+      inner_size);
+  return out;
+}
 } // namespace executor
 } // namespace torch

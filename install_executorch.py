@@ -119,16 +119,8 @@ def check_and_update_submodules():
     logger.info("All required submodules are present.")
 
 
-def main(args):
-    if not python_is_compatible():
-        sys.exit(1)
-
+def build_args_parser() -> argparse.ArgumentParser:
     # Parse options.
-
-    EXECUTORCH_BUILD_PYBIND = ""
-    CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
-    use_pytorch_nightly = True
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--pybind",
@@ -146,28 +138,48 @@ def main(args):
         action="store_true",
         help="build from the pinned PyTorch commit instead of nightly",
     )
-    args = parser.parse_args(args)
-    if args.pybind:
-        # Flatten list of lists.
-        args.pybind = list(itertools.chain(*args.pybind))
-        if "off" in args.pybind:
-            if len(args.pybind) != 1:
+    return parser
+
+
+def handle_pybind(args, cmake_args, executorch_build_pybind):
+    # Flatten list of lists.
+    args.pybind = list(itertools.chain(*args.pybind))
+    if "off" in args.pybind:
+        if len(args.pybind) != 1:
+            raise Exception(f"Cannot combine `off` with other pybinds: {args.pybind}")
+        executorch_build_pybind = "OFF"
+    else:
+        for pybind_arg in args.pybind:
+            if pybind_arg not in VALID_PYBINDS:
                 raise Exception(
-                    f"Cannot combine `off` with other pybinds: {args.pybind}"
+                    f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
                 )
-            EXECUTORCH_BUILD_PYBIND = "OFF"
-        else:
-            for pybind_arg in args.pybind:
-                if pybind_arg not in VALID_PYBINDS:
-                    raise Exception(
-                        f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
-                    )
-                if pybind_arg == "training":
-                    CMAKE_ARGS += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
-                    os.environ["EXECUTORCH_BUILD_TRAINING"] = "ON"
-                else:
-                    CMAKE_ARGS += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
-                EXECUTORCH_BUILD_PYBIND = "ON"
+            if pybind_arg == "training":
+                cmake_args += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
+                os.environ["EXECUTORCH_BUILD_TRAINING"] = "ON"
+            elif pybind_arg == "mps":
+                cmake_args += " -DEXECUTORCH_BUILD_MPS=ON"
+            else:
+                cmake_args += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
+            executorch_build_pybind = "ON"
+    return executorch_build_pybind, cmake_args
+
+
+def main(args):
+    if not python_is_compatible():
+        sys.exit(1)
+
+    parser = build_args_parser()
+    args = parser.parse_args()
+
+    EXECUTORCH_BUILD_PYBIND = ""
+    CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
+    use_pytorch_nightly = True
+
+    if args.pybind:
+        EXECUTORCH_BUILD_PYBIND, CMAKE_ARGS = handle_pybind(
+            args, CMAKE_ARGS, EXECUTORCH_BUILD_PYBIND
+        )
 
     if args.clean:
         clean()

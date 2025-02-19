@@ -402,6 +402,22 @@ deps = [
   "xnnpack_backend",
 ]
 
+[targets.extension_llm_tokenizer]
+buck_targets = [
+  "//extension/llm/tokenizer:bpe_tokenizer",
+  "//extension/llm/tokenizer:tiktoken",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+]
+
 [targets.llama_runner]
 buck_targets = [
   "//examples/models/llama/runner:runner",

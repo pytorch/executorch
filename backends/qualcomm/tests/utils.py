@@ -19,6 +19,11 @@ from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitione
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DTYPE,
+    QCOM_SCALE,
+    QCOM_ZERO_POINT,
+)
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     get_soc_to_chipset_map,
@@ -182,6 +187,7 @@ class TestQNN(unittest.TestCase):
     use_16a4w: str = "16a4w"
     shared_buffer: bool = False
     enable_x86_64: bool = False
+    compile_only: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -234,6 +240,9 @@ class TestQNN(unittest.TestCase):
         expected_profile_events: int = -1,
         expected_intermediate_events: int = -1,
         method_index: int = 0,
+        input_encodings: Tuple = (),
+        output_encodings: Tuple = (),
+        check_io_shape: bool = False,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
@@ -253,10 +262,26 @@ class TestQNN(unittest.TestCase):
             debug_output_path = f"{tmp_dir}/debug_output.bin"
 
             def post_process():
+                from torch.testing._internal.common_utils import (
+                    torch_to_numpy_dtype_dict,
+                )
+
                 for i, f in enumerate(sorted(os.listdir(output_dir))):
+                    enc = output_encodings[i] if len(output_encodings) != 0 else None
+                    dtype = (
+                        ref_outputs[i].numpy().dtype
+                        if enc is None
+                        else torch_to_numpy_dtype_dict[enc[QCOM_DTYPE]]
+                    )
                     filename = os.path.join(output_dir, f)
-                    output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
+                    output = np.fromfile(filename, dtype=dtype)
                     output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
+                    if enc is not None:
+                        output = (
+                            output.to(torch.float)
+                            .sub(enc[QCOM_ZERO_POINT])
+                            .mul(enc[QCOM_SCALE])
+                        )
                     outputs.append(output)
 
             def validate_profile():
@@ -275,8 +300,20 @@ class TestQNN(unittest.TestCase):
                             len(event_block.events) == expected_intermediate_events
                         )
 
+            processed_inputs = list(sample_inputs)
+            for i, enc in enumerate(input_encodings):
+                processed_inputs[i] = (
+                    processed_inputs[i]
+                    .div(enc[QCOM_SCALE])
+                    .add(enc[QCOM_ZERO_POINT])
+                    .round()
+                    .to(enc[QCOM_DTYPE])
+                )
+
             if self.enable_x86_64:
-                generate_inputs(tmp_dir, "input_list.txt", [sample_inputs], input_list)
+                generate_inputs(
+                    tmp_dir, "input_list.txt", [processed_inputs], input_list
+                )
                 make_output_dir(output_dir)
 
                 target = "x86_64-linux-clang"
@@ -305,6 +342,31 @@ class TestQNN(unittest.TestCase):
                 ]
                 if expected_intermediate_events != -1:
                     cmd.append("--dump_intermediate_outputs")
+
+                if check_io_shape:
+                    shape_info = {
+                        "input_shape": processed_inputs,
+                        "output_shape": ref_outputs,
+                    }
+                    for name, tensors in shape_info.items():
+                        with open(f"{tmp_dir}/{name}.txt", "w") as f:
+                            for t in tensors:
+                                f.write(str(tuple(t.shape)).strip("()") + "\n")
+                        cmd.append(f"--{name}_path")
+                        cmd.append(f"{tmp_dir}/{name}.txt")
+
+                    dtype_info = {
+                        "input_type_size": input_encodings,
+                        "output_type_size": output_encodings,
+                    }
+                    for name, encodings in dtype_info.items():
+                        with open(f"{tmp_dir}/{name}.txt", "w") as f:
+                            for e in encodings:
+                                f.write(
+                                    f"{torch.tensor([], dtype=e[QCOM_DTYPE]).element_size()}\n"
+                                )
+                        cmd.append(f"--{name}_path")
+                        cmd.append(f"{tmp_dir}/{name}.txt")
 
                 env = dict(os.environ)
                 env["LD_LIBRARY_PATH"] = f"{qnn_sdk}/lib/{target}/:{build_folder}/lib"
@@ -347,8 +409,28 @@ class TestQNN(unittest.TestCase):
                     dump_intermediate_outputs=(
                         True if expected_intermediate_events != -1 else False
                     ),
+                    expected_input_shape=(
+                        (tensor.shape for tensor in processed_inputs)
+                        if check_io_shape
+                        else None
+                    ),
+                    expected_output_shape=(
+                        (tensor.shape for tensor in ref_outputs)
+                        if check_io_shape
+                        else None
+                    ),
+                    expected_input_dtype=(
+                        (encoding[QCOM_DTYPE] for encoding in input_encodings)
+                        if check_io_shape
+                        else None
+                    ),
+                    expected_output_dtype=(
+                        (encoding[QCOM_DTYPE] for encoding in output_encodings)
+                        if check_io_shape
+                        else None
+                    ),
                 )
-                adb.push(inputs=[sample_inputs], input_list=input_list)
+                adb.push(inputs=[processed_inputs], input_list=input_list)
                 adb.execute(method_index=method_index)
                 adb.pull(output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
@@ -373,11 +455,14 @@ class TestQNN(unittest.TestCase):
         assert_output_equal: bool = True,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
+        dynamic_shapes: Dict = None,
     ):
         qnn_partitioner = QnnPartitioner(
             self.compiler_specs, skip_node_id_set, skip_node_op_set
         )
-        delegated_program = capture_program(module, sample_inputs)
+        delegated_program = capture_program(
+            module, sample_inputs, dynamic_shapes=dynamic_shapes
+        )
 
         # this is needed for the ETRecord as lowering modifies the graph in-place
         edge_copy = copy.deepcopy(delegated_program)
@@ -435,8 +520,10 @@ class TestQNN(unittest.TestCase):
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+        dynamic_shapes: Dict = None,
+        bypass_check: bool = False,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export(module, inputs, strict=True).module()
+        m = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes).module()
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
@@ -454,7 +541,8 @@ class TestQNN(unittest.TestCase):
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
         }
-        self.assertTrue(nodes.intersection(q_and_dq))
+        if not bypass_check:
+            self.assertTrue(nodes.intersection(q_and_dq))
         return quantized_module
 
     def get_prepared_qat_module(

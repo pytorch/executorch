@@ -79,25 +79,25 @@ typedef struct {
 } ExecutionHandle;
 
 extern "C" {
-void __attribute__((weak)) ArmBackend_execute_begin() {}
-void __attribute__((weak)) ArmBackend_execute_end() {}
+void __attribute__((weak)) EthosUBackend_execute_begin() {}
+void __attribute__((weak)) EthosUBackend_execute_end() {}
 }
 
-class ArmBackendExecuteCallbacks {
+class EthosUBackendExecuteCallbacks {
  public:
-  ArmBackendExecuteCallbacks() {
-    ArmBackend_execute_begin();
+  EthosUBackendExecuteCallbacks() {
+    EthosUBackend_execute_begin();
   }
-  ~ArmBackendExecuteCallbacks() {
-    ArmBackend_execute_end();
+  ~EthosUBackendExecuteCallbacks() {
+    EthosUBackend_execute_end();
   }
 };
 
-class ArmBackend final : public ::executorch::runtime::BackendInterface {
+class EthosUBackend final : public ::executorch::runtime::BackendInterface {
  public:
-  ArmBackend() {}
+  EthosUBackend() {}
 
-  ~ArmBackend() = default;
+  ~EthosUBackend() = default;
 
   virtual bool is_available() const override {
     // TODO: revise to use a register check/init function
@@ -108,7 +108,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ET_LOG(Info, "ArmBackend::init %p", processed->data());
+    ET_LOG(Info, "EthosUBackend::init %p", processed->data());
 
     char* data = (char*)processed->data();
     size_t size = processed->size();
@@ -138,8 +138,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     EventTracerEntry event_tracer_local_scope;
 #endif
 
-    EXECUTORCH_PROF_SCOPE(event_tracer, "ArmBackend::execute()");
-    ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
+    EXECUTORCH_PROF_SCOPE(event_tracer, "EthosUBackend::execute()");
 
     ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
     VelaHandles handles;
@@ -148,27 +147,27 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     EXECUTORCH_PROF_START(
         event_tracer,
         event_tracer_local_scope,
-        "+ArmBackend::execute()processed_data");
+        "+EthosUBackend::execute()processed_data");
     char* data = (char*)execution_handle->processed->data();
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
-    ET_LOG(Debug, "ArmBackend::execute %p", data);
+    ET_LOG(Debug, "EthosUBackend::execute %p", data);
 
     EXECUTORCH_PROF_START(
         event_tracer,
         event_tracer_local_scope,
-        "+ArmBackend::execute()vela_bin_read()");
+        "+EthosUBackend::execute()vela_bin_read()");
     // Read key sections from the vela_bin_stream
     if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
         false) {
-      ET_LOG(Error, "ArmBackend::vela_read: error, invalid binary layout");
+      ET_LOG(Error, "EthosUBackend::vela_read: error, invalid binary layout");
       return Error::InvalidProgram;
     }
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
     ET_LOG(
         Debug,
-        "ArmBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n",
+        "EthosUBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n",
         handles.cmd_data,
         handles.cmd_data_size,
         handles.weight_data,
@@ -226,7 +225,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
       if (both_char and permuted_input_shape) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer,
-            "+ArmBackend::execute()handles.input.permute_CHW_to_HWC()");
+            "+EthosUBackend::execute()handles.input.permute_CHW_to_HWC()");
         // permuted byte copy CHW to HWC
         permute_CHW_to_HWC(
             tensor_in.mutable_data_ptr<char>(),
@@ -236,7 +235,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             tensor_in.size(3));
       } else if (both_char or both_int) {
         EXECUTORCH_PROF_SCOPE(
-            event_tracer, "+ArmBackend::execute()handles.input.memcpy()");
+            event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
         // Sizes match and elt size matches so memcpy
         memcpy(
             scratch_addr,
@@ -266,7 +265,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         std::unique_ptr<ethosu_driver, decltype(&ethosu_release_driver)>(
             ethosu_reserve_driver(), ethosu_release_driver);
     if (driver == NULL) {
-      ET_LOG(Error, "ArmBackend::execute: ethosu_reserve_driver failed");
+      ET_LOG(Error, "EthosUBackend::execute: ethosu_reserve_driver failed");
       return Error::InvalidState;
     }
 
@@ -279,7 +278,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
         handles.weight_data_size, handles.scratch_data_size};
     int result = 0;
     EXECUTORCH_PROF_START(
-        event_tracer, event_tracer_local_scope, "+ArmBackend::execute()NPU");
+        event_tracer, event_tracer_local_scope, "+EthosUBackend::execute()NPU");
     result = ethosu_invoke_v3(
         driver.get(),
         (void*)handles.cmd_data,
@@ -293,7 +292,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
     if (result != 0) {
       ET_LOG(
           Error,
-          "ArmBackend::execute: Ethos-U invocation failed error (%d)",
+          "EthosUBackend::execute: Ethos-U invocation failed error (%d)",
           result);
       return Error::InvalidProgram;
     }
@@ -322,7 +321,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
           permuted_output_shape) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer,
-            "+ArmBackend::execute()handles.output.permute_HWC_to_CHW()");
+            "+EthosUBackend::execute()handles.output.permute_HWC_to_CHW()");
 
         char* output_address = (char*)output_addr;
         permute_HWC_to_CHW(
@@ -333,7 +332,7 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
             tensor_out.size(3));
       } else {
         EXECUTORCH_PROF_SCOPE(
-            event_tracer, "+ArmBackend::execute()handles.output.move()");
+            event_tracer, "+EthosUBackend::execute()handles.output.move()");
         for (int j = 0; j < tensor_out.numel(); j++) {
           if (tensor_out.scalar_type() == ScalarType::Char) {
             char* output_address = (char*)output_addr;
@@ -416,8 +415,8 @@ class ArmBackend final : public ::executorch::runtime::BackendInterface {
 };
 
 namespace {
-auto backend = ArmBackend();
-Backend backend_id{"ArmBackend", &backend};
+auto backend = EthosUBackend();
+Backend backend_id{"EthosUBackend", &backend};
 static auto registered = register_backend(backend_id);
 } // namespace
 

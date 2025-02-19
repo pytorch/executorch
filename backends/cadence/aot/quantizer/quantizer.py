@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -40,30 +41,46 @@ from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 
 
-act_qspec = QuantizationSpec(
-    dtype=torch.uint8,
-    quant_min=0,
-    quant_max=255,
+act_qspec_asym8u = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
     qscheme=torch.per_tensor_affine,
     is_dynamic=False,
     observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
 )
 
-wgt_qspec = QuantizationSpec(
-    dtype=torch.uint8,
-    quant_min=0,
-    quant_max=255,
+wgt_qspec_asym8u = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
     qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=MinMaxObserver,
+)
+
+wgt_qspec_asym8s = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_tensor_symmetric,
     is_dynamic=False,
     observer_or_fake_quant_ctr=MinMaxObserver,
 )
 
 bias_qspec: Optional[QuantizationSpec] = None
 
-_default_qconfig = QuantizationConfig(
-    act_qspec,
-    act_qspec,
-    wgt_qspec,
+qconfig_A8uW8u = QuantizationConfig(
+    act_qspec_asym8u,
+    act_qspec_asym8u,
+    wgt_qspec_asym8u,
+    None,
+)
+
+qconfig_A8uW8s = QuantizationConfig(
+    act_qspec_asym8u,
+    act_qspec_asym8u,
+    wgt_qspec_asym8s,
     None,
 )
 
@@ -147,22 +164,22 @@ class CadenceAtenQuantizer(Quantizer):
         return []
 
 
-def get_cadence_default_quantizer_list_with_config(
-    quantization_config: QuantizationConfig,
-) -> List[Quantizer]:
+def get_cadence_default_quantizers() -> List[Quantizer]:
     return [
-        CadenceAtenQuantizer(AddmmPattern(), quantization_config),
-        CadenceAtenQuantizer(BmmPattern(), quantization_config),
-        CadenceAtenQuantizer(Conv1dPattern(), quantization_config),
-        CadenceAtenQuantizer(Conv2dPattern(), quantization_config),
-        CadenceAtenQuantizer(LayerNormPattern(), quantization_config),
-        CadenceAtenQuantizer(LinearPattern(), quantization_config),
-        CadenceAtenQuantizer(MatmulPattern(), quantization_config),
-        CadenceAtenQuantizer(ReluPattern0(), quantization_config),
-        CadenceAtenQuantizer(ReluPattern1(), quantization_config),
+        CadenceAtenQuantizer(AddmmPattern(), qconfig_A8uW8u),
+        CadenceAtenQuantizer(BmmPattern(), qconfig_A8uW8u),
+        CadenceAtenQuantizer(Conv1dPattern(), qconfig_A8uW8s),
+        CadenceAtenQuantizer(Conv2dPattern(), qconfig_A8uW8s),
+        CadenceAtenQuantizer(LayerNormPattern(), qconfig_A8uW8u),
+        CadenceAtenQuantizer(LinearPattern(), qconfig_A8uW8u),
+        CadenceAtenQuantizer(MatmulPattern(), qconfig_A8uW8u),
+        CadenceAtenQuantizer(ReluPattern0(), qconfig_A8uW8u),
+        CadenceAtenQuantizer(ReluPattern1(), qconfig_A8uW8u),
     ]
 
 
+# Note: need dataclass to be used in CI configs through OmegaConf and Hydra
+@dataclass
 class CadenceQuantizer(ComposableQuantizer):
     """
     Generic CadenceQuantizer. Although it can be used directly, it is typically a base
@@ -178,10 +195,9 @@ class CadenceDefaultQuantizer(CadenceQuantizer):
     Default quantizer for Cadence backend.
     """
 
-    def __init__(self, qconfig: Optional[QuantizationConfig] = None) -> None:
-        if qconfig is None:
-            qconfig = _default_qconfig
-        quantizers = get_cadence_default_quantizer_list_with_config(qconfig)
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
         super().__init__(quantizers)
 
 
