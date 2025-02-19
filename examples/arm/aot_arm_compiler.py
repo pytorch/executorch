@@ -484,15 +484,15 @@ def get_args():  # noqa C901
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
-    if args.system_config is None:
+    if "ethos-u" in args.target and args.system_config is None:
         if "u55" in args.target:
             args.system_config = "Ethos_U55_High_End_Embedded"
         elif "u85" in args.target:
-            args.system_confg = "Ethos_U85_SYS_DRAM_Mid"
+            args.system_config = "Ethos_U85_SYS_DRAM_Mid"
         else:
             raise RuntimeError(f"Invalid target name {args.target}")
 
-    if args.memory_mode is None:
+    if "ethos-u" in args.target and args.memory_mode is None:
         if "u55" in args.target:
             args.memory_mode = "Shared_Sram"
         elif "u85" in args.target:
@@ -591,6 +591,7 @@ if __name__ == "__main__":
         output_name = os.path.join(args.output, output_name)
 
     save_pte_program(exec_prog, output_name)
+    print(f"PTE file saved as {output_name}.pte")
 
     if args.evaluate:
         evaluate_model(
