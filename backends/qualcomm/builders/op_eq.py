@@ -63,7 +63,7 @@ class Equal(NodeVisitor):
                     (),  # args
                     {},  # kwargs
                 )
-                # Because the output data type of the ge node is boolean.
+                # Because the output data type of the eq node is boolean.
                 # We need to take the quant attr from the non-scalar node.
                 if quant_attrs := node.args[index ^ 1].meta.get(QCOM_QUANT_ATTRS):
                     quant_attrs = quant_attrs.copy()

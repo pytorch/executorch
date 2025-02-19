@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -177,6 +178,8 @@ def get_cadence_default_quantizers() -> List[Quantizer]:
     ]
 
 
+# Note: need dataclass to be used in CI configs through OmegaConf and Hydra
+@dataclass
 class CadenceQuantizer(ComposableQuantizer):
     """
     Generic CadenceQuantizer. Although it can be used directly, it is typically a base

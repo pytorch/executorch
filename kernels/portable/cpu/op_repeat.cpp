@@ -23,7 +23,7 @@ bool calculate_output_size(
     Tensor::SizesType* out_sizes_ptr) {
   ET_LOG_AND_RETURN_IF_FALSE(repeats.size() < kTensorDimensionLimit);
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       repeats.size() >= self_sizes.size(),
       "Repeats vector size is %zu must be >= self_sizes %zu.",
       repeats.size(),
