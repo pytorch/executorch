@@ -13,7 +13,13 @@ import sys
 from typing import Any
 
 import pytest
-import torch
+import logging
+
+try:
+    import tosa_reference_model
+except ImportError:
+    logging.warning("tosa_reference_model not found, can't run reference model tests")
+    tosa_reference_model = None
 
 """
 This file contains the pytest hooks, fixtures etc. for the Arm test suite.
@@ -24,18 +30,29 @@ This file contains the pytest hooks, fixtures etc. for the Arm test suite.
 
 
 def pytest_configure(config):
-
     pytest._test_options = {}  # type: ignore[attr-defined]
-
-    if config.option.arm_run_corstoneFVP:
+    pytest._test_options["corstone_fvp"] = False  # type: ignore[attr-defined]
+    if (
+        getattr(config.option, "arm_run_corestoneFVP", False)
+        and config.option.arm_run_corstoneFVP
+    ):
         corstone300_exists = shutil.which("FVP_Corstone_SSE-300_Ethos-U55")
         corstone320_exists = shutil.which("FVP_Corstone_SSE-320")
         if not (corstone300_exists and corstone320_exists):
             raise RuntimeError(
                 "Tests are run with --arm_run_corstoneFVP but corstone FVP is not installed."
             )
-        pytest._test_options["corstone_fvp"] = True  # type: ignore[attr-defined]
-    pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
+        # Only enable if we also have the TOSA reference model available.
+        pytest._test_options["corstone_fvp"] = tosa_reference_model is not None  # type: ignore[attr-defined]
+
+    pytest._test_options["fast_fvp"] = False  # type: ignore[attr-defined]
+    if getattr(config.option, "fast_fvp", False):
+        pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
+
+    # TODO: remove this flag once we have a way to run the reference model tests with Buck
+    pytest._test_options["tosa_ref_model"] = False  # type: ignore[attr-defined]
+    if tosa_reference_model is not None:
+        pytest._test_options["tosa_ref_model"] = True  # type: ignore[attr-defined]
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
@@ -44,9 +61,15 @@ def pytest_collection_modifyitems(config, items):
 
 
 def pytest_addoption(parser):
-    parser.addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
-    parser.addoption("--arm_run_corstoneFVP", action="store_true")
-    parser.addoption("--fast_fvp", action="store_true")
+    def try_addoption(*args, **kwargs):
+        try:
+            parser.addoption(*args, **kwargs)
+        except Exception:
+            pass
+
+    try_addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
+    try_addoption("--arm_run_corstoneFVP", action="store_true", help="Deprecated.")
+    try_addoption("--fast_fvp", action="store_true")
 
 
 def pytest_sessionstart(session):
@@ -78,6 +101,8 @@ def set_random_seed():
     Rerun with a specific seed found under a random seed test
         ARM_TEST_SEED=3478246 pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
     """
+    import torch
+
     if os.environ.get("ARM_TEST_SEED", "RANDOM") == "RANDOM":
         random.seed()  # reset seed, in case any other test has fiddled with it
         seed = random.randint(0, 2**32 - 1)
@@ -161,6 +186,8 @@ def _load_libquantized_ops_aot_lib():
     res = subprocess.run(find_lib_cmd, capture_output=True)
     if res.returncode == 0:
         library_path = res.stdout.decode().strip()
+        import torch
+
         torch.ops.load_library(library_path)
     else:
         raise RuntimeError(
