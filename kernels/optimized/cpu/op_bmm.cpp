@@ -31,39 +31,38 @@ namespace {
 // Verifies that the parameters are valid.
 bool check_bmm_out_args(const Tensor& self, const Tensor& mat2, Tensor& out) {
   // Ensure dimensions is 3 for all input and out
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.dim() == mat2.dim(),
       "self.dim() %zd != mat2.dim() %zd",
       self.dim(),
       mat2.dim());
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.dim() == out.dim(),
       "self.dim() %zd != out.dim() %zd",
       self.dim(),
       out.dim());
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      self.dim() == 3, "self.dim() %zd != 3", self.dim());
+  ET_CHECK_OR_RETURN_FALSE(self.dim() == 3, "self.dim() %zd != 3", self.dim());
   // Ensure batch larger than or equals to 0
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.size(0) >= 0, "self.size(0) %zd < 0", self.size(0));
   // Ensure batches are the same
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.size(0) == mat2.size(0),
       "self.size(0) %zd != mat2.size(0) %zd",
       self.size(0),
       mat2.size(0));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.size(0) == out.size(0),
       "self.size(0) %zd != out.size(0) %zd",
       self.size(0),
       out.size(0));
   // Ensure the out size is compatible with input tensors
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       mat2.size(2) == out.size(2),
       "mat2.size(2) %zd != out.size(2) %zd",
       mat2.size(2),
       out.size(2));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       self.size(1) == out.size(1),
       "self.size(1) %zd != out.size(1) %zd",
       self.size(1),

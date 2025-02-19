@@ -12,8 +12,9 @@ import pytest
 import torch
 
 from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
+    EthosUQuantizer,
     get_symmetric_quantization_config,
+    TOSAQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -75,7 +76,7 @@ class TestClamp(unittest.TestCase):
     ):
         tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
         compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
@@ -92,14 +93,15 @@ class TestClamp(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_clamp_tosa_ethos_BI_pipeline(
+    def _test_clamp_ethos_pipeline(
         self,
         compile_spec: list[CompileSpec],
         module: torch.nn.Module,
         test_data: Tuple[torch.tensor],
     ):
-        tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
-        quantizer = ArmQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
+        quantizer = EthosUQuantizer(compile_spec).set_io(
+            get_symmetric_quantization_config()
+        )
         tester = (
             ArmTester(
                 module,
@@ -147,7 +149,7 @@ class TestClamp(unittest.TestCase):
         min: Union[torch.Tensor, Number, None],
         max: Union[torch.Tensor, Number, None],
     ):
-        self._test_clamp_tosa_ethos_BI_pipeline(
+        self._test_clamp_ethos_pipeline(
             common.get_u55_compile_spec(), self.Clamp(min, max), (test_data,)
         )
 
@@ -160,6 +162,6 @@ class TestClamp(unittest.TestCase):
         min: Union[torch.Tensor, Number, None],
         max: Union[torch.Tensor, Number, None],
     ):
-        self._test_clamp_tosa_ethos_BI_pipeline(
+        self._test_clamp_ethos_pipeline(
             common.get_u85_compile_spec(), self.Clamp(min, max), (test_data,)
         )
