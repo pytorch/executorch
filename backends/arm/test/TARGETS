@@ -21,3 +21,12 @@ python_library(
         "//executorch/exir/backend:compile_spec_schema",
     ]
 )
+
+python_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    deps = [
+        "//executorch/exir:lib",
+        "fbsource//third-party/pypi/pytest:pytest",
+    ]
+)
