@@ -1,8 +1,9 @@
-import coremltools as ct
 import argparse
 import os
-import subprocess
 import shutil
+import subprocess
+
+import coremltools as ct
 
 if __name__ == "__main__":
     """
@@ -34,16 +35,22 @@ if __name__ == "__main__":
     output_dir = str(args.output_dir)
 
     if os.path.exists(output_dir):
-        raise Exception(f"Output directory {output_dir} already exists.  Please make delete it before running script.")
+        raise Exception(
+            f"Output directory {output_dir} already exists.  Please make delete it before running script."
+        )
     os.makedirs(output_dir)
 
     coreml_extract_path = os.path.join(os.getcwd(), "extracted_coreml_models")
     if os.path.exists(coreml_extract_path):
-        raise Exception(f"{coreml_extract_path} already exists.  Please delete it before running script.")
+        raise Exception(
+            f"{coreml_extract_path} already exists.  Please delete it before running script."
+        )
 
-    extract_script_path = os.path.join(os.path.dirname(__file__), "../scripts/extract_coreml_models.py")
+    extract_script_path = os.path.join(
+        os.path.dirname(__file__), "../scripts/extract_coreml_models.py"
+    )
     extracted_path = "extracted_coreml_models/model_1/lowered_module/model.mlpackage"
-    
+
     subprocess.run(["python", extract_script_path, "--model", model1_path])
     items = os.listdir("extracted_coreml_models")
     assert len(items) == 1, "Expected one CoreML partition"
@@ -59,12 +66,12 @@ if __name__ == "__main__":
     desc.add_function(
         f"{output_dir}/model1.mlpackage",
         src_function_name="main",
-        target_function_name="model1"
+        target_function_name="model1",
     )
     desc.add_function(
         f"{output_dir}/model2.mlpackage",
         src_function_name="main",
-        target_function_name="model2"
+        target_function_name="model2",
     )
     desc.default_function_name = "model1"
     ct.utils.save_multifunction(desc, f"{output_dir}/combined.mlpackage")

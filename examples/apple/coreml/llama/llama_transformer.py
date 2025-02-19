@@ -392,8 +392,8 @@ class Transformer(nn.Module):
                 h,
                 freqs_cos,
                 freqs_sin,
-                k_caches[i] if self.use_cache_list else k_caches[i,:,:,:,:],
-                v_caches[i] if self.use_cache_list else v_caches[i,:,:,:,:],
+                k_caches[i] if self.use_cache_list else k_caches[i, :, :, :, :],
+                v_caches[i] if self.use_cache_list else v_caches[i, :, :, :, :],
                 attn_mask,
             )
             k_out.append(new_k)
@@ -420,14 +420,13 @@ class InputManager:
         seq_length,
         dtype=torch.float16,
         minus_infinity=-torch.inf,
-        cache_size = None,
+        cache_size=None,
     ):
         if cache_size is None:
             cache_size = model_args.max_seq_len - seq_length
         self.cache_size = cache_size
         assert self.cache_size + seq_length <= model_args.max_seq_len
-        
-        
+
         self.n_layers = model_args.n_layers
         self.max_batch_size = model_args.max_batch_size
         self.n_kv_heads = model_args.n_kv_heads
@@ -438,15 +437,11 @@ class InputManager:
 
         if self.use_cache_list:
             self.k_caches = [
-                torch.zeros(self.get_cache_shape(self.cache_size)).to(
-                    dtype
-                )
+                torch.zeros(self.get_cache_shape(self.cache_size)).to(dtype)
                 for _ in range(self.n_layers)
             ]
             self.v_caches = [
-                torch.zeros(self.get_cache_shape(self.cache_size)).to(
-                    dtype
-                )
+                torch.zeros(self.get_cache_shape(self.cache_size)).to(dtype)
                 for _ in range(self.n_layers)
             ]
         else:
@@ -460,7 +455,10 @@ class InputManager:
             minus_infinity * torch.ones(self.seq_length, self.seq_length), diagonal=1
         )  # attn for current tokens
         self.attn_mask = torch.concat([attn_cache, attn_seq], dim=-1).to(dtype)
-        assert self.attn_mask.shape == (self.seq_length, self.cache_size + self.seq_length)
+        assert self.attn_mask.shape == (
+            self.seq_length,
+            self.cache_size + self.seq_length,
+        )
 
         self.input_pos = 0
         self.cache_pos = 0
@@ -495,37 +493,42 @@ class InputManager:
 
                 self.k_caches[i][
                     :, :, (self.cache_pos) : (self.cache_pos + length), :
-                ] = new_k_caches[i][:, :, start:(start+length), :]
+                ] = new_k_caches[i][:, :, start : (start + length), :]
                 self.v_caches[i][
                     :, :, (self.cache_pos) : (self.cache_pos + length), :
-                ] = new_v_caches[i][:, :, start:(start+length), :]
+                ] = new_v_caches[i][:, :, start : (start + length), :]
         else:
             assert new_k_caches.shape == self.get_cache_shape(self.seq_length)
             assert new_v_caches.shape == self.get_cache_shape(self.seq_length)
-            self.k_caches[
-                :, :, :, (self.cache_pos) : (self.cache_pos + length), :
-            ] = new_k_caches[:, :, :, start:(start+length), :]
-            self.v_caches[
-                :, :, :, (self.cache_pos) : (self.cache_pos + length), :
-            ] = new_v_caches[:, :, :, start:(start+length), :]
+            self.k_caches[:, :, :, (self.cache_pos) : (self.cache_pos + length), :] = (
+                new_k_caches[:, :, :, start : (start + length), :]
+            )
+            self.v_caches[:, :, :, (self.cache_pos) : (self.cache_pos + length), :] = (
+                new_v_caches[:, :, :, start : (start + length), :]
+            )
 
         self.cache_pos += length
         if self.cache_pos == self.cache_size:
             self.cache_pos = 0
-
 
     def update(self, input_length, new_k_caches, new_v_caches):
         # Copy as much new cache data into cache as possible without wrapping
         amount_to_copy = min(input_length, self.cache_size - self.cache_pos)
         self._update_cache(0, amount_to_copy, new_k_caches, new_v_caches)
         if self.input_pos <= self.cache_size:
-            self.attn_mask[:, (self.input_pos) : (self.input_pos + amount_to_copy)] = 0.0
+            self.attn_mask[:, (self.input_pos) : (self.input_pos + amount_to_copy)] = (
+                0.0
+            )
 
         # Copy remainder (cache is now wrapped around and has more room)
         # Attention mask needs no further updates.  Attention is paid to the whole cache
-        remaining_to_copy = min(input_length - amount_to_copy, self.cache_size - self.cache_pos)
+        remaining_to_copy = min(
+            input_length - amount_to_copy, self.cache_size - self.cache_pos
+        )
         if remaining_to_copy > 0:
-            self._update_cache(amount_to_copy, remaining_to_copy, new_k_caches, new_v_caches)
+            self._update_cache(
+                amount_to_copy, remaining_to_copy, new_k_caches, new_v_caches
+            )
 
         self.input_pos += input_length
 

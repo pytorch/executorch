@@ -57,6 +57,12 @@ def main() -> None:
         help="maximum length sequence to evaluate",
     )
     parser.add_argument(
+        "--cache_size",
+        type=int,
+        default=None,
+        help="Cache size.  Old items are evicted from cache",
+    )
+    parser.add_argument(
         "-E",
         "--embedding-quantize",
         default=None,
@@ -68,6 +74,11 @@ def main() -> None:
         default=None,
         choices=["b4w", "c4w"],
         help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight), c4w (for channelwise 4 bit weight)",
+    )
+    parser.add_argument(
+        "--use-cache-list",
+        action="store_true",
+        help="Use cache list to speed up model computation (does not work in pybindings)",
     )
 
     export_args = parser.parse_args()
@@ -81,6 +92,7 @@ def main() -> None:
     args = ModelArgs(
         max_seq_len=export_args.max_seq_length,
         generate_full_logits=False,
+        use_cache_list=export_args.use_cache_list,
         **params,
     )
 
@@ -156,6 +168,7 @@ def main() -> None:
         seq_length=export_args.seq_length,
         dtype=float_dtype,
         minus_infinity=-30000,
+        cache_size=export_args.cache_size,
     )
     example_inputs = input_manager.get_inputs(tokens=[0])
 

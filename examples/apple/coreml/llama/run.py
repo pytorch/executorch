@@ -1,9 +1,9 @@
 import argparse
-from multiprocessing import process
 import sys
+from multiprocessing import process
+from pathlib import Path
 
 import torch
-from pathlib import Path
 
 
 sys.path.insert(0, "..")
@@ -11,11 +11,12 @@ import json
 
 import sentencepiece as spm
 import tiktoken
-from tiktoken.load import load_tiktoken_bpe
 
 from executorch.runtime import Runtime
 
 from llama.llama_transformer import InputManager, ModelArgs
+from tiktoken.load import load_tiktoken_bpe
+
 
 class Tokenizer:
     def __init__(self, model_path: str):
@@ -56,28 +57,41 @@ class Tokenizer:
                 mergeable_ranks=mergeable_ranks,
                 special_tokens=self.special_tokens,
             )
-    
+
     def encode(self, text):
         return self.tokenizer.encode(text)
-    
+
     def encode_prompt(self, text):
         if isinstance(self.tokenizer, spm.SentencePieceProcessor):
             return self.tokenizer.encode(text)
 
-        get_prompt = lambda x: f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{x}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
-        return self.tokenizer.encode(get_prompt(text), allowed_special={"<|begin_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>"})
+        get_prompt = (
+            lambda x: f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{x}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+        )
+        return self.tokenizer.encode(
+            get_prompt(text),
+            allowed_special={
+                "<|begin_of_text|>",
+                "<|start_header_id|>",
+                "<|end_header_id|>",
+                "<|eot_id|>",
+            },
+        )
 
     def decode(self, tokens):
         return self.tokenizer.decode(tokens)
-    
+
     def stop_tokens(self):
         if isinstance(self.tokenizer, spm.SentencePieceProcessor):
             return [self.tokenizer.eos_id()]
         if isinstance(self.tokenizer, tiktoken.Encoding):
             return [
                 self.tokenizer.encode("<|eot_id|>", allowed_special={"<|eot_id|>"})[0],
-                self.tokenizer.encode("<|end_of_text|>", allowed_special={"<|end_of_text|>"})[0],
+                self.tokenizer.encode(
+                    "<|end_of_text|>", allowed_special={"<|end_of_text|>"}
+                )[0],
             ]
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -134,7 +148,7 @@ def main() -> None:
     model_args = ModelArgs(
         max_seq_len=args.max_seq_length,
         generate_full_logits=False,
-        use_cache_list=False, # cache_list does not work in pybindings
+        use_cache_list=False,  # cache_list does not work in pybindings
         **params,
     )
 
@@ -156,8 +170,8 @@ def main() -> None:
     generated_tokens.extend(tokens)
     while input_manager.input_pos < args.n_steps:
         while len(tokens) > 0:
-            inputs, remaining_tokens = (
-                input_manager.get_inputs_and_remaining_tokens(tokens)
+            inputs, remaining_tokens = input_manager.get_inputs_and_remaining_tokens(
+                tokens
             )
             processed_tokens = len(tokens) - len(remaining_tokens)
             logits, k, v = method.execute(inputs)
