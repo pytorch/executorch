@@ -692,7 +692,7 @@ It’s also available as a default model in <a class="reference external" href="
 <p>In this flow, without any backend delegates, to illustrate the portability of the ExecuTorch runtime, as well as of the operator library we will skip specifying the backend during the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> generation.</p>
 <p>Following script will serve as a helper utility to help us generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This is available in the <code class="docutils literal notranslate"><span class="pre">examples/arm</span></code> directory.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;softmax&quot;</span>
-<span class="c1"># This should produce ./softmax.pte</span>
+<span class="c1"># This should produce ./softmax_arm_ethos-u55-128.pte</span>
 </pre></div>
 </div>
 </div>
@@ -709,13 +709,14 @@ It’s also available as a default model in <a class="reference external" href="
 </div>
 <p>Similar to the non-delegate flow, the same script will server as a helper utility to help us generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. Notice the <code class="docutils literal notranslate"><span class="pre">--delegate</span></code> option to enable the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> call.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span><span class="w"> </span>--delegate
-<span class="c1"># should produce ./add_arm_delegate.pte</span>
+<span class="c1"># should produce ./add_arm_delegate_ethos-u55-128.pte</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="delegated-quantized-workflow">
 <h3>Delegated Quantized Workflow<a class="headerlink" href="#delegated-quantized-workflow" title="Permalink to this heading">¶</a></h3>
 <p>Before generating the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file for delegated quantized networks like MobileNetV2, we need to build the <code class="docutils literal notranslate"><span class="pre">quantized_ops_aot_lib</span></code></p>
+<p>You can just run the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_quantized_ops_aot_lib.sh</span></code> script to build this for you or build it yourself like this.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;executorch_root_dir&gt;
 mkdir<span class="w"> </span>-p<span class="w"> </span>cmake-out-aot-lib
 cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
@@ -731,7 +732,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 </div>
 <p>After the <code class="docutils literal notranslate"><span class="pre">quantized_ops_aot_lib</span></code> build, we can run the following script to generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--delegate<span class="w"> </span>--quantize<span class="w"> </span>--so_library<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>find<span class="w"> </span>cmake-out-aot-lib<span class="w"> </span>-name<span class="w"> </span>libquantized_ops_aot_lib.so<span class="k">)</span><span class="s2">&quot;</span>
-<span class="c1"># should produce ./mv2_arm_delegate.pte.pte</span>
+<span class="c1"># should produce ./mv2_arm_delegate_ethos-u55-128.pte</span>
 </pre></div>
 </div>
 <br />
@@ -747,6 +748,12 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 <div class="section" id="getting-a-bare-metal-executable">
 <h2>Getting a Bare-Metal Executable<a class="headerlink" href="#getting-a-bare-metal-executable" title="Permalink to this heading">¶</a></h2>
 <p>In this section, we will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository we have a functioning script which does the exact same steps. It is located at <code class="docutils literal notranslate"><span class="pre">executorch/examples/arm/run.sh</span></code>. We will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.</p>
+<p>By default the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> will use <code class="docutils literal notranslate"><span class="pre">arm_test/</span></code> as an build and output folder and you will find the build artifacts under it. This can be contolled/overrided with the <code class="docutils literal notranslate"><span class="pre">--et_build_root</span></code> and the <code class="docutils literal notranslate"><span class="pre">--output</span></code> flags if needed.</p>
+<p>e.g. running <code class="docutils literal notranslate"><span class="pre">examples/arm/run.sh</span> <span class="pre">--model_name=add</span> <span class="pre">--target=ethos-u85-128</span></code> will produce a pte and elf file like this:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>arm_test/add/add_arm_delegate_ethos-u85-128.pte
+arm_test/add/cmake-out/arm_executor_runner
+</pre></div>
+</div>
 <p>Also before we get started, make sure that you have completed ExecuTorch cmake build setup, and the instructions to setup the development environment described <a class="reference internal" href="#set-up-the-developer-environment"><span class="std std-doc">earlier</span></a>.</p>
 <p>The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.</p>
 <p><img alt="" src="_images/arm-delegate-runtime-build.svg" /></p>
@@ -767,19 +774,15 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch_delegate_ethos_u.a</span></code></p></li>
 </ul>
-<p>These libraries are generated in <code class="docutils literal notranslate"><span class="pre">build_executorch</span></code> and <code class="docutils literal notranslate"><span class="pre">build_quantization_aot_lib</span></code> function of the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script.</p>
-<p>In this function, <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code> will decide the number of portable operators included in the build and are available at runtime. It must match with <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file’s requirements, otherwise you will get <code class="docutils literal notranslate"><span class="pre">Missing</span> <span class="pre">Operator</span></code> error at runtime.</p>
+<p>These libraries are generated by the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_executorch.sh</span></code>, <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_portable_kernels.sh</span></code> and <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_quantized_ops_aot_lib.sh</span></code> scripts called from the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">--portable_kernels</span></code> flag can be used to set the build flag <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code> when running <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_portable_kernels.sh</span></code> that will decide the number of portable operators included in the build and are available at runtime. It must match with <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file’s requirements, otherwise you will get <code class="docutils literal notranslate"><span class="pre">Missing</span> <span class="pre">Operator</span></code> error at runtime.</p>
 <p>For example, there  in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for <em>non-delegated</em> operators.</p>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script takes in <code class="docutils literal notranslate"><span class="pre">--portable_kernels</span></code> option, which provides a way to supply a comma seperated list of portable kernels to be included.</p>
-</div>
 </div>
 <div class="section" id="building-the-executor-runner-bare-metal-application">
 <h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this heading">¶</a></h3>
 <p>The SDK dir is the same one prepared <a class="reference internal" href="#setup-the-arm-ethos-u-software-development"><span class="std std-doc">earlier</span></a>. And, we will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
 <p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300/Corstone-320 platforms.</p>
-<p>This is performed by the <code class="docutils literal notranslate"><span class="pre">build_executorch_runner</span></code> function in <code class="docutils literal notranslate"><span class="pre">run.sh</span></code>.</p>
+<p>This is performed by the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_executorch_runner.sh</span></code> script runned from <code class="docutils literal notranslate"><span class="pre">run.sh</span></code>.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script takes in <code class="docutils literal notranslate"><span class="pre">--target</span></code> option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)</p>
@@ -788,7 +791,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<sp
 </div>
 <div class="section" id="running-on-corstone-fvp-platforms">
 <h2>Running on Corstone FVP Platforms<a class="headerlink" href="#running-on-corstone-fvp-platforms" title="Permalink to this heading">¶</a></h2>
-<p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf. The below command is used to run the <span class="xref myst">MV2Model</span> on Corstone-320 FVP</p>
+<p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf. <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> will run the FVP for you via the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/run_fvp.sh</span></code> script but you can also run it directly.</p>
+<p>The below command is used to run the <span class="xref myst">MV2Model</span> on Corstone-320 FVP</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">ethos_u_build_dir</span><span class="o">=</span>examples/arm/executor_runner/
 
 <span class="nv">elf</span><span class="o">=</span><span class="k">$(</span>find<span class="w"> </span><span class="si">${</span><span class="nv">ethos_u_build_dir</span><span class="si">}</span><span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;arm_executor_runner&quot;</span><span class="k">)</span>
