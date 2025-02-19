@@ -23,7 +23,7 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..
-  ${EXECUTORCH_ROOT}/runtime/core/portable_type)
+  ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
