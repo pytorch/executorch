@@ -1063,7 +1063,8 @@ void SmartMaskIoMgr::update_kv_io(
   for (int i = 0; i < k_cache_in.size(); ++i) {
     uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>() + pos;
     const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
-    for (size_t j = 0, offset = 0; j < head_dim_; ++j, offset += kv_cache_len_) {
+    for (size_t j = 0, offset = 0; j < head_dim_;
+         ++j, offset += kv_cache_len_) {
       ptr_in[offset] = ptr_out[j];
     }
   }
