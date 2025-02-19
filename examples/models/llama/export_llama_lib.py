@@ -84,6 +84,7 @@ pkg_name = __name__
 verbosity_setting = None
 
 
+# All models that leverage the transformer architecture defined in llama_transformer.py.
 EXECUTORCH_DEFINED_MODELS = [
     "stories110m",
     "llama2",
@@ -91,6 +92,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_1",
     "llama3_2",
     "static_llama",
+    "qwen2_5",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 

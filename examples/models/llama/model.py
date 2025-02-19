@@ -236,14 +236,23 @@ the checkpoint format to avoid generating faulty models.
                 eviction_batch_size=eviction_batch_size,
             )
 
-        # assign=True: load params/buffers by assignment instead of performing an in-place copy.
-        # Because we are using device="meta", tensors do not have memory associated with them
-        # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
-        missing, unexpected = self.model_.load_state_dict(
-            checkpoint,
-            strict=False,
-            assign=True,
-        )  # self.model_ = Transformer(gptconf)
+        missing, unexpected = None, None
+        try:
+            # assign=True: load params/buffers by assignment instead of performing an in-place copy.
+            # Because we are using device="meta", tensors do not have memory associated with them
+            # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
+            missing, unexpected = self.model_.load_state_dict(
+                checkpoint,
+                strict=False,
+                assign=True,
+            )  # self.model_ = Transformer(gptconf)
+        except RuntimeError as e:
+            print(
+                "Could not load checkpoint into mode, defaulting to random uninitialized weights."
+            )
+            print(f"Error: {e}")
+            # Need to provide concrete (empty) values for meta-initialized tensors for quantization.
+            self.model_.to_empty(device="cpu")
 
         if missing:
             missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
