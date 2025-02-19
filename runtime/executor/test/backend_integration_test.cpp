@@ -330,6 +330,13 @@ TEST_P(BackendIntegrationTest, BackendIsPresent) {
   ASSERT_EQ(backend, &StubBackend::singleton());
 }
 
+TEST_P(BackendIntegrationTest, BackendIsPresentInAll) {
+  std::vector<BackendInterface*> backends =
+      executorch::runtime::get_all_backend_classes();
+  ASSERT_EQ(backends.size(), 1);
+  ASSERT_EQ(backends[0], &StubBackend::singleton());
+}
+
 // Demonstrate that installed StubBackend initializes successfully by default.
 TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
   Result<FileDataLoader> loader = FileDataLoader::from(program_path());
