@@ -7,6 +7,7 @@
 
 from . import (  # noqa
     node_visitor,
+    op_abs,
     op_add,
     op_avg_pool2d,
     op_bmm,
@@ -20,7 +21,6 @@ from . import (  # noqa
     op_ge,
     op_get_item,
     op_gt,
-    op_hardtanh,
     op_le,
     op_log,
     op_lt,
@@ -30,7 +30,6 @@ from . import (  # noqa
     op_mul,
     op_permute,
     op_reciprocal,
-    op_relu,
     op_repeat,
     op_rescale,
     op_rshift,
