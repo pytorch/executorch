@@ -97,10 +97,11 @@ test_model() {
       # Test export_llama script: python3 -m examples.models.llama.export_llama.
       # Use Llama random checkpoint with Qwen 2.5 1.5b model configuration.
       "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/qwen2_5/1_5b_config.json
-      run_portable_executor_runner
       rm "./${MODEL_NAME}.pte"
+      return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
   fi
-  # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
+
+  # Export a basic .pte and run the model.
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
 }
