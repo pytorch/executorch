@@ -74,7 +74,7 @@ Follow the steps below to setup your build environment:
    ```bash
    pip install -r requirements.txt
    ```
-
+  Note: To achieve optimal performance with NNCF quantization, you should install the latest development version of NNCF (version 2.16.0.dev0+191b53d9 or higher).
 3. Navigate to `scripts/` directory.
 
 4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-openvino-out/backends/openvino/` as `libopenvino_backend.so`

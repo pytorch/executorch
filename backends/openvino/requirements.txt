@@ -6,4 +6,4 @@ tokenizers
 transformers
 piq
 pillow
-nncf @ https://github.com/openvinotoolkit/nncf.git
+git+https://github.com/openvinotoolkit/nncf@191b53d#egg=nncf
