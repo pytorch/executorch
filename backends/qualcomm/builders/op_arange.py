@@ -28,6 +28,9 @@ class Arange(NodeVisitor):
         step = node.args[2] if len(node.args) > 2 else 1
         out_tensor = torch.arange(start, end, step)
 
+        # since we can derive the constant value of current op in AoT stage
+        # we only build static tensor here for consumers of current node
+        # to correctly reference the data
         self.define_tensor(
             node,
             node,
