@@ -45,7 +45,7 @@ def main() -> None:
         help="checkpoint path",
     )
     parser.add_argument(
-        "--static_seq_length",
+        "--seq_length",
         type=int,
         default=1,  # set to 1 for decode
         help="length sequence to evaluate",
@@ -153,7 +153,7 @@ def main() -> None:
 
     input_manager = InputManager(
         model_args=args,
-        seq_length=export_args.static_seq_length,
+        seq_length=export_args.seq_length,
         dtype=float_dtype,
         minus_infinity=-30000,
     )
@@ -164,7 +164,7 @@ def main() -> None:
         example_inputs,
         edge_compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
-            # _skip_type_promotion=(float_dtype == torch.float16),
+            _skip_type_promotion=(float_dtype == torch.float16),
             _skip_dim_order=True,
         ),
     )

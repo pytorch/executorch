@@ -457,6 +457,7 @@ class InputManager:
     def update(self, input_length, new_k_cache, new_v_cache):
         assert new_k_cache.shape == self.get_cache_shape(self.seq_length)
         assert new_v_cache.shape == self.get_cache_shape(self.seq_length)
+        assert self.input_pos + input_length <= self.max_seq_length - self.seq_length
 
         self.k_cache[:, :, :, (self.input_pos) : (self.input_pos + input_length), :] = (
             new_k_cache[:, :, :, 0:input_length, :]
