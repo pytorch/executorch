@@ -1,0 +1,18 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+python_library(
+    name = "hf_tokenizer",
+    srcs = ["hf_tokenizer.py"],
+    labels = ["autodeps2_generated"],
+    deps = [
+        "fbsource//third-party/pypi/tokenizers:tokenizers",
+    ],
+)
