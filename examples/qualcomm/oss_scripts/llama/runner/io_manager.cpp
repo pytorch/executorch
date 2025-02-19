@@ -571,7 +571,6 @@ void ShiftPointerIoMgr::update_prefill_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   (void)cur_token;
   (void)output_tensors;
-  IO* ptr = static_cast<IO*>(data_ptr_.get());
 
   if (!is_bert_) {
     // update v_cache
@@ -1041,7 +1040,6 @@ void SmartMaskIoMgr::update_kv_io(
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
-  size_t cache_len = std::max(kv_cache_len_, prefill_cache_len_);
   // update input_tok
   *ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
@@ -1065,7 +1063,7 @@ void SmartMaskIoMgr::update_kv_io(
   for (int i = 0; i < k_cache_in.size(); ++i) {
     uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>() + pos;
     const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
-    for (size_t j = 0, offset = 0; j < head_dim_; ++j, offset += cache_len) {
+    for (size_t j = 0, offset = 0; j < head_dim_; ++j, offset += kv_cache_len_) {
       ptr_in[offset] = ptr_out[j];
     }
   }
@@ -1086,7 +1084,6 @@ void SmartMaskIoMgr::prepare_prefill_io(
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   std::unordered_map<std::string, size_t> io_bytes_map = get_io_bytes();
 
-  int32_t cache_len = methods_meta[0]->input_tensor_meta(0)->sizes()[1];
   // [I]: pre_input_tokens
   Result<TensorInfo> prefill_input_toks = methods_meta[0]->input_tensor_meta(0);
   prefill_input_toks_ = std::make_unique<TensorImpl>(
@@ -1303,7 +1300,6 @@ void SmartMaskIoMgr::update_prefill_io(
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
   (void)output_tensors;
-  IO* ptr = static_cast<IO*>(data_ptr_.get());
 
   if (!is_bert_) {
     // update v_cache
