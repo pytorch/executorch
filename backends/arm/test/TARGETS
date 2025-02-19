@@ -30,3 +30,17 @@ python_library(
         "fbsource//third-party/pypi/pytest:pytest",
     ]
 )
+
+python_library(
+    name = "arm_tester",
+    srcs = glob(["tester/*.py"]),
+    deps = [
+        ":runner_utils",
+        ":common",
+        "//executorch/backends/arm:tosa_mapping",
+        "//executorch/backends/arm:tosa_specification",
+        "//executorch/backends/arm/quantizer:arm_quantizer",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "fbsource//third-party/pypi/tabulate:tabulate",
+    ]
+)
