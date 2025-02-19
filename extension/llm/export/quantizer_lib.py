@@ -107,10 +107,8 @@ def get_pt2e_quantizers(
                 raise RuntimeError(
                     "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
                     "Follow the following steps to build the needed lib via cmake.\n"
-                    'Use `python -c "import torch as _; print(_.__path__)"` to find where torch package is installed.\n'
-                    "Set that as TORCH_PACKAGE_DIR.\n"
                     "Then from root executorch dir do the following:\n"
-                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON ..) && cmake --build . -j16\n"
+                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON ..) && cmake --build . -j16\n"
                     'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
                     "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
                 )
