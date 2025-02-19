@@ -176,6 +176,8 @@ add_custom_command(
 add_library(
   etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/emitter.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/buffer_data_sink.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/buffer_data_sink.h
 )
 
 target_link_libraries(

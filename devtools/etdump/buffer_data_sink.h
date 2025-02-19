@@ -25,13 +25,23 @@ namespace etdump {
 class BufferDataSink : public DataSinkBase {
  public:
   /**
-   * Constructs a BufferDataSink with a given buffer.
+   * Constructs a BufferDataSink with a given span buffer.
    *
    * @param[in] buffer A Span object representing the buffer where data will be
    * stored.
    */
   explicit BufferDataSink(::executorch::runtime::Span<uint8_t> buffer)
       : debug_buffer_(buffer), offset_(0) {}
+
+  /**
+   * Constructs a BufferDataSink with a given ptr to data blob, and the size of
+   * data blob.
+   *
+   * @param[in] ptr A pointer to the data blob where data will be stored.
+   * @param[in] size The size of the data blob in bytes.
+   */
+  BufferDataSink(void* ptr, size_t size)
+      : debug_buffer_((uint8_t*)ptr, size), offset_(0) {}
 
   BufferDataSink(const BufferDataSink&) = delete;
   BufferDataSink& operator=(const BufferDataSink&) = delete;

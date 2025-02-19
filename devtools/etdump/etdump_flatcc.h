@@ -9,7 +9,9 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 
+#include <executorch/devtools/etdump/data_sink_base.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/platform.h>
@@ -141,8 +143,10 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const double& output) override;
   void set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
+  void set_data_sink(std::shared_ptr<DataSinkBase> buffer_data_sink);
   ETDumpResult get_etdump_data();
   size_t get_debug_buffer_size() const;
+  size_t get_data_sink_size() const;
   size_t get_num_blocks();
   bool is_static_etdump();
   void reset();
@@ -158,7 +162,6 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
 
   void check_ready_to_add_events();
   int64_t create_string_entry(const char* name);
-  size_t copy_tensor_to_debug_buffer(executorch::aten::Tensor tensor);
 
   /**
    * Templated helper function used to log various types of intermediate output.
@@ -170,10 +173,11 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const T& output);
 
+  long write_tensor_or_raise_error(executorch::aten::Tensor tensor);
+
   struct flatcc_builder* builder_;
   size_t num_blocks_ = 0;
-  ::executorch::runtime::Span<uint8_t> debug_buffer_;
-  size_t debug_buffer_offset_ = 0;
+  std::shared_ptr<DataSinkBase> data_sink_;
   int bundled_input_index_ = -1;
   State state_ = State::Init;
   struct internal::ETDumpStaticAllocator alloc_;
