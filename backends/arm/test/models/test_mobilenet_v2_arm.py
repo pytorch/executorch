@@ -32,50 +32,37 @@ class TestMobileNetV2(unittest.TestCase):
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
-    model_inputs = (normalize(torch.randn((1, 3, 224, 224))),)
 
-    all_operators = {
-        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
-        "executorch_exir_dialects_edge__ops_aten_add_Tensor",
-        "executorch_exir_dialects_edge__ops_aten_permute_copy_default",
-        "executorch_exir_dialects_edge__ops_aten_addmm_default",
-        "executorch_exir_dialects_edge__ops_aten_mean_dim",
-        "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
-        "executorch_exir_dialects_edge__ops_aten_convolution_default",
-    }
-
-    operators_after_quantization = all_operators - {
-        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
-    }
+    # Used e.g. for quantization calibration and shape extraction in the tester
+    model_example_inputs = (normalize(torch.randn((1, 3, 224, 224))),)
 
     def test_mv2_tosa_MI(self):
         (
             ArmTester(
                 self.mv2,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=self.model_inputs)
+            .run_method_and_compare_outputs()
         )
 
     def test_mv2_tosa_BI(self):
         (
             ArmTester(
                 self.mv2,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
             .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            # atol=1.0 is a defensive upper limit
-            # TODO MLETROCH-72
-            # TODO MLETROCH-149
-            .run_method_and_compare_outputs(atol=1.0, qtol=1, inputs=self.model_inputs)
+            .run_method_and_compare_outputs(rtol=0.001, atol=0.2, qtol=1)
         )
 
     @pytest.mark.slow
@@ -84,7 +71,7 @@ class TestMobileNetV2(unittest.TestCase):
         tester = (
             ArmTester(
                 self.mv2,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
@@ -95,7 +82,9 @@ class TestMobileNetV2(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs
+                rtol=0.001,
+                atol=0.2,
+                qtol=1,
             )
 
     @pytest.mark.slow
@@ -104,7 +93,7 @@ class TestMobileNetV2(unittest.TestCase):
         tester = (
             ArmTester(
                 self.mv2,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_u85_compile_spec(),
             )
             .quantize()
@@ -115,5 +104,7 @@ class TestMobileNetV2(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs
+                rtol=0.001,
+                atol=0.2,
+                qtol=1,
             )

@@ -25,20 +25,28 @@ if TOSA_DBG_VERBOSE:
     logger.setLevel(logging.INFO)
 
 
-def dbg_node(node):
+def dbg_node(node: torch.fx.Node):
     # Debug output of node information
-    logger.info("OP")
-    logger.info(f"  op is {node.op}")
-    logger.info(f"  name is {node.name}")
-    logger.info(f"  node target is {node.target}")
-    logger.info(f"  node args is {node.args}")
-    logger.info(f"  node kwargs is {node.kwargs}")
-    logger.info("  node.meta = ")
+    logger.info(get_node_debug_info(node))
+
+
+def get_node_debug_info(node: torch.fx.Node) -> str:
+    output = (
+        "-- NODE DEBUG INFO --\n"
+        f"  Op is {node.op}\n"
+        f"  Name is {node.name}\n"
+        f"  Node target is {node.target}\n"
+        f"  Node args is {node.args}\n"
+        f"  Node kwargs is {node.kwargs}\n"
+        f"  Node users is {node.users}\n"
+        "  Node.meta = \n"
+    )
     for k, v in node.meta.items():
-        logger.info(f"    '{k}' = {v}")
+        output += f"    '{k}' = {v}\n"
         if isinstance(v, list):
             for i in v:
-                logger.info(f"      {i} ")
+                output += f"      {i}\n"
+    return output
 
 
 # Output TOSA flatbuffer and test harness file
@@ -65,14 +73,19 @@ def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
 
 def dbg_fail(node, tosa_graph, path):
     dbg_tosa_dump(tosa_graph, path)
-    logger.warn("Internal error due to poorly handled node:")
+    logger.warning("Internal error due to poorly handled node:")
     dbg_node(node)
-    logger.warn(f"Debug output captured in '{path}'.")
+    logger.warning(f"Debug output captured in '{path}'.")
     raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
 
 
 def getNodeArgs(node: Node) -> list[TosaArg]:
-    return [TosaArg(arg) for arg in node.args]
+    try:
+        return [TosaArg(arg) for arg in node.args]
+    except ValueError as e:
+        raise ValueError(
+            f"Failed processing args to op:\n{get_node_debug_info(node)}"
+        ) from e
 
 
 def get_output_node(node: Node) -> Node:

@@ -9,6 +9,8 @@
 
 # Selective build. See codegen/tools/gen_oplist.py for how to use these
 # arguments.
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
 function(gen_selected_ops)
   set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS)
   cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
@@ -145,17 +147,12 @@ function(gen_custom_ops_aot_lib)
     ${_out_dir}/RegisterCPUCustomOps.cpp ${_out_dir}/RegisterSchema.cpp
     ${_out_dir}/CustomOpsNativeFunctions.h "${GEN_KERNEL_SOURCES}"
   )
-  # Find `Torch`.
-  if(NOT TARGET torch)
-    find_package(Torch REQUIRED)
-  endif()
+  find_package_torch()
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)
-
-  include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
   if(TARGET portable_lib)
@@ -221,6 +218,9 @@ function(merge_yaml)
   )
 endfunction()
 
+# Append the file list in the variable named `name` in
+# build/build_variables.bzl to the variable named `outputvar` in the
+# caller's scope.
 function(append_filelist name outputvar)
   # configure_file adds its input to the list of CMAKE_RERUN dependencies
   configure_file(
@@ -250,6 +250,17 @@ function(append_filelist name outputvar)
   )
 endfunction()
 
+# Fail the build if the src lists in build_variables.bzl do not match
+# the src lists extracted from Buck and placed into
+# EXECUTORCH_SRCS_FILE. This is intended to be a safety mechanism
+# while we are in the process of removing Buck from the CMake build
+# and replacing it with build_variables.bzl; if you are seeing
+# failures after you have intentionally changed Buck srcs, then simply
+# update build_variables.bzl. If you are seeing failures after
+# changing something about the build system, make sure your changes
+# will work both before and after we finish replacing Buck with
+# build_variables.bzl, which should involve getting these lists to
+# match!
 function(validate_build_variables)
   include(${EXECUTORCH_SRCS_FILE})
   set(BUILD_VARIABLES_FILELISTS
@@ -322,10 +333,10 @@ function(validate_build_variables)
     )
       message(
         FATAL_ERROR
-          "Buck-generated ${filelist_and_varname_1} does not match hardcoded \
-${filelist_and_varname_0} in build_variables.bzl. Left: \
-${${filelist_and_varname_1}}\n \
-Right: ${${filelist_and_varname_1}_from_build_variables}"
+          "Buck-generated ${filelist_and_varname_1} does not match hardcoded "
+          "${filelist_and_varname_0} in build_variables.bzl. Left: "
+          "${${filelist_and_varname_1}}\n "
+          "Right: ${${filelist_and_varname_1}_from_build_variables}"
       )
     endif()
   endforeach()

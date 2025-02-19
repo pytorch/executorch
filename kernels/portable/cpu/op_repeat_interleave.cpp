@@ -18,12 +18,12 @@ bool check_repeat_interleave_args(
     int64_t output_size_value,
     int64_t repeats_sum,
     Tensor& out) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       repeats.scalar_type() == ScalarType::Int ||
           repeats.scalar_type() == ScalarType::Long,
       "repeats must be int or long");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(repeats.dim() == 1, "repeats must be 1D");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(repeats.dim() == 1, "repeats must be 1D");
+  ET_CHECK_OR_RETURN_FALSE(
       output_size_value == repeats_sum,
       "output_size, if provided, must be equal to repeats.sum()");
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(repeats, out));
@@ -31,13 +31,13 @@ bool check_repeat_interleave_args(
   if (repeats.scalar_type() == ScalarType::Long) {
     const int64_t* const repeats_data = repeats.const_data_ptr<int64_t>();
     for (size_t i = 0; i < repeats.numel(); ++i) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           repeats_data[i] >= 0, "repeats cannot be negative");
     }
   } else {
     const int32_t* const repeats_data = repeats.const_data_ptr<int32_t>();
     for (size_t i = 0; i < repeats.numel(); ++i) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           repeats_data[i] >= 0, "repeats cannot be negative");
     }
   }

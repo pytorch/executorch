@@ -6,6 +6,26 @@
 # file. (Remember that bzl files are not exported via ShipIt by default, so you may also
 # need to update ExecuTorch's ShipIt config.)
 
+# This file contains srcs lists that are shared between our Buck and CMake build
+# systems. We had three choices for listing src files:
+# 1) List them in Buck and use buck query to get them in CMake. This was our setup for a
+# long time; the problem is that OSS users would prefer not to have to deal with Buck at
+# all.
+# 2) List them in both Buck targets.bzl files and CMake's CMakeLists.txt files. This is
+# unnecessary duplication, and people will invariably forget to update one or the other
+# 3) List them somewhere CMake and Buck can both get at them; that's this file. Buck
+# files can load() it, and our CMake build evaluates it with Python. (See
+# append_filelist in build/Codegen.cmake.)
+#
+# Inconveniently, the Buck target layout is much more granular than the CMake library
+# layout, leading to several complications:
+# 1) Single-file Buck targets will just list the one src file they contain. Nothing to
+# share with CMake in that case, and that src will be in a list in this file that does
+# not map directly to that particular Buck target.
+# 2) Multi-file Buck targets should have a list below that corresponds exactly to their
+# `srcs`. There should then be simple Python code that combines those lists into lists
+# that map 1:1 to the CMake library layout.
+
 EXECUTORCH_SRCS = [
     "kernels/prim_ops/et_copy_index.cpp",
     "kernels/prim_ops/et_view.cpp",
