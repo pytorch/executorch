@@ -76,5 +76,17 @@ class ScalarsToAttributePass(ExportPass):
                     new_args.append(get_attr_node)
             n.args = tuple(new_args)
 
+            # Replace rsub.Scalar with sub.Tensor as retracing will fail otherwise
+            if n.target == torch.ops.aten.rsub.Scalar:
+                with graph_module.graph.inserting_after(n):
+                    reversed_args = (n.args[1], n.args[0])
+                    sub = graph_module.graph.create_node(
+                        "call_function", torch.ops.aten.sub.Tensor, reversed_args, {}
+                    )
+                    n.replace_all_uses_with(sub)
+                    sub.meta["val"] = n.meta["val"]
+                graph_module.graph.erase_node(n)
+
         graph_module.recompile()
+        graph_module = super().call(graph_module).graph_module
         return PassResult(graph_module, True)

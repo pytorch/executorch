@@ -6,6 +6,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_add",
         deps = [
             ":binary_ops",
+            ":add_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
@@ -117,6 +118,14 @@ def define_common_targets():
 
     aten_op_targets = [":{}".format(op["name"]) for op in enabled_ops]
     all_op_targets = aten_op_targets
+
+    runtime.cxx_library(
+        name = "add_sub_impl",
+        srcs = [],
+        exported_headers = ["op_add_sub_impl.h"],
+        visibility = ["//executorch/kernels/optimized/cpu/..."],
+        exported_deps = ["//executorch/runtime/core:core"],
+    )
 
     runtime.cxx_library(
         name = "binary_ops",

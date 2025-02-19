@@ -64,7 +64,9 @@ def get_registered_tosa_support_checks(
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
 
     if tosa_spec not in _tosa_spec_support:
-        raise RuntimeError
+        raise RuntimeError(
+            f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support.keys())}"
+        )
 
     return _tosa_spec_support[tosa_spec]
 
@@ -89,6 +91,7 @@ class BaseTOSASupportList(OperatorSupportBase):
 
     def is_node_supported(self, submodules, node: fx.Node) -> bool:
         supported = node.op == "call_function" and node.target in [
+            exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
@@ -104,6 +107,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
+            exir_ops.edge.aten.floor.default,
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.ge.Tensor,
@@ -111,6 +115,10 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.le.Tensor,
             exir_ops.edge.aten.lt.Tensor,
             exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.add.Scalar,
+            exir_ops.edge.aten.sub.Scalar,
+            exir_ops.edge.aten.mul.Scalar,
+            exir_ops.edge.aten.div.Scalar,
             exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
             exir_ops.edge.aten.native_layer_norm.default,
             exir_ops.edge.aten.sigmoid.default,
@@ -138,6 +146,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.aten.constant_pad_nd.default,
         ]
 
         return supported
