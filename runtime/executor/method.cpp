@@ -297,7 +297,9 @@ Result<size_t> Method::get_num_external_constants() {
   size_t n_external_constants = 0;
   for (size_t i = 0; i < n_value; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
-    // Ensure that the `val_as_X()` calls will return non-null pointers.
+    // Ensure values are non-null.
+    // Note that as a side-effect of this check, we're guaranteed that all
+    // values are non-null, so later loops can skip that check.
     ET_CHECK_OR_RETURN_ERROR(
         serialization_value != nullptr &&
             (serialization_value->val_type() ==
@@ -326,13 +328,15 @@ Result<size_t> Method::get_num_external_constants() {
   return n_external_constants;
 }
 
-Result<size_t> Method::parse_external_constants(
-    const NamedDataMap* named_data_map) {
+Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   size_t n_value = flatbuffer_values->size();
 
-  // The number of unique external tensors that have been resolved.
-  size_t n_external_constants = 0;
+  // n_external_constants_ counts the number of successfully-initialized
+  // external constants for ~Method() to clean up, and is incremented at the
+  // bottom of the loop. This makes it safe for errors to return without
+  // updating any state.
+  n_external_constants_ = 0;
   for (size_t i = 0; i < n_value; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
     // Ignore non-tensor types.
@@ -361,7 +365,7 @@ Result<size_t> Method::parse_external_constants(
 
     // Check if this tensor has already been resolved.
     if (get_data_by_key(
-            key, Span<NamedData>(external_constants_, n_external_constants)) !=
+            key, Span<NamedData>(external_constants_, n_external_constants_)) !=
         nullptr) {
       continue;
     }
@@ -372,12 +376,12 @@ Result<size_t> Method::parse_external_constants(
     }
     // Check external tensor compatibility.
     Error err =
-        deserialization::validateExternalTensor(s_tensor, tensor_layout.get());
+        deserialization::validateTensorLayout(s_tensor, tensor_layout.get());
     if (err != Error::Ok) {
       return err;
     }
     // Save the key.
-    external_constants_[n_external_constants].key = key;
+    external_constants_[n_external_constants_].key = key;
 
     // Save the buffer.
     Result<FreeableBuffer> buffer = named_data_map->get_data(key);
@@ -385,12 +389,12 @@ Result<size_t> Method::parse_external_constants(
         buffer.ok(),
         InvalidExternalData,
         "Buffer retrieved from get_data is not valid");
-    new (&external_constants_[n_external_constants].buffer)
+    new (&external_constants_[n_external_constants_].buffer)
         FreeableBuffer(std::move(buffer.get()));
 
-    n_external_constants++;
+    n_external_constants_ = i + 1;
   }
-  return n_external_constants;
+  return Error::Ok;
 }
 
 Error Method::parse_values(const NamedDataMap* named_data_map) {
@@ -403,7 +407,12 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
     return Error::MemoryAllocationFailed;
   }
 
-  // Check if there are any external constants.
+  // Count the number of tensors marked as EXTERNAL for this method. The actual
+  // number of external constants may be smaller, if multiple tensors point to
+  // the same underlying data buffer.
+  // This function also ensures that all flatbuffer_values entries
+  // are non-null, so `val_as_X()` calls below are guaranteed to return
+  // non-null pointers.
   Result<size_t> max_external_constants = get_num_external_constants();
   if (!max_external_constants.ok()) {
     return max_external_constants.error();
@@ -416,12 +425,10 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
     if (external_constants_ == nullptr) {
       return Error::MemoryAllocationFailed;
     }
-    Result<size_t> n_resolved_constants =
-        parse_external_constants(named_data_map);
-    if (!n_resolved_constants.ok()) {
-      return n_resolved_constants.error();
+    Error err = parse_external_constants(named_data_map);
+    if (err != Error::Ok) {
+      return err;
     }
-    n_external_constants_ = n_resolved_constants.get();
   }
 
   // n_value_ counts the number of successfully-initialized values for ~Method()

@@ -28,14 +28,14 @@ struct NamedData {
   FreeableBuffer buffer;
 };
 
-NamedData* get_data_by_key(const char* key, Span<NamedData> external_constants);
+NamedData* get_data_by_key(const char* key, Span<NamedData> entries);
 
 ET_NODISCARD Result<executorch::aten::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor,
     const NamedDataMap* named_data_map = nullptr,
-    Span<NamedData> external_constants = {});
+    Span<NamedData> entries = {});
 
 ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
@@ -45,9 +45,9 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
 
 // Checks that the sizes, dim_order and scalar_type match between tensors
 // stored in the PTE and externally.
-ET_NODISCARD Error validateExternalTensor(
+ET_NODISCARD Error validateTensorLayout(
     const executorch_flatbuffer::Tensor* s_tensor,
-    const TensorLayout& external_tensor);
+    const TensorLayout& expected_layout);
 
 // Deserializes a List of optional type. The code here is the same between all
 // list of optionals: list of optional Tensor, list of optional float etc, so we

@@ -111,50 +111,47 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
       evalp_list, tensor_list, tensor_indices->size());
 }
 
-ET_NODISCARD Error validateExternalTensor(
+ET_NODISCARD Error validateTensorLayout(
     const executorch_flatbuffer::Tensor* s_tensor,
-    const TensorLayout& external_tensor) {
-  // Compatibility checking.
+    const TensorLayout& expected_layout) {
   ET_CHECK_OR_RETURN_ERROR(
       static_cast<ScalarType>(s_tensor->scalar_type()) ==
-          external_tensor.scalar_type(),
+          expected_layout.scalar_type(),
       InvalidExternalData,
       "Scalar type mismatch. Expected %hhd, got %hhd.",
       static_cast<int8_t>(s_tensor->scalar_type()),
-      static_cast<int8_t>(external_tensor.scalar_type()));
+      static_cast<int8_t>(expected_layout.scalar_type()));
   int dim = s_tensor->sizes()->size();
   ET_CHECK_OR_RETURN_ERROR(
-      dim == external_tensor.sizes().size(),
+      dim == expected_layout.sizes().size(),
       InvalidExternalData,
       "Dim mismatch. Expected %d, got %zu.",
       dim,
-      external_tensor.sizes().size());
+      expected_layout.sizes().size());
   for (int i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
-        s_tensor->sizes()->Get(i) == external_tensor.sizes()[i],
+        s_tensor->sizes()->Get(i) == expected_layout.sizes()[i],
         InvalidExternalData,
         "Sizes mismatch. Expected %d, got %d for size at index %d.",
         s_tensor->sizes()->Get(i),
-        external_tensor.sizes()[i],
+        expected_layout.sizes()[i],
         i);
     ET_CHECK_OR_RETURN_ERROR(
-        s_tensor->dim_order()->Get(i) == external_tensor.dim_order()[i],
+        s_tensor->dim_order()->Get(i) == expected_layout.dim_order()[i],
         InvalidExternalData,
         "Dim order mismatch. Expected %d, got %d for dim at index %d.",
         s_tensor->dim_order()->Get(i),
-        external_tensor.dim_order()[i],
+        expected_layout.dim_order()[i],
         i);
   }
   return Error::Ok;
 }
 
-// Check if key exists in external_constants.
-NamedData* get_data_by_key(
-    const char* key,
-    Span<NamedData> external_constants) {
-  for (int i = 0; i < external_constants.size(); i++) {
-    if (strcmp(key, external_constants[i].key) == 0) {
-      return &external_constants[i];
+// Check if key exists in entries. If it does, return a pointer to the entry.
+NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
+  for (int i = 0; i < entries.size(); i++) {
+    if (strcmp(key, entries[i].key) == 0) {
+      return &entries[i];
     }
   }
   return nullptr;
@@ -201,12 +198,9 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
 
     // Constant value.
     if (allocation_info == nullptr) {
-      for (int i = 0; i < external_constants.size(); i++) {
-        if (strcmp(external_constants[i].key, fqn) == 0) {
-          // The const_cast is 'ok' here because program and runtime should
-          // guarantee that this data is never modified.
-          return const_cast<void*>(external_constants[i].buffer.data());
-        }
+      NamedData* data = get_data_by_key(fqn, external_constants);
+      if (data != nullptr) {
+        return const_cast<void*>(data->buffer.data());
       }
       // Should never reach here; these tensors are resolved in
       // Method::parse_external_constants. Any errors should be caught there.
@@ -220,7 +214,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
         return tensor_layout_res.error();
       }
       const TensorLayout& tensor_layout = tensor_layout_res.get();
-      Error err = validateExternalTensor(s_tensor, tensor_layout);
+      Error err = validateTensorLayout(s_tensor, tensor_layout);
       if (err != Error::Ok) {
         return err;
       }

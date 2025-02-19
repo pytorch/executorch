@@ -355,22 +355,25 @@ class Method final {
   InitializationState init_state_;
 
   /**
-   * Counts the number of external constants for this method.
+   * Counts the number of tensors marked as EXTERNAL in the flatbuffer for this
+   * method. The actual number of buffers may be smaller, eg. if two tensors
+   * are marked as EXTERNAL but share the same underlying data.
    */
   ET_NODISCARD Result<size_t> get_num_external_constants();
 
   /**
    * Parses the flatbuffer for constant tensors tagged as EXTERNAL.
    * Retrieves the external constants using the named_data_map and places them
-   * into `external_constants_`.
+   * into `external_constants_`. Updates `n_external_constants_` to count the
+   * number of successfully-initialized external constants.
    * FreeableBuffers returned by the named_data_map are owned by the
    * method and are freed on method destruction.
    *
-   * @param[in] named_data_map, to retrieve external constants.
-   * @returns the number of external constants resolved.
+   * @param[in] named_data_map, to retrieve external constants from.
+   * @returns Error::Ok on success, non-Ok on failure.
    */
-  ET_NODISCARD Result<size_t> parse_external_constants(
-      const NamedDataMap* named_data_map);
+  ET_NODISCARD Error
+  parse_external_constants(const NamedDataMap* named_data_map);
 
   /**
    * Parses the elements of the values_ array. On error, n_value_ will be set to
