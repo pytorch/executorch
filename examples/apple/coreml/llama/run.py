@@ -43,12 +43,17 @@ program = runtime.load_program(filename)
 method = program.load_method("forward")
 print(text)
 tokens = tokenizer.encode(text)
-while input_manager.input_pos + len(tokens) < max_seq_length:
-    inputs = input_manager.get_inputs(torch.tensor(tokens, dtype=torch.long))
-    logits, k, v = method.execute(inputs)
-    input_manager.update(input_length=len(tokens), new_k_cache=k, new_v_cache=v)
+while input_manager.input_pos + len(tokens) < max_seq_length - seq_length:
+    while len(tokens) > 0:
+        inputs, processed_tokens, remaining_tokens = (
+            input_manager.get_inputs_and_remaining_tokens(tokens)
+        )
+        logits, k, v = method.execute(inputs)
+        input_manager.update(
+            input_length=processed_tokens, new_k_cache=k, new_v_cache=v
+        )
+        tokens = remaining_tokens
 
-    new_token = logits.argmax(-1).item()
-    tokens = [new_token]
+    tokens = [logits.argmax(-1).item()]
     decoded_text = tokenizer.decode(tokens)
-    print(decoded_text, end=" ")
+    print(decoded_text, end=" ", flush=True)

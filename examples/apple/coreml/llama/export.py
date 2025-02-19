@@ -157,7 +157,7 @@ def main() -> None:
         dtype=float_dtype,
         minus_infinity=-30000,
     )
-    example_inputs = input_manager.get_inputs(tokens=torch.tensor([0]))
+    example_inputs = input_manager.get_inputs(tokens=[0])
 
     edge_manager = export_to_edge(
         model,

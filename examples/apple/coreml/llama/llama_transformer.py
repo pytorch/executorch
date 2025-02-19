@@ -8,7 +8,7 @@
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -467,9 +467,7 @@ class InputManager:
         self.attn_mask[:, (self.input_pos) : (self.input_pos + input_length)] = 0.0
         self.input_pos += input_length
 
-    def get_inputs(self, tokens):
-        assert tokens.dim() == 1
-        assert tokens.dtype == torch.int64
+    def get_inputs(self, tokens: List[int]):
         input_length = len(tokens)
         assert input_length <= self.seq_length
 
@@ -477,7 +475,7 @@ class InputManager:
             # tokens
             torch.concat(
                 [
-                    tokens,
+                    torch.tensor(tokens, dtype=torch.int64),
                     torch.zeros(self.seq_length - input_length, dtype=torch.int64),
                 ],
                 axis=-1,
@@ -492,4 +490,12 @@ class InputManager:
             self.v_cache,
             # attn_mask
             self.attn_mask,
+        )
+
+    def get_inputs_and_remaining_tokens(self, tokens: List[int]):
+        processed_tokens = min(self.seq_length, len(tokens))
+        return (
+            self.get_inputs(tokens[0:processed_tokens]),
+            processed_tokens,
+            tokens[processed_tokens:],
         )
