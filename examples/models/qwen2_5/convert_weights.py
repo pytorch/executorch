@@ -1,3 +1,4 @@
+import argparse
 from typing import Dict
 
 import torch
@@ -52,19 +53,38 @@ def qwen_2_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
     return converted_state_dict
 
 
-# Don't necessarily need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
-checkpointer = FullModelHFCheckpointer(
-    checkpoint_dir="/home/jackzhxng/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323/",
-    checkpoint_files=["model.safetensors"],
-    output_dir=".",
-    model_type="QWEN2",
-)
+def main():
+    parser = argparse.ArgumentParser(
+        description="Convert Qwen2 weights to Meta format."
+    )
+    parser.add_argument(
+        "input_dir",
+        type=str,
+        help="Path to directory containing checkpoint files",
+    )
+    parser.add_argument("output", type=str, help="Path to the output checkpoint")
 
-print("Loading checkpoint")
-sd = checkpointer.load_checkpoint()
+    args = parser.parse_args()
 
-# Convert from TorchTune to Meta (PyTorch native).
-sd = qwen_2_tune_to_meta(sd["model"])
+    # Don't necessarily need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
+    checkpointer = FullModelHFCheckpointer(
+        # checkpoint_dir="/home/jackzhxng/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323/",
+        checkpoint_dir=args.input_dir,
+        checkpoint_files=["model.safetensors"],
+        output_dir=".",
+        model_type="QWEN2",
+    )
 
-print("Saving checkpoint")
-torch.save(sd, "/home/jackzhxng/models/qwen2_5-1_5b.pth")
+    print("Loading checkpoint...")
+    sd = checkpointer.load_checkpoint()
+
+    print("Converting checkpoint...")
+    sd = qwen_2_tune_to_meta(sd["model"])
+    # torch.save(sd, "/home/jackzhxng/models/qwen2_5-1_5b.pth")
+
+    torch.save(sd, args.output)
+    print(f"Checkpoint saved to {args.output}")
+
+
+if __name__ == "__main__":
+    main()
