@@ -51,7 +51,7 @@ ET_NODISCARD bool check_dim_list_is_valid(
       ET_LOG_AND_RETURN_IF_FALSE(
           non_neg_d < kTensorDimensionLimit && non_neg_d >= 0);
 
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           dim_exist[non_neg_d] == false,
           "dim %zd appears multiple times in the list of dims",
           non_neg_d);

@@ -16,6 +16,9 @@ from collections import deque
 from numbers import Number
 from typing import cast, Sequence
 
+# Import these for the cadence function signatures.
+import executorch.backends.cadence.aot.ops_registrations # noqa: F401
+
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import (
@@ -849,7 +852,10 @@ class FuseMulIntoDequantPass(ExportPass):
             if isinstance(arg, torch.fx.Node)
             and isinstance(arg.target, EdgeOpOverload)
             and get_edge_overload_packet(arg.target)
-            == exir_ops.edge.quantized_decomposed.dequantize_per_tensor
+            in (
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+                exir_ops.edge.cadence.dequantize_per_tensor,
+            )
         ]
         multiplier_nodes = [
             arg

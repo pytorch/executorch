@@ -21,6 +21,7 @@ python_library(
         "//executorch/backends/arm:tosa_mapping",
         "//executorch/backends/arm:tosa_quant_utils",
         "//executorch/backends/arm:tosa_utils",
+        "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
     ],
 )
