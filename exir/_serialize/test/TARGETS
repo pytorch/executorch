@@ -33,3 +33,13 @@ python_unittest(
         "//executorch/exir/_serialize:lib",
     ],
 )
+
+python_unittest(
+    name = "named_data_store",
+    srcs = [
+        "test_named_data_store.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+    ],
+)
