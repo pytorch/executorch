@@ -408,8 +408,8 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
   }
 
   // Count the number of tensors marked as EXTERNAL for this method. The actual
-  // number of external constants may be smaller, if multiple tensors point to
-  // the same underlying data buffer.
+  // number of external constants may be smaller, eg. if multiple tensors point
+  // to the same underlying data buffer.
   // This function also ensures that all flatbuffer_values entries
   // are non-null, so `val_as_X()` calls below are guaranteed to return
   // non-null pointers.

@@ -147,7 +147,8 @@ ET_NODISCARD Error validateTensorLayout(
   return Error::Ok;
 }
 
-// Check if key exists in entries. If it does, return a pointer to the entry.
+// Check if key exists in entries. If it does, return a pointer to the entry
+// otherwise return a nullptr.
 NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
   for (int i = 0; i < entries.size(); i++) {
     if (strcmp(key, entries[i].key) == 0) {

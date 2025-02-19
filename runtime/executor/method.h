@@ -355,9 +355,8 @@ class Method final {
   InitializationState init_state_;
 
   /**
-   * Counts the number of tensors marked as EXTERNAL in the flatbuffer for this
-   * method. The actual number of buffers may be smaller, eg. if two tensors
-   * are marked as EXTERNAL but share the same underlying data.
+   * Counts the number of tensors marked as EXTERNAL in the flatbuffer
+   * for this method.
    */
   ET_NODISCARD Result<size_t> get_num_external_constants();
 
