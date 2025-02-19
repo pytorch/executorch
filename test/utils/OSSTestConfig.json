@@ -30,13 +30,6 @@
         ]
     },
     {
-        "directory": "extension/flat_tensor/test",
-        "sources": [
-            "flat_tensor_data_map_test.cpp",
-            "flat_tensor_header_test.cpp"
-        ]
-    },
-    {
         "directory": "extension/kernel_util/test",
         "sources": [
             "make_boxed_from_unboxed_functor_test.cpp"
@@ -79,12 +72,13 @@
     {
         "directory": "runtime/core/portable_type/test",
         "sources": [
-            "optional_test.cpp",
-            "tensor_test.cpp",
+            "bfloat16_test.cpp",
+            "dont_shadow_complex_test.c",
             "half_test.cpp",
+            "optional_test.cpp",
             "scalar_test.cpp",
             "tensor_impl_test.cpp",
-            "bfloat16_test.cpp"
+            "tensor_test.cpp"
         ]
     },
     {

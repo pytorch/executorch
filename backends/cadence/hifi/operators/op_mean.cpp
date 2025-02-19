@@ -168,6 +168,16 @@ Tensor& mean_out(
   return out;
 }
 
+Tensor& mean_dim_out(
+    RuntimeContext& ctx,
+    const Tensor& in,
+    optional<ArrayRef<int64_t>> dim_list,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out) {
+  mean_out(ctx, in, dim_list, keepdim, dtype, out);
+}
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl
