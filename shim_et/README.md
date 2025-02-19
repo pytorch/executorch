@@ -1,6 +1,6 @@
 # buck2 shims
 
-The `shim/` subtree helps the Meta-internal buck2 build system also work in the
+The `shim_et/` subtree helps the Meta-internal buck2 build system also work in the
 open-source repo.
 
 Shims are how open-source buck2 supports a [line
@@ -11,6 +11,6 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 ```
 
 In the open-source repo, `fbsource//xplat` (a Meta-internal root) doesn't exist.
-The `shim = shim` line in `../.buckconfig` tells buck2 to look in
-[`shim/xplat/executorch/build/runtime_wrapper.bzl`](https://github.com/pytorch/executorch/blob/main/shim/xplat/executorch/build/runtime_wrapper.bzl)
+The `fbsource = shim_et` line in `../.buckconfig` tells buck2 to look in
+[`shim_et/xplat/executorch/build/runtime_wrapper.bzl`](https://github.com/pytorch/executorch/blob/main/shim_et/xplat/executorch/build/runtime_wrapper.bzl)
 instead.
