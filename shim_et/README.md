@@ -14,3 +14,6 @@ In the open-source repo, `fbsource//xplat` (a Meta-internal root) doesn't exist.
 The `fbsource = shim_et` line in `../.buckconfig` tells buck2 to look in
 [`shim_et/xplat/executorch/build/runtime_wrapper.bzl`](https://github.com/pytorch/executorch/blob/main/shim_et/xplat/executorch/build/runtime_wrapper.bzl)
 instead.
+
+NOTE: `tools` is a symlink to `../shim/tools` because `fbsource//`
+must refer here, but `fbsource//tools` in particular lives in `shim/`.
