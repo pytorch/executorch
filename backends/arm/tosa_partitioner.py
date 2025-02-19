@@ -7,16 +7,17 @@
 
 import logging
 import os
-from typing import Callable, final, List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import (  # type: ignore[attr-defined]
-    ArmBackend,
+from executorch.backends.arm.arm_backend import (
+    get_tosa_spec,
+    is_tosa,
 )  # usort: skip
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_backend import TOSABackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -54,28 +55,27 @@ def is_dequant_node(node: torch.fx.node.Node) -> bool:
     }
 
 
-@final
-class ArmPartitioner(Partitioner):
+class TOSAPartitioner(Partitioner):
     def __init__(
         self,
         compile_spec: List[CompileSpec],
         additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
     ) -> None:
-        self.delegation_spec = DelegationSpec(ArmBackend.__name__, compile_spec)
+        if not is_tosa(compile_spec):
+            raise RuntimeError("compile spec is not targeting TOSA")
+        self.delegation_spec = DelegationSpec(TOSABackend.__name__, compile_spec)
         self.additional_checks = additional_checks
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
 
-        logger.info("ArmPartitioner::partition")
+        logger.info("TOSAPartitioner::partition")
         partition_tags = {}
 
-        tosa_spec = TosaSpecification.create_from_compilespecs(
-            self.delegation_spec.compile_specs
-        )
+        tosa_spec = get_tosa_spec(self.delegation_spec.compile_specs)
 
-        logger.info(f"Partitioning for {tosa_spec}")
+        logger.info(f"Partitioning for {self.delegation_spec.backend_id}: {tosa_spec}")
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,

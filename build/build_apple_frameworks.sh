@@ -150,7 +150,6 @@ cmake_build() {
     mkdir "$platform" && cd "$platform" || exit 1
     cmake "$SOURCE_ROOT_DIR" -G Xcode \
         -DCMAKE_BUILD_TYPE="$MODE" \
-        -DCMAKE_PREFIX_PATH="$($PYTHON -c 'import torch as _; print(_.__path__[0])')" \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
@@ -207,11 +206,11 @@ check_command "$BUCK2"
 # So, just patch our generated framework to do that.
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
-' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/macros/Macros.h
+' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
-' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/macros/Export.h
-cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10 "$HEADERS_PATH/"
+' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h
+cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_PATH/"
 
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"

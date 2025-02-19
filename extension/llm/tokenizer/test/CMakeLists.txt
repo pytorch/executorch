@@ -12,39 +12,18 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(tokenizer_test)
-
-# Use C++17 for test.
-set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_tokenizer_test_srcs
-    test_tiktoken.cpp test_bpe_tokenizer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../tiktoken.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../bpe_tokenizer.cpp
+set(test_env "RESOURCES_PATH=${EXECUTORCH_ROOT}/extension/llm/tokenizer/test/resources")
+
+set(_test_srcs test_bpe_tokenizer.cpp test_tiktoken.cpp)
+
+et_cxx_test(
+  extension_llm_tokenizer_test SOURCES ${_test_srcs} EXTRA_LIBS
+  extension_llm_tokenizer
 )
 
-set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/resources)
-set(ABSL_ENABLE_INSTALL ON)
-set(ABSL_PROPAGATE_CXX_STD ON)
-set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/abseil-cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
-)
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/re2
-  ${CMAKE_CURRENT_BINARY_DIR}/re2
-)
-set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
-
-et_cxx_test(tokenizer_test SOURCES ${_tokenizer_test_srcs} EXTRA_LIBS re2::re2)
-target_include_directories(
-  tokenizer_test
-  PRIVATE ${CMAKE_INSTALL_PREFIX}/include
-          ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/abseil-cpp
-)
+set_property(TEST extension_llm_tokenizer_test PROPERTY ENVIRONMENT ${test_env})
