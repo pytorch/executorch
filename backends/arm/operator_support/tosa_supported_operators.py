@@ -107,6 +107,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
+            exir_ops.edge.aten.floor.default,
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.ge.Tensor,
