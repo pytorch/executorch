@@ -10,14 +10,14 @@ from functools import partial
 from typing import Any
 
 import torch
-from executorch.extension.pybindings.aten_lib import ExecuTorchModule  # @manual
+from executorch.extension.pybindings.portable_lib import ExecuTorchModule  # @manual
 
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torchtune.data import AlpacaToMessages
 from torchtune.data._collate import padded_collate_sft
 from torchtune.datasets import PackedDataset, SFTDataset
-from torchtune.modules.tokenizers import ModelTokenizer
+from torchtune.modules.transforms.tokenizers import ModelTokenizer
 from tqdm import tqdm
 
 
