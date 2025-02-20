@@ -20,7 +20,7 @@ Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
     return static_cast<size_t>(-1);
   }
   uint8_t* offset_ptr =
-      internal::alignPointer(debug_buffer_.data() + offset_, 64);
+      internal::align_pointer(debug_buffer_.data() + offset_, 64);
 
   // Zero out the padding between data blobs.
   size_t n_zero_pad = offset_ptr - debug_buffer_.data() - offset_;

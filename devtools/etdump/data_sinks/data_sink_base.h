@@ -17,7 +17,7 @@ namespace etdump {
 /**
  * DataSinkBase is an abstract class that users can inherit and implement
  * to customize the storage and management of debug data in ETDumpGen. This
- * class provides an basic and essential interface for writing datablob to a
+ * class provides a basic and essential interface for writing datablob to a
  * user-defined storage, retrieving storage capacity, and tracking the amount of
  * data stored.
  */
