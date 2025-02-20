@@ -1,5 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/kernels/optimized:op_registration_util.bzl", "define_op_target", "is_op_disabled", "op_target")
+load("@fbsource//xplat/executorch/kernels/optimized:op_registration_util.bzl", "define_op_target", "op_target")
 
 _OPTIMIZED_ATEN_OPS = (
     op_target(
@@ -110,13 +110,11 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    enabled_ops = [op for op in _OPTIMIZED_ATEN_OPS if not is_op_disabled(op["name"])]
-
     # Define build targets for all operators registered in the tables above.
-    for op in enabled_ops:
+    for op in _OPTIMIZED_ATEN_OPS:
         define_op_target(**op)
 
-    aten_op_targets = [":{}".format(op["name"]) for op in enabled_ops]
+    aten_op_targets = [":{}".format(op["name"]) for op in _OPTIMIZED_ATEN_OPS]
     all_op_targets = aten_op_targets
 
     runtime.cxx_library(
