@@ -77,9 +77,9 @@ class OpLogSoftmaxOutTest : public OperatorTest {
   void test_dtype_noncontiguous_dim() {
     TensorFactory<DTYPE> tf;
 
-    // clang-format off Dim 0 must be longer than the vector width of
-    // the machine (for float, this is 4 for ARM64 and 8 for AVX2) to
-    // exhibit problems.
+    // Dim 0 must be longer than the vector width of the machine (for
+    // float, this is 4 for ARM64 and 8 for AVX2) to exhibit problems.
+    // clang-format off
     Tensor x = tf.make(
       {9, 3},
       {
@@ -125,7 +125,6 @@ class OpLogSoftmaxOutTest : public OperatorTest {
       EXPECT_TENSOR_CLOSE(out, expected);
     }
   }
-
 };
 
 TEST_F(OpLogSoftmaxOutTest, Smoke) {
