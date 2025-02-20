@@ -107,8 +107,8 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
 
   if (buffer.data() != nullptr) {
     builder_ =
-        (struct flatcc_builder*)internal::alignPointer(buffer.data(), 64);
-    uintptr_t buffer_with_builder = (uintptr_t)internal::alignPointer(
+        (struct flatcc_builder*)internal::align_pointer(buffer.data(), 64);
+    uintptr_t buffer_with_builder = (uintptr_t)internal::align_pointer(
         builder_ + sizeof(struct flatcc_builder), 64);
     size_t builder_size =
         (size_t)(buffer_with_builder - (uintptr_t)buffer.data());
@@ -630,7 +630,7 @@ size_t ETDumpGen::get_debug_buffer_size() const {
 }
 
 size_t ETDumpGen::get_data_sink_size() const {
-  ET_CHECK_MSG(data_sink_, "Must set data sink before checking its size\n");
+  ET_CHECK_MSG(data_sink_, "Must set data sink before checking its size");
   Result<size_t> ret = data_sink_->get_storage_size();
   ET_CHECK_MSG(
       ret.ok(),
@@ -640,7 +640,7 @@ size_t ETDumpGen::get_data_sink_size() const {
 }
 
 long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
-  ET_CHECK_MSG(data_sink_, "Must set data sink before writing data\n");
+  ET_CHECK_MSG(data_sink_, "Must set data sink before writing data");
   Result<size_t> ret =
       data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
   ET_CHECK_MSG(

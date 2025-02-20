@@ -85,7 +85,6 @@ enum class Error : error_code_t {
   /// Does not have enough resources to perform the requested operation.
   OutOfResources = 0x25,
 
-
   /*
    * Delegate errors.
    */

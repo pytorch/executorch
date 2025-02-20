@@ -9,7 +9,7 @@ namespace executorch {
 namespace etdump {
 namespace internal {
 
-inline uint8_t* alignPointer(void* ptr, size_t alignment) {
+inline uint8_t* align_pointer(void* ptr, size_t alignment) {
   intptr_t addr = reinterpret_cast<intptr_t>(ptr);
   if ((addr & (alignment - 1)) == 0) {
     // Already aligned.
