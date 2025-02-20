@@ -78,6 +78,23 @@ Result<const TensorLayout> create_tensor_layout(
       scalar_type);
 }
 
+Result<int> get_and_check_segment_offset(
+    const flatbuffers::Vector<
+        flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>* segments,
+    const flat_tensor_flatbuffer::TensorMetadata* metadata) {
+  ET_CHECK_OR_RETURN_ERROR(
+      segments != nullptr,
+      InvalidExternalData,
+      "No segments in external data flatbuffer.");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      metadata->segment_index() < segments->size(),
+      InvalidExternalData,
+      "Invalid segment_index %d; malformed PTD file.",
+      metadata->segment_index());
+  return segments->Get(metadata->segment_index())->offset();
+}
+
 } // namespace
 
 ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_metadata(
@@ -102,12 +119,23 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
   if (!tensor_layout.ok()) {
     return tensor_layout.error();
   }
+  Result<int> segment_offset =
+      get_and_check_segment_offset(flat_tensor_->segments(), metadata.get());
+  if (!segment_offset.ok()) {
+    return segment_offset.error();
+  }
 
   // Load constant data.
-  int segment_offset =
-      flat_tensor_->segments()->Get(metadata.get()->segment_index())->offset();
+  ET_CHECK_OR_RETURN_ERROR(
+      segment_offset.get() <
+          header_.segment_base_offset + header_.segment_data_size,
+      InvalidExternalData,
+      "Invalid segment offset %d is larger than the segment_base_offset + segment_data_size %lu; malformed PTD file.",
+      segment_offset.get(),
+      header_.segment_base_offset + header_.segment_data_size);
   return loader_->load(
-      header_.segment_base_offset + segment_offset + metadata.get()->offset(),
+      header_.segment_base_offset + segment_offset.get() +
+          metadata.get()->offset(),
       tensor_layout.get().nbytes(),
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
 }
@@ -116,7 +144,6 @@ ET_NODISCARD Result<size_t> FlatTensorDataMap::load_data_into(
     ET_UNUSED const char* key,
     ET_UNUSED void* buffer,
     ET_UNUSED size_t size) const {
-  // Get metadata to get nbytes.
   Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata =
       get_flat_tensor_metadata(key, flat_tensor_->tensors());
   if (!metadata.ok()) {
@@ -132,15 +159,19 @@ ET_NODISCARD Result<size_t> FlatTensorDataMap::load_data_into(
       InvalidArgument,
       "Buffer size %zu is smaller than tensor size %zu",
       size,
-      tensor_layout.get().nbytes())
+      tensor_layout.get().nbytes());
 
-  int segment_offset =
-      flat_tensor_->segments()->Get(metadata.get()->segment_index())->offset();
+  Result<int> segment_offset =
+      get_and_check_segment_offset(flat_tensor_->segments(), metadata.get());
+  if (!segment_offset.ok()) {
+    return segment_offset.error();
+  }
+  // Load mutable data.
   DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
       DataLoader::SegmentInfo::Type::Mutable, 0, nullptr);
-
   return loader_->load_into(
-      header_.segment_base_offset + segment_offset + metadata.get()->offset(),
+      header_.segment_base_offset + segment_offset.get() +
+          metadata.get()->offset(),
       tensor_layout.get().nbytes(),
       info,
       buffer);
