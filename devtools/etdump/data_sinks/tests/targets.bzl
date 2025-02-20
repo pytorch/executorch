@@ -18,3 +18,15 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )
+
+
+    runtime.cxx_test(
+        name = "stream_data_sink_test",
+        srcs = [
+            "stream_data_sink_test.cpp",
+        ],
+        deps = [
+            "//executorch/devtools/etdump/data_sinks:stream_data_sink",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        ],
+    )

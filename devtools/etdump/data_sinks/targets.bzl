@@ -1,6 +1,28 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 
+def define_data_sink_target(data_sink_name, aten_suffix):
+    runtime.cxx_library(
+            name = data_sink_name + aten_suffix,
+            exported_headers = [
+                data_sink_name + ".h",
+            ],
+            srcs = [
+                data_sink_name + ".cpp",
+            ],
+            deps = [
+                "//executorch/devtools/etdump:utils",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                ":data_sink_base" + aten_suffix,
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -24,23 +46,5 @@ def define_common_targets():
             ],
         )
 
-        runtime.cxx_library(
-            name = "buffer_data_sink" + aten_suffix,
-            exported_headers = [
-                "buffer_data_sink.h",
-            ],
-            srcs = [
-                "buffer_data_sink.cpp",
-            ],
-            deps = [
-                "//executorch/devtools/etdump:utils",
-            ],
-            exported_deps = [
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                ":data_sink_base" + aten_suffix,
-            ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-        )
+        define_data_sink_target("buffer_data_sink", aten_suffix)
+        define_data_sink_target("stream_data_sink", aten_suffix)
