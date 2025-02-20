@@ -12,7 +12,6 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/executor/memory_manager.h>
-#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>

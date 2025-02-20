@@ -52,7 +52,14 @@ Result<const flat_tensor_flatbuffer::TensorMetadata*> get_flat_tensor_metadata(
   for (int i = 0; i < tensors->size(); i++) {
     if (std::strcmp(tensors->Get(i)->fully_qualified_name()->c_str(), key) ==
         0) {
-      return tensors->Get(i);
+      const auto* metadata = tensors->Get(i);
+      ET_CHECK_OR_RETURN_ERROR(
+          metadata->segment_index() >= 0 && metadata->offset() >= 0,
+          InvalidExternalData,
+          "Invalid segment_index %d or offset %lu; malformed PTD file.",
+          metadata->segment_index(),
+          metadata->offset());
+      return metadata;
     }
   }
   return Error::NotFound;
@@ -85,31 +92,22 @@ ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_metadata(
 
 ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
     const char* key) const {
-  auto tensor_metadata = flat_tensor_->tensors();
-
-  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata_res =
-      get_flat_tensor_metadata(key, tensor_metadata);
-  if (!metadata_res.ok()) {
-    return metadata_res.error();
+  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata =
+      get_flat_tensor_metadata(key, flat_tensor_->tensors());
+  if (!metadata.ok()) {
+    return metadata.error();
   }
-  const auto metadata = metadata_res.get();
-  ET_CHECK_OR_RETURN_ERROR(
-      metadata->segment_index() >= 0 && metadata->offset() >= 0,
-      InvalidExternalData,
-      "Invalid segment_index %d or offset %lu; malformed PTD file.",
-      metadata->segment_index(),
-      metadata->offset())
-
-  Result<const TensorLayout> tensor_layout = create_tensor_layout(metadata);
+  Result<const TensorLayout> tensor_layout =
+      create_tensor_layout(metadata.get());
   if (!tensor_layout.ok()) {
     return tensor_layout.error();
   }
 
   // Load constant data.
-  const auto* s_data_segment = flat_tensor_->segments();
-  int segment_offset = s_data_segment->Get(0)->offset();
+  int segment_offset =
+      flat_tensor_->segments()->Get(metadata.get()->segment_index())->offset();
   return loader_->load(
-      header_.segment_base_offset + segment_offset + metadata->offset(),
+      header_.segment_base_offset + segment_offset + metadata.get()->offset(),
       tensor_layout.get().nbytes(),
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
 }
@@ -118,23 +116,14 @@ ET_NODISCARD Result<size_t> FlatTensorDataMap::load_data_into(
     ET_UNUSED const char* key,
     ET_UNUSED void* buffer,
     ET_UNUSED size_t size) const {
-  auto tensor_metadata = flat_tensor_->tensors();
-
   // Get metadata to get nbytes.
-  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata_res =
-      get_flat_tensor_metadata(key, tensor_metadata);
-  if (!metadata_res.ok()) {
-    return metadata_res.error();
+  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata =
+      get_flat_tensor_metadata(key, flat_tensor_->tensors());
+  if (!metadata.ok()) {
+    return metadata.error();
   }
-  const auto metadata = metadata_res.get();
-  ET_CHECK_OR_RETURN_ERROR(
-      metadata->segment_index() >= 0 && metadata->offset() >= 0,
-      InvalidExternalData,
-      "Invalid segment_index %d or offset %lu; malformed PTD file.",
-      metadata->segment_index(),
-      metadata->offset())
-
-  Result<const TensorLayout> tensor_layout = create_tensor_layout(metadata);
+  Result<const TensorLayout> tensor_layout =
+      create_tensor_layout(metadata.get());
   if (!tensor_layout.ok()) {
     return tensor_layout.error();
   }
@@ -145,13 +134,13 @@ ET_NODISCARD Result<size_t> FlatTensorDataMap::load_data_into(
       size,
       tensor_layout.get().nbytes())
 
-  const auto* s_data_segment = flat_tensor_->segments();
-  int segment_offset = s_data_segment->Get(0)->offset();
+  int segment_offset =
+      flat_tensor_->segments()->Get(metadata.get()->segment_index())->offset();
   DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
       DataLoader::SegmentInfo::Type::Mutable, 0, nullptr);
 
   return loader_->load_into(
-      header_.segment_base_offset + segment_offset + metadata->offset(),
+      header_.segment_base_offset + segment_offset + metadata.get()->offset(),
       tensor_layout.get().nbytes(),
       info,
       buffer);

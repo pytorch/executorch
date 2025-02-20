@@ -78,7 +78,7 @@ To download, we can either download `Corstone-300 Ecosystem FVP` and `Corstone-3
 
 Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55/M85 CPU available on the Corstone-300/Corstone-320 platform.
 
-These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 12.3 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
+These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 13.3.rel1 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
 
 ### Setup the Arm Ethos-U Software Development
 
@@ -96,23 +96,22 @@ At the end of the setup, if everything goes well, your top level devlopement dir
 
 ```bash
 .
-├── arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
+├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
+├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
 ├── ethos-u
 │   ├── core_platform
 │   ├── core_software
 │   ├── fetch_externals.py
 │   └── [...]
-├── ethos-u-vela
 ├── FVP-corstone300
 │   ├── FVP_Corstone_SSE-300.sh
 │   └── [...]
 ├── FVP-corstone320
 │   ├── FVP_Corstone_SSE-320.sh
 │   └── [...]
-├── FVP_cs300.tgz
-├── FVP_cs320.tgz
-├── gcc.tar.xz
-└── reference_model
+├── FVP_corstone300.tgz
+├── FVP_corstone320.tgz
+└── setup_path.sh
 ```
 
 ## Convert the PyTorch Model to the `.pte` File
@@ -229,8 +228,6 @@ python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
 Before generating the `.pte` file for delegated quantized networks like MobileNetV2, we need to build the `quantized_ops_aot_lib`
 
 ```bash
-SITE_PACKAGES="$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
 cd <executorch_root_dir>
 mkdir -p cmake-out-aot-lib
@@ -238,7 +235,6 @@ cmake -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
     -DPYTHON_EXECUTABLE=python3 \
 -Bcmake-out-aot-lib \
     "${et_root_dir}"

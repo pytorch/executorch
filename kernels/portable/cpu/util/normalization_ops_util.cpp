@@ -81,15 +81,15 @@ bool check_layer_norm_args(
     Tensor& mean_out,
     Tensor& rstd_out) {
   size_t ndim = normalized_shape.size();
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       ndim >= 1,
       "Expected normalized_shape to be at least 1-dimensional, i.e., containing at least one element.");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       in.dim() >= ndim,
       "Expected input tensor to have rank >= the length of normalized_shape.");
   size_t shift = in.dim() - ndim;
   for (size_t d = 0; d < ndim; ++d) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         in.size(d + shift) == normalized_shape[d],
         "Expected normalized_shape to match the sizes of input's rightmost dimensions.");
   }
@@ -144,16 +144,16 @@ bool check_group_norm_args(
   ET_LOG_AND_RETURN_IF_FALSE(in.size(0) == N);
   ET_LOG_AND_RETURN_IF_FALSE(in.size(1) == C);
   ET_LOG_AND_RETURN_IF_FALSE(in.numel() == N * C * HxW);
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       group > 0, "Expected number of groups to be greater than 0");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       C % group == 0,
       "Expected number of channels in input to be divisible by number of groups");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !weight.has_value() ||
           (weight.value().dim() == 1 && weight.value().size(0) == C),
       "Expected weight to be a vector of size equal to the number of channels in input");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !bias.has_value() ||
           (bias.value().dim() == 1 && bias.value().size(0) == C),
       "Expected bias to be a vector of size equal to the number of channels in input");

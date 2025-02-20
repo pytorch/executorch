@@ -52,5 +52,6 @@ def define_common_targets():
         srcs = ["tensor_shape_to_c_string_test.cpp"],
         deps = [
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     )

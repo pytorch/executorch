@@ -11,12 +11,12 @@ from typing import final, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch  # noqa: F401
-from executorch.backends.qualcomm._passes.fuse_consecutive_transpose import (
+from executorch.backends.qualcomm._passes import (
     FuseConsecutiveTranspose,
+    InsertIOQDQ,
+    InsertRequantize,
+    LayoutTransform,
 )
-from executorch.backends.qualcomm._passes.insert_io_qdq import InsertIOQDQ
-from executorch.backends.qualcomm._passes.insert_requantize import InsertRequantize
-from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
