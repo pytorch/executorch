@@ -47,19 +47,29 @@ class StaticKVCache(nn.Module, ABC):
         return f"l{layer_id},h{head_id}"
 
     @staticmethod
-    def apply_update(cache, update, transpose=False):
+    def apply_update(cache, update, pos, style, transpose=False):
         """
         After inference, update the cache state for next iteration. The runtime needs to
         implement the same operation.
         """
-        if transpose:
-            update_len = update.size(-1)
-            updated = torch.roll(cache, -update_len, -1)
-            updated[:, :, -update_len:] = update
-        else:
-            update_len = update.size(-2)
-            updated = torch.roll(cache, -update_len, -2)
-            updated[:, -update_len:, :] = update
+        if style == "shift_pointer":
+            if transpose:
+                update_len = update.size(-1)
+                updated = torch.roll(cache, -update_len, -1)
+                updated[:, :, -update_len:] = update
+            else:
+                update_len = update.size(-2)
+                updated = torch.roll(cache, -update_len, -2)
+                updated[:, -update_len:, :] = update
+
+        if style == "smart_mask":
+            updated = torch.clone(cache)
+            if transpose:
+                update_len = update.size(-1)
+                updated[:, :, pos : pos + update_len] = update
+            else:
+                update_len = update.size(-2)
+                updated[:, pos : pos + update_len, :] = update
 
         return updated
 
@@ -114,6 +124,44 @@ class StaticVCache(StaticKVCache):
         return all_data, (out_k_cache, out_v_cache)
 
 
+class StaticAttentionMask:
+    def __init__(self, input_len, cache_len, style):
+        self.input_len = input_len
+        self.cache_len = cache_len
+        assert style in ("shift_pointer", "smart_mask")
+        self.style = style
+        self.unmasked_len = 0
+        self.tensor = torch.zeros(1, input_len, input_len + cache_len)
+        self.reset()
+
+    def reset(self):
+        self.unmasked_len = 0
+        self.tensor[:, :, : self.cache_len] = float("-inf")
+
+    def unmask(self, new_unmasked_len):
+        if new_unmasked_len <= 0:
+            return
+
+        if self.style == "shift_pointer":
+            self.tensor[
+                :,
+                :,
+                self.cache_len
+                - self.unmasked_len
+                - new_unmasked_len : self.cache_len
+                - self.unmasked_len,
+            ] = 0
+
+        if self.style == "smart_mask":
+            self.tensor[
+                :,
+                :,
+                self.unmasked_len : self.unmasked_len + new_unmasked_len,
+            ] = 0
+
+        self.unmasked_len += new_unmasked_len
+
+
 class _Rope(nn.Module):
     def __init__(self, use_hf_rope):
         super().__init__()
@@ -135,7 +183,6 @@ class _Rope(nn.Module):
             x_r, x_i = x[..., ::2], x[..., 1::2]
             x_out_r = x_r * freqs_cos - x_i * freqs_sin
             x_out_i = x_r * freqs_sin + x_i * freqs_cos
-
             x_out = torch.cat([x_out_r, x_out_i], dim=-1)
             return x_out
 
