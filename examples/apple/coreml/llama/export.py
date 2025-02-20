@@ -27,9 +27,11 @@ from llama.llama_transformer import InputManager, ModelArgs, Transformer
 
 
 class SplitLinearModule(torch.nn.Module):
-    def __init__(self, in_features, out_features, target_size):
+    def __init__(self, in_features, out_features, target_size, max_splits):
         super(SplitLinearModule, self).__init__()
         self.num_splits = max(out_features // target_size, 1)
+        if self.num_splits > max_splits:
+            self.num_splits = max_splits
         self.common_size = out_features // self.num_splits
         self.remainder = out_features % self.num_splits
         self.splits = torch.nn.ModuleList(
@@ -38,7 +40,13 @@ class SplitLinearModule(torch.nn.Module):
                 for _ in range(self.num_splits)
             ]
         )
+        print(
+            f"Splitting out_features={out_features} into {self.num_splits} of size {self.common_size}"
+        )
         if self.remainder > 0:
+            print(
+                f"Warning: remainder {self.remainder} after splitting out_features={out_features} into {self.num_splits} of size {self.common_size}"
+            )
             self.splits.append(torch.nn.Linear(in_features, self.remainder))
 
     def split_sizes(self):
@@ -48,11 +56,11 @@ class SplitLinearModule(torch.nn.Module):
         return torch.cat([split(x) for split in self.splits], dim=-1)
 
 
-def replace_linear_with_split_linear(model, target_size):
+def replace_linear_with_split_linear(model, target_size, max_splits):
     for name, module in model.named_children():
         if isinstance(module, torch.nn.Linear):
             new_module = SplitLinearModule(
-                module.in_features, module.out_features, target_size
+                module.in_features, module.out_features, target_size, max_splits
             )
             split_sizes = new_module.split_sizes()
             if module.bias is not None:
@@ -66,8 +74,7 @@ def replace_linear_with_split_linear(model, target_size):
                     split.bias = None
             setattr(model, name, new_module)
         else:
-            replace_linear_with_split_linear(module, target_size)
-
+            replace_linear_with_split_linear(module, target_size, max_splits)
 
 
 def main() -> None:
@@ -130,6 +137,12 @@ def main() -> None:
         default=None,
         help="Split linear layers into smaller chunks of target_size",
     )
+    parser.add_argument(
+        "--max_splits",
+        type=int,
+        default=8,
+        help="Maximum number of splits to divide linear layers",
+    )
 
     export_args = parser.parse_args()
     params_path = export_args.params
@@ -180,7 +193,9 @@ def main() -> None:
         ).quantized_model()
 
     if export_args.target_size is not None:
-        replace_linear_with_split_linear(model, export_args.target_size)
+        replace_linear_with_split_linear(
+            model, export_args.target_size, export_args.max_splits
+        )
 
     model = model.to(float_dtype)
 
