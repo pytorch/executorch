@@ -3106,6 +3106,173 @@ class TestQNNQuantizedUtils(TestQNN):
         ), "Generated .dot file does not match the golden file."
 
 
+class TestExampleLLMScript(TestQNN):
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
+    def test_llama3_2_1b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+        assert (
+            self.llama_artifacts is not None
+        ), "Please provide path to llama artifacts"
+
+        prompt = "What is the meaning of life?"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--checkpoint",
+            f"{self.llama_artifacts}/consolidated.00.pth",
+            "--params",
+            f"{self.llama_artifacts}/params.json",
+            "--tokenizer_model",
+            f"{self.llama_artifacts}/tokenizer.model",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a4w",
+            "--temperature",
+            "0",
+            "--llama_model",
+            "llama3_2",
+            "--model_mode",
+            "hybrid",
+            "--prefill_seq_len",
+            "32",
+            "--kv_seq_len",
+            "512",
+            "--num_sharding",
+            "4",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        golden_start_with = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>"
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    self.assertTrue(
+                        model_out.startswith(golden_start_with),
+                        f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                    )
+                # x86 does not allow weight sharing, so we don't check pte size.
+                # Inference speed on x86 is slow, so we only check when running on Android
+                if not self.enable_x86_64:
+                    pte_size = msg["pte_size"]
+                    self.assertLessEqual(pte_size, 1300000000)
+                if not self.compile_only and not self.enable_x86_64:
+                    self.assertGreaterEqual(msg["inference_speed"], 66)  # Lanai
+
+    def test_llama_stories_110m(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+        assert (
+            self.llama_artifacts is not None
+        ), "Please provide path to llama artifacts"
+
+        prompt = "Once"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--checkpoint",
+            f"{self.llama_artifacts}/stories110M.pt",
+            "--params",
+            f"{self.llama_artifacts}/params.json",
+            "--tokenizer_model",
+            f"{self.llama_artifacts}/tokenizer.model",
+            "--tokenizer_bin",
+            f"{self.llama_artifacts}/tokenizer.bin",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a4w",
+            "--temperature",
+            "0",
+            "--llama_model",
+            "stories110m",
+            "--model_mode",
+            "hybrid",
+            "--prefill_seq_len",
+            "32",
+            "--kv_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        golden_start_with = "Once upon a time,"
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    self.assertTrue(
+                        model_out.startswith(golden_start_with),
+                        f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                    )
+                # x86 does not allow weight sharing, so we don't check pte size
+                if not self.enable_x86_64:
+                    pte_size = msg["pte_size"]
+                    self.assertLessEqual(pte_size, 130000000)
+                if not self.compile_only and not self.enable_x86_64:
+                    self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
+
+
 class TestExampleOssScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -4001,72 +4168,6 @@ class TestExampleScript(TestQNN):
                 self.assertGreaterEqual(msg["MPA"], 0.70)
                 self.assertGreaterEqual(msg["MIoU"], 0.55)
 
-    def test_stories_single_llama(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--checkpoint",
-            f"{self.artifact_dir}/stories110M.pt",
-            "--params",
-            f"{self.artifact_dir}/params.json",
-            "--tokenizer_model",
-            f"{self.artifact_dir}/tokenizer.model",
-            "--tokenizer_bin",
-            f"{self.artifact_dir}/tokenizer.bin",
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            "Once",
-            "--ptq",
-            "16a4w",
-            "--temperature",
-            "0",
-            "--llama_model",
-            "stories110m",
-            "--model_mode",
-            "hybrid",
-            "--prefill_seq_len",
-            "32",
-            "--kv_seq_len",
-            "128",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-
-        golden_start_with = "Once upon a time,"
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                if not self.compile_only:
-                    model_out = msg["result"][0]
-                    self.assertTrue(model_out.startswith(golden_start_with))
-                # x86 does not allow weight sharing, so we don't check pte size
-                if not self.enable_x86_64:
-                    pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 130000000)
-
     @unittest.skip("dynamic shape inputs appear in recent torch.export.export")
     def test_mobilebert(self):
         if not self.required_envs([self.pretrained_weight]):
@@ -4271,6 +4372,18 @@ def setup_environment():
         type=str,
     )
 
+    parser.add_argument(
+        "--pre_gen_pte",
+        help="Run the pre-generated pte in the given directory.",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--llama_artifacts",
+        help="A folder that contains: weight, tokenizer, and params.",
+        type=str,
+    )
+
     args, ns_args = parser.parse_known_args(namespace=unittest)
     TestQNN.host = args.host
     TestQNN.device = args.device
@@ -4289,6 +4402,8 @@ def setup_environment():
     TestQNN.enable_x86_64 = args.enable_x86_64
     TestQNN.dump_intermediate_outputs = args.dump_intermediate_outputs
     TestQNN.compile_only = args.compile_only
+    TestQNN.pre_gen_pte = args.pre_gen_pte
+    TestQNN.llama_artifacts = args.llama_artifacts
 
     return sys.argv[:1] + ns_args
 

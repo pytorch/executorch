@@ -26,6 +26,7 @@ def define_common_targets():
             "util/TypeSafeSignMath.h",
             "util/bit_cast.h",
             "util/floating_point_utils.h",
+            "util/irange.h",
         ],
         exported_preprocessor_flags = [
             # NOTE: If we define C10_EMBEDDED to prevent Half and

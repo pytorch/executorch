@@ -43,6 +43,7 @@ class PartitionAnchors:
     output: List[Union[Tuple[fx.Node], Tuple[fx.Node, SharedQuantizationSpec]]] = field(
         default_factory=list
     )
+    empty: bool = False
 
 
 class QuantizationPattern(ABC):
@@ -99,6 +100,38 @@ class AddmmPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_linear
+
+
+class AddPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        add_node = fused_partition[0].nodes[-1]
+
+        # Bail if:
+        #   - the add node is not a tensor add
+        #   - the add node has kwargs (e.g. alpha)
+        is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
+            add_node.args[1], fx.Node
+        )
+        if not is_tensor_add or len(add_node.kwargs) > 0:
+            return PartitionAnchors(
+                empty=True,
+            )
+
+        return PartitionAnchors(
+            inputs=[(add_node, 0), (add_node, 1)],
+            weights=[],
+            biases=[],
+            output=[(add_node,)],
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_add.default
 
 
 class BmmPattern(QuantizationPattern):

@@ -55,10 +55,10 @@ To run the unit test suite with Corstone3x0 FVP simulator support use
 backends/arm/test/test_arm_baremetal.sh test_pytest_ethosu_fvp
 ```
 
-You can test to run some models with the run.sh flow
+You can test to run some models with the full fvp test flow
 
 ```
-backends/arm/test/test_arm_baremetal.sh test_run_ethosu_fvp
+backends/arm/test/test_arm_baremetal.sh test_full_ethosu_fvp
 ```
 
 ## Unit tests

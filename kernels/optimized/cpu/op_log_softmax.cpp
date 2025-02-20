@@ -14,6 +14,8 @@
 #include <cmath>
 #include <type_traits>
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -66,30 +68,30 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
       }
       // calculate sum and exponential in softmax dim
       OUT_T temp_sum = 0;
-#ifndef __aarch64__
-      for (auto d = 0; d < dim_size; ++d) {
-        output_data[d * dim_stride] =
-            std::exp(input_data[d * dim_stride] - max_input);
-        temp_sum += output_data[d * dim_stride];
-      }
-#else
+      using VecOut = at::vec::Vectorized<OUT_T>;
+      using VecIn = at::vec::Vectorized<IN_T>;
       auto d = 0;
-      for (; d + 4 < dim_size; d += 4) {
+      static_assert(sizeof(IN_T) == sizeof(OUT_T));
+      static_assert(
+          std::is_same_v<OUT_T, float>,
+          "Below loop actually only supports float.");
+      const VecIn max_input_vec(max_input);
+      for (; d + VecOut::size() < dim_size; d += VecOut::size()) {
         auto index = d * dim_stride;
-        float32x4_t in =
-            vld1q_f32(static_cast<const float*>(&input_data[index]));
-        float32x4_t out_ =
-            Sleef_expf4_u10(vsubq_f32(in, vmovq_n_f32(max_input)));
-        vst1q_f32(static_cast<float*>(&output_data[index]), out_);
+        auto in = VecIn::loadu(&input_data[index]);
+        auto out_ = (in - max_input_vec).exp();
+        out_.store(&output_data[index]);
+#if defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE)
         temp_sum += vaddvq_f32(out_);
+#else
+        temp_sum += at::vec::vec_reduce_all<float>(std::plus<VecOut>(), out_);
+#endif
       }
-
       for (; d < dim_size; ++d) {
         output_data[d * dim_stride] =
             std::exp(input_data[d * dim_stride] - max_input);
         temp_sum += output_data[d * dim_stride];
       }
-#endif // __aarch64__
 
       temp_sum = std::log(temp_sum);
 

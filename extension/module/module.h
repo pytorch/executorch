@@ -52,6 +52,21 @@ class Module {
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
   /**
+   * Constructs an instance by loading a program from a file with specified
+   * memory locking behavior.
+   *
+   * @param[in] file_path The path to the ExecuTorch program file to load.
+   * @param[in] data_map_path The path to a .ptd file
+   * @param[in] load_mode The loading mode to use.
+   * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   */
+  explicit Module(
+      const std::string& file_path,
+      const std::string& data_map_path,
+      const LoadMode load_mode = LoadMode::MmapUseMlock,
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+
+  /**
    * Constructs an instance with the provided data loader and memory allocator.
    *
    * @param[in] data_loader A DataLoader used for loading program data.
@@ -59,12 +74,14 @@ class Module {
    * @param[in] temp_allocator A MemoryAllocator to use when allocating
    * temporary data during kernel or delegate execution.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   * @param[in] data_map_loader A DataLoader used for loading external weights.
    */
   explicit Module(
       std::unique_ptr<runtime::DataLoader> data_loader,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr);
 
   /**
    * Constructs an instance using an existing shared program.
@@ -75,12 +92,14 @@ class Module {
    * @param[in] temp_allocator A MemoryAllocator to use when allocating
    * temporary data.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   * @param[in] data_map_loader A DataLoader used for loading external weights.
    */
   explicit Module(
       std::shared_ptr<runtime::Program> program,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr);
 
   Module(const Module&) = delete;
   Module& operator=(const Module&) = delete;
@@ -433,14 +452,16 @@ class Module {
     std::vector<runtime::EValue> inputs;
   };
 
- private:
   std::string file_path_;
+  std::string data_map_path_;
   LoadMode load_mode_{LoadMode::MmapUseMlock};
   std::shared_ptr<runtime::Program> program_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
   std::unique_ptr<runtime::MemoryAllocator> temp_allocator_;
   std::unique_ptr<runtime::EventTracer> event_tracer_;
+  std::unique_ptr<runtime::DataLoader> data_map_loader_;
+  std::unique_ptr<runtime::NamedDataMap> data_map_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;

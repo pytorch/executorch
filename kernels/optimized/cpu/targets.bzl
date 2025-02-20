@@ -57,15 +57,10 @@ _OPTIMIZED_ATEN_OPS = (
     ),
     op_target(
         name = "op_log_softmax",
-        deps = select({
-            "DEFAULT": [
-                "//executorch/kernels/portable/cpu/util:activation_ops_util",
-            ],
-            "ovr_config//cpu:arm64": [
-                "//executorch/kernels/portable/cpu/util:activation_ops_util",
-                "fbsource//third-party/sleef:sleef_arm",
-            ],
-        }),
+        deps = [
+            "//executorch/kernels/portable/cpu/util:activation_ops_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
     ),
     op_target(
         name = "op_mm",

@@ -200,7 +200,7 @@ Tensor& softmax_out(
     int64_t dim,
     bool half_to_float,
     Tensor& out) {
-  _softmax_out(ctx, in, dim, half_to_float, out);
+  return _softmax_out(ctx, in, dim, half_to_float, out);
 }
 
 } // namespace native

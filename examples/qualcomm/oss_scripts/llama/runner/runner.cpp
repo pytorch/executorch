@@ -18,6 +18,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
 #include <ctime>
+#include <fstream>
 #include <sstream>
 
 using executorch::aten::Tensor;
@@ -518,6 +519,19 @@ void printReport(const Runner::Stats& stats) {
       stats.num_generated_tokens,
       (double)stats.aggregate_sampling_time_ms /
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
+
+  // For now, we just print the total inference time for CI, can save more info
+  // in future if needed.
+  std::ofstream outfile("outputs/inference_speed.txt");
+  if (outfile.is_open()) {
+    double num_tok = (stats.num_generated_tokens) /
+        (double)(stats.inference_end_ms - stats.inference_start_ms) *
+        stats.SCALING_FACTOR_UNITS_PER_SECOND;
+    outfile << num_tok;
+    outfile.close();
+  } else {
+    ET_CHECK_MSG(false, "Error saving the inference speed file");
+  }
 }
 
 std::string statsToJsonString(const Runner::Stats& stats) {

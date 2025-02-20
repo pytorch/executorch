@@ -43,6 +43,35 @@ class StaticAttentionTest(unittest.TestCase):
         )
         self.assertTrue(torch.isclose(y, expected, rtol=1e-3).all())
 
+    def test_hf_rope_without_cache(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            max_seq_len=8,
+            use_hf_rope=True,
+        )
+        layer_id = 0
+        rope = Rope(config)
+        attn_mha = AttentionMHA(config, layer_id, rope).eval()
+        static_attn = StaticAttention(config, layer_id, rope).eval()
+        static_attn.load_weights_from_attention_mha(attn_mha)
+
+        x = torch.rand(1, config.max_seq_len, config.dim)
+        freqs_cos, freqs_sin = rope.get_freqs(None, config.max_seq_len)
+        expected, _ = attn_mha(x, freqs_cos, freqs_sin)
+        mask = torch.triu(
+            torch.full((1, config.max_seq_len, config.max_seq_len), float("-inf")),
+            diagonal=1,
+        )
+        y, _ = static_attn(
+            x,
+            freqs_cos.unsqueeze(0),
+            freqs_sin.unsqueeze(0),
+            mask=mask,
+        )
+        self.assertTrue(torch.isclose(y, expected, rtol=1e-3).all())
+
     def test_with_cache(self):
         config = ModelArgs(
             dim=64,

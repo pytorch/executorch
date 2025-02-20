@@ -25,6 +25,7 @@ def define_common_targets():
                 "//executorch/extension/memory_allocator:malloc_memory_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/data_loader:mmap_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
             ],
             exported_deps = [
                 "//executorch/runtime/executor:program" + aten_suffix,

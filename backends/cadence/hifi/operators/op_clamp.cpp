@@ -328,7 +328,7 @@ Tensor& clamp_tensor_out(
     const executorch::aten::optional<Tensor>& min_opt,
     const executorch::aten::optional<Tensor>& max_opt,
     Tensor& out) {
-  clamp_Tensor_out(ctx, in, min_opt, max_opt, out);
+  return clamp_Tensor_out(ctx, in, min_opt, max_opt, out);
 }
 
 } // namespace native

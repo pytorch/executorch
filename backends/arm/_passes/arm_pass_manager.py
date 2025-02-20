@@ -27,6 +27,7 @@ from executorch.backends.arm._passes.convert_split_to_slice import (
 from executorch.backends.arm._passes.convert_squeezes_to_view import (  # type: ignore[import-not-found]
     ConvertSqueezesToViewPass,
 )
+from executorch.backends.arm._passes.convert_to_clamp import ConvertToClampPass
 from executorch.backends.arm._passes.decompose_batchnorm_pass import (
     DecomposeBatchNormPass,
 )
@@ -104,6 +105,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeLinearPass())
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(ConvertFullLikeToFullPass())
+        self.add_pass(ConvertToClampPass())
 
         self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
@@ -144,6 +146,8 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxesPass())
         self.add_pass(ConvertFullLikeToFullPass())
+        self.add_pass(ConvertToClampPass())
+
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]

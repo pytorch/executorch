@@ -19,7 +19,7 @@ test_data_t = tuple[torch.Tensor, int, int]
 test_data_suite: list[tuple[test_data_t]] = [
     # (test_data, dim, index)
     ((torch.zeros(5, 3, 20), -1, 0),),
-    ((torch.zeros(5, 3, 20), 0, -1),),
+    ((torch.rand(5, 3, 20), 0, -1),),
     ((torch.zeros(5, 3, 20), 0, 4),),
     ((torch.ones(10, 10, 10), 0, 2),),
     ((torch.rand(5, 3, 20, 2), 0, 2),),
@@ -61,9 +61,7 @@ class TestSelect(unittest.TestCase):
             .check([export_target])
             .check_not(["torch.ops.quantized_decomposed"])
             .to_edge()
-            .dump_artifact()
             .partition()
-            .dump_artifact()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=test_data)

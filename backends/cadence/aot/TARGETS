@@ -180,6 +180,7 @@ python_library(
     typing = True,
     deps = [
         "//caffe2:torch",
+        ":ops_registrations",
         ":compiler_utils",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:utils",
