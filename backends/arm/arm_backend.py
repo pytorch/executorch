@@ -29,9 +29,9 @@ class ArmCompileSpecBuilder:
 
     def ethosu_compile_spec(
         self,
-        config: str,
-        system_config: str,
-        memory_mode: str,
+        target: str,
+        system_config: Optional[str] = None,
+        memory_mode: Optional[str] = None,
         extra_flags: Optional[str] = None,
         config_ini: Optional[str] = "Arm/vela.ini",
     ) -> "ArmCompileSpecBuilder":
@@ -39,7 +39,7 @@ class ArmCompileSpecBuilder:
         Generate compile spec for Ethos-U NPU
 
         Args:
-            config: Ethos-U accelerator configuration, e.g. ethos-u55-128
+            target: Ethos-U accelerator configuration, e.g. ethos-u55-128
             system_config: System configuration to select from the Vel
                 configuration file
             memory_mode: Memory mode to select from the Vela configuration file
@@ -52,9 +52,24 @@ class ArmCompileSpecBuilder:
         ), f"Output format already set to f{self.output_format}"
         self.output_format = "vela"
         self.compiler_flags = [
-            f"--accelerator-config={config}",
+            f"--accelerator-config={target}",
             f"--config={config_ini}",
         ]
+
+        # default system config and memory mode
+        if "ethos-u55" in target:
+            if system_config is None:
+                system_config = "Ethos_U55_High_End_Embedded"
+            if memory_mode is None:
+                memory_mode = "Shared_Sram"
+        elif "ethos-u85" in target:
+            if system_config is None:
+                system_config = "Ethos_U85_SYS_DRAM_Mid"
+            if memory_mode is None:
+                memory_mode = "Sram_Only"
+        else:
+            raise RuntimeError(f"Unknown ethos target: {target}")
+
         if system_config is not None:
             self.compiler_flags.append(f"--system-config={system_config}")
         if memory_mode is not None:
@@ -62,8 +77,13 @@ class ArmCompileSpecBuilder:
         if extra_flags is not None:
             self.compiler_flags.append(extra_flags)
 
+        # We require raw output and regor, so add these flags if absent. This
+        # overrides any other output setting.
+        self.compiler_flags.append("--output-format=raw")
+        self.compiler_flags.append("--debug-force-regor")
+
         base_tosa_version = "TOSA-0.80+BI"
-        if "u55" in config:
+        if "u55" in target:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
         self.tosa_spec = TosaSpecification.create_from_string(base_tosa_version)

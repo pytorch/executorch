@@ -317,19 +317,12 @@ def get_compile_spec(
         except:
             tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
         spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
-    elif "ethos-u55" in target:
+    elif "ethos-u" in target:
         spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
             target,
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
-        )
-    elif "ethos-u85" in target:
-        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
-            target,
-            system_config=system_config,
-            memory_mode=memory_mode,
-            extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
+            extra_flags="--verbose-operators --verbose-cycle-estimate",
         )
 
     if intermediates is not None:
@@ -520,22 +513,6 @@ def get_args():
         and models[args.model_name].can_delegate is False
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
-
-    if "ethos-u" in args.target and args.system_config is None:
-        if "u55" in args.target:
-            args.system_config = "Ethos_U55_High_End_Embedded"
-        elif "u85" in args.target:
-            args.system_config = "Ethos_U85_SYS_DRAM_Mid"
-        else:
-            raise RuntimeError(f"Invalid target name {args.target}")
-
-    if "ethos-u" in args.target and args.memory_mode is None:
-        if "u55" in args.target:
-            args.memory_mode = "Shared_Sram"
-        elif "u85" in args.target:
-            args.memory_mode = "Sram_Only"
-        else:
-            raise RuntimeError(f"Invalid target name {args.target}")
 
     return args
 
