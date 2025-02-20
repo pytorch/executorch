@@ -91,6 +91,7 @@ class BaseTOSASupportList(OperatorSupportBase):
 
     def is_node_supported(self, submodules, node: fx.Node) -> bool:
         supported = node.op == "call_function" and node.target in [
+            exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
@@ -106,6 +107,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
+            exir_ops.edge.aten.floor.default,
             exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.ge.Tensor,

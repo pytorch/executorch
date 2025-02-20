@@ -41,9 +41,9 @@ ${CONDA_RUN} --no-capture-output \
 PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
 
 if [[ "$BUILD_TOOL" == "cmake" ]]; then
-    .ci/scripts/unittest-macos-cmake.sh "$BUILD_MODE"
+    .ci/scripts/unittest-macos-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
-    .ci/scripts/unittest-buck2.sh "$BUILD_MODE"
+    .ci/scripts/unittest-buck2.sh
 else
     echo "Unknown build tool $BUILD_TOOL"
     exit 1
