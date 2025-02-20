@@ -44,6 +44,7 @@ def define_common_targets():
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],

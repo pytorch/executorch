@@ -4,9 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.exir.backend.operator_support import (
     DontPartition,
     DontPartitionModule,
@@ -42,7 +42,7 @@ def test_single_reject():
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
     check = DontPartition(exir_ops.edge.aten.sigmoid.default)
-    partitioner = ArmPartitioner(compile_spec, additional_checks=[check])
+    partitioner = TOSAPartitioner(compile_spec, additional_checks=[check])
     (
         ArmTester(
             module,
@@ -66,7 +66,7 @@ def test_multiple_reject():
     check = DontPartition(
         exir_ops.edge.aten.sigmoid.default, exir_ops.edge.aten.mul.Tensor
     )
-    partitioner = ArmPartitioner(compile_spec, additional_checks=[check])
+    partitioner = TOSAPartitioner(compile_spec, additional_checks=[check])
     (
         ArmTester(
             module,
@@ -88,7 +88,7 @@ def test_torch_op_reject():
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
     check = DontPartition(torch.ops.aten.sigmoid.default)
-    partitioner = ArmPartitioner(compile_spec, additional_checks=[check])
+    partitioner = TOSAPartitioner(compile_spec, additional_checks=[check])
     (
         ArmTester(
             module,
@@ -110,7 +110,7 @@ def test_string_op_reject():
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
     check = DontPartition("aten.sigmoid.default")
-    partitioner = ArmPartitioner(compile_spec, additional_checks=[check])
+    partitioner = TOSAPartitioner(compile_spec, additional_checks=[check])
     (
         ArmTester(
             module,
@@ -133,7 +133,7 @@ def test_name_reject():
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
     check = DontPartitionName("mul", "sigmoid", exact=False)
-    partitioner = ArmPartitioner(compile_spec, additional_checks=[check])
+    partitioner = TOSAPartitioner(compile_spec, additional_checks=[check])
     (
         ArmTester(
             module,
@@ -155,7 +155,7 @@ def test_module_reject():
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
     check = DontPartitionModule(module_name="CustomPartitioning")
-    partitioner = ArmPartitioner(compile_spec, additional_checks=[check])
+    partitioner = TOSAPartitioner(compile_spec, additional_checks=[check])
     (
         ArmTester(
             module,
@@ -177,7 +177,7 @@ def test_inexact_module_reject():
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
     check = DontPartitionModule(module_name="Custom", exact=False)
-    partitioner = ArmPartitioner(compile_spec, additional_checks=[check])
+    partitioner = TOSAPartitioner(compile_spec, additional_checks=[check])
     (
         ArmTester(
             module,
@@ -199,7 +199,7 @@ def test_module_instance_reject():
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
     check = DontPartitionModule(instance_name="nested")
-    partitioner = ArmPartitioner(compile_spec, additional_checks=[check])
+    partitioner = TOSAPartitioner(compile_spec, additional_checks=[check])
     (
         ArmTester(
             module,

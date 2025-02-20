@@ -14,13 +14,21 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/memory_manager.h>
-#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
 namespace runtime {
 namespace deserialization {
+
+/// Data structure to hold key and data buffer for external data used
+/// in a method.
+struct NamedData {
+  const char* key;
+  FreeableBuffer buffer;
+};
+
+NamedData* get_data_by_key(const char* key, Span<NamedData> entries);
 
 ET_NODISCARD Result<executorch::aten::Tensor> parseTensor(
     const Program* program,
@@ -37,9 +45,9 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
 
 // Checks that the sizes, dim_order and scalar_type match between tensors
 // stored in the PTE and externally.
-ET_NODISCARD Error validateExternalTensor(
+ET_NODISCARD Error validateTensorLayout(
     const executorch_flatbuffer::Tensor* s_tensor,
-    const TensorLayout& tensor_layout);
+    const TensorLayout& expected_layout);
 
 // Deserializes a List of optional type. The code here is the same between all
 // list of optionals: list of optional Tensor, list of optional float etc, so we
@@ -114,8 +122,10 @@ parseListOptionalType(
  * @param[in] allocator The source of memory for non-constant tensors.
  * @param[in] named_data_map An optional map of {name, blob} used to resolve
  *     data that is mutable and external to the PTE, if any.
- * @param[in] external_constants An optional span of {name, buffer} used to
- *     resolve data that is constant and external to the PTE, if any.
+ * @param[in] external_constants An optional span containing tensor fqn to
+ *     corresponding tensor data. Used to resolve data that is constant and
+ *     external to the PTE, if any. Referencing data from external_constants is
+ *     safe, as it has the same lifetime as the method.
  *
  * @returns On success, the data pointer to use for the tensor. On failure, a
  *     non-Ok Error.

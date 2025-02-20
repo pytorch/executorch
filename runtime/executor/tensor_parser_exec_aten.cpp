@@ -11,7 +11,6 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/memory_manager.h>
-#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
@@ -112,41 +111,51 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
       evalp_list, tensor_list, tensor_indices->size());
 }
 
-ET_NODISCARD Error validateExternalTensor(
+ET_NODISCARD Error validateTensorLayout(
     const executorch_flatbuffer::Tensor* s_tensor,
-    const TensorLayout& tensor_layout) {
-  // Compatibility checking.
+    const TensorLayout& expected_layout) {
   ET_CHECK_OR_RETURN_ERROR(
       static_cast<ScalarType>(s_tensor->scalar_type()) ==
-          tensor_layout.scalar_type(),
+          expected_layout.scalar_type(),
       InvalidExternalData,
       "Scalar type mismatch. Expected %hhd, got %hhd.",
       static_cast<int8_t>(s_tensor->scalar_type()),
-      static_cast<int8_t>(tensor_layout.scalar_type()));
+      static_cast<int8_t>(expected_layout.scalar_type()));
   int dim = s_tensor->sizes()->size();
   ET_CHECK_OR_RETURN_ERROR(
-      dim == tensor_layout.sizes().size(),
+      dim == expected_layout.sizes().size(),
       InvalidExternalData,
       "Dim mismatch. Expected %d, got %zu.",
       dim,
-      tensor_layout.sizes().size());
+      expected_layout.sizes().size());
   for (int i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
-        s_tensor->sizes()->Get(i) == tensor_layout.sizes()[i],
+        s_tensor->sizes()->Get(i) == expected_layout.sizes()[i],
         InvalidExternalData,
         "Sizes mismatch. Expected %d, got %d for size at index %d.",
         s_tensor->sizes()->Get(i),
-        tensor_layout.sizes()[i],
+        expected_layout.sizes()[i],
         i);
     ET_CHECK_OR_RETURN_ERROR(
-        s_tensor->dim_order()->Get(i) == tensor_layout.dim_order()[i],
+        s_tensor->dim_order()->Get(i) == expected_layout.dim_order()[i],
         InvalidExternalData,
         "Dim order mismatch. Expected %d, got %d for dim at index %d.",
         s_tensor->dim_order()->Get(i),
-        tensor_layout.dim_order()[i],
+        expected_layout.dim_order()[i],
         i);
   }
   return Error::Ok;
+}
+
+// Check if key exists in entries. If it does, return a pointer to the entry
+// otherwise return a nullptr.
+NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
+  for (int i = 0; i < entries.size(); i++) {
+    if (strcmp(key, entries[i].key) == 0) {
+      return &entries[i];
+    }
+  }
+  return nullptr;
 }
 
 ET_NODISCARD Result<void*> getTensorDataPtr(
@@ -185,33 +194,28 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
         s_tensor->extra_tensor_info()->fully_qualified_name() != nullptr,
         InvalidExternalData,
         "Fully qualified name of external tensor is null");
-    const char* key =
+    const char* fqn =
         s_tensor->extra_tensor_info()->fully_qualified_name()->c_str();
 
     // Constant value.
     if (allocation_info == nullptr) {
-      for (int i = 0; i < external_constants.size(); i++) {
-        if (strcmp(external_constants[i].key, key) == 0) {
-          // The const_cast is 'ok' here because program and runtime should
-          // guarantee that this data is never modified.
-          return const_cast<void*>(external_constants[i].buffer->data());
-        }
+      NamedData* data = get_data_by_key(fqn, external_constants);
+      if (data != nullptr) {
+        return const_cast<void*>(data->buffer.data());
       }
       // Should never reach here; these tensors are resolved in
       // Method::parse_external_constants. Any errors should be caught there.
-      return Error::NotFound;
-    }
-
-    // Mutable value.
-    else {
+      return Error::Internal;
+    } else {
+      // Mutable value.
       // Look up tensor in named data map.
       Result<const TensorLayout> tensor_layout_res =
-          named_data_map->get_metadata(key);
+          named_data_map->get_metadata(fqn);
       if (!tensor_layout_res.ok()) {
         return tensor_layout_res.error();
       }
       const TensorLayout& tensor_layout = tensor_layout_res.get();
-      Error err = validateExternalTensor(s_tensor, tensor_layout);
+      Error err = validateTensorLayout(s_tensor, tensor_layout);
       if (err != Error::Ok) {
         return err;
       }
@@ -221,7 +225,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
         return planned_ptr.error();
       }
       auto size =
-          named_data_map->load_data_into(key, planned_ptr.get(), nbytes);
+          named_data_map->load_data_into(fqn, planned_ptr.get(), nbytes);
       if (size.error() != Error::Ok) {
         return size.error();
       }
