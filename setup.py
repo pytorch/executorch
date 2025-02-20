@@ -57,8 +57,8 @@ import sys
 import setuptools  # noqa: F401 # usort: skip
 import subprocess
 
-from distutils import log
-from distutils.sysconfig import get_python_lib
+from distutils import log  # type: ignore[import-not-found]
+from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path
 from typing import List, Optional
 
@@ -751,6 +751,7 @@ setup(
         # into core pip packages. Refactor out the necessary utils
         # or core models files into a separate package.
         "executorch/examples/models": "examples/models",
+        "executorch/examples/llm_pte_finetuning": "examples/llm_pte_finetuning",
         "executorch/exir": "exir",
         "executorch/extension": "extension",
         "executorch/kernels/quantized": "kernels/quantized",
