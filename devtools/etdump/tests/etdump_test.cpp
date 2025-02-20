@@ -9,7 +9,7 @@
 #include <gtest/gtest.h>
 #include <cstdio>
 
-#include <executorch/devtools/etdump/buffer_data_sink.h>
+#include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>

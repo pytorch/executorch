@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <memory>
 
-#include <executorch/devtools/etdump/data_sink_base.h>
+#include <executorch/devtools/etdump/data_sinks/data_sink_base.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/platform.h>
