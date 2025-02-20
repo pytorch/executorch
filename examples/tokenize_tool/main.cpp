@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
 
 /**
  * This is a simple tool to instantiate a tokenizer and run it over some text.
