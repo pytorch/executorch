@@ -270,16 +270,14 @@ set(_optimized_kernels_test_sources
     "op_le_test.cpp"
     "op_linear_test.cpp"
     "op_log_softmax_test.cpp"
+    "op_mm_test.cpp"
     "op_mul_test.cpp"
     "op_native_layer_norm_test.cpp"
     "op_neg_test.cpp"
     "op_sub_test.cpp"
     "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
-    ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
 )
-
-# We don't have sleef on OSS so we don't have log_softmax
-list(REMOVE_ITEM _optimized_kernels_test_sources "op_log_softmax_test.cpp")
 
 et_cxx_test(
   optimized_kernels_test

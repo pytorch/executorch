@@ -9,7 +9,12 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
+    "get_vec_deps",
     "get_vec_preprocessor_flags",
+)
+load(
+    "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
+    "get_compiler_optimization_flags",
 )
 
 def op_target(name, deps = [], compiler_flags = []):
@@ -94,12 +99,17 @@ def define_op_library(name, compiler_flags, deps):
             "//executorch/kernels/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        # kernels often have helpers with no prototypes just disabling the warning here as the headers
-        # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = [
+            # kernels often have helpers with no prototypes just disabling the warning here as the headers
+            # are codegend and linked in later
+            "-Wno-missing-prototypes",
+            # pragma unroll fails with -Os, don't need to warn us and
+            # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
+            "-Wno-pass-failed",
+        ] + get_compiler_optimization_flags(),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
-        ] + augmented_deps,
+        ] + augmented_deps + get_vec_deps(),
         preprocessor_flags = get_vec_preprocessor_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
@@ -134,8 +144,3 @@ def define_op_target(name, compiler_flags, deps):
         compiler_flags = compiler_flags,
         deps = deps,
     )
-
-def is_op_disabled(name):
-    # TODO (gjcomer) Enable ops with sleef dependency in OSS
-    disabled_ops = ["op_log_softmax"]
-    return name in disabled_ops
