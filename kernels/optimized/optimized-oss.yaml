@@ -10,6 +10,11 @@
     - arg_meta: null
       kernel_name: torch::executor::opt_fft_r2c_out
 
+- op: _log_softmax.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_log_softmax_out
+
 - op: add.out
   kernels:
     - arg_meta: null
