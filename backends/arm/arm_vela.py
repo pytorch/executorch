@@ -12,7 +12,13 @@ import tempfile
 from typing import List
 
 import numpy as np
-from ethosu.vela import vela  # type: ignore
+
+try:
+    from ethosu.vela import vela  # type: ignore
+
+    has_vela = True
+except ImportError:
+    has_vela = False
 
 
 # Pack either input or output tensor block, compose the related arrays into
@@ -45,6 +51,11 @@ def vela_compile(
     """
     Compile a TOSA graph to a binary stream for ArmBackendEthosU using Vela.
     """
+    if not has_vela:
+        raise RuntimeError(
+            "ethos-u-vela pip package couldn't be imported. Make sure it's installed!"
+        )
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tosaname = "out.tosa"
         tosa_path = os.path.join(tmpdir, tosaname)
