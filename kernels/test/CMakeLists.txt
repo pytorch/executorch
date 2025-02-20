@@ -276,7 +276,7 @@ set(_optimized_kernels_test_sources
     "op_neg_test.cpp"
     "op_sub_test.cpp"
     "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
-    ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
 )
 
 et_cxx_test(
