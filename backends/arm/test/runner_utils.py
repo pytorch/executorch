@@ -180,7 +180,8 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
-        if not self.ran_tosa_dispatch:
+        # Only raise this error if we ran the model without errors.
+        if not self.ran_tosa_dispatch and exc_type is None:
             raise RuntimeError(
                 "Ran model with TosaReferenceModelDispatch but never ran TOSABackend delegate."
             )
