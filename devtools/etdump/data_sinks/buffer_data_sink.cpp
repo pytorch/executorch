@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/devtools/etdump/buffer_data_sink.h>
+#include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/utils.h>
 
 using ::executorch::runtime::Error;

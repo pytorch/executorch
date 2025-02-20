@@ -10,7 +10,7 @@
 
 #include <cstring>
 
-#include <executorch/devtools/etdump/buffer_data_sink.h>
+#include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/emitter.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
