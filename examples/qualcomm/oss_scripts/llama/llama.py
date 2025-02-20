@@ -881,6 +881,10 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
 
         adb.pull(output_path=args.artifact, callback=post_process)
     if args.ip and args.port != -1:
+        inference_speed = 0
+        with open(f"{args.artifact}/outputs/inference_speed.txt", "r") as f:
+            inference_speed = float(f.read())
+
         pte_size = os.path.getsize(pte_path)
         with Client((args.ip, args.port)) as conn:
             conn.send(
@@ -888,6 +892,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                     {
                         "result": outputs,
                         "pte_size": pte_size,
+                        "inference_speed": inference_speed,
                     }
                 )
             )
