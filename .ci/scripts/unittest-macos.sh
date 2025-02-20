@@ -14,6 +14,14 @@ else
   exit 1
 fi
 
+BUILD_MODE=$2
+if [[ $BUILD_MODE =~ ^(Debug|Release)$ ]]; then
+    echo "Running tests in build mode ${BUILD_MODE} ..."
+else
+    echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
+    exit 1
+fi
+
 bash .ci/scripts/setup-conda.sh
 eval "$(conda shell.bash hook)"
 
@@ -27,7 +35,7 @@ PYTHON_EXECUTABLE=python \
 EXECUTORCH_BUILD_PYBIND=ON \
 CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
 ${CONDA_RUN} --no-capture-output \
-.ci/scripts/setup-macos.sh cmake
+.ci/scripts/setup-macos.sh "${BUILD_TOOL}" "${BUILD_MODE}"
 
 # Install llama3_2_vision dependencies.
 PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
