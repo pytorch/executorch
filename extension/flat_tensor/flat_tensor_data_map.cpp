@@ -56,7 +56,7 @@ Result<const flat_tensor_flatbuffer::TensorMetadata*> get_flat_tensor_metadata(
       ET_CHECK_OR_RETURN_ERROR(
           metadata->segment_index() >= 0 && metadata->offset() >= 0,
           InvalidExternalData,
-          "Invalid segment_index %d or offset %lu; malformed PTD file.",
+          "Invalid segment_index %d or offset %" PRIu64 "; malformed PTD file.",
           metadata->segment_index(),
           metadata->offset());
       return metadata;
@@ -130,7 +130,8 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
       segment_offset.get() <
           header_.segment_base_offset + header_.segment_data_size,
       InvalidExternalData,
-      "Invalid segment offset %d is larger than the segment_base_offset + segment_data_size %lu; malformed PTD file.",
+      "Invalid segment offset %d is larger than the segment_base_offset + segment_data_size %" PRIu64
+      "; malformed PTD file.",
       segment_offset.get(),
       header_.segment_base_offset + header_.segment_data_size);
   return loader_->load(
