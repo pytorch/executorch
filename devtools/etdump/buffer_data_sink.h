@@ -31,10 +31,14 @@ class BufferDataSink : public DataSinkBase {
    * stored.
    */
   explicit BufferDataSink(::executorch::runtime::Span<uint8_t> buffer)
-      : debug_buffer_(buffer), offset_(0) {}
+      : debug_buffer_(buffer), offset_(0), alighment_(64) {}
 
+  // Uncopiable and unassignable to avoid double assignment and free of the
+  // internal buffer.
   BufferDataSink(const BufferDataSink&) = delete;
   BufferDataSink& operator=(const BufferDataSink&) = delete;
+
+  // Movable to be compatible with Result.
   BufferDataSink(BufferDataSink&&) = default;
   BufferDataSink& operator=(BufferDataSink&&) = default;
 
@@ -75,6 +79,9 @@ class BufferDataSink : public DataSinkBase {
 
   // The offset of the next available location in the buffer.
   size_t offset_;
+
+  // The alignment of the buffer.
+  size_t alighment_;
 };
 
 } // namespace etdump
