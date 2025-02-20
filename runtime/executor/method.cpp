@@ -392,7 +392,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
     new (&external_constants_[n_external_constants_].buffer)
         FreeableBuffer(std::move(buffer.get()));
 
-    n_external_constants_ = i + 1;
+    n_external_constants_ += 1;
   }
   return Error::Ok;
 }

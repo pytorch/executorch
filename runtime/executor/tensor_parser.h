@@ -35,7 +35,7 @@ ET_NODISCARD Result<executorch::aten::Tensor> parseTensor(
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor,
     const NamedDataMap* named_data_map = nullptr,
-    Span<NamedData> entries = {});
+    Span<NamedData> external_constants = {});
 
 ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
