@@ -13,7 +13,7 @@ python_library(
 
 python_library(
     name = "ops",
-    srcs = glob(["op_*.py"]),
+    srcs = glob(["op_*.py", "ops_*.py"]),
     typing = True,
     deps = [
         "fbsource//third-party/serialization_lib/python/tosa:tosa",
