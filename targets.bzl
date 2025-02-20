@@ -15,6 +15,7 @@ def define_common_targets():
         ]),
         visibility = [
             "@EXECUTORCH_CLIENTS",
+            "//pytorch/tokenizers/...",
         ],
         header_namespace = "",
     )
@@ -29,12 +30,14 @@ def define_common_targets():
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
+            "//pytorch/tokenizers/...",
         ],
         compiler_flags = [
             "-D_USE_INTERNAL_STRING_VIEW",
         ],
         external_deps = [
             "sentencepiece",
+            "abseil-cpp",
         ],
     )
 
@@ -49,6 +52,7 @@ def define_common_targets():
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
+            "//pytorch/tokenizers/...",
         ],
         compiler_flags = [
             "-D_USE_INTERNAL_STRING_VIEW",
@@ -84,6 +88,7 @@ def define_common_targets():
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
+            "//pytorch/tokenizers/...",
         ],
         compiler_flags = [
             "-D_USE_INTERNAL_STRING_VIEW",
@@ -104,5 +109,6 @@ def define_common_targets():
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
+            "//pytorch/tokenizers/...",
         ],
     )

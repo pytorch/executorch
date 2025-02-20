@@ -7,9 +7,6 @@
  */
 // @lint-ignore-every LICENSELINT
 
-#ifdef TOKENIZERS_FB_BUCK
-#include <TestResourceUtils/TestResourceUtils.h>
-#endif
 #include <gtest/gtest.h>
 #include <pytorch/tokenizers/sentencepiece.h>
 
@@ -17,14 +14,8 @@ namespace tokenizers {
 
 namespace {
 static inline std::string _get_resource_path(const std::string& name) {
-#ifdef TOKENIZERS_FB_BUCK
-  return facebook::xplat::testing::getPathForTestResource(
-      "test/resources/" + name);
-#else
   return std::getenv("RESOURCES_PATH") + std::string("/") + name;
-#endif
 }
-
 } // namespace
 
 TEST(SPTokenizerTest, TestEncodeWithoutLoad) {
