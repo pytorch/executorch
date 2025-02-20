@@ -7,6 +7,7 @@ Export model with:
 python export.py -n /path/to/output/model.pte -p /path/to/params.json -c /path/to/model.pth --seq_length 64 --max_seq_length 1024 --coreml-quantize c4w
 ```
 
+For better performance, use "--use_cache_list" export arg (does not work with pybindings).  You can also set "--target_size", which splits linear layers into smaller sizes for the ANE (it defaults to no splitting).  This can have substantial impact on performance.  For example, on Llama1B by setting "--target_size" to 1024, I see 1.34x increase in inference speed on M1 Pro (but loading time is increased).  We need further experiments to tune this.
 
 The runner is written in python and is only intended to serve as an example for how the model inputs should be processed; it is not performant.
 

@@ -120,7 +120,6 @@ class ModelArgs:
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
 
-
 class Rope(torch.nn.Module):
     def __init__(self, params: ModelArgs):
         super().__init__()
@@ -401,7 +400,7 @@ class Transformer(nn.Module):
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
-            h = h[:, input_length - 1, :]
+            h = h[:, input_length - 1, :].squeeze(1)
 
         h = self.norm(h)
 

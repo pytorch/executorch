@@ -26,6 +26,50 @@ sys.path.insert(0, "..")
 from llama.llama_transformer import InputManager, ModelArgs, Transformer
 
 
+class SplitLinearModule(torch.nn.Module):
+    def __init__(self, in_features, out_features, target_size):
+        super(SplitLinearModule, self).__init__()
+        self.num_splits = max(out_features // target_size, 1)
+        self.common_size = out_features // self.num_splits
+        self.remainder = out_features % self.num_splits
+        self.splits = torch.nn.ModuleList(
+            [
+                torch.nn.Linear(in_features, self.common_size)
+                for _ in range(self.num_splits)
+            ]
+        )
+        if self.remainder > 0:
+            self.splits.append(torch.nn.Linear(in_features, self.remainder))
+
+    def split_sizes(self):
+        return [split.out_features for split in self.splits]
+
+    def forward(self, x):
+        return torch.cat([split(x) for split in self.splits], dim=-1)
+
+
+def replace_linear_with_split_linear(model, target_size):
+    for name, module in model.named_children():
+        if isinstance(module, torch.nn.Linear):
+            new_module = SplitLinearModule(
+                module.in_features, module.out_features, target_size
+            )
+            split_sizes = new_module.split_sizes()
+            if module.bias is not None:
+                split_bias = module.bias.split(split_sizes)
+            split_weights = module.weight.split(split_sizes, dim=0)
+            for i, split in enumerate(new_module.splits):
+                split.weight = torch.nn.Parameter(split_weights[i])
+                if module.bias is not None:
+                    split.bias = torch.nn.Parameter(split_bias[i])
+                else:
+                    split.bias = None
+            setattr(model, name, new_module)
+        else:
+            replace_linear_with_split_linear(module, target_size)
+
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -80,6 +124,12 @@ def main() -> None:
         action="store_true",
         help="Use cache list to speed up model computation (does not work in pybindings)",
     )
+    parser.add_argument(
+        "--target_size",
+        type=int,
+        default=None,
+        help="Split linear layers into smaller chunks of target_size",
+    )
 
     export_args = parser.parse_args()
     params_path = export_args.params
@@ -128,6 +178,9 @@ def main() -> None:
             group_size=group_size,
             packed=(bitwidth in [2, 4]),
         ).quantized_model()
+
+    if export_args.target_size is not None:
+        replace_linear_with_split_linear(model, export_args.target_size)
 
     model = model.to(float_dtype)
 
@@ -183,6 +236,9 @@ def main() -> None:
     )
     print("Edge program")
     print(edge_manager.exported_program())
+
+    for node in edge_manager.exported_program().graph_module.graph.nodes:
+        print(node.name, node.target, node.args, node.kwargs)
 
     edge_manager = edge_manager.to_backend(partitioner)
 
