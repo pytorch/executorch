@@ -416,24 +416,29 @@ class Transformer(nn.Module):
 class InputManager:
     def __init__(
         self,
-        model_args: ModelArgs,
-        seq_length,
+        n_layers: int,
+        max_batch_size: int,
+        n_kv_heads: int,
+        max_seq_length: int,
+        head_dim: int,
+        use_cache_list: bool,
+        seq_length: int,
         dtype=torch.float16,
         minus_infinity=-torch.inf,
         cache_size=None,
     ):
         if cache_size is None:
-            cache_size = model_args.max_seq_len - seq_length
+            cache_size = max_seq_length - seq_length
         self.cache_size = cache_size
-        assert self.cache_size + seq_length <= model_args.max_seq_len
+        assert self.cache_size + seq_length <= max_seq_length
 
-        self.n_layers = model_args.n_layers
-        self.max_batch_size = model_args.max_batch_size
-        self.n_kv_heads = model_args.n_kv_heads
-        self.head_dim = model_args.head_dim
+        self.n_layers = n_layers
+        self.max_batch_size = max_batch_size
+        self.n_kv_heads = n_kv_heads
+        self.head_dim = head_dim
 
         self.seq_length = seq_length
-        self.use_cache_list = model_args.use_cache_list
+        self.use_cache_list = use_cache_list
 
         if self.use_cache_list:
             self.k_caches = [

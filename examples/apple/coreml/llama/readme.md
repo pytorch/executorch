@@ -14,13 +14,10 @@ The runner is written in python and is only intended to serve as an example for 
 
 Run model with:
 ```
-python run.py -m /path/to/model.pte -p /path/to/params.json -t /path/to/tokenizer.model --seq_length 64 --max_seq_length 1024 --prompt "Once upon a time," --n_steps 512
+python run.py -m /path/to/model.pte -t /path/to/tokenizer.model --prompt "Once upon a time,"
 ```
 
-
 (Note the script should be run from the executorch/examples/apple/coreml/llama directory.)
-
-The model here is based on a "sliding" cache, where old tokens are evicted from the cache.  There is no actual sliding in the implementation, though.
 
 
 ## Export args

@@ -22,8 +22,8 @@ from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
-sys.path.insert(0, "..")
-from llama.llama_transformer import InputManager, ModelArgs, Transformer
+sys.path.insert(0, ".")
+from llama_transformer import InputManager, ModelArgs, Transformer
 
 
 class SplitLinearModule(torch.nn.Module):
@@ -125,7 +125,7 @@ def main() -> None:
         help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight), c4w (for channelwise 4 bit weight)",
     )
     parser.add_argument(
-        "--use-cache-list",
+        "--use_cache_list",
         action="store_true",
         help="Use cache list to speed up model computation (does not work in pybindings)",
     )
@@ -230,7 +230,12 @@ def main() -> None:
     )
 
     input_manager = InputManager(
-        model_args=args,
+        n_layers=args.n_layers,
+        max_batch_size=args.max_batch_size,
+        n_kv_heads=args.n_kv_heads,
+        max_seq_length=args.max_seq_len,
+        head_dim=args.head_dim,
+        use_cache_list=export_args.use_cache_list,
         seq_length=export_args.seq_length,
         dtype=float_dtype,
         minus_infinity=-30000,

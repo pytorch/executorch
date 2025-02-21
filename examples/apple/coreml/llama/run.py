@@ -1,21 +1,18 @@
 import argparse
 import sys
-from multiprocessing import process
-from pathlib import Path
-
-import torch
-
-
-sys.path.insert(0, "..")
-import json
 
 import sentencepiece as spm
 import tiktoken
 
+import torch
+
 from executorch.runtime import Runtime
 
-from llama.llama_transformer import InputManager, ModelArgs
-from tiktoken.load import load_tiktoken_bpe
+
+sys.path.insert(0, ".")
+from executorch.examples.models.llama.runner.generation import next_token
+from executorch.examples.models.llama.tokenizer import tiktoken
+from llama_transformer import InputManager
 
 
 class Tokenizer:
@@ -27,70 +24,25 @@ class Tokenizer:
             sp.load(model_path)
             self.tokenizer = sp
         except:
-            print("Trying to tiktoken")
-            self.num_reserved_special_tokens = 256
-            self.pat_str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"  # noqa: E501
+            print("Trying to load tiktoken")
+            self.tokenizer = tiktoken.Tokenizer(model_path)
 
-            mergeable_ranks = load_tiktoken_bpe(model_path)
-            num_base_tokens = len(mergeable_ranks)
-            special_tokens = [
-                "<|begin_of_text|>",
-                "<|end_of_text|>",
-                "<|reserved_special_token_0|>",
-                "<|reserved_special_token_1|>",
-                "<|reserved_special_token_2|>",
-                "<|reserved_special_token_3|>",
-                "<|start_header_id|>",
-                "<|end_header_id|>",
-                "<|reserved_special_token_4|>",
-                "<|eot_id|>",  # end of turn
-            ] + [
-                f"<|reserved_special_token_{i}|>"
-                for i in range(5, self.num_reserved_special_tokens - 5)
-            ]
-            self.special_tokens = {
-                token: num_base_tokens + i for i, token in enumerate(special_tokens)
-            }
-            self.tokenizer = tiktoken.Encoding(
-                name=Path(model_path).name,
-                pat_str=self.pat_str,
-                mergeable_ranks=mergeable_ranks,
-                special_tokens=self.special_tokens,
-            )
-
-    def encode(self, text):
-        return self.tokenizer.encode(text)
-
-    def encode_prompt(self, text):
+    def encode(self, text, bos, eos):
         if isinstance(self.tokenizer, spm.SentencePieceProcessor):
-            return self.tokenizer.encode(text)
+            bos_string = "<s>" if bos else ""
+            eos_string = "</s>" if eos else ""
+            return self.tokenizer.encode(f"{bos_string}{text}{eos_string}")
+        return self.tokenizer.encode(text, bos=bos, eos=eos)
 
-        get_prompt = (
-            lambda x: f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{x}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
-        )
-        return self.tokenizer.encode(
-            get_prompt(text),
-            allowed_special={
-                "<|begin_of_text|>",
-                "<|start_header_id|>",
-                "<|end_header_id|>",
-                "<|eot_id|>",
-            },
-        )
-
-    def decode(self, tokens):
-        return self.tokenizer.decode(tokens)
+    def decode_token(self, token):
+        if isinstance(self.tokenizer, spm.SentencePieceProcessor):
+            return f"{self.tokenizer.decode(token)} "
+        return self.tokenizer.decode_token(token)
 
     def stop_tokens(self):
         if isinstance(self.tokenizer, spm.SentencePieceProcessor):
             return [self.tokenizer.eos_id()]
-        if isinstance(self.tokenizer, tiktoken.Encoding):
-            return [
-                self.tokenizer.encode("<|eot_id|>", allowed_special={"<|eot_id|>"})[0],
-                self.tokenizer.encode(
-                    "<|end_of_text|>", allowed_special={"<|end_of_text|>"}
-                )[0],
-            ]
+        return self.tokenizer.stop_tokens
 
 
 def main() -> None:
@@ -101,26 +53,9 @@ def main() -> None:
         help="model.pte",
     )
     parser.add_argument(
-        "-p",
-        "--params",
-        help="config.json",
-    )
-    parser.add_argument(
         "-t",
         "--tokenizer",
         help="tokenizer.model path",
-    )
-    parser.add_argument(
-        "--seq_length",
-        type=int,
-        default=1,  # set to 1 for decode
-        help="length sequence to evaluate",
-    )
-    parser.add_argument(
-        "--max_seq_length",
-        type=int,
-        default=128,
-        help="maximum length sequence to evaluate",
     )
     parser.add_argument(
         "--prompt",
@@ -128,48 +63,57 @@ def main() -> None:
         default="Once upon a time,",
     )
     parser.add_argument(
-        "--n_steps",
-        type=int,
+        "--temperature",
+        type=float,
+        default=0.6,
     )
     parser.add_argument(
-        "--cache_size",
-        type=int,
-        default=None,
-        help="Cache size.  Old items are evicted from cache",
+        "--top_p",
+        type=float,
+        default=0.9,
     )
 
     args = parser.parse_args()
-    params_path = args.params
-
-    # Load model args
-    with open(params_path, "r") as f:
-        params = json.loads(f.read())
-
-    model_args = ModelArgs(
-        max_seq_len=args.max_seq_length,
-        generate_full_logits=False,
-        use_cache_list=False,  # cache_list does not work in pybindings
-        **params,
-    )
-
-    input_manager = InputManager(
-        model_args=model_args,
-        seq_length=args.seq_length,
-        dtype=torch.float16,
-        minus_infinity=-30000,
-        cache_size=args.cache_size,
-    )
 
     tokenizer = Tokenizer(args.tokenizer)
 
     runtime = Runtime.get()
     program = runtime.load_program(args.model)
     method = program.load_method("forward")
-    generated_tokens = []
-    tokens = tokenizer.encode_prompt(args.prompt)
-    generated_tokens.extend(tokens)
-    while input_manager.input_pos < args.n_steps:
-        while len(tokens) > 0:
+
+    metadata = method.metadata
+    print("Method metadata: ", metadata, "\n\n")
+
+    assert (
+        metadata.num_inputs() == 6
+    ), "Do not export with --use_cache_list for use in pybindings"
+    # k_cache input
+    n_layers, max_batch_size, n_kv_heads, cache_size, head_dim = (
+        metadata.input_tensor_meta(3).sizes()
+    )
+
+    # mask input
+    seq_length, max_seq_length = metadata.input_tensor_meta(5).sizes()
+
+    input_manager = InputManager(
+        n_layers=n_layers,
+        max_batch_size=max_batch_size,
+        n_kv_heads=n_kv_heads,
+        max_seq_length=max_seq_length,
+        head_dim=head_dim,
+        use_cache_list=False,
+        seq_length=seq_length,
+        dtype=torch.float16,
+        minus_infinity=-30000.0,
+        cache_size=cache_size,
+    )
+
+    print(args.prompt, end="")
+    tokens = tokenizer.encode(args.prompt, bos=True, eos=False)
+    while input_manager.input_pos + seq_length < max_seq_length:
+        while len(tokens) > 0 and (
+            input_manager.input_pos + seq_length < max_seq_length
+        ):
             inputs, remaining_tokens = input_manager.get_inputs_and_remaining_tokens(
                 tokens
             )
@@ -180,14 +124,11 @@ def main() -> None:
             )
             tokens = remaining_tokens
 
-        tokens = [logits.argmax(-1).item()]
-        generated_tokens.extend(tokens)
+        tokens = [next_token(logits, args.temperature, args.top_p)]
+
         if tokens[-1] in tokenizer.stop_tokens():
             break
-        print(tokenizer.decode([generated_tokens[-1]]), end=" ", flush=True)
-
-    print("\n\nFull text:")
-    print(tokenizer.decode(generated_tokens))
+        print(tokenizer.decode_token(tokens[-1]), end="", flush=True)
 
 
 if __name__ == "__main__":
