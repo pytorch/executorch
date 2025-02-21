@@ -126,6 +126,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.bitwise_xor.Tensor,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.ceil.default,
             exir_ops.edge.aten.clamp.default,
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.permute_copy.default,

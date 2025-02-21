@@ -38,6 +38,7 @@ class InsertTableOpsPass(ExportPass):
     """
 
     table_ops: Dict[EdgeOpOverload, Callable[[torch.Tensor], torch.Tensor]] = {
+        exir_ops.edge.aten.ceil.default: torch.ceil,
         exir_ops.edge.aten.exp.default: torch.exp,
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
