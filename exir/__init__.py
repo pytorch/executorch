@@ -29,6 +29,8 @@ from executorch.exir.serde.serialize import load, save
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.export import ExportedProgram, ExportGraphSignature
 
+import torch 
+
 Value = Any
 
 __all__ = [
@@ -55,3 +57,8 @@ __all__ = [
     "load",
     "save",
 ]
+
+def func(*args, **kwargs):
+    return True
+
+torch._utils_internal.export_training_ir_rollout_check = func
