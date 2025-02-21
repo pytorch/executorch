@@ -9,5 +9,6 @@ python_library(
         "//executorch/backends/arm:tosa_utils",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/exir:lib",
+        "//executorch/backends/transforms:utils",
     ],
 )
