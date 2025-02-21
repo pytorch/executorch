@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
 #include <numeric>
@@ -24,7 +25,7 @@ namespace {
 void check_strides_eq(
     executorch::aten::ArrayRef<executorch::aten::StridesType> strides_a,
     executorch::aten::ArrayRef<executorch::aten::StridesType> strides_b) {
-  for (int32_t i = 0; i < strides_a.size(); ++i) {
+  for (const auto i : c10::irange(strides_a.size())) {
     EXPECT_EQ(strides_a[i], strides_b[i]);
   }
 }
@@ -32,7 +33,7 @@ void check_strides_eq(
 void check_dim_order_eq(
     executorch::aten::ArrayRef<executorch::aten::DimOrderType> dim_order_a,
     executorch::aten::ArrayRef<executorch::aten::DimOrderType> dim_order_b) {
-  for (int32_t i = 0; i < dim_order_a.size(); ++i) {
+  for (const auto i : c10::irange(dim_order_a.size())) {
     EXPECT_EQ(dim_order_a[i], dim_order_b[i]);
   }
 }
@@ -227,7 +228,7 @@ TEST(DimOrderUtilTest, StrideToDimOrderSameStrides) {
 }
 
 TEST(DimOrderUtilTest, IsDefaultDimOrderTest) {
-  for (int i = 1; i < 7; ++i) {
+  for (const auto i : c10::irange(1, 7)) {
     std::vector<executorch::aten::DimOrderType> dim_order(i);
     std::iota(dim_order.begin(), dim_order.end(), 0);
 
@@ -241,7 +242,7 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderTest) {
 
 TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
   // Dims is default order but have two elements swapped
-  for (int i = 3; i < 8; ++i) {
+  for (const auto i : c10::irange(3, 8)) {
     std::vector<executorch::aten::DimOrderType> dim_order(i);
     std::iota(dim_order.begin(), dim_order.end(), 0);
     std::swap(dim_order[0], dim_order[1]);
@@ -250,9 +251,9 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
   }
 
   // Dims is default order but shifted by 1
-  for (int i = 3; i < 8; ++i) {
+  for (const auto i : c10::irange(3, 8)) {
     std::vector<executorch::aten::DimOrderType> dim_order(i);
-    for (int d = 0; d < i; ++d) {
+    for (const auto d : c10::irange(i)) {
       dim_order[d] = (d + 1) % i;
     }
 
