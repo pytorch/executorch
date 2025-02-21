@@ -540,7 +540,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModuleType</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="k">try</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.pybindings.portable_lib</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -623,6 +623,21 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div></div>
 
 
+<span class="k">class</span><span class="w"> </span><span class="nc">BackendRegistry</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The registry of backends that are available to the runtime.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">legacy_module</span><span class="p">:</span> <span class="n">ModuleType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># TODO: Expose the kernel callables to Python.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span> <span class="o">=</span> <span class="n">legacy_module</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">registered_backend_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the names of all registered backends as a list of strings.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_get_registered_backend_names</span><span class="p">()</span>
+
+
 <div class="viewcode-block" id="OperatorRegistry"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.OperatorRegistry">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">OperatorRegistry</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The registry of operators that are available to the runtime.&quot;&quot;&quot;</span>
 
@@ -655,6 +670,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">legacy_module</span><span class="p">:</span> <span class="n">ModuleType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Public attributes.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">backend_registry</span> <span class="o">=</span> <span class="n">BackendRegistry</span><span class="p">(</span><span class="n">legacy_module</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">operator_registry</span> <span class="o">=</span> <span class="n">OperatorRegistry</span><span class="p">(</span><span class="n">legacy_module</span><span class="p">)</span>
         <span class="c1"># Private attributes.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span> <span class="o">=</span> <span class="n">legacy_module</span>
