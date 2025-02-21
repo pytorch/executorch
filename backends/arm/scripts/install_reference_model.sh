@@ -41,6 +41,7 @@ function setup_tosa_reference_model() {
     patch_repo reference_model/thirdparty/serialization_lib ${tosa_serialization_lib_0_80_rev} ${patches_dir}
 
     pushd reference_model
+    rm -rf build
     pip install . --no-dependencies flatbuffers
     popd
 }

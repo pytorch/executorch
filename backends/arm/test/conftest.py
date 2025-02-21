@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 try:
-    import tosa_reference_model
+    import tosa_tools.v0_80.tosa_reference_model as tosa_reference_model
 except ImportError:
     logging.warning("tosa_reference_model not found, can't run reference model tests")
     tosa_reference_model = None

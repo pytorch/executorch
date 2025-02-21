@@ -6,15 +6,13 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -39,4 +37,4 @@ class ExpVisitor_0_80_MI(NodeVisitor):
         assert len(node.all_input_nodes) == 1
         assert inputs[0].dtype == output.dtype == ts.DType.FP32
 
-        tosa_graph.addOperator(TosaOp.Op().EXP, [inputs[0].name], [output.name])
+        tosa_graph.addOperator(ts.TosaOp.Op().EXP, [inputs[0].name], [output.name])

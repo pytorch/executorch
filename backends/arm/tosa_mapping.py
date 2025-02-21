@@ -13,8 +13,9 @@
 
 from typing import Any, Sequence
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 
 UNSUPPORTED_DTYPES = (

@@ -8,8 +8,9 @@
 
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -17,7 +18,6 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 from executorch.backends.arm.tosa_specification import Tosa_0_80
 from executorch.backends.arm.tosa_utils import tosa_shape
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor
@@ -57,7 +57,7 @@ class RshiftVisitor(NodeVisitor):
                 dtype=map_dtype(cast_type),
             )
             tosa_graph.addOperator(
-                TosaOp.Op().CAST,
+                ts.TosaOp.Op().CAST,
                 [inputs[0].name],
                 [shift_input.name],
                 None,
@@ -85,7 +85,7 @@ class RshiftVisitor(NodeVisitor):
         )
         # add right shift operator
         tosa_graph.addOperator(
-            TosaOp.Op().ARITHMETIC_RIGHT_SHIFT,
+            ts.TosaOp.Op().ARITHMETIC_RIGHT_SHIFT,
             [shift_input.name, shift_const_name],
             [shift.name],
             attr,
@@ -93,7 +93,7 @@ class RshiftVisitor(NodeVisitor):
         if cast_output:
             # cast output to original output dtype
             tosa_graph.addOperator(
-                TosaOp.Op().CAST,
+                ts.TosaOp.Op().CAST,
                 [shift.name],
                 [output.name],
                 None,

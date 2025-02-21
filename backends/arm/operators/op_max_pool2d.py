@@ -6,8 +6,9 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -19,7 +20,6 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor
@@ -76,7 +76,7 @@ class MaxPool2dVisitor(NodeVisitor):
         )
 
         tosa_graph.addOperator(
-            TosaOp.Op().MAX_POOL2D,
+            ts.TosaOp.Op().MAX_POOL2D,
             [input_tensor.name],
             [output.name],
             attr,

@@ -9,9 +9,9 @@ from typing import List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import executorch.backends.arm.tosa_utils as tutils
-
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -25,7 +25,6 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import reshape_for_broadcast
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor
@@ -88,7 +87,7 @@ class MulVisitor_080_BI(NodeVisitor):
         attr = ts.TosaSerializerAttribute()
         attr.MulAttribute(shift=0)
         tosa_graph.addOperator(
-            TosaOp.Op().MUL,
+            ts.TosaOp.Op().MUL,
             [input1.name, input2.name],
             [mul_output.name],
             attr,
@@ -120,5 +119,5 @@ class MulVisitor_080_MI(MulVisitor_080_BI):
         attr = ts.TosaSerializerAttribute()
         attr.MulAttribute(shift=0)
         tosa_graph.addOperator(
-            TosaOp.Op().MUL, [input1.name, input2.name], [output.name], attr
+            ts.TosaOp.Op().MUL, [input1.name, input2.name], [output.name], attr
         )

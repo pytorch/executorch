@@ -7,8 +7,9 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -21,7 +22,6 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor
@@ -65,7 +65,7 @@ class BMMVisitor(NodeVisitor):
         attr.MatMulAttribute(A_zp=input0_zp, B_zp=input1_zp)
 
         tosa_graph.addOperator(
-            TosaOp.Op().MATMUL,
+            ts.TosaOp.Op().MATMUL,
             [inputs[0].name, inputs[1].name],
             [bmm_output_name],
             attr,

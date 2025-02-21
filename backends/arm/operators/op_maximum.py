@@ -8,7 +8,7 @@
 from typing import List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 # pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -20,8 +20,6 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_utils import tosa_shape
-
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -65,7 +63,7 @@ class MaxVisitor(NodeVisitor):
             operand_inputs = inputs
 
         tosa_graph.addOperator(
-            TosaOp.Op().MAXIMUM,
+            ts.TosaOp.Op().MAXIMUM,
             [
                 operand_inputs[0].name,
                 operand_inputs[1].name,
