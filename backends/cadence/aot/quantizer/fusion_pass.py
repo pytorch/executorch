@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
+    AddPattern,
     BmmPattern,
     Conv1dPattern,
     Conv2dPattern,
@@ -39,6 +40,47 @@ ArgsType = Any
 
 # Use this part for patterns with multiple aten ops
 ReluPatterns = (ReluPattern0, ReluPattern1)
+
+
+def get_args_and_kwargs_add(
+    graph_module: GraphModule,
+    inputs_inputs: List[fx.Node],
+    dequants_inputs: List[fx.Node],
+    quant_node: fx.Node,
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    X_scale_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], dequants_inputs[0].args[1]),
+        {"dtype": torch.float},
+    )
+    X_zero_point_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], dequants_inputs[0].args[2]),
+        {"dtype": torch.int32},
+    )
+    Y_scale_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], dequants_inputs[1].args[1]),
+        {"dtype": torch.float},
+    )
+    Y_zero_point_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], dequants_inputs[1].args[2]),
+        {"dtype": torch.int32},
+    )
+    args = (
+        inputs_inputs[0],
+        X_scale_,
+        X_zero_point_,
+        inputs_inputs[1],
+        Y_scale_,
+        Y_zero_point_,
+        quant_node.args[1],
+        quant_node.args[2],
+    )
+
+    kwargs = {}
+    return args, kwargs
 
 
 # Helper function to get the args and kwargs for the linear replacement op
@@ -339,7 +381,7 @@ class QuantFusion(ExportPass):
             )
             for fused_partition in fused_partitions:
                 anchors = pattern.get_anchors(graph_module, fused_partition)
-                if not anchors:
+                if not anchors or anchors.empty:
                     continue
                 if any(self.is_fused(p.nodes) for p in fused_partition):
                     continue
@@ -385,7 +427,14 @@ class QuantFusion(ExportPass):
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
                     kwargs = {}
-                    if isinstance(pattern, (Conv1dPattern, Conv2dPattern)):
+                    if isinstance(pattern, AddPattern):
+                        args, kwargs = get_args_and_kwargs_add(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            quant_node,
+                        )
+                    elif isinstance(pattern, (Conv1dPattern, Conv2dPattern)):
                         args, kwargs = get_args_and_kwargs_conv(
                             graph_module,
                             inputs_inputs,

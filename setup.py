@@ -239,11 +239,11 @@ class _BaseExtension(Extension):
         srcs = tuple(cmake_cache_dir.glob(self.src))
         if len(srcs) != 1:
             raise ValueError(
-                f"""Expected exactly one file matching '{self.src}'; found {repr(srcs)}. 
+                f"""Expected exactly one file matching '{self.src}'; found {repr(srcs)}.
 
 If that file is a CMake-built extension module file, and we are installing in editable mode, please disable the corresponding build option since it's not supported yet.
 
-Try: 
+Try:
 
 EXECUTORCH_BUILD_FLATC=OFF EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=OFF pip install -e .
 """
