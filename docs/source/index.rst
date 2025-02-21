@@ -100,6 +100,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Backends
    :hidden:
 
+   backends-overview
    backends-xnnpack
    backends-coreml
    backends-mps
