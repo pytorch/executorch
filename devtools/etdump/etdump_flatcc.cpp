@@ -509,17 +509,28 @@ void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
 }
 
 size_t ETDumpGen::copy_tensor_to_debug_buffer(executorch::aten::Tensor tensor) {
-  if (tensor.nbytes() == 0) {
-    return static_cast<size_t>(-1);
+  const void* tensor_data_ptr = tensor.const_data_ptr();
+  const size_t tensor_nbytes = tensor.nbytes();
+
+  if (tensor_nbytes == 0) {
+    return (size_t)debug_buffer_offset_;
   }
-  uint8_t* offset_ptr =
-      alignPointer(debug_buffer_.data() + debug_buffer_offset_, 64);
-  debug_buffer_offset_ = (offset_ptr - debug_buffer_.data()) + tensor.nbytes();
+
+  uint8_t* last_data_end = debug_buffer_.data() + debug_buffer_offset_;
+
+  // The beginning of the next data blob must be aligned to the alignment
+  uint8_t* cur_data_begin = alignPointer(last_data_end, 64);
+  uint8_t* cur_data_end = cur_data_begin + tensor_nbytes;
+
   ET_CHECK_MSG(
-      debug_buffer_offset_ <= debug_buffer_.size(),
+      cur_data_end <= debug_buffer_.data() + debug_buffer_.size(),
       "Ran out of space to store intermediate outputs.");
-  memcpy(offset_ptr, tensor.const_data_ptr(), tensor.nbytes());
-  return (size_t)(offset_ptr - debug_buffer_.data());
+
+  memset(last_data_end, 0, cur_data_begin - last_data_end);
+  memcpy(cur_data_begin, tensor_data_ptr, tensor_nbytes);
+  debug_buffer_offset_ = (size_t)(cur_data_end - debug_buffer_.data());
+
+  return (size_t)(cur_data_begin - debug_buffer_.data());
 }
 
 void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
