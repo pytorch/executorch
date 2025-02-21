@@ -1,0 +1,75 @@
+[build-system]
+requires = [
+  "cmake", # For building binary targets in the wheel.
+  "pip>=23",  # For building the pip package.
+  "setuptools>=63",  # For building the pip package contents.
+  "wheel",  # For building the pip package archive.
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pytorch_tokenizers"
+dynamic = [
+  # setup.py will set the version.
+  'version',
+  'readme',
+]
+description = "A package with common tokenizers in Python and C++"
+authors = [
+  {name="PyTorch Team", email="packages@pytorch.org"},
+]
+license = {file = "LICENSE"}
+keywords = ["pytorch", "machine learning", "llm"]
+# PyPI package information.
+classifiers = [
+    # How mature is this project? Common values are
+    #   3 - Alpha
+    #   4 - Beta
+    #   5 - Production/Stable
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    # Update this as we support more versions of python.
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# Python dependencies required for use.
+requires-python = ">=3.10"
+dependencies=[
+  "tiktoken",
+  "tokenizers",
+  "sentencepiece",
+]
+
+[project.urls]
+# The keys are arbitrary but will be visible on PyPI.
+Homepage = "https://pytorch.org/executorch/"
+Repository = "https://github.com/pytorch/executorch"
+Issues = "https://github.com/pytorch/executorch/issues"
+Changelog = "https://github.com/pytorch/executorch/releases"
+
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc"]
+
+[tool.usort]
+# Do not try to put "first-party" imports in their own section.
+first_party_detection = false
+
+[tool.black]
+# Emit syntax compatible with older versions of python instead of only the range
+# specified by `requires-python`. TODO: Remove this once we support these older
+# versions of python and can expand the `requires-python` range.
+target-version = ["py38", "py39", "py310", "py311", "py312"]
