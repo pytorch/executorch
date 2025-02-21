@@ -84,5 +84,4 @@ class SelectCopy(NodeVisitor):
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {QCOM_DATA: np.uint32(math.pow(2, dim))},
         )
-
         return stride_slice_op

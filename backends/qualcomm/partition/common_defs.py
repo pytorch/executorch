@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 import _operator
 
+import torch
+
 from executorch.exir.dialects._ops import ops as exir_ops
 
 not_supported_operator = [
@@ -20,6 +22,7 @@ constant_operator = [
     exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
+    torch.ops.aten.scalar_tensor.default,
 ]
 
 allow_list_operator = [

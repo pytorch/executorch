@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Dict
+
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.backends.qualcomm.utils.constants import QCOM_ENCODING
@@ -22,6 +24,13 @@ dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
+
+
+def copy_meta(meta: Dict):
+    copied = {}
+    for k, v in meta.items():
+        copied[k] = v
+    return copied
 
 
 def get_quant_attrs(
@@ -60,8 +69,10 @@ def get_passes_dependency_for_capture_program():
     from executorch.backends.qualcomm._passes import (
         AnnotateDecomposed,
         AnnotateQuantAttrs,
+        AnnotateStack,
         ConstantI64toI32,
         ConvertBmmToMatmul,
+        ConvertConv1dToConv2d,
         ConvertInterpolateWithUpsample2D,
         ConvertToLinear,
         DecomposeAny,
@@ -87,8 +98,10 @@ def get_passes_dependency_for_capture_program():
             ConvertBmmToMatmul,
             ConvertInterpolateWithUpsample2D,
         ],
+        AnnotateStack: [FoldQDQ],
         ConstantI64toI32: [ConvertInterpolateWithUpsample2D],
         ConvertBmmToMatmul: [ConvertToLinear],
+        ConvertConv1dToConv2d: [FoldQDQ],
         ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
         ConvertToLinear: [RecomposePixelUnshuffle],
         DecomposeAny: [RemoveRedundancy],
@@ -97,6 +110,7 @@ def get_passes_dependency_for_capture_program():
         FoldQDQ: [AnnotateQuantAttrs, AnnotateDecomposed],
         LayoutTransform: [
             AnnotateQuantAttrs,
+            ConvertConv1dToConv2d,
             ExpandBroadcastTensorShape,
         ],
         RecomposePixelUnshuffle: [RemoveRedundancy],

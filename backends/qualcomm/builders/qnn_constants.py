@@ -86,6 +86,11 @@ class OpElementWiseAdd:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAnd:
+    op_name: str = "ElementWiseAnd"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseCeil:
     op_name = "ElementWiseCeil"
 
@@ -98,6 +103,11 @@ class OpElementWiseCos:
 @dataclass(init=False, frozen=True)
 class OpElementWiseDivide:
     op_name: str = "ElementWiseDivide"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseExp:
+    op_name: str = "ElementWiseExp"
 
 
 @dataclass(init=False, frozen=True)
@@ -189,8 +199,19 @@ class OpElementWiseSelect:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseSqrt:
+    op_name: str = "ElementWiseSquareRoot"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseSubtract:
     op_name = "ElementWiseSubtract"
+
+
+@dataclass(init=False, frozen=True)
+class OpElu:
+    op_name: str = "Elu"
+    param_alpha: str = "alpha"
 
 
 @dataclass(init=False, frozen=True)
@@ -416,11 +437,6 @@ class OpSplit:
     op_name: str = "Split"
     param_axis: str = "axis"
     param_split_index: str = "split_index"
-
-
-@dataclass(init=False, frozen=True)
-class OpSqrt:
-    op_name: str = "ElementWiseSquareRoot"
 
 
 @dataclass(init=False, frozen=True)

@@ -324,7 +324,7 @@ def build_executorch_binary(
         None: The function writes the output to a specified .pte file.
     """
     if quant_dtype is not None:
-        captured_model = torch.export.export(model, inputs, strict=True).module()
+        captured_model = torch.export.export(model, inputs, strict=False).module()
         if qat_training_data:
             quantizer = custom_quantizer or make_quantizer(
                 quant_dtype=quant_dtype, is_qat=True

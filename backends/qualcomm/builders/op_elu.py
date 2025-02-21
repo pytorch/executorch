@@ -7,15 +7,17 @@ from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
+import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpElementWiseSqrt, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpElu, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class SQRT(NodeVisitor):
-    target = ["aten.sqrt.default"]
+class Elu(NodeVisitor):
+    target = ["aten.elu.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -36,7 +38,7 @@ class SQRT(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        sqrt_input_tensors = [input_tensor_wrapper]
+        elu_input_tensors = [input_tensor_wrapper]
 
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
@@ -46,14 +48,21 @@ class SQRT(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        sqrt_output_tensors = [output_tensor_wrapper]
+        elu_output_tensors = [output_tensor_wrapper]
 
-        sqrt_op = PyQnnWrapper.PyQnnOpWrapper(
+        elu_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpElementWiseSqrt.op_name,
+            OpElu.op_name,
         )
-        sqrt_op.AddInputTensors(sqrt_input_tensors)
-        sqrt_op.AddOutputTensors(sqrt_output_tensors)
+        elu_op.AddInputTensors(elu_input_tensors)
+        elu_op.AddOutputTensors(elu_output_tensors)
 
-        return sqrt_op
+        if len(node.args) == 2:
+            elu_op.AddScalarParam(
+                OpElu.param_alpha,
+                PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+                {QCOM_DATA: np.uint32(node.args[1])},
+            )
+
+        return elu_op

@@ -19,11 +19,14 @@ import torch
 from executorch.backends.qualcomm._passes import (
     AnnotateDecomposed,
     AnnotateQuantAttrs,
+    AnnotateStack,
     ConstantI64toI32,
     ConvertBmmToMatmul,
+    ConvertConv1dToConv2d,
     ConvertInterpolateWithUpsample2D,
     ConvertToLinear,
     DecomposeAny,
+    DecomposeExpM1,
     DecomposeLinalgVectorNorm,
     ExpandBroadcastTensorShape,
     FoldQDQ,
@@ -32,6 +35,7 @@ from executorch.backends.qualcomm._passes import (
     RecomposePixelUnshuffle,
     RecomposePReLU,
     RecomposeRmsNorm,
+    RemoveEmptyTensor,
     RemoveRedundancy,
     ReplaceIndexPutInput,
 )
@@ -327,6 +331,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     # The below super ops are supported by QNN
     skip_decompositions = [
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.elu.default,
         torch.ops.aten.instance_norm.default,
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
@@ -354,8 +359,10 @@ def get_capture_program_passes():
     default_passes_and_setting = [
         (AnnotateDecomposed, True),
         (AnnotateQuantAttrs, True),
+        (AnnotateStack, True),
         (ConstantI64toI32, True),
         (ConvertBmmToMatmul, True),
+        (ConvertConv1dToConv2d, True),
         (ConvertInterpolateWithUpsample2D, True),
         (ConvertToLinear, True),
         (DecomposeAny, True),
@@ -366,6 +373,7 @@ def get_capture_program_passes():
         (RecomposePReLU, True),
         (RecomposePixelUnshuffle, True),
         (RecomposeRmsNorm, True),
+        (RemoveEmptyTensor, True),
         (RemoveRedundancy, True),
         (ReplaceIndexPutInput, True),
         (TensorI64toI32, True),
@@ -438,9 +446,11 @@ def _transform(
 def _preprocess_module(module: torch.nn.Module, inputs: Tuple[torch.Tensor]):
     if isinstance(module, torch.fx.graph_module.GraphModule):
         return module
-    module = torch.export.export(module, inputs, strict=True).module()
+    module = torch.export.export(module, inputs, strict=False).module()
+
     module = DecomposeScaledDotProductAttention()(module).graph_module
     module = DecomposeLinalgVectorNorm(True)(module).graph_module
+    module = DecomposeExpM1()(module).graph_module
     module = LiftConstantScalarOperands()(module).graph_module
     return module
 
@@ -452,7 +462,9 @@ def capture_program(
     dynamic_shapes: Dict = None,
 ) -> exir.ExirExportedProgram:
     module = _preprocess_module(module, inputs)
-    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
+    ep = torch.export.export(
+        module, inputs, dynamic_shapes=dynamic_shapes, strict=False
+    )
     decomposed_ep = ep.run_decompositions(get_decomp_table())
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(TensorI64toI32(edge_program=core_ep))

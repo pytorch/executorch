@@ -10,12 +10,12 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpElementWiseSqrt, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpElementWiseAnd, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class SQRT(NodeVisitor):
-    target = ["aten.sqrt.default"]
+class OpAnd(NodeVisitor):
+    target = ["aten.bitwise_and.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -25,19 +25,6 @@ class SQRT(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        # tensor input
-        input_node = node.args[0]
-        input_tensor = self.get_tensor(input_node, node)
-
-        input_tensor_wrapper = self.define_tensor(
-            input_node,
-            node,
-            input_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers,
-        )
-        sqrt_input_tensors = [input_tensor_wrapper]
-
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
@@ -46,14 +33,27 @@ class SQRT(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        sqrt_output_tensors = [output_tensor_wrapper]
+        and_output_tensors = [output_tensor_wrapper]
 
-        sqrt_op = PyQnnWrapper.PyQnnOpWrapper(
+        and_input_tensors = []
+        for index in range(2):
+            input_node = node.args[index]
+            input_tensor = self.get_tensor(input_node, node)
+            tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+
+            input_tensor_wrapper = self.define_tensor(
+                input_node,
+                node,
+                input_tensor,
+                tensor_type,
+                nodes_to_wrappers,
+            )
+            and_input_tensors.append(input_tensor_wrapper)
+        and_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpElementWiseSqrt.op_name,
+            OpElementWiseAnd.op_name,
         )
-        sqrt_op.AddInputTensors(sqrt_input_tensors)
-        sqrt_op.AddOutputTensors(sqrt_output_tensors)
-
-        return sqrt_op
+        and_op.AddInputTensors(and_input_tensors)
+        and_op.AddOutputTensors(and_output_tensors)
+        return and_op

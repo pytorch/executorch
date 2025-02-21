@@ -24,6 +24,9 @@ class TensorI64toI32(ExportPass):
 
     cast_ops = {
         torch.ops.aten.argmin.default,
+        torch.ops.aten.arange.start_step,
+        torch.ops.aten.full.default,
+        torch.ops.aten.scalar_tensor.default,
     }
 
     def __init__(self, edge_program):
@@ -45,6 +48,7 @@ class TensorI64toI32(ExportPass):
                 else:
                     n.meta[QCOM_ORIG_DTYPE] = n.meta["val"].dtype
                 continue
+
             if n.target in self.cast_ops:
                 node_val = n.meta["val"]
                 if self._is_tensor_of_dtype(node_val, torch.int64):
@@ -61,7 +65,12 @@ class TensorI64toI32(ExportPass):
                         cast_node.args = args
 
                         for user in users:
-                            user.replace_input_with(n, cast_node)
+                            # This node is used to check dtype, which will cause lowering to fail since we are changing int64 to int32
+                            if (
+                                user.target
+                                != torch.ops.aten._assert_tensor_metadata.default
+                            ):
+                                user.replace_input_with(n, cast_node)
 
         core_ep.exported_program._graph_signature = _get_updated_graph_signature(
             core_ep.exported_program._graph_signature,

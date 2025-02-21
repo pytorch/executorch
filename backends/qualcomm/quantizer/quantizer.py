@@ -10,12 +10,14 @@ from typing import Callable, Optional, Sequence, Set
 import torch
 from executorch.backends.qualcomm._passes import (
     DecomposeEinsum,
+    DecomposeExpM1,
     DecomposeLinalgVectorNorm,
     DecomposeSilu,
     LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
     ReduceDynamicRange,
-    ReplaceInfBuffer,
+    ReplaceArangeArgs,
+    ReplaceInfValues,
 )
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
@@ -222,11 +224,16 @@ class QnnQuantizer(Quantizer):
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         model = ReduceDynamicRange()(model).graph_module
         model = RecomposePixelUnshuffle(quantization_capture=True)(model).graph_module
+        model = ReplaceArangeArgs()(model).graph_module
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
         model = DecomposeEinsum()(model).graph_module
+        model = DecomposeExpM1()(model).graph_module
         model = DecomposeLinalgVectorNorm(aten_dialect_capture=True)(model).graph_module
-        model = ReplaceInfBuffer()(model).graph_module
+        model = ReplaceInfValues()(model).graph_module
+        from executorch.backends.qualcomm.utils.utils import draw_graph
+
+        draw_graph("checking", ".", model)
         model = LiftConstantScalarOperands()(model).graph_module
         return model
 

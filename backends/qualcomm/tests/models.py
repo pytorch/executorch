@@ -6,6 +6,17 @@
 
 import torch
 
+# module with related operator only
+class And(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.pos = pos
+        self.neg = neg
+
+    def forward(self, x, y):
+        bitwise_and = torch.bitwise_and(x, y).bool()
+        return torch.where(bitwise_and, self.pos, self.neg)
+
 
 # module with related operator only
 class Abs(torch.nn.Module):
@@ -455,6 +466,17 @@ class Conv2dSingle(torch.nn.Module):
         return self.conv(x)
 
 
+class ConvTranspose1dSingle(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv_transpose = torch.nn.ConvTranspose1d(
+            in_channels=1, out_channels=3, kernel_size=3, stride=2, padding=1, bias=bias
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(x)
+
+
 class ConvTranspose2dSingle(torch.nn.Module):
     def __init__(self, bias=True):
         super().__init__()
@@ -594,6 +616,15 @@ class EinsumOuterProductRelu(torch.nn.Module):
         return torch.relu(torch.einsum("i,j->ij", i, j))
 
 
+class Elu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.elu = torch.nn.ELU(alpha=0.5)
+
+    def forward(self, i):
+        return self.elu(i)
+
+
 class Embedding(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -636,6 +667,14 @@ class ExpandAs(torch.nn.Module):
         y = torch.linalg.vector_norm(x)
         y = torch.clamp_min(y, min=1e-10)
         return y.expand_as(x)
+
+
+class ExpM1(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.special.expm1(x)
 
 
 class Full(torch.nn.Module):
@@ -1447,3 +1486,40 @@ class WhereConstant(torch.nn.Module):
 
     def forward(self, x):
         return torch.where(x >= torch.zeros(x.shape), self.pos, self.neg)
+
+
+class WhereConstantOther(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.where(x >= 0, torch.ones(x.shape), 0)
+
+
+class WhereConstantAll(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.where(x >= 0, 1, 0) * 2.0
+
+
+class WhereConstantInf(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.nn.functional.softmax(
+            torch.where(x >= 0, 0.1, float("-inf")), dim=-1
+        )
+
+
+# Mimi Decoder has 0D tensor which QNN cannot handle.
+class ZeroDimTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        input1 = torch.zeros(1)
+        selected_element = torch.select(input1, 0, 0)
+        return torch.add(x, selected_element)

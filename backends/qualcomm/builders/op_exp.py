@@ -10,12 +10,12 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpElementWiseSqrt, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpElementWiseExp, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class SQRT(NodeVisitor):
-    target = ["aten.sqrt.default"]
+class Exp(NodeVisitor):
+    target = ["aten.exp.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -36,7 +36,7 @@ class SQRT(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        sqrt_input_tensors = [input_tensor_wrapper]
+        exp_input_tensors = [input_tensor_wrapper]
 
         out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
@@ -46,14 +46,14 @@ class SQRT(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        sqrt_output_tensors = [output_tensor_wrapper]
+        exp_output_tensors = [output_tensor_wrapper]
 
-        sqrt_op = PyQnnWrapper.PyQnnOpWrapper(
+        exp_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpElementWiseSqrt.op_name,
+            OpElementWiseExp.op_name,
         )
-        sqrt_op.AddInputTensors(sqrt_input_tensors)
-        sqrt_op.AddOutputTensors(sqrt_output_tensors)
+        exp_op.AddInputTensors(exp_input_tensors)
+        exp_op.AddOutputTensors(exp_output_tensors)
 
-        return sqrt_op
+        return exp_op

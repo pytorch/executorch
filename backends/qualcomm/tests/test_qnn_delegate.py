@@ -169,7 +169,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
-    def test_qnn_backend_conv1d(self):
+    def test_qnn_backend_conv1ds(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
         for i, module in enumerate(modules):
@@ -189,6 +189,16 @@ class TestQNNFloatingPointOperator(TestQNN):
             Conv2dSequential(bias=False, channel_last=True),  # noqa: F405
         ]
         sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv_transpose1d(self):
+        modules = [
+            ConvTranspose1dSingle(),  # noqa: F405
+            ConvTranspose1dSingle(bias=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
@@ -252,6 +262,11 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
+
+    def test_qnn_backend_element_wise_and(self):
+        module = And(torch.tensor(1.7), torch.tensor(0.2))  # noqa: F405
+        sample_input = (torch.tensor([1, 0, 1, 0], dtype=torch.bool), torch.tensor([1, 1, 0, 0], dtype=torch.bool),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_ceil(self):
         module = Ceil()  # noqa: F405
@@ -340,6 +355,12 @@ class TestQNNFloatingPointOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
+    @unittest.expectedFailure
+    def test_qnn_backend_elu(self):
+        module = Elu()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_embedding(self):
         module = Embedding()  # noqa: F405
         sample_input = (torch.Tensor([[1, 2, 4, 5], [4, 3, 2, 9]]).to(torch.int32),)
@@ -368,6 +389,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_expm1(self):
+        sample_input = (torch.randn(3, 4, 5),)
+        module = ExpM1()  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_full(self):
         shape = (1, 2, 3, 4)
@@ -763,10 +789,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         modules = [
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
+            WhereConstantOther(),  # noqa: F405
+            WhereConstantAll(),  # noqa: F405
+            WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
             (torch.randn(3, 2),),
+            (torch.randn(3, 2),),
+            (torch.randn(3, 2),),
+            (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
             self.lower_module_and_test_output(module, sample_inputs[i])
@@ -892,6 +924,11 @@ class TestQNNFloatingPointModel(TestQNN):
         module = ViewPermuteMatMul()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_zero_dim_tensor(self):
+        module = ZeroDimTensor()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 125),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_example_models(self):
@@ -1121,6 +1158,17 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv_transpose1d(self):
+        modules = [
+            ConvTranspose1dSingle(),  # noqa: F405
+            ConvTranspose1dSingle(bias=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv_transpose2d(self):
         modules = [
             ConvTranspose2dSingle(),  # noqa: F405
@@ -1185,6 +1233,12 @@ class TestQNNQuantizedOperator(TestQNN):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
+
+    def test_qnn_backend_element_wise_and(self):
+        module = And(torch.tensor(1.7), torch.tensor(0.2))  # noqa: F405
+        sample_input = (torch.tensor([1, 0, 1, 0], dtype=torch.bool), torch.tensor([1, 1, 0, 0], dtype=torch.bool),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_ceil(self):
         module = Ceil()  # noqa: F405
@@ -1278,6 +1332,12 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
+    def test_qnn_backend_elu(self):
+        module = Elu()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_embedding(self):
         module = Embedding()  # noqa: F405
         sample_input = (torch.Tensor([[1, 2, 4, 5], [4, 3, 2, 9]]).to(torch.int32),)
@@ -1309,6 +1369,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_expm1(self):
+        sample_input = (torch.randn(3, 4, 5),)
+        module = ExpM1()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_full(self):
         shape = (1, 2, 3, 4)
@@ -1771,10 +1837,16 @@ class TestQNNQuantizedOperator(TestQNN):
         modules = [
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
+            # WhereConstantOther(),  # noqa: F405
+            WhereConstantAll(),  # noqa: F405
+            # WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
             (torch.randn(3, 2),),
+            # (torch.randn(3, 2),),
+            (torch.randn(3, 2),),
+            # (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
             module = self.get_qdq_module(module, sample_inputs[i])
@@ -1918,6 +1990,12 @@ class TestQNNQuantizedModel(TestQNN):
         module = ViewPermuteMatMul()  # noqa: F405
         torch.manual_seed(8)
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_zero_dim_tensor(self):
+        module = ZeroDimTensor()  # noqa: F405
+        sample_input = (torch.randn(1, 256, 125),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
