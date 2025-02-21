@@ -6,6 +6,7 @@
 
 from collections import defaultdict
 from enum import Enum
+from itertools import islice
 from typing import Dict, List, Optional, Tuple
 
 import nncf
@@ -13,6 +14,7 @@ import nncf.common.quantization as quantization
 import nncf.experimental.torch.fx as nncf_fx
 
 import torch.fx
+
 from nncf.common.graph.graph import NNCFGraph
 from torch.ao.quantization.observer import HistogramObserver, PerChannelMinMaxObserver
 from torch.ao.quantization.quantizer.quantizer import (
@@ -343,5 +345,39 @@ class OpenVINOQuantizer(Quantizer):
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
+        # Fold constant branches to avoid their quantization
         nncf_fx.transformations.fold_constant_except_qdq(model)
         return model
+
+
+def quantize_model(
+    captured_model: torch.fx.GraphModule,
+    calibration_dataset: torch.utils.data.DataLoader,
+) -> torch.fx.GraphModule:
+    """
+    Quantizes a model using either NNCF-based or PTQ-based quantization.
+
+    :param captured_model: The model to be quantized, represented as a torch.fx.GraphModule.
+    :param calibration_dataset: A DataLoader containing calibration data for quantization.
+    :return: The quantized model as a torch.fx.GraphModule.
+    """
+    quantizer = OpenVINOQuantizer()
+
+    print("PTQ: Quantize the model")
+    default_subset_size = 300
+    batch_size = calibration_dataset.batch_size
+    subset_size = (default_subset_size // batch_size) + int(
+        default_subset_size % batch_size > 0
+    )
+
+    def transform(x):
+        return x[0]
+
+    quantized_model = nncf_fx.quantize_pt2e(
+        captured_model,
+        quantizer,
+        subset_size=subset_size,
+        calibration_dataset=nncf.Dataset(calibration_dataset, transform_func=transform),
+        fold_quantize=False,
+    )
+    return quantized_model
