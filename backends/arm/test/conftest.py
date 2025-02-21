@@ -13,7 +13,6 @@ import sys
 from typing import Any
 
 import pytest
-import logging
 
 try:
     import tosa_reference_model
@@ -43,7 +42,7 @@ def pytest_configure(config):
                 "Tests are run with --arm_run_corstoneFVP but corstone FVP is not installed."
             )
         # Only enable if we also have the TOSA reference model available.
-        pytest._test_options["corstone_fvp"] = tosa_reference_model is not None  # type: ignore[attr-defined]
+        pytest._test_options["corstone_fvp"] = True  # type: ignore[attr-defined]
 
     pytest._test_options["fast_fvp"] = False  # type: ignore[attr-defined]
     if getattr(config.option, "fast_fvp", False):

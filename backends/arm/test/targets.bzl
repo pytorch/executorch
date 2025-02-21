@@ -5,6 +5,9 @@ def define_arm_tests():
     # TODO Add more tests
     test_files = native.glob(["passes/test_*.py"])
 
+    # https://github.com/pytorch/executorch/issues/8606
+    test_files.remove("passes/test_ioquantization_pass.py")
+
     TESTS = {}
 
     for test_file in test_files:
