@@ -55,5 +55,16 @@ Error register_backend(const Backend& backend) {
   return Error::Ok;
 }
 
+size_t get_num_registered_backends() {
+  return num_registered_backends;
+}
+
+Result<const char*> get_backend_name(size_t index) {
+  if (index >= num_registered_backends) {
+    return Error::InvalidArgument;
+  }
+  return registered_backends[index].name;
+}
+
 } // namespace runtime
 } // namespace executorch
