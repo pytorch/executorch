@@ -5,6 +5,9 @@
 
 from typing import Tuple
 
+import common
+import pytest
+
 import torch
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -27,6 +30,7 @@ model_inputs = (normalize(input_tensor),)
 input_t = Tuple[torch.Tensor]
 
 
+@pytest.mark.slow
 def test_mv3_tosa_MI():
     pipeline = TosaPipelineMI[input_t](
         mv3, model_inputs, aten_op=[], exir_op=[], use_to_edge_transform_and_lower=True
@@ -34,6 +38,7 @@ def test_mv3_tosa_MI():
     pipeline.run()
 
 
+@pytest.mark.slow
 def test_mv3_tosa_BI():
     pipeline = TosaPipelineBI[input_t](
         mv3,
@@ -47,6 +52,9 @@ def test_mv3_tosa_BI():
     pipeline.run()
 
 
+@pytest.mark.slow
+@pytest.mark.corstone_fvp
+@common.XfailIfNoCorstone300
 def test_mv3_u55_BI():
     pipeline = EthosU55PipelineBI[input_t](
         mv3,
@@ -61,6 +69,9 @@ def test_mv3_u55_BI():
     pipeline.run()
 
 
+@pytest.mark.slow
+@pytest.mark.corstone_fvp
+@common.XfailIfNoCorstone320
 def test_mv3_u85_BI():
     pipeline = EthosU85PipelineBI[input_t](
         mv3,
