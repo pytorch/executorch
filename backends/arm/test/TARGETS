@@ -1,4 +1,8 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load(":targets.bzl", "define_arm_tests")
+
+
+oncall("executorch")
 
 python_library(
     name = "common",
@@ -8,6 +12,7 @@ python_library(
         "//executorch/backends/arm:arm_backend",
         "//executorch/exir:lib",
         "//executorch/exir/backend:compile_spec_schema",
+        "fbsource//third-party/pypi/pytest:pytest",
     ]
 )
 
@@ -40,7 +45,10 @@ python_library(
         "//executorch/backends/arm:tosa_mapping",
         "//executorch/backends/arm:tosa_specification",
         "//executorch/backends/arm/quantizer:arm_quantizer",
+        "//executorch/backends/arm:arm_partitioner",
         "//executorch/devtools/backend_debug:delegation_info",
         "fbsource//third-party/pypi/tabulate:tabulate",
     ]
 )
+
+define_arm_tests() 

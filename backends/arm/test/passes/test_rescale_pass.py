@@ -116,7 +116,7 @@ def _test_rescale_pipeline(
 ):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
-    (
+    tester = (
         ArmTester(
             module,
             example_inputs=test_data,
@@ -126,8 +126,9 @@ def _test_rescale_pipeline(
         .export()
         .to_edge_transform_and_lower()
         .to_executorch()
-        .run_method_and_compare_outputs(test_data)
     )
+    if conftest.is_option_enabled("tosa_ref_model"):
+        tester.run_method_and_compare_outputs(test_data)
 
 
 def _test_rescale_pipeline_ethosu(
@@ -152,6 +153,7 @@ def _test_rescale_pipeline_ethosu(
 class TestRescales(unittest.TestCase):
 
     @parameterized.expand(RescaleNetwork.test_parameters)
+    @pytest.mark.tosa_ref_model
     def test_quantized_rescale(self, x, y):
         _test_rescale_pipeline(RescaleNetwork(), (x, y))
 

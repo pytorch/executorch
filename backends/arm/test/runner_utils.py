@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 try:
     import tosa_reference_model
 except ImportError:
-    logger.warning("tosa_reference_model not found, can't run reference model tests")
     tosa_reference_model = None
 from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
 
