@@ -27,27 +27,25 @@ from llama.llama_transformer import InputManager, ModelArgs, Transformer
 
 
 class SplitLinearModule(torch.nn.Module):
-    def __init__(self, in_features, out_features, target_size, max_splits):
+    def __init__(self, in_features, out_features, target_split_size, max_splits):
         super(SplitLinearModule, self).__init__()
-        self.num_splits = max(out_features // target_size, 1)
-        if self.num_splits > max_splits:
-            self.num_splits = max_splits
-        self.common_size = out_features // self.num_splits
-        self.remainder = out_features % self.num_splits
+        num_splits = max(out_features // target_split_size, 1)
+        if num_splits > max_splits:
+            num_splits = max_splits
+
+        self.split_size = out_features // num_splits
+        self.split_remainder = out_features % num_splits
         self.splits = torch.nn.ModuleList(
-            [
-                torch.nn.Linear(in_features, self.common_size)
-                for _ in range(self.num_splits)
-            ]
+            [torch.nn.Linear(in_features, self.split_size) for _ in range(num_splits)]
         )
         print(
-            f"Splitting out_features={out_features} into {self.num_splits} of size {self.common_size}"
+            f"Splitting out_features={out_features} into {num_splits} of size {self.split_size}"
         )
-        if self.remainder > 0:
+        if self.split_remainder > 0:
             print(
-                f"Warning: remainder {self.remainder} after splitting out_features={out_features} into {self.num_splits} of size {self.common_size}"
+                f"Warning: remainder {self.split_remainder} after splitting out_features={out_features} into {num_splits} of size {self.split_size}"
             )
-            self.splits.append(torch.nn.Linear(in_features, self.remainder))
+            self.splits.append(torch.nn.Linear(in_features, self.split_remainder))
 
     def split_sizes(self):
         return [split.out_features for split in self.splits]
@@ -56,11 +54,11 @@ class SplitLinearModule(torch.nn.Module):
         return torch.cat([split(x) for split in self.splits], dim=-1)
 
 
-def replace_linear_with_split_linear(model, target_size, max_splits):
+def replace_linear_with_split_linear(model, target_split_size, max_splits):
     for name, module in model.named_children():
         if isinstance(module, torch.nn.Linear):
             new_module = SplitLinearModule(
-                module.in_features, module.out_features, target_size, max_splits
+                module.in_features, module.out_features, target_split_size, max_splits
             )
             split_sizes = new_module.split_sizes()
             if module.bias is not None:
@@ -74,7 +72,7 @@ def replace_linear_with_split_linear(model, target_size, max_splits):
                     split.bias = None
             setattr(model, name, new_module)
         else:
-            replace_linear_with_split_linear(module, target_size, max_splits)
+            replace_linear_with_split_linear(module, target_split_size, max_splits)
 
 
 def main() -> None:
@@ -98,7 +96,7 @@ def main() -> None:
     parser.add_argument(
         "--seq_length",
         type=int,
-        default=1,  # set to 1 for decode
+        default=1,
         help="length sequence to evaluate",
     )
     parser.add_argument(
@@ -132,10 +130,10 @@ def main() -> None:
         help="Use cache list to speed up model computation (does not work in pybindings)",
     )
     parser.add_argument(
-        "--target_size",
+        "--target_split_size",
         type=int,
         default=None,
-        help="Split linear layers into smaller chunks of target_size",
+        help="Split linear layers into smaller chunks of target_split_size.",
     )
     parser.add_argument(
         "--max_splits",
@@ -192,9 +190,9 @@ def main() -> None:
             packed=(bitwidth in [2, 4]),
         ).quantized_model()
 
-    if export_args.target_size is not None:
+    if export_args.target_split_size is not None:
         replace_linear_with_split_linear(
-            model, export_args.target_size, export_args.max_splits
+            model, export_args.target_split_size, export_args.max_splits
         )
 
     model = model.to(float_dtype)

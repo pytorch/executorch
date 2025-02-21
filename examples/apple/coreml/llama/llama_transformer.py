@@ -120,6 +120,7 @@ class ModelArgs:
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
 
+
 class Rope(torch.nn.Module):
     def __init__(self, params: ModelArgs):
         super().__init__()
