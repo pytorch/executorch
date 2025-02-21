@@ -201,6 +201,20 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "replace_scalar_with_tensor",
+        srcs = [
+            "replace_scalar_with_tensor.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
     runtime.python_test(
         name = "test_duplicate_dynamic_quant_chain",
         srcs = [
