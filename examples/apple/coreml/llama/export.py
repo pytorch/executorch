@@ -160,7 +160,9 @@ def main() -> None:
     with torch.device("meta"):
         model = Transformer(args)
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", mmap=True)
+    checkpoint = torch.load(
+        checkpoint_path, map_location="cpu", mmap=True, weights_only=True
+    )
     if "model" in checkpoint:
         checkpoint = checkpoint["model"]
 

@@ -2,7 +2,6 @@ import argparse
 import sys
 
 import sentencepiece as spm
-import tiktoken
 
 import torch
 
