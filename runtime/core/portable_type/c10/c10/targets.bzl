@@ -45,7 +45,7 @@ def define_common_targets():
             "-DC10_USING_CUSTOM_GENERATED_MACROS",
         ],
         visibility = [
-            "//executorch/runtime/core/portable_type/...",
+            "//executorch/...",
         ],
         deps = select({
             "DEFAULT": [],
