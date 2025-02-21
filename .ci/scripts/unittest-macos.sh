@@ -38,7 +38,9 @@ ${CONDA_RUN} --no-capture-output \
 .ci/scripts/setup-macos.sh "${BUILD_TOOL}" "${BUILD_MODE}"
 
 # Install llama3_2_vision dependencies.
-PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
+PYTHON_EXECUTABLE=python \
+${CONDA_RUN} --no-capture-output \
+./examples/models/llama3_2_vision/install_requirements.sh
 
 if [[ "$BUILD_TOOL" == "cmake" ]]; then
     .ci/scripts/unittest-macos-cmake.sh
