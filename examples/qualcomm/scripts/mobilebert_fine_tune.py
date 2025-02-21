@@ -169,7 +169,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     dataset_train = TensorDataset(input_ids_train, attention_masks_train, labels_train)
     dataset_val = TensorDataset(input_ids_val, attention_masks_val, labels_val)
 
-    epochs = 5
+    epochs = 1 # Revert this later
     dataloader_train = DataLoader(
         dataset_train,
         sampler=RandomSampler(dataset_train),
