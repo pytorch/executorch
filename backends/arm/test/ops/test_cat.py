@@ -111,7 +111,6 @@ class TestCat(unittest.TestCase):
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
-            .dump_artifact()
             .check_not(["executorch_exir_dialects_edge__ops_aten_cat_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
