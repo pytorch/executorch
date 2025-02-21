@@ -9,6 +9,7 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include <ATen/Tensor.h> // @manual
+#include <c10/util/irange.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
@@ -41,7 +42,7 @@ bool tensor_has_valid_dim_order(at::Tensor t) {
 
   if (!validate_dim_order(dim_order, t.dim())) {
     ET_LOG(Error, "Tensor dim order is not valid:");
-    for (size_t d = 0; d < t.dim(); ++d) {
+    for (const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
@@ -66,7 +67,7 @@ inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
     ET_LOG(
         Error,
         "Expected tensor to have default or channels last dim order, but got");
-    for (size_t d = 0; d < t.dim(); ++d) {
+    for (const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
@@ -96,7 +97,7 @@ bool tensors_have_same_dim_order(
   bool all_channels_last =
       is_channels_last_dim_order(first_dim_order, tensor_list[0].dim());
 
-  for (size_t i = 1; i < tensor_list.size(); ++i) {
+  for (const auto i : c10::irange(1, tensor_list.size())) {
     ET_CHECK_OR_RETURN_FALSE(
         get_dim_order(tensor_list[i], other_dim_order, tensor_list[i].dim()) ==
             Error::Ok,
