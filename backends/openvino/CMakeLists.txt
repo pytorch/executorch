@@ -36,7 +36,7 @@ add_library(openvino_backend SHARED .)
 # Enable exceptions and RTTI for OpenVINO backend
 target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
 
-# Include ExecuteTorch directories
+# Include Executorch directories
 target_include_directories(openvino_backend PUBLIC ${COMMON_INCLUDE_DIRS})
 
 # Link OpenVINO and ExecuteTorch core libraries
