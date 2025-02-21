@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/span.h>
@@ -43,7 +44,7 @@ Result<const TensorLayout> TensorLayout::create(
     return Error::InvalidArgument;
   }
 
-  for (size_t i = 0; i < dim_order.size(); i++) {
+  for (const auto i : c10::irange(dim_order.size())) {
     if (dim_order[i] >= sizes.size()) {
       return Error::InvalidArgument;
     }
