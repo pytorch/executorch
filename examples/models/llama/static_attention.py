@@ -145,22 +145,23 @@ class StaticAttention(Attention):
         self.dim = config.dim
         self.head_dim = config.head_dim
         self.inv_scale = 1.0 / (float(self.head_dim) ** 0.5)
+        self.attention_qkv_bias = config.attention_qkv_bias
 
         self.wqs = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_heads)
             ]
         )
         self.wks = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_kv_heads)
             ]
         )
         self.wvs = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_kv_heads)
             ]
         )

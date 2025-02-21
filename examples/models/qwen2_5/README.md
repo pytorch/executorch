@@ -61,6 +61,3 @@ python -m examples.models.llama.runner.native
   --max_len 64
   --temperature 0
 ```
-
-
-
