@@ -159,7 +159,7 @@ jobs:
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
         # Test ethos-u delegate examples with run.sh
-        backends/arm/test/test_arm_baremetal.sh test_run_ethosu_fvp
+        backends/arm/test/test_arm_baremetal.sh test_full_ethosu_fvp
 
 
   test-arm-reference-delegation:
@@ -394,7 +394,6 @@ jobs:
         rm -rf cmake-out
         cmake \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
-            -DCMAKE_PREFIX_PATH="$(python -c 'import torch as _; print(_.__path__[0])')" \
             -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
             -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -412,7 +411,6 @@ jobs:
         cmake \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$(python -c 'import torch as _; print(_.__path__[0])')" \
             -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
             -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
             -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -491,3 +489,13 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
+
+  unittest-release:
+    uses: ./.github/workflows/_unittest.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      build-mode: Release
+      build-tool: cmake
+      docker-image: executorch-ubuntu-22.04-clang12

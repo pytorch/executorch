@@ -44,8 +44,6 @@ test_buck2_quantization() {
 
 test_cmake_quantization() {
   echo "Building quantized ops shared library"
-  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
   clean_executorch_install_folders
 
@@ -56,7 +54,6 @@ test_cmake_quantization() {
       -DEXECUTORCH_BUILD_XNNPACK="$EXECUTORCH_BUILD_XNNPACK" \
       -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
       -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   cmake --build cmake-out -j4
