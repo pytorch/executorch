@@ -5,7 +5,7 @@
 
 from typing import List, Sequence
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -13,7 +13,6 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -40,7 +39,7 @@ def _add_node_to_tosa_graph(
             )
 
     tosa_graph.addOperator(
-        TosaOp.Op().SELECT,
+        ts.TosaOp.Op().SELECT,
         [inputs[0].name, inputs[1].name, inputs[2].name],
         [output.name],
         None,

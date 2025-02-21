@@ -6,14 +6,13 @@
 # pyre-unsafe
 from typing import cast, List
 
-import serializer.tosa_serializer as ts  # type: ignore
+import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (  # type: ignore
     NodeVisitor,
     register_node_visitor,
 )
 
 from executorch.backends.arm.tosa_mapping import TosaArg  # type: ignore
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
@@ -49,5 +48,5 @@ class AnyVisitor(NodeVisitor):
         attr.AxisAttribute(inputs[0].dim_order.index(dim))
 
         tosa_graph.addOperator(
-            TosaOp.Op().REDUCE_ANY, [inputs[0].name], [output.name], attr
+            ts.TosaOp.Op().REDUCE_ANY, [inputs[0].name], [output.name], attr
         )
