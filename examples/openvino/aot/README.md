@@ -36,7 +36,7 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
   The dataset length must be evenly divisible by the batch size.
 
 - **`--quantize`** (optional):
-  Enable model quantization. --dataset argument is requred for the quantization. `huggingface` suite  does not supported yet.
+  Enable model quantization. --dataset argument is requred for the quantization. `huggingface` suite  is not supported yet.
 
 - **`--quantization_flow`** (optional):
   Specifies the way to quantize torch.fx.GraphModule.
