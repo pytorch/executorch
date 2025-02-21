@@ -14,7 +14,7 @@ Pip is the recommended way to install the ExecuTorch python package. This packag
 pip install executorch
 ```
 
-To build the framework from source, see [Building From Source](TODO).
+To build the framework from source, see [Building From Source](using-executorch-building-from-source.md).
 
 Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.
 
@@ -29,7 +29,7 @@ The following are required to install the ExecuTorch host libraries, needed to e
 <hr/>
 
 ## Preparing the Model
-Exporting is the process of taking a PyTorch model and converting it to the .pte file format used by the ExecuTorch runtime. This is done using Python APIs. PTE files for common models can be found on HuggingFace (TODO add link).
+Exporting is the process of taking a PyTorch model and converting it to the .pte file format used by the ExecuTorch runtime. This is done using Python APIs. PTE files for common models, such as Llama 3, can be found on HuggingFace under [ExecuTorch Community](https://huggingface.co/executorch-community). These models have been exported and lowered for ExecuTorch, and can be directly deployed without needing to go through the lowering process.
 
 ### Requirements
 - A PyTorch model.
@@ -39,7 +39,7 @@ Exporting is the process of taking a PyTorch model and converting it to the .pte
 ### Selecting a Backend
 ExecuTorch provides hardware acceleration for a wide variety of hardware. The most commonly used backends are XNNPACK, for Arm and x86 CPU, Core ML (for iOS), Vulkan (for Android GPUs), and Qualcomm (for Qualcomm-powered Android phones).
 
-For mobile use cases, consider using XNNPACK for Android and Core ML or XNNPACK for iOS as a first step. See [Delegates](/TODO.md) for a description of available backends.
+For mobile use cases, consider using XNNPACK for Android and Core ML or XNNPACK for iOS as a first step. See [Hardware Backends](using-executorch-export.md#hardware-backends) for more information.
 
 ### Exporting
 Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows:
@@ -96,7 +96,7 @@ Quick Links:
 
 #### Installation
 ExecuTorch provides Java bindings for Android usage, which can be consumed from both Java and Kotlin. 
-To add the library to your app, download the AAR, and add it to the gradle build rule. TODO Replace with Maven/Gradle package management when available.
+To add the library to your app, download the AAR, and add it to the gradle build rule.
 
 ```
 mkdir -p app/libs
@@ -113,39 +113,39 @@ dependencies {
 #### Runtime APIs
 Models can be loaded and run using the `Module` class:
 ```java
-import org.pytorch.executorch.EValue
-import org.pytorch.executorch.Module
-import org.pytorch.executorch.Tensor
+import org.pytorch.executorch.EValue;
+import org.pytorch.executorch.Module;
+import org.pytorch.executorch.Tensor;
 
 // …
 
 Module model = Module.load(“/path/to/model.pte”)
-// TODO Add input setup
-EValue output = model.forward(input_evalue);
+
+Tensor input_tensor = Tensor.fromBlob(float_data, new long[] { 1, 3, height, width });
+EValue input_evalue = EValue.from(input_tensor);
+EValue[] output = model.forward(input_evalue);
+float[] scores = output[0].toTensor().getDataAsFloatArray();
 ```
 
-For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see [Using ExecuTorch on Android](/TODO.md).
+For a full example of running a model on Android, see the [ExecuTorch Android Demo App](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/ClassificationActivity.java). For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see [Using ExecuTorch on Android](using-executorch-android.md).
 
 ### iOS
 
 #### Installation
-ExecuTorch supports both iOS and MacOS via C++ and Objective-C bindings, as well as hardware backends for CoreML, MPS, and CPU. The iOS runtime library is provided as a collection of .xcframework targets and are made available as a Swift PM package.
+ExecuTorch supports both iOS and MacOS via C++, as well as hardware backends for CoreML, MPS, and CPU. The iOS runtime library is provided as a collection of .xcframework targets and are made available as a Swift PM package.
 
-To get started with Xcode, go to File > Add Package Dependencies. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-”, (e.g. “swiftpm-0.5.0”).  The ExecuTorch dependency can also be added to the package file manually. See [Using ExecuTorch on iOS](/TODO.md) for more information.
+To get started with Xcode, go to File > Add Package Dependencies. Paste the URL of the ExecuTorch repo into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-”, (e.g. “swiftpm-0.5.0”).  The ExecuTorch dependency can also be added to the package file manually. See [Using ExecuTorch on iOS](using-executorch-ios.md) for more information.
 
 #### Runtime APIs
-Models can be loaded and run from Swift as follows:
-```swift
-// TODO Code sample
-```
+Models can be loaded and run from Objective-C using the C++ APIs.
 
-For more information on iOS integration, including an API reference, logging setup, and building from source, see [Using ExecuTorch on iOS](/TODO.md).
+For more information on iOS integration, including an API reference, logging setup, and building from source, see [Using ExecuTorch on iOS](using-executorch-ios.md).
 
 ### C++
 ExecuTorch provides C++ APIs, which can be used to target embedded or mobile devices. The C++ APIs provide a greater level of control compared to other language bindings, allowing for advanced memory management, data loading, and platform integration.
 
 #### Installation
-CMake is the preferred build system for the ExecuTorch C++ runtime. To use with CMake, clone the ExecuTorch repository as a subdirectory of your project, and use CMake's `add_subdirectory("executorch")` to include the dependency. The `executorch` target, as well as kernel and backend targets will be made available to link against. The runtime can also be built standalone to support diverse toolchains. See [Using ExecuTorch with C++](/TODO.md) for a detailed description of build integration, targets, and cross compilation.
+CMake is the preferred build system for the ExecuTorch C++ runtime. To use with CMake, clone the ExecuTorch repository as a subdirectory of your project, and use CMake's `add_subdirectory("executorch")` to include the dependency. The `executorch` target, as well as kernel and backend targets will be made available to link against. The runtime can also be built standalone to support diverse toolchains. See [Using ExecuTorch with C++](using-executorch-cpp.md) for a detailed description of build integration, targets, and cross compilation.
 
 ```
 git clone -b release/0.5 https://github.com/pytorch/executorch.git
@@ -199,9 +199,9 @@ For more information on the C++ APIs, see [Running an ExecuTorch Model Using the
 ExecuTorch provides a high-degree of customizability to support diverse hardware targets. Depending on your use cases, consider exploring one or more of the following pages:
 
 - [Export and Lowering](using-executorch-export.md) for advanced model conversion options.
-- [Delegates](/TODO.md) for available backends and configuration options.
-- [Using ExecuTorch on Android](/TODO.md) and [Using ExecuTorch on iOS](TODO.md) for mobile runtime integration.
-- [Using ExecuTorch with C++](/TODO.md) for embedded and mobile native development.
-- [Troubleshooting, Profiling, and Optimization](/TODO.md) for developer tooling and debugging.
-- [API Reference](/TODO.md) for a full description of available APIs.
+- [Backend Overview](backends-overview.md) for available backends and configuration options.
+- [Using ExecuTorch on Android](using-executorch-android.md) and [Using ExecuTorch on iOS](using-executorch-ios.md) for mobile runtime integration.
+- [Using ExecuTorch with C++](using-executorch-cpp.md) for embedded and mobile native development.
+- [Profiling and Debugging](using-executorch-troubleshooting.md) for developer tooling and debugging.
+- [API Reference](export-to-executorch-api-reference.md) for a full description of available APIs.
 - [Examples](https://github.com/pytorch/executorch/tree/main/examples) for demo apps and example code.
