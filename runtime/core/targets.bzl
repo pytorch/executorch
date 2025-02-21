@@ -50,6 +50,7 @@ def define_common_targets():
         ],
         exported_preprocessor_flags = get_core_flags(),
         exported_deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
             "//executorch/runtime/platform:platform",
         ],
     )
@@ -73,6 +74,7 @@ def define_common_targets():
         ],
         exported_deps = [
             ":core",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         visibility = [
             "//executorch/...",
@@ -145,13 +147,16 @@ def define_common_targets():
             ":tensor_layout",
         ],
     )
-    
+
     runtime.cxx_library(
         name = "tensor_layout",
         srcs = ["tensor_layout.cpp"],
         exported_headers = ["tensor_layout.h"],
+        deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
+        ],
         exported_deps = [
-            ":core", 
+            ":core",
             "//executorch/runtime/core/exec_aten:lib",
         ],
         visibility = ["//executorch/..."],
