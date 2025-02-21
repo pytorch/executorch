@@ -100,7 +100,7 @@ class TestJointGraph(unittest.TestCase):
         et_outputs = et_mod.forward(
             example_inputs
         )  # ET outputs are [loss, grads, weights]
-        
+
         # Without rtol and atol, this test fails in macos.
         assert_close(loss, et_outputs[0], rtol=1e-4, atol=1e-4)
         self.assertTrue(
