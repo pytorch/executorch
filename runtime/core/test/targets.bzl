@@ -40,6 +40,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/runtime/core:event_tracer",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
     )
 
@@ -68,6 +69,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/runtime/core:memory_allocator",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
     )
 
