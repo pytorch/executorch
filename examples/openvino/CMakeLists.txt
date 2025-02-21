@@ -30,10 +30,6 @@ endif()
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/../../../build/executorch_srcs.cmake")
-extract_sources(${EXECUTORCH_SRCS_FILE})
-include(${EXECUTORCH_SRCS_FILE})
-
 set(_openvino_executor_runner__srcs 
     ${CMAKE_CURRENT_LIST_DIR}/../openvino/executor_runner/openvino_executor_runner.cpp
 )

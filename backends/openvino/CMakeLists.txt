@@ -28,44 +28,22 @@ set(COMMON_INCLUDE_DIRS ${EXECUTORCH_ROOT}/..)
 # Include utility CMake scripts from ExecuteTorch
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
-# Set OpenVINO directory from environment variable
-set(OPENVINO_DIR "$ENV{INTEL_OPENVINO_DIR}")
-if(NOT OPENVINO_DIR)
-    message(FATAL_ERROR "ERROR: INTEL_OPENVINO_DIR environment variable is not set.")
-endif()
-
-# Set OpenVINO include directories
-set(OPENVINO_INCLUDE_DIRS
-    ${OPENVINO_DIR}/runtime/include
-    ${OPENVINO_DIR}/deployment_tools/inference_engine/include
-)
-
-# Set OpenVINO library path
-set(OPENVINO_LIB_PATH ${OPENVINO_DIR}/runtime/lib/intel64)
-
-# Try to locate OpenVINO automatically
-find_library(OPENVINO_LIB NAMES openvino PATHS ${OPENVINO_LIB_PATH} NO_DEFAULT_PATH)
-if(NOT OPENVINO_LIB)
-    message(FATAL_ERROR "ERROR: OpenVINO library (libopenvino.so) not found in ${OPENVINO_LIB_PATH}")
-endif()
+find_package(OpenVINO REQUIRED)
 
 # Define OpenVINO backend as a shared library
-add_library(openvino_backend SHARED)
+add_library(openvino_backend SHARED .)
 
 # Enable exceptions and RTTI for OpenVINO backend
 target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
 
-# Include ExecuteTorch and OpenVINO directories
-target_include_directories(openvino_backend PUBLIC ${COMMON_INCLUDE_DIRS} ${OPENVINO_INCLUDE_DIRS})
+# Include ExecuteTorch directories
+target_include_directories(openvino_backend PUBLIC ${COMMON_INCLUDE_DIRS})
 
 # Link OpenVINO and ExecuteTorch core libraries
-target_link_libraries(openvino_backend PRIVATE ${OPENVINO_LIB} executorch_core)
+target_link_libraries(openvino_backend PRIVATE openvino::runtime executorch_core)
 
 # Add source files for OpenVINO backend
 target_sources(openvino_backend PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/OpenvinoBackend.cpp)
 
-# Set runtime library path for OpenVINO
-target_link_options(openvino_backend PRIVATE -Wl,-rpath=${OPENVINO_LIB_PATH})
-
-# Install OpenVINO backend library to the lib directory
+## Install OpenVINO backend library to the lib directory
 install(TARGETS openvino_backend DESTINATION lib)
