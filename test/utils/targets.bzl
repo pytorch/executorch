@@ -21,6 +21,7 @@ def define_common_targets():
             ],
             visibility = [
                 "//executorch/...",
+                "//pytorch/tokenizers/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             deps = [

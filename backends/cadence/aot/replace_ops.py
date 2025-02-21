@@ -162,11 +162,12 @@ class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op not in {exir_ops.edge.quantized_decomposed.quantize_per_tensor.default}:
+        ns = exir_ops.edge if isinstance(op, EdgeOpOverload) else torch.ops
+        if op != ns.quantized_decomposed.quantize_per_tensor.default:
             return super().call_operator(op, args, kwargs, meta)
 
         return super().call_operator(
-            exir_ops.edge.cadence.quantize_per_tensor.default,
+            ns.cadence.quantize_per_tensor.default,
             args,
             kwargs,
             meta,
@@ -188,11 +189,12 @@ class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op not in {exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default}:
+        ns = exir_ops.edge if isinstance(op, EdgeOpOverload) else torch.ops
+        if op != ns.quantized_decomposed.dequantize_per_tensor.default:
             return super().call_operator(op, args, kwargs, meta)
 
         return super().call_operator(
-            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            ns.cadence.dequantize_per_tensor.default,
             args,
             kwargs,
             meta,
@@ -1837,6 +1839,10 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
     replaced_scalar_args: dict[
         EdgeOpOverloadPacket, tuple[EdgeOpOverload, Sequence[int]]
     ] = {
+        exir_ops.edge.cadence.quantized_add: (
+            exir_ops.edge.cadence.quantized_add.per_tensor,
+            [1, 2, 4, 5],
+        ),
         exir_ops.edge.cadence.quantized_conv: (
             exir_ops.edge.cadence.quantized_conv.per_tensor,
             [8, 9, 12, 13],
