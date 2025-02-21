@@ -33,7 +33,7 @@ class Runner {
       const int32_t logits_offset,
       const float temperature,
       const int eval_mode,
-      const std::string& kv_updator);
+      const std::string& kv_updater);
 
   struct Stats {
     // Scaling factor for timestamps - in this case, we use ms.
@@ -89,7 +89,10 @@ class Runner {
   std::string prompt_;
 
   // metadata
+  int32_t context_len_{0};
+  int32_t prefill_ar_len_{0};
   int32_t prefill_cache_len_{0};
+  int32_t kv_ar_len_{0};
   int32_t kv_cache_len_{0};
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -111,7 +114,7 @@ class Runner {
   std::string kv_forward_name_;
   std::vector<std::string> method_names_;
   LlamaVersion llama_version_;
-  std::string kv_updator_;
+  std::string kv_updater_;
 };
 
 } // namespace example
