@@ -25,7 +25,7 @@ bool check_repeat_args(
     executorch::aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
   // Ensure the self tensors list is non-empty.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       repeats.size() >= self.dim(),
       "Number of dimensions of repeat dims can not be smaller than number of dimensions of tensor");
 
@@ -34,11 +34,11 @@ bool check_repeat_args(
   for (auto repeat : repeats) {
     all_non_negative = all_non_negative && (repeat >= 0);
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       all_non_negative, "Trying to create tensor with negative dimension");
 
   /// Check if out.size() is legal.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() == repeats.size(),
       "The dimension of out shall equal size of repeats, but now is %zd and %zd",
       out.dim(),
@@ -47,7 +47,7 @@ bool check_repeat_args(
   // Right now we only support the tensors whose dimension is no greater than
   // kTensorDimensionLimit. Only check out tensor because the number of
   // dimension of out tensor shall have more than or equal to self tensor
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() <= kTensorDimensionLimit,
       "The dimension of input and output should not be larger than %zd",
       kTensorDimensionLimit);
@@ -66,7 +66,7 @@ bool check_repeat_args(
     reformat_self_size[out.dim() - 1 - i] = self.size(self.dim() - 1 - i);
   }
   for (size_t i = 0; i < repeats.size(); i++) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         reformat_self_size[i] * repeats[i] == out.size(i),
         "Expect out size at dimension %zu is %" PRId64 ", but now is %zd",
         i,

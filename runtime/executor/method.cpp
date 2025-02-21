@@ -33,6 +33,7 @@
 namespace executorch {
 namespace runtime {
 
+using deserialization::NamedData;
 using internal::PlatformMemoryAllocator;
 
 /**
@@ -289,6 +290,113 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
 
 } // namespace
 
+Result<size_t> Method::get_num_external_constants() {
+  auto flatbuffer_values = serialization_plan_->values();
+  size_t n_value = flatbuffer_values->size();
+
+  size_t n_external_constants = 0;
+  for (size_t i = 0; i < n_value; ++i) {
+    auto serialization_value = flatbuffer_values->Get(i);
+    // Ensure values are non-null.
+    // Note that as a side-effect of this check, we're guaranteed that all
+    // values are non-null, so later loops can skip that check.
+    ET_CHECK_OR_RETURN_ERROR(
+        serialization_value != nullptr &&
+            (serialization_value->val_type() ==
+                 executorch_flatbuffer::KernelTypes::Null ||
+             serialization_value->val() != nullptr),
+        InvalidProgram,
+        "Null value at index %" ET_PRIsize_t,
+        i);
+    // Ignore non-tensor types.
+    if (serialization_value->val_type() !=
+        executorch_flatbuffer::KernelTypes::Tensor) {
+      continue;
+    }
+    const auto s_tensor = static_cast<const executorch_flatbuffer::Tensor*>(
+        serialization_value->val());
+
+    // An external constant is tagged with EXTERNAL and has no
+    // allocation_info.
+    if (s_tensor->extra_tensor_info() != nullptr &&
+        s_tensor->extra_tensor_info()->location() ==
+            executorch_flatbuffer::TensorDataLocation::EXTERNAL &&
+        s_tensor->allocation_info() == nullptr) {
+      n_external_constants++;
+    }
+  }
+  return n_external_constants;
+}
+
+Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
+  auto flatbuffer_values = serialization_plan_->values();
+  size_t n_value = flatbuffer_values->size();
+
+  // n_external_constants_ counts the number of successfully-initialized
+  // external constants for ~Method() to clean up, and is incremented at the
+  // bottom of the loop. This makes it safe for errors to return without
+  // updating any state.
+  n_external_constants_ = 0;
+  for (size_t i = 0; i < n_value; ++i) {
+    auto serialization_value = flatbuffer_values->Get(i);
+    // Ignore non-tensor types.
+    if (serialization_value->val_type() !=
+        executorch_flatbuffer::KernelTypes::Tensor) {
+      continue;
+    }
+    const auto s_tensor = static_cast<const executorch_flatbuffer::Tensor*>(
+        serialization_value->val());
+    // Constant tensors are resolved here; tensors with allocation_info are
+    // mutable and are resolved in parse_values.
+    if (s_tensor->extra_tensor_info() == nullptr ||
+        s_tensor->extra_tensor_info()->location() !=
+            executorch_flatbuffer::TensorDataLocation::EXTERNAL ||
+        s_tensor->allocation_info() != nullptr) {
+      continue;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        s_tensor->extra_tensor_info()->fully_qualified_name() != nullptr,
+        InvalidExternalData,
+        "Fully qualified name of external tensor is null at index %zu",
+        i);
+
+    const char* key =
+        s_tensor->extra_tensor_info()->fully_qualified_name()->c_str();
+
+    // Check if this tensor has already been resolved.
+    if (get_data_by_key(
+            key, Span<NamedData>(external_constants_, n_external_constants_)) !=
+        nullptr) {
+      continue;
+    }
+    Result<const TensorLayout> tensor_layout =
+        named_data_map->get_metadata(key);
+    if (!tensor_layout.ok()) {
+      return tensor_layout.error();
+    }
+    // Check external tensor compatibility.
+    Error err =
+        deserialization::validateTensorLayout(s_tensor, tensor_layout.get());
+    if (err != Error::Ok) {
+      return err;
+    }
+    // Save the key.
+    external_constants_[n_external_constants_].key = key;
+
+    // Save the buffer.
+    Result<FreeableBuffer> buffer = named_data_map->get_data(key);
+    ET_CHECK_OR_RETURN_ERROR(
+        buffer.ok(),
+        InvalidExternalData,
+        "Buffer retrieved from get_data is not valid");
+    new (&external_constants_[n_external_constants_].buffer)
+        FreeableBuffer(std::move(buffer.get()));
+
+    n_external_constants_ += 1;
+  }
+  return Error::Ok;
+}
+
 Error Method::parse_values(const NamedDataMap* named_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   ET_CHECK_OR_RETURN_ERROR(
@@ -299,6 +407,30 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
     return Error::MemoryAllocationFailed;
   }
 
+  // Count the number of tensors marked as EXTERNAL for this method. The actual
+  // number of external constants may be smaller, eg. if multiple tensors point
+  // to the same underlying data buffer.
+  // This function also ensures that all flatbuffer_values entries
+  // are non-null, so `val_as_X()` calls below are guaranteed to return
+  // non-null pointers.
+  Result<size_t> max_external_constants = get_num_external_constants();
+  if (!max_external_constants.ok()) {
+    return max_external_constants.error();
+  }
+  if (max_external_constants.get() > 0) {
+    // Allocate space for external tensors.
+    external_constants_ =
+        memory_manager_->method_allocator()->allocateList<NamedData>(
+            max_external_constants.get());
+    if (external_constants_ == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+    Error err = parse_external_constants(named_data_map);
+    if (err != Error::Ok) {
+      return err;
+    }
+  }
+
   // n_value_ counts the number of successfully-initialized values for ~Method()
   // to clean up, and is incremented at the bottom of the loop. This makes it
   // safe for errors to return without updating any state.
@@ -306,16 +438,6 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
 
   for (size_t i = 0; i < n_value; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
-    // Ensure that the `val_as_X()` calls will return non-null pointers.
-    ET_CHECK_OR_RETURN_ERROR(
-        serialization_value != nullptr &&
-            (serialization_value->val_type() ==
-                 executorch_flatbuffer::KernelTypes::Null ||
-             serialization_value->val() != nullptr),
-        InvalidProgram,
-        "Null value at index %" ET_PRIsize_t,
-        i);
-
     const auto val = serialization_value->val();
 
     switch (serialization_value->val_type()) {
@@ -416,7 +538,8 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
             program_,
             memory_manager_,
             static_cast<const executorch_flatbuffer::Tensor*>(val),
-            named_data_map);
+            named_data_map,
+            Span<NamedData>(external_constants_, n_external_constants_));
         if (!t.ok()) {
           ET_LOG(
               Error,
@@ -1495,6 +1618,10 @@ Method::~Method() {
     for (int i = 0; i < n_delegate_; i++) {
       delegates_[i].~BackendDelegate();
     }
+  }
+  // Free resources associated with external constants.
+  for (int i = 0; i < n_external_constants_; i++) {
+    external_constants_[i].buffer.~FreeableBuffer();
   }
   // All other fields are trivially destructible.
 }
