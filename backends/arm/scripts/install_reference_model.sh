@@ -41,6 +41,7 @@ function setup_tosa_reference_model() {
     patch_repo reference_model/thirdparty/serialization_lib ${tosa_serialization_lib_0_80_rev} ${patches_dir}
 
     pushd reference_model
+    rm -rf build
     # reference_model flatbuffers version clashes with Vela.
     # go with Vela's since it newer.
     # Vela's flatbuffer requirement is expected to loosen, then remove this. MLETORCH-565
