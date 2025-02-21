@@ -29,7 +29,9 @@ The following are required to install the ExecuTorch host libraries, needed to e
 <hr/>
 
 ## Preparing the Model
-Exporting is the process of taking a PyTorch model and converting it to the .pte file format used by the ExecuTorch runtime. This is done using Python APIs. PTE files for common models, such as Llama 3, can be found on HuggingFace under [ExecuTorch Community](https://huggingface.co/executorch-community). These models have been exported and lowered for ExecuTorch, and can be directly deployed without needing to go through the lowering process.
+Exporting is the process of taking a PyTorch model and converting it to the .pte file format used by the ExecuTorch runtime. This is done using Python APIs. PTE files for common models, such as Llama 3.2, can be found on HuggingFace under [ExecuTorch Community](https://huggingface.co/executorch-community). These models have been exported and lowered for ExecuTorch, and can be directly deployed without needing to go through the lowering process.
+
+A complete example of exporting, lowering, and verifying MobileNet V2 is available as a [Colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing).
 
 ### Requirements
 - A PyTorch model.
@@ -39,7 +41,7 @@ Exporting is the process of taking a PyTorch model and converting it to the .pte
 ### Selecting a Backend
 ExecuTorch provides hardware acceleration for a wide variety of hardware. The most commonly used backends are XNNPACK, for Arm and x86 CPU, Core ML (for iOS), Vulkan (for Android GPUs), and Qualcomm (for Qualcomm-powered Android phones).
 
-For mobile use cases, consider using XNNPACK for Android and Core ML or XNNPACK for iOS as a first step. See [Hardware Backends](using-executorch-export.md#hardware-backends) for more information.
+For mobile use cases, consider using XNNPACK for Android and Core ML or XNNPACK for iOS as a first step. See [Hardware Backends](backends-overview.md) for more information.
 
 ### Exporting
 Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows:
@@ -50,13 +52,13 @@ model = MyModel() # The PyTorch model to export
 example_inputs = (torch.randn(1,3,64,64),) # A tuple of inputs
 
 et_program =
- executorch.exir.to_edge_transform_and_lower(
- torch.export.export(model, example_inputs)
+    executorch.exir.to_edge_transform_and_lower(
+    torch.export.export(model, example_inputs)
 partitioner=[XnnpackPartitioner()]
 ).to_executorch()
 
 with open(“model.pte”, “wb”) as f:
-	f.write(et_program.buffer)
+    f.write(et_program.buffer)
 ```
 
 If the model requires varying input sizes, you will need to specify the varying dimensions and bounds as part of the `export` call. See [Model Export and Lowering](using-executorch-export.md) for more information.
@@ -119,7 +121,7 @@ import org.pytorch.executorch.Tensor;
 
 // …
 
-Module model = Module.load(“/path/to/model.pte”)
+Module model = Module.load(“/path/to/model.pte”);
 
 Tensor input_tensor = Tensor.fromBlob(float_data, new long[] { 1, 3, height, width });
 EValue input_evalue = EValue.from(input_tensor);

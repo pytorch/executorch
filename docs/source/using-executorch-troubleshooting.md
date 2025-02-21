@@ -1,6 +1,6 @@
 # Profiling and Debugging
 
-ExecuTorch 
+To faciliate model and runtime integration, ExecuTorch provides tools to profile model resource utilization, numerics, and more. This section describes the available troubleshooting tools and steps to resolve issues when integrating ExecuTorch.
 
 ## General Troubleshooting Steps
 

@@ -159,7 +159,7 @@ xcode-select --install
 ```
 
 Run the above command with `--help` flag to learn more on how to build additional backends
-(like [Core ML](build-run-coreml.md), [MPS](build-run-mps.md) or XNNPACK), etc.
+(like [Core ML](backends-coreml.md), [MPS](backends-mps.md) or XNNPACK), etc.
 Note, some backends may require additional dependencies and certain versions of Xcode and iOS.
 
 3. Copy over the generated `.xcframework` bundles to your Xcode project, link them against
@@ -172,6 +172,6 @@ Check out the [iOS Demo App](demo-apps-ios.md) tutorial for more info.
 
 You have successfully cross-compiled `executor_runner` binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:
 
-* [Selective build](./kernel-library-selective_build) to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.
+* [Selective build](kernel-library-selective-build.md) to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.
 * Tutorials on building [Android](./demo-apps-android.md) and [iOS](./demo-apps-ios.md) demo apps.
-* Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](./executorch-arm-delegate-tutorial.md) and [XTensa HiFi DSP](./build-run-xtensa.md).
+* Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](backends-arm-ethos-u.md) and [XTensa HiFi DSP](./backends-cadence.md).

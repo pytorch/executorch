@@ -7,8 +7,8 @@
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
 * [Introduction to ExecuTorch](./intro-how-it-works.md)
-* [Setting up ExecuTorch](./getting-started-setup.md)
-* [Building ExecuTorch with CMake](./runtime-build-and-cross-compilation.md)
+* [Getting Started](./getting-started.md)
+* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
 :::
 
 :::{grid-item-card}  What you will learn in this tutorial:
@@ -280,7 +280,7 @@ The `generate_pte_file` function in `run.sh` script produces the `.pte` files ba
 
 ExecuTorch's CMake build system produces a set of build pieces which are critical for us to include and run the ExecuTorch runtime with-in the bare-metal environment we have for Corstone FVPs from Ethos-U SDK.
 
-[This](./runtime-build-and-cross-compilation.md) document provides a detailed overview of each individual build piece. For running either variant of the `.pte` file, we will need a core set of libraries. Here is a list,
+[This](./using-executorch-building-from-source.md) document provides a detailed overview of each individual build piece. For running either variant of the `.pte` file, we will need a core set of libraries. Here is a list,
 
 - `libexecutorch.a`
 - `libportable_kernels.a`
