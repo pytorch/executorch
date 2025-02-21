@@ -674,47 +674,91 @@ def _validate_args(args):
             )
 
 
-def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
-    _validate_args(args)
-
-    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
-
-    # export_to_edge
-    builder_exported = _prepare_for_llama_export(args).export()
-
-    builder_exported.run_canonical_optimizations()
-
-    if args.export_only:
-        exit()
-
-    builder_exported_to_edge = builder_exported.pt2e_quantize(
-        quantizers
-    ).export_to_edge()
-
-    modelname = builder_exported_to_edge.modelname
-
-    # to_backend
+def _to_edge_and_lower_llama_xnnpack(
+    builder_exported,
+    modelname,
+    additional_passes,
+    pt2e_quant_params,
+    quantizers,
+    quant_dtype,
+    args,
+) -> LLMEdgeManager:  # noqa: C901
     partitioners = []
 
     # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
-    if (
-        pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None
-    ) or (args.xnnpack):
-        partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
-        )
+    partitioners.append(get_xnnpack_partitioner(dynamic_quant_only_partitioner=True))
 
-        # force xnnpack to be true if pt2e_quant_params is not None and args.xnnpack is False
-        args.xnnpack = True
-        modelname = f"xnnpack_dq_{modelname}"
+    modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack_extended_ops:
-        assert args.xnnpack, "xnnpack_extended_ops requires xnnpack to be enabled"
         partitioners.append(
             get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
         )
         modelname = f"xnnpack_{modelname}"
 
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
+
+    # TODO: Enable generating ETRecord with XNNPack and to_edge_transform_and_lower().
+    if args.generate_etrecord:
+        raise NotImplementedError(
+            f="export_llama does not support XNNPack and generating ETRecord at the moment. "
+        )
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
+    if args.verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+    if args.num_sharding > 0 and args.qnn:
+        from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+        # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
+        canonicalize_program(builder.edge_manager.exported_program())
+
+    return builder.to_executorch(passes=additional_passes)
+
+    if args.profile_memory:
+        generate_memory_trace(builder.export_program, "memory_profile.json")
+
+    if builder.dtype == DType.fp16:
+        modelname = f"{modelname}_h"
+
+    if args.output_name:
+        modelname = args.output_name
+        if modelname.endswith(".pte"):
+            output_file = modelname
+            modelname = modelname[:-4]
+            print(f"modelname: {modelname}")
+            print(f"output_file: {output_file}")
+        else:
+            output_file = f"{builder.output_dir}/{modelname}.pte"
+            print(f"modelname: {modelname}")
+            print(f"output_file: {output_file}")
+    else:
+        output_file = f"{builder.output_dir}/{modelname}.pte"
+
+    builder.save_to_pte(output_file)
+
+    return builder
+
+
+def _to_edge_and_lower_llama(  # noqa: C901
+    builder_exported,
+    modelname,
+    additional_passes,
+    pt2e_quant_params,
+    quantizers,
+    quant_dtype,
+    args,
+):
+    builder_exported_to_edge = builder_exported.pt2e_quantize(
+        quantizers
+    ).export_to_edge()
+
+    # to_backend
+    partitioners = []
     if args.vulkan:
         partitioners.append(
             get_vulkan_partitioner(
@@ -800,9 +844,6 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    additional_passes = []
-    if args.model in TORCHTUNE_DEFINED_MODELS:
-        additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -843,6 +884,51 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
 
         builder = builder.to_executorch(passes=additional_passes)
 
+    return builder
+
+
+def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
+    _validate_args(args)
+
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+
+    additional_passes = []
+    if args.model in TORCHTUNE_DEFINED_MODELS:
+        additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
+
+    # export_to_edge
+    builder_exported = _prepare_for_llama_export(args).export()
+    builder_exported.run_canonical_optimizations()
+    modelname = builder_exported.modelname
+
+    if args.export_only:
+        exit()
+
+    if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
+        # Force xnnpack to be true if pt2e_quant_params is not None and args.xnnpack is False
+        args.xnnpack = True
+
+    if args.xnnpack:
+        builder = _to_edge_and_lower_llama_xnnpack(
+            builder_exported,
+            modelname,
+            additional_passes,
+            pt2e_quant_params,
+            quantizers,
+            quant_dtype,
+            args,
+        )
+    else:
+        builder = _to_edge_and_lower_llama(
+            builder_exported,
+            modelname,
+            additional_passes,
+            pt2e_quant_params,
+            quantizers,
+            quant_dtype,
+            args,
+        )
+
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
 
@@ -864,7 +950,6 @@ def _export_llama(args) -> LLMEdgeManager:  # noqa: C901
         output_file = f"{builder.output_dir}/{modelname}.pte"
 
     builder.save_to_pte(output_file)
-
     return builder
 
 
