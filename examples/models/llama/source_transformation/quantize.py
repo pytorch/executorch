@@ -611,7 +611,7 @@ class EmbeddingQuantHandler(QuantHandler):
                     f"quantize {fqn, mod} with group_size {self.group_size}, bitwidth {self.bitwidth}"
                 )
                 weight, scales, _ = dynamically_quantize_per_channel(
-                    mod.weight.float(),
+                    mod.weight,
                     range_min,
                     range_max,
                     torch.int8,

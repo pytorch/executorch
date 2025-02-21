@@ -46,6 +46,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from torchao.quantization.GPTQ import Int8DynActInt4WeightLinear
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
@@ -57,6 +58,7 @@ from .source_transformation.attention import replace_attention_to_attention_sha
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
+    QuantizedGroupEmbedding,
 )
 from .source_transformation.quantized_kv_cache import (
     replace_kv_cache_with_custom_kv_cache,
@@ -561,7 +563,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     output_dir_path = canonical_path(args.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
-    # dtype override
+    # Convert dtype override string to actual type.
     if args.dtype_override is not None:
         dtype_override = DType[args.dtype_override]
     elif args.quantization_mode in ["8da4w", "8da4w-gptq"]:
@@ -569,34 +571,62 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     else:
         dtype_override = None
 
-    return (
-        _load_llama_model(
-            args.model,
-            checkpoint=checkpoint_path,
-            checkpoint_dir=checkpoint_dir,
-            params_path=params_path,
-            use_kv_cache=args.use_kv_cache,
-            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
-            generate_full_logits=args.generate_full_logits,
-            weight_type=weight_type,
-            enable_dynamic_shape=args.enable_dynamic_shape,
-            calibration_tasks=args.calibration_tasks,
-            calibration_limit=args.calibration_limit,
-            calibration_seq_length=args.calibration_seq_length,
-            calibration_data=args.calibration_data,
-            tokenizer_path=args.tokenizer_path,
-            verbose=args.verbose,
-            max_seq_len=args.max_seq_length,
-            max_context_len=args.max_context_length,
-            input_prune_map_path=args.input_prune_map,
-            output_prune_map_path=args.output_prune_map,
-            metadata_str=args.metadata,
-            dtype_override=dtype_override,
-            args=args,
-        )
-        .set_output_dir(output_dir_path)
-        .source_transform(_get_source_transforms(args.model, dtype_override, args))
+    edge_manager = _load_llama_model(
+        args.model,
+        checkpoint=checkpoint_path,
+        checkpoint_dir=checkpoint_dir,
+        params_path=params_path,
+        use_kv_cache=args.use_kv_cache,
+        use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
+        generate_full_logits=args.generate_full_logits,
+        weight_type=weight_type,
+        enable_dynamic_shape=args.enable_dynamic_shape,
+        calibration_tasks=args.calibration_tasks,
+        calibration_limit=args.calibration_limit,
+        calibration_seq_length=args.calibration_seq_length,
+        calibration_data=args.calibration_data,
+        tokenizer_path=args.tokenizer_path,
+        verbose=args.verbose,
+        max_seq_len=args.max_seq_length,
+        max_context_len=args.max_context_length,
+        input_prune_map_path=args.input_prune_map,
+        output_prune_map_path=args.output_prune_map,
+        metadata_str=args.metadata,
+        dtype_override=dtype_override,
+        args=args,
     )
+
+    # Assumes the checkpoint has uniform dtype.
+    checkpoint_dtype = next(edge_manager.model.parameters()).dtype
+    print(f"checkpoint dtype: {checkpoint_dtype}")
+    # We want to quantize the weights of the model in the checkpoint dtype.
+    edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
+        _get_source_transforms(
+            args.model, DType.from_torch_dtype(checkpoint_dtype), args
+        )
+    )
+
+    # We want to do compute the actual ops in the precision of the dtype_override.
+    def _set_precision_to_fp32(module):
+        """
+        Recursively iterate through the module and set the precision attribute
+        of all Int8DynActInt4WeightLinear submodules to 'fp32'.
+        """
+        for name, child in module.named_children():
+            if isinstance(child, Int8DynActInt4WeightLinear):
+                # Change the precision attribute to 'fp32'
+                child.precision = torch.float32
+                print(f"Changed precision of {name} to torch.float32")
+            elif isinstance(child, QuantizedGroupEmbedding):
+                child.dtype = torch.float32
+                print(f"Changed precision of {name} to torch.float32")
+            else:
+                # Recursively apply to child modules
+                _set_precision_to_fp32(child)
+
+    _set_precision_to_fp32(edge_manager.model)
+
+    return edge_manager
 
 
 def get_quantizer_and_quant_params(args):
@@ -971,32 +1001,16 @@ def _load_llama_model(
             args=args,
         )
     )
+
     if dtype_override:
         assert isinstance(
             dtype_override, DType
         ), "Override dtype needs to be of type <DType>"
-        torch_dtype = dtype_override.to_torch_dtype()
-        logging.info(f"model.to {torch_dtype}")
-        model = model.to(dtype=torch_dtype)
         dtype = dtype_override
     else:
-        state_dict = model.state_dict()
-        dtype = state_dict[next(iter(state_dict))].dtype
-        assert dtype in [
-            torch.bfloat16,
-            torch.float16,
-            torch.float32,
-        ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
+        checkpoint_dtype = next(model.parameters()).dtype
+        dtype = DType.from_torch_dtype(checkpoint_dtype)
         logging.info(f"Loaded model with dtype={dtype}")
-
-        if dtype == torch.bfloat16:
-            dtype = DType.bf16
-        elif dtype == torch.float16:
-            dtype = DType.fp16
-        elif dtype == torch.float32:
-            dtype = DType.fp32
-        else:
-            raise ValueError(f"Unsupported dtype {dtype}")
 
     return LLMEdgeManager(
         model=model,
