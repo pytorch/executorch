@@ -120,46 +120,22 @@ Tensor& opt_div_out(
           out.numel());
     });
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
-    const Tensor* lhs;
-    const Tensor* rhs;
-    if (selected_optimized_path ==
-        ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
-      lhs = &b;
-      rhs = &a;
-    } else {
-      // Catch failure to update logic when subing new broadcasting possibility.
-      ET_DCHECK(
-          selected_optimized_path ==
-          ElementwiseOptimizedPath::kBroadcast2dBy1d);
-      lhs = &a;
-      rhs = &b;
-    }
-    auto error = resize_tensor(out, lhs->sizes());
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        error == Error::Ok,
-        InvalidArgument,
-        out,
-        "Failed to resize output tensor.");
-    ET_SWITCH_REALB_TYPES(out_type, ctx, "sub.out", CTYPE, [&]() {
-      using Vec = executorch::vec::Vectorized<CTYPE>;
+    // Reason for using alpha is becasuse handle_broadcast_elementwise
+    // is used for add and sub as well:
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "div.out", CTYPE, [&]() {
       if (selected_optimized_path ==
-          ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
-        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
-            [](Vec x, Vec y) { return y / x; },
-            out.mutable_data_ptr<CTYPE>(),
-            lhs->const_data_ptr<CTYPE>(),
-            rhs->const_data_ptr<CTYPE>(),
-            lhs->sizes()[lhs->dim() - 2],
-            lhs->sizes()[lhs->dim() - 1]);
+              ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastLastDimReverseArguments ||
+          selected_optimized_path ==
+              ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
+        auto div_lambda = [](auto x, auto y) { return y / x; };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, div_lambda, a, b, out, selected_optimized_path);
       } else {
-        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
-            [](Vec x, Vec y) { return x / y; },
-            out.mutable_data_ptr<CTYPE>(),
-            lhs->const_data_ptr<CTYPE>(),
-            rhs->const_data_ptr<CTYPE>(),
-            lhs->sizes()[lhs->dim() - 2],
-            lhs->sizes()[lhs->dim() - 1]);
+        auto div_lambda = [](auto x, auto y) { return x / y; };
+        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+            ctx, div_lambda, a, b, out, selected_optimized_path);
       }
     });
   } else {
