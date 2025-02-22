@@ -39,7 +39,9 @@ def define_common_targets():
         name = "flat_tensor_header",
         srcs = ["flat_tensor_header.cpp"],
         exported_headers = ["flat_tensor_header.h"],
-        visibility = ["//executorch/..."],
+        visibility = [
+            "//executorch/...",
+        ],
         exported_deps = ["//executorch/runtime/core:core"],
     )
 
@@ -54,6 +56,7 @@ def define_common_targets():
         exported_headers = ["serialize.h"],
         visibility = [
             "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         exported_external_deps = ["flatbuffers-api"],
     )
