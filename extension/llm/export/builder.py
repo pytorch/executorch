@@ -34,7 +34,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
-from executorch.extension.llm.export.export_passes import RemoveRedundantPermutes
+from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
@@ -113,7 +113,7 @@ class LLMEdgeManager:
         self.calibration_seq_length = calibration_seq_length
         self.calibration_data = calibration_data
         self.tokenizer_path = tokenizer_path
-        self.canonical_passes = [RemoveRedundantPermutes()]
+        self.canonical_passes = [RemoveRedundantTransposes()]
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -170,7 +170,7 @@ class LLMEdgeManager:
             self.dynamic_shapes = ({1: dim},)
         elif self.enable_dynamic_shape:
             # Two input arguments: tokens and input_pos but input_pos is static shape
-            self.dynamic_shapes = ({1: dim}, {0: 1})
+            self.dynamic_shapes = ({1: dim}, {"input_pos": {0: 1}})
         else:
             # Two input arguments: tokens and input_pos but both are of static shape
             self.dynamic_shapes = None
@@ -270,7 +270,7 @@ class LLMEdgeManager:
                 while token_list[-1] != tokenizer.eos_id and pos < max_len:
                     logits = module(
                         torch.full((1, 1), token_list[pos]),
-                        torch.tensor((pos,)),
+                        {"input_pos": torch.tensor((pos,))},
                     )
                     pos += 1
                     if pos >= len(token_list):

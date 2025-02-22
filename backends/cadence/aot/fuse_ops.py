@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
 
@@ -11,6 +15,9 @@ import operator
 from collections import deque
 from numbers import Number
 from typing import cast, Sequence
+
+# Import these for the cadence function signatures.
+import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
 
 import torch
 import torch.fx
@@ -845,7 +852,10 @@ class FuseMulIntoDequantPass(ExportPass):
             if isinstance(arg, torch.fx.Node)
             and isinstance(arg.target, EdgeOpOverload)
             and get_edge_overload_packet(arg.target)
-            == exir_ops.edge.quantized_decomposed.dequantize_per_tensor
+            in (
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+                exir_ops.edge.cadence.dequantize_per_tensor,
+            )
         ]
         multiplier_nodes = [
             arg

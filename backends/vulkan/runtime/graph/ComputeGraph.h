@@ -461,7 +461,8 @@ class ComputeGraph final {
       const vkapi::ScalarType dtype,
       const utils::StorageType storage_type,
       const utils::GPUMemoryLayout memory_layout,
-      const int64_t shared_object_idx = -1);
+      const int64_t shared_object_idx = -1,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the specified properties. The
@@ -471,7 +472,8 @@ class ComputeGraph final {
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const utils::StorageType storage_type,
-      const int64_t shared_object_idx = -1);
+      const int64_t shared_object_idx = -1,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the specified properties. The
@@ -481,7 +483,8 @@ class ComputeGraph final {
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const utils::GPUMemoryLayout memory_layout,
-      const int64_t shared_object_idx = -1);
+      const int64_t shared_object_idx = -1,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the specified properties. The
@@ -491,7 +494,8 @@ class ComputeGraph final {
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
-      const int64_t shared_object_idx = -1);
+      const int64_t shared_object_idx = -1,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the specified image.
@@ -504,7 +508,8 @@ class ComputeGraph final {
   ValueRef add_tensor_like(
       const ValueRef vref,
       const utils::StorageType storage_type,
-      const utils::GPUMemoryLayout memory_layout);
+      const utils::GPUMemoryLayout memory_layout,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`. The
@@ -512,7 +517,8 @@ class ComputeGraph final {
    */
   ValueRef add_tensor_like(
       const ValueRef vref,
-      const utils::GPUMemoryLayout memory_layout);
+      const utils::GPUMemoryLayout memory_layout,
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
 
   /*
    * Use the copy constructor of `api::vTensor` to create a "view" of the

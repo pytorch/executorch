@@ -78,7 +78,7 @@ To download, we can either download `Corstone-300 Ecosystem FVP` and `Corstone-3
 
 Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55/M85 CPU available on the Corstone-300/Corstone-320 platform.
 
-These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 12.3 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
+These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 13.3.rel1 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
 
 ### Setup the Arm Ethos-U Software Development
 
@@ -96,23 +96,22 @@ At the end of the setup, if everything goes well, your top level devlopement dir
 
 ```bash
 .
-├── arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
+├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
+├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
 ├── ethos-u
 │   ├── core_platform
 │   ├── core_software
 │   ├── fetch_externals.py
 │   └── [...]
-├── ethos-u-vela
 ├── FVP-corstone300
 │   ├── FVP_Corstone_SSE-300.sh
 │   └── [...]
 ├── FVP-corstone320
 │   ├── FVP_Corstone_SSE-320.sh
 │   └── [...]
-├── FVP_cs300.tgz
-├── FVP_cs320.tgz
-├── gcc.tar.xz
-└── reference_model
+├── FVP_corstone300.tgz
+├── FVP_corstone320.tgz
+└── setup_path.sh
 ```
 
 ## Convert the PyTorch Model to the `.pte` File
@@ -201,7 +200,7 @@ Following script will serve as a helper utility to help us generate the `.pte` f
 
 ```bash
 python3 -m examples.arm.aot_arm_compiler --model_name="softmax"
-# This should produce ./softmax.pte
+# This should produce ./softmax_arm_ethos-u55-128.pte
 ```
 
 ### Delegated Workflow
@@ -222,15 +221,15 @@ Similar to the non-delegate flow, the same script will server as a helper utilit
 
 ```bash
 python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
-# should produce ./add_arm_delegate.pte
+# should produce ./add_arm_delegate_ethos-u55-128.pte
 ```
 
 ### Delegated Quantized Workflow
 Before generating the `.pte` file for delegated quantized networks like MobileNetV2, we need to build the `quantized_ops_aot_lib`
 
+You can just run the `backends/arm/scripts/build_quantized_ops_aot_lib.sh` script to build this for you or build it yourself like this. 
+
 ```bash
-SITE_PACKAGES="$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
 cd <executorch_root_dir>
 mkdir -p cmake-out-aot-lib
@@ -238,7 +237,6 @@ cmake -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
     -DPYTHON_EXECUTABLE=python3 \
 -Bcmake-out-aot-lib \
     "${et_root_dir}"
@@ -249,7 +247,7 @@ cmake --build cmake-out-aot-lib --parallel -- quantized_ops_aot_lib
 After the `quantized_ops_aot_lib` build, we can run the following script to generate the `.pte` file
 ```bash
 python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --delegate --quantize --so_library="$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)"
-# should produce ./mv2_arm_delegate.pte.pte
+# should produce ./mv2_arm_delegate_ethos-u55-128.pte
 ```
 
 <br />
@@ -266,6 +264,14 @@ Now let's try to run these `.pte` files on a Corstone-300 and Corstone-320 platf
 
 In this section, we will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository we have a functioning script which does the exact same steps. It is located at `executorch/examples/arm/run.sh`. We will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.
 
+By default the `run.sh` will use `arm_test/` as an build and output folder and you will find the build artifacts under it. This can be contolled/overrided with the `--et_build_root` and the `--output` flags if needed.
+
+e.g. running `examples/arm/run.sh --model_name=add --target=ethos-u85-128` will produce a pte and elf file like this:
+
+```bash
+arm_test/add/add_arm_delegate_ethos-u85-128.pte
+arm_test/add/cmake-out/arm_executor_runner
+```
 Also before we get started, make sure that you have completed ExecuTorch cmake build setup, and the instructions to setup the development environment described [earlier](#set-up-the-developer-environment).
 
 The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.
@@ -290,15 +296,11 @@ To run a `.pte` file with the Arm backend delegate call instructions, we will ne
 
 - `libexecutorch_delegate_ethos_u.a`
 
-These libraries are generated in `build_executorch` and `build_quantization_aot_lib` function of the `run.sh` script.
+These libraries are generated by the `backends/arm/scripts/build_executorch.sh`, `backends/arm/scripts/build_portable_kernels.sh` and `backends/arm/scripts/build_quantized_ops_aot_lib.sh` scripts called from the `run.sh` script.
 
-In this function, `EXECUTORCH_SELECT_OPS_LIST` will decide the number of portable operators included in the build and are available at runtime. It must match with `.pte` file's requirements, otherwise you will get `Missing Operator` error at runtime.
+The `--portable_kernels` flag can be used to set the build flag `EXECUTORCH_SELECT_OPS_LIST` when running `backends/arm/scripts/build_portable_kernels.sh` that will decide the number of portable operators included in the build and are available at runtime. It must match with `.pte` file's requirements, otherwise you will get `Missing Operator` error at runtime.
 
 For example, there  in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for *non-delegated* operators.
-
-```{tip}
-The `run.sh` script takes in `--portable_kernels` option, which provides a way to supply a comma seperated list of portable kernels to be included.
-```
 
 ### Building the executor_runner Bare-Metal Application
 
@@ -306,7 +308,7 @@ The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-d
 
 Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300/Corstone-320 platforms.
 
-This is performed by the `build_executorch_runner` function in `run.sh`.
+This is performed by the `backends/arm/scripts/build_executorch_runner.sh` script runned from `run.sh`.
 
 ```{tip}
 The `run.sh` script takes in `--target` option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)
@@ -314,7 +316,10 @@ The `run.sh` script takes in `--target` option, which provides a way to provide 
 
 ## Running on Corstone FVP Platforms
 
-Once the elf is prepared, regardless of the `.pte` file variant is used to generate the bare metal elf. The below command is used to run the [MV2Model](#mv2module) on Corstone-320 FVP
+Once the elf is prepared, regardless of the `.pte` file variant is used to generate the bare metal elf. `run.sh` will run the FVP for you via the `backends/arm/scripts/run_fvp.sh` script but you can also run it directly.
+
+
+The below command is used to run the [MV2Model](#mv2module) on Corstone-320 FVP
 
 ```bash
 ethos_u_build_dir=examples/arm/executor_runner/

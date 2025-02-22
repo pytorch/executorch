@@ -134,6 +134,8 @@ target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
+target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+target_compile_definitions(coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
 target_link_libraries(coremldelegate PRIVATE executorch_core)
 
 if(EXECUTORCH_BUILD_DEVTOOLS)

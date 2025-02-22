@@ -13,6 +13,8 @@ class ForwardOptions(TypedDict, total=False):
 
     mask: Optional[torch.Tensor]
     input_pos: Optional[torch.Tensor]
+    freqs_cos_override: Optional[torch.Tensor]
+    freqs_sin_override: Optional[torch.Tensor]
     in_cache_state: Optional[Any]
     out_cache_state: Optional[Any]
 
@@ -236,7 +238,7 @@ class AttentionMHA(Attention):
             assert input_pos is not None
             k, v = self.kv_cache.update(input_pos, k, v)
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
-            return self.wo(output)
+            return self.wo(output), None
 
         # grouped multiquery attention: expand out keys and values
         k = k.repeat_interleave(self.n_rep, dim=1)
@@ -252,4 +254,4 @@ class AttentionMHA(Attention):
 
         output = self.wo(output)
 
-        return output
+        return output, None

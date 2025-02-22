@@ -61,12 +61,11 @@ ethos_u_base_rev="24.08"
 
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="v0.80.1"
+tosa_reference_model_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
 
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="e131bf4f528f0d461868229972e07f371dcbc881"
-
+vela_rev="46d88f56902be0706e051c10153ffb7620e01ee3"
 
 ########
 ### Optional user args
@@ -96,10 +95,16 @@ function setup_fvp() {
         shift; # drop this arg
     fi
     if [[ "${OS}" != "Linux" ]]; then
-        echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
-        echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
-        echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
-        return 1
+        # Check if FVP is callable
+        if command -v FVP_Corstone_SSE-300_Ethos-U55 &> /dev/null; then
+            echo "[${FUNCNAME[0]}] Info: FVP for MacOS seem to be installed. Continuing..."
+            return 0  # If true exit gracefully and proceed with setup
+        else
+            echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
+            echo "[${FUNCNAME[0]}] Warning: For MacOS, using https://github.com/Arm-Examples/FVPs-on-Mac is recommended."
+            echo "[${FUNCNAME[0]}] Warning:   Follow the instructions and make sure the path is set correctly."
+            return 1  # Throw error. User need to install FVP according to ^^^
+        fi
     fi
 
     # Download and install the Corstone 300 FVP simulator platform

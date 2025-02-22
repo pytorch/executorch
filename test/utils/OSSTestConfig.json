@@ -61,12 +61,13 @@
     {
         "directory": "runtime/core/portable_type/test",
         "sources": [
-            "optional_test.cpp",
-            "tensor_test.cpp",
+            "bfloat16_test.cpp",
+            "dont_shadow_complex_test.c",
             "half_test.cpp",
+            "optional_test.cpp",
             "scalar_test.cpp",
             "tensor_impl_test.cpp",
-            "bfloat16_test.cpp"
+            "tensor_test.cpp"
         ]
     },
     {
@@ -85,10 +86,11 @@
     {
         "directory": "runtime/core/exec_aten/util/test",
         "sources": [
-            "tensor_util_test.cpp",
-            "scalar_type_util_test.cpp",
+            "dim_order_util_test.cpp",
             "operator_impl_example_test.cpp",
-            "dim_order_util_test.cpp"
+            "scalar_type_util_test.cpp",
+            "tensor_shape_to_c_string_test.cpp",
+            "tensor_util_test.cpp"
         ]
     },
     {

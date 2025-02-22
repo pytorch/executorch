@@ -7,6 +7,11 @@
 
 set -ex
 
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+which "${PYTHON_EXECUTABLE}"
+
 build_jar() {
   pushd extension/android
   ./gradlew build

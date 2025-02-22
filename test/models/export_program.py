@@ -264,6 +264,8 @@ def main() -> None:
             # Skip type promotion to keep the model in fp16.
             # Type promotion will convert to fp32.
             skip_type_promotion = True
+        if args.external_constants:
+            module_name = f"{module_name}Program"
         outfile = os.path.join(args.outdir, f"{module_name}.pte")
         prog = export_module_to_program(
             module_class,

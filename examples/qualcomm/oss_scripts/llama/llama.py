@@ -12,6 +12,7 @@ import getpass
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 from collections import OrderedDict
@@ -19,7 +20,7 @@ from functools import partial
 from multiprocessing.connection import Client
 
 import torch
-from executorch.backends.qualcomm._passes.i64_to_i32 import I64toI32
+from executorch.backends.qualcomm._passes.constant_i64_to_i32 import ConstantI64toI32
 
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
@@ -51,6 +52,8 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_chipset_map,
     update_spill_fill_size,
 )
+
+from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
@@ -389,6 +392,7 @@ class SingleLlama:
         num_sharding=1,
         passes_job=OrderedDict(),
         shared_buffer=False,
+        verbose=False,
     ):
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -440,6 +444,10 @@ class SingleLlama:
             edge_prog_mgr = edge_prog_mgr.to_backend(partitioner)
             if num_sharding > 1:
                 update_spill_fill_size(edge_prog_mgr.exported_program())
+
+            if verbose:
+                print_delegation_info(edge_prog_mgr.exported_program().graph_module)
+
             exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
             with open(f"{work_space}/{self.pte_filename}.pte", "wb") as file:
                 exec_prog_mgr.write_to_file(file)
@@ -553,9 +561,9 @@ def compile(args, pte_filename, tokenizer):
             llama_instance_list[i] = get_quant_embedding_transform(args)(
                 llama_instance_list[i]
             )
-            passes_job[I64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]["skip_node"] = {
-                "tokens"
-            }
+            passes_job[ConstantI64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+                "skip_node"
+            ] = {"tokens"}
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), pte_filename
@@ -647,6 +655,7 @@ def compile(args, pte_filename, tokenizer):
                 backend_options=backend_options,
                 shared_buffer=args.shared_buffer,
                 multiple_graphs=True,
+                weight_sharing=not args.enable_x86_64,  # x86 emulator does not support weight sharing
                 graph_name=graph_name,
             )
             for graph_name in graph_names
@@ -666,6 +675,10 @@ def compile(args, pte_filename, tokenizer):
                 max_sf_size
             )
             compiler_specs[0][0].value = option_to_flatbuffer(qnn_executorch_options)
+
+        if args.verbose:
+            for exported_program in exported_programs:
+                print_delegation_info(exported_program.graph_module)
 
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -779,48 +792,11 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
-    seq_len = args.prefill_seq_len if args.model_mode == "prefill" else args.kv_seq_len
-    runner_args = " ".join(
-        [
-            f"--model_path {pte_filename}.pte",
-            "--output_path outputs/outputs.txt",
-            f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
-            f'--prompt "{args.prompt}"',
-            f"--seq_len {seq_len}",
-            f"--eval_mode {eval_mode}",
-            f"--temperature {args.temperature}",
-            f"--system_prompt '{args.system_prompt}'",
-            f"--logits_scale {quant_attrs['scale']}",
-            f"--logits_offset {quant_attrs['zero_point']}",
-            f"--kv_updator {'SmartMask' if args.kv_updator == smart_mask_updator else 'ShiftPointer'}",
-        ]
-    )
-    runner_cmd = " ".join(
-        [
-            f"cd {workspace} &&",
-            f"./qnn_llama_runner {runner_args}",
-        ]
-    )
-
     pte_path = (
         f"{pre_gen_pte}/{pte_filename}.pte"
         if pre_gen_pte
         else f"{args.artifact}/{pte_filename}.pte"
     )
-    adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
-        pte_path=pte_path,
-        workspace=workspace,
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
-    )
-    # No pregen inputs, input_list is not required
-    adb.push(inputs=[], input_list="", files=[runtime_tokenizer_path])
-    adb.execute(custom_runner_cmd=runner_cmd)
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
@@ -831,14 +807,92 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
         with open(f"{args.artifact}/outputs/outputs.txt", "r") as f:
             outputs.append(f.read())
 
-    adb.pull(output_path=args.artifact, callback=post_process)
+    seq_len = args.prefill_seq_len if args.model_mode == "prefill" else args.kv_seq_len
+    runner_args = " ".join(
+        [
+            f'--prompt "{args.prompt}"',
+            f"--eval_mode {eval_mode}",
+            f"--temperature {args.temperature}",
+            f"--system_prompt '{args.system_prompt}'",
+            f"--logits_scale {quant_attrs['scale']}",
+            f"--logits_offset {quant_attrs['zero_point']}",
+        ]
+    )
 
+    runner_cmd = ""
+    if args.enable_x86_64:
+        # x86 emulator is intended for CI and not performance. Check only the first few tokens.
+        seq_len = min(seq_len, 16)
+
+        if args.kv_updator == smart_mask_updator:
+            logging.warning(
+                "x86 only support ShiftPointer, overwrite kv_updator to ShiftPointer"
+            )
+
+        qnn_sdk = os.getenv("QNN_SDK_ROOT")
+        target = "x86_64-linux-clang"
+        runner_cmd = " ".join(
+            [
+                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
+                f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+                f"--tokenizer_path {runtime_tokenizer_path}",
+                f"--model_path {pte_path}",
+                f"--seq_len {seq_len}",
+                f"--output_path {args.artifact}/outputs/outputs.txt",
+                f"--kv_updator ShiftPointer",
+                runner_args,
+            ]
+        )
+        subprocess.run(
+            runner_cmd,
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+        )
+        post_process()
+    else:
+        runner_cmd = " ".join(
+            [
+                f"cd {workspace} &&",
+                f"./qnn_llama_runner",
+                f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
+                f"--model_path {pte_filename}.pte",
+                f"--seq_len {seq_len}",
+                "--output_path outputs/outputs.txt",
+                f"--kv_updator {'SmartMask' if args.kv_updator == smart_mask_updator else 'ShiftPointer'}",
+                runner_args,
+            ]
+        )
+
+        adb = SimpleADB(
+            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
+            build_path=f"{args.build_folder}",
+            pte_path=pte_path,
+            workspace=workspace,
+            device_id=args.device,
+            host_id=args.host,
+            soc_model=args.model,
+            shared_buffer=args.shared_buffer,
+            runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+        )
+        # No pregen inputs, input_list is not required
+        adb.push(inputs=[], input_list="", files=[runtime_tokenizer_path])
+        adb.execute(custom_runner_cmd=runner_cmd)
+
+        adb.pull(output_path=args.artifact, callback=post_process)
     if args.ip and args.port != -1:
+        inference_speed = 0
+        with open(f"{args.artifact}/outputs/inference_speed.txt", "r") as f:
+            inference_speed = float(f.read())
+
+        pte_size = os.path.getsize(pte_path)
         with Client((args.ip, args.port)) as conn:
             conn.send(
                 json.dumps(
                     {
                         "result": outputs,
+                        "pte_size": pte_size,
+                        "inference_speed": inference_speed,
                     }
                 )
             )
@@ -980,13 +1034,12 @@ def _build_parser():
         help="Fallback to cpu embedding operator and type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '4,32'.",
     )
 
+    parser.add_argument("-v", "--verbose", action="store_true")
+
     return parser
 
 
-def main(args) -> None:
-    parser = _build_parser()
-
-    args = parser.parse_args(args)
+def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")
 
@@ -1049,6 +1102,18 @@ def main(args) -> None:
             )
         else:
             logging.warning("Quant attributes of the logit is None.")
+
+        if args.ip and args.port != -1:
+            pte_path = f"{args.artifact}/{pte_filename}.pte"
+            pte_size = os.path.getsize(pte_path)
+            with Client((args.ip, args.port)) as conn:
+                conn.send(
+                    json.dumps(
+                        {
+                            "pte_size": pte_size,
+                        }
+                    )
+                )
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
@@ -1075,6 +1140,12 @@ def main(args) -> None:
             raise Exception(e)
 
 
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
+    export_llama(args)
+
+
 # flake8: noqa: C901
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()

@@ -10,6 +10,7 @@ def define_common_targets():
         name = "tokenizer_py_lib",
         srcs = [
             "__init__.py",
+            "hf_tokenizer.py",
             "tokenizer.py",
             "utils.py",
         ],

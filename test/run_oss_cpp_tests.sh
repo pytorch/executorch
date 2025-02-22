@@ -22,6 +22,11 @@ elif [[ $(uname) == "Linux" ]]; then
   export LLVM_COV="${LLVM_COV:-llvm-cov}"
 fi
 
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+which "${PYTHON_EXECUTABLE}"
+
 build_executorch() {
   BUILD_VULKAN="OFF"
   if [ -x "$(command -v glslc)" ]; then
@@ -33,6 +38,7 @@ build_executorch() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -49,8 +55,6 @@ build_and_run_test() {
 
   if [[ "$test_dir" =~ .*examples/models/llama/tokenizer.* ]]; then
     RESOURCES_PATH=$(realpath examples/models/llama/tokenizer/test/resources)
-  elif [[ "$test_dir" =~ .*extension/llm/tokenizer.* ]]; then
-    RESOURCES_PATH=$(realpath extension/llm/tokenizer/test/resources)
   fi
   export RESOURCES_PATH
 
