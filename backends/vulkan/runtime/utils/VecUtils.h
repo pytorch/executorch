@@ -499,7 +499,7 @@ class WorkgroupSize final {
     // shift numbers by multiple of 11 bits, since each local workgroup axis can
     // be 1024 at most and which is 0x400. only z axis can't store 1024, because
     // it would overflow uint32_t storage.
-    if (z == 1024) {
+    if (vec[2u] == 1024) {
       throw std::runtime_error(
           "Workgroup size in z axis cannot be 1024 because it would overflow uint32_t storage");
     }
