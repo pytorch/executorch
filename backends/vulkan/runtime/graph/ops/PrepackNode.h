@@ -49,7 +49,7 @@ class PrepackNode final {
   const vkapi::ShaderInfo shader_;
   vkapi::ShaderInfo noop_shader_;
   const utils::uvec3 global_workgroup_size_;
-  const utils::uvec3 local_workgroup_size_;
+  const utils::WorkgroupSize local_workgroup_size_;
   const ValueRef tref_;
   const ValueRef packed_;
   const vkapi::ParamsBindList params_;

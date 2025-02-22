@@ -92,7 +92,7 @@ class DispatchNode final : public ExecuteNode {
  protected:
   const vkapi::ShaderInfo shader_;
   const utils::uvec3 global_workgroup_size_;
-  const utils::uvec3 local_workgroup_size_;
+  const utils::WorkgroupSize local_workgroup_size_;
   const vkapi::ParamsBindList params_;
   const vkapi::SpecVarList spec_vars_;
   const std::vector<PushConstantDataInfo> push_constants_;
