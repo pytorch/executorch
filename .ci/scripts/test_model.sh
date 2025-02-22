@@ -166,6 +166,8 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=inception_v3
   elif [[ "${MODEL_NAME}" == "vit" ]]; then
     EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "mb" ]]; then
+    EXPORT_SCRIPT=mobilebert_fine_tune
   elif [[ "${MODEL_NAME}" == "edsr" ]]; then
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr

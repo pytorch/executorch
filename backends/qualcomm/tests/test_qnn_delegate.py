@@ -74,7 +74,7 @@ from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 
-# from executorch.examples.models.wav2letter import Wav2LetterModel
+from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import disable_validation
 from executorch.exir.passes import PassManager
@@ -903,8 +903,7 @@ class TestQNNFloatingPointModel(TestQNN):
             MV3Model(),
             MobileBertModelExample(),
             TorchVisionViTModel(),
-            # Encountered undefined symbol in mainline. Reopen once resolved.
-            # Wav2LetterModel(),
+            Wav2LetterModel(),
         ]
         expected_partitions = [
             1,
@@ -1956,12 +1955,11 @@ class TestQNNQuantizedModel(TestQNN):
                 QCOM_ANNOTATION: (),
                 QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
-            # Encountered undefined symbol in mainline. Reopen once resolved.
-            # {
-            #     QCOM_MODULE: Wav2LetterModel(),
-            #     QCOM_ANNOTATION: (),
-            #     QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
-            # },
+            {
+                QCOM_MODULE: Wav2LetterModel(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
+            },
         ]
         expected_partitions = [
             1,
@@ -1974,7 +1972,7 @@ class TestQNNQuantizedModel(TestQNN):
             # For MobileBertModelExample
             # 1,
             1,
-            # 1, For Wav2LetterModel
+            1,
         ]
         # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
         disable_validation()
