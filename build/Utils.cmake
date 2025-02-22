@@ -329,35 +329,31 @@ function(resolve_python_executable)
 endfunction()
 
 # find_package(Torch CONFIG REQUIRED) replacement for targets that have a
-# header-only Torch dependency. Because find_package sets variables in the
-# parent scope, we use a macro to preserve this rather than maintaining our own
-# list of those variables.
-macro(find_package_torch_headers)
-  # We cannot simply use CMAKE_FIND_ROOT_PATH_BOTH, because that does not
-  # propagate into TorchConfig.cmake.
-  foreach(mode_kind IN ITEMS PACKAGE LIBRARY INCLUDE)
-    set(OLD_CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}
-        ${CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}}
-    )
-    set(CMAKE_FIND_ROOT_PATH_MODE_${mode_kind} BOTH)
-  endforeach()
-  find_package_torch()
-  foreach(mode_kind IN ITEMS PACKAGE LIBRARY INCLUDE)
-    set(CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}
-        ${OLD_CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}}
-    )
-  endforeach()
-endmacro()
+# header-only Torch dependency.
+#
+# Unlike find_package(Torch ...), this will only set
+# TORCH_INCLUDE_DIRS in the parent scope. In particular, it will NOT
+# set any of the following:
+# - TORCH_FOUND
+# - TORCH_LIBRARY
+# - TORCH_CXX_FLAGS
+function(find_package_torch_headers)
+  # We implement this way rather than using find_package so that
+  # cross-compilation can still use the host's installed copy of
+  # torch, since the headers should be fine.
+  get_torch_base_path(TORCH_BASE_PATH)
+  set(TORCH_INCLUDE_DIRS "${TORCH_BASE_PATH}/include;${TORCH_BASE_PATH}/include/torch/csrc/api/include" PARENT_SCOPE)
+endfunction()
 
-# Add the Torch CMake configuration to CMAKE_PREFIX_PATH so that find_package
-# can find Torch.
-function(add_torch_to_cmake_prefix_path)
+# Return the base path to the installed Torch Python library in
+# outVar.
+function(get_torch_base_path outVar)
   if(NOT PYTHON_EXECUTABLE)
     resolve_python_executable()
   endif()
   execute_process(
     COMMAND "${PYTHON_EXECUTABLE}" -c
-            "import torch as _; print(_.__path__[0], end='')"
+            "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])"
     OUTPUT_VARIABLE _tmp_torch_path
     ERROR_VARIABLE _tmp_torch_path_error
     RESULT_VARIABLE _tmp_torch_path_result COMMAND_ECHO STDERR
@@ -370,6 +366,13 @@ function(add_torch_to_cmake_prefix_path)
     message("Output:\n${_tmp_torch_path}")
     message(FATAL_ERROR "Error:\n${_tmp_torch_path_error}")
   endif()
+  set(${outVar} ${_tmp_torch_path} PARENT_SCOPE)
+endfunction()
+
+# Add the Torch CMake configuration to CMAKE_PREFIX_PATH so that find_package
+# can find Torch.
+function(add_torch_to_cmake_prefix_path)
+  get_torch_base_path(_tmp_torch_path)
   list(APPEND CMAKE_PREFIX_PATH "${_tmp_torch_path}")
   set(CMAKE_PREFIX_PATH
       "${CMAKE_PREFIX_PATH}"

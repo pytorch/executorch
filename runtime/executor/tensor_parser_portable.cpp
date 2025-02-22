@@ -21,6 +21,7 @@ namespace executorch {
 namespace runtime {
 namespace deserialization {
 
+using executorch::runtime::Span;
 using torch::executor::ScalarType;
 using torch::executor::Tensor;
 using torch::executor::TensorImpl;
@@ -29,7 +30,8 @@ Result<Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor,
-    const NamedDataMap* named_data_map) {
+    const NamedDataMap* named_data_map,
+    Span<NamedData> external_constants) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
   auto method_allocator = memory_manager->method_allocator();
 
@@ -149,7 +151,8 @@ Result<Tensor> parseTensor(
       program,
       tensor_impl->nbytes(),
       memory_manager->planned_memory(),
-      named_data_map);
+      named_data_map,
+      external_constants);
   if (!data_ptr.ok()) {
     ET_LOG(
         Error,

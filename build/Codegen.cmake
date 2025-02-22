@@ -9,7 +9,7 @@
 
 # Selective build. See codegen/tools/gen_oplist.py for how to use these
 # arguments.
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/Utils.cmake)
 
 function(gen_selected_ops)
   set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS)
@@ -97,7 +97,7 @@ function(generate_bindings_for_kernels)
       --tags-path=${site-packages-out}/torchgen/packaged/ATen/native/tags.yaml
       --aten-yaml-path=${site-packages-out}/torchgen/packaged/ATen/native/native_functions.yaml
       --op-selection-yaml-path=${_oplist_yaml}
-    )
+  )
   if(GEN_ADD_EXCEPTION_BOUNDARY)
     set(_gen_command "${_gen_command}" --add-exception-boundary)
   endif()
@@ -218,9 +218,8 @@ function(merge_yaml)
   )
 endfunction()
 
-# Append the file list in the variable named `name` in
-# build/build_variables.bzl to the variable named `outputvar` in the
-# caller's scope.
+# Append the file list in the variable named `name` in build/build_variables.bzl
+# to the variable named `outputvar` in the caller's scope.
 function(append_filelist name outputvar)
   # configure_file adds its input to the list of CMAKE_RERUN dependencies
   configure_file(
@@ -250,17 +249,15 @@ function(append_filelist name outputvar)
   )
 endfunction()
 
-# Fail the build if the src lists in build_variables.bzl do not match
-# the src lists extracted from Buck and placed into
-# EXECUTORCH_SRCS_FILE. This is intended to be a safety mechanism
-# while we are in the process of removing Buck from the CMake build
-# and replacing it with build_variables.bzl; if you are seeing
-# failures after you have intentionally changed Buck srcs, then simply
-# update build_variables.bzl. If you are seeing failures after
-# changing something about the build system, make sure your changes
-# will work both before and after we finish replacing Buck with
-# build_variables.bzl, which should involve getting these lists to
-# match!
+# Fail the build if the src lists in build_variables.bzl do not match the src
+# lists extracted from Buck and placed into EXECUTORCH_SRCS_FILE. This is
+# intended to be a safety mechanism while we are in the process of removing Buck
+# from the CMake build and replacing it with build_variables.bzl; if you are
+# seeing failures after you have intentionally changed Buck srcs, then simply
+# update build_variables.bzl. If you are seeing failures after changing
+# something about the build system, make sure your changes will work both before
+# and after we finish replacing Buck with build_variables.bzl, which should
+# involve getting these lists to match!
 function(validate_build_variables)
   include(${EXECUTORCH_SRCS_FILE})
   set(BUILD_VARIABLES_FILELISTS
@@ -324,6 +321,9 @@ function(validate_build_variables)
   foreach(filelist_and_varname IN ZIP_LISTS BUILD_VARIABLES_FILELISTS
                                   BUILD_VARIABLES_VARNAMES
   )
+    if("${filelist_and_varname_1}" STREQUAL "_custom_ops__srcs")
+      continue()
+    endif()
     append_filelist(
       ${filelist_and_varname_0}
       "${filelist_and_varname_1}_from_build_variables"
