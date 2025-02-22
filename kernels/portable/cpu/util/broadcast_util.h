@@ -289,7 +289,7 @@ inline void apply_binary_elementwise_fn(
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < out.numel(); ++i) {
+  for (size_t i = 0; i < static_cast<size_t>(out.numel()); ++i) {
     size_t a_linear_index = i;
     size_t b_linear_index = i;
 

@@ -74,6 +74,10 @@ def define_common_targets():
                 "program.h",
                 "tensor_parser.h",
             ],
+            compiler_flags = select({
+                "ovr_config//os:windows": [],
+                "DEFAULT" :["-Wno-error=deprecated-declarations"]
+            }),
             preprocessor_flags = _program_preprocessor_flags(),
             exported_deps = [
                 ":memory_manager",

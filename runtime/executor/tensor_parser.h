@@ -91,7 +91,7 @@ parseListOptionalType(
       evalp_list[output_idx] = nullptr;
     } else {
       ET_CHECK_OR_RETURN_ERROR(
-          index >= 0 && index < values_len,
+          index >= 0 && static_cast<size_t>(index) < values_len,
           InvalidProgram,
           "Invalid value index %" PRId32 " for ListOptional",
           index);
