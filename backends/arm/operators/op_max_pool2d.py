@@ -9,11 +9,7 @@ from typing import List
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
-# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    get_input_qparams,
-    get_output_qparams,
-)
+from executorch.backends.arm._passes import get_input_qparams, get_output_qparams
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -51,12 +47,12 @@ class MaxPool2dVisitor(NodeVisitor):
         # Initilize zero point to zero.
         input_zp = 0
         if inputs[0].dtype == ts.DType.INT8:
-            input_qparams = get_input_qparams(node)  # pyre-ignore[16]
+            input_qparams = get_input_qparams(node)
             input_zp = input_qparams[0].zp
 
         output_zp = 0
         if output.dtype == ts.DType.INT8:
-            output_qparams = get_output_qparams(node)  # pyre-ignore[16]
+            output_qparams = get_output_qparams(node)
             output_zp = output_qparams[0].zp
 
         attr = ts.TosaSerializerAttribute()
