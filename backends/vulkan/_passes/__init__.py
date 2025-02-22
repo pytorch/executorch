@@ -20,8 +20,8 @@ from executorch.backends.vulkan._passes.remove_local_scalar_dense_ops import (
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
     RemoveRedundantOpsTransform,
 )
-from executorch.backends.vulkan._passes.squeeze_int4_linear_inputs import (
-    SqueezeInt4LinearInputs,
+from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
+    SqueezeUnsqueezeInputs,
 )
 from executorch.backends.vulkan._passes.tag_memory_meta_pass import TagMemoryMetaPass
 
@@ -32,6 +32,6 @@ __all__ = [
     "RemoveAssertsTransform",
     "RemoveLocalScalarDenseOpsTransform",
     "RemoveRedundantOpsTransform",
-    "SqueezeInt4LinearInputs",
+    "SqueezeUnsqueezeInputs",
     "TagMemoryMetaPass",
 ]
