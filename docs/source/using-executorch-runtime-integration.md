@@ -10,7 +10,7 @@ Logging is sent to STDOUT and STDERR by default on host platforms, and is redire
 
 To configure log level when building from source, specify `EXECUTORCH_ENABLE_LOGGING` as on or off and `EXECUTORCH_LOG_LEVEL` as one of debug, info, error, or fatal. Logging is enabled by default in debug builds and disabled in release. Log level defaults to info.
 
-See [Building from Source](TODO) for more information.
+See [Building from Source](using-executorch-building-from-source.md) for more information.
 
 ```
 cmake -b cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=DEBUG ...
