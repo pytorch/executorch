@@ -121,3 +121,8 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
           LIBRARY DESTINATION executorch/extension/llm/custom_ops
   )
 endif()
+
+add_subdirectory(spinquant/third-party/FFHT)
+if(BUILD_TESTING)
+  add_subdirectory(spinquant/test)
+endif()
