@@ -95,11 +95,11 @@ runtime.command_alias(
 )
 
 runtime.python_library(
-    name = "export_library",
+    name = "source_transformation",
+    visibility = [
+        "//executorch/examples/...",
+    ],
     srcs = [
-        "export_llama.py",
-        "export_llama_lib.py",
-        "model.py",
         "source_transformation/apply_spin_quant_r1_r2.py",
         "source_transformation/attention.py",
         "source_transformation/lora.py",
@@ -114,6 +114,15 @@ runtime.python_library(
         "source_transformation/vulkan_rope.py",
         "source_transformation/attention_sink.py",
     ],
+)
+
+runtime.python_library(
+    name = "export_library",
+    srcs = [
+        "export_llama.py",
+        "export_llama_lib.py",
+        "model.py",
+    ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
     visibility = [
@@ -123,6 +132,7 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        ":source_transformation",
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
         "//executorch/backends/vulkan/_passes:vulkan_passes",
