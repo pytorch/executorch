@@ -174,6 +174,14 @@ void SpecVarList::append(const SpecVarList& other) {
   vars.insert(vars.end(), other.vars.begin(), other.vars.end());
 }
 
+void SpecVarList::reserve(const size_t size) {
+  vars.reserve(size);
+}
+
+void SpecVarList::append(const SpecVar& other) {
+  vars.push_back(other);
+}
+
 std::vector<VkSpecializationMapEntry> SpecVarList::generate_map_entries()
     const {
   std::vector<VkSpecializationMapEntry> map_entries;
