@@ -106,7 +106,7 @@ git clone https://github.com/pytorch/executorch.git --depth 1 --recurse-submodul
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](build-run-coreml.md) or [MPS](build-run-mps.md), if you plan to build them as well:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md), if you plan to build them as well:
 
 ```bash
 ./install_executorch.sh --pybind coreml mps xnnpack

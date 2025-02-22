@@ -12,9 +12,9 @@ The MPS backend device maps machine learning computational graphs and primitives
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Setting up ExecuTorch](getting-started-setup.md)
-* [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
+* [Introduction to ExecuTorch](./intro-how-it-works.md)
+* [Getting Started](./getting-started.md)
+* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
 * [ExecuTorch iOS Demo App](demo-apps-ios.md)
 * [ExecuTorch iOS LLaMA Demo App](llm/llama-demo-ios.md)
 :::

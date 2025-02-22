@@ -32,14 +32,14 @@ As part of the .pte file creation process, ExecuTorch identifies portions of the
 
 Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation and the [Export and Lowering](#export-and-lowering) section below for more information. 
 
-- [XNNPACK (Mobile CPU)](native-delegates-executorch-xnnpack-delegate.md)
-- [Core ML (iOS)](native-delegates-executorch-coreml-delegate.md)
-- [Metal Performance Shaders (iOS GPU)](native-delegates-executorch-mps-delegate.md)
-- [Vulkan (Android GPU)](native-delegates-executorch-vulkan-delegate.md)
-- [Qualcomm NPU](native-delegates-executorch-qualcomm-delegate.md)
-- [MediaTek NPU](native-delegates-executorch-mediatek-delegate.md)
-- [Arm Ethos-U NPU](native-delegates-executorch-arm-ethos-u-delegate.md)
-- [Cadence DSP](native-delegates-executorch-cadence-delegate.md)
+- [XNNPACK (Mobile CPU)](backends-xnnpack.md)
+- [Core ML (iOS)](backends-coreml.md)
+- [Metal Performance Shaders (iOS GPU)](backends-mps.md)
+- [Vulkan (Android GPU)](backends-vulkan.md)
+- [Qualcomm NPU](backends-qualcomm.md)
+- [MediaTek NPU](backends-mediatek.md)
+- [Arm Ethos-U NPU](backends-arm-ethos-u.md)
+- [Cadence DSP](backends-cadence.md)
 
 ## Model Preparation
 
