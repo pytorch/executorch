@@ -43,7 +43,14 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
-DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
+
+DEFINE_int32(
+    num_warmup_iters,
+    0,
+    "Number of warmup inference iterations (doesn't count to benchmark).");
+
+DEFINE_int32(num_iters, 1, "Number of inference iterations to run.");
+
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
 #endif // ET_EVENT_TRACER_ENABLED
@@ -239,8 +246,19 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Inputs prepared.");
 
   // Run the model.
-  for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
+  for (uint32_t i = 0; i < FLAGS_num_warmup_iters; i++) {
     Error status = method->execute();
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Execution of method %s failed with status 0x%" PRIx32,
+        method_name,
+        (uint32_t)status);
+  }
+  for (uint32_t i = 0; i < FLAGS_num_iters; i++) {
+    EXECUTORCH_PROFILE_CREATE_BLOCK("inference loop");
+    uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("run model");
+    Error status = method->execute();
+    EXECUTORCH_END_PROF(prof_tok);
     ET_CHECK_MSG(
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
@@ -250,7 +268,7 @@ int main(int argc, char** argv) {
   ET_LOG(
       Info,
       "Model executed successfully %" PRIu32 " time(s).",
-      FLAGS_num_executions);
+      FLAGS_num_iters);
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());
