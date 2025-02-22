@@ -100,8 +100,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
   // bound with the correct image layout.
   {
     vkapi::PipelineBarrier pipeline_barrier{};
-    vkapi::DescriptorSet descriptor_set =
-        context->get_descriptor_set(noop_shader_, {1, 1, 1});
+    vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
+        noop_shader_, utils::WorkgroupSize(1, 1, 1));
 
     bind_tensor_to_descriptor_set(
         *packed,

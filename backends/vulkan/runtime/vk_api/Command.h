@@ -51,7 +51,7 @@ class CommandBuffer final {
   struct Bound {
     VkPipeline pipeline;
     VkPipelineLayout pipeline_layout;
-    utils::uvec3 local_workgroup_size;
+    utils::WorkgroupSize local_workgroup_size;
     VkDescriptorSet descriptors;
 
     explicit Bound()
@@ -63,7 +63,7 @@ class CommandBuffer final {
     inline void reset() {
       pipeline = VK_NULL_HANDLE;
       pipeline_layout = VK_NULL_HANDLE;
-      local_workgroup_size = {0u, 0u, 0u};
+      local_workgroup_size = utils::WorkgroupSize{0u, 0u, 0u};
       descriptors = VK_NULL_HANDLE;
     }
   };
@@ -87,7 +87,7 @@ class CommandBuffer final {
   void begin();
   void end();
 
-  void bind_pipeline(VkPipeline, VkPipelineLayout, const utils::uvec3);
+  void bind_pipeline(VkPipeline, VkPipelineLayout, const utils::WorkgroupSize);
   void bind_descriptors(VkDescriptorSet);
   void set_push_constants(VkPipelineLayout, const void*, uint32_t);
 

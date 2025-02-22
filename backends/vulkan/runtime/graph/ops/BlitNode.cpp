@@ -46,7 +46,7 @@ void BlitNode::encode(ComputeGraph* graph) {
   kernel_name += vkapi::to_string(dst_tensor->dtype());
 
   context->report_shader_dispatch_start(
-      kernel_name, utils::uvec3(), utils::uvec3(), node_id_);
+      kernel_name, utils::uvec3(), utils::WorkgroupSize(), node_id_);
 
   context->register_blit(
       pipeline_barrier,
