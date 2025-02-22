@@ -4,6 +4,98 @@ ExecuTorch uses [CMake](https://cmake.org/) as the primary build system.
 Even if you don't use CMake directly, CMake can emit scripts for other format
 like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
 
+## System Requirements
+### Operating System
+
+We've tested these instructions on the following systems, although they should
+also work in similar environments.
+
+
+Linux (x86_64)
+- CentOS 8+
+- Ubuntu 20.04.6 LTS+
+- RHEL 8+
+
+macOS (x86_64/M1/M2)
+- Big Sur (11.0)+
+
+Windows (x86_64)
+- Windows Subsystem for Linux (WSL) with any of the Linux options
+
+### Software
+* `conda` or another virtual environment manager
+  - We recommend `conda` as it provides cross-language
+    support and integrates smoothly with `pip` (Python's built-in package manager)
+  - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
+* `g++` version 7 or higher, `clang++` version 5 or higher, or another
+  C++17-compatible toolchain.
+
+Note that the cross-compilable core runtime code supports a wider range of
+toolchains, down to C++17. See the [Runtime Overview](./runtime-overview.md) for
+portability details.
+
+## Environment Setup
+
+### Create a Virtual Environment
+
+[Install conda on your machine](https://conda.io/projects/conda/en/latest/user-guide/install/index.html). Then, create a virtual environment to manage our dependencies.
+   ```bash
+   # Create and activate a conda environment named "executorch"
+   conda create -yn executorch python=3.10.0
+   conda activate executorch
+   ```
+
+### Clone and install ExecuTorch requirements
+
+   ```bash
+   # Clone the ExecuTorch repo from GitHub
+   # 'main' branch is the primary development branch where you see the latest changes.
+   # 'viable/strict' contains all of the commits on main that pass all of the necessary CI checks.
+   git clone --branch viable/strict https://github.com/pytorch/executorch.git
+   cd executorch
+
+   # Update and pull submodules
+   git submodule sync
+   git submodule update --init
+
+   # Install ExecuTorch pip package and its dependencies, as well as
+   # development tools like CMake.
+   # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
+   ./install_executorch.sh
+   ```
+
+   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends.
+   ```bash
+   ./install_executorch.sh --pybind <coreml | mps | xnnpack>
+
+   # Example: pybindings with CoreML *only*
+   ./install_executorch.sh --pybind coreml
+
+   # Example: pybinds with CoreML *and* XNNPACK
+   ./install_executorch.sh --pybind coreml xnnpack
+   ```
+
+   By default, `./install_executorch.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
+   ```bash
+   ./install_executorch.sh --pybind off
+   ```
+
+> **_NOTE:_**  Cleaning the build system
+>
+> When fetching a new version of the upstream repo (via `git fetch` or `git
+> pull`) it is a good idea to clean the old build artifacts. The build system
+> does not currently adapt well to changes in build dependencies.
+>
+> You should also update and pull the submodules again, in case their versions
+> have changed.
+>
+> ```bash
+> # From the root of the executorch repo:
+> ./install_executorch.sh --clean
+> git submodule sync
+> git submodule update --init
+> ```
+
 ## Targets Built by the CMake Build System
 
 ExecuTorch's CMake build system covers the pieces of the runtime that are
