@@ -94,8 +94,8 @@ Topics in this section will help you get started with ExecuTorch.
    using-executorch-cpp
    using-executorch-runtime-integration
    using-executorch-troubleshooting
-   using-executorch-faqs
    using-executorch-building-from-source
+   using-executorch-faqs
 
 .. toctree::
    :glob:
@@ -103,6 +103,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Backends
    :hidden:
 
+   backends-overview
    backends-xnnpack
    backends-coreml
    backends-mps
@@ -142,6 +143,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    runtime-overview
+   extension-module
+   extension-tensor
+   running-a-model-cpp-tutorial
    runtime-backend-delegate-implementation-and-linking
    runtime-platform-abstraction-layer
    portable-cpp-programming
