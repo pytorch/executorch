@@ -8,6 +8,7 @@ def _operator_registry_preprocessor_flags():
         return select({
             "DEFAULT": [],
             "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-256": ["-DMAX_KERNEL_NUM=256"],
+            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-128": ["-DMAX_KERNEL_NUM=128"],
             "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-64": ["-DMAX_KERNEL_NUM=64"],
         })
     else:

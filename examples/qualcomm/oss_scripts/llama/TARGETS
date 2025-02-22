@@ -35,23 +35,12 @@ python_library(
 
 python_binary(
     name = "llama",
-    srcs = ["llama.py"],
     main_function = "executorch.examples.qualcomm.oss_scripts.llama.llama.main",
     preload_deps = [
         "//executorch/extension/llm/custom_ops:model_sharding_py",
     ],
     deps = [
-        "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
-        "//caffe2:torch",
-        "//executorch/extension/pybindings:aten_lib",
-        "//executorch/backends/qualcomm/partition:partition",
-        "//executorch/backends/qualcomm/quantizer:quantizer",
-        "//executorch/devtools/backend_debug:delegation_info",
-        "//executorch/devtools:lib",
-        "//executorch/examples/models:models",
-        "//executorch/examples/qualcomm:utils",
-        "//executorch/extension/export_util:export_util",
-        "//executorch/extension/llm/export:export_lib",
+        ":llama_lib",
     ],
 )
 
