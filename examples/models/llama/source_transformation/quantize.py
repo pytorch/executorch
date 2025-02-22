@@ -119,11 +119,12 @@ def quantize(  # noqa C901
         # Check for required args
         if group_size is None:
             raise Exception("For 8da4w quantization, group size must be specified.")
-        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-        model = Int8DynActInt4WeightQuantizer(
-            precision=torch_dtype, groupsize=group_size
-        ).quantize(model)
+        from torchao.quantization import (
+            quantize_,
+            int8_dynamic_activation_int4_weight,
+        )
+        quantize_(model, int8_dynamic_activation_int4_weight(group_size=group_size))
 
         if verbose:
             print("quantized model:", model)
