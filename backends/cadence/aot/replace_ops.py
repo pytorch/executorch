@@ -1719,9 +1719,9 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
         )
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))(
-    ReplaceScalarWithTensorArgPass()
-)
+register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
+
+
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceScalarTensorWithFullPass(ExportPass):
     """
