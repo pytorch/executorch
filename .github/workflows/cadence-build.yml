@@ -1,0 +1,87 @@
+name: cadence-build
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+  pull_request:
+    paths:
+      # - .ci/scripts/setup-cadence.sh
+      - .github/workflows/apple.yml
+      - install_executorch.sh
+      - backends/cadence/**
+      - examples/cadence/**
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * *'  # Runs daily at 2 AM PST
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  setup-env:
+    name: setup-env
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+
+  set-envir-vars:
+    name: set-envir-vars
+    runs-on: ubuntu-22.04
+    needs: setup-env
+    outputs:
+      version: ${{ steps.set_version.outputs.version }}
+    steps:
+      - name: Set VERSION variable
+        id: set_version
+        shell: bash
+        run: |
+          VERSION="0.5.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  cpu-build:
+    name: cpu-build
+    needs: set-envir-vars
+    # uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    # secrets: inherit
+    steps:
+      - name: install executorch
+        shell: bash
+        run: |
+          BUILD_TOOL="cmake"
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+      - name: run cadence cpu build script
+        shell: bash
+        run: |
+          .ci/scripts/build_cadence_runner.sh
+
+  g3-build:
+  # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-22.04
+  hifi-build:
+  # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-22.04
+  mv130-build:
+  # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-22.04
+  hifi-build:
+  # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-22.04
+    # uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    # secrets: inherit
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-cadence-sdk
+      fetch-depth: 0
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90

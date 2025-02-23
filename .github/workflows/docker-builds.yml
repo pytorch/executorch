@@ -38,6 +38,7 @@ jobs:
           - docker-image-name: executorch-ubuntu-22.04-linter
           - docker-image-name: executorch-ubuntu-22.04-arm-sdk
           - docker-image-name: executorch-ubuntu-22.04-qnn-sdk
+          - docker-image-name: executorch-ubuntu-22.04-cadence-sdk
           - docker-image-name: executorch-ubuntu-22.04-mediatek-sdk
           - docker-image-name: executorch-ubuntu-22.04-clang12-android
     env:

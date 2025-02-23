@@ -41,6 +41,10 @@ case "${IMAGE_NAME}" in
     QNN_SDK=yes
     CLANG_VERSION=12
     ;;
+  executorch-ubuntu-22.04-cadence-sdk)
+    CADENCE_SDK=yes
+    CLANG_VERSION=12
+    ;;
   executorch-ubuntu-22.04-mediatek-sdk)
     MEDIATEK_SDK=yes
     CLANG_VERSION=12
@@ -81,6 +85,7 @@ docker build \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   --build-arg "ARM_SDK=${ARM_SDK:-}" \
   --build-arg "QNN_SDK=${QNN_SDK:-}" \
+  --build-arg "CADENCE_SDK=${CADENCE_SDK:-}" \
   --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
   -f "${OS}"/Dockerfile \
