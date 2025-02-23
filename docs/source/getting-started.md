@@ -51,13 +51,12 @@ import executorch
 model = MyModel() # The PyTorch model to export
 example_inputs = (torch.randn(1,3,64,64),) # A tuple of inputs
 
-et_program =
-    executorch.exir.to_edge_transform_and_lower(
-    torch.export.export(model, example_inputs)
-partitioner=[XnnpackPartitioner()]
+et_program = executorch.exir.to_edge_transform_and_lower(
+    torch.export.export(model, example_inputs),
+    partitioner=[XnnpackPartitioner()]
 ).to_executorch()
 
-with open(“model.pte”, “wb”) as f:
+with open("model.pte", "wb") as f:
     f.write(et_program.buffer)
 ```
 
@@ -121,7 +120,7 @@ import org.pytorch.executorch.Tensor;
 
 // …
 
-Module model = Module.load(“/path/to/model.pte”);
+Module model = Module.load("/path/to/model.pte");
 
 Tensor input_tensor = Tensor.fromBlob(float_data, new long[] { 1, 3, height, width });
 EValue input_evalue = EValue.from(input_tensor);
