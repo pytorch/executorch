@@ -151,7 +151,8 @@ class RMSNorm(torch.nn.Module):
         """
         x_max, _ = torch.abs(x).max(-1, keepdim=True)
         x = x / x_max  # This makes the op more stable in FP16
-        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
+        eps = self.eps / (x_max * x_max)
+        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + eps)
 
     def forward(self, x):
         """
