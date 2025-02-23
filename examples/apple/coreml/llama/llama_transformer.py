@@ -13,8 +13,6 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-from executorch.examples.models.llama.llama_transformer import RMSNorm
-
 from executorch.examples.models.llama.rope import (
     hf_apply_rotary_emb,
     hf_precompute_freqs_cis,
@@ -119,6 +117,55 @@ class ModelArgs:
 
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
+
+
+class RMSNorm(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        """
+        Initialize the RMSNorm normalization layer.
+
+        Args:
+            dim (int): The dimension of the input tensor.
+            eps (float, optional): A small value added to the denominator for numerical stability. Default is 1e-6.
+
+        Attributes:
+            eps (float): A small value added to the denominator for numerical stability.
+            weight (nn.Parameter): Learnable scaling parameter.
+
+        """
+        super().__init__()
+        self.dim = dim
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x):
+        """
+        Apply the RMSNorm normalization to the input tensor.
+
+        Args:
+            x (torch.Tensor): The input tensor.
+
+        Returns:
+            torch.Tensor: The normalized tensor.
+
+        """
+        x_max, _ = torch.abs(x).max(-1, keepdim=True)
+        x = x / x_max  # This makes the op more stable in FP16
+        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        """
+        Forward pass through the RMSNorm layer.
+
+        Args:
+            x (torch.Tensor): The input tensor.
+
+        Returns:
+            torch.Tensor: The output tensor after applying RMSNorm.
+
+        """
+        output = self._norm(x)
+        return output * self.weight
 
 
 class Rope(torch.nn.Module):
@@ -305,11 +352,8 @@ class Attention(nn.Module):
             v = v.repeat_interleave(self.n_rep, dim=1)
 
         output = torch.ops.coreml.sdpa(q, k, v, attn_mask)
-
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
-
         output = self.wo(output)
-
         return output, new_k, new_v
 
 
@@ -411,6 +455,39 @@ class Transformer(nn.Module):
             k_out = torch.stack(k_out, dim=0)
             v_out = torch.stack(v_out, dim=0)
         return logits, k_out, v_out
+
+
+def load_model(checkpoint_path, params_path, max_seq_length, use_cache_list):
+    import json
+
+    with open(params_path, "r") as f:
+        params = json.loads(f.read())
+
+    args = ModelArgs(
+        max_seq_len=max_seq_length,
+        generate_full_logits=False,
+        use_cache_list=use_cache_list,
+        **params,
+    )
+
+    with torch.device("meta"):
+        model = Transformer(args)
+
+    checkpoint = torch.load(
+        checkpoint_path, map_location="cpu", mmap=True, weights_only=True
+    )
+    if "model" in checkpoint:
+        checkpoint = checkpoint["model"]
+
+    missing, unexpected = model.load_state_dict(
+        checkpoint,
+        strict=False,
+        assign=True,
+    )
+    print("Missing keys: ", missing)
+    print("Unexpected keys: ", unexpected)
+
+    return model
 
 
 class InputManager:
