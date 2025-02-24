@@ -9,7 +9,7 @@ import torch
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
 )
-from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
@@ -32,7 +32,7 @@ def test_fold_qdq_pass_tosa_BI():
     is removed from the representation.
     """
     module = SimpleQuantizeModel()
-    pipeline = TestPassPipeline[input_t](
+    pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
         tosa_version="TOSA-0.80+BI",
