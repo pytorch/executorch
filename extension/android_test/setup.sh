@@ -33,7 +33,7 @@ build_native_library() {
 
   cmake --build "${CMAKE_OUT}" -j16 --target install
 
-  cmake extension/android \
+  cmake --trace extension/android \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}"/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DCMAKE_INSTALL_PREFIX=c"${CMAKE_OUT}" \

@@ -114,6 +114,7 @@ def apply_rotary_emb_to_k(
     return xk_out.type_as(xk)
 
 
+# Wrap apply_rotary_emb in a module to enable it to be module swapped out.
 class RotaryEmbedding(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -213,14 +214,20 @@ class Rope(torch.nn.Module):
     def __init__(self, params: ModelArgs):
         super().__init__()
         self.params = params
+
+        # Choose the appropriate RoPE implementation
         if self.params.use_hf_rope:
             self.precompute_freqs_cis = hf_precompute_freqs_cis
+            self.apply_rotary_emb = hf_apply_rotary_emb
         else:
             self.precompute_freqs_cis = partial(
                 precompute_freqs_cis,
                 use_scaled=self.params.use_scaled_rope,
                 scale_factor=self.params.rope_scale_factor,
             )
+            self.apply_rotary_emb = RotaryEmbedding()
+
+        # Precompute frequencies
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
             self.params.head_dim,
             (
@@ -232,10 +239,6 @@ class Rope(torch.nn.Module):
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
-        if self.params.use_hf_rope:
-            self.apply_rotary_emb = hf_apply_rotary_emb
-        else:
-            self.apply_rotary_emb = RotaryEmbedding()
 
     def forward(
         self,
