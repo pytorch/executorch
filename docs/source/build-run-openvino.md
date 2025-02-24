@@ -31,37 +31,6 @@ OpenVINO backend supports the following hardware:
 - Intel discrete GPUs
 - Intel NPUs
 
-## Directory Structure
-
-```
-executorch
-├── backends
-│   └── openvino
-│       ├── runtime
-│           ├── OpenvinoBackend.cpp
-│           └── OpenvinoBackend.hpp
-│       ├── scripts
-│           └── openvino_build.sh
-│       ├── tests
-│       ├── CMakeLists.txt
-│       ├── README.md
-│       ├── __init__.py
-│       ├── openvino_functions.yaml
-│       ├── partitioner.py
-│       ├── preprocess.py
-│       └── requirements.txt
-└── examples
-│   └── openvino
-│       ├── aot
-│           ├── README.md
-│           └── aot_openvino_compiler.py
-│       └── executor_runner
-│           └── openvino_executor_runner.cpp
-│       ├── CMakeLists.txt
-│       ├── README.md
-└──     └── openvino_build_example.sh
-```
-
 ## Instructions for Building OpenVINO Backend
 
 ### Prerequisites
