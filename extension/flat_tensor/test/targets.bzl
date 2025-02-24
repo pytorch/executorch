@@ -40,7 +40,7 @@ def define_common_targets(is_fbcode=False):
         }
 
         runtime.cxx_test(
-            name = "flat_tensor_data_map",
+            name = "flat_tensor_data_map_test",
             srcs = [
                 "flat_tensor_data_map_test.cpp",
             ],
