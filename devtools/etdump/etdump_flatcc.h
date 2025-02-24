@@ -63,10 +63,12 @@ struct ETDumpResult {
   size_t size;
 };
 
-class ETDumpGen : public ::executorch::runtime::EventTracer {
+class ETDumpGenBase : public ::executorch::runtime::EventTracer {
  public:
-  ETDumpGen(::executorch::runtime::Span<uint8_t> buffer = {nullptr, (size_t)0});
-  ~ETDumpGen() override;
+  ETDumpGenBase(
+      ::executorch::runtime::Span<uint8_t> buffer = {nullptr, (size_t)0});
+
+  virtual ~ETDumpGenBase() override;
   void clear_builder();
 
   void create_event_block(const char* name) override;
@@ -147,6 +149,15 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   bool is_static_etdump();
   void reset();
 
+ protected:
+  // Declare the function as pure virtual
+  virtual size_t copy_tensor_to_debug_buffer(
+      const executorch::aten::Tensor& tensor) = 0;
+
+  // Make them as protected to be accessible by derived classes
+  ::executorch::runtime::Span<uint8_t> debug_buffer_;
+  size_t debug_buffer_offset_ = 0;
+
  private:
   enum class State {
     Init,
@@ -158,7 +169,6 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
 
   void check_ready_to_add_events();
   int64_t create_string_entry(const char* name);
-  size_t copy_tensor_to_debug_buffer(executorch::aten::Tensor tensor);
 
   /**
    * Templated helper function used to log various types of intermediate output.
@@ -172,11 +182,20 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
 
   struct flatcc_builder* builder_;
   size_t num_blocks_ = 0;
-  ::executorch::runtime::Span<uint8_t> debug_buffer_;
-  size_t debug_buffer_offset_ = 0;
+
   int bundled_input_index_ = -1;
   State state_ = State::Init;
   struct internal::ETDumpStaticAllocator alloc_;
+};
+
+class ETDumpGen : public ETDumpGenBase {
+ public:
+  ETDumpGen(::executorch::runtime::Span<uint8_t> buffer = {nullptr, (size_t)0})
+      : ETDumpGenBase(buffer) {}
+
+ protected:
+  size_t copy_tensor_to_debug_buffer(
+      const executorch::aten::Tensor& tensor) override;
 };
 
 } // namespace etdump
