@@ -34,6 +34,8 @@ class ModelArgs:
     input_prune_map: Optional[Dict[int, int]] = None
     # A dictionary mapping from pruned token-id to original token-id
     output_prune_map: Optional[Dict[int, int]] = None
+    apply_embedding: bool = True  # Use embedding inside the transformer
+    apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
