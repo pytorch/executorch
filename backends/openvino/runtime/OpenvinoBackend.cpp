@@ -18,7 +18,7 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
-#include "OpenvinoBackend.hpp"
+#include "OpenvinoBackend.h"
 
 using namespace std;
 using executorch::aten::ScalarType;

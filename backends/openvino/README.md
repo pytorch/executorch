@@ -18,7 +18,7 @@ executorch
 │   └── openvino
 │       ├── runtime
 │           ├── OpenvinoBackend.cpp
-│           └── OpenvinoBackend.hpp
+│           └── OpenvinoBackend.h
 │       ├── scripts
 │           └── openvino_build.sh
 │       ├── tests
