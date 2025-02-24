@@ -488,7 +488,7 @@ def executorch_generated_lib(
         platforms = get_default_executorch_platforms(),
         compiler_flags = [],
         kernel_deps = [],
-        dtype_selective_build = False,
+        dtype_selective_build = True,
         feature = None,
         expose_operator_symbols = False,
         support_exceptions = True):
