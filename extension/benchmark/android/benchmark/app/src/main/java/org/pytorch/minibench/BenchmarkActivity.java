@@ -44,6 +44,7 @@ public class BenchmarkActivity extends Activity {
             .get();
 
     int numIter = intent.getIntExtra("num_iter", 50);
+    int numWarmupIter = intent.getIntExtra("num_warm_up_iter", 5);
 
     // TODO: Format the string with a parsable format
     Stats stats = new Stats();
@@ -57,6 +58,10 @@ public class BenchmarkActivity extends Activity {
         Module module = Module.load(model.getPath());
         stats.errorCode = module.loadMethod("forward");
         stats.loadEnd = System.nanoTime();
+
+        for (int i = 0; i < numWarmupIter; i++) {
+          module.forward();
+        }
 
         for (int i = 0; i < numIter; i++) {
           long start = System.nanoTime();
