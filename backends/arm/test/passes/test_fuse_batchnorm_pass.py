@@ -8,7 +8,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -138,7 +138,7 @@ modules = {
 @common.parametrize("module", modules)
 def test_fuse_batchnorm_tosa_MI(module):
     """Test various cases where the batchnorm should and shouldn't be fused."""
-    pipeline = TestPassPipeline[input_t](
+    pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
         tosa_version="TOSA-0.80+MI",
