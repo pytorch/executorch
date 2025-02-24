@@ -61,27 +61,27 @@ jobs:
         run: |
           .ci/scripts/build_cadence_runner.sh
 
-  g3-build:
-  # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
-    if: ${{ !github.event.pull_request.head.repo.fork }}
-    runs-on: ubuntu-22.04
-  hifi-build:
-  # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
-    if: ${{ !github.event.pull_request.head.repo.fork }}
-    runs-on: ubuntu-22.04
-  mv130-build:
-  # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
-    if: ${{ !github.event.pull_request.head.repo.fork }}
-    runs-on: ubuntu-22.04
-  hifi-build:
-  # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
-    if: ${{ !github.event.pull_request.head.repo.fork }}
-    runs-on: ubuntu-22.04
-    # uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    # secrets: inherit
-    with:
-      runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-cadence-sdk
-      fetch-depth: 0
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+  # g3-build:
+  # # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+  #   if: ${{ !github.event.pull_request.head.repo.fork }}
+  #   runs-on: ubuntu-22.04
+  # hifi-build:
+  # # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+  #   if: ${{ !github.event.pull_request.head.repo.fork }}
+  #   runs-on: ubuntu-22.04
+  # mv130-build:
+  # # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+  #   if: ${{ !github.event.pull_request.head.repo.fork }}
+  #   runs-on: ubuntu-22.04
+  # hifi-build:
+  # # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+  #   if: ${{ !github.event.pull_request.head.repo.fork }}
+  #   runs-on: ubuntu-22.04
+  #   # uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+  #   # secrets: inherit
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: executorch-ubuntu-22.04-cadence-sdk
+  #     fetch-depth: 0
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
