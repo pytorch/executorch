@@ -24,42 +24,39 @@ using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
-namespace G3 { 
+namespace G3 {
 namespace native {
 
-Tensor& tanh_out(KernelRuntimeContext& ctx,
-                 const Tensor& in,
-                 Tensor& out) 
-{
-#ifdef OP_ARG_CHECK 
-    // Resize for dynamic shape
-    ET_KERNEL_CHECK_MSG(
+Tensor& tanh_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
+#ifdef OP_ARG_CHECK
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
       ctx,
       executorch::runtime::resize_tensor(out, in.sizes()) == Error::Ok,
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
- 
-    ET_KERNEL_CHECK(
-      ctx, executorch::runtime::tensors_have_same_dim_order(in, out),
-      InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(in, out),
+      InvalidArgument,
+      out);
 #endif
 
-    if((in.scalar_type() == ScalarType::Float) &&
-       (out.scalar_type() == ScalarType::Float))
-    {
-        float * const out_data = out.mutable_data_ptr<float>();
-        const float * const in_data = in.const_data_ptr<float>();
- 
-        XT_KERNEL_CHECK(
+  if ((in.scalar_type() == ScalarType::Float) &&
+      (out.scalar_type() == ScalarType::Float)) {
+    float* const out_data = out.mutable_data_ptr<float>();
+    const float* const in_data = in.const_data_ptr<float>();
+
+    XT_KERNEL_CHECK(
         ctx, out, xa_nn_tanh_f32_f32, out_data, in_data, out.numel());
- 
-        return out;
-    }
-    else
-    {
-        return torch::executor::native::internal::unary_ufunc_realhbbf16_to_floathbf16(std::tanh, ctx, in, out);
-    }
+
+    return out;
+  } else {
+    return torch::executor::native::internal::
+        unary_ufunc_realhbbf16_to_floathbf16(std::tanh, ctx, in, out);
+  }
 }
 
 } // namespace native

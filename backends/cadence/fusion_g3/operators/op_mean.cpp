@@ -134,7 +134,7 @@ Tensor& mean_out(
     if ((num_axis_dims == num_inp_dims) || (!dim_list.has_value())) {
       num_out_dims = 1;
     }
-  
+
     XT_KERNEL_CHECK(
         ctx,
         out,

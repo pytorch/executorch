@@ -33,12 +33,16 @@ Tensor& where_out(
 #ifdef OP_ARG_CHECK
   // Check Dim Order
   ET_KERNEL_CHECK(
-      ctx, executorch::runtime::tensors_have_same_dim_order(cond, a, b, out), InvalidArgument, out);
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(cond, a, b, out),
+      InvalidArgument,
+      out);
 
   // Resize
   ET_KERNEL_CHECK(
       ctx,
-      torch::executor::resize_to_broadcast_target_size(a, b, cond, out) == Error::Ok,
+      torch::executor::resize_to_broadcast_target_size(a, b, cond, out) ==
+          Error::Ok,
       InvalidArgument,
       out);
 #endif
@@ -95,9 +99,9 @@ Tensor& where_out(
   }
 
   if (((broadcast) && (max_dim > kTensorDimensionLimit)) ||
-      (!((a.scalar_type() == ScalarType::Float) && 
+      (!((a.scalar_type() == ScalarType::Float) &&
          (b.scalar_type() == ScalarType::Float) &&
-         (cond.scalar_type() == ScalarType::Bool) && 
+         (cond.scalar_type() == ScalarType::Bool) &&
          (out.scalar_type() == ScalarType::Float)))) {
     optimized = false;
   }
@@ -135,34 +139,39 @@ Tensor& where_out(
     }
   } else {
     // Common Dtype
-    ScalarType common_type = executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
+    ScalarType common_type =
+        executorch::runtime::promoteTypes(a.scalar_type(), b.scalar_type());
 
     // Check Common Dtype
-    ET_KERNEL_CHECK(ctx, common_type == out.scalar_type(), InvalidArgument, out);
+    ET_KERNEL_CHECK(
+        ctx, common_type == out.scalar_type(), InvalidArgument, out);
 
     // Compute Dtype
-    ScalarType compute_type = torch::executor::native::utils::get_compute_type(common_type);
+    ScalarType compute_type =
+        torch::executor::native::utils::get_compute_type(common_type);
 
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-      torch::executor::native::utils::apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [](const CTYPE_COMPUTE val_a,
-          const CTYPE_COMPUTE val_b,
-          const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
-        ctx,
-        a,
-        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
-        cond,
-        torch::executor::native::utils::SupportedTensorDtypes::BOOL_OR_BYTE,
-        out,
-        torch::executor::native::utils::SupportedTensorDtypes::SAME_AS_COMMON);
+      torch::executor::native::utils::apply_tritensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name>(
+          [](const CTYPE_COMPUTE val_a,
+             const CTYPE_COMPUTE val_b,
+             const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
+          ctx,
+          a,
+          torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+          b,
+          torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
+          cond,
+          torch::executor::native::utils::SupportedTensorDtypes::BOOL_OR_BYTE,
+          out,
+          torch::executor::native::utils::SupportedTensorDtypes::
+              SAME_AS_COMMON);
     });
   }
 
   return out;
 }
-
 
 } // namespace native
 } // namespace G3

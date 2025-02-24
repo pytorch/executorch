@@ -58,12 +58,16 @@ Tensor& transpose_copy_int_out(
   // Resize for dynamic shape
   ET_KERNEL_CHECK(
       ctx,
-      executorch::runtime::resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
+      executorch::runtime::resize_tensor(
+          out, {expected_out_size, expected_out_dim}) == Error::Ok,
       InvalidArgument,
       out);
 
   ET_KERNEL_CHECK(
-      ctx, executorch::runtime::tensors_have_same_dim_order(in, out), InvalidArgument, out);
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(in, out),
+      InvalidArgument,
+      out);
 #endif
 
   int inp_shape[kTensorDimensionLimit];
@@ -85,7 +89,6 @@ Tensor& transpose_copy_int_out(
   permute_vec[dim0] = dim1;
   permute_vec[dim1] = dim0;
 
-
   signed char* const out_data = out.mutable_data_ptr<signed char>();
   const signed char* const inp_data = in.const_data_ptr<signed char>();
 
@@ -97,7 +100,6 @@ Tensor& transpose_copy_int_out(
        (out.scalar_type() == ScalarType::UInt16) ||
        (out.scalar_type() == ScalarType::Byte)) &&
       (in.dim() <= kTensorDimensionLimit)) {
-
     XT_KERNEL_CHECK(
         ctx,
         out,
@@ -117,7 +119,7 @@ Tensor& transpose_copy_int_out(
         out);
 
     ET_SWITCH_ALL_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
-       torch::executor::transpose_tensors<CTYPE>(in, dim0, dim1, out);
+      torch::executor::transpose_tensors<CTYPE>(in, dim0, dim1, out);
     });
   }
 

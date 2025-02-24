@@ -32,7 +32,10 @@ Tensor& lt_tensor_out(
 #ifdef OP_ARG_CHECK
   // Check Dim Order
   ET_KERNEL_CHECK(
-      ctx, executorch::runtime::tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(a, b, out),
+      InvalidArgument,
+      out);
 
   // Resize
   ET_KERNEL_CHECK(
@@ -85,9 +88,9 @@ Tensor& lt_tensor_out(
   }
 
   if (((broadcast) && (max_dim > kTensorDimensionLimit)) ||
-      (!((a.scalar_type() == ScalarType::Float) && 
-        (b.scalar_type() == ScalarType::Float) &&
-        (out.scalar_type() == ScalarType::Bool)))) {
+      (!((a.scalar_type() == ScalarType::Float) &&
+         (b.scalar_type() == ScalarType::Float) &&
+         (out.scalar_type() == ScalarType::Bool)))) {
     optimized = false;
   }
 
@@ -131,7 +134,8 @@ Tensor& lt_tensor_out(
   } else {
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     static constexpr const char op_name[] = "lt.Tensor_out";
-    torch::executor::native::internal::comparison_tensor_out<op_name>(ctx, a, b, out);
+    torch::executor::native::internal::comparison_tensor_out<op_name>(
+        ctx, a, b, out);
   }
 
   return out;
@@ -145,11 +149,17 @@ Tensor& lt_scalar_out(
 #ifdef OP_ARG_CHECK
   // Check Dim Order
   ET_KERNEL_CHECK(
-      ctx, executorch::runtime::tensors_have_same_dim_order(a, out), InvalidArgument, out);
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(a, out),
+      InvalidArgument,
+      out);
 
   // Resize
   ET_KERNEL_CHECK(
-      ctx, executorch::runtime::resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
+      ctx,
+      executorch::runtime::resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out);
 #endif
 
   bool optimized = true;
@@ -178,7 +188,8 @@ Tensor& lt_scalar_out(
   } else {
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     static constexpr const char op_name[] = "lt.Scalar_out";
-    torch::executor::native::internal::comparison_scalar_out<op_name>(ctx, a, b, out);
+    torch::executor::native::internal::comparison_scalar_out<op_name>(
+        ctx, a, b, out);
   }
 
   return out;

@@ -17,7 +17,6 @@
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
@@ -32,10 +31,17 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
 #ifdef OP_ARG_CHECK
-  ET_KERNEL_CHECK(ctx, executorch::runtime::tensor_is_floating_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_floating_type(out),
+      InvalidArgument,
+      out);
 
   ET_KERNEL_CHECK(
-      ctx, executorch::runtime::tensors_have_same_dim_order(in, out), InvalidArgument, out);
+      ctx,
+      executorch::runtime::tensors_have_same_dim_order(in, out),
+      InvalidArgument,
+      out);
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
@@ -55,18 +61,21 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
     float* const out_data = out.mutable_data_ptr<float>();
 
     XT_KERNEL_CHECK(
-    ctx, out, xa_nn_sigmoid_f32_f32, out_data, in_data, out.numel());
+        ctx, out, xa_nn_sigmoid_f32_f32, out_data, in_data, out.numel());
   } else {
-
     ET_KERNEL_CHECK(
-      ctx, in.scalar_type() != ScalarType::Bool, InvalidArgument, out);
+        ctx, in.scalar_type() != ScalarType::Bool, InvalidArgument, out);
 
     ScalarType compute_type =
-        executorch::runtime::isFloatingType(in.scalar_type()) ? in.scalar_type()
-                                                              : ScalarType::Float;
-    compute_type = torch::executor::native::utils::get_compute_type(compute_type);
-      ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-          torch::executor::native::utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        executorch::runtime::isFloatingType(in.scalar_type())
+        ? in.scalar_type()
+        : ScalarType::Float;
+    compute_type =
+        torch::executor::native::utils::get_compute_type(compute_type);
+    ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      torch::executor::native::utils::apply_unitensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name>(
           [](const CTYPE_COMPUTE val_in) {
             CTYPE_COMPUTE out_val = static_cast<CTYPE_COMPUTE>(1.0) /
                 (static_cast<CTYPE_COMPUTE>(1.0) + exp(-val_in));
@@ -77,8 +86,8 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
           torch::executor::native::utils::SupportedTensorDtypes::REALHBBF16,
           out,
           torch::executor::native::utils::SupportedTensorDtypes::FLOATHBF16);
-      });
-    }
+    });
+  }
 
   return out;
 }
