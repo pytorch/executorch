@@ -69,7 +69,7 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
-  cmake --trace extension/android \
+  cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-26 \
