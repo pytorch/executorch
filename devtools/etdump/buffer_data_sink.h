@@ -19,8 +19,7 @@ namespace etdump {
  * BufferDataSink is a concrete implementation of the DataSinkBase class,
  * designed to store debug data in a pre-allocated, user-owned buffer. This
  * class provides methods to write raw data and tensor data into the buffer,
- * ensuring proper alignment and managing padding as needed. It is the standard
- * DataSink used by ETDumpGen.
+ * ensuring proper alignment and managing padding as needed.
  */
 class BufferDataSink : public DataSinkBase {
  public:
@@ -29,8 +28,8 @@ class BufferDataSink : public DataSinkBase {
    *
    * @param[in] buffer A Span object representing the buffer where data will be
    * stored.
-   * @param[in] alignment The alignment requirement for the buffer. Default is
-   * 64.
+   * @param[in] alignment The alignment requirement for the buffer. It must be
+   * a power of two. Default is 64.
    */
   explicit BufferDataSink(
       ::executorch::runtime::Span<uint8_t> buffer,

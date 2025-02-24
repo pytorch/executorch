@@ -17,7 +17,7 @@ namespace etdump {
 
 Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
   if (length == 0) {
-    return (size_t)offset_;
+    return offset_;
   }
 
   uint8_t* last_data_end = debug_buffer_.data() + offset_;
