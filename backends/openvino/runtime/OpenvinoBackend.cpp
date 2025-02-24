@@ -20,20 +20,6 @@
 
 #include "OpenvinoBackend.h"
 
-using namespace std;
-using executorch::aten::ScalarType;
-using executorch::runtime::ArrayRef;
-using executorch::runtime::Backend;
-using executorch::runtime::BackendExecutionContext;
-using executorch::runtime::BackendInitContext;
-using executorch::runtime::CompileSpec;
-using executorch::runtime::DelegateHandle;
-using executorch::runtime::Error;
-using executorch::runtime::EValue;
-using executorch::runtime::FreeableBuffer;
-using executorch::runtime::MemoryAllocator;
-using executorch::runtime::Result;
-
 namespace executorch {
 namespace backends {
 namespace openvino {
@@ -70,10 +56,10 @@ bool OpenvinoBackend::is_available() const {
   return false; // OpenVINO is not available
 }
 
-Result<DelegateHandle*> OpenvinoBackend::init(
-    BackendInitContext& context,
-    FreeableBuffer* processed,
-    ArrayRef<CompileSpec> compile_specs) const {
+exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
+    exr::BackendInitContext& context,
+    exr::FreeableBuffer* processed,
+    exr::ArrayRef<exr::CompileSpec> compile_specs) const {
   ET_LOG(Info, "OpenvinoBackend::init %p", processed->data());
 
   ov::Core core;
@@ -101,7 +87,7 @@ Result<DelegateHandle*> OpenvinoBackend::init(
       std::make_shared<ov::InferRequest>(compiled_model.create_infer_request());
 
   // Allocate execution handle
-  MemoryAllocator* allocator = context.get_runtime_allocator();
+  exr::MemoryAllocator* allocator = context.get_runtime_allocator();
   ExecutionHandle* handle =
       ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
   handle->compiled_model = std::make_shared<ov::CompiledModel>(compiled_model);
@@ -110,10 +96,10 @@ Result<DelegateHandle*> OpenvinoBackend::init(
   return handle;
 }
 
-Error OpenvinoBackend::execute(
-    BackendExecutionContext& context,
-    DelegateHandle* input_handle,
-    EValue** args) const {
+exr::Error OpenvinoBackend::execute(
+    exr::BackendExecutionContext& context,
+    exr::DelegateHandle* input_handle,
+    exr::EValue** args) const {
   ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
 
   auto infer_request = execution_handle->infer_request;
@@ -154,10 +140,10 @@ Error OpenvinoBackend::execute(
   // Execute the inference
   infer_request->infer();
 
-  return Error::Ok;
+  return exr::Error::Ok;
 }
 
-void OpenvinoBackend::destroy(DelegateHandle* handle) const {
+void OpenvinoBackend::destroy(exr::DelegateHandle* handle) const {
   if (!handle) {
     ET_LOG(Info, "Attempted to destroy a null handle.");
     return;
@@ -181,13 +167,13 @@ void OpenvinoBackend::destroy(DelegateHandle* handle) const {
 }
 
 ov::element::Type OpenvinoBackend::convert_to_openvino_type(
-    ScalarType scalar_type) const {
+    exa::ScalarType scalar_type) const {
   switch (scalar_type) {
-    case ScalarType::Float:
+    case exa::ScalarType::Float:
       return ov::element::f32;
-    case ScalarType::Int:
+    case exa::ScalarType::Int:
       return ov::element::i32;
-    case ScalarType::Char:
+    case exa::ScalarType::Char:
       return ov::element::i8;
     default:
       throw std::runtime_error("Unsupported scalar type");
