@@ -7,6 +7,7 @@ python_library(
     deps = [
         "//executorch/backends/arm:tosa_quant_utils",
         "//executorch/backends/arm:tosa_utils",
+        "//executorch/backends/transforms:replace_scalar_with_tensor",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/exir:lib",
         "//executorch/backends/transforms:utils",
