@@ -23,6 +23,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/method.h>
@@ -91,6 +92,8 @@ using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
+using ::executorch::runtime::get_backend_name;
+using ::executorch::runtime::get_num_registered_backends;
 using ::executorch::runtime::get_registered_kernels;
 using ::executorch::runtime::HierarchicalAllocator;
 using ::executorch::runtime::Kernel;
@@ -975,6 +978,18 @@ py::list get_operator_names() {
   return res;
 }
 
+py::list get_registered_backend_names() {
+  size_t n_of_registered_backends = get_num_registered_backends();
+  py::list res;
+  for (size_t i = 0; i < n_of_registered_backends; i++) {
+    auto backend_name_res = get_backend_name(i);
+    THROW_IF_ERROR(backend_name_res.error(), "Failed to get backend name");
+    auto backend_name = backend_name_res.get();
+    res.append(backend_name);
+  }
+  return res;
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
@@ -1027,6 +1042,10 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
             reinterpret_cast<const char*>(prof_result.prof_data),
             prof_result.num_bytes);
       },
+      call_guard);
+  m.def(
+      "_get_registered_backend_names",
+      &get_registered_backend_names,
       call_guard);
   m.def("_get_operator_names", &get_operator_names);
   m.def("_create_profile_block", &create_profile_block, call_guard);

@@ -17,23 +17,22 @@ namespace etdump {
 
 Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
   if (length == 0) {
-    return static_cast<size_t>(-1);
+    return (size_t)offset_;
   }
 
   uint8_t* last_data_end = debug_buffer_.data() + offset_;
 
   // The beginning of the next data blob must be aligned to the alignment
-  uint8_t* cur_data_begin = internal::align_pointer(last_data_end, alighment_);
+  uint8_t* cur_data_begin = internal::align_pointer(last_data_end, alignment_);
   uint8_t* cur_data_end = cur_data_begin + length;
 
-  // Raise OutOfResources error if the end of current data blob is out of range.
-  if (cur_data_end > debug_buffer_.data() + debug_buffer_.size()) {
-    return Error::OutOfResources;
-  }
+  ET_CHECK_MSG(
+      cur_data_end <= debug_buffer_.data() + debug_buffer_.size(),
+      "Ran out of space to store intermediate outputs.");
 
+  memset(last_data_end, 0, cur_data_begin - last_data_end);
   memcpy(cur_data_begin, ptr, length);
-
-  offset_ = cur_data_end - debug_buffer_.data();
+  offset_ = (size_t)(cur_data_end - debug_buffer_.data());
 
   return (size_t)(cur_data_begin - debug_buffer_.data());
 }

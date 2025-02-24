@@ -29,9 +29,13 @@ class BufferDataSink : public DataSinkBase {
    *
    * @param[in] buffer A Span object representing the buffer where data will be
    * stored.
+   * @param[in] alignment The alignment requirement for the buffer. Default is
+   * 64.
    */
-  explicit BufferDataSink(::executorch::runtime::Span<uint8_t> buffer)
-      : debug_buffer_(buffer), offset_(0), alighment_(64) {}
+  explicit BufferDataSink(
+      ::executorch::runtime::Span<uint8_t> buffer,
+      size_t alignment = 64)
+      : debug_buffer_(buffer), offset_(0), alignment_(alignment) {}
 
   // Uncopiable and unassignable to avoid double assignment and free of the
   // internal buffer.
@@ -64,7 +68,7 @@ class BufferDataSink : public DataSinkBase {
    *
    * @return A Result object containing the total size of the buffer in bytes.
    */
-  ::executorch::runtime::Result<size_t> get_storage_size() const override;
+  ::executorch::runtime::Result<size_t> get_storage_size() const;
 
   /**
    * Retrieves the number of bytes currently used in the buffer.
@@ -81,7 +85,7 @@ class BufferDataSink : public DataSinkBase {
   size_t offset_;
 
   // The alignment of the buffer.
-  size_t alighment_;
+  size_t alignment_;
 };
 
 } // namespace etdump

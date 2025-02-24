@@ -109,7 +109,7 @@ build_executorch_runner_cmake() {
   pushd "${CMAKE_OUTPUT_DIR}" || return
   # This command uses buck2 to gather source files and buck2 could crash flakily
   # on MacOS
-  retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE=Release ..
+  retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
   popd || return
 
   if [ "$(uname)" == "Darwin" ]; then
@@ -124,7 +124,7 @@ build_executorch_runner() {
   if [[ $1 == "buck2" ]]; then
     build_executorch_runner_buck2
   elif [[ $1 == "cmake" ]]; then
-    build_executorch_runner_cmake
+    build_executorch_runner_cmake "$2"
   else
     echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
     exit 1
