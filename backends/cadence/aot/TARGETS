@@ -256,6 +256,7 @@ python_library(
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:remove_ops",
         "//executorch/backends/cadence/aot:utils",
+        "//executorch/backends/transforms:replace_scalar_with_tensor",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
