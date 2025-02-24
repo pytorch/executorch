@@ -134,21 +134,7 @@ Tensor& mean_out(
     if ((num_axis_dims == num_inp_dims) || (!dim_list.has_value())) {
       num_out_dims = 1;
     }
-
-    int inp_shape_max = inp_shape[p_axis[0]];
-    for (int i = 1; i < num_axis_dims; i++) {
-      if (inp_shape[p_axis[i]] > inp_shape_max) {
-        inp_shape_max = inp_shape[p_axis[i]];
-      }
-    }
-
-    int scratch_size = in.numel() / inp_shape_max;
-
-    executorch::runtime::Result<void*> temp_mem =
-        ctx.allocate_temp(scratch_size * sizeof(float));
-
-    void* __restrict__ p_scratch_in = (void* __restrict__)(temp_mem.get());
-
+  
     XT_KERNEL_CHECK(
         ctx,
         out,
@@ -160,8 +146,7 @@ Tensor& mean_out(
         inp_shape,
         num_inp_dims,
         p_axis,
-        num_axis_dims,
-        p_scratch_in);
+        num_axis_dims);
   } else {
     ET_KERNEL_CHECK(
         ctx,
