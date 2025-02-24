@@ -96,6 +96,10 @@ runtime.command_alias(
 
 runtime.python_library(
     name = "source_transformation",
+    visibility = [
+        "//executorch/examples/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
     srcs = [
         "source_transformation/apply_spin_quant_r1_r2.py",
         "source_transformation/attention.py",

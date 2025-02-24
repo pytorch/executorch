@@ -277,7 +277,8 @@ ComputePipeline::ComputePipeline(
     : device_(device), handle_{VK_NULL_HANDLE} {
   SpecVarList specialization_constants;
 
-  specialization_constants.reserve(3 + descriptor.specialization_constants.size());
+  specialization_constants.reserve(
+      3 + descriptor.specialization_constants.size());
   specialization_constants.append(descriptor.local_wg_size[0]);
   specialization_constants.append(descriptor.local_wg_size[1]);
   specialization_constants.append(descriptor.local_wg_size[2]);
