@@ -42,7 +42,7 @@ Example output:
 import functools
 from pathlib import Path
 from types import ModuleType
-from typing import Any, BinaryIO, Dict, Optional, Sequence, Set, Union
+from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
 
 try:
     from executorch.extension.pybindings.portable_lib import (
@@ -125,6 +125,21 @@ class Program:
         return self._methods.get(name, None)
 
 
+class BackendRegistry:
+    """The registry of backends that are available to the runtime."""
+
+    def __init__(self, legacy_module: ModuleType) -> None:
+        # TODO: Expose the kernel callables to Python.
+        self._legacy_module = legacy_module
+
+    @property
+    def registered_backend_names(self) -> List[str]:
+        """
+        Returns the names of all registered backends as a list of strings.
+        """
+        return self._legacy_module._get_registered_backend_names()
+
+
 class OperatorRegistry:
     """The registry of operators that are available to the runtime."""
 
@@ -157,6 +172,7 @@ class Runtime:
 
     def __init__(self, *, legacy_module: ModuleType) -> None:
         # Public attributes.
+        self.backend_registry = BackendRegistry(legacy_module)
         self.operator_registry = OperatorRegistry(legacy_module)
         # Private attributes.
         self._legacy_module = legacy_module
