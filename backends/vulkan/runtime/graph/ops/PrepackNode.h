@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/containers/PushConstantData.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
 namespace vkcompute {
@@ -34,7 +35,8 @@ class PrepackNode final {
       const ValueRef tref,
       const ValueRef packed,
       const vkapi::ParamsBindList& params,
-      const vkapi::SpecVarList& spec_vars = {});
+      const vkapi::SpecVarList& spec_vars = {},
+      const std::vector<PushConstantDataInfo>& push_constants = {});
 
   ~PrepackNode() = default;
 
@@ -54,6 +56,7 @@ class PrepackNode final {
   const ValueRef packed_;
   const vkapi::ParamsBindList params_;
   const vkapi::SpecVarList spec_vars_;
+  const std::vector<PushConstantDataInfo> push_constants_;
 
  private:
   api::StagingBuffer create_staging_buffer(ComputeGraph* graph);
