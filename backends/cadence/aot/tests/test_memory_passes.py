@@ -46,14 +46,13 @@ class TestMemPlanningPasses(unittest.TestCase):
         inputs = (torch.ones(batch_size, input_dim),)
         model = PeakMemoryTestModel(input_dim, hidden_dim, output_dim)
 
-        graph_module = (
-            compiler.export_to_executorch_gen_etrecord(model, inputs)
-            .exported_program()
-            .graph_module
-        )
+        exported_program = compiler.export_to_executorch_gen_etrecord(
+            model, inputs
+        ).exported_program()
 
         peak_usage, _ = find_peak_memory_usage(
-            graph_module,
+            exported_program.graph_module,
+            exported_program.graph_signature,
             mem_constraints=None,
             alloc_graph_input=True,
             alloc_graph_output=True,
@@ -73,14 +72,13 @@ class TestMemPlanningPasses(unittest.TestCase):
             input_dim, hidden_dim, hidden_dim, hidden_dim, output_dim
         )
 
-        graph_module = (
-            compiler.export_to_executorch_gen_etrecord(model, inputs)
-            .exported_program()
-            .graph_module
-        )
+        exported_program = compiler.export_to_executorch_gen_etrecord(
+            model, inputs
+        ).exported_program()
 
         peak_usage, _ = find_peak_memory_usage(
-            graph_module,
+            exported_program.graph_module,
+            exported_program.graph_signature,
             mem_constraints=None,
             alloc_graph_input=True,
             alloc_graph_output=True,
@@ -111,6 +109,7 @@ class TestMemPlanningPasses(unittest.TestCase):
         graph_module.graph.eliminate_dead_code()
         peak_usage, _ = find_peak_memory_usage(
             graph_module,
+            executorch_prog.exported_program().graph_signature,
             alloc_graph_input=False,
             alloc_graph_output=False,
             mem_constraints=None,
