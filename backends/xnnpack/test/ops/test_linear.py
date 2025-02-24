@@ -31,6 +31,8 @@ from executorch.backends.xnnpack.test.tester.tester import (
     ToEdgeTransformAndLower,
 )
 
+from torch.export.graph_signature import ExportGraphSignature, InputKind
+
 try:
     from torchao.quantization.quant_api import (
         int8_dynamic_activation_int4_weight,
@@ -871,3 +873,71 @@ class TestLinear(unittest.TestCase):
                     "dequantize_per_channel.default": 1,  # 1: weight
                 },
             )
+
+    def test_linear_fp32_with_force_as_mm(self):
+        def check_signature(
+            signature: ExportGraphSignature,
+            force_flag: bool,
+            use_bias: bool,
+            legacy_mode: bool,
+        ):
+            num_params = 0
+            if force_flag:
+                num_params = 1  # weight_param
+                if use_bias:
+                    num_params += 1  # bias_param
+            sign_params: int = 0
+            input_specs = signature.input_specs
+            for input_spec in input_specs:
+                if input_spec.kind == InputKind.PARAMETER:
+                    sign_params += 1
+            assert (
+                sign_params == num_params
+            ), f"Expected {num_params} params, got {sign_params} with force_flag={force_flag}, use_bias={use_bias}, legacy_mode={legacy_mode}"
+
+        for force_flag in (True, False):
+            for use_bias in (True, False):
+                for legacy_mode in (True, False):
+                    module = BaseLinear(
+                        in_size=8,
+                        input_channels=13,
+                        output_channels=17,
+                        use_bias=use_bias,
+                    )
+                    inputs = module.get_inputs()
+                    tester = Tester(module, inputs).export()
+                    partitioner = XnnpackPartitioner(
+                        force_fp32_dynamic_linear=force_flag
+                    )
+                    if legacy_mode:
+                        tester.to_edge()
+                        partitioner_stage = Partition(partitioner=partitioner)
+                        tester.partition(partition_stage=partitioner_stage)
+                        tester.check_not(
+                            [
+                                (
+                                    "executorch_exir_dialects_edge__ops_aten_mm_default"
+                                    if use_bias
+                                    else "executorch_exir_dialects_edge__ops_aten_addmm_default"
+                                )
+                            ]
+                        )
+                    else:
+                        to_edge_and_transform_stage = ToEdgeTransformAndLower(
+                            partitioners=[partitioner]
+                        )
+                        tester.to_edge_transform_and_lower(
+                            to_edge_and_transform_stage=to_edge_and_transform_stage
+                        )
+                        tester.check_not(
+                            ["executorch_exir_dialects_edge__ops_aten_linear_default"]
+                        )
+
+                    signature: ExportGraphSignature = (
+                        tester.get_artifact().exported_program().graph_signature
+                    )
+                    check_signature(signature, force_flag, use_bias, legacy_mode)
+
+                    tester.to_executorch()
+                    tester.serialize()
+                    tester.run_method_and_compare_outputs()

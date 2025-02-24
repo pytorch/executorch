@@ -26,6 +26,7 @@ def define_common_targets():
             "util/TypeSafeSignMath.h",
             "util/bit_cast.h",
             "util/floating_point_utils.h",
+            "util/irange.h",
         ],
         exported_preprocessor_flags = [
             # NOTE: If we define C10_EMBEDDED to prevent Half and
@@ -44,7 +45,7 @@ def define_common_targets():
             "-DC10_USING_CUSTOM_GENERATED_MACROS",
         ],
         visibility = [
-            "//executorch/runtime/core/portable_type/...",
+            "//executorch/...",
         ],
         deps = select({
             "DEFAULT": [],
