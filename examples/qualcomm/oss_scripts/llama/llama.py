@@ -1039,10 +1039,7 @@ def _build_parser():
     return parser
 
 
-def main(args) -> None:
-    parser = _build_parser()
-
-    args = parser.parse_args(args)
+def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")
 
@@ -1143,6 +1140,12 @@ def main(args) -> None:
             raise Exception(e)
 
 
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
+    export_llama(args)
+
+
 # flake8: noqa: C901
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()

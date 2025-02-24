@@ -357,7 +357,7 @@ function(add_torch_to_cmake_prefix_path)
   endif()
   execute_process(
     COMMAND "${PYTHON_EXECUTABLE}" -c
-            "import torch as _; print(_.__path__[0], end='')"
+            "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])"
     OUTPUT_VARIABLE _tmp_torch_path
     ERROR_VARIABLE _tmp_torch_path_error
     RESULT_VARIABLE _tmp_torch_path_result COMMAND_ECHO STDERR
