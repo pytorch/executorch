@@ -18,6 +18,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
 #include <ctime>
+#include <fstream>
 #include <sstream>
 
 using executorch::aten::Tensor;
@@ -44,7 +45,7 @@ Runner::Runner(
     const int32_t logits_offset,
     const float temperature,
     const int eval_mode,
-    const std::string& kv_updator)
+    const std::string& kv_updater)
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
@@ -52,7 +53,7 @@ Runner::Runner(
       logits_offset_(logits_offset),
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
-      kv_updator_(kv_updator) {
+      kv_updater_(kv_updater) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
         models_path[i], Module::LoadMode::MmapUseMlockIgnoreErrors));
@@ -76,10 +77,6 @@ Error Runner::load() {
   }
 
   switch (eval_mode_) {
-    case EvalMode::kPrefill:
-      prefill_forward_name_ = "forward";
-      method_names_.emplace_back(prefill_forward_name_);
-      break;
     case EvalMode::kKVCached:
       kv_forward_name_ = "forward";
       method_names_.emplace_back(kv_forward_name_);
@@ -105,17 +102,22 @@ Error Runner::load() {
   }
 
   if (!prefill_forward_name_.empty()) {
-    // Use input tokens length to retrieve prefill cache len
-    // Cache len equals to prefill model seq_len - 1
-    prefill_cache_len_ = get_methods_meta(prefill_forward_name_)[0]
-                             ->input_tensor_meta(0)
-                             ->sizes()[1];
+    // Use attention mask length to retrieve prefill_ar_len and context length
+    // Prefill cache length equals to context_len - prefill_ar_len
+    auto atten_mask_meta =
+        get_methods_meta(prefill_forward_name_)[0]->input_tensor_meta(1);
+    prefill_ar_len_ = atten_mask_meta->sizes()[1];
+    context_len_ = atten_mask_meta->sizes()[2];
+    prefill_cache_len_ = context_len_ - prefill_ar_len_;
   }
   if (!kv_forward_name_.empty()) {
-    // Use k cache length to retirieve kv cache len
-    // Cache len equals to kv model seq_len - 1
-    kv_cache_len_ =
-        get_methods_meta(kv_forward_name_)[0]->input_tensor_meta(3)->sizes()[2];
+    // Use attention mask length to retrieve kv ar len and context length
+    // Cache len equals to kv model context_len - kv_ar_len
+    auto atten_mask_meta =
+        get_methods_meta(kv_forward_name_)[0]->input_tensor_meta(1);
+    kv_ar_len_ = atten_mask_meta->sizes()[1];
+    context_len_ = atten_mask_meta->sizes()[2];
+    kv_cache_len_ = context_len_ - kv_ar_len_;
   }
 
   // retrieve any method meta, can be either prefill or kv
@@ -129,10 +131,13 @@ Error Runner::load() {
       executorch::aten::ScalarType::Long;
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
 
-  if (kv_updator_ == "SmartMask") {
+  if (kv_updater_ == "SmartMask") {
     io_mgr_ = std::make_unique<SmartMaskIoMgr>(
         modules_,
+        context_len_,
+        prefill_ar_len_,
         prefill_cache_len_,
+        kv_ar_len_,
         kv_cache_len_,
         vocab_size_,
         num_layers,
@@ -142,10 +147,13 @@ Error Runner::load() {
         prefill_forward_name_,
         kv_forward_name_,
         use_int64_token_);
-  } else if (kv_updator_ == "ShiftPointer") {
+  } else if (kv_updater_ == "ShiftPointer") {
     io_mgr_ = std::make_unique<ShiftPointerIoMgr>(
         modules_,
+        context_len_,
+        prefill_ar_len_,
         prefill_cache_len_,
+        kv_ar_len_,
         kv_cache_len_,
         vocab_size_,
         num_layers,
@@ -156,16 +164,13 @@ Error Runner::load() {
         kv_forward_name_,
         use_int64_token_);
   } else {
-    ET_LOG(Error, "Using an unknown updator %s", kv_updator_.c_str());
+    ET_LOG(Error, "Using an unknown updater %s", kv_updater_.c_str());
   }
   ET_LOG(Info, "creating io_memory");
 
   // prepare io
   io_mgr_->init_io();
   switch (eval_mode_) {
-    case EvalMode::kPrefill:
-      io_mgr_->prepare_prefill_io(get_methods_meta(prefill_forward_name_));
-      break;
     case EvalMode::kKVCached:
       io_mgr_->prepare_kv_io(get_methods_meta(kv_forward_name_));
       break;
@@ -323,8 +328,7 @@ Error Runner::generate(
       break;
   }
 
-  int max_seq_len = std::max(prefill_cache_len_, kv_cache_len_) + 1;
-  seq_len = (seq_len > 0 && seq_len <= max_seq_len) ? seq_len : max_seq_len;
+  seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
   Result<std::vector<uint64_t>> encode_res =
       tokenizer_->encode(prompt_, n_bos_, 0);
   ET_CHECK_OK_OR_RETURN_ERROR(
@@ -332,61 +336,46 @@ Error Runner::generate(
 
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
-  ET_CHECK_MSG(num_prompt_tokens < max_seq_len, "max seq length exceeded");
   ET_CHECK_MSG(
       num_prompt_tokens < seq_len,
       "sequence length exceeded - please increase the seq_len value");
-  if (eval_mode_ == EvalMode::kHybrid) {
-    int prefill_seq_len = get_methods_meta(prefill_forward_name_)[0]
-                              ->input_tensor_meta(0)
-                              ->sizes()[1] +
-        1;
-    ET_CHECK_MSG(
-        num_prompt_tokens < prefill_seq_len,
-        "For hybrid mode, please ensure prompt length(%d) is less than prefill's seq_len(%d)",
-        num_prompt_tokens,
-        prefill_seq_len);
-  }
 
   int64_t pos = 0, prev_token, cur_token = prompt_tokens[0];
   if (token_callback) {
     token_callback(prompt_);
   }
   auto prefill_execute = [&](const std::string& method_name) {
-    io_mgr_->fill_prefill_toks(prompt_tokens);
+    int num_iters = 1 + ((num_prompt_tokens - 1) / prefill_ar_len_);
+    ET_LOG(
+        Info,
+        "Prompt Processor: total %d tokens (AR-%d * %d iters)",
+        num_prompt_tokens,
+        prefill_ar_len_,
+        num_iters);
 
-    pos = num_prompt_tokens - 1;
-    cur_token = prompt_tokens[pos];
-    while (pos < seq_len - 1) {
-      // inference
+    for (int i = 0; i < num_iters; i++) {
+      io_mgr_->fill_prefill_toks(pos, prompt_tokens);
       run_model_step(method_name, inputs[method_name]);
-      Tensor& logits_tensor = output_tensors[method_name].back()[0];
-      prev_token = cur_token;
-      long sample_start_time_ms = time_in_ms();
-      cur_token = logitsToToken(logits_tensor, pos);
-      stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
-
-      io_mgr_->update_prefill_io(cur_token, ++pos, output_tensors[method_name]);
-      auto piece_res = tokenizer_->decode(prev_token, cur_token);
-      ET_CHECK(piece_res.ok());
-      if (token_callback) {
-        token_callback(piece_res.get().c_str());
-      }
-
-      if (pos == num_prompt_tokens) {
-        stats_.first_token_ms = time_in_ms();
-        stats_.prompt_eval_end_ms = time_in_ms();
-      }
-
-      if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
-        ET_LOG(Info, "\nReached to the end of generation");
-        break;
-      }
-      // prefill model inferences once for prompt in the hybrid mode
-      if (eval_mode_ == EvalMode::kHybrid) {
-        break;
-      }
+      io_mgr_->update_prefill_io(cur_token, pos, output_tensors[method_name]);
+      pos += prefill_ar_len_;
     }
+    Tensor& logits_tensor = output_tensors[method_name].back()[0];
+    prev_token = prompt_tokens[num_prompt_tokens - 1];
+    long sample_start_time_ms = time_in_ms();
+    cur_token = logitsToToken(
+        logits_tensor,
+        (num_prompt_tokens + prefill_ar_len_ - 1) % prefill_ar_len_);
+    stats_.aggregate_sampling_time_ms += time_in_ms() - sample_start_time_ms;
+
+    auto piece_res = tokenizer_->decode(prev_token, cur_token);
+    ET_CHECK(piece_res.ok());
+    if (token_callback) {
+      token_callback(piece_res.get().c_str());
+    }
+
+    pos = num_prompt_tokens;
+    stats_.first_token_ms = time_in_ms();
+    stats_.prompt_eval_end_ms = time_in_ms();
   };
 
   auto kv_execute = [&](const std::string& method_name) {
@@ -428,9 +417,6 @@ Error Runner::generate(
   };
 
   switch (eval_mode_) {
-    case EvalMode::kPrefill:
-      prefill_execute(prefill_forward_name_);
-      break;
     case EvalMode::kKVCached:
       kv_execute(kv_forward_name_);
       break;
@@ -518,6 +504,19 @@ void printReport(const Runner::Stats& stats) {
       stats.num_generated_tokens,
       (double)stats.aggregate_sampling_time_ms /
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
+
+  // For now, we just print the total inference time for CI, can save more info
+  // in future if needed.
+  std::ofstream outfile("outputs/inference_speed.txt");
+  if (outfile.is_open()) {
+    double num_tok = (stats.num_generated_tokens) /
+        (double)(stats.inference_end_ms - stats.inference_start_ms) *
+        stats.SCALING_FACTOR_UNITS_PER_SECOND;
+    outfile << num_tok;
+    outfile.close();
+  } else {
+    ET_CHECK_MSG(false, "Error saving the inference speed file");
+  }
 }
 
 std::string statsToJsonString(const Runner::Stats& stats) {

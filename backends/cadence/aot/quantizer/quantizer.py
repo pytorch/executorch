@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple, Union
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
+    AddPattern,
     BmmPattern,
     Conv1dPattern,
     Conv2dPattern,
@@ -109,7 +110,7 @@ class CadenceAtenQuantizer(Quantizer):
                 continue
 
             anchors = self.pattern.get_anchors(model, fused_partition)
-            if not anchors:
+            if not anchors or anchors.empty:
                 continue
             if is_annotated(
                 [
@@ -211,3 +212,15 @@ class CadenceNopQuantizer(CadenceQuantizer):
         self,
     ) -> None:
         super().__init__([])
+
+
+class CadenceWakeWordQuantizer(CadenceQuantizer):
+    """
+    Quantizer for WakeWord, including add
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8uW8u))
+        super().__init__(quantizers)
