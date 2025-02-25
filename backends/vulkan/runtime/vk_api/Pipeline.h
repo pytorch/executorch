@@ -82,6 +82,10 @@ class SpecVarList final {
 
   void append(const SpecVarList& other);
 
+  void reserve(const size_t size);
+
+  void append(const SpecVar& other);
+
   std::vector<VkSpecializationMapEntry> generate_map_entries() const;
 
   friend bool operator==(const SpecVarList& lhs, const SpecVarList& rhs);
@@ -152,6 +156,7 @@ class ComputePipeline final {
     VkPipelineLayout pipeline_layout;
     VkShaderModule shader_module;
     SpecVarList specialization_constants;
+    utils::WorkgroupSize local_wg_size;
   };
 
   explicit ComputePipeline(
@@ -268,6 +273,9 @@ class ComputePipelineCache final {
         }
         seed = utils::hash_combine(seed, new_seed);
       }
+
+      seed = utils::hash_combine(
+          seed, std::hash<uint32_t>()((uint32_t)descriptor.local_wg_size));
 
       return seed;
     }
