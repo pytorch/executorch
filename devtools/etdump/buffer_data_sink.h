@@ -29,7 +29,7 @@ class BufferDataSink : public DataSinkBase {
    * @param[in] buffer A Span object representing the buffer where data will be
    * stored.
    * @param[in] alignment The alignment requirement for the buffer. It must be
-   * a power of two. Default is 64.
+   * a power of two and greater than zero. Default is 64.
    */
   explicit BufferDataSink(
       ::executorch::runtime::Span<uint8_t> buffer,
@@ -42,6 +42,8 @@ class BufferDataSink : public DataSinkBase {
    *
    * @param[in] ptr A pointer to the data blob where data will be stored.
    * @param[in] size The size of the data blob in bytes.
+   * @param[in] alignment The alignment requirement for the buffer. It must be
+   * a power of two and greater than zero. Default is 64.
    */
   BufferDataSink(void* ptr, size_t size, size_t alignment = 64)
       : debug_buffer_((uint8_t*)ptr, size), offset_(0), alignment_(alignment) {}
