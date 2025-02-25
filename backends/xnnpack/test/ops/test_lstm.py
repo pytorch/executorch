@@ -54,9 +54,8 @@ class TestLSTM(unittest.TestCase):
             )
             .check_not(["executorch_exir_dialects_edge__ops_aten_addmm_default"])
             # Weights are supplied as input to linears
-            .check(["p_lstm_weight_hh_l0", "p_lstm_weight_ih_l0"])
-            # Biases are owned by delegates
-            .check_not(["p_lstm_bias"])
+            # Biases are not owned by delegates when force_fp32_dynamic_linear is set
+            .check(["p_lstm_weight_hh_l0", "p_lstm_weight_ih_l0", "p_lstm_bias"])
             .to_executorch()
             .serialize()
             .run_method_and_compare_outputs()
