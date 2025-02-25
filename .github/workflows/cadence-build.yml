@@ -7,14 +7,14 @@ on:
       - release/*
   pull_request:
     paths:
-      # - .ci/scripts/setup-cadence.sh
-      - .github/workflows/apple.yml
+      - .ci/scripts/setup-cadence.sh
+      - .github/workflows/cadence-build.yml
       - install_executorch.sh
       - backends/cadence/**
       - examples/cadence/**
   workflow_dispatch:
-  schedule:
-    - cron: '0 10 * * *'  # Runs daily at 2 AM PST
+#   schedule:
+#     - cron: '0 10 * * *'  # Runs daily at 2 AM PST
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -59,6 +59,9 @@ jobs:
       - name: run cadence cpu build script
         shell: bash
         run: |
+          # install cadence requirements
+          bash backends/cadence/install_requirements.sh
+          
           .ci/scripts/build_cadence_runner.sh
 
   # g3-build:
