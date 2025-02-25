@@ -41,6 +41,10 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
 
     .ci/scripts/unittest-linux-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
+    # XXX: check whether this is sufficient to unbreak sccache
+    PYTHON_EXECUTABLE=python \
+    .ci/scripts/setup-linux.sh "$BUILD_TOOL" "$BUILD_MODE"
+
     .ci/scripts/unittest-buck2.sh
 else
     echo "Unknown build tool $BUILD_TOOL"
