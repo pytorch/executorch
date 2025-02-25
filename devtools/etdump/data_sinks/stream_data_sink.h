@@ -61,7 +61,7 @@ class StreamDataSink : public DataSinkBase {
   StreamDataSink(const StreamDataSink&) = delete;
   StreamDataSink& operator=(const StreamDataSink&) = delete;
 
-  StreamDataSink(StreamDataSink&& other);
+  StreamDataSink(StreamDataSink&& other) noexcept;
   StreamDataSink& operator=(StreamDataSink&& other) = default;
 
   /**
@@ -76,14 +76,6 @@ class StreamDataSink : public DataSinkBase {
    */
   ::executorch::runtime::Result<size_t> write(const void* ptr, size_t size)
       override;
-
-  /**
-   * Return Error::NotSupported in StreamDataSink since file is unbounded
-   * destination.
-   *
-   * @return Error::NotSupported
-   */
-  ::executorch::runtime::Result<size_t> get_storage_size() const override;
 
   /**
    * Gets the number of bytes currently used in the debug storage.

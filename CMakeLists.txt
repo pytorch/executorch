@@ -258,6 +258,11 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
+  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+endif()
+
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
   set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
@@ -761,9 +766,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
-  if(NOT TARGET torch)
-    find_package(Torch CONFIG REQUIRED)
-  endif()
+  find_package_torch()
   find_library(
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )

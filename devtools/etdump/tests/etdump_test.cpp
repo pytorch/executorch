@@ -233,7 +233,6 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
 
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
-      ;
       auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
 
       // using span to record debug data

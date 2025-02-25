@@ -67,17 +67,6 @@ TEST_F(StreamDataSinkTest, CreationExpectFail) {
   ASSERT_EQ(fail_with_invalid_alignment.error(), Error::InvalidArgument);
 }
 
-TEST_F(StreamDataSinkTest, StorageSizeCheck) {
-  // Create a StreamDataSink instance
-  Result<StreamDataSink> result =
-      StreamDataSink::create(buffer_ptr_, buffer_size_, file_path_.c_str());
-  ASSERT_TRUE(result.ok());
-
-  // Check that get_storage_size() returns Error::NotSupported
-  StreamDataSink* data_sink = &result.get();
-  Result<size_t> storage_size_result = data_sink->get_storage_size();
-  ASSERT_EQ(storage_size_result.error(), Error::NotSupported);
-}
 TEST_F(StreamDataSinkTest, WriteSmallDataToBuffer) {
   // Create a StreamDataSink instance
   Result<StreamDataSink> result =

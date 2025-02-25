@@ -18,7 +18,7 @@ using ::executorch::runtime::Result;
 namespace executorch {
 namespace etdump {
 
-StreamDataSink::StreamDataSink(StreamDataSink&& other)
+StreamDataSink::StreamDataSink(StreamDataSink&& other) noexcept
     : buffer_(std::move(other.buffer_)),
       buffer_offset_(other.buffer_offset_),
       file_descriptor_(other.file_descriptor_),
@@ -101,11 +101,6 @@ Result<size_t> StreamDataSink::write(const void* ptr, size_t size) {
   buffer_offset_ = new_offset;
 
   return aligned_ptr - buffer_.data() + total_written_bytes_;
-}
-
-Result<size_t> StreamDataSink::get_storage_size() const {
-  // Return an error indicating that the storage size is not supported
-  return Error::NotSupported;
 }
 
 size_t StreamDataSink::get_used_bytes() const {

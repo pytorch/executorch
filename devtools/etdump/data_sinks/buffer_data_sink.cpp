@@ -17,24 +17,26 @@ namespace etdump {
 
 Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
   if (length == 0) {
-    return static_cast<size_t>(-1);
+    return offset_;
   }
-  uint8_t* offset_ptr =
-      internal::align_pointer(debug_buffer_.data() + offset_, 64);
 
-  // Zero out the padding between data blobs.
-  size_t n_zero_pad = offset_ptr - debug_buffer_.data() - offset_;
-  memset(debug_buffer_.data() + offset_, 0, n_zero_pad);
+  uint8_t* last_data_end = debug_buffer_.data() + offset_;
 
-  offset_ = (offset_ptr - debug_buffer_.data()) + length;
+  // The beginning of the next data blob must be aligned to the alignment
+  uint8_t* cur_data_begin = internal::align_pointer(last_data_end, alignment_);
+  uint8_t* cur_data_end = cur_data_begin + length;
 
-  // Raise access error if offset_ is out of range.
-  if (offset_ > debug_buffer_.size()) {
+  if (cur_data_end > debug_buffer_.data() + debug_buffer_.size()) {
+    ET_LOG(Error, "Ran out of space to store intermediate outputs.");
     return Error::OutOfResources;
   }
 
-  memcpy(offset_ptr, ptr, length);
-  return (size_t)(offset_ptr - debug_buffer_.data());
+  // Zero out the padding between data blobs
+  memset(last_data_end, 0, cur_data_begin - last_data_end);
+  memcpy(cur_data_begin, ptr, length);
+  offset_ = (size_t)(cur_data_end - debug_buffer_.data());
+
+  return (size_t)(cur_data_begin - debug_buffer_.data());
 }
 
 Result<size_t> BufferDataSink::get_storage_size() const {

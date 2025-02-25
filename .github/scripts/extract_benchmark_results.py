@@ -229,11 +229,7 @@ def extract_ios_metric(
 
     elif method == "forward":
         if metric_name == "Clock Monotonic Time, s":
-            benchmark_result["metric"] = (
-                "generate_time(ms)"
-                if "llama" in test_name
-                else "avg_inference_latency(ms)"
-            )
+            benchmark_result["metric"] = "avg_inference_latency(ms)"
             benchmark_result["actualValue"] = metric_value * 1000
 
         elif metric_name == "Memory Peak Physical, kB":
@@ -241,9 +237,14 @@ def extract_ios_metric(
             benchmark_result["metric"] = "peak_inference_mem_usage(mb)"
             benchmark_result["actualValue"] = metric_value / 1024
 
-    elif method == "generate" and metric_name == "Tokens Per Second, t/s":
-        benchmark_result["metric"] = "token_per_sec"
-        benchmark_result["actualValue"] = metric_value
+    elif method == "generate":
+        if metric_name == "Clock Monotonic Time, s":
+            benchmark_result["metric"] = "generate_time(ms)"
+            benchmark_result["actualValue"] = metric_value * 1000
+
+        elif metric_name == "Tokens Per Second, t/s":
+            benchmark_result["metric"] = "token_per_sec"
+            benchmark_result["actualValue"] = metric_value
 
     return benchmark_result
 
