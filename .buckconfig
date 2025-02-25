@@ -15,9 +15,10 @@
   ovr_config = prelude
   toolchains = shim_et
   fbcode = shim_et
-  fbcode_macros = shim_et
+  fbcode_macros = shim
   fbsource = shim_et
   buck = shim
+  gh_facebook_buck2_shims_meta = shim
 
 [cxx]
   cxxflags = -g -std=c++17
