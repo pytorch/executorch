@@ -7,6 +7,10 @@ on:
         required: true
         type: string
         description: Name of the docker image to use.
+      build-mode:
+        required: true
+        type: string
+        description: Build mode to use, Debug or Release.
       build-tool:
         required: true
         type: string
@@ -30,7 +34,7 @@ jobs:
       timeout: 90
       script: |
         set -eux
-        .ci/scripts/unittest-linux.sh "${{ inputs.build-tool }}"
+        .ci/scripts/unittest-linux.sh "${{ inputs.build-tool }}" "${{ inputs.build-mode }}"
 
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -41,4 +45,4 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
-        .ci/scripts/unittest-macos.sh "${{ inputs.build-tool }}"
+        .ci/scripts/unittest-macos.sh "${{ inputs.build-tool }}" "${{ inputs.build-mode }}"

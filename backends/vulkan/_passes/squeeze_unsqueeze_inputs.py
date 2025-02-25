@@ -6,16 +6,27 @@
 
 # pyre-strict
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple, Union
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa: needed to access vk op
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
+
+from torch._ops import OpOverload
 
 from torch.fx.node import Argument
 
+OpType = Union[str, OpOverload, EdgeOpOverload]
 
-class SqueezeInt4LinearInputs(ExportPass):
+
+class SqueezeUnsqueezeInputs(ExportPass):
+    _squeezable_ops: Set[OpType] = {
+        exir_ops.edge.et_vk.linear_weight_int4.default,
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten.gelu.default,
+    }
+
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -26,7 +37,7 @@ class SqueezeInt4LinearInputs(ExportPass):
         def _squeezable(shape: List[int]) -> bool:
             return len(shape) > 2 and 1 in shape
 
-        if op != exir_ops.edge.et_vk.linear_weight_int4.default:
+        if op not in self._squeezable_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         # pyre-ignore[16]: `None` has no attribute `node`
