@@ -14,6 +14,7 @@ from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_tosa,
 )  # usort: skip
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
@@ -66,7 +67,7 @@ class TOSAPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(TOSABackend.__name__, compile_spec)
         self.additional_checks = additional_checks
 
-    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:  # noqa
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
 
@@ -107,6 +108,20 @@ class TOSAPartitioner(Partitioner):
                 if is_dequant_node(node):
                     for user in node.users:
                         if not is_partitioned(user):
+                            del node.meta["delegation_tag"]
+                            break
+
+                if tosa_spec.support_float():
+                    continue
+
+                if is_partitioned(node):
+                    for input in node.all_input_nodes:
+                        if is_partitioned(input):
+                            continue
+                        if get_first_fake_tensor(input).dtype.is_floating_point:
+                            logger.info(
+                                f"Not partitioning {node.name} becuase input {input.name} has floating point dtype."
+                            )
                             del node.meta["delegation_tag"]
                             break
 
