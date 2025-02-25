@@ -9,6 +9,7 @@
 #include <array>
 #include <vector>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/alignment.h>
@@ -62,12 +63,12 @@ TEST_F(MemoryAllocatorTest, MemoryAllocatorAlignment) {
       128,
       2};
 
-  for (int i = 0; i < arr_size; i++) {
+  for (const auto i : c10::irange(arr_size)) {
     auto align_size = alignment[i];
     constexpr size_t mem_size = 1000;
     uint8_t mem_pool[mem_size];
     MemoryAllocator allocator = MemoryAllocator(mem_size, mem_pool);
-    for (int j = 0; j < arr_size; j++) {
+    for (const auto j : c10::irange(arr_size)) {
       auto size = allocation[j];
       void* start = allocator.allocate(size, align_size);
       EXPECT_ALIGNED(start, align_size);
@@ -81,7 +82,7 @@ TEST_F(MemoryAllocatorTest, MemoryAllocatorNonPowerOfTwoAlignment) {
   MemoryAllocator allocator(mem_size, mem_pool);
 
   size_t alignment[5] = {0, 5, 6, 12, 34};
-  for (int i = 0; i < 5; i++) {
+  for (const auto i : c10::irange(5)) {
     ASSERT_EQ(nullptr, allocator.allocate(8, alignment[i]));
   }
 }

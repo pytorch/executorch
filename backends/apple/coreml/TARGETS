@@ -76,6 +76,7 @@ runtime.cxx_python_extension(
     base_module = "",
     visibility = [
         "//executorch/examples/apple/coreml/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     external_deps = [
         "pybind11",

@@ -19,8 +19,7 @@ namespace etdump {
  * BufferDataSink is a concrete implementation of the DataSinkBase class,
  * designed to store debug data in a pre-allocated, user-owned buffer. This
  * class provides methods to write raw data and tensor data into the buffer,
- * ensuring proper alignment and managing padding as needed. It is the standard
- * DataSink used by ETDumpGen.
+ * ensuring proper alignment and managing padding as needed.
  */
 class BufferDataSink : public DataSinkBase {
  public:
@@ -29,12 +28,20 @@ class BufferDataSink : public DataSinkBase {
    *
    * @param[in] buffer A Span object representing the buffer where data will be
    * stored.
+   * @param[in] alignment The alignment requirement for the buffer. It must be
+   * a power of two. Default is 64.
    */
-  explicit BufferDataSink(::executorch::runtime::Span<uint8_t> buffer)
-      : debug_buffer_(buffer), offset_(0) {}
+  explicit BufferDataSink(
+      ::executorch::runtime::Span<uint8_t> buffer,
+      size_t alignment = 64)
+      : debug_buffer_(buffer), offset_(0), alignment_(alignment) {}
 
+  // Uncopiable and unassignable to avoid double assignment and free of the
+  // internal buffer.
   BufferDataSink(const BufferDataSink&) = delete;
   BufferDataSink& operator=(const BufferDataSink&) = delete;
+
+  // Movable to be compatible with Result.
   BufferDataSink(BufferDataSink&&) = default;
   BufferDataSink& operator=(BufferDataSink&&) = default;
 
@@ -60,7 +67,7 @@ class BufferDataSink : public DataSinkBase {
    *
    * @return A Result object containing the total size of the buffer in bytes.
    */
-  ::executorch::runtime::Result<size_t> get_storage_size() const override;
+  ::executorch::runtime::Result<size_t> get_storage_size() const;
 
   /**
    * Retrieves the number of bytes currently used in the buffer.
@@ -75,6 +82,9 @@ class BufferDataSink : public DataSinkBase {
 
   // The offset of the next available location in the buffer.
   size_t offset_;
+
+  // The alignment of the buffer.
+  size_t alignment_;
 };
 
 } // namespace etdump

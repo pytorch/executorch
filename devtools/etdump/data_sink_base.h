@@ -26,6 +26,7 @@ class DataSinkBase {
   /**
    * Virtual destructor to ensure proper cleanup of derived classes.
    */
+
   virtual ~DataSinkBase() = default;
   /**
    * Write data into the debug storage. This method should be implemented
@@ -47,17 +48,7 @@ class DataSinkBase {
   virtual ::executorch::runtime::Result<size_t> write(
       const void* ptr,
       size_t length) = 0;
-  /**
-   * Get the maximum capacity of the debug storage in bytes.
-   * Should return Error::NotSupported if the capacity is not available
-   * (e.g. unbounded storage like internet or file)
-   *
-   * @return A Result object containing either:
-   *         - The total size of the debug storage, or
-   *         - An error code indicating the failure reason, if any issue
-   *           occurs when retrieving the storage capacity.
-   */
-  virtual ::executorch::runtime::Result<size_t> get_storage_size() const = 0;
+
   /**
    * Get the number of bytes currently used in the debug storage.
    *

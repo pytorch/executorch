@@ -50,12 +50,10 @@ prepare_artifacts_upload() {
 
 build_cmake_executor_runner() {
   echo "Building executor_runner"
-  CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
   rm -rf ${CMAKE_OUTPUT_DIR}
   cmake -DCMAKE_BUILD_TYPE=Debug \
       -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -B${CMAKE_OUTPUT_DIR} .
 
   cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
@@ -100,14 +98,12 @@ test_model() {
 
 build_cmake_xnn_executor_runner() {
   echo "Building xnn_executor_runner"
-  CMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')"
 
   (rm -rf ${CMAKE_OUTPUT_DIR} \
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
     && retry cmake -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   cmake --build ${CMAKE_OUTPUT_DIR} -j4
