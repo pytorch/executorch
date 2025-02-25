@@ -268,6 +268,7 @@ def _cxx_test(*args, **kwargs):
     kwargs["deps"].append("//executorch/test/utils:utils")
 
     _patch_kwargs_cxx(kwargs)
+    env.patch_headers(kwargs)
     _patch_build_mode_flags(kwargs)
     _patch_test_compiler_flags(kwargs)
 
@@ -332,6 +333,9 @@ def get_oss_build_kwargs():
             ],
         }
     return {}
+
+def get_aten_mode_options():
+    return (False,) if env.is_oss else (True, False)
 
 # Names in this struct should match the standard Buck rule names if possible:
 # see the "Build Rules" section in the sidebar of

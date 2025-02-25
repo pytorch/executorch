@@ -170,14 +170,24 @@ class Transformer(nn.Module):
         self.params = params
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
+        self.apply_embedding = params.apply_embedding
+        self.apply_output = params.apply_output
 
-        self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
+        self.tok_embeddings = (
+            nn.Embedding(params.vocab_size, params.dim)
+            if self.apply_embedding
+            else None
+        )
         self.rope = Rope(params)
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params, self.rope))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
-        self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
+        self.output = (
+            nn.Linear(params.dim, params.vocab_size, bias=False)
+            if self.apply_output
+            else None
+        )
         self.use_kv_cache = params.use_kv_cache
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
@@ -195,7 +205,7 @@ class Transformer(nn.Module):
             raise ValueError(
                 "You cannot specify both tokens and h at the same time, and must specify either one"
             )
-        if tokens is not None and h is None:
+        if self.apply_embedding and tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
 
         if attn_options is None:
@@ -219,7 +229,8 @@ class Transformer(nn.Module):
 
         h = self.norm(h)
 
-        logits = self.output(h)
+        if self.apply_output:
+            logits = self.output(h)
 
         if self.output_prune_map is not None:
             # expand to original size so that downstream applications can use the logits as-is.
