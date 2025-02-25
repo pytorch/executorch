@@ -8,11 +8,10 @@ set -eux
 
 # TODO: expand this to //...
 # TODO: can't query cadence & vulkan backends
-buck2 query "//backends/apple/... + //backends/arm/... + \
-//backends/example/... + //backends/mediatek/... + //backends/test/... + \
-//backends/transforms/... + //backends/xnnpack/... + //configurations/... + \
-//kernels/portable/cpu/... + //runtime/... + //schema/... + //test/... + \
-//util/..."
+buck2 query "//backends/apple/... + //backends/example/... + \
+//backends/mediatek/... + //backends/test/... + //backends/transforms/... + \
+//backends/xnnpack/... + //configurations/... + //kernels/portable/cpu/... + \
+//runtime/... + //schema/... + //test/... + //util/..."
 
 # TODO: expand the covered scope of Buck targets.
 buck2 build //runtime/core/portable_type/...

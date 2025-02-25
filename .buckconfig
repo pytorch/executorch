@@ -11,6 +11,7 @@
   shim_et = shim_et
 
 [repository_aliases]
+  bazel_skylib = shim
   config = prelude
   ovr_config = prelude
   toolchains = shim_et
