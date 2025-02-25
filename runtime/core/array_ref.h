@@ -29,6 +29,7 @@
 #include <array>
 #include <cstdint>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
@@ -149,7 +150,7 @@ class ArrayRef final {
     if (Length != RHS.Length) {
       return false;
     }
-    for (size_t i = 0; i < this->Length; i++) {
+    for (const auto i : c10::irange(this->Length)) {
       if (Data[i] != RHS.Data[i]) {
         return false;
       }
