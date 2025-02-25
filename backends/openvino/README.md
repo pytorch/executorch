@@ -27,7 +27,7 @@ executorch
 │       ├── CMakeLists.txt
 │       ├── README.md
 │       ├── __init__.py
-│       ├── openvino_functions.yaml
+│       ├── unsupported_openvino_functions.yaml
 │       ├── partitioner.py
 │       ├── preprocess.py
 │       └── requirements.txt
