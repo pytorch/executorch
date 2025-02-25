@@ -76,7 +76,7 @@ Follow the steps below to setup your build environment:
 ## Build Instructions for Examples
 
 ### AOT step:
-Refer to the [README.md](aot/README.md) in the `aot` folder for detailed instructions on exporting deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to openvino backend using Executorch. Users can dynamically specify the model, input shape, and target device. 
+Refer to the [README.md](../../examples/openvino/aot/README.md) in the `examples/openvino/aot` folder for detailed instructions on exporting deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to openvino backend using Executorch. Users can dynamically specify the model, input shape, and target device. 
 
 Below is an example to export a ResNet50 model from Torchvision model suite for CPU device with an input shape of `[1, 3, 256, 256]`
 
