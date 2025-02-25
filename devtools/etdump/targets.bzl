@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 SCALAR_TYPE_STEM = "scalar_type"
 SCALAR_TYPE = SCALAR_TYPE_STEM + ".fbs"
@@ -87,7 +87,7 @@ def define_common_targets():
         exported_external_deps = ["flatccrt"],
     )
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
             name = "etdump_flatcc" + aten_suffix,
