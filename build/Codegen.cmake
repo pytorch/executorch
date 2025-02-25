@@ -223,13 +223,13 @@ endfunction()
 function(append_filelist name outputvar)
   # configure_file adds its input to the list of CMAKE_RERUN dependencies
   configure_file(
-    ${PROJECT_SOURCE_DIR}/build/build_variables.bzl
+    ${PROJECT_SOURCE_DIR}/shim_et/xplat/executorch/build/build_variables.bzl
     ${PROJECT_BINARY_DIR}/build_variables.bzl COPYONLY
   )
   execute_process(
     COMMAND
       "${PYTHON_EXECUTABLE}" -c
-      "exec(open('${PROJECT_SOURCE_DIR}/build/build_variables.bzl').read());print(';'.join(${name}))"
+      "exec(open('${PROJECT_SOURCE_DIR}/shim_et/xplat/executorch/build/build_variables.bzl').read());print(';'.join(${name}))"
     WORKING_DIRECTORY "${_rootdir}"
     RESULT_VARIABLE _retval
     OUTPUT_VARIABLE _tempvar
@@ -268,7 +268,7 @@ function(validate_build_variables)
       QUANTIZED_KERNELS_SRCS
       PROGRAM_SCHEMA_SRCS
       OPTIMIZED_CPUBLAS_SRCS
-      OPTIMIZED_NATIVE_CPU_OPS_OSS_SRCS
+      OPTIMIZED_NATIVE_CPU_OPS_SRCS
       EXTENSION_DATA_LOADER_SRCS
       EXTENSION_MODULE_SRCS
       EXTENSION_RUNNER_UTIL_SRCS
@@ -297,7 +297,7 @@ function(validate_build_variables)
       _quantized_kernels__srcs
       _program_schema__srcs
       _optimized_cpublas__srcs
-      _optimized_native_cpu_ops_oss__srcs
+      _optimized_native_cpu_ops__srcs
       _extension_data_loader__srcs
       _extension_module__srcs
       _extension_runner_util__srcs
