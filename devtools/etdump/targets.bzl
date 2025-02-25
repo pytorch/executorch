@@ -87,8 +87,54 @@ def define_common_targets():
         exported_external_deps = ["flatccrt"],
     )
 
+    runtime.cxx_library(
+        name = "utils",
+        srcs = [],
+        exported_headers = [
+            "utils.h",
+        ],
+        visibility = [
+
+        ],
+    )
+
     for aten_mode in (True, False):
         aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_library(
+            name = "data_sink_base" + aten_suffix,
+            exported_headers = [
+                "data_sink_base.h",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
+
+        runtime.cxx_library(
+            name = "buffer_data_sink" + aten_suffix,
+            headers = [
+                "buffer_data_sink.h",
+            ],
+            srcs = [
+                "buffer_data_sink.cpp",
+            ],
+            deps = [
+                ":utils",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                ":data_sink_base" + aten_suffix,
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
         runtime.cxx_library(
             name = "etdump_flatcc" + aten_suffix,
             srcs = [
@@ -106,6 +152,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 ":etdump_schema_flatcc",
+                ":utils",
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
