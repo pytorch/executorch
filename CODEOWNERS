@@ -32,7 +32,7 @@
 /examples/llm_manual @larryliu0820
 /examples/llm_pte_finetuning @JacobSzwejbka
 /examples/mediatek @cccclai
-/examples/models @lucylq
+/examples/models @lucylq @jackzhxng
 /examples/portable @larryliu0820 @manuelcandales
 /examples/qualcomm @cccclai
 /examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
