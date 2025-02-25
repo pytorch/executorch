@@ -310,11 +310,11 @@ class CheckProperQuantization(OperatorSupportBase):
         if not input_quantized:
             return False
 
-        output_quantized = output_quantized or all(
-            (output_node.target == self.q_op)
-            or (not get_first_fake_tensor(output_node).dtype.is_floating_point)
-            for output_node in node.users
+        all_q_users = all(
+            (output_node.target == self.q_op) for output_node in node.users
         )
+        is_floating_point = get_first_fake_tensor(node).dtype.is_floating_point
+        output_quantized = output_quantized or all_q_users or not is_floating_point
 
         if not output_quantized:
             return False

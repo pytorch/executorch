@@ -1,9 +1,18 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 python_library(
-    name = "common",
-    srcs = ["common.py"],
+    name = "conftest",
+    srcs = ["conftest.py"],
     deps = [
+        "//executorch/exir:lib",
+    ]
+)
+
+python_library(
+    name = "runner_utils",
+    srcs = ["runner_utils.py"],
+    deps = [
+        ":conftest",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/arm:arm_backend",
         "//executorch/exir:lib",
@@ -12,12 +21,14 @@ python_library(
 )
 
 python_library(
-    name = "runner_utils",
-    srcs = ["runner_utils.py"],
+    name = "common",
+    srcs = ["common.py"],
     deps = [
+        ":runner_utils",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/arm:arm_backend",
         "//executorch/exir:lib",
         "//executorch/exir/backend:compile_spec_schema",
+        "fbsource//third-party/pypi/pytest:pytest",
     ]
 )
