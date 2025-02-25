@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Using Android prebuilt libraries (AAR) &mdash; ExecuTorch main documentation</title>
+  <title>Using Android prebuilt library (AAR) &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -459,7 +459,7 @@
       </li>
 
         
-      <li>Using Android prebuilt libraries (AAR)</li>
+      <li>Using Android prebuilt library (AAR)</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -497,26 +497,16 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="using-android-prebuilt-libraries-aar">
-<h1>Using Android prebuilt libraries (AAR)<a class="headerlink" href="#using-android-prebuilt-libraries-aar" title="Permalink to this heading">¶</a></h1>
-<p>We provide two prebuilt Android libraries (AAR), <code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code> for generic use case (image/audio processing) and <code class="docutils literal notranslate"><span class="pre">executorch_llama.aar</span></code> for LLAMA use case.</p>
-<div class="section" id="contents-of-libraries">
-<h2>Contents of libraries<a class="headerlink" href="#contents-of-libraries" title="Permalink to this heading">¶</a></h2>
+  <div class="section" id="using-android-prebuilt-library-aar">
+<h1>Using Android prebuilt library (AAR)<a class="headerlink" href="#using-android-prebuilt-library-aar" title="Permalink to this heading">¶</a></h1>
+<p>We provide a prebuilt Android library (AAR), <code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code> for both generic (image/audio processing) and LLAMA use case.</p>
+<div class="section" id="contents-of-library">
+<h2>Contents of library<a class="headerlink" href="#contents-of-library" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code></p>
 <ul>
 <li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/android/src/main/java/org/pytorch/executorch">Java library</a></p></li>
-<li><p>JNI contains the JNI binding for <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/extension/android/src/main/java/org/pytorch/executorch/NativePeer.java">NativePeer.java</a> and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, and Quantized kernels.</p>
-<ul>
-<li><p>Comes with two ABI variants, arm64-v8a and x86_64.</p></li>
-</ul>
-</li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_llama.aar</span></code></p>
-<ul>
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/android/src/main/java/org/pytorch/executorch">Java library</a> (Note: it contains the same Java classes as the previous Java, but it does not contain the JNI binding for generic Module/NativePeer Java code).</p></li>
-<li><p>JNI contains the JNI binding for <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/extension/android/src/main/java/org/pytorch/executorch/LlamaModule.java">LlamaModule.java</a> and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.</p>
+<li><p>JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.</p>
 <ul>
 <li><p>Comes with two ABI variants, arm64-v8a and x86_64.</p></li>
 </ul>
@@ -585,8 +575,8 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Using Android prebuilt libraries (AAR)</a><ul>
-<li><a class="reference internal" href="#contents-of-libraries">Contents of libraries</a></li>
+<li><a class="reference internal" href="#">Using Android prebuilt library (AAR)</a><ul>
+<li><a class="reference internal" href="#contents-of-library">Contents of library</a></li>
 <li><a class="reference internal" href="#downloading-aar">Downloading AAR</a></li>
 <li><a class="reference internal" href="#using-prebuilt-libraries">Using prebuilt libraries</a></li>
 </ul>
