@@ -22,6 +22,9 @@ from executorch.exir.memory_planning import collect_specs_from_nodes
 from executorch.exir.tests.models import MultiLayerPerceptron
 
 
+asd
+
+
 class TestMemPlanningPasses(unittest.TestCase):
     def test_calculate_peak_memory_pass(self) -> None:
         class PeakMemoryTestModel(torch.nn.Module):
