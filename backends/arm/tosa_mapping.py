@@ -11,6 +11,8 @@
 # the standardised TOSA representation.
 #
 
+from typing import Sequence
+
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
@@ -43,8 +45,10 @@ DTYPE_MAP = {
 
 
 def map_dtype(data_type):
-    assert data_type not in UNSUPPORTED_DTYPES, f"Unsupported type: {data_type}"
-    assert data_type in DTYPE_MAP, f"Unknown type: {data_type}"
+    if data_type in UNSUPPORTED_DTYPES:
+        raise ValueError(f"Unsupported type: {data_type}")
+    if data_type not in DTYPE_MAP:
+        raise ValueError(f"Unknown type: {data_type}")
     return DTYPE_MAP[data_type]
 
 
@@ -58,7 +62,10 @@ def extract_tensor_meta(meta):
         # TODO: should use first concrete representation
         val = val[0]
 
-    assert torch._subclasses.fake_tensor.FakeTensor == type(val)
+    if not isinstance(val, torch._subclasses.fake_tensor.FakeTensor):
+        raise ValueError(
+            f"Expected first value in node.meta['val'] to be FakeTensor, got {val.__class__}"
+        )
     dtype = map_dtype(val.dtype)
     shape = tuple(val.size())
 
@@ -71,19 +78,18 @@ def extract_tensor_meta(meta):
 
 # Class to capture arguments and turn into tensor references for TOSA OPs
 class TosaArg:
-    def __process_node(self, argument):
-        assert isinstance(argument, torch.fx.node.Node)
+    def __process_node(self, argument: torch.fx.Node):
         self.name = argument.name
         self.dtype, self.shape, self.dim_order = extract_tensor_meta(argument.meta)
 
     def __process_list(self, argument):
         self.special = list(argument)
 
-    def __process_number(self, argument):
+    def __process_number(self, argument: float | int):
         self.number = argument
 
     def __init__(self, argument) -> None:
-        self.name = None
+        self.name = None  # type: ignore[assignment]
         self.dtype = None
         self.shape = None
         self.dim_order = None
@@ -92,16 +98,13 @@ class TosaArg:
         if argument is None:
             return
 
-        if isinstance(argument, torch.fx.node.Node):
+        if isinstance(argument, torch.fx.Node):
             self.__process_node(argument)
             return
-        if isinstance(argument, list):
+        if isinstance(argument, Sequence):
             self.__process_list(argument)
             return
-        if isinstance(argument, int):
-            self.__process_number(argument)
-            return
-        if isinstance(argument, float):
+        if isinstance(argument, (int, float)):
             self.__process_number(argument)
             return
 

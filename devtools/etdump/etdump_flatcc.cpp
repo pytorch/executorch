@@ -625,21 +625,23 @@ bool ETDumpGen::is_static_etdump() {
   return alloc_.data != nullptr;
 }
 
-size_t ETDumpGen::get_debug_buffer_size() const {
-  return ETDumpGen::get_data_sink_size();
-}
-
-size_t ETDumpGen::get_data_sink_size() const {
-  ET_CHECK_MSG(data_sink_, "Must set data sink before checking its size");
-  Result<size_t> ret = data_sink_->get_storage_size();
-  ET_CHECK_MSG(
-      ret.ok(),
-      "Failed to get storage size with error 0x%" PRIx32,
-      static_cast<uint32_t>(ret.error()));
-  return ret.get();
+std::shared_ptr<DataSinkBase> ETDumpGen::get_data_sink() {
+  return data_sink_;
 }
 
 long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
+  // Previously, the function copy_tensor_to_debug_buffer returned 0xFF..F when
+  // given an empty tensor, which is an invalid offset for most buffers. In our
+  // data sink, we will return the current debug_buffer_offset for better
+  // clarity. We are isolating the empty tensor case here using the old logic to
+  // avoid any backward compatibility issues while introducing the data sink.
+  // Once the data sink is fully implemented, we can remove this check and apply
+  // the new logic to all cases.
+  // TODO(gasoonjia): remove this check after datasink is fully rolled out.
+  if (tensor.nbytes() == 0) {
+    return static_cast<size_t>(-1);
+  }
+
   ET_CHECK_MSG(data_sink_, "Must set data sink before writing data");
   Result<size_t> ret =
       data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());

@@ -31,6 +31,12 @@ struct EValue;
 namespace executorch {
 namespace runtime {
 
+// Forward declare NamedData. This is a public header and must not include
+// internal data types.
+namespace deserialization {
+struct NamedData;
+} // namespace deserialization
+
 // Forward declare Program to avoid a circular reference.
 class Program;
 
@@ -42,6 +48,7 @@ using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
+using deserialization::NamedData;
 
 /**
  * An executable method of an executorch program. Maps to a python method like
@@ -66,6 +73,8 @@ class Method final {
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
         chains_(rhs.chains_),
+        external_constants_(rhs.external_constants_),
+        n_external_constants_(rhs.n_external_constants_),
         init_state_(rhs.init_state_) {
     // Required: clear out fields that the dtor looks at, so that we don't free
     // anything twice.
@@ -73,6 +82,8 @@ class Method final {
     rhs.values_ = nullptr;
     rhs.n_delegate_ = 0;
     rhs.delegates_ = nullptr;
+    rhs.n_external_constants_ = 0;
+    rhs.external_constants_ = nullptr;
 
     // Helpful: Try to ensure that any other interactions with the old object
     // result in failures.
@@ -288,6 +299,8 @@ class Method final {
         delegates_(nullptr),
         n_chains_(0),
         chains_(nullptr),
+        external_constants_(nullptr),
+        n_external_constants_(0),
         init_state_(InitializationState::Uninitialized) {}
 
   /// Static factory used by Program.
@@ -336,7 +349,30 @@ class Method final {
   size_t n_chains_;
   Chain* chains_;
 
+  NamedData* external_constants_;
+  size_t n_external_constants_ = 0;
+
   InitializationState init_state_;
+
+  /**
+   * Counts the number of tensors marked as EXTERNAL in the flatbuffer
+   * for this method.
+   */
+  ET_NODISCARD Result<size_t> get_num_external_constants();
+
+  /**
+   * Parses the flatbuffer for constant tensors tagged as EXTERNAL.
+   * Retrieves the external constants using the named_data_map and places them
+   * into `external_constants_`. Updates `n_external_constants_` to count the
+   * number of successfully-initialized external constants.
+   * FreeableBuffers returned by the named_data_map are owned by the
+   * method and are freed on method destruction.
+   *
+   * @param[in] named_data_map, to retrieve external constants from.
+   * @returns Error::Ok on success, non-Ok on failure.
+   */
+  ET_NODISCARD Error
+  parse_external_constants(const NamedDataMap* named_data_map);
 
   /**
    * Parses the elements of the values_ array. On error, n_value_ will be set to

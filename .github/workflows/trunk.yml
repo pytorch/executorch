@@ -159,7 +159,7 @@ jobs:
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
         # Test ethos-u delegate examples with run.sh
-        backends/arm/test/test_arm_baremetal.sh test_run_ethosu_fvp
+        backends/arm/test/test_arm_baremetal.sh test_full_ethosu_fvp
 
 
   test-arm-reference-delegation:
@@ -374,7 +374,13 @@ jobs:
     secrets: inherit
     strategy:
       matrix:
-        hf_model_repo: [google/gemma-2-2b]
+        hf_model_id: [
+          google/gemma-2-2b,
+          Qwen/Qwen2.5-0.5B,
+          HuggingFaceTB/SmolLM2-135M,
+          meta-llama/Llama-3.2-1B,
+          allenai/OLMo-1B-hf
+        ]
       fail-fast: false
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -389,68 +395,39 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
-
-        echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
-        rm -rf cmake-out
-        cmake \
-            -DCMAKE_INSTALL_PREFIX=cmake-out \
-            -DCMAKE_PREFIX_PATH="$(python -c 'import torch as _; print(_.__path__[0])')" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-            -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-            -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-            -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-            -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-            -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-            -DEXECUTORCH_BUILD_XNNPACK=ON \
-            -DPYTHON_EXECUTABLE=python \
-            -Bcmake-out .
-        cmake --build cmake-out -j9 --target install --config Release
-
-        echo "Build llama runner"
-        dir="examples/models/llama"
-        cmake \
-            -DCMAKE_INSTALL_PREFIX=cmake-out \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$(python -c 'import torch as _; print(_.__path__[0])')" \
-            -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-            -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-            -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-            -DEXECUTORCH_BUILD_XNNPACK=ON \
-            -DPYTHON_EXECUTABLE=python \
-            -Bcmake-out/${dir} \
-            ${dir}
-        cmake --build cmake-out/${dir} -j9 --config Release
         echo "::endgroup::"
 
-        echo "::group::Set up HuggingFace Dependencies"
-        if [ -z "$SECRET_EXECUTORCH_HF_TOKEN" ]; then
-          echo "::error::SECRET_EXECUTORCH_HF_TOKEN is empty. For security reason secrets won't be accessible on forked PRs. Please make sure you submit a non-forked PR."
-          exit 1
-        fi
+        echo "::group::Set up Hugging Face"
         pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        git clone https://github.com/huggingface/optimum-executorch
+        cd optimum-executorch
+        # There is no release yet, for CI stability, always test from the same commit on main
+        git checkout 6a7e83f3eee2976fa809335bfb78a45b1ea1cb25
+        pip install .
         pip install accelerate sentencepiece
         pip list
         echo "::endgroup::"
 
-        echo "::group::Export to ExecuTorch"
-        TOKENIZER_FILE=tokenizer.model
-        TOKENIZER_BIN_FILE=tokenizer.bin
-        ET_MODEL_NAME=et_model
-        DOWNLOADED_TOKENIZER_FILE_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${{ matrix.hf_model_repo }}" --files "${TOKENIZER_FILE}")
-        if [ -f "$DOWNLOADED_TOKENIZER_FILE_PATH/$TOKENIZER_FILE" ]; then
-            echo "${TOKENIZER_FILE} downloaded successfully at: $DOWNLOADED_TOKENIZER_FILE_PATH"
-            python -m extension.llm.tokenizer.tokenizer -t "$DOWNLOADED_TOKENIZER_FILE_PATH/$TOKENIZER_FILE" -o ./${TOKENIZER_BIN_FILE}
-            ls ./tokenizer.bin
-        else
-            echo "Failed to download ${TOKENIZER_FILE} from ${{ matrix.hf_model_repo }}."
-            exit 1
-        fi
+        echo "::group::Export and Run ${{ matrix.hf_model_id }}"
+        # Pass matrix variable as environment variable
+        export MODEL_ID="${{ matrix.hf_model_id }}"
+        python -c "
+        import os
+        from optimum.executorch import ExecuTorchModelForCausalLM
+        from transformers import AutoTokenizer
 
-        python -m extension.export_util.export_hf_model -hfm=${{ matrix.hf_model_repo }} -o ${ET_MODEL_NAME}
-
-        cmake-out/examples/models/llama/llama_main --model_path=${ET_MODEL_NAME}.pte --tokenizer_path=${TOKENIZER_BIN_FILE} --prompt="My name is"
+        model_id = os.getenv('MODEL_ID')
+        print(f'Loading model: {model_id}')
+        model = ExecuTorchModelForCausalLM.from_pretrained(model_id, recipe='xnnpack')
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        generated_text = model.text_generation(
+          tokenizer=tokenizer,
+          prompt='Simply put, the theory of relativity states that',
+          max_seq_len=64
+        )
+        print(generated_text)
+        "
         echo "::endgroup::"
 
 
@@ -491,3 +468,13 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
+
+  unittest-release:
+    uses: ./.github/workflows/_unittest.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      build-mode: Release
+      build-tool: cmake
+      docker-image: executorch-ubuntu-22.04-clang12
