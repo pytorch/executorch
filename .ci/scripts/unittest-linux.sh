@@ -14,6 +14,14 @@ else
   exit 1
 fi
 
+BUILD_MODE=$2
+if [[ "${BUILD_MODE:-}" =~ ^(Debug|Release)$ ]]; then
+    echo "Running tests in build mode ${BUILD_MODE} ..."
+else
+    echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
+    exit 1
+fi
+
 # The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"
 CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -25,7 +33,7 @@ source .ci/scripts/setup-vulkan-linux-deps.sh
 PYTHON_EXECUTABLE=python \
 EXECUTORCH_BUILD_PYBIND=ON \
 CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
-.ci/scripts/setup-linux.sh "$BUILD_TOOL"
+.ci/scripts/setup-linux.sh "$BUILD_TOOL" "$BUILD_MODE"
 
 # Install llama3_2_vision dependencies.
 PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
