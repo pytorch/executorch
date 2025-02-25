@@ -89,32 +89,38 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
 
 
-def smart_mask_updator(atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches):
-    for i, k_cache in enumerate(k_caches):
-        k_cache[:, :, pos] = new_k_caches[i][:, :, 0]
+def smart_mask_updater(
+    ar_len, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
+):
+    # Update the KV cache input for the next inference when the position exceeds the autoregressive length.
+    if pos >= ar_len:
+        for i, k_cache in enumerate(k_caches):
+            k_cache[:, :, pos - ar_len] = new_k_caches[i][:, :, 0]
 
-    for i, v_cache in enumerate(v_caches):
-        v_cache[:, pos, :] = new_v_caches[i]
+        for i, v_cache in enumerate(v_caches):
+            v_cache[:, pos - ar_len, :] = new_v_caches[i][:, 0, :]
+        atten_mask[:, :, pos - ar_len] = 0
 
-    atten_mask[0][pos] = 0
     pos += 1
     return (atten_mask, pos, k_caches, v_caches)
 
 
-def shift_pointer_updator(
-    atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
+def shift_pointer_updater(
+    ar_len, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
 ):
-    k_caches = [
-        torch.cat([k_cache[:, :, 1:], new_k_caches[i]], dim=-1)
-        for i, k_cache in enumerate(k_caches)
-    ]
-    v_caches = [
-        torch.cat([v_cache[:, 1:, :], new_v_caches[i]], dim=1)
-        for i, v_cache in enumerate(v_caches)
-    ]
+    # Update the KV cache input for the next inference when the position exceeds the autoregressive length.
+    if pos >= ar_len:
+        k_caches = [
+            torch.cat([k_cache[:, :, 1:], new_k_caches[i][:, :, :1]], dim=-1)
+            for i, k_cache in enumerate(k_caches)
+        ]
+        v_caches = [
+            torch.cat([v_cache[:, 1:, :], new_v_caches[i][:, :1, :]], dim=1)
+            for i, v_cache in enumerate(v_caches)
+        ]
+        atten_mask[:, :, -pos - 1] = 0
 
     pos += 1
-    atten_mask[0][-pos - 1] = 0
     return (atten_mask, pos, k_caches, v_caches)
 
 
@@ -123,15 +129,15 @@ def _kv_calibrate(
     user_prompts,
     module: torch.fx.GraphModule,
     tokenizer,
+    ar_len=1,
     max_seq_len=512,
-    updator=smart_mask_updator,
+    updater=smart_mask_updater,
     use_i64_token=False,
 ):
     _, atten_mask, _, k_caches, v_caches = example_inputs
 
     # TODO: change criteria & support batch inputs if necessary
-    pos = torch.tensor(0, dtype=torch.int32)
-    max_cache_len = max_seq_len - 1
+    all_pos = torch.arange(0, max_seq_len, 1, dtype=torch.int32).unsqueeze(0)
 
     token_list = []
     # Llama2 tokenizer has no special tokens
@@ -144,21 +150,50 @@ def _kv_calibrate(
     else:
         raise RuntimeError("Unkown tokenizer")
 
+    pos = len(token_list) if len(token_list) < ar_len else ar_len
+    dtype = torch.int64 if use_i64_token else torch.int32
+
     with torch.no_grad():
-        while token_list[-1] != tokenizer.eos_id and pos < max_cache_len:
-            dtype = torch.int64 if use_i64_token else torch.int32
-            token = torch.full((1, 1), token_list[pos], dtype=dtype)
+        while token_list[-1] != tokenizer.eos_id and pos < max_seq_len:
+            tmp_token_list = torch.tensor(
+                token_list[pos - ar_len : pos], dtype=dtype
+            ).reshape(1, -1)
+            tmp_pos = all_pos[:, pos - ar_len : pos]
+            tmp_atten_mask = atten_mask
+            if pos < ar_len:
+                tmp_token_list = torch.cat(
+                    [
+                        torch.zeros((1, ar_len - pos), dtype=dtype),
+                        torch.tensor(token_list, dtype=dtype).reshape(1, -1),
+                    ],
+                    dim=1,
+                )
+                tmp_pos = torch.cat(
+                    [
+                        torch.zeros((1, ar_len - pos), dtype=torch.int32),
+                        all_pos[:, :pos],
+                    ],
+                    dim=1,
+                )
+                tmp_atten_mask = torch.cat(
+                    [
+                        torch.ones(1, ar_len, max_seq_len - pos) * -255.0,
+                        atten_mask[:, :, -pos:],
+                    ],
+                    dim=-1,
+                )
+
             logits, new_k_caches, new_v_caches = module(
-                token,
-                atten_mask,
-                torch.full((1, 1), pos),
+                tmp_token_list,
+                tmp_atten_mask,
+                tmp_pos,
                 *k_caches,
                 *v_caches,
             )
-            atten_mask, pos, k_caches, v_caches = updator(
-                atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
+            atten_mask, pos, k_caches, v_caches = updater(
+                ar_len, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
             )
-            if pos >= len(token_list):
+            if pos > len(token_list):
                 token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
 
     print(f"kv calibration data:\n{tokenizer.decode(token_list)}")
@@ -173,7 +208,6 @@ def _prefill_calibrate(
     use_i64_token=False,
 ):
     _, atten_mask = example_inputs
-    max_cache_len = max_seq_len - 1
 
     # TODO: change criteria & support batch inputs if necessary
 
@@ -192,20 +226,24 @@ def _prefill_calibrate(
     dtype = torch.int64 if use_i64_token else torch.int32
 
     with torch.no_grad():
-        while token_list[-1] != tokenizer.eos_id and pos < max_cache_len:
+        while token_list[-1] != tokenizer.eos_id and pos < max_seq_len:
             tmp_token_list = torch.tensor(token_list, dtype=dtype).reshape(1, -1)
-            if pos < max_cache_len:
+            if pos < max_seq_len:
                 tmp_token_list = torch.cat(
                     [
                         tmp_token_list,
-                        torch.zeros((1, max_cache_len - pos), dtype=dtype),
+                        torch.zeros((1, max_seq_len - pos), dtype=dtype),
                     ],
                     dim=1,
                 )
-            logits, new_k_caches, new_v_caches = module(
+            results = module(
                 tmp_token_list,
                 atten_mask,
             )
+            if len(results) == 3:
+                logits, new_k_caches, new_v_caches = results
+            elif len(results) == 1:
+                logits = results
             token_list.append(torch.argmax(logits[:, pos - 1], dim=-1).item())
             pos += 1
 
@@ -217,8 +255,9 @@ def calibrate(
     user_prompts,
     module: torch.fx.GraphModule,
     tokenizer,
+    ar_len=1,
     max_seq_len=512,
-    kv_updator=smart_mask_updator,
+    kv_updater=smart_mask_updater,
     use_i64_token=False,
 ):
     if len(example_inputs) == 2:
@@ -236,8 +275,9 @@ def calibrate(
             user_prompts,
             module,
             tokenizer,
+            ar_len,
             max_seq_len,
-            updator=kv_updator,
+            updater=kv_updater,
             use_i64_token=use_i64_token,
         )
     else:
@@ -268,56 +308,36 @@ class SingleLlama:
 
         # shape of k caches and v caches
         kv_cache_shape = {
-            # single head, kv mode input
+            # single head, kv input
             (self.llama_meta["get_head_dim"], self.llama_meta["get_max_seq_len"]),
             (self.llama_meta["get_max_seq_len"], self.llama_meta["get_head_dim"]),
-            # single head, kv mode output
-            (self.llama_meta["get_head_dim"], 1),
-            (1, self.llama_meta["get_head_dim"]),
-            # single head, bert mode
-            (self.llama_meta["get_head_dim"], self.llama_meta["get_max_seq_len"] - 1),
-            (self.llama_meta["get_max_seq_len"] - 1, self.llama_meta["get_head_dim"]),
+            # single head, kv output
+            (self.llama_meta["get_head_dim"], self.llama_meta["get_ar_len"]),
+            (self.llama_meta["get_ar_len"], self.llama_meta["get_head_dim"]),
         }
         io_shape = {
-            # kv mode
+            # logit output
             (
                 self.llama_meta["get_max_batch_size"],
-                1,
-                self.llama_meta["get_vocab_size"],
-            ),
-            # bert mode
-            (
-                self.llama_meta["get_max_batch_size"],
-                self.llama_meta["get_max_seq_len"] - 1,
+                self.llama_meta["get_ar_len"],
                 self.llama_meta["get_vocab_size"],
             ),
         }
 
         atten_mask_shape = {
-            # kv mode
-            (self.llama_meta["get_max_batch_size"], self.llama_meta["get_max_seq_len"]),
-            # bert mode
             (
-                self.llama_meta["get_max_seq_len"] - 1,
-                self.llama_meta["get_max_seq_len"] - 1,
+                self.llama_meta["get_max_batch_size"],
+                self.llama_meta["get_ar_len"],
+                self.llama_meta["get_max_seq_len"],
             ),
         }
 
         freq_shape = {
-            # kv mode
-            (1, self.llama_meta["get_head_dim"] // 2),
-            # bert mode
-            (
-                self.llama_meta["get_max_seq_len"] - 1,
-                self.llama_meta["get_head_dim"] // 2,
-            ),
+            (self.llama_meta["get_ar_len"], self.llama_meta["get_head_dim"] // 2),
         }
 
         freq_op = {
-            # kv mode
             exir_ops.edge.aten.select.int,
-            # bert mode
-            exir_ops.edge.aten.slice_copy.Tensor,
         }
 
         for n in gm.graph.nodes:
@@ -376,8 +396,9 @@ class SingleLlama:
             args.prompt,
             fx_graph_module,
             tokenizer=tokenizer,
+            ar_len=self.llama_meta["get_ar_len"],
             max_seq_len=self.llama_meta["get_max_seq_len"],
-            kv_updator=args.kv_updator,
+            kv_updater=args.kv_updater,
             use_i64_token=args.embedding_quantize is not None,
         )
 
@@ -467,12 +488,14 @@ def compile(args, pte_filename, tokenizer):
         kv_config = ModelArgs(**json.load(f))
         # TODO: support batch inputs if necessary
         kv_config.max_batch_size = 1
-        kv_config.max_seq_len = args.kv_seq_len
+        kv_config.max_seq_len = args.max_seq_len
         kv_config.use_kv_cache = True
 
         prefill_config = copy.copy(kv_config)
-        prefill_config.max_seq_len = args.prefill_seq_len
-        prefill_config.use_kv_cache = False
+        prefill_config.max_seq_len = args.max_seq_len
+        prefill_config.use_kv_cache = (
+            False if args.max_seq_len == args.prefill_ar_len else True
+        )
 
     state_dict = torch.load(
         args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -484,27 +507,29 @@ def compile(args, pte_filename, tokenizer):
         if args.model_mode == "kv":
             llama_instance_list.append(
                 LlamaModel(
-                    kv_config, output_new_cache_only=True, use_i64_token=use_i64_token
-                )
-            )
-        elif args.model_mode == "prefill":
-            llama_instance_list.append(
-                LlamaModel(
-                    prefill_config,
-                    output_new_cache_only=False,
+                    kv_config,
+                    ar_len=1,
+                    output_new_cache_only=True,
+                    output_cache=True,
                     use_i64_token=use_i64_token,
                 )
             )
         elif args.model_mode == "hybrid":
             llama_instance_list.append(
                 LlamaModel(
-                    kv_config, output_new_cache_only=True, use_i64_token=use_i64_token
+                    kv_config,
+                    ar_len=1,
+                    output_new_cache_only=True,
+                    output_cache=True,
+                    use_i64_token=use_i64_token,
                 )
             )
             llama_instance_list.append(
                 LlamaModel(
                     prefill_config,
-                    output_new_cache_only=False,
+                    ar_len=args.prefill_ar_len,
+                    output_new_cache_only=True,
+                    output_cache=True,
                     use_i64_token=use_i64_token,
                 )
             )
@@ -606,7 +631,7 @@ def compile(args, pte_filename, tokenizer):
     start_lowering_ts = time.time()
     quant_attrs = None
 
-    if args.model_mode in ["kv", "prefill"]:
+    if args.model_mode in ["kv"]:
         llama_instance_list[0].lowering_modules(
             args.artifact,
             fixed_point_type,
@@ -783,12 +808,10 @@ def compile(args, pte_filename, tokenizer):
 def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
 
-    if args.model_mode == "prefill":
+    if args.model_mode == "kv":
         eval_mode = 0
-    elif args.model_mode == "kv":
-        eval_mode = 1
     elif args.model_mode == "hybrid":
-        eval_mode = 2
+        eval_mode = 1
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
@@ -807,7 +830,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
         with open(f"{args.artifact}/outputs/outputs.txt", "r") as f:
             outputs.append(f.read())
 
-    seq_len = args.prefill_seq_len if args.model_mode == "prefill" else args.kv_seq_len
+    seq_len = args.max_seq_len
     runner_args = " ".join(
         [
             f'--prompt "{args.prompt}"',
@@ -824,9 +847,9 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
         # x86 emulator is intended for CI and not performance. Check only the first few tokens.
         seq_len = min(seq_len, 16)
 
-        if args.kv_updator == smart_mask_updator:
+        if args.kv_updater == smart_mask_updater:
             logging.warning(
-                "x86 only support ShiftPointer, overwrite kv_updator to ShiftPointer"
+                "x86 only support ShiftPointer, overwrite kv_updater to ShiftPointer"
             )
 
         qnn_sdk = os.getenv("QNN_SDK_ROOT")
@@ -839,7 +862,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
                 f"--output_path {args.artifact}/outputs/outputs.txt",
-                f"--kv_updator ShiftPointer",
+                f"--kv_updater ShiftPointer",
                 runner_args,
             ]
         )
@@ -859,7 +882,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                 f"--model_path {pte_filename}.pte",
                 f"--seq_len {seq_len}",
                 "--output_path outputs/outputs.txt",
-                f"--kv_updator {'SmartMask' if args.kv_updator == smart_mask_updator else 'ShiftPointer'}",
+                f"--kv_updater {'SmartMask' if args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
                 runner_args,
             ]
         )
@@ -998,28 +1021,28 @@ def _build_parser():
 
     parser.add_argument(
         "--model_mode",
-        help="Export and inference prefill mode, kv mode or hybrid mode",
+        help="Export and inference kv mode or hybrid mode",
         default="kv",
-        choices=["prefill", "kv", "hybrid"],
+        choices=["kv", "hybrid"],
         type=str,
     )
 
     parser.add_argument(
-        "--prefill_seq_len",
-        help="Ouput sequence length for llama. Use this option for prefill or hybrid mode",
-        default=32,
-        type=int,
-    )
-
-    parser.add_argument(
-        "--kv_seq_len",
-        help="Ouput sequence length for llama. Use this option for kv or hybrid mode",
+        "--max_seq_len",
+        help="This refers to maximum number of tokens that the model can process & consider at once to generate predictions/responses.",
         default=512,
         type=int,
     )
 
     parser.add_argument(
-        "--kv_updator",
+        "--prefill_ar_len",
+        help="The auto-regression (AR) length determines the number of tokens to consume and the number of logits to produce. Use this option to process the prompt and generate the key-value (kv) cache, which serves as a prompt processor for hybrid mode.",
+        default=32,
+        type=int,
+    )
+
+    parser.add_argument(
+        "--kv_updater",
         help="Choose how to update kv cache during runtime",
         choices=["smart_mask", "shift_pointer"],
         default="smart_mask",
@@ -1045,12 +1068,10 @@ def export_llama(args) -> None:
 
     if args.model_mode == "kv":
         pte_filename = "kv_llama_qnn"
-    elif args.model_mode == "prefill":
-        pte_filename = "prefill_llama_qnn"
     elif args.model_mode == "hybrid":
         assert (
-            args.kv_seq_len >= args.prefill_seq_len
-        ), "Please ensure kv_seq_len is >= prefill_seq_len"
+            args.max_seq_len >= args.prefill_ar_len
+        ), "Please ensure max_seq_len is >= prefill_ar_len"
         pte_filename = "hybrid_llama_qnn"
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
@@ -1073,13 +1094,13 @@ def export_llama(args) -> None:
     else:
         raise RuntimeError(f"Unknown llama_model: {args.llama_model}.")
 
-    if args.kv_updator == "smart_mask":
+    if args.kv_updater == "smart_mask":
         args.shared_buffer = True
-        args.kv_updator = smart_mask_updator
-    elif args.kv_updator == "shift_pointer":
-        args.kv_updator = shift_pointer_updator
+        args.kv_updater = smart_mask_updater
+    elif args.kv_updater == "shift_pointer":
+        args.kv_updater = shift_pointer_updater
     else:
-        exit(f"Using an unkown kv update {args.kv_updator}")
+        exit(f"Using an unkown kv update {args.kv_updater}")
 
     if args.pre_gen_pte:
         quant_attrs = json.load(

@@ -10,6 +10,7 @@
 
 #include <tuple>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -182,9 +183,9 @@ void kernel_reduction_then_map_2d(
   int64_t d_W = val_at(dilation, 1, /*default_value=*/1);
 
   // Compute 2D output region
-  for (size_t out_y = 0; out_y < out_H; ++out_y) {
+  for (const auto out_y : c10::irange(out_H)) {
     out_coord[in_dim - 2] = out_y;
-    for (size_t out_x = 0; out_x < out_W; ++out_x) {
+    for (const auto out_x : c10::irange(out_W)) {
       out_coord[in_dim - 1] = out_x;
 
       bool accum_initialized = false;
@@ -212,7 +213,7 @@ void kernel_reduction_then_map_2d(
         count = (ih1 - ih0) * (iw1 - iw0);
       }
 
-      for (size_t w_y = 0; w_y < k_H; ++w_y) {
+      for (const auto w_y : c10::irange(k_H)) {
         int64_t stride_y = s_H;
         int64_t padding_y = p_H;
         int64_t dilation_y = d_H;
@@ -220,7 +221,7 @@ void kernel_reduction_then_map_2d(
         size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
         in_coord[in_dim - 2] = in_y;
 
-        for (size_t w_x = 0; w_x < k_W; ++w_x) {
+        for (const auto w_x : c10::irange(k_W)) {
           int64_t stride_x = s_W;
           int64_t padding_x = p_W;
           int64_t dilation_x = d_W;
@@ -356,8 +357,8 @@ void apply_kernel_2d_reduce_then_map_fn(
   if (in.dim() == 4) {
     batch_size = in_sizes[0];
   }
-  for (size_t batch = 0; batch < batch_size; ++batch) {
-    for (size_t channel = 0; channel < in_sizes[in.dim() - 3]; ++channel) {
+  for (const auto batch : c10::irange(batch_size)) {
+    for (const auto channel : c10::irange(in_sizes[in.dim() - 3])) {
       kernel_reduction_then_map_2d(
           reduce_fn,
           map_fn,
