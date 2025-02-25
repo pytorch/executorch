@@ -81,7 +81,7 @@ void CommandBuffer::end() {
 void CommandBuffer::bind_pipeline(
     VkPipeline pipeline,
     VkPipelineLayout pipeline_layout,
-    const utils::uvec3 local_workgroup_size) {
+    const utils::WorkgroupSize local_workgroup_size) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::RECORDING,
       "Vulkan CommandBuffer: called bind_pipeline() on a command buffer whose state "
