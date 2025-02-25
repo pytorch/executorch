@@ -18,7 +18,7 @@ build_native_library() {
   CMAKE_OUT="cmake-out-android-${ANDROID_ABI}"
   ANDROID_NDK="${ANDROID_NDK:-/opt/ndk}"
   EXECUTORCH_CMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE:-Release}"
-  cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+  cmake --trace . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
