@@ -15,12 +15,16 @@ pte_file=""
 target="ethos-u55-128"
 build_type="Release"
 system_config=""
+bundleio=false
 build_with_etdump=false
 extra_build_flags=""
 output_folder_set=false
 output_folder="."
 et_build_root="${et_root_dir}/arm_test"
 ethosu_tools_dir=${et_root_dir}/examples/arm/ethos-u-scratch
+
+build_bundleio_flags=" -DET_BUNDLE_IO=OFF "
+build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF "
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -30,6 +34,7 @@ help() {
     echo "  --build_type=<TYPE>             Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --system_config=<CONFIG>        System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                     NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
+    echo "  --bundleio                      Support both pte and Bundle IO bpte using Devtools BundelIO with Input/RefOutput included"
     echo "  --etdump                        Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --extra_build_flags=<FLAGS>     Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --output=<FOLDER>               Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
@@ -45,6 +50,7 @@ for arg in "$@"; do
       --target=*) target="${arg#*=}";;
       --build_type=*) build_type="${arg#*=}";;
       --system_config=*) system_config="${arg#*=}";;
+      --bundleio) bundleio=true ;;
       --etdump) build_with_etdump=true ;;
       --extra_build_flags=*) extra_build_flags="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
@@ -64,9 +70,8 @@ et_build_dir=${et_build_root}/cmake-out
 et_build_dir=$(realpath ${et_build_dir})
 
 if [ "$output_folder_set" = false ] ; then
-    pte_folder=$(cd -- "$( dirname -- "${pte_file}" )" &> /dev/null && pwd)
-    pte_short_name=$(basename -- "${pte_file}" ".pte")
-    output_folder="$pte_folder/$pte_short_name"
+    # remove file ending
+    output_folder=${pte_file%.*}
 fi
 
 if [[ ${system_config} == "" ]]
@@ -86,18 +91,21 @@ else
     target_cpu=cortex-m85
 fi
 echo "--------------------------------------------------------------------------------"
-echo "Build Arm Baremetal executor_runner for ${target} with ${pte_file} using ${system_config} to '${output_folder}/cmake-out'"
+echo "Build Arm Baremetal executor_runner for ${target} with ${pte_file} using ${system_config} ${extra_build_flags} to '${output_folder}/cmake-out'"
 echo "--------------------------------------------------------------------------------"
 
 cd ${et_root_dir}/examples/arm/executor_runner
 
-build_with_etdump_flags=""
+if [ "$bundleio" = true ] ; then
+    build_bundleio_flags=" -DET_BUNDLE_IO=ON "
+fi
+
 if [ "$build_with_etdump" = true ] ; then
-    echo "Building with etdump e.g. -DEXECUTORCH_ENABLE_EVENT_TRACER=ON"
     build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=ON "
 fi
 
-mkdir -p "$output_folder"
+echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
+mkdir -p "${output_folder}"
 
 cmake \
     -DCMAKE_BUILD_TYPE=${build_type}            \
@@ -105,9 +113,10 @@ cmake \
     -DTARGET_CPU=${target_cpu}                  \
     -DET_DIR_PATH:PATH=${et_root_dir}           \
     -DET_BUILD_DIR_PATH:PATH=${et_build_dir}    \
-    -DET_PTE_FILE_PATH:PATH="${pte_file}"            \
+    -DET_PTE_FILE_PATH:PATH="${pte_file}"       \
     -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}   \
     -DETHOSU_TARGET_NPU_CONFIG=${target}        \
+    ${build_bundleio_flags}                     \
     ${build_with_etdump_flags}                  \
     -DPYTHON_EXECUTABLE=$(which python3)        \
     -DSYSTEM_CONFIG=${system_config}            \
