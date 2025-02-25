@@ -120,10 +120,8 @@ def quantize(  # noqa C901
         if group_size is None:
             raise Exception("For 8da4w quantization, group size must be specified.")
 
-        from torchao.quantization import (
-            quantize_,
-            int8_dynamic_activation_int4_weight,
-        )
+        from torchao.quantization import int8_dynamic_activation_int4_weight, quantize_
+
         quantize_(model, int8_dynamic_activation_int4_weight(group_size=group_size))
 
         if verbose:
@@ -664,7 +662,7 @@ class EmbeddingQuantHandler(QuantHandler):
     def quantized_model(self) -> nn.Module:
         model_updated_state_dict = self.create_quantized_state_dict(self.packed)
         self.convert_for_runtime()
-        self.mod.load_state_dict(model_updated_state_dict)
+        self.mod.load_state_dict(model_updated_state_dict, assign=True)
         return self.mod
 
 
