@@ -60,6 +60,9 @@ def test_softplus_tosa_BI(test_data: input_t1):
     pipeline.pop_stage("check_not.exir")
     # check that all ops in exir_op except add are rejected
     pipeline.add_stage_after(
-        "partition", pipeline.tester.check, exir_op[1:], suffix="exir_post_partition"
+        "to_edge_transform_and_lower",
+        pipeline.tester.check,
+        exir_op[1:],
+        suffix="exir_post_partition",
     )
     pipeline.run()
