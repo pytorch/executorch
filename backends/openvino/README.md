@@ -10,6 +10,8 @@ OpenVINO backend supports the following hardware:
 - Intel discrete GPUs
 - Intel NPUs
 
+For more information on the supported hardware, please refer to [OpenVINO System Requirements](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html) page.
+
 ## Directory Structure
 
 ```
