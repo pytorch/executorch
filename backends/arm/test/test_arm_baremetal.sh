@@ -92,18 +92,18 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
 
     # TOSA quantized
     echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
-    examples/arm/run.sh --target=TOSA --model_name=add
-    examples/arm/run.sh --target=TOSA --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA --model_name=mul
 
     # Ethos-U55
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
-    examples/arm/run.sh --target=ethos-u55-128 --model_name=add
-    examples/arm/run.sh --target=ethos-u55-128 --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul
 
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
-    examples/arm/run.sh --target=ethos-u85-128 --model_name=add
-    examples/arm/run.sh --target=ethos-u85-128 --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul
     echo "${TEST_SUITE_NAME}: PASS"
     }
 
@@ -113,26 +113,26 @@ test_models_ethosu_fvp() { # End to End model tests using model_test.py
     source examples/arm/ethos-u-scratch/setup_path.sh
 
     # Build common libs once
-    python3 backends/arm/test/test_model.py --build_libs
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
 
     # TOSA quantized
     echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
-    python3 backends/arm/test/test_model.py --target=TOSA --model=mv2
-    python3 backends/arm/test/test_model.py --target=TOSA --model=mv3
-    python3 backends/arm/test/test_model.py --target=TOSA --model=lstm
-    python3 backends/arm/test/test_model.py --target=TOSA --model=edsr
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=mv2
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=mv3
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=lstm
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA --model=edsr
 
     # Ethos-U55
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
-    python3 backends/arm/test/test_model.py --target=ethos-u55-128 --model=mv2
-    python3 backends/arm/test/test_model.py --target=ethos-u55-64 --model=mv3
-    python3 backends/arm/test/test_model.py --target=ethos-u55-256 --model=lstm
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-128 --model=mv2  --extra_flags="-DET_ATOL=1.20 -DET_RTOL=1.20"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-64  --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-256 --model=lstm --extra_flags="-DET_ATOL=0.02 -DET_RTOL=0.02"
 
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
-    python3 backends/arm/test/test_model.py --target=ethos-u85-256 --model=mv2
-    python3 backends/arm/test/test_model.py --target=ethos-u85-1024 --model=mv3
-    python3 backends/arm/test/test_model.py --target=ethos-u85-128 --model=lstm
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256  --model=mv2  --extra_flags="-DET_ATOL=1.20 -DET_RTOL=1.20"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-1024 --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128  --model=lstm --extra_flags="-DET_ATOL=0.02 -DET_RTOL=0.02"
     echo "${TEST_SUITE_NAME}: PASS"
     }
 

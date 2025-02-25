@@ -248,6 +248,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_gelu.cpp",
     "kernels/optimized/cpu/op_le.cpp",
     "kernels/optimized/cpu/op_linear.cpp",
+    "kernels/optimized/cpu/op_log_softmax.cpp",
     "kernels/optimized/cpu/op_mm.cpp",
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
@@ -282,7 +283,7 @@ OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/CPUBlas.cpp",
 ]
 
-OPTIMIZED_NATIVE_CPU_OPS_OSS_SRCS = [
+OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
     "codegen/templates/RegisterCodegenUnboxedKernels.cpp",
     "codegen/templates/RegisterDispatchKeyCustomOps.cpp",
     "codegen/templates/RegisterKernels.cpp",
@@ -300,6 +301,7 @@ OPTIMIZED_NATIVE_CPU_OPS_OSS_SRCS = [
     "kernels/optimized/cpu/op_gelu.cpp",
     "kernels/optimized/cpu/op_le.cpp",
     "kernels/optimized/cpu/op_linear.cpp",
+    "kernels/optimized/cpu/op_log_softmax.cpp",
     "kernels/optimized/cpu/op_mm.cpp",
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
@@ -314,6 +316,8 @@ EXTENSION_DATA_LOADER_SRCS = [
 ]
 
 EXTENSION_MODULE_SRCS = [
+    "extension/flat_tensor/flat_tensor_data_map.cpp",
+    "extension/flat_tensor/serialize/flat_tensor_header.cpp",
     "extension/module/module.cpp",
 ]
 
@@ -345,6 +349,8 @@ EXTENSION_THREADPOOL_SRCS = [
 EXTENSION_TRAINING_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
     "extension/data_loader/mmap_data_loader.cpp",
+    "extension/flat_tensor/flat_tensor_data_map.cpp",
+    "extension/flat_tensor/serialize/flat_tensor_header.cpp",
     "extension/module/module.cpp",
     "extension/training/module/training_module.cpp",
     "extension/training/optimizer/sgd.cpp",
@@ -356,6 +362,7 @@ EXTENSION_TRAINING_SRCS = [
 TRAIN_XOR_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
     "extension/data_loader/mmap_data_loader.cpp",
+    "extension/flat_tensor/flat_tensor_data_map.cpp",
     "extension/flat_tensor/serialize/flat_tensor_header.cpp",
     "extension/flat_tensor/serialize/serialize.cpp",
     "extension/module/module.cpp",
