@@ -47,19 +47,29 @@ class StaticKVCache(nn.Module, ABC):
         return f"l{layer_id},h{head_id}"
 
     @staticmethod
-    def apply_update(cache, update, transpose=False):
+    def apply_update(cache, update, pos, style, transpose=False):
         """
         After inference, update the cache state for next iteration. The runtime needs to
         implement the same operation.
         """
-        if transpose:
-            update_len = update.size(-1)
-            updated = torch.roll(cache, -update_len, -1)
-            updated[:, :, -update_len:] = update
-        else:
-            update_len = update.size(-2)
-            updated = torch.roll(cache, -update_len, -2)
-            updated[:, -update_len:, :] = update
+        if style == "shift_pointer":
+            if transpose:
+                update_len = update.size(-1)
+                updated = torch.roll(cache, -update_len, -1)
+                updated[:, :, -update_len:] = update
+            else:
+                update_len = update.size(-2)
+                updated = torch.roll(cache, -update_len, -2)
+                updated[:, -update_len:, :] = update
+
+        if style == "smart_mask":
+            updated = torch.clone(cache)
+            if transpose:
+                update_len = update.size(-1)
+                updated[:, :, pos : pos + update_len] = update
+            else:
+                update_len = update.size(-2)
+                updated[:, pos : pos + update_len, :] = update
 
         return updated
 
@@ -114,15 +124,67 @@ class StaticVCache(StaticKVCache):
         return all_data, (out_k_cache, out_v_cache)
 
 
-def _apply_rotary_embedding(
-    x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> torch.Tensor:
-    x_r, x_i = x[..., ::2], x[..., 1::2]
-    x_out_r = x_r * freqs_cos - x_i * freqs_sin
-    x_out_i = x_r * freqs_sin + x_i * freqs_cos
+class StaticAttentionMask:
+    def __init__(self, input_len, cache_len, style):
+        self.input_len = input_len
+        self.cache_len = cache_len
+        assert style in ("shift_pointer", "smart_mask")
+        self.style = style
+        self.unmasked_len = 0
+        self.tensor = torch.zeros(1, input_len, input_len + cache_len)
+        self.reset()
 
-    x_out = torch.cat([x_out_r, x_out_i], dim=-1)
-    return x_out
+    def reset(self):
+        self.unmasked_len = 0
+        self.tensor[:, :, : self.cache_len] = float("-inf")
+
+    def unmask(self, new_unmasked_len):
+        if new_unmasked_len <= 0:
+            return
+
+        if self.style == "shift_pointer":
+            self.tensor[
+                :,
+                :,
+                self.cache_len
+                - self.unmasked_len
+                - new_unmasked_len : self.cache_len
+                - self.unmasked_len,
+            ] = 0
+
+        if self.style == "smart_mask":
+            self.tensor[
+                :,
+                :,
+                self.unmasked_len : self.unmasked_len + new_unmasked_len,
+            ] = 0
+
+        self.unmasked_len += new_unmasked_len
+
+
+class _Rope(nn.Module):
+    def __init__(self, use_hf_rope):
+        super().__init__()
+        self.use_hf_rope = use_hf_rope
+
+    def forward(
+        self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
+    ) -> torch.Tensor:
+        if self.use_hf_rope:
+            if len(freqs_cos.shape) == 2:
+                freqs_cos = freqs_cos.unsqueeze(0)
+            if len(freqs_sin.shape) == 2:
+                freqs_sin = freqs_sin.unsqueeze(0)
+            x1 = x[..., : x.shape[-1] // 2]
+            x2 = x[..., x.shape[-1] // 2 :]
+            x_rotated = torch.cat((-x2, x1), dim=-1)
+            return x * freqs_cos + x_rotated * freqs_sin
+        else:
+            x_r, x_i = x[..., ::2], x[..., 1::2]
+            x_out_r = x_r * freqs_cos - x_i * freqs_sin
+            x_out_i = x_r * freqs_sin + x_i * freqs_cos
+            x_out = torch.cat([x_out_r, x_out_i], dim=-1)
+            return x_out
 
 
 @register_attention("static")
@@ -145,22 +207,23 @@ class StaticAttention(Attention):
         self.dim = config.dim
         self.head_dim = config.head_dim
         self.inv_scale = 1.0 / (float(self.head_dim) ** 0.5)
+        self.attention_qkv_bias = config.attention_qkv_bias
 
         self.wqs = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_heads)
             ]
         )
         self.wks = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_kv_heads)
             ]
         )
         self.wvs = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_kv_heads)
             ]
         )
@@ -172,6 +235,7 @@ class StaticAttention(Attention):
             [StaticVCache(layer_id, i) for i in range(self.n_kv_heads)]
         )
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        self.rope = _Rope(rope.params.use_hf_rope)
 
     def forward(
         self,
@@ -191,8 +255,8 @@ class StaticAttention(Attention):
         new_qs = [self.wqs[i](x) for i in range(self.n_heads)]
         new_ks = [self.wks[i](x) for i in range(self.n_kv_heads)]
         new_vs = [self.wvs[i](x) for i in range(self.n_kv_heads)]
-        new_qs = [_apply_rotary_embedding(q, freqs_cos, freqs_sin) for q in new_qs]
-        new_ks = [_apply_rotary_embedding(k, freqs_cos, freqs_sin) for k in new_ks]
+        new_qs = [self.rope(q, freqs_cos, freqs_sin) for q in new_qs]
+        new_ks = [self.rope(k, freqs_cos, freqs_sin) for k in new_ks]
 
         all_ks = []
         all_vs = []
@@ -211,7 +275,7 @@ class StaticAttention(Attention):
             kv_idx = i // self.n_heads_per_kv_group
             attn = new_qs[i] @ all_ks[kv_idx].transpose(-2, -1)
             attn = attn * self.inv_scale
-            attn = attn + mask  # pyre-ignore
+            attn = attn + mask
             attn = F.softmax(attn, dim=-1)
             heads.append(attn @ all_vs[kv_idx])
 

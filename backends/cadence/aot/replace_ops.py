@@ -1719,9 +1719,9 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
         )
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))(
-    ReplaceScalarWithTensorArgPass()
-)
+register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
+
+
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceScalarTensorWithFullPass(ExportPass):
     """
@@ -1839,6 +1839,10 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
     replaced_scalar_args: dict[
         EdgeOpOverloadPacket, tuple[EdgeOpOverload, Sequence[int]]
     ] = {
+        exir_ops.edge.cadence.quantized_add: (
+            exir_ops.edge.cadence.quantized_add.per_tensor,
+            [1, 2, 4, 5],
+        ),
         exir_ops.edge.cadence.quantized_conv: (
             exir_ops.edge.cadence.quantized_conv.per_tensor,
             [8, 9, 12, 13],

@@ -46,6 +46,7 @@ def get_aligned_offset(pre_aligned_offset: int, alignment: int) -> int:
 
 def collect_specs_from_graph_module(
     graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
 ) -> Iterable[TensorSpec]:
@@ -56,6 +57,7 @@ def collect_specs_from_graph_module(
     # Collect the specs from all the nodes in the graph module, and return it
     return collect_specs_from_nodes(
         graph_module.graph.nodes,
+        graph_signature,
         ignore_graph_input=not alloc_graph_input,
         ignore_graph_output=not alloc_graph_output,
     )
@@ -107,7 +109,7 @@ def position_based_greedy_with_hierarchy(
     # Iterate over all the specs in sorted order
     for spec in sorted(
         collect_specs_from_graph_module(
-            graph_module, alloc_graph_input, alloc_graph_output
+            graph_module, graph_signature, alloc_graph_input, alloc_graph_output
         ),
         key=lambda spec: spec.allocated_memory,
         reverse=True,
@@ -182,7 +184,7 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
     # Iterate over all the specs in sorted order
     for spec in sorted(
         collect_specs_from_graph_module(
-            graph_module, alloc_graph_input, alloc_graph_output
+            graph_module, graph_signature, alloc_graph_input, alloc_graph_output
         ),
         key=lambda spec: spec.allocated_memory,
         reverse=True,
@@ -250,6 +252,7 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
 
 def find_peak_memory_usages_per_memory(
     graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
@@ -265,7 +268,7 @@ def find_peak_memory_usages_per_memory(
 
     # go through all nodes in the graph, collect memory usage per spec.mem_id
     for spec in collect_specs_from_graph_module(
-        graph_module, alloc_graph_input, alloc_graph_output
+        graph_module, graph_signature, alloc_graph_input, alloc_graph_output
     ):
         if mem_constraints is not None and mem_constraints.skipped_spec(spec):
             continue
@@ -288,6 +291,7 @@ def find_peak_memory_usages_per_memory(
 
 def find_peak_memory_usage(
     graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
@@ -303,7 +307,7 @@ def find_peak_memory_usage(
 
     # Iterate over all the node specs
     for spec in collect_specs_from_graph_module(
-        graph_module, alloc_graph_input, alloc_graph_output
+        graph_module, graph_signature, alloc_graph_input, alloc_graph_output
     ):
         if spec.lifetime[0] is None or (
             mem_constraints is not None and mem_constraints.skipped_spec(spec)
@@ -358,6 +362,7 @@ def print_memory_planning_info(
     # Get the peak memory usages per memory space
     peak_memory_usages_per_memory = find_peak_memory_usages_per_memory(
         executorch_prog.exported_program().graph_module,
+        executorch_prog.exported_program().graph_signature,
         alloc_graph_input,
         alloc_graph_output,
         mem_constraints,
@@ -393,6 +398,7 @@ def print_memory_planning_info(
     # Get the total peak memory usage across all memory spaces
     total_peak_memory_usage = find_peak_memory_usage(
         executorch_prog.exported_program().graph_module,
+        executorch_prog.exported_program().graph_signature,
         alloc_graph_input,
         alloc_graph_output,
         mem_constraints,
@@ -453,7 +459,17 @@ class CadenceMemoryPlanning:
             greedy_by_size_for_offset_calculation_with_hierarchy,
         ]
 
-    def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def __call__(
+        self,
+        graph_module: torch.fx.GraphModule,
+    ) -> PassResult:
+        return self.run(graph_module)
+
+    def run(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature: Optional[ExportGraphSignature] = None,
+    ) -> PassResult:
         mem_constraints = MemConstraints(
             opt_level=self.opt_level,
             alloc_graph_input=self.alloc_graph_input,
@@ -475,6 +491,6 @@ class CadenceMemoryPlanning:
             alloc_graph_output=self.alloc_graph_output,
             alignment=self.mem_alignment,
         )
-        mem_planning(graph_module)
+        mem_planning.run(graph_module, graph_signature)
 
         return PassResult(graph_module, True)
