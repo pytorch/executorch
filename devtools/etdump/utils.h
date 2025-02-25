@@ -9,6 +9,15 @@ namespace executorch {
 namespace etdump {
 namespace internal {
 
+/**
+ * Aligns a pointer to the next multiple of `alignment`.
+ *
+ * @param[in] ptr Pointer to align.
+ * @param[in] alignment Alignment to align to. Must be a power of 2 and cannot
+ * be 0.
+ *
+ * @returns A pointer aligned to `alignment`.
+ */
 inline uint8_t* align_pointer(void* ptr, size_t alignment) {
   intptr_t addr = reinterpret_cast<intptr_t>(ptr);
   if ((addr & (alignment - 1)) == 0) {

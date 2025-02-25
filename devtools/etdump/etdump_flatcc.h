@@ -145,9 +145,8 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   void set_debug_buffer(::executorch::runtime::Span<uint8_t> buffer);
   void set_data_sink(std::shared_ptr<DataSinkBase> buffer_data_sink);
   ETDumpResult get_etdump_data();
-  size_t get_debug_buffer_size() const;
-  size_t get_data_sink_size() const;
   size_t get_num_blocks();
+  std::shared_ptr<DataSinkBase> get_data_sink();
   bool is_static_etdump();
   void reset();
 

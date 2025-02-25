@@ -32,7 +32,6 @@ class TestConformer(unittest.TestCase):
     ops_after_partitioner = {
         "executorch_exir_dialects_edge__ops_aten_arange_start_step": 1,
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_mul_Scalar": 4,
         "executorch_exir_dialects_edge__ops_aten_eq_Scalar": 2,
         "executorch_exir_dialects_edge__ops_aten_where_self": 4,
         "executorch_exir_dialects_edge__ops_aten_logical_not_default": 4,
@@ -40,7 +39,7 @@ class TestConformer(unittest.TestCase):
         "torch.ops.aten._assert_scalar.default": 10,
         "torch.ops.aten._local_scalar_dense.default": 1,
         "torch.ops.aten.scalar_tensor.default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 5,
+        "torch.ops.higher_order.executorch_call_delegate": 4,
     }
 
     dim = 16

@@ -9,6 +9,8 @@
 
 # Selective build. See codegen/tools/gen_oplist.py for how to use these
 # arguments.
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
 function(gen_selected_ops)
   set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS)
   cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
@@ -145,17 +147,12 @@ function(gen_custom_ops_aot_lib)
     ${_out_dir}/RegisterCPUCustomOps.cpp ${_out_dir}/RegisterSchema.cpp
     ${_out_dir}/CustomOpsNativeFunctions.h "${GEN_KERNEL_SOURCES}"
   )
-  # Find `Torch`.
-  if(NOT TARGET torch)
-    find_package(Torch REQUIRED)
-  endif()
+  find_package_torch()
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)
-
-  include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
   if(TARGET portable_lib)
