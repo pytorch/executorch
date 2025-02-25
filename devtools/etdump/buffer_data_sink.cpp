@@ -26,10 +26,12 @@ Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
   uint8_t* cur_data_begin = internal::align_pointer(last_data_end, alignment_);
   uint8_t* cur_data_end = cur_data_begin + length;
 
-  ET_CHECK_MSG(
-      cur_data_end <= debug_buffer_.data() + debug_buffer_.size(),
-      "Ran out of space to store intermediate outputs.");
+  if (cur_data_end > debug_buffer_.data() + debug_buffer_.size()) {
+    ET_LOG(Error, "Ran out of space to store intermediate outputs.");
+    return Error::OutOfResources;
+  }
 
+  // Zero out the padding between data blobs
   memset(last_data_end, 0, cur_data_begin - last_data_end);
   memcpy(cur_data_begin, ptr, length);
   offset_ = (size_t)(cur_data_end - debug_buffer_.data());
