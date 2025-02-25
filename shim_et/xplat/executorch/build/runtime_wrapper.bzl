@@ -268,7 +268,6 @@ def _cxx_test(*args, **kwargs):
     kwargs["deps"].append("//executorch/test/utils:utils")
 
     _patch_kwargs_cxx(kwargs)
-    env.patch_headers(kwargs)
     _patch_build_mode_flags(kwargs)
     _patch_test_compiler_flags(kwargs)
 
