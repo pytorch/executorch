@@ -24,17 +24,20 @@ namespace etdump {
 class BufferDataSink : public DataSinkBase {
  public:
   /**
-   * Constructs a BufferDataSink with a given buffer.
+   * Creates a BufferDataSink with a given span buffer.
    *
    * @param[in] buffer A Span object representing the buffer where data will be
    * stored.
    * @param[in] alignment The alignment requirement for the buffer. It must be
-   * a power of two. Default is 64.
+   * a power of two and greater than zero. Default is 64.
+   * @return A Result object containing either:
+   *         - A BufferDataSink object if succees, or
+   *         - An error code indicating the failure reason, if any issue
+   *           occurs during the creation process.
    */
-  explicit BufferDataSink(
+  static ::executorch::runtime::Result<BufferDataSink> create(
       ::executorch::runtime::Span<uint8_t> buffer,
-      size_t alignment = 64)
-      : debug_buffer_(buffer), offset_(0), alignment_(alignment) {}
+      size_t alignment = 64) noexcept;
 
   // Uncopiable and unassignable to avoid double assignment and free of the
   // internal buffer.
@@ -77,6 +80,19 @@ class BufferDataSink : public DataSinkBase {
   size_t get_used_bytes() const override;
 
  private:
+  /**
+   * Constructs a BufferDataSink with a given buffer.
+   *
+   * @param[in] buffer A Span object representing the buffer where data will be
+   * stored.
+   * @param[in] alignment The alignment requirement for the buffer. It must be
+   * a power of two. Default is 64.
+   */
+  explicit BufferDataSink(
+      ::executorch::runtime::Span<uint8_t> buffer,
+      size_t alignment)
+      : debug_buffer_(buffer), offset_(0), alignment_(alignment) {}
+
   // A Span object representing the buffer used for storing debug data.
   ::executorch::runtime::Span<uint8_t> debug_buffer_;
 
