@@ -28,6 +28,8 @@ Platform Support:
 
 - Hardware Acceleration:
   - Apple
+
+  asdas
   - Arm
   - Cadence
   - MediaTek
