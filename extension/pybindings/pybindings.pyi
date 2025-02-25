@@ -221,6 +221,15 @@ def _get_operator_names() -> List[str]:
     ...
 
 @experimental("This API is experimental and subject to change without notice.")
+def _get_registered_backend_names() -> List[str]:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
 def _create_profile_block(name: str) -> None:
     """
     .. warning::
