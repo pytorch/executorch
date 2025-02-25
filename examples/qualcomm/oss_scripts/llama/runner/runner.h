@@ -29,6 +29,7 @@ class Runner {
   explicit Runner(
       const std::vector<std::string>& models_path,
       const std::string& tokenizer_path,
+      const std::string& performance_output_path_,
       const float logits_scale,
       const int32_t logits_offset,
       const float temperature,
@@ -101,6 +102,7 @@ class Runner {
   const int32_t n_eos_;
   std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
   std::string tokenizer_path_;
+  std::string performance_output_path_;
   float logits_scale_;
   int32_t logits_offset_;
   float temperature_;
