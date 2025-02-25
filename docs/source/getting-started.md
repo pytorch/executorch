@@ -192,7 +192,7 @@ if (result.ok()) {
 }
 ```
 
-For more information on the C++ APIs, see [Running an ExecuTorch Model Using the Module Extension in C++](https://pytorch.org/executorch/stable/extension-module.html) and [Managing Tensor Memory in C++](https://pytorch.org/executorch/stable/extension-tensor.html).
+For more information on the C++ APIs, see [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md) and [Managing Tensor Memory in C++](extension-tensor.md).
 
 <hr/>
 

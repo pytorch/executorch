@@ -100,6 +100,15 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
+   :caption: Examples
+   :hidden:
+
+   demo-apps-android.md
+   demo-apps-ios.md
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
    :caption: Backends
    :hidden:
 
@@ -199,6 +208,7 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    backend-delegates-integration
+   backend-delegates-xnnpack-reference
    backend-delegates-dependencies
    compiler-delegate-and-partitioner
    debug-backend-delegate
@@ -315,7 +325,7 @@ ExecuTorch tutorials.
    :header: Building and Running ExecuTorch with Vulkan Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with Vulkan Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-vulkan.html
+   :link: backends-vulkan.html
    :tags: Export,Backend,Delegation,Vulkan
 
 ..
@@ -333,35 +343,35 @@ ExecuTorch tutorials.
    :header: Building and Running ExecuTorch with CoreML Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with CoreML Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-coreml.html
+   :link: backends-coreml.html
    :tags: Export,Backend,Delegation,CoreML
 
 .. customcarditem::
    :header: Building and Running ExecuTorch with MediaTek Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with MediaTek Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-mediatek-backend.html
+   :link: backends-mediatek-backend.html
    :tags: Export,Backend,Delegation,MediaTek
 
 .. customcarditem::
    :header: Building and Running ExecuTorch with MPS Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-mps.html
+   :link: backends-mps.html
    :tags: Export,Backend,Delegation,MPS,MPSGraph
 
 .. customcarditem::
    :header: Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-qualcomm-ai-engine-direct-backend.html
+   :link: backends-qualcomm-ai-engine-direct-backend.html
    :tags: Export,Backend,Delegation,QNN
 
 .. customcarditem::
    :header: Building and Running ExecuTorch on Xtensa HiFi4 DSP
    :card_description: A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-xtensa.html
+   :link: backends-cadence.html
    :tags: Export,Custom-Operators,DSP,Xtensa
 
 .. customcardend::
