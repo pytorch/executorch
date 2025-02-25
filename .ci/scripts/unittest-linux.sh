@@ -41,7 +41,9 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
 
     .ci/scripts/unittest-linux-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
-    # XXX: check whether this is sufficient to unbreak sccache
+    # Removing this breaks sccache in the Buck build, apparently
+    # because TMPDIR gets messed up? Please feel free to fix this and
+    # speed up this CI job!
     PYTHON_EXECUTABLE=python \
     .ci/scripts/setup-linux.sh "$BUILD_TOOL" "$BUILD_MODE"
 
