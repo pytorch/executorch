@@ -56,7 +56,12 @@ def get_args():
         default=False,
         help="Don't save temporary files during compilation",
     )
-
+    parser.add_argument(
+        "--extra_flags",
+        required=False,
+        default=None,
+        help="Extra cmake flags to pass the when building the executor_runner",
+    )
     args = parser.parse_args()
 
     if args.model and "ethos-u" in args.target and args.system_config is None:
@@ -95,6 +100,8 @@ def build_libs(et_build_root: str, script_path: str):
             os.path.join(script_path, "build_executorch.sh"),
             f"--et_build_root={et_build_root}",
             "--build_type=Release",
+            "--devtools",
+            "--etdump",
         ]
     )
     run_external_cmd(
@@ -148,6 +155,7 @@ def build_pte(
             "examples.arm.aot_arm_compiler",
             "--delegate",
             "--quantize",
+            "--bundleio",
             intermediate,
             f"--model_name={model_name}",
             f"--target={target}",
@@ -158,7 +166,7 @@ def build_pte(
         ]
     )
 
-    pte_file = os.path.join(output, f"{model_name}_arm_delegate_{args.target}.pte")
+    pte_file = os.path.join(output, f"{model_name}_arm_delegate_{args.target}.bpte")
     return pte_file
 
 
@@ -168,17 +176,26 @@ def build_ethosu_runtime(
     pte_file: str,
     target: str,
     system_config: str,
+    extra_flags: str,
     elf_build_path: str,
 ):
+
+    extra_build_flag = ""
+    if extra_flags:
+        extra_build_flag = f"--extra_build_flags={extra_flags}"
+
     run_external_cmd(
         [
             "bash",
             os.path.join(script_path, "build_executorch_runner.sh"),
             f"--et_build_root={et_build_root}",
             f"--pte={pte_file}",
+            "--bundleio",
+            "--etdump",
             f"--target={target}",
             "--build_type=Release",
             f"--system_config={system_config}",
+            extra_build_flag,
             f"--output={elf_build_path}",
         ]
     )
@@ -239,6 +256,7 @@ if __name__ == "__main__":
                 pte_file,
                 args.target,
                 args.system_config,
+                args.extra_flags,
                 elf_build_path,
             )
             print(f"ELF file created: {elf_file} ")
