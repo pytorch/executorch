@@ -82,6 +82,9 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   // Import the model
   auto compiled_model = core.import_model(compiled_stream, device);
 
+  // The processed data can be freed since the model is compiled
+  processed->Free(); 
+
   // Allocate an infer request
   std::shared_ptr<ov::InferRequest> infer_request =
       std::make_shared<ov::InferRequest>(compiled_model.create_infer_request());
