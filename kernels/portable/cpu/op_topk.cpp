@@ -28,7 +28,7 @@ bool check_topk_args(
   if (dim < 0) {
     dim += nonzero_dim(in);
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       k >= 0 && k <= nonempty_size(in, dim), "selected index k out of range");
   return true;
 }
