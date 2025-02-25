@@ -24,17 +24,29 @@ namespace etdump {
 class BufferDataSink : public DataSinkBase {
  public:
   /**
-   * Constructs a BufferDataSink with a given buffer.
+   * Constructs a BufferDataSink with a given span buffer.
    *
    * @param[in] buffer A Span object representing the buffer where data will be
    * stored.
    * @param[in] alignment The alignment requirement for the buffer. It must be
-   * a power of two. Default is 64.
+   * a power of two and greater than zero. Default is 64.
    */
   explicit BufferDataSink(
       ::executorch::runtime::Span<uint8_t> buffer,
       size_t alignment = 64)
       : debug_buffer_(buffer), offset_(0), alignment_(alignment) {}
+
+  /**
+   * Constructs a BufferDataSink with a given ptr to data blob, and the size of
+   * data blob.
+   *
+   * @param[in] ptr A pointer to the data blob where data will be stored.
+   * @param[in] size The size of the data blob in bytes.
+   * @param[in] alignment The alignment requirement for the buffer. It must be
+   * a power of two and greater than zero. Default is 64.
+   */
+  BufferDataSink(void* ptr, size_t size, size_t alignment = 64)
+      : debug_buffer_((uint8_t*)ptr, size), offset_(0), alignment_(alignment) {}
 
   // Uncopiable and unassignable to avoid double assignment and free of the
   // internal buffer.
