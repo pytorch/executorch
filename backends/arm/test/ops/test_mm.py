@@ -132,18 +132,16 @@ class TestMM(unittest.TestCase):
         test_data = test_data_generator()
         self._test_mm_tosa_BI_pipeline(self.MMSingleInput(), test_data)
 
-    # Expected to fail with error: CPU performance estimation for "MatMul" not implemented
+    # TODO: Enable numerical testing
     @parameterized.expand(MM.test_data_generators)
-    @unittest.expectedFailure
     def test_mm_u55_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_mm_ethosu_BI_pipeline(
             common.get_u55_compile_spec(), self.MM(), test_data
         )
 
-    # Expected to fail with error: Warning, unsupported fusing of TOSA Rescale previous operator is of type: Memcpy
+    # TODO: Enable numerical testing
     @parameterized.expand(MMSingleInput.test_data_generators)
-    @unittest.expectedFailure
     def test_mm_single_input_u55_BI(self, test_data_generator: Callable[[], Tuple]):
         test_data = test_data_generator()
         self._test_mm_ethosu_BI_pipeline(
