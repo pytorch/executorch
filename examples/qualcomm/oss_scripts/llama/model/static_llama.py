@@ -153,10 +153,7 @@ class LlamaAttention(nn.Module):
         y = y.reshape(bsz, seq_len, -1)
 
         if self.output_new_cache_only:
-            if k_caches and v_caches:
-                return y, k, v
-            # batch_prefill mode. Consider to remove, it's not really used
-            return y, k[-1], v[-1]
+            return y, k, v
 
         return y, kh, vh
 
@@ -298,7 +295,12 @@ class LlamaDecoderLayer(nn.Module):
 
 class LlamaModel(nn.Module):
     def __init__(
-        self, config: ModelArgs, output_new_cache_only=True, use_i64_token=False
+        self,
+        config: ModelArgs,
+        ar_len=1,
+        output_new_cache_only=True,
+        output_cache=True,
+        use_i64_token=False,
     ):
         super().__init__()
         self.dim = config.dim
@@ -311,8 +313,10 @@ class LlamaModel(nn.Module):
         self.vocab_size = config.vocab_size
         self.rope_freq_base = config.rope_freq_base
         self.use_kv_cache = config.use_kv_cache
+        self.ar_len = ar_len
         self.output_new_cache_only = output_new_cache_only
         self.use_i64_token = use_i64_token
+        self.output_cache = output_cache
 
         self.layers = nn.ModuleList(
             [
@@ -359,10 +363,10 @@ class LlamaModel(nn.Module):
         output_v_cache = []
         # following tensors should be invariant across batches
         freqs_cos = (
-            self.freqs_cos[input_pos][0] if self.use_kv_cache else self.freqs_cos[:-1]
+            self.freqs_cos[input_pos][0] if self.use_kv_cache else self.freqs_cos
         )
         freqs_sin = (
-            self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin[:-1]
+            self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin
         )
 
         hidden_states = self.tok_embeddings(tokens)
@@ -388,19 +392,36 @@ class LlamaModel(nn.Module):
         hidden_states = self.norm(hidden_states)
         logits = self.output(hidden_states)
 
-        return logits, output_k_cache, output_v_cache
+        if self.output_cache:
+            return logits, output_k_cache, output_v_cache
+        return logits
 
     def get_example_inputs(self, use_kv_cache=True):
         dtype = torch.int64 if self.use_i64_token else torch.int32
-        if use_kv_cache:
-            tokens = torch.randint(
-                self.vocab_size, (self.max_batch_size, 1), dtype=dtype
-            )
+        tokens = torch.randint(
+            self.vocab_size, (self.max_batch_size, self.ar_len), dtype=dtype
+        )
 
-            pos_ids = torch.zeros((self.max_batch_size, 1), dtype=torch.int32)
+        atten_mask = torch.full((self.ar_len, self.ar_len), torch.tensor(-255.0))
+        mask_cond = torch.arange(atten_mask.size(-1))
+        atten_mask.masked_fill_(
+            mask_cond < (mask_cond + 1).view(atten_mask.size(-1), 1), 0
+        )
+        if self.max_seq_len != self.ar_len:
+            atten_mask = torch.cat(
+                [
+                    torch.ones(self.ar_len, self.max_seq_len - self.ar_len) * -255.0,
+                    atten_mask,
+                ],
+                dim=-1,
+            )
+        atten_mask = atten_mask[None, :, :].expand(
+            self.max_batch_size, self.ar_len, self.max_seq_len
+        )
+        if use_kv_cache:
+            pos_ids = torch.zeros((self.max_batch_size, self.ar_len), dtype=torch.int32)
             k_cache, v_cache = [], []
-            atten_mask = torch.full((self.max_batch_size, self.max_seq_len), -255.0)
-            atten_mask[:, -1] = 0
+
             for _ in range(self.n_layers):
                 for _ in range(self.n_kv_heads):
                     # transpose first to decrease the runtime efforts
@@ -408,13 +429,13 @@ class LlamaModel(nn.Module):
                         torch.zeros(
                             self.max_batch_size,
                             self.head_dim,
-                            self.max_seq_len - 1,
+                            self.max_seq_len - self.ar_len,
                         )
                     )
                     v_cache.append(
                         torch.zeros(
                             self.max_batch_size,
-                            self.max_seq_len - 1,
+                            self.max_seq_len - self.ar_len,
                             self.head_dim,
                         )
                     )
@@ -426,10 +447,6 @@ class LlamaModel(nn.Module):
                 v_cache,
             )
 
-        max_promp = self.max_seq_len - 1
-        tokens = torch.arange(0, max_promp, 1, dtype=dtype).unsqueeze(0)
-        atten_mask = torch.triu(torch.rand((max_promp, max_promp)), 1)
-        atten_mask[atten_mask != 0] = -255
         return (
             tokens,
             atten_mask,
@@ -438,6 +455,7 @@ class LlamaModel(nn.Module):
     def get_metadata(self):
         # TODO: modify this when enabling LLAMA 7B
         return {
+            "get_ar_len": self.ar_len,
             "get_bos_id": 1,
             "get_eos_id": 2,
             "get_dim": self.dim,

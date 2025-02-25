@@ -333,6 +333,9 @@ def get_oss_build_kwargs():
         }
     return {}
 
+def get_aten_mode_options():
+    return (False,) if env.is_oss else (True, False)
+
 # Names in this struct should match the standard Buck rule names if possible:
 # see the "Build Rules" section in the sidebar of
 # https://buck.build/concept/build_rule.html.
