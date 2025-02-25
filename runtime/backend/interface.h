@@ -139,6 +139,16 @@ struct Backend {
  */
 ET_NODISCARD Error register_backend(const Backend& backend);
 
+/**
+ * Returns the number of registered backends.
+ */
+size_t get_num_registered_backends();
+
+/**
+ * Returns the backend name at the given index.
+ */
+Result<const char*> get_backend_name(size_t index);
+
 } // namespace runtime
 } // namespace executorch
 
