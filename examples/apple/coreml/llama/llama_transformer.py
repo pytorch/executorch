@@ -23,29 +23,6 @@ from executorch.examples.models.llama.rope import (
 from torch import nn
 
 
-# These are just to prevent to_edge from decomposing SDPA
-# A better method is to use the to_edge_transform_and_lower API for CoreML
-# and not decompose SDPA
-@torch.library.custom_op("coreml::sdpa", mutates_args=())
-def sdpa(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor
-) -> torch.Tensor:
-    """Same as F.scaled_dot_product_attention, but with custom op to avoid lowering during dialect conversion."""
-    return torch.ops.aten.scaled_dot_product_attention.default(
-        q, k, v, attn_mask=attn_mask
-    )
-
-
-@torch.library.register_fake("coreml::sdpa")
-def _(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor
-) -> torch.Tensor:
-    """Fake implementation with the right output shape, which is required for torch.compile/export/fx tracing."""
-    expected_shape = list(q.shape)
-    expected_shape[-1] = v.shape[-1]
-    return q.new_empty(expected_shape)
-
-
 def find_multiple(n: int, k: int) -> int:
     if n % k == 0:
         return n
@@ -149,10 +126,15 @@ class RMSNorm(torch.nn.Module):
             torch.Tensor: The normalized tensor.
 
         """
-        x_max, _ = torch.abs(x).max(-1, keepdim=True)
-        x = x / x_max  # This makes the op more stable in FP16
-        eps = self.eps / (x_max * x_max)
-        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + eps)
+        # CoreML ignores casts to FP32, so existing implementation of RMSNorm was not stable
+        # We instead use (x * sqrt(n)) / norm(x, dim=-1)
+        # Using torch.norm and preserving this op in CoreML improves stability
+        # Note, we ignore eps, but could add it by using torch.norm(torch.concat(x, sqrt(n*eps))) in the denominator
+        # In future, we want to add CoreML support for the functional RMSNorm op
+        rms_norm_eps0 = (
+            x * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
+        ) / torch.linalg.vector_norm(x, dim=-1, keepdim=True)
+        return rms_norm_eps0
 
     def forward(self, x):
         """
@@ -352,7 +334,9 @@ class Attention(nn.Module):
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
 
-        output = torch.ops.coreml.sdpa(q, k, v, attn_mask)
+        output = torch.ops.aten.scaled_dot_product_attention.default(
+            q, k, v, attn_mask=attn_mask
+        )
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
         output = self.wo(output)
         return output, new_k, new_v

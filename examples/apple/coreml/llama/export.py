@@ -19,7 +19,8 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from executorch.exir.program._program import to_edge_with_preserved_ops
+from executorch.extension.export_util.utils import save_pte_program
 
 sys.path.insert(0, ".")
 from llama_transformer import InputManager, load_model
@@ -229,10 +230,20 @@ def main() -> None:
     )
     example_inputs = input_manager.get_inputs(tokens=[0])
 
-    edge_manager = export_to_edge(
+    ep = torch.export.export(
         model,
         example_inputs,
-        edge_compile_config=EdgeCompileConfig(
+    )
+    print("Exported program")
+    print(ep)
+
+    edge_manager = to_edge_with_preserved_ops(
+        ep,
+        preserve_ops=[
+            torch.ops.aten.scaled_dot_product_attention.default,
+            torch.ops.aten.linalg_vector_norm.default,
+        ],
+        compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_type_promotion=(float_dtype == torch.float16),
             _skip_dim_order=True,
