@@ -275,14 +275,23 @@ ComputePipeline::ComputePipeline(
     const ComputePipeline::Descriptor& descriptor,
     VkPipelineCache pipeline_cache)
     : device_(device), handle_{VK_NULL_HANDLE} {
-  std::vector<VkSpecializationMapEntry> map_entries =
-      descriptor.specialization_constants.generate_map_entries();
+  SpecVarList specialization_constants;
+
+  specialization_constants.reserve(
+      3 + descriptor.specialization_constants.size());
+  specialization_constants.append(descriptor.local_wg_size[0]);
+  specialization_constants.append(descriptor.local_wg_size[1]);
+  specialization_constants.append(descriptor.local_wg_size[2]);
+
+  specialization_constants.append(descriptor.specialization_constants);
+  const std::vector<VkSpecializationMapEntry> map_entries =
+      specialization_constants.generate_map_entries();
 
   const VkSpecializationInfo specialization_info{
-      descriptor.specialization_constants.size(), // mapEntryCount
+      specialization_constants.size(), // mapEntryCount
       map_entries.data(), // pMapEntries
-      descriptor.specialization_constants.data_nbytes(), // dataSize
-      descriptor.specialization_constants.data(), // pData
+      specialization_constants.data_nbytes(), // dataSize
+      specialization_constants.data(), // pData
   };
 
   const VkPipelineShaderStageCreateInfo shader_stage_create_info{
