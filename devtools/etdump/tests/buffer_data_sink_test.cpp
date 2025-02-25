@@ -16,6 +16,7 @@
 using namespace ::testing;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
+using ::executorch::etdump::BufferDataSink;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
@@ -29,7 +30,6 @@ class BufferDataSinkTest : public ::testing::Test {
     buffer_size_ = 128; // Small size for testing
     buffer_ptr_ = malloc(buffer_size_);
     buffer_ = Span<uint8_t>(static_cast<uint8_t*>(buffer_ptr_), buffer_size_);
-    data_sink_ = std::make_unique<executorch::etdump::BufferDataSink>(buffer_);
   }
 
   void TearDown() override {
@@ -39,11 +39,13 @@ class BufferDataSinkTest : public ::testing::Test {
   size_t buffer_size_;
   void* buffer_ptr_;
   Span<uint8_t> buffer_;
-  std::unique_ptr<executorch::etdump::BufferDataSink> data_sink_;
 };
 
 TEST_F(BufferDataSinkTest, StorageSizeCheck) {
-  Result<size_t> ret = data_sink_->get_storage_size();
+  Result<BufferDataSink> buffer_data_sink = BufferDataSink::create(buffer_);
+  ASSERT_EQ(buffer_data_sink.error(), Error::Ok);
+
+  Result<size_t> ret = buffer_data_sink.get().get_storage_size();
   ASSERT_EQ(ret.error(), Error::Ok);
 
   size_t storage_size = ret.get();
@@ -54,8 +56,10 @@ TEST_F(BufferDataSinkTest, WriteOneTensorAndCheckData) {
   TensorFactory<ScalarType::Float> tf;
   Tensor tensor = tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0});
 
+  Result<BufferDataSink> buffer_data_sink = BufferDataSink::create(buffer_);
+
   Result<size_t> ret =
-      data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+      buffer_data_sink->write(tensor.const_data_ptr(), tensor.nbytes());
   ASSERT_EQ(ret.error(), Error::Ok);
 
   size_t offset = ret.get();
@@ -75,9 +79,11 @@ TEST_F(BufferDataSinkTest, WriteMultiTensorsAndCheckData) {
   std::vector<Tensor> tensors = {
       tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0}),
       tf.make({1, 4}, {5.0, 6.0, 7.0, 8.0})};
+  Result<BufferDataSink> buffer_data_sink = BufferDataSink::create(buffer_);
+
   for (const auto& tensor : tensors) {
     Result<size_t> ret =
-        data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+        buffer_data_sink->write(tensor.const_data_ptr(), tensor.nbytes());
     ASSERT_EQ(ret.error(), Error::Ok);
 
     size_t offset = ret.get();
@@ -94,8 +100,10 @@ TEST_F(BufferDataSinkTest, WriteMultiTensorsAndCheckData) {
 TEST_F(BufferDataSinkTest, PointerAlignmentCheck) {
   TensorFactory<ScalarType::Float> tf;
   Tensor tensor = tf.make({1, 4}, {1.0, 2.0, 3.0, 4.0});
+  Result<BufferDataSink> buffer_data_sink = BufferDataSink::create(buffer_);
+
   Result<size_t> ret =
-      data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+      buffer_data_sink->write(tensor.const_data_ptr(), tensor.nbytes());
   ASSERT_EQ(ret.error(), Error::Ok);
 
   size_t offset = ret.get();
@@ -109,15 +117,38 @@ TEST_F(BufferDataSinkTest, WriteUntilOverflow) {
   TensorFactory<ScalarType::Float> tf;
   Tensor tensor = tf.zeros({1, 8}); // Large tensor to fill the buffer
 
+  Result<BufferDataSink> buffer_data_sink = BufferDataSink::create(buffer_);
+
   // Write tensors until we run out of space
   for (size_t i = 0; i < 2; i++) {
     Result<size_t> ret =
-        data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+        buffer_data_sink->write(tensor.const_data_ptr(), tensor.nbytes());
     ASSERT_EQ(ret.error(), Error::Ok);
   }
 
   // Attempting to write another tensor should raise an error
   Result<size_t> ret =
-      data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
+      buffer_data_sink->write(tensor.const_data_ptr(), tensor.nbytes());
   ASSERT_EQ(ret.error(), Error::OutOfResources);
+}
+
+TEST_F(BufferDataSinkTest, illegalAlignment) {
+  for (size_t i = 1; i <= 128; i <<= 1) {
+    // Create a buffer_data_sink with legal alignment that is a power of 2 and
+    // greater than 0
+    Result<BufferDataSink> buffer_data_sink =
+        BufferDataSink::create(buffer_, i);
+    ASSERT_EQ(buffer_data_sink.error(), Error::Ok);
+  }
+
+  // Create a buffer_data_sink with illegal alignment that is not a power of 2
+  // or greater than 0
+
+  std::vector<size_t> illegal_alignments = {0, 3, 5, 7, 100, 127};
+
+  for (size_t i = 0; i < illegal_alignments.size(); i++) {
+    Result<BufferDataSink> buffer_data_sink =
+        BufferDataSink::create(buffer_, illegal_alignments[i]);
+    ASSERT_EQ(buffer_data_sink.error(), Error::InvalidArgument);
+  }
 }
