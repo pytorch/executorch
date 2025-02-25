@@ -17,6 +17,7 @@
 
 #include <limits>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -277,7 +278,7 @@
         a_strides = a__.strides();                                             \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>          \
         b_strides = b__.strides();                                             \
-    for (size_t i = 0; i < a__.dim(); i++) {                                   \
+    for (const auto i : c10::irange(a__.dim())) {                              \
       ET_CHECK_MSG(                                                            \
           a_strides[i] == b_strides[i],                                        \
           "a.strides()[%zu] shall equal to b.strides()[%zu], "                 \
@@ -309,7 +310,7 @@
         b_strides = b__.strides();                                      \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>   \
         c_strides = c__.strides();                                      \
-    for (size_t i = 0; i < a__.dim(); i++) {                            \
+    for (const auto i : c10::irange(a__.dim())) {                       \
       ET_CHECK_MSG(                                                     \
           a_strides[i] == b_strides[i] && b_strides[i] == c_strides[i], \
           "a_strides[%zu], b_strides[%zu] and c_strides[%zu] "          \
@@ -894,7 +895,7 @@ inline size_t getLeadingDims(
       dim,
       ssize_t(tensor.dim()));
   size_t dims = 1;
-  for (size_t i = 0; i < dim; ++i) {
+  for (const auto i : c10::irange(dim)) {
     dims *= static_cast<size_t>(tensor.size(i));
   }
   return dims;
@@ -931,7 +932,7 @@ inline size_t coordinateToIndex(
     const executorch::aten::Tensor& tensor,
     const size_t* const coordinate) {
   size_t index = 0;
-  for (int d = 0; d < tensor.dim(); ++d) {
+  for (const auto d : c10::irange(tensor.dim())) {
     index += coordinate[d] * getTrailingDims(tensor, d);
   }
   return index;
@@ -963,7 +964,7 @@ inline size_t coordinateToIndexWithTrailingDimsMemo(
     const size_t* const coordinate,
     const size_t trailing_dims_memo[kTensorDimensionLimit]) {
   size_t index = 0;
-  for (int d = 0; d < tensor.dim(); ++d) {
+  for (const auto d : c10::irange(tensor.dim())) {
     index += coordinate[d] * trailing_dims_memo[d];
   }
   return index;
@@ -985,7 +986,7 @@ inline void indexToCoordinate(
     size_t index,
     size_t* coordinate) {
   ET_CHECK(index < tensor.numel());
-  for (auto i = 0; i < tensor.dim(); ++i) {
+  for (const auto i : c10::irange(tensor.dim())) {
     auto dim = tensor.dim() - 1 - i;
     size_t dim_size = tensor.size(dim);
     coordinate[dim] = index % dim_size;
@@ -1175,7 +1176,7 @@ ET_NODISCARD inline Error resize_tensor(
   std::array<executorch::aten::SizesType, kTensorDimensionLimit>
       new_sizes_casted{};
   size_t new_sizes_ndim = new_sizes.size();
-  for (size_t i = 0; i < new_sizes_ndim; ++i) {
+  for (const auto i : c10::irange(new_sizes_ndim)) {
     new_sizes_casted[i] =
         static_cast<executorch::aten::SizesType>(new_sizes[i]);
   }
@@ -1306,7 +1307,7 @@ inline size_t calculate_linear_index(
     const executorch::aten::StridesType* strides,
     const size_t ndim) {
   size_t index = 0;
-  for (size_t i = 0; i < ndim; i++) {
+  for (const auto i : c10::irange(ndim)) {
     index += coordinate[i] * strides[i];
   }
   return index;
