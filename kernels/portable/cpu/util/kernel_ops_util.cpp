@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
@@ -26,14 +27,14 @@ bool param_array_is_valid(
     bool allow_empty) {
   auto size = array.size();
   if (allow_empty) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         size == 0 || size == 1 || size == length,
         "Expected %s to have size 0, 1 or %zu but got %zd",
         name,
         length,
         size);
   } else {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         size == 1 || size == length,
         "Expected %s to have size 1 or %zu but got %zd",
         name,
@@ -47,7 +48,7 @@ bool param_array_is_valid(
 } // namespace
 
 bool int_array_all_ge(IntArrayRef array, int64_t val) {
-  for (size_t i = 0; i < array.size(); ++i) {
+  for (const auto i : c10::irange(array.size())) {
     if (array[i] < val) {
       ET_LOG(
           Error,
@@ -88,7 +89,7 @@ bool padding_is_valid(
 
   if (enforce_half_kernel) {
     // Padding must be at most half of kernel size.
-    for (size_t i = 0; i < padding.size(); i++) {
+    for (const auto i : c10::irange(padding.size())) {
       if (padding[i] > val_at(kernel_size, i) / 2) {
         ET_LOG(
             Error,
@@ -122,11 +123,11 @@ bool output_padding_is_valid(
       kernel_ndim,
       /*allow_empty=*/false));
 
-  for (size_t i = 0; i < kernel_ndim; i++) {
+  for (const auto i : c10::irange(kernel_ndim)) {
     const int64_t op_i = val_at(output_padding, i);
     const int64_t s_i = val_at(stride, i);
     const int64_t d_i = val_at(dilation, i);
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         op_i < s_i || op_i < d_i,
         "output padding must be smaller than either stride or dilation");
   }
@@ -138,12 +139,12 @@ bool output_size_is_valid(
     size_t kernel_ndim) {
   bool valid = true;
   size_t out_dim = output_size.size();
-  for (size_t i = 0; i < out_dim - kernel_ndim; i++) {
+  for (const auto i : c10::irange(out_dim - kernel_ndim)) {
     if (output_size[i] < 0) {
       valid = false;
     }
   }
-  for (size_t i = out_dim - kernel_ndim; i < out_dim; i++) {
+  for (const auto i : c10::irange(out_dim - kernel_ndim, out_dim)) {
     if (output_size[i] <= 0) {
       valid = false;
     }
@@ -153,7 +154,7 @@ bool output_size_is_valid(
         Error,
         "The provided combination of input and kernel parameters "
         "produces an invalid output size:");
-    for (size_t d = 0; d < output_size.size(); ++d) {
+    for ([[maybe_unused]] const auto d : c10::irange(output_size.size())) {
       ET_LOG(
           Error, "    size(%zu): %zu", d, static_cast<size_t>(output_size[d]));
     }
@@ -167,11 +168,11 @@ void get_unsqueezed_sizes(
     executorch::aten::SizesType* sizes_arr,
     size_t& ndim) {
   ndim = t.dim() + 1;
-  for (int d = 0; d < unsqueeze_dim; ++d) {
+  for (const auto d : c10::irange(unsqueeze_dim)) {
     sizes_arr[d] = t.size(d);
   }
   sizes_arr[unsqueeze_dim] = 1;
-  for (int d = (unsqueeze_dim + 1); d < ndim; d++) {
+  for (const auto d : c10::irange(unsqueeze_dim + 1, ndim)) {
     sizes_arr[d] = t.size(d - 1);
   }
 }
@@ -181,7 +182,7 @@ void get_unsqueezed_dim_order(
     executorch::aten::DimOrderType unsqueeze_dim,
     executorch::aten::DimOrderType* dim_order_arr) {
   int offset = 0;
-  for (int i = 0; i < t.dim(); ++i) {
+  for (const auto i : c10::irange(t.dim())) {
     executorch::aten::DimOrderType dim = t.dim_order()[i];
     if (dim == unsqueeze_dim) {
       dim_order_arr[i] = dim;
@@ -213,7 +214,7 @@ int64_t _kernel_output_size_helper(
   if (ceil_mode) {
     // ensure that the last pooling starts inside the image
     // needed to avoid problems in ceil mode
-    if ((outputSize - 1) * stride >= inputSize + pad) {
+    if ((outputSize - 1) * stride >= static_cast<int64_t>(inputSize) + pad) {
       --outputSize;
     }
   }
@@ -231,7 +232,7 @@ void calculate_kernel_output_sizes(
     bool ceil_mode,
     bool transposed,
     IntArrayRef output_padding) {
-  for (size_t i = 0; i < kernel_ndim; ++i) {
+  for (const auto i : c10::irange(kernel_ndim)) {
     auto dim = in.dim() - (kernel_ndim - i);
     int64_t k = val_at(kernel_size, i);
     int64_t s = val_at(stride, i, /*default_value=*/k);
@@ -246,12 +247,12 @@ void calculate_kernel_output_sizes(
 }
 
 bool check_arange_args(double start, double end, double step, Tensor& out) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() == 1,
       "out should be a 1-d tensor, but got a %zu-d tensor",
       out.dim());
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (step > 0 && (end >= start)) || (step < 0 && (end <= start)),
       "upper bound and larger bound inconsistent with step sign");
 
@@ -272,7 +273,7 @@ bool check_avg_pool2d_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
       "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
@@ -285,7 +286,7 @@ bool check_avg_pool2d_args(
       padding, kernel_size, /*kernel_ndim=*/2, /*enforce_half_kernel=*/true));
 
   if (divisor_override.has_value()) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         divisor_override.value() != 0,
         "divisor_override must be non-zero, but found %" PRId64,
         divisor_override.value());
@@ -334,7 +335,7 @@ bool check_convolution_args(
       tensor_is_default_or_channels_last_dim_order(weight));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       in.dim() == 3 || in.dim() == 4,
       "Expect input tensor to be 3-D or 4-D, but got, %zu.",
       static_cast<size_t>(in.dim()));
@@ -343,7 +344,7 @@ bool check_convolution_args(
 
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         bias.value().size(0) == transposed ? groups * weight.size(1)
                                            : weight.size(0),
         "bias length must equal number of output channels, but got %zd",
@@ -369,14 +370,14 @@ bool check_convolution_args(
         output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
   }
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.size(0) >= groups,
       "Given groups=%" PRId64 ", expected weight to be at least %" PRId64
       " at dimension 0, but got weight.size(0) = %zd instead",
       groups,
       groups,
       weight.size(0));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.size(0) % groups == 0,
       "Given groups=%" PRId64 ", expected weight to be divisible by %" PRId64
       " at dimension 0, but got weight.size(0) = %zd instead",
@@ -385,7 +386,7 @@ bool check_convolution_args(
       weight.size(0));
 
   if (!transposed) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         in.size(1) == groups * weight.size(1),
         "Given groups=%" PRId64
         " and weight.size(1) = %zd, expected input to have %" PRId64
@@ -395,7 +396,7 @@ bool check_convolution_args(
         groups * weight.size(1),
         in.size(1));
   } else {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         in.size(1) == weight.size(0),
         "input channels must match weight.size(0) in transposed convolution");
   }
@@ -472,7 +473,7 @@ bool check_max_pool2d_with_indices_args(
     Tensor& out,
     Tensor& indices) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       indices.scalar_type() == ScalarType::Long,
       "Expected indices to have type of Long, but found %s",
       toString(indices.scalar_type()));
@@ -480,7 +481,7 @@ bool check_max_pool2d_with_indices_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
           (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
       "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
@@ -543,11 +544,12 @@ bool check_constant_pad_args(
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(in, out));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       pad.size() % 2 == 0, "Padding array must be a multiple of 2");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      pad.size() / 2 <= in.dim(), "Padding array contains too many elements");
+  ET_CHECK_OR_RETURN_FALSE(
+      static_cast<ssize_t>(pad.size() / 2) <= in.dim(),
+      "Padding array contains too many elements");
 
   return true;
 }
@@ -559,11 +561,12 @@ Error resize_constant_pad_output(
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
 
   int pad_i = in.dim() - 1;
-  for (size_t i = 0; i < in.dim(); ++i, --pad_i) {
+  for (const auto i : c10::irange(in.dim())) {
     expected_output_size[i] = in.size(i);
-    if (pad_i >= 0 && pad_i < pad.size() / 2) {
+    if (pad_i >= 0 && static_cast<size_t>(pad_i) < pad.size() / 2) {
       expected_output_size[i] += pad[2 * pad_i] + pad[2 * pad_i + 1];
     }
+    --pad_i;
   }
 
   ArrayRef<Tensor::SizesType> output_size{
@@ -578,13 +581,13 @@ bool check_embedding_args(
     const Tensor& indices,
     const Tensor& out) {
   // Ensure weight is 2-D. It could be empty.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.dim() == 2, "weight.dim() %zd != 2", weight.dim());
 
   // Ensure out is k+1 dimension tensor where k is the indices.dim()
   // out's first k dimension shall be same as indices, and the last dim shall
   // equal weight's last dim
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() == indices.dim() + 1,
       "out.dim() %zd != indices.dim() %zd + 1",
       out.dim(),
@@ -601,7 +604,7 @@ Error resize_embedding_output(
     const Tensor& indices,
     const Tensor& out) {
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
-  for (size_t i = 0; i < indices.dim(); i++) {
+  for (const auto i : c10::irange(indices.dim())) {
     expected_output_size[i] = indices.size(i);
   }
   const size_t embedding_dim = weight.size(1);

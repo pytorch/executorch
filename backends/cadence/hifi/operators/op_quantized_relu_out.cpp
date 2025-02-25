@@ -75,6 +75,46 @@ void quantized_relu_per_tensor_out(
   }
 }
 
+void quantized_relu_per_tensor_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& in_zero_point,
+    const int64_t out_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& output) {
+  int8_t _in_zero_point = in_zero_point.const_data_ptr<int8_t>()[0];
+  int32_t _out_multiplier = out_multiplier.const_data_ptr<int32_t>()[0];
+  int32_t _out_shift = out_shift.const_data_ptr<int32_t>()[0];
+
+  quantized_relu_per_tensor_out(
+      ctx,
+      input,
+      _in_zero_point,
+      out_zero_point,
+      _out_multiplier,
+      _out_shift,
+      output);
+}
+
+void quantized_relu_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& in_zero_point,
+    const int64_t out_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& output) {
+  quantized_relu_per_tensor_out(
+      ctx,
+      input,
+      in_zero_point,
+      out_zero_point,
+      out_multiplier,
+      out_shift,
+      output);
+}
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl

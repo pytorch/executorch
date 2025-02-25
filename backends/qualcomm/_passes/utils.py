@@ -65,6 +65,8 @@ def get_passes_dependency_for_capture_program():
         ConvertInterpolateWithUpsample2D,
         ConvertPReLU,
         ConvertToLinear,
+        DecomposeAny,
+        DecomposeLinalgVectorNorm,
         ExpandBroadcastTensorShape,
         FoldQDQ,
         LayoutTransform,
@@ -76,14 +78,10 @@ def get_passes_dependency_for_capture_program():
     )
 
     return {
-        RecomposePixelUnshuffle: [RemoveRedundancy],
-        RecomposeRmsNorm: [RemoveRedundancy],
-        ConvertToLinear: [RecomposePixelUnshuffle],
-        ConvertPReLU: [RemoveRedundancy],
-        ConvertBmmToMatmul: [ConvertToLinear],
-        ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
-        ConstantI64toI32: [RemoveRedundancy],
-        TensorI64toI32: [RemoveRedundancy],
+        AnnotateAndQuantScalar: [
+            AnnotateQuantAttrs,
+        ],
+        AnnotateDecomposed: [RemoveRedundancy],
         AnnotateQuantAttrs: [
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
@@ -92,16 +90,22 @@ def get_passes_dependency_for_capture_program():
             ConvertBmmToMatmul,
             ConvertInterpolateWithUpsample2D,
         ],
-        AnnotateAndQuantScalar: [
-            AnnotateQuantAttrs,
-        ],
-        AnnotateDecomposed: [RemoveRedundancy],
-        FoldQDQ: [AnnotateQuantAttrs, AnnotateAndQuantScalar, AnnotateDecomposed],
+        ConstantI64toI32: [ConvertInterpolateWithUpsample2D],
+        ConvertBmmToMatmul: [ConvertToLinear],
+        ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
+        ConvertPReLU: [RemoveRedundancy],
+        ConvertToLinear: [RecomposePixelUnshuffle],
+        DecomposeAny: [RemoveRedundancy],
+        DecomposeLinalgVectorNorm: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [RemoveRedundancy],
+        FoldQDQ: [AnnotateQuantAttrs, AnnotateAndQuantScalar, AnnotateDecomposed],
         LayoutTransform: [
             AnnotateQuantAttrs,
             AnnotateAndQuantScalar,
             ExpandBroadcastTensorShape,
         ],
+        RecomposePixelUnshuffle: [RemoveRedundancy],
+        RecomposeRmsNorm: [RemoveRedundancy],
         ReplaceIndexPutInput: [LayoutTransform],
+        TensorI64toI32: [RemoveRedundancy],
     }

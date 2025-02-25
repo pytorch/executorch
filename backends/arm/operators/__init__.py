@@ -7,11 +7,13 @@
 
 from . import (  # noqa
     node_visitor,
+    op_abs,
     op_add,
     op_avg_pool2d,
     op_bmm,
     op_cat,
     op_clamp,
+    op_constant_pad_nd,
     op_conv2d,
     op_eq,
     op_exp,
@@ -19,7 +21,6 @@ from . import (  # noqa
     op_ge,
     op_get_item,
     op_gt,
-    op_hardtanh,
     op_le,
     op_log,
     op_lt,
@@ -29,7 +30,6 @@ from . import (  # noqa
     op_mul,
     op_permute,
     op_reciprocal,
-    op_relu,
     op_repeat,
     op_rescale,
     op_rshift,
@@ -45,4 +45,6 @@ from . import (  # noqa
     op_transpose,
     op_upsample_nearest2d,
     op_view,
+    ops_binary,
+    ops_unary,
 )

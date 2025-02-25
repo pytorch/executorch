@@ -21,7 +21,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
-from executorch.exir import EdgeProgramManager
+from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
 
 from executorch.exir.backend.utils import format_delegated_graph
@@ -34,12 +34,12 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
-from executorch.extension.llm.export.export_passes import RemoveRedundantPermutes
+from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
-from torch.export import export_for_training
+from torch.export import export_for_training, ExportedProgram
 from torch.nn.attention import SDPBackend
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -89,8 +89,8 @@ class LLMEdgeManager:
         dynamic_shapes: Optional[Any] = None,
     ):
         self.model = model
-        # graph module returned from export()
-        self.pre_autograd_graph_module: Optional[torch.fx.GraphModule] = None
+        self.pre_autograd_exported_program: Optional[ExportedProgram] = None
+        self.pre_autograd_graph_module: Optional[torch.nn.Module] = None
         self.modelname = modelname
         self.max_seq_len = max_seq_len
         self.dtype = dtype
@@ -113,7 +113,7 @@ class LLMEdgeManager:
         self.calibration_seq_length = calibration_seq_length
         self.calibration_data = calibration_data
         self.tokenizer_path = tokenizer_path
-        self.canonical_passes = [RemoveRedundantPermutes()]
+        self.canonical_passes = [RemoveRedundantTransposes()]
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -218,8 +218,8 @@ class LLMEdgeManager:
                     kwargs=self.example_kwarg_inputs,
                     dynamic_shapes=dynamic_shape,
                 )
-            # pyre-fixme[8]: Attribute has type `Optional[GraphModule]`; used as
             #  `Module`.
+            self.pre_autograd_exported_program = exported_module
             self.pre_autograd_graph_module = exported_module.module()
             if hasattr(self.args, "export_only") and self.args.export_only:
                 torch.export.save(exported_module, self.args.output_name)
@@ -330,7 +330,10 @@ class LLMEdgeManager:
                 assert (
                     self.pre_autograd_graph_module is not None
                 ), "Please run export() first"
-                m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
+                m = prepare_pt2e(
+                    self.pre_autograd_graph_module,  # pyre-ignore[6]
+                    composed_quantizer,
+                )
                 logging.info(
                     f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
                 )
@@ -428,6 +431,19 @@ class LLMEdgeManager:
                     logging.info("No partitioner provided, passing...")
                     continue
 
+        return self
+
+    def to_edge_transform_and_lower(
+        self, partitioners: Optional[List[Partitioner]]
+    ) -> "LLMEdgeManager":
+        if partitioners is None:
+            logging.info("No partitioner provided, skipping backend lowering...")
+        edge_config = self._get_edge_config()
+        self.edge_manager = to_edge_transform_and_lower(
+            self.pre_autograd_exported_program,
+            partitioner=partitioners,
+            compile_config=edge_config,
+        )
         return self
 
     def to_executorch(

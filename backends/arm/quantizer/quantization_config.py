@@ -78,6 +78,7 @@ class QuantizationConfig:
             torch.ops.aten.conv1d.default,
             torch.ops.aten.conv2d.default,
             torch.ops.aten.linear.default,
+            torch.ops.aten.conv2d.padding,
         ]:
             input_act = node.args[0]
             weight = node.args[1]

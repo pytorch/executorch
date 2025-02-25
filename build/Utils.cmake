@@ -70,6 +70,9 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR : "
                  "${EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR}"
   )
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_LLM : "
+                 "${EXECUTORCH_BUILD_EXTENSION_LLM}"
+  )
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
                  "${EXECUTORCH_BUILD_EXTENSION_MODULE}"
   )
@@ -203,9 +206,9 @@ function(extract_sources sources_file)
 
     if(ANDROID_ABI)
       if("${ANDROID_ABI}" STREQUAL "arm64-v8a")
-        set(target_platforms_arg "--target-platforms=shim//:android-arm64")
+        set(target_platforms_arg "--target-platforms=shim_et//:android-arm64")
       elseif("${ANDROID_ABI}" STREQUAL "x86_64")
-        set(target_platforms_arg "--target-platforms=shim//:android-x86_64")
+        set(target_platforms_arg "--target-platforms=shim_et//:android-x86_64")
       else()
         message(
           FATAL_ERROR
@@ -325,21 +328,61 @@ function(resolve_python_executable)
   endif()
 endfunction()
 
-# find_package(Torch CONFIG REQUIRED) replacement for targets that
-# have a header-only Torch dependency. Because find_package sets
-# variables in the parent scope, we use a macro to preserve this
-# rather than maintaining our own list of those variables.
+# find_package(Torch CONFIG REQUIRED) replacement for targets that have a
+# header-only Torch dependency. Because find_package sets variables in the
+# parent scope, we use a macro to preserve this rather than maintaining our own
+# list of those variables.
 macro(find_package_torch_headers)
-  # We cannot simply use CMAKE_FIND_ROOT_PATH_BOTH, because that does
-  # not propagate into TorchConfig.cmake.
+  # We cannot simply use CMAKE_FIND_ROOT_PATH_BOTH, because that does not
+  # propagate into TorchConfig.cmake.
   foreach(mode_kind IN ITEMS PACKAGE LIBRARY INCLUDE)
-    set(OLD_CMAKE_FIND_ROOT_PATH_MODE_${mode_kind} ${CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}})
+    set(OLD_CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}
+        ${CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}}
+    )
     set(CMAKE_FIND_ROOT_PATH_MODE_${mode_kind} BOTH)
   endforeach()
+  find_package_torch()
+  foreach(mode_kind IN ITEMS PACKAGE LIBRARY INCLUDE)
+    set(CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}
+        ${OLD_CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}}
+    )
+  endforeach()
+endmacro()
+
+# Add the Torch CMake configuration to CMAKE_PREFIX_PATH so that find_package
+# can find Torch.
+function(add_torch_to_cmake_prefix_path)
+  if(NOT PYTHON_EXECUTABLE)
+    resolve_python_executable()
+  endif()
+  execute_process(
+    COMMAND "${PYTHON_EXECUTABLE}" -c
+            "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])"
+    OUTPUT_VARIABLE _tmp_torch_path
+    ERROR_VARIABLE _tmp_torch_path_error
+    RESULT_VARIABLE _tmp_torch_path_result COMMAND_ECHO STDERR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT _tmp_torch_path_result EQUAL 0)
+    message("Error while adding torch to CMAKE_PREFIX_PATH. "
+            "Exit code: ${_tmp_torch_path_result}"
+    )
+    message("Output:\n${_tmp_torch_path}")
+    message(FATAL_ERROR "Error:\n${_tmp_torch_path_error}")
+  endif()
+  list(APPEND CMAKE_PREFIX_PATH "${_tmp_torch_path}")
+  set(CMAKE_PREFIX_PATH
+      "${CMAKE_PREFIX_PATH}"
+      PARENT_SCOPE
+  )
+endfunction()
+
+# Replacement for find_package(Torch CONFIG REQUIRED); sets up CMAKE_PREFIX_PATH
+# first and only does the find once. If you have a header-only Torch dependency,
+# use find_package_torch_headers instead!
+macro(find_package_torch)
   if(NOT TARGET torch)
+    add_torch_to_cmake_prefix_path()
     find_package(Torch CONFIG REQUIRED)
   endif()
-  foreach(mode_kind IN ITEMS PACKAGE LIBRARY INCLUDE)
-    set(CMAKE_FIND_ROOT_PATH_MODE_${mode_kind} ${OLD_CMAKE_FIND_ROOT_PATH_MODE_${mode_kind}})
-  endforeach()
 endmacro()
