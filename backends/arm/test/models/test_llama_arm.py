@@ -117,7 +117,7 @@ class TestLlama(unittest.TestCase):
                 .to_edge_transform_and_lower(
                     edge_compile_config=self._edge_compile_config
                 )
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 25})
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 14})
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=llama_inputs, atol=1.8, rtol=0.01
