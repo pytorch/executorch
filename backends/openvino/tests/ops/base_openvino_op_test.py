@@ -18,8 +18,8 @@ class BaseOpenvinoOpTest(unittest.TestCase):
     device = "CPU"
     build_folder = ""
 
-    atol = 1e-1
-    rtol = 1e-1
+    atol = 1e-5
+    rtol = 1e-5
 
     def execute_layer_test(
         self,
