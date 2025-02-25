@@ -21,6 +21,7 @@ build_native_library() {
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
+    -DBUILD_TESTING=OFF \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -33,9 +34,10 @@ build_native_library() {
 
   cmake --build "${CMAKE_OUT}" -j16 --target install
 
-  cmake --trace extension/android \
+  cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}"/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
+    -DBUILD_TESTING=OFF \
     -DCMAKE_INSTALL_PREFIX=c"${CMAKE_OUT}" \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
