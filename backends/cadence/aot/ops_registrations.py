@@ -100,6 +100,10 @@ lib.define(
     "Tensor Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
 )
 lib.define(
+    "quantized_add.per_tensor(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
+)
+lib.define(
     "quantized_mul(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
 )
@@ -174,6 +178,10 @@ lib.define(
 lib.define(
     "quantized_add.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_add.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_mul.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
@@ -288,6 +296,42 @@ def dequantize_per_tensor_meta(
     dtype: torch.dtype,
 ) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::quantized_add")
+def quantized_add_meta(
+    X: torch.Tensor,
+    X_scale: torch.Tensor,
+    X_zero_point: torch.Tensor,
+    Y: torch.Tensor,
+    Y_scale: torch.Tensor,
+    Y_zero_point: torch.Tensor,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    out_size = X.size()
+    if list(X.size()) == [1]:
+        out_size = Y.size()
+
+    return X.new_empty(out_size, dtype=X.dtype)
+
+
+@register_fake("cadence::quantized_add.per_tensor")
+def quantized_add_per_tensor_meta(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    out_size = X.size()
+    if list(X.size()) == [1]:
+        out_size = Y.size()
+
+    return X.new_empty(out_size, dtype=X.dtype)
 
 
 @register_fake("cadence::quantized_linear")
@@ -576,7 +620,7 @@ def quantized_relu_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
-    return input.new_empty(input.size(), dtype=torch.uint8)
+    return input.new_empty(input.size(), dtype=input.dtype)
 
 
 @register_fake("cadence::fully_connected")

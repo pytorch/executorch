@@ -16,6 +16,13 @@ from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from torch.nn.quantizable.modules import rnn
 
 
+def get_test_inputs():
+    return (
+        torch.randn(5, 3, 10),  # input
+        (torch.randn(2, 3, 20), torch.randn(2, 3, 20)),  # (h0, c0)
+    )
+
+
 class TestLSTM(unittest.TestCase):
     """Tests quantizable LSTM module."""
 
@@ -27,31 +34,28 @@ class TestLSTM(unittest.TestCase):
     lstm = rnn.LSTM(10, 20, 2)
     lstm = lstm.eval()
 
-    input_tensor = torch.randn(5, 3, 10)
-    h0 = torch.randn(2, 3, 20)
-    c0 = torch.randn(2, 3, 20)
-
-    model_inputs = (input_tensor, (h0, c0))
+    # Used e.g. for quantization calibration and shape extraction in the tester
+    model_example_inputs = get_test_inputs()
 
     def test_lstm_tosa_MI(self):
         (
             ArmTester(
                 self.lstm,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(inputs=self.model_inputs)
+            .run_method_and_compare_outputs(inputs=get_test_inputs())
         )
 
     def test_lstm_tosa_BI(self):
         (
             ArmTester(
                 self.lstm,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
@@ -59,14 +63,14 @@ class TestLSTM(unittest.TestCase):
             .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(atol=3e-1, qtol=1, inputs=self.model_inputs)
+            .run_method_and_compare_outputs(atol=3e-1, qtol=1, inputs=get_test_inputs())
         )
 
     def test_lstm_u55_BI(self):
         tester = (
             ArmTester(
                 self.lstm,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
@@ -78,14 +82,14 @@ class TestLSTM(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=3e-1, qtol=1, inputs=self.model_inputs
+                atol=3e-1, qtol=1, inputs=get_test_inputs()
             )
 
     def test_lstm_u85_BI(self):
         tester = (
             ArmTester(
                 self.lstm,
-                example_inputs=self.model_inputs,
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_u85_compile_spec(),
             )
             .quantize()
@@ -97,5 +101,5 @@ class TestLSTM(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=3e-1, qtol=1, inputs=self.model_inputs
+                atol=3e-1, qtol=1, inputs=get_test_inputs()
             )

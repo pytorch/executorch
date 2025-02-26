@@ -78,6 +78,8 @@ exclude_patterns = [
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
+    # Want to be able to keep c10 in sync with PyTorch core.
+    'runtime/core/portable_type/c10/**',
 ]
 command = [
     'python',
@@ -261,6 +263,8 @@ exclude_patterns = [
     'extension/**',
     'kernels/optimized/**',
     'runtime/core/exec_aten/**',
+    # Want to be able to keep c10 in sync with PyTorch core.
+    'runtime/core/portable_type/c10/**',
     'runtime/executor/tensor_parser_aten.cpp',
     'scripts/**',
     'test/**',

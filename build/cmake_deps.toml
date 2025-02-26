@@ -117,9 +117,9 @@ deps = [
   "executorch",
 ]
 
-[targets.optimized_native_cpu_ops_oss]
+[targets.optimized_native_cpu_ops]
 buck_targets = [
-  "//configurations:optimized_native_cpu_ops_oss",
+  "//configurations:optimized_native_cpu_ops",
 ]
 filters = [
   ".cpp$",
@@ -402,6 +402,22 @@ deps = [
   "xnnpack_backend",
 ]
 
+[targets.extension_llm_tokenizer]
+buck_targets = [
+  "//extension/llm/tokenizer:bpe_tokenizer",
+  "//extension/llm/tokenizer:tiktoken",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+]
+
 [targets.llama_runner]
 buck_targets = [
   "//examples/models/llama/runner:runner",
@@ -421,6 +437,6 @@ deps = [
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
-  "optimized_native_cpu_ops_oss",
+  "optimized_native_cpu_ops",
 ]
 # ---------------------------------- LLama end ----------------------------------

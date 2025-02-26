@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cstdint>
 
+#include <c10/util/irange.h>
+
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
@@ -30,7 +32,7 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
       dim == 0 || sizes != nullptr,
       "Sizes must be provided for non-scalar tensors");
   ssize_t numel = 1; // Zero-dimensional tensors (scalars) have numel == 1.
-  for (ssize_t i = 0; i < dim; ++i) {
+  for (const auto i : c10::irange(dim)) {
     ET_CHECK_MSG(
         sizes[i] >= 0,
         "Size must be non-negative, got %d at dimension %zd",
@@ -95,7 +97,7 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   switch (shape_dynamism_) {
     case TensorShapeDynamism::STATIC:
       if (!std::equal(sizes_, sizes_ + dim_, new_sizes.begin())) {
-#ifdef ET_LOG_ENABLED
+#if ET_LOG_ENABLED
         executorch::runtime::Span<const SizesType> sizes_span(
             sizes().data(), sizes().size());
         executorch::runtime::Span<const SizesType> new_sizes_span(

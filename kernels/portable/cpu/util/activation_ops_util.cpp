@@ -6,9 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 
 namespace torch {
 namespace executor {
@@ -16,7 +18,7 @@ namespace executor {
 bool check_gelu_args(const Tensor& in, string_view approximate, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(in.scalar_type() != ScalarType::Bool);
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       approximate == "tanh" || approximate == "none",
       "Invalid approximation format: %.*s for gelu",
       static_cast<int>(approximate.length()),
@@ -31,7 +33,7 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
   const size_t dim_size = in.size(non_negative_dim);
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       dim_size % 2 == 0,
       "Halving dimension must be even, but dimension %zd is size %zd",
       non_negative_dim,
@@ -39,15 +41,28 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(out));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(in, out));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.size(non_negative_dim) == dim_size / 2,
       "output tensor must have half the size of the input tensor along the specified dimension.");
 
-  for (size_t i = 0; i < in.dim(); ++i) {
-    if (i != non_negative_dim) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
-          out.size(i) == in.size(i),
-          "output tensor must have the same size as the input tensor in all dimensions except for the specified dimension.");
+  for (const auto i : c10::irange(in.dim())) {
+    if (static_cast<size_t>(i) != non_negative_dim) {
+      if (out.size(i) != in.size(i)) {
+#if ET_LOG_ENABLED
+        auto out_shape_str = executorch::runtime::tensor_shape_to_c_string(
+            executorch::runtime::Span<const Tensor::SizesType>(
+                out.sizes().data(), out.sizes().size()));
+        auto in_shape_str = executorch::runtime::tensor_shape_to_c_string(
+            executorch::runtime::Span<const Tensor::SizesType>(
+                in.sizes().data(), in.sizes().size()));
+        ET_LOG(
+            Error,
+            "output tensor must have the same size as the input tensor in all dimensions except for the specified dimension. (output shape: %s input shape: %s)",
+            out_shape_str.data(),
+            in_shape_str.data());
+#endif // ET_LOG_ENABLED
+        return false;
+      }
     }
   }
 
@@ -59,7 +74,7 @@ bool check_log_softmax_args(
     int64_t dim,
     bool half_to_float,
     Tensor& out) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !half_to_float, "half to float conversion is not supported on CPU");
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
@@ -80,9 +95,10 @@ Error resize_glu_out(const Tensor& in, int64_t dim, Tensor& out) {
   executorch::aten::SizesType expected_output_size[kTensorDimensionLimit];
 
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
-  for (size_t i = 0; i < in.dim(); i++) {
-    expected_output_size[i] =
-        (i == non_negative_dim) ? (in.size(i) / 2) : in.size(i);
+  for (const auto i : c10::irange(in.dim())) {
+    expected_output_size[i] = (static_cast<size_t>(i) == non_negative_dim)
+        ? (in.size(i) / 2)
+        : in.size(i);
   }
 
   ArrayRef<executorch::aten::SizesType> output_size{

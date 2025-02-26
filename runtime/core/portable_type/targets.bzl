@@ -28,6 +28,9 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/...",
             "//executorch/runtime/core/portable_type/test/...",
         ],
+        deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
+        ],
         exported_deps = [
             ":scalar_type",
             "//executorch/runtime/core:core",
@@ -50,6 +53,9 @@ def define_common_targets():
             "scalar_type.h",
             "qint_types.h",
             "bits_types.h",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         visibility = [
             "//executorch/extension/...",

@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -35,7 +35,7 @@ def define_common_targets():
         ],
     )
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_test(
             name = "tensor_util_test" + aten_suffix,
@@ -52,5 +52,6 @@ def define_common_targets():
         srcs = ["tensor_shape_to_c_string_test.cpp"],
         deps = [
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     )

@@ -61,12 +61,11 @@ ethos_u_base_rev="24.08"
 
 # tosa reference model
 tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
-tosa_reference_model_rev="v0.80.1"
+tosa_reference_model_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
 
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="e131bf4f528f0d461868229972e07f371dcbc881"
-
+vela_rev="46d88f56902be0706e051c10153ffb7620e01ee3"
 
 ########
 ### Optional user args
