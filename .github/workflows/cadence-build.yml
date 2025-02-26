@@ -48,6 +48,7 @@ jobs:
   cpu-build:
     name: cpu-build
     needs: set-envir-vars
+    runs-on: ubuntu-22.04
     # uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     # secrets: inherit
     steps:
@@ -61,7 +62,7 @@ jobs:
         run: |
           # install cadence requirements
           bash backends/cadence/install_requirements.sh
-          
+
           .ci/scripts/build_cadence_runner.sh
 
   # g3-build:

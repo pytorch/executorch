@@ -382,6 +382,9 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
+        # install cadence requirements
+        bash backends/cadence/install_requirements.sh
+
         # run python unittest
         python -m examples.cadence.operators.test_g3_ops
 
