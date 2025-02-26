@@ -431,13 +431,14 @@ table SubsegmentOffsets {
   offsets: [uint64];
 }
 
-// Attributes a name to data referenced by Program.segments. Typically used
-// when data is referenced by multiple users.
+// Attributes a name to data referenced by Program.segments. Used when data is
+// referenced by multiple users, in cases where indices are not guaranteed to
+// be consistent across the users.
 table NamedData {
   // The unique id of the data blob.
   key: string;
 
-  // Index of the segment in Program.segments
+  // Index of the segment in Program.segments.
   segment_index: uint32;
 }
 
@@ -479,8 +480,9 @@ table Program {
   // constant segment. No two elements should point to the same segment.
   mutable_data_segments: [SubsegmentOffsets];
 
-  // [Optional] List of blobs keyed by a name. Stored in segments attached to
-  // the PTE file.
+  // [Optional] List of blobs keyed by a unique name. Note that multiple
+  // 'NamedData' entries could point to the same segment index. Stored in
+  // segments attached to the PTE file.
   named_data: [NamedData];
 }
 

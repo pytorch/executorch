@@ -141,7 +141,7 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
 }
 
-ET_NODISCARD Result<size_t> FlatTensorDataMap::load_data_into(
+ET_NODISCARD Error FlatTensorDataMap::load_data_into(
     ET_UNUSED const char* key,
     ET_UNUSED void* buffer,
     ET_UNUSED size_t size) const {
@@ -156,7 +156,7 @@ ET_NODISCARD Result<size_t> FlatTensorDataMap::load_data_into(
     return tensor_layout.error();
   }
   ET_CHECK_OR_RETURN_ERROR(
-      size < tensor_layout.get().nbytes(),
+      size <= tensor_layout.get().nbytes(),
       InvalidArgument,
       "Buffer size %zu is smaller than tensor size %zu",
       size,
@@ -187,6 +187,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   if (index < 0 || index >= flat_tensor_->tensors()->size()) {
     return Error::InvalidArgument;
   }
+
   return flat_tensor_->tensors()->Get(index)->fully_qualified_name()->c_str();
 }
 

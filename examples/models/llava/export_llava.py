@@ -67,6 +67,7 @@ class LlavaEdgeManager(LLMEdgeManager):
                 dynamic_shapes=dynamic_shape,
                 strict=False,
             )
+            # pyre-ignore: Incompatible attribute type [8]: Attribute `pre_autograd_graph_module` declared in class `LLMEdgeManager` has type `Optional[GraphModule]` but is used as type `Module`.
             self.pre_autograd_graph_module = self.export_program.module()
         return self
 
