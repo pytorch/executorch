@@ -185,8 +185,8 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
 
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
-      ;
-      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
+
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(std::move(BufferDataSink::create(ptr, 2048).get()));
 
       // using span to record debug data
       if (j == 0) {
@@ -233,7 +233,9 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
 
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
-      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
+
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(std::move(BufferDataSink::create(ptr, 2048).get()));
+
 
       // using span to record debug data
       if (j == 0) {
@@ -261,8 +263,8 @@ TEST_F(ProfilerETDumpTest, VerifyLogging) {
 
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
-      ;
-      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
+
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(std::move(BufferDataSink::create(ptr, 2048).get()));
 
       // using span to record debug data
       if (j == 0) {
@@ -473,7 +475,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
 
-      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(std::move(BufferDataSink::create(ptr, 2048).get()));
 
       etdump_gen[i]->create_event_block("test_block");
       TensorFactory<ScalarType::Float> tf;
@@ -548,7 +550,7 @@ TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
       ;
-      auto buffer_data_sink = std::make_shared<BufferDataSink>(ptr, 2048);
+      auto buffer_data_sink = std::make_shared<BufferDataSink>(std::move(BufferDataSink::create(ptr, 2048).get()));
 
       // using span to record debug data
       if (j == 0) {

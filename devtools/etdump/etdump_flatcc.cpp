@@ -499,7 +499,7 @@ ETDumpResult ETDumpGen::get_etdump_data() {
 }
 
 void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
-  data_sink_ = std::make_shared<BufferDataSink>(buffer);
+  data_sink_ = std::make_shared<BufferDataSink>(std::move(BufferDataSink::create(buffer).get()));
 }
 
 void ETDumpGen::set_data_sink(std::shared_ptr<DataSinkBase> buffer_data_sink) {
