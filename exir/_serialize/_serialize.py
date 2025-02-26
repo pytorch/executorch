@@ -6,12 +6,12 @@
 
 # pyre-strict
 
-
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from executorch.exir._serialize import _serialize_pte_binary
 
 from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize.data_serializer import (
     DataPayload,
     DataSerializer,
@@ -28,10 +28,24 @@ def serialize_for_executorch(
     emitter_output: EmitterOutput,
     config: ExecutorchBackendConfig,
     data_serializer: DataSerializer,
+    named_data: Optional[NamedDataStoreOutput] = None,
 ) -> Tuple[Cord, Dict[str, Cord]]:
     """Serialize the output from Emitter into ExecuTorch artifacts; PTE and PTD files."""
 
     # Serialize PTE file.
+    pte_named_data = None
+    if (
+        named_data is not None
+        and len(named_data.buffers) > 0
+        and len(named_data.pte_data) > 0
+    ):
+        # Create a separate NamedDataStoreOutput with only pte_data; exclude
+        # external_data, which shouldn't be serialized with the PTE file.
+        pte_named_data = NamedDataStoreOutput(
+            buffers=named_data.buffers,
+            pte_data=named_data.pte_data,
+            external_data={},
+        )
     pte: Cord = _serialize_pte_binary(
         program=emitter_output.program,
         mutable_data=emitter_output.mutable_data,
@@ -39,6 +53,7 @@ def serialize_for_executorch(
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
+        named_data=pte_named_data,
     )
 
     # Serialize PTD files.
@@ -87,5 +102,12 @@ def serialize_for_executorch(
                     fqn_to_tensor=fqn_to_tensor_entry,
                 )
             )
+
+    # pyre-ignore Undefined attribute [16]: `NamedDataStoreOutput` has no attribute `external_blobs`.
+    if named_data is None or len(named_data.external_data) == 0:
+        return pte, ptd_files
+
+    if len(named_data.buffers) == 0:
+        raise RuntimeError("External data exists, but there are no buffers provided.")
 
     return pte, ptd_files
