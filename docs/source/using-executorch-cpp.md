@@ -55,6 +55,17 @@ target_link_libraries(
 
 See [Building from Source](using-executorch-building-from-source.md) for more information on the CMake build process.
 
+## Reference Runners
+
+The ExecuTorch repository includes several reference runners, which are simple programs that load and execute a .pte file, typically with random inputs. These can be used to sanity check model execution on a development platform and as a code reference for runtime integration.
+
+The `executor_runner` target is built by default when building with CMake. It can be invoked as follows:
+```
+./cmake-out/executor_runner --model_path path/to/model.pte
+```
+
+The runner source code can be found in the ExecuTorch repo under [examples/portable/executor_runner.cpp](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp). Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See [examples/apple/coreml](https://github.com/pytorch/executorch/tree/main/examples/apple/coreml) and the [examples](https://github.com/pytorch/executorch/tree/main/examples) directory for more information.
+
 ## Next Steps
 
 - [Runtime API Reference](executorch-runtime-api-reference.md) for documentation on the available C++ runtime APIs.
