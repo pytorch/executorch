@@ -27,6 +27,12 @@ Result<BufferDataSink> BufferDataSink::create(
   return BufferDataSink(buffer, alignment);
 }
 
+Result<BufferDataSink> BufferDataSink::create(
+    void* ptr, size_t size,
+    size_t alignment) noexcept {
+  return BufferDataSink::create({(uint8_t*)ptr, size}, alignment);
+}
+
 Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
   if (length == 0) {
     return offset_;
