@@ -50,6 +50,7 @@ import contextlib
 import os
 import platform
 import re
+import site
 import sys
 
 # Import this before distutils so that setuptools can intercept the distuils
@@ -239,7 +240,7 @@ class _BaseExtension(Extension):
         srcs = tuple(cmake_cache_dir.glob(self.src))
         if len(srcs) != 1:
             raise ValueError(
-                f"""Expected exactly one file matching '{self.src}'; found {repr(srcs)}.
+                f"""Expected exactly one file matching '{self.src}' in {cmake_cache_dir}; found {repr(srcs)}.
 
 If that file is a CMake-built extension module file, and we are installing in editable mode, please disable the corresponding build option since it's not supported yet.
 
@@ -371,6 +372,63 @@ class BuiltExtension(_BaseExtension):
 
 class InstallerBuildExt(build_ext):
     """Installs files that were built by cmake."""
+
+    def __init__(self, *args, **kwargs):
+        self._ran_build = False
+        super().__init__(*args, **kwargs)
+
+    def run(self):
+        # Run the build command first in editable mode. Since `build` command
+        # will also trigger `build_ext` command, only run this once.
+        if self._ran_build:
+            return
+
+        if self.editable_mode:
+            self._ran_build = True
+            self.run_command("build")
+        super().run()
+
+    def copy_extensions_to_source(self) -> None:
+        """For each extension in `ext_modules`, we need to copy the extension
+        file from the build directory to the correct location in the local
+        directory.
+
+        This should only be triggered when inplace mode (editable mode) is enabled.
+
+        Args:
+
+        Returns:
+        """
+        build_py = self.get_finalized_command("build_py")
+        for ext in self.extensions:
+            if isinstance(ext, BuiltExtension):
+                modpath = ext.name.split(".")
+                package = ".".join(modpath[:-1])
+                package_dir = os.path.abspath(build_py.get_package_dir(package))
+            else:
+                # HACK: get rid of the leading "executorch" in ext.dst.
+                # This is because we don't have a root level "executorch" module.
+                package_dir = ext.dst.removeprefix("executorch/")
+
+            # Ensure that the destination directory exists.
+            self.mkpath(os.fspath(package_dir))
+
+            regular_file = ext.src_path(self)
+            inplace_file = os.path.join(
+                package_dir, os.path.basename(ext.src_path(self))
+            )
+
+            # Always copy, even if source is older than destination, to ensure
+            # that the right extensions for the current Python/platform are
+            # used.
+            if os.path.exists(regular_file) or not ext.optional:
+                self.copy_file(regular_file, inplace_file, level=self.verbose)
+
+            if ext._needs_stub:
+                inplace_stub = self._get_equivalent_stub(ext, inplace_file)
+                self._write_stub_file(inplace_stub, ext, compile=True)
+                # Always compile stub and remove the original (leave the cache behind)
+                # (this behaviour was observed in previous iterations of the code)
 
     # TODO(dbort): Depend on the "build" command to ensure it runs first
 
@@ -630,6 +688,10 @@ class CustomBuild(build):
         if not self.dry_run:
             # Dry run should log the command but not actually run it.
             (Path(cmake_cache_dir) / "CMakeCache.txt").unlink(missing_ok=True)
+        # Set PYTHONPATH to the location of the pip package.
+        os.environ["PYTHONPATH"] = (
+            site.getsitepackages()[0] + ";" + os.environ.get("PYTHONPATH", "")
+        )
         with Buck2EnvironmentFixer():
             # The context manager may patch the environment while running this
             # cmake command, which happens to run buck2 to get some source
@@ -741,25 +803,6 @@ def get_ext_modules() -> List[Extension]:
 
 setup(
     version=Version.string(),
-    # TODO(dbort): Could use py_modules to restrict the set of modules we
-    # package, and package_data to restrict the set up non-python files we
-    # include. See also setuptools/discovery.py for custom finders.
-    package_dir={
-        "executorch/backends": "backends",
-        "executorch/codegen": "codegen",
-        # TODO(mnachin T180504136): Do not put examples/models
-        # into core pip packages. Refactor out the necessary utils
-        # or core models files into a separate package.
-        "executorch/examples/models": "examples/models",
-        "executorch/exir": "exir",
-        "executorch/extension": "extension",
-        "executorch/kernels/quantized": "kernels/quantized",
-        "executorch/schema": "schema",
-        "executorch/devtools": "devtools",
-        "executorch/devtools/bundled_program": "devtools/bundled_program",
-        "executorch/runtime": "runtime",
-        "executorch/util": "util",
-    },
     cmdclass={
         "build": CustomBuild,
         "build_ext": InstallerBuildExt,
