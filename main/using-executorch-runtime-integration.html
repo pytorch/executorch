@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building and Running ExecuTorch with the Vulkan Backend &mdash; ExecuTorch main documentation</title>
+  <title>Runtime Integration &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Building and Running ExecuTorch with ARM Ethos-U Backend" href="executorch-arm-delegate-tutorial.html" />
-    <link rel="prev" title="Building and Running ExecuTorch with XNNPACK Backend" href="tutorial-xnnpack-delegate-lowering.html" />
+    <link rel="next" title="Profiling and Debugging" href="using-executorch-troubleshooting.html" />
+    <link rel="prev" title="Using ExecuTorch with C++" href="using-executorch-cpp.html" />
 
 
   <!-- Google Tag Manager -->
@@ -322,88 +322,37 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-faqs.html">FAQs and Common Issues</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
-<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch with the Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mediatek-backend.html">Building and Running ExecuTorch with MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -417,6 +366,61 @@
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -461,13 +465,13 @@
       </li>
 
         
-      <li>Building and Running ExecuTorch with the Vulkan Backend</li>
+      <li>Runtime Integration</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/build-run-vulkan.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/using-executorch-runtime-integration.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -499,136 +503,49 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-and-running-executorch-with-the-vulkan-backend">
-<h1>Building and Running ExecuTorch with the Vulkan Backend<a class="headerlink" href="#building-and-running-executorch-with-the-vulkan-backend" title="Permalink to this heading">¶</a></h1>
-<p>The <a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html"><span class="doc std std-doc">ExecuTorch Vulkan Delegate</span></a>
-is a native GPU delegate for ExecuTorch.</p>
-<!----This will show a grid card on the page----->
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-content docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn in this tutorial:</div>
+  <div class="section" id="runtime-integration">
+<h1>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h1>
+<p>This section describes options for configuring and customizing the ExecuTorch runtime. While the pre-built packages are designed to provide an “out-of-box” experience, it is common to require additional configuration when shipping into production. ExecuTorch provides the ability to compile-time gate features, such as logging, customize system integration, and include only the operators needed to run specific models (selective build).</p>
+<div class="section" id="logging">
+<h2>Logging<a class="headerlink" href="#logging" title="Permalink to this heading">¶</a></h2>
+<p>ExecuTorch runtime code includes logging statements at various levels, to aid with integration and debugging. Logging inclusion is controlled at build time by the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ENABLE_LOGGING</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LOG_LEVEL</span></code> CMake options. Having these exposed as compile-time configuration allows for all logging-related code to be excluded when not used, which is critical for resource constrained systems.</p>
+<p>Logging is sent to STDOUT and STDERR by default on host platforms, and is redirected to OS-specific logging on Android and iOS. See <a class="reference internal" href="#platform-abstraction-layer-pal"><span class="std std-doc">Platform Abstraction Layer</span></a> below for more information on log routing.</p>
+<p>To configure log level when building from source, specify <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ENABLE_LOGGING</span></code> as on or off and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LOG_LEVEL</span></code> as one of debug, info, error, or fatal. Logging is enabled by default in debug builds and disabled in release. Log level defaults to info.</p>
+<p>See <a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building from Source</span></a> for more information.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cmake</span> <span class="o">-</span><span class="n">b</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">DEXECUTORCH_ENABLE_LOGGING</span><span class="o">=</span><span class="n">ON</span> <span class="o">-</span><span class="n">DEXECUTORCH_LOG_LEVEL</span><span class="o">=</span><span class="n">DEBUG</span> <span class="o">...</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="platform-abstraction-layer-pal">
+<h2>Platform Abstraction Layer (PAL)<a class="headerlink" href="#platform-abstraction-layer-pal" title="Permalink to this heading">¶</a></h2>
+<p>The ExecuTorch Platform Abstraction Layer, or PAL, is a glue layer responsible for providing integration with a particular host system. This includes log routing, timestamps, and abort handling. ExecuTorch provides a default implementation for POSIX-compliant targets, as well as a Android and iOS-specific implementations under the appropriate extensions.</p>
+<p>For non-POSIX-compliant systems, a minimal no-op PAL implementation is provided. It is expected that users override the relevant PAL methods in order to enable logging, timestamps, and aborts. The minimal PAL can be selected by building with <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_PAL_DEFAULT=minimal</span></code>.</p>
+<div class="section" id="overriding-the-pal">
+<h3>Overriding the PAL<a class="headerlink" href="#overriding-the-pal" title="Permalink to this heading">¶</a></h3>
+<p>Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. To override one or more PAL methods, take the following steps:</p>
 <ul class="simple">
-<li><p class="sd-card-text">How to export the Llama3.2-1B parameter model with partial GPU delegation</p></li>
-<li><p class="sd-card-text">How to execute the partially delegated model on Android</p></li>
+<li><p>Include
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>
+in one of your application’s <code class="docutils literal notranslate"><span class="pre">.c</span></code> or <code class="docutils literal notranslate"><span class="pre">.cpp</span></code> files.</p></li>
+<li><p>Define an implementation of one or more of the <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions.</p></li>
 </ul>
+<p>The default PAL functions are weak symbols, so providing your own strong-symbol
+definition can override them at link time. To ensure that your definitions take
+precedence, you may need to ensure that the strong definitions precede the weak
+definitions in the link order.</p>
+<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h">runtime/platform/platform.h</a> for the PAL function signatures and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/default/posix.cpp">runtime/platform/default/posix.cpp</a> for the reference POSIX implementation.</p>
 </div>
 </div>
+<div class="section" id="kernel-libraries">
+<h2>Kernel Libraries<a class="headerlink" href="#kernel-libraries" title="Permalink to this heading">¶</a></h2>
+<p>During export, a model is broken down into a list of operators, each providing some fundamental computation. Adding two tensors is an operator, as is convolution. Each operator requires a corresponding operator kernel to perform the computation on the target hardware. ExecuTorch backends are the preferred way to do this, but not all operators are supported on all backends.</p>
+<p>To handle this, ExecuTorch provides two implementations - the <em>portable</em> and <em>optimized</em> kernel libraries. The portable kernel library provides full support for all operators in a platform-independent manner. The optimized library carries additional system requirements, but is able to leverage multithreading and vectorized code to achieve greater performance. Operators can be drawn for both for a single build, allowing the optimized library to be used where available with the portable library as a fallback.</p>
+<p>The choice of kernel library is transparent to the user when using mobile pre-built packages. However, it is important when building from source, especially on embedded systems. On mobile, the optimized operators are preferred where available. See <a class="reference internal" href="kernel-library-overview.html"><span class="doc std std-doc">Overview of ExecuTorch’s Kernel Libraries</span></a> for more information.</p>
 </div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Prerequisites:</div>
-<ul class="simple">
-<li><p class="sd-card-text">Follow <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc"><strong>Setting up ExecuTorch</strong></span></a></p></li>
-<li><p class="sd-card-text">It is also recommended that you read through <a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html"><span class="doc std std-doc"><strong>ExecuTorch Vulkan Delegate</strong></span></a> and follow the example in that page</p></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="section" id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
-<p>Note that all the steps below should be performed from the ExecuTorch repository
-root directory, and assumes that you have gone through the steps of setting up
-ExecuTorch.</p>
-<p>It is also assumed that the Android NDK and Android SDK is installed, and the
-following environment examples are set.</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
-<span class="c1"># Select an appropriate Android ABI for your device</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
-<span class="c1"># All subsequent commands should be performed from ExecuTorch repo root</span>
-<span class="nb">cd</span><span class="w"> </span>&lt;path_to_executorch_root&gt;
-<span class="c1"># Make sure adb works</span>
-adb<span class="w"> </span>--version
-</pre></div>
-</div>
-</div>
-<div class="section" id="lowering-the-llama3-2-1b-model-to-vulkan">
-<h2>Lowering the Llama3.2-1B model to Vulkan<a class="headerlink" href="#lowering-the-llama3-2-1b-model-to-vulkan" title="Permalink to this heading">¶</a></h2>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The resultant model will only be partially delegated to the Vulkan backend. In
-particular, only binary arithmetic operators (<code class="docutils literal notranslate"><span class="pre">aten.add</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.sub</span></code>,
-<code class="docutils literal notranslate"><span class="pre">aten.mul</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.div</span></code>), matrix multiplication operators (<code class="docutils literal notranslate"><span class="pre">aten.mm</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.bmm</span></code>),
-and linear layers (<code class="docutils literal notranslate"><span class="pre">aten.linear</span></code>) will be executed on the GPU via the Vulkan
-delegate. The rest of the model will be executed using Portable operators.</p>
-<p>Operator support for LLaMA models is currently in active development; please
-check out the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch of the ExecuTorch repo for the latest capabilities.</p>
-</div>
-<p>First, obtain the <code class="docutils literal notranslate"><span class="pre">consolidated.00.pth</span></code>, <code class="docutils literal notranslate"><span class="pre">params.json</span></code> and <code class="docutils literal notranslate"><span class="pre">tokenizer.model</span></code>
-files for the <code class="docutils literal notranslate"><span class="pre">Llama3.2-1B</span></code> model from the <a class="reference external" href="https://www.llama.com/llama-downloads/">Llama website</a>.</p>
-<p>Once the files have been downloaded, the <code class="docutils literal notranslate"><span class="pre">export_llama</span></code> script can be used to
-partially lower the Llama model to Vulkan.</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># The files will usually be downloaded to ~/.llama</span>
-python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama.export_llama<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--disable_dynamic_shape<span class="w"> </span>--vulkan<span class="w"> </span>-kv<span class="w"> </span>--use_sdpa_with_kv_cache<span class="w"> </span>-d<span class="w"> </span>fp32<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--model<span class="w"> </span><span class="s2">&quot;llama3_2&quot;</span><span class="w"> </span><span class="se">\ </span>
-<span class="w">  </span>-c<span class="w"> </span>~/.llama/checkpoints/Llama3.2-1B/consolidated.00.pth<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-p<span class="w"> </span>~/.llama/checkpoints/Llama3.2-1B/params.json<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--metadata<span class="w"> </span><span class="s1">&#39;{&quot;get_bos_id&quot;:128000, &quot;get_eos_ids&quot;:[128009, 128001]}&#39;</span>
-</pre></div>
-</div>
-<p>A <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> file should have been created as a result of running the
-script.</p>
-<p>Push the tokenizer binary and <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> onto your Android device:</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>~/.llama/tokenizer.model<span class="w"> </span>/data/local/tmp/
-adb<span class="w"> </span>push<span class="w"> </span>vulkan_llama2.pte<span class="w"> </span>/data/local/tmp/
-</pre></div>
-</div>
-</div>
-<div class="section" id="build-and-run-the-llama-runner-binary-on-android">
-<h2>Build and Run the LLaMA runner binary on Android<a class="headerlink" href="#build-and-run-the-llama-runner-binary-on-android" title="Permalink to this heading">¶</a></h2>
-<p>First, build and install ExecuTorch libraries, then build the LLaMA runner
-binary using the Android NDK toolchain.</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--clean
-<span class="o">(</span>mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="nv">$ANDROID_ABI</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="o">)</span>
-
-<span class="c1"># Build LLaMA Runner library</span>
-<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out/examples/models/llama<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>cmake<span class="w"> </span>examples/models/llama<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="nv">$ANDROID_ABI</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-android-out/examples/models/llama<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/examples/models/llama<span class="w"> </span>-j16<span class="o">)</span>
-</pre></div>
-</div>
-<p>Finally, push and run the llama runner binary on your Android device. Note that
-your device must have sufficient GPU memory to execute the model.</p>
-<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/examples/models/llama/llama_main<span class="w"> </span>/data/local/tmp/llama_main
-
-adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/llama_main<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--model_path<span class="o">=</span>/data/local/tmp/vulkan_llama2.pte<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--tokenizer_path<span class="o">=</span>/data/local/tmp/tokenizer.model<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--prompt<span class="w"> </span><span class="s2">&quot;Hello&quot;</span>
-</pre></div>
-</div>
-<p>Note that currently model inference will be very slow due to the high amount of
-delegate blobs in the lowered graph, which requires a transfer to and from the
-GPU for each sub graph. Performance is expected to improve drastically as more
-of the model can be lowered to the Vulkan delegate, and techniques such as
-quantization are supported.</p>
+<div class="section" id="selective-build">
+<h2>Selective Build<a class="headerlink" href="#selective-build" title="Permalink to this heading">¶</a></h2>
+<p>By default, ExecuTorch ships with all supported operator kernels, allowing it to run any supported model at any precision. This comes with a binary size of several megabytes, which may be undesirable for production use cases or resource constrained systems. To minimize binary size, ExecuTorch provides selective build functionality, in order to include only the operators needed to run specific models.</p>
+<p>Note the selective build only applies to the portable and optimized kernel libraries. Delegates do not participate in selective build and can be included or excluded by linking indivually. See <a class="reference internal" href="kernel-library-selective-build.html"><span class="doc std std-doc">Kernel Library Selective Build</span></a> for more information.</p>
 </div>
 </div>
 
@@ -640,10 +557,10 @@ quantization are supported.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="executorch-arm-delegate-tutorial.html" class="btn btn-neutral float-right" title="Building and Running ExecuTorch with ARM Ethos-U Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="using-executorch-troubleshooting.html" class="btn btn-neutral float-right" title="Profiling and Debugging" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="tutorial-xnnpack-delegate-lowering.html" class="btn btn-neutral" title="Building and Running ExecuTorch with XNNPACK Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="using-executorch-cpp.html" class="btn btn-neutral" title="Using ExecuTorch with C++" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -677,10 +594,14 @@ quantization are supported.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building and Running ExecuTorch with the Vulkan Backend</a><ul>
-<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li><a class="reference internal" href="#lowering-the-llama3-2-1b-model-to-vulkan">Lowering the Llama3.2-1B model to Vulkan</a></li>
-<li><a class="reference internal" href="#build-and-run-the-llama-runner-binary-on-android">Build and Run the LLaMA runner binary on Android</a></li>
+<li><a class="reference internal" href="#">Runtime Integration</a><ul>
+<li><a class="reference internal" href="#logging">Logging</a></li>
+<li><a class="reference internal" href="#platform-abstraction-layer-pal">Platform Abstraction Layer (PAL)</a><ul>
+<li><a class="reference internal" href="#overriding-the-pal">Overriding the PAL</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#kernel-libraries">Kernel Libraries</a></li>
+<li><a class="reference internal" href="#selective-build">Selective Build</a></li>
 </ul>
 </li>
 </ul>

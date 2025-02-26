@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building and Running ExecuTorch with Core ML Backend &mdash; ExecuTorch main documentation</title>
+  <title>Vulkan Backend &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,11 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Building and Running ExecuTorch with MediaTek Backend" href="build-run-mediatek-backend.html" />
-    <link rel="prev" title="Building and Running ExecuTorch with ARM Ethos-U Backend" href="executorch-arm-delegate-tutorial.html" />
-
-<link rel="stylesheet" href="../_static/css/progress-bar.css">
-<script src="../_static/js/progress-bar.js" defer></script>
+    <link rel="next" title="ARM Ethos-U Backend" href="backends-arm-ethos-u.html" />
+    <link rel="prev" title="MPS Backend" href="backends-mps.html" />
 
 
   <!-- Google Tag Manager -->
@@ -325,88 +322,37 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-faqs.html">FAQs and Common Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
-<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch with Core ML Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mediatek-backend.html">Building and Running ExecuTorch with MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -420,6 +366,61 @@
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -464,13 +465,13 @@
       </li>
 
         
-      <li>Building and Running ExecuTorch with Core ML Backend</li>
+      <li>Vulkan Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/build-run-coreml.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/backends-vulkan.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -502,197 +503,212 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-and-running-executorch-with-core-ml-backend">
-<h1>Building and Running ExecuTorch with Core ML Backend<a class="headerlink" href="#building-and-running-executorch-with-core-ml-backend" title="Permalink to this heading">¶</a></h1>
-<p>Core ML delegate uses Core ML APIs to enable running neural networks via Apple’s hardware acceleration. For more about Core ML you can read <a class="reference external" href="https://developer.apple.com/documentation/coreml">here</a>. In this tutorial, we will walk through the steps of lowering a PyTorch model to Core ML delegate</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn in this tutorial:</div>
+  <div class="section" id="vulkan-backend">
+<h1>Vulkan Backend<a class="headerlink" href="#vulkan-backend" title="Permalink to this heading">¶</a></h1>
+<p>The ExecuTorch Vulkan delegate is a native GPU delegate for ExecuTorch that is
+built on top of the cross-platform Vulkan GPU API standard. It is primarily
+designed to leverage the GPU to accelerate model inference on Android devices,
+but can be used on any platform that supports an implementation of Vulkan:
+laptops, servers, and edge devices.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The Vulkan delegate is currently under active development, and its components
+are subject to change.</p>
+</div>
+<div class="section" id="what-is-vulkan">
+<h2>What is Vulkan?<a class="headerlink" href="#what-is-vulkan" title="Permalink to this heading">¶</a></h2>
+<p>Vulkan is a low-level GPU API specification developed as a successor to OpenGL.
+It is designed to offer developers more explicit control over GPUs compared to
+previous specifications in order to reduce overhead and maximize the
+capabilities of the modern graphics hardware.</p>
+<p>Vulkan has been widely adopted among GPU vendors, and most modern GPUs (both
+desktop and mobile) in the market support Vulkan. Vulkan is also included in
+Android from Android 7.0 onwards.</p>
+<p><strong>Note that Vulkan is a GPU API, not a GPU Math Library</strong>. That is to say it
+provides a way to execute compute and graphics operations on a GPU, but does not
+come with a built-in library of performant compute kernels.</p>
+</div>
+<div class="section" id="the-vulkan-compute-library">
+<h2>The Vulkan Compute Library<a class="headerlink" href="#the-vulkan-compute-library" title="Permalink to this heading">¶</a></h2>
+<p>The ExecuTorch Vulkan Delegate is a wrapper around a standalone runtime known as
+the <strong>Vulkan Compute Library</strong>. The aim of the Vulkan Compute Library is to
+provide GPU implementations for PyTorch operators via GLSL compute shaders.</p>
+<p>The Vulkan Compute Library is a fork/iteration of the <a class="reference external" href="https://pytorch.org/tutorials/prototype/vulkan_workflow.html">PyTorch Vulkan Backend</a>.
+The core components of the PyTorch Vulkan backend were forked into ExecuTorch
+and adapted for an AOT graph-mode style of model inference (as opposed to
+PyTorch which adopted an eager execution style of model inference).</p>
+<p>The components of the Vulkan Compute Library are contained in the
+<code class="docutils literal notranslate"><span class="pre">executorch/backends/vulkan/runtime/</span></code> directory. The core components are listed
+and described below:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>runtime/
+├── api/ .................... Wrapper API around Vulkan to manage Vulkan objects
+└── graph/ .................. ComputeGraph class which implements graph mode inference
+    └── ops/ ................ Base directory for operator implementations
+        ├── glsl/ ........... GLSL compute shaders
+        │   ├── *.glsl
+        │   └── conv2d.glsl
+        └── impl/ ........... C++ code to dispatch GPU compute shaders
+            ├── *.cpp
+            └── Conv2d.cpp
+</pre></div>
+</div>
+</div>
+<div class="section" id="features">
+<h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
+<p>The Vulkan delegate currently supports the following features:</p>
 <ul class="simple">
-<li><p class="sd-card-text">In this tutorial you will learn how to export <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model so that it runs on Core ML backend.</p></li>
-<li><p class="sd-card-text">You will also learn how to deploy and run the exported model on a supported Apple device.</p></li>
+<li><p><strong>Memory Planning</strong></p>
+<ul>
+<li><p>Intermediate tensors whose lifetimes do not overlap will share memory allocations. This reduces the peak memory usage of model inference.</p></li>
+</ul>
+</li>
+<li><p><strong>Capability Based Partitioning</strong>:</p>
+<ul>
+<li><p>A graph can be partially lowered to the Vulkan delegate via a partitioner, which will identify nodes (i.e. operators) that are supported by the Vulkan delegate and lower only supported subgraphs</p></li>
+</ul>
+</li>
+<li><p><strong>Support for upper-bound dynamic shapes</strong>:</p>
+<ul>
+<li><p>Tensors can change shape between inferences as long as its current shape is smaller than the bounds specified during lowering</p></li>
+</ul>
+</li>
+</ul>
+<p>In addition to increasing operator coverage, the following features are
+currently in development:</p>
+<ul class="simple">
+<li><p><strong>Quantization Support</strong></p>
+<ul>
+<li><p>We are currently working on support for 8-bit dynamic quantization, with plans to extend to other quantization schemes in the future.</p></li>
+</ul>
+</li>
+<li><p><strong>Memory Layout Management</strong></p>
+<ul>
+<li><p>Memory layout is an important factor to optimizing performance. We plan to introduce graph passes to introduce memory layout transitions throughout a graph to optimize memory-layout sensitive operators such as Convolution and Matrix Multiplication.</p></li>
+</ul>
+</li>
+<li><p><strong>Selective Build</strong></p>
+<ul>
+<li><p>We plan to make it possible to control build size by selecting which operators/shaders you want to build with</p></li>
+</ul>
+</li>
 </ul>
 </div>
-</div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Tutorials we recommend you complete before this:</div>
-<ul class="simple">
-<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">ExecuTorch iOS Demo App</span></a></p></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="section" id="prerequisites-hardware-and-software">
-<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
-<p>In order to be able to successfully build and run the ExecuTorch’s Core ML backend you’ll need the following hardware and software components.</p>
-<div class="section" id="hardware">
-<h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
-<ul class="simple">
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/">mac</a> system for building.</p></li>
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/">mac</a> or <a class="reference external" href="https://www.apple.com/iphone/">iPhone</a> or <a class="reference external" href="https://www.apple.com/ipad/">iPad</a> or <a class="reference external" href="https://www.apple.com/tv-home/">Apple TV</a> device for running the model.</p></li>
-</ul>
-</div>
-<div class="section" id="software">
-<h3>Software:<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><a class="reference external" href="https://developer.apple.com/documentation/xcode">Xcode</a> &gt;= 14.1, <a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0 for building.</p></li>
-<li><p><a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0, <a class="reference external" href="https://developer.apple.com/ios/">iOS</a> &gt;= 16.0, <a class="reference external" href="https://developer.apple.com/ipados/">iPadOS</a> &gt;= 16.0, and <a class="reference external" href="https://developer.apple.com/tvos/">tvOS</a> &gt;= 16.0 for running the model.</p></li>
-</ul>
-</div>
-</div>
-<div class="section" id="setting-up-your-developer-environment">
-<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic simple">
-<li><p>Make sure that you have completed the ExecuTorch setup tutorials linked to at the top of this page and setup the environment.</p></li>
-<li><p>Run <code class="docutils literal notranslate"><span class="pre">install_requirements.sh</span></code> to install dependencies required by the <strong>Core ML</strong> backend.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./backends/apple/coreml/scripts/install_requirements.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="3">
-<li><p>Install <a class="reference external" href="https://developer.apple.com/xcode/">Xcode</a>.</p></li>
-<li><p>Install Xcode Command Line Tools.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>xcode-select<span class="w"> </span>--install
-</pre></div>
-</div>
-</div>
-<div class="section" id="build">
-<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="aot-ahead-of-time-components">
-<h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
-<p><strong>Exporting a Core ML delegated Program</strong>:</p>
-<ul class="simple">
-<li><p>In this step, you will lower the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the Core ML backend and export the ExecuTorch program. You’ll then deploy and run the exported program on a supported Apple device using Core ML backend.</p></li>
-</ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<div class="section" id="end-to-end-example">
+<h2>End to End Example<a class="headerlink" href="#end-to-end-example" title="Permalink to this heading">¶</a></h2>
+<p>To further understand the features of the Vulkan Delegate and how to use it,
+consider the following end to end example with a simple single operator model.</p>
+<div class="section" id="compile-and-lower-a-model-to-the-vulkan-delegate">
+<h3>Compile and lower a model to the Vulkan Delegate<a class="headerlink" href="#compile-and-lower-a-model-to-the-vulkan-delegate" title="Permalink to this heading">¶</a></h3>
+<p>Assuming ExecuTorch has been set up and installed, the following script can be
+used to produce a lowered MobileNet V2 model as <code class="docutils literal notranslate"><span class="pre">vulkan_mobilenetv2.pte</span></code>.</p>
+<p>Once ExecuTorch has been set up and installed, the following script can be used
+to generate a simple model and lower it to the Vulkan delegate.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Note: this script is the same as the script from the &quot;Setting up ExecuTorch&quot;</span>
+<span class="c1"># page, with one minor addition to lower to the Vulkan backend.</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge</span>
 
-<span class="c1"># Generates ./mv3_coreml_all.pte file.</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.scripts.export<span class="w"> </span>--model_name<span class="w"> </span>mv3
-</pre></div>
-</div>
-<ul class="simple">
-<li><p>Core ML backend uses <a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/overview-coremltools.html">coremltools</a> to lower <a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc">Edge dialect</span></a> to Core ML format and then bundles it in the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file.</p></li>
-</ul>
-</div>
-<div class="section" id="runtime">
-<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
-<p><strong>Running a Core ML delegated Program</strong>:</p>
-<ol class="arabic simple">
-<li><p>Build the runner.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.vulkan.partitioner.vulkan_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">VulkanPartitioner</span>
 
-<span class="c1"># Builds `coreml_executor_runner`.</span>
-./examples/apple/coreml/scripts/build_executor_runner.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Run the CoreML delegated program.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<span class="c1"># Start with a PyTorch model that adds two input tensors (matrices)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="nb">super</span><span class="p">(</span><span class="n">Add</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
-<span class="c1"># Runs the exported mv3 model using the Core ML backend.</span>
-./coreml_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>mv3_coreml_all.pte
-</pre></div>
-</div>
-<p><strong>Profiling a Core ML delegated Program</strong>:</p>
-<p>Note that profiling is supported on <a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 14.4.</p>
-<ol class="arabic simple">
-<li><p>[Optional] Generate an <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> when exporting your model.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+  <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+      <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
 
-<span class="c1"># Generates `mv3_coreml_all.pte` and `mv3_coreml_etrecord.bin` files.</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.scripts.export<span class="w"> </span>--model_name<span class="w"> </span>mv3<span class="w"> </span>--generate_etrecord
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Build the runner.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Builds `coreml_executor_runner`.</span>
-./examples/apple/coreml/scripts/build_executor_runner.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="3">
-<li><p>Run and generate an <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump</span></a>.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<span class="c1"># 1. torch.export: Defines the program with the ATen operator set.</span>
+<span class="n">aten_dialect</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">Add</span><span class="p">(),</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)))</span>
 
-<span class="c1"># Generate the ETDump file.</span>
-./coreml_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>mv3_coreml_all.pte<span class="w"> </span>--profile_model<span class="w"> </span>--etdump_path<span class="w"> </span>etdump.etdp
-</pre></div>
-</div>
-<ol class="arabic simple" start="4">
-<li><p>Create an instance of the <a class="reference internal" href="model-inspector.html"><span class="doc std std-doc">Inspector API</span></a> by passing in the <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump</span></a> you have sourced from the runtime along with the optionally generated <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> from step 1 or execute the following command in your terminal to display the profiling data table.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>examples/apple/coreml/scripts/inspector_cli.py<span class="w"> </span>--etdump_path<span class="w"> </span>etdump.etdp<span class="w"> </span>--etrecord_path<span class="w"> </span>mv3_coreml.bin
-</pre></div>
-</div>
-</div>
-</div>
-<div class="section" id="deploying-and-running-on-a-device">
-<h2>Deploying and running on a device<a class="headerlink" href="#deploying-and-running-on-a-device" title="Permalink to this heading">¶</a></h2>
-<p><strong>Running the Core ML delegated Program in the Demo iOS App</strong>:</p>
-<ol class="arabic simple">
-<li><p>Please follow the <a class="reference internal" href="demo-apps-ios.html#models-and-labels"><span class="std std-doc">Export Model</span></a> step of the tutorial to bundle the exported <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> program. You only need to do the Core ML part.</p></li>
-<li><p>Complete the <span class="xref myst">Build Runtime and Backends</span> section of the tutorial. When building the frameworks you only need the <code class="docutils literal notranslate"><span class="pre">coreml</span></code> option.</p></li>
-<li><p>Complete the <a class="reference internal" href="demo-apps-ios.html#final-steps"><span class="std std-doc">Final Steps</span></a> section of the tutorial to build and run the demo app.</p></li>
-</ol>
-<p><br><strong>Running the Core ML delegated Program in your App</strong></p>
-<ol class="arabic simple">
-<li><p>Build frameworks, running the following will create a <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> and <code class="docutils literal notranslate"><span class="pre">coreml_backend.xcframework</span></code> in the <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> directory.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./build/build_apple_frameworks.sh<span class="w"> </span>--coreml
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Create a new <a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-an-xcode-project-for-an-app#">Xcode project</a> or open an existing project.</p></li>
-<li><p>Drag the <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> and <code class="docutils literal notranslate"><span class="pre">coreml_backend.xcframework</span></code> generated from Step 2 to Frameworks.</p></li>
-<li><p>Go to the project’s <a class="reference external" href="https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target">Build Phases</a> -  Link Binaries With Libraries, click the + sign, and add the following frameworks:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">executorch</span><span class="o">.</span><span class="n">xcframework</span>
-<span class="n">coreml_backend</span><span class="o">.</span><span class="n">xcframework</span>
-<span class="n">Accelerate</span><span class="o">.</span><span class="n">framework</span>
-<span class="n">CoreML</span><span class="o">.</span><span class="n">framework</span>
-<span class="n">libsqlite3</span><span class="o">.</span><span class="n">tbd</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="5">
-<li><p>Add the exported program to the <a class="reference external" href="https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product">Copy Bundle Phase</a> of your Xcode target.</p></li>
-<li><p>Please follow the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Runtime APIs Tutorial</span></a> to integrate the code for loading an ExecuTorch program.</p></li>
-<li><p>Update the code to load the program from the Application’s bundle.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-objective-c"><div class="highlight"><pre><span></span><span class="bp">NSURL</span><span class="w"> </span><span class="o">*</span><span class="n">model_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">NBundle</span><span class="p">.</span><span class="n">mainBundle</span><span class="w"> </span><span class="n">URLForResource</span><span class="o">:</span><span class="s">@&quot;mv3_coreml_all&quot;</span><span class="w"> </span><span class="n">extension</span><span class="o">:</span><span class="s">@&quot;pte&quot;</span><span class="p">];</span>
+<span class="c1"># 2. to_edge: Make optimizations for Edge devices</span>
+<span class="n">edge_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">aten_dialect</span><span class="p">)</span>
+<span class="c1"># 2.1 Lower to the Vulkan backend</span>
+<span class="n">edge_program</span> <span class="o">=</span> <span class="n">edge_program</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">VulkanPartitioner</span><span class="p">())</span>
 
-<span class="n">Result</span><span class="o">&lt;</span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loader</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">::</span><span class="n">from</span><span class="p">(</span><span class="n">model_url</span><span class="p">.</span><span class="n">path</span><span class="p">.</span><span class="n">UTF8String</span><span class="p">);</span>
+<span class="c1"># 3. to_executorch: Convert the graph to an ExecuTorch program</span>
+<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">edge_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># 4. Save the compiled .pte program</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;vk_add.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
-<ol class="arabic simple" start="8">
-<li><p>Use <a class="reference external" href="https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app">Xcode</a> to deploy the application on the device.</p></li>
-<li><p>The application can now run the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model on the Core ML backend.</p></li>
-</ol>
-<p><br>In this tutorial, you have learned how to lower the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the Core ML backend, deploy, and run it on an Apple device.</p>
+<p>Like other ExecuTorch delegates, a model can be lowered to the Vulkan Delegate
+using the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> API. The Vulkan Delegate implements the
+<code class="docutils literal notranslate"><span class="pre">VulkanPartitioner</span></code> class which identifies nodes (i.e. operators) in the graph
+that are supported by the Vulkan delegate, and separates compatible sections of
+the model to be executed on the GPU.</p>
+<p>This means the a model can be lowered to the Vulkan delegate even if it contains
+some unsupported operators. This will just mean that only parts of the graph
+will be executed on the GPU.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/vulkan/partitioner/supported_ops.py">supported ops list</a>
+Vulkan partitioner code can be inspected to examine which ops are currently
+implemented in the Vulkan delegate.</p>
 </div>
-<div class="section" id="frequently-encountered-errors-and-resolution">
-<h2>Frequently encountered errors and resolution.<a class="headerlink" href="#frequently-encountered-errors-and-resolution" title="Permalink to this heading">¶</a></h2>
-<p>If you encountered any bugs or issues following this tutorial please file a bug/issue <a class="reference external" href="https://github.com/pytorch/executorch/issues">here</a> with tag #coreml.</p>
+</div>
+<div class="section" id="build-vulkan-delegate-libraries">
+<h3>Build Vulkan Delegate libraries<a class="headerlink" href="#build-vulkan-delegate-libraries" title="Permalink to this heading">¶</a></h3>
+<p>The easiest way to build and test the Vulkan Delegate is to build for Android
+and test on a local Android device. Android devices have built in support for
+Vulkan, and the Android NDK ships with a GLSL compiler which is needed to
+compile the Vulkan Compute Library’s GLSL compute shaders.</p>
+<p>The Vulkan Delegate libraries can be built by setting <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_VULKAN=ON</span></code>
+when building with CMake.</p>
+<p>First, make sure that you have the Android NDK installed; any NDK version past
+NDK r19c should work. Note that the examples in this doc have been validated with
+NDK r27b. The Android SDK should also be installed so that you have access to <code class="docutils literal notranslate"><span class="pre">adb</span></code>.</p>
+<p>The instructions in this page assumes that the following environment variables
+are set.</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
+<span class="c1"># Select the appropriate Android ABI for your device</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
+<span class="c1"># All subsequent commands should be performed from ExecuTorch repo root</span>
+<span class="nb">cd</span><span class="w"> </span>&lt;path_to_executorch_root&gt;
+<span class="c1"># Make sure adb works</span>
+adb<span class="w"> </span>--version
+</pre></div>
+</div>
+<p>To build and install ExecuTorch libraries (for Android) with the Vulkan
+Delegate:</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># From executorch root directory</span>
+<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>pp<span class="w"> </span>cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="nv">$ANDROID_ABI</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="o">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="run-the-vulkan-model-on-device">
+<h3>Run the Vulkan model on device<a class="headerlink" href="#run-the-vulkan-model-on-device" title="Permalink to this heading">¶</a></h3>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Since operator support is currently limited, only binary arithmetic operators
+will run on the GPU. Expect inference to be slow as the majority of operators
+are being executed via Portable operators.</p>
+</div>
+<p>Now, the partially delegated model can be executed (partially) on your device’s
+GPU!</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># Build a model runner binary linked with the Vulkan delegate libs</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>--target<span class="w"> </span>vulkan_executor_runner<span class="w"> </span>-j32
+
+<span class="c1"># Push model to device</span>
+adb<span class="w"> </span>push<span class="w"> </span>vk_add.pte<span class="w"> </span>/data/local/tmp/vk_add.pte
+<span class="c1"># Push binary to device</span>
+adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/backends/vulkan/vulkan_executor_runner<span class="w"> </span>/data/local/tmp/runner_bin
+
+<span class="c1"># Run the model</span>
+adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/runner_bin<span class="w"> </span>--model_path<span class="w"> </span>/data/local/tmp/vk_add.pte
+</pre></div>
+</div>
+</div>
 </div>
 </div>
 
@@ -704,10 +720,10 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="build-run-mediatek-backend.html" class="btn btn-neutral float-right" title="Building and Running ExecuTorch with MediaTek Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="backends-arm-ethos-u.html" class="btn btn-neutral float-right" title="ARM Ethos-U Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="executorch-arm-delegate-tutorial.html" class="btn btn-neutral" title="Building and Running ExecuTorch with ARM Ethos-U Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="backends-mps.html" class="btn btn-neutral" title="MPS Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -741,20 +757,16 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building and Running ExecuTorch with Core ML Backend</a><ul>
-<li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
-<li><a class="reference internal" href="#hardware">Hardware:</a></li>
-<li><a class="reference internal" href="#software">Software:</a></li>
+<li><a class="reference internal" href="#">Vulkan Backend</a><ul>
+<li><a class="reference internal" href="#what-is-vulkan">What is Vulkan?</a></li>
+<li><a class="reference internal" href="#the-vulkan-compute-library">The Vulkan Compute Library</a></li>
+<li><a class="reference internal" href="#features">Features</a></li>
+<li><a class="reference internal" href="#end-to-end-example">End to End Example</a><ul>
+<li><a class="reference internal" href="#compile-and-lower-a-model-to-the-vulkan-delegate">Compile and lower a model to the Vulkan Delegate</a></li>
+<li><a class="reference internal" href="#build-vulkan-delegate-libraries">Build Vulkan Delegate libraries</a></li>
+<li><a class="reference internal" href="#run-the-vulkan-model-on-device">Run the Vulkan model on device</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#setting-up-your-developer-environment">Setting up your developer environment</a></li>
-<li><a class="reference internal" href="#build">Build</a><ul>
-<li><a class="reference internal" href="#aot-ahead-of-time-components">AOT (Ahead-of-time) components:</a></li>
-<li><a class="reference internal" href="#runtime">Runtime:</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#deploying-and-running-on-a-device">Deploying and running on a device</a></li>
-<li><a class="reference internal" href="#frequently-encountered-errors-and-resolution">Frequently encountered errors and resolution.</a></li>
 </ul>
 </li>
 </ul>

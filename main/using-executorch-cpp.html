@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building and Running ExecuTorch with MediaTek Backend &mdash; ExecuTorch main documentation</title>
+  <title>Using ExecuTorch with C++ &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Building and Running ExecuTorch with MPS Backend" href="build-run-mps.html" />
-    <link rel="prev" title="Building and Running ExecuTorch with Core ML Backend" href="build-run-coreml.html" />
+    <link rel="next" title="Runtime Integration" href="using-executorch-runtime-integration.html" />
+    <link rel="prev" title="Using ExecuTorch on iOS" href="using-executorch-ios.html" />
 
 
   <!-- Google Tag Manager -->
@@ -322,88 +322,37 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-faqs.html">FAQs and Common Issues</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
-<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch with MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -417,6 +366,61 @@
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -461,13 +465,13 @@
       </li>
 
         
-      <li>Building and Running ExecuTorch with MediaTek Backend</li>
+      <li>Using ExecuTorch with C++</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/build-run-mediatek-backend.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/using-executorch-cpp.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -499,136 +503,75 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-and-running-executorch-with-mediatek-backend">
-<h1>Building and Running ExecuTorch with MediaTek Backend<a class="headerlink" href="#building-and-running-executorch-with-mediatek-backend" title="Permalink to this heading">¶</a></h1>
-<p>MediaTek backend empowers ExecuTorch to speed up PyTorch models on edge devices that equips with MediaTek Neuron Processing Unit (NPU). This document offers a step-by-step guide to set up the build environment for the MediaTek ExecuTorch libraries.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn in this tutorial:</div>
-<ul class="simple">
-<li><p class="sd-card-text">How to export and lower a PyTorch model ahead of time with ExecuTorch for MediaTek devices.</p></li>
-<li><p class="sd-card-text">How to build MediaTek backend and examples.</p></li>
-<li><p class="sd-card-text">How to deploy the exported models on device with ExecuTorch runtime.</p></li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Tutorials we recommend you complete before this:</div>
-<ul class="simple">
-<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="section" id="prerequisites-hardware-and-software">
-<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="host-os">
-<h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this heading">¶</a></h3>
-<ul class="simple">
-<li><p>Linux operating system</p></li>
-</ul>
-</div>
-<div class="section" id="supported-chips">
-<h3>Supported Chips:<a class="headerlink" href="#supported-chips" title="Permalink to this heading">¶</a></h3>
-<ul class="simple">
-<li><p>MediaTek Dimensity 9300 (D9300)</p></li>
-</ul>
-</div>
-<div class="section" id="software">
-<h3>Software:<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><a class="reference external" href="https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress">NeuroPilot Express SDK</a> is a lightweight SDK for deploying AI applications on MediaTek SOC devices.</p></li>
-</ul>
-</div>
-</div>
-<div class="section" id="setting-up-your-developer-environment">
-<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this heading">¶</a></h2>
-<p>Follow the steps below to setup your build environment:</p>
-<ol class="arabic simple">
-<li><p><strong>Setup ExecuTorch Environment</strong>: Refer to the <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> guide for detailed instructions on setting up the ExecuTorch environment.</p></li>
-<li><p><strong>Setup MediaTek Backend Environment</strong></p></li>
-</ol>
-<ul>
-<li><p>Install the dependent libs. Ensure that you are inside <code class="docutils literal notranslate"><span class="pre">backends/mediatek/</span></code> directory</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
-</pre></div>
-</div>
-</li>
-<li><p>Install the two .whl downloaded from NeuroPilot Portal</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>mtk_neuron-8.2.13-py3-none-linux_x86_64.whl
-pip3<span class="w"> </span>install<span class="w"> </span>mtk_converter-8.9.1+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-</pre></div>
-</div>
-</li>
-<li><p>Set evironment variables for building backend</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">NEURON_BUFFER_ALLOCATOR_LIB</span><span class="o">=</span>&lt;path_to_buffer_allocator.so&gt;
-</pre></div>
-</div>
-</li>
-</ul>
-</div>
-<div class="section" id="build">
-<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="ahead-of-time">
-<h3>Ahead of time:<a class="headerlink" href="#ahead-of-time" title="Permalink to this heading">¶</a></h3>
-<p><strong>Exporting a PyTorch Model for MediaTek Backend</strong>:</p>
-<ol class="arabic simple">
-<li><p>Lower and export the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file for on-device execution. The export script samples are povided under <code class="docutils literal notranslate"><span class="pre">example/mediatek/</span></code>. For example, the following commnad exports the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> using the scripts provided.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+  <div class="section" id="using-executorch-with-c">
+<h1>Using ExecuTorch with C++<a class="headerlink" href="#using-executorch-with-c" title="Permalink to this heading">¶</a></h1>
+<p>In order to support a wide variety of devices, from high-end mobile phones down to tiny embedded systems, ExecuTorch provides an API surface with a high degree of customizability. The C++ APIs expose advanced configuration options, such as controlling memory allocation, placement, and data loading. To meet the needs of both application and embedded programming, ExecuTorch provides a low-level, highly-customizable core set of APIs, and set of high-level extensions, which abstract away many of the low-level details that are not relevant for mobile application programming.</p>
+<div class="section" id="high-level-apis">
+<h2>High-Level APIs<a class="headerlink" href="#high-level-apis" title="Permalink to this heading">¶</a></h2>
+<p>The C++ <code class="docutils literal notranslate"><span class="pre">Module</span></code> class provides the high-level interface to load and execute a model from C++. It is responsible for loading the .pte file, configuring memory allocation and placement, and running the model. The Module constructor takes a file path and provides a simplified <code class="docutils literal notranslate"><span class="pre">forward()</span></code> method to run the model.</p>
+<p>In addition the Module class, the tensor extension provides an encapsulated interface to define and manage tensor memory. It provides the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> class, which is a “fat” smart pointer. It provides ownership over the tensor  data and metadata, such as size and strides. The <code class="docutils literal notranslate"><span class="pre">make_tensor_ptr</span></code> and <code class="docutils literal notranslate"><span class="pre">from_blob</span></code> methods, defined in <code class="docutils literal notranslate"><span class="pre">tensor.h</span></code>, provide owning and non-owning tensor creation APIs, respectively.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/tensor/tensor.h&gt;</span>
 
-./examples/mediatek/shell_scripts/export_oss.sh<span class="w"> </span>mobilenetv3
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="o">::</span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
+
+<span class="c1">// Load the model.</span>
+<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
+
+<span class="c1">// Create an input tensor.</span>
+<span class="kt">float</span><span class="w"> </span><span class="n">input</span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="p">];</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">});</span>
+
+<span class="c1">// Perform an inference.</span>
+<span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">tensor</span><span class="p">);</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Retrieve the output data.</span>
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">result</span><span class="o">-&gt;</span><span class="n">at</span><span class="p">(</span><span class="mi">0</span><span class="p">).</span><span class="n">toTensor</span><span class="p">().</span><span class="n">const_data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="p">}</span>
 </pre></div>
 </div>
-<ol class="arabic simple" start="2">
-<li><p>Find the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files under the directory named as same as the model.</p></li>
-</ol>
+<p>For more information on the Module class, see <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Running an ExecuTorch Model Using the Module Extension in C++</span></a>. For information on high-level tensor APIs, see <a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">Managing Tensor Memory in C++</span></a>.</p>
 </div>
-<div class="section" id="runtime">
-<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
-<p><strong>Build MediaTek Backend for ExecuTorch Runtime</strong></p>
-<ol class="arabic">
-<li><p>Navigate to <code class="docutils literal notranslate"><span class="pre">backends/mediatek/scripts/</span></code> directory.</p></li>
-<li><p><strong>Build MediaTek Backend</strong>: Once the prerequisites are in place, run the <code class="docutils literal notranslate"><span class="pre">mtk_build.sh</span></code> script to start the build process:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./mtk_build.sh
+<div class="section" id="low-level-apis">
+<h2>Low-Level APIs<a class="headerlink" href="#low-level-apis" title="Permalink to this heading">¶</a></h2>
+<p>Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see <a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running an ExecuTorch Model in C++ Tutorial</span></a>.</p>
+</div>
+<div class="section" id="building-with-cmake">
+<h2>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this heading">¶</a></h2>
+<p>ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_MODULE</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_TENSOR</span></code> CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> target as a CMake dependency, along with <code class="docutils literal notranslate"><span class="pre">executorch_module_static</span></code> and <code class="docutils literal notranslate"><span class="pre">executorch_tensor</span></code>, if desired.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
+<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
+<span class="o">...</span>
+<span class="n">target_link_libraries</span><span class="p">(</span>
+    <span class="n">my_target</span>
+    <span class="n">PRIVATE</span> <span class="n">executorch</span>
+    <span class="n">executorch_module_static</span>
+    <span class="n">executorch_tensor</span>
+    <span class="n">optimized_native_cpu_ops_lib</span>
+    <span class="n">xnnpack_backend</span><span class="p">)</span>
 </pre></div>
 </div>
-</li>
-<li><p>MediaTek backend will be built under <code class="docutils literal notranslate"><span class="pre">cmake-android-out/backends/</span></code> as <code class="docutils literal notranslate"><span class="pre">libneuron_backend.so</span></code>.</p></li>
-</ol>
-<p><strong>Build a runner to execute the model on the device</strong>:</p>
-<ol class="arabic simple">
-<li><p>Build the runners and the backend by exedcuting the script:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./mtk_build_examples.sh
+<p>See <a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building from Source</span></a> for more information on the CMake build process.</p>
+</div>
+<div class="section" id="reference-runners">
+<h2>Reference Runners<a class="headerlink" href="#reference-runners" title="Permalink to this heading">¶</a></h2>
+<p>The ExecuTorch repository includes several reference runners, which are simple programs that load and execute a .pte file, typically with random inputs. These can be used to sanity check model execution on a development platform and as a code reference for runtime integration.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> target is built by default when building with CMake. It can be invoked as follows:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">executor_runner</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">model</span><span class="o">.</span><span class="n">pte</span>
 </pre></div>
 </div>
-<ol class="arabic simple" start="2">
-<li><p>The runners will be built under <code class="docutils literal notranslate"><span class="pre">cmake-android-out/examples/</span></code></p></li>
-</ol>
+<p>The runner source code can be found in the ExecuTorch repo under <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp">examples/portable/executor_runner.cpp</a>. Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/apple/coreml">examples/apple/coreml</a> and the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples">examples</a> directory for more information.</p>
 </div>
-</div>
-<div class="section" id="deploying-and-running-on-a-device">
-<h2>Deploying and running on a device<a class="headerlink" href="#deploying-and-running-on-a-device" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic">
-<li><p><strong>Push MediaTek universal SDK and MediaTek backend to the device</strong>: push <code class="docutils literal notranslate"><span class="pre">libneuronusdk_adapter.mtk.so</span></code> and <code class="docutils literal notranslate"><span class="pre">libneuron_backend.so</span></code> to the phone and export it to the <code class="docutils literal notranslate"><span class="pre">$LD_LIBRARY_PATH</span></code> environment variable before executing ExecuTorch with MediaTek backend.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span>&lt;path_to_usdk&gt;:&lt;path_to_neuron_backend&gt;:<span class="nv">$LD_LIBRARY_PATH</span>
-</pre></div>
-</div>
-</li>
-</ol>
+<div class="section" id="next-steps">
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a> for documentation on the available C++ runtime APIs.</p></li>
+<li><p><a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Running an ExecuTorch Model Using the Module Extension in C++</span></a> for information on the high-level Module API.</p></li>
+<li><p><a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">Managing Tensor Memory in C++</span></a> for information on high-level tensor APIs.</p></li>
+<li><p><a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running an ExecuTorch Model in C++ Tutorial</span></a> for information on the low-level runtime APIs.</p></li>
+<li><p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building from Source</span></a> for information on CMake build integration.</p></li>
+</ul>
 </div>
 </div>
 
@@ -640,10 +583,10 @@ pip3<span class="w"> </span>install<span class="w"> </span>mtk_converter-8.9.1+p
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="build-run-mps.html" class="btn btn-neutral float-right" title="Building and Running ExecuTorch with MPS Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="using-executorch-runtime-integration.html" class="btn btn-neutral float-right" title="Runtime Integration" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="build-run-coreml.html" class="btn btn-neutral" title="Building and Running ExecuTorch with Core ML Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="using-executorch-ios.html" class="btn btn-neutral" title="Using ExecuTorch on iOS" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -677,20 +620,12 @@ pip3<span class="w"> </span>install<span class="w"> </span>mtk_converter-8.9.1+p
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building and Running ExecuTorch with MediaTek Backend</a><ul>
-<li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
-<li><a class="reference internal" href="#host-os">Host OS</a></li>
-<li><a class="reference internal" href="#supported-chips">Supported Chips:</a></li>
-<li><a class="reference internal" href="#software">Software:</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#setting-up-your-developer-environment">Setting up your developer environment</a></li>
-<li><a class="reference internal" href="#build">Build</a><ul>
-<li><a class="reference internal" href="#ahead-of-time">Ahead of time:</a></li>
-<li><a class="reference internal" href="#runtime">Runtime:</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#deploying-and-running-on-a-device">Deploying and running on a device</a></li>
+<li><a class="reference internal" href="#">Using ExecuTorch with C++</a><ul>
+<li><a class="reference internal" href="#high-level-apis">High-Level APIs</a></li>
+<li><a class="reference internal" href="#low-level-apis">Low-Level APIs</a></li>
+<li><a class="reference internal" href="#building-with-cmake">Building with CMake</a></li>
+<li><a class="reference internal" href="#reference-runners">Reference Runners</a></li>
+<li><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>
 </li>
 </ul>

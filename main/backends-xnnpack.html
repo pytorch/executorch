@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Using Android prebuilt library (AAR) &mdash; ExecuTorch main documentation</title>
+  <title>XNNPACK Backend &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,6 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Core ML Backend" href="backends-coreml.html" />
+    <link rel="prev" title="Backend Overview" href="backends-overview.html" />
 
 
   <!-- Google Tag Manager -->
@@ -320,88 +322,37 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-faqs.html">FAQs and Common Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
-<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mediatek-backend.html">Building and Running ExecuTorch with MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -415,6 +366,61 @@
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -459,13 +465,13 @@
       </li>
 
         
-      <li>Using Android prebuilt library (AAR)</li>
+      <li>XNNPACK Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/android-prebuilt-library.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/backends-xnnpack.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -497,45 +503,138 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="using-android-prebuilt-library-aar">
-<h1>Using Android prebuilt library (AAR)<a class="headerlink" href="#using-android-prebuilt-library-aar" title="Permalink to this heading">¶</a></h1>
-<p>We provide a prebuilt Android library (AAR), <code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code> for both generic (image/audio processing) and LLAMA use case.</p>
-<div class="section" id="contents-of-library">
-<h2>Contents of library<a class="headerlink" href="#contents-of-library" title="Permalink to this heading">¶</a></h2>
+  <div class="section" id="xnnpack-backend">
+<h1>XNNPACK Backend<a class="headerlink" href="#xnnpack-backend" title="Permalink to this heading">¶</a></h1>
+<p>The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. XNNPACK is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs.</p>
+<div class="section" id="features">
+<h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code></p>
+<li><p>Wide operator support on Arm and x86 CPUs, available on any modern mobile phone.</p></li>
+<li><p>Support for a wide variety of quantization schemes and quantized operators.</p></li>
+</ul>
+</div>
+<div class="section" id="target-requirements">
+<h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>ARM64 on Android, iOS, macOS, Linux, and Windows.</p></li>
+<li><p>ARMv7 (with NEON) on Android.</p></li>
+<li><p>ARMv6 (with VFPv2) on Linux.</p></li>
+<li><p>x86 and x86-64 (up to AVX512) on Windows, Linux, macOS, Android, and iOS simulator.</p></li>
+</ul>
+</div>
+<div class="section" id="development-requirements">
+<h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Permalink to this heading">¶</a></h2>
+<p>The XNNPACK delegate does not introduce any development system requirements beyond those required by the core ExecuTorch runtime.</p>
+</div>
+<div class="section" id="lowering-a-model-to-xnnpack">
+<h2>Lowering a Model to XNNPACK<a class="headerlink" href="#lowering-a-model-to-xnnpack" title="Permalink to this heading">¶</a></h2>
+<p>To target the XNNPACK backend during the export and lowering process, pass an instance of the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. The example below demonstrates this process using the MobileNet V2 model from torchvision.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;mv2_xnnpack.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">et_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="section" id="partitioner-api">
+<h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
+<p>The XNNPACK partitioner API allows for configuration of the model delegation to XNNPACK. Passing an <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the XNNPACK backend. This is the most common use-case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/xnnpack/partition/xnnpack_partitioner.py#L31">constructor</a>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">configs</span></code>: Control which operators are delegated to XNNPACK. By default, all available operators all delegated. See <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/xnnpack/partition/config/__init__.py#L66">../config/__init__.py</a> for an exhaustive list of available operator configs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">config_precisions</span></code>: Filter operators by data type. By default, delegate all precisions. One or more of <code class="docutils literal notranslate"><span class="pre">ConfigPrecisionType.FP32</span></code>, <code class="docutils literal notranslate"><span class="pre">ConfigPrecisionType.STATIC_QUANT</span></code>, or <code class="docutils literal notranslate"><span class="pre">ConfigPrecisionType.DYNAMIC_QUANT</span></code>. See <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/xnnpack/partition/config/xnnpack_config.py#L24">ConfigPrecisionType</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">per_op_mode</span></code>: If true, emit individual delegate calls for every operator. This is an advanced option intended to reduce memory overhead in some contexts at the cost of a small amount of runtime overhead. Defaults to false.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">verbose</span></code>: If true, print additional information during lowering.</p></li>
+</ul>
+</div>
+<div class="section" id="quantization">
+<h3>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h3>
+<p>The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library.</p>
+</div>
+<div class="section" id="configuring-the-xnnpackquantizer">
+<h3>Configuring the XNNPACKQuantizer<a class="headerlink" href="#configuring-the-xnnpackquantizer" title="Permalink to this heading">¶</a></h3>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+  <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
+  <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">get_symmetric_quantization_config</span><span class="p">())</span>
+</pre></div>
+</div>
+<p>Here, the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured for symmetric quantization, indicating that the quantized zero point is set to zero with <code class="docutils literal notranslate"><span class="pre">qmin</span> <span class="pre">=</span> <span class="pre">-127</span></code> and <code class="docutils literal notranslate"><span class="pre">qmax</span> <span class="pre">=</span> <span class="pre">127</span></code>. <code class="docutils literal notranslate"><span class="pre">get_symmetric_quantization_config()</span></code> can be configured with the following arguments:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">is_per_channel</span></code></p>
 <ul>
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/android/src/main/java/org/pytorch/executorch">Java library</a></p></li>
-<li><p>JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.</p>
+<li><p>Weights are quantized across channels</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">is_qat</span></code></p>
 <ul>
-<li><p>Comes with two ABI variants, arm64-v8a and x86_64.</p></li>
+<li><p>Quantize aware training</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">is_dynamic</span></code></p>
+<ul>
+<li><p>Dynamic quantization</p></li>
 </ul>
 </li>
 </ul>
-</li>
-</ul>
-</div>
-<div class="section" id="downloading-aar">
-<h2>Downloading AAR<a class="headerlink" href="#downloading-aar" title="Permalink to this heading">¶</a></h2>
-<p><a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar">executorch.aar</a>
-<a class="reference external" href="https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar.sha256sums">executorch.aar.sha256sums</a></p>
-</div>
-<div class="section" id="using-prebuilt-libraries">
-<h2>Using prebuilt libraries<a class="headerlink" href="#using-prebuilt-libraries" title="Permalink to this heading">¶</a></h2>
-<p>To add the Java library to your app, simply download the AAR, and add it to your gradle build rule.</p>
-<p>In your app working directory, such as example executorch/examples/demo-apps/android/LlamaDemo,</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span>
-<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">executorch</span><span class="o">-</span><span class="mi">241002</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">quantization_config</span><span class="p">)</span>
+    <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span> <span class="c1"># can configure by module type</span>
+    <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">functional</span><span class="o">.</span><span class="n">linear</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span> <span class="c1"># or torch functional op typea</span>
+    <span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="s2">&quot;foo.bar&quot;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span>  <span class="c1"># or by module fully qualified name</span>
 </pre></div>
 </div>
-<p>And include it in gradle:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># app/build.grardle.kts</span>
-<span class="n">dependencies</span> <span class="p">{</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s2">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
-<span class="p">}</span>
+<div class="section" id="quantizing-a-model-with-the-xnnpackquantizer">
+<h4>Quantizing a model with the XNNPACKQuantizer<a class="headerlink" href="#quantizing-a-model-with-the-xnnpackquantizer" title="Permalink to this heading">¶</a></h4>
+<p>After configuring the quantizer, the model can be quantized by via the <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> and <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> APIs.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_for_training</span>
+
+<span class="n">exported_model</span> <span class="o">=</span> <span class="n">export_for_training</span><span class="p">(</span><span class="n">model_to_quantize</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">exported_model</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">cal_sample</span> <span class="ow">in</span> <span class="n">cal_samples</span><span class="p">:</span> <span class="c1"># Replace with representative model inputs</span>
+	<span class="n">prepared_model</span><span class="p">(</span><span class="n">cal_sample</span><span class="p">)</span> <span class="c1"># Calibrate</span>
+
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Now you can compile your app with the ExecuTorch Android library.</p>
+<p>For static, post-training quantization (PTQ), the post-prepare_pt2e model should beS run with a representative set of samples, which are used to determine the quantization parameters.</p>
+<p>After <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code>, the model can be exported and lowered using the normal ExecuTorch XNNPACK flow. For more information on PyTorch 2 quantization <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">here</a>.</p>
+</div>
+</div>
+<div class="section" id="testing-the-model">
+<h3>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h3>
+<p>After generating the XNNPACK-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See <a class="reference internal" href="using-executorch-export.html#testing-the-model"><span class="std std-doc">Testing the Model</span></a> for more information.</p>
+</div>
+</div>
+<div class="section" id="runtime-integration">
+<h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
+<p>To run the model on-device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="getting-started.html#running-on-device"><span class="std std-doc">Running on Device</span></a> for more information.</p>
+<p>The XNNPACK delegate is included by default in the published Android, iOS, and pip packages. When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_XNNPACK=ON</span></code> when configuring the CMake build to compile the XNNPACK backend.</p>
+<p>To link against the backend, add the <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code> CMake target as a build dependency, or link directly against <code class="docutils literal notranslate"><span class="pre">libxnnpack_backend</span></code>. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,xnnpack_backend&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
+<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
+<span class="o">...</span>
+<span class="n">target_link_libraries</span><span class="p">(</span>
+    <span class="n">my_target</span>
+    <span class="n">PRIVATE</span> <span class="n">executorch</span>
+    <span class="n">executorch_module_static</span>
+    <span class="n">executorch_tensor</span>
+    <span class="n">optimized_native_cpu_ops_lib</span>
+    <span class="n">xnnpack_backend</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>No additional steps are necessary to use the backend beyond linking the target. Any XNNPACK-delegated .pte file will automatically run on the registered backend.</p>
 </div>
 </div>
 
@@ -544,6 +643,15 @@
              
             </div>
             <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="backends-coreml.html" class="btn btn-neutral float-right" title="Core ML Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="backends-overview.html" class="btn btn-neutral" title="Backend Overview" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
   
 
   
@@ -575,10 +683,21 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Using Android prebuilt library (AAR)</a><ul>
-<li><a class="reference internal" href="#contents-of-library">Contents of library</a></li>
-<li><a class="reference internal" href="#downloading-aar">Downloading AAR</a></li>
-<li><a class="reference internal" href="#using-prebuilt-libraries">Using prebuilt libraries</a></li>
+<li><a class="reference internal" href="#">XNNPACK Backend</a><ul>
+<li><a class="reference internal" href="#features">Features</a></li>
+<li><a class="reference internal" href="#target-requirements">Target Requirements</a></li>
+<li><a class="reference internal" href="#development-requirements">Development Requirements</a></li>
+<li><a class="reference internal" href="#lowering-a-model-to-xnnpack">Lowering a Model to XNNPACK</a><ul>
+<li><a class="reference internal" href="#partitioner-api">Partitioner API</a></li>
+<li><a class="reference internal" href="#quantization">Quantization</a></li>
+<li><a class="reference internal" href="#configuring-the-xnnpackquantizer">Configuring the XNNPACKQuantizer</a><ul>
+<li><a class="reference internal" href="#quantizing-a-model-with-the-xnnpackquantizer">Quantizing a model with the XNNPACKQuantizer</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#testing-the-model">Testing the Model</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#runtime-integration">Runtime Integration</a></li>
 </ul>
 </li>
 </ul>

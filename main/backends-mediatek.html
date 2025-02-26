@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building and Running ExecuTorch on Xtensa HiFi4 DSP &mdash; ExecuTorch main documentation</title>
+  <title>MediaTek Backend &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,11 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Llama on ExecuTorch" href="llm/llama.html" />
-    <link rel="prev" title="Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend" href="build-run-qualcomm-ai-engine-direct-backend.html" />
-
-<link rel="stylesheet" href="../_static/css/progress-bar.css">
-<script src="../_static/js/progress-bar.js" defer></script>
+    <link rel="next" title="Cadence Xtensa Backend" href="backends-cadence.html" />
+    <link rel="prev" title="Qualcomm AI Engine Backend" href="backends-qualcomm.html" />
 
 
   <!-- Google Tag Manager -->
@@ -325,88 +322,37 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-faqs.html">FAQs and Common Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
-<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mediatek-backend.html">Building and Running ExecuTorch with MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -420,6 +366,61 @@
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -464,13 +465,13 @@
       </li>
 
         
-      <li>Building and Running ExecuTorch on Xtensa HiFi4 DSP</li>
+      <li>MediaTek Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/build-run-xtensa.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/backends-mediatek.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -502,12 +503,9 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-and-running-executorch-on-xtensa-hifi4-dsp">
-<h1>Building and Running ExecuTorch on Xtensa HiFi4 DSP<a class="headerlink" href="#building-and-running-executorch-on-xtensa-hifi4-dsp" title="Permalink to this heading">¶</a></h1>
-<p>In this tutorial we will walk you through the process of getting setup to build ExecuTorch for an Xtensa HiFi4 DSP and running a simple model on it.</p>
-<p><a class="reference external" href="https://www.cadence.com/en_US/home.html">Cadence</a> is both a hardware and software vendor, providing solutions for many computational workloads, including to run on power-limited embedded devices. The <a class="reference external" href="https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html">Xtensa HiFi4 DSP</a> is a Digital Signal Processor (DSP) that is optimized for running audio based neural networks such as wake word detection, Automatic Speech Recognition (ASR), etc.</p>
-<p>In addition to the chip, the HiFi4 Neural Network Library (<a class="reference external" href="https://github.com/foss-xtensa/nnlib-hifi4">nnlib</a>) offers an optimized set of library functions commonly used in NN processing that we utilize in this example to demonstrate how common operations can be accelerated.</p>
-<p>On top of being able to run on the Xtensa HiFi4 DSP, another goal of this tutorial is to demonstrate how portable ExecuTorch is and its ability to run on a low-power embedded device such as the Xtensa HiFi4 DSP. This workflow does not require any delegates, it uses custom operators and compiler passes to enhance the model and make it more suitable to running on Xtensa HiFi4 DSPs. A custom <a class="reference external" href="https://pytorch.org/tutorials/prototype/quantization_in_pytorch_2_0_export_tutorial.html">quantizer</a> is used to represent activations and weights as <code class="docutils literal notranslate"><span class="pre">uint8</span></code> instead of <code class="docutils literal notranslate"><span class="pre">float</span></code>, and call appropriate operators. Finally, custom kernels optimized with Xtensa intrinsics provide runtime acceleration.</p>
+  <div class="section" id="mediatek-backend">
+<h1>MediaTek Backend<a class="headerlink" href="#mediatek-backend" title="Permalink to this heading">¶</a></h1>
+<p>MediaTek backend empowers ExecuTorch to speed up PyTorch models on edge devices that equips with MediaTek Neuron Processing Unit (NPU). This document offers a step-by-step guide to set up the build environment for the MediaTek ExecuTorch libraries.</p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
 <div class="sd-col sd-d-flex-row docutils">
@@ -516,8 +514,9 @@
 <div class="sd-card-title sd-font-weight-bold docutils">
 What you will learn in this tutorial:</div>
 <ul class="simple">
-<li><p class="sd-card-text">In this tutorial you will learn how to export a quantized model with a linear operation targeted for the Xtensa HiFi4 DSP.</p></li>
-<li><p class="sd-card-text">You will also learn how to compile and deploy the ExecuTorch runtime with the kernels required for running the quantized model generated in the previous step on the Xtensa HiFi4 DSP.</p></li>
+<li><p class="sd-card-text">How to export and lower a PyTorch model ahead of time with ExecuTorch for MediaTek devices.</p></li>
+<li><p class="sd-card-text">How to build MediaTek backend and examples.</p></li>
+<li><p class="sd-card-text">How to deploy the exported models on device with ExecuTorch runtime.</p></li>
 </ul>
 </div>
 </div>
@@ -529,211 +528,111 @@ What you will learn in this tutorial:</div>
 Tutorials we recommend you complete before this:</div>
 <ul class="simple">
 <li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
 </ul>
 </div>
 </div>
 </div>
 </div>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The linux part of this tutorial has been designed and tested on Ubuntu 22.04 LTS, and requires glibc 2.34. Workarounds are available for other distributions, but will not be covered in this tutorial.</p>
 </div>
 <div class="section" id="prerequisites-hardware-and-software">
 <h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
-<p>In order to be able to succesfully build and run ExecuTorch on a Xtensa HiFi4 DSP you’ll need the following hardware and software components.</p>
-<div class="section" id="hardware">
-<h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="host-os">
+<h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
-<li><p><a class="reference external" href="https://www.nxp.com/design/development-boards/i-mx-evaluation-and-development-boards/i-mx-rt600-evaluation-kit:MIMXRT685-EVK">i.MX RT600 Evaluation Kit</a></p></li>
+<li><p>Linux operating system</p></li>
+</ul>
+</div>
+<div class="section" id="supported-chips">
+<h3>Supported Chips:<a class="headerlink" href="#supported-chips" title="Permalink to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>MediaTek Dimensity 9300 (D9300)</p></li>
 </ul>
 </div>
 <div class="section" id="software">
-<h3>Software<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
+<h3>Software:<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
-<li><p>x86-64 Linux system (For compiling the DSP binaries)</p></li>
-<li><p><a class="reference external" href="https://www.nxp.com/design/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE">MCUXpresso IDE</a></p>
-<ul>
-<li><p>This IDE is supported on multiple platforms including MacOS. You can use it on any of the supported platforms as you’ll only be using this to flash the board with the DSP images that you’ll be building later on in this tutorial.</p></li>
-</ul>
-</li>
-<li><p><a class="reference external" href="https://www.segger.com/downloads/jlink/">J-Link</a></p>
-<ul>
-<li><p>Needed to flash the board with the firmware images. You can install this on the same platform that you installed the MCUXpresso IDE on.</p></li>
-<li><p>Note: depending on the version of the NXP board, another probe than JLink might be installed. In any case, flashing is done using the MCUXpresso IDE in a similar way.</p></li>
-</ul>
-</li>
-<li><p><a class="reference external" href="https://mcuxpresso.nxp.com/en/select?device=EVK-MIMXRT685">MCUXpresso SDK</a></p>
-<ul>
-<li><p>Download this SDK to your Linux machine, extract it and take a note of the path where you store it. You’ll need this later.</p></li>
-</ul>
-</li>
-<li><p><a class="reference external" href="https://tensilicatools.com/platform/i-mx-rt600/">Xtensa compiler</a></p>
-<ul>
-<li><p>Download this to your Linux machine. This is needed to build ExecuTorch for the HiFi4 DSP.</p></li>
-</ul>
-</li>
-<li><p>For cases with optimized kernels, the <a class="reference external" href="https://github.com/foss-xtensa/nnlib-hifi4">nnlib repo</a>.</p></li>
+<li><p><a class="reference external" href="https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress">NeuroPilot Express SDK</a> is a lightweight SDK for deploying AI applications on MediaTek SOC devices.</p></li>
 </ul>
 </div>
 </div>
-<div class="section" id="setting-up-developer-environment">
-<h2>Setting up Developer Environment<a class="headerlink" href="#setting-up-developer-environment" title="Permalink to this heading">¶</a></h2>
-<p>Step 1. In order to be able to successfully install all the software components specified above users will need to go through the NXP tutorial linked below. Although the tutorial itself walks through a Windows setup, most of the steps translate over to a Linux installation too.</p>
-<p><a class="reference external" href="https://www.nxp.com/document/guide/getting-started-with-i-mx-rt600-evaluation-kit:GS-MIMXRT685-EVK?section=plug-it-in">NXP tutorial on setting up the board and dev environment</a></p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Before proceeding forward to the next section users should be able to succesfullly flash the <strong>dsp_mu_polling_cm33</strong> sample application from the tutorial above and notice output on the UART console indicating that the Cortex-M33 and HiFi4 DSP are talking to each other.</p>
-</div>
-<p>Step 2. Make sure you have completed the ExecuTorch setup tutorials linked to at the top of this page.</p>
-</div>
-<div class="section" id="working-tree-description">
-<h2>Working Tree Description<a class="headerlink" href="#working-tree-description" title="Permalink to this heading">¶</a></h2>
-<p>The working tree is:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>executorch
-├── backends
-│   └── cadence
-│       ├── aot
-│       ├── ops_registration
-│       ├── tests
-│       ├── utils
-│       ├── hifi
-│       │   ├── kernels
-│       │   ├── operators
-│       │   └── third-party
-│       │       └── hifi4-nnlib
-│       └── [other cadence DSP families]
-│           ├── kernels
-│           ├── operators
-│           └── third-party
-│               └── [any required lib]
-└── examples
-    └── cadence
-        ├── models
-        └── operators
+<div class="section" id="setting-up-your-developer-environment">
+<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this heading">¶</a></h2>
+<p>Follow the steps below to setup your build environment:</p>
+<ol class="arabic simple">
+<li><p><strong>Setup ExecuTorch Environment</strong>: Refer to the <a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started</span></a> guide for detailed instructions on setting up the ExecuTorch environment.</p></li>
+<li><p><strong>Setup MediaTek Backend Environment</strong></p></li>
+</ol>
+<ul>
+<li><p>Install the dependent libs. Ensure that you are inside <code class="docutils literal notranslate"><span class="pre">backends/mediatek/</span></code> directory</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
 </pre></div>
 </div>
-<p><em><strong>AoT (Ahead-of-Time) Components</strong></em>:</p>
-<p>The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. In our case, <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/export_example.py">export_example.py</a> is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer.py">quantizer.py</a>). Then a few compiler passes, also defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer.py">quantizer.py</a>, will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/ops_registrations.py">ops_registrations.py</a> and have corresponding implemetations in the other folders.</p>
-<p><em><strong>Operators</strong></em>:</p>
-<p>The operators folder contains two kinds of operators: existing operators from the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/kernels/portable/cpu">ExecuTorch portable library</a> and new operators that define custom computations. The former is simply dispatching the operator to the relevant ExecuTorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.</p>
-<p><em><strong>Kernels</strong></em>:</p>
-<p>The kernels folder contains the optimized kernels that will run on the HiFi4 chip. They use Xtensa intrinsics to deliver high performance at low-power.</p>
+</li>
+<li><p>Install the two .whl downloaded from NeuroPilot Portal</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>mtk_neuron-8.2.13-py3-none-linux_x86_64.whl
+pip3<span class="w"> </span>install<span class="w"> </span>mtk_converter-8.9.1+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+</pre></div>
+</div>
+</li>
+<li><p>Set evironment variables for building backend</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">NEURON_BUFFER_ALLOCATOR_LIB</span><span class="o">=</span>&lt;path_to_buffer_allocator.so&gt;
+</pre></div>
+</div>
+</li>
+</ul>
 </div>
 <div class="section" id="build">
 <h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
-<p>In this step, you will generate the ExecuTorch program from different models. You’ll then use this Program (the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file) during the runtime build step to bake this Program into the DSP image.</p>
-<p><em><strong>Simple Model</strong></em>:</p>
-<p>The first, simple model is meant to test that all components of this tutorial are working properly, and simply does an add operation. The generated file is called <code class="docutils literal notranslate"><span class="pre">add.pte</span></code>.</p>
+<div class="section" id="ahead-of-time">
+<h3>Ahead of time:<a class="headerlink" href="#ahead-of-time" title="Permalink to this heading">¶</a></h3>
+<p><strong>Exporting a PyTorch Model for MediaTek Backend</strong>:</p>
+<ol class="arabic simple">
+<li><p>Lower and export the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file for on-device execution. The export script samples are povided under <code class="docutils literal notranslate"><span class="pre">example/mediatek/</span></code>. For example, the following commnad exports the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> using the scripts provided.</p></li>
+</ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span>
+
+./examples/mediatek/shell_scripts/export_oss.sh<span class="w"> </span>mobilenetv3
 </pre></div>
 </div>
-<p><em><strong>Quantized Operators</strong></em>:</p>
-<p>The other, more complex model are custom operators, including:</p>
-<ul class="simple">
-<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html">linear</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/quantized_linear_op.py#L28">here</a>. Linear is the backbone of most Automatic Speech Recognition (ASR) models.</p></li>
-<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html">conv1d</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/quantized_conv1d_op.py#L36">here</a>. Convolutions are important in wake word and many denoising models.</p></li>
-</ul>
-<p>In both cases the generated file is called <code class="docutils literal notranslate"><span class="pre">CadenceDemoModel.pte</span></code>.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.operators.quantized_&lt;linear,conv1d&gt;_op
-</pre></div>
+<ol class="arabic simple" start="2">
+<li><p>Find the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files under the directory named as same as the model.</p></li>
+</ol>
 </div>
-<p><em><strong>Small Model: RNNT predictor</strong></em>:</p>
-<p>The torchaudio <a class="reference external" href="https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html">RNNT-emformer</a> model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
-The <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/models/rnnt_predictor.py">predictor</a> is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.models.rnnt_predictor
-</pre></div>
-</div>
-<p>The generated file is called <code class="docutils literal notranslate"><span class="pre">CadenceDemoModel.pte</span></code>.</p>
 <div class="section" id="runtime">
-<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
-<p><strong>Building the DSP firmware image</strong>
-In this step, you’ll be building the DSP firmware image that consists of the sample ExecuTorch runner along with the Program generated from the previous step. This image when loaded onto the DSP will run through the model that this Program consists of.</p>
-<p><em><strong>Step 1</strong></em>. Configure the environment variables needed to point to the Xtensa toolchain that you have installed in the previous step. The three environment variables that need to be set include:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Directory in which the Xtensa toolchain was installed</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">XTENSA_TOOLCHAIN</span><span class="o">=</span>/home/user_name/cadence/XtDevTools/install/tools
-<span class="c1"># The version of the toolchain that was installed. This is essentially the name of the directory</span>
-<span class="c1"># that is present in the XTENSA_TOOLCHAIN directory from above.</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">TOOLCHAIN_VER</span><span class="o">=</span>RI-2021.8-linux
-<span class="c1"># The Xtensa core that you&#39;re targeting.</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">XTENSA_CORE</span><span class="o">=</span>nxp_rt600_RI2021_8_newlib
+<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
+<p><strong>Build MediaTek Backend for ExecuTorch Runtime</strong></p>
+<ol class="arabic">
+<li><p>Navigate to <code class="docutils literal notranslate"><span class="pre">backends/mediatek/scripts/</span></code> directory.</p></li>
+<li><p><strong>Build MediaTek Backend</strong>: Once the prerequisites are in place, run the <code class="docutils literal notranslate"><span class="pre">mtk_build.sh</span></code> script to start the build process:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./mtk_build.sh
 </pre></div>
 </div>
-<p><em><strong>Step 2</strong></em>. Clone the <a class="reference external" href="https://github.com/foss-xtensa/nnlib-hifi4">nnlib repo</a>, which contains optimized kernels and primitives for HiFi4 DSPs, with <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">clone</span> <span class="pre">git&#64;github.com:foss-xtensa/nnlib-hifi4.git</span></code>.</p>
-<p><em><strong>Step 3</strong></em>. Run the CMake build.
-In order to run the CMake build, you need the path to the following:</p>
-<ul class="simple">
-<li><p>The Program generated in the previous step</p></li>
-<li><p>Path to the NXP SDK root. This should have been installed already in the <a class="reference internal" href="#setting-up-developer-environment"><span class="std std-doc">Setting up Developer Environment</span></a> section. This is the directory that contains the folders such as boards, components, devices, and other.</p></li>
-</ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./install_executorch.sh<span class="w"> </span>--clean
-mkdir<span class="w"> </span>cmake-out
-<span class="c1"># prebuild and install executorch library</span>
-cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/backends/cadence/cadence.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_HOST_TARGETS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXECUTOR_RUNNER<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_PTHREADPOOL<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_CPUINFO<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-out<span class="w"> </span>.
-
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j&lt;num_cores&gt;<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Debug
-<span class="c1"># build cadence runner</span>
-cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/backends/cadence.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span>&lt;path_to_executorch&gt;/cmake-out<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DMODEL_PATH<span class="o">=</span>&lt;path_to_program_file_generated_in_previous_step&gt;<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DNXP_SDK_ROOT_DIR<span class="o">=</span>&lt;path_to_nxp_sdk_root&gt;<span class="w"> </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span><span class="m">0</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DNN_LIB_BASE_DIR<span class="o">=</span>&lt;path_to_nnlib_cloned_in_step_2&gt;<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-out/examples/cadence<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>examples/cadence
-
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out/examples/cadence<span class="w"> </span>-j8<span class="w"> </span>-t<span class="w"> </span>cadence_executorch_example
+</li>
+<li><p>MediaTek backend will be built under <code class="docutils literal notranslate"><span class="pre">cmake-android-out/backends/</span></code> as <code class="docutils literal notranslate"><span class="pre">libneuron_backend.so</span></code>.</p></li>
+</ol>
+<p><strong>Build a runner to execute the model on the device</strong>:</p>
+<ol class="arabic simple">
+<li><p>Build the runners and the backend by exedcuting the script:</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./mtk_build_examples.sh
 </pre></div>
 </div>
-<p>After having succesfully run the above step you should see two binary files in their CMake output directory.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>&gt;<span class="w"> </span>ls<span class="w"> </span>cmake-xt/*.bin
-cmake-xt/dsp_data_release.bin<span class="w">  </span>cmake-xt/dsp_text_release.bin
+<ol class="arabic simple" start="2">
+<li><p>The runners will be built under <code class="docutils literal notranslate"><span class="pre">cmake-android-out/examples/</span></code></p></li>
+</ol>
+</div>
+</div>
+<div class="section" id="deploying-and-running-on-a-device">
+<h2>Deploying and running on a device<a class="headerlink" href="#deploying-and-running-on-a-device" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic">
+<li><p><strong>Push MediaTek universal SDK and MediaTek backend to the device</strong>: push <code class="docutils literal notranslate"><span class="pre">libneuronusdk_adapter.mtk.so</span></code> and <code class="docutils literal notranslate"><span class="pre">libneuron_backend.so</span></code> to the phone and export it to the <code class="docutils literal notranslate"><span class="pre">$LD_LIBRARY_PATH</span></code> environment variable before executing ExecuTorch with MediaTek backend.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span>&lt;path_to_usdk&gt;:&lt;path_to_neuron_backend&gt;:<span class="nv">$LD_LIBRARY_PATH</span>
 </pre></div>
 </div>
-</div>
-</div>
-<div class="section" id="deploying-and-running-on-device">
-<h2>Deploying and Running on Device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this heading">¶</a></h2>
-<p><em><strong>Step 1</strong></em>. You now take the DSP binary images generated from the previous step and copy them over into your NXP workspace created in the <a class="reference internal" href="#setting-up-developer-environment"><span class="std std-doc">Setting up  Developer Environment</span></a> section. Copy the DSP images into the <code class="docutils literal notranslate"><span class="pre">dsp_binary</span></code> section highlighted in the image below.</p>
-<p><img src="_static/img/dsp_binary.png" alt="MCUXpresso IDE" /><br></p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>As long as binaries have been built using the Xtensa toolchain on Linux, flashing the board and running on the chip can be done only with the MCUXpresso IDE, which is available on all platforms (Linux, MacOS, Windows).</p>
-</div>
-<p><em><strong>Step 2</strong></em>. Clean your work space</p>
-<p><em><strong>Step 3</strong></em>. Click <strong>Debug your Project</strong> which will flash the board with your binaries.</p>
-<p>On the UART console connected to your board (at a default baud rate of 115200), you should see an output similar to this:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>&gt;<span class="w"> </span>screen<span class="w"> </span>/dev/tty.usbmodem0007288234991<span class="w"> </span><span class="m">115200</span>
-Executed<span class="w"> </span>model
-Model<span class="w"> </span>executed<span class="w"> </span>successfully.
-First<span class="w"> </span><span class="m">20</span><span class="w"> </span>elements<span class="w"> </span>of<span class="w"> </span>output<span class="w"> </span><span class="m">0</span>
-<span class="m">0</span>.165528<span class="w">   </span><span class="m">0</span>.331055<span class="w"> </span>...
-</pre></div>
-</div>
-</div>
-<div class="section" id="conclusion-and-future-work">
-<h2>Conclusion and Future Work<a class="headerlink" href="#conclusion-and-future-work" title="Permalink to this heading">¶</a></h2>
-<p>In this tutorial, you have learned how to export a quantized operation, build the ExecuTorch runtime and run this model on the Xtensa HiFi4 DSP chip.</p>
-<p>The (quantized linear) model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model as a new test and adding the needed operators/kernels to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/hifi/operators">operators</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/hifi/kernels">kernels</a>.</p>
-<p>Other models can be created following the same structure, always assuming that operators and kernels are available.</p>
+</li>
+</ol>
 </div>
 </div>
 
@@ -745,10 +644,10 @@ First<span class="w"> </span><span class="m">20</span><span class="w"> </span>el
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="llm/llama.html" class="btn btn-neutral float-right" title="Llama on ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="backends-cadence.html" class="btn btn-neutral float-right" title="Cadence Xtensa Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="build-run-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral" title="Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="backends-qualcomm.html" class="btn btn-neutral" title="Qualcomm AI Engine Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -782,20 +681,20 @@ First<span class="w"> </span><span class="m">20</span><span class="w"> </span>el
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a><ul>
+<li><a class="reference internal" href="#">MediaTek Backend</a><ul>
 <li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
-<li><a class="reference internal" href="#hardware">Hardware</a></li>
-<li><a class="reference internal" href="#software">Software</a></li>
+<li><a class="reference internal" href="#host-os">Host OS</a></li>
+<li><a class="reference internal" href="#supported-chips">Supported Chips:</a></li>
+<li><a class="reference internal" href="#software">Software:</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#setting-up-developer-environment">Setting up Developer Environment</a></li>
-<li><a class="reference internal" href="#working-tree-description">Working Tree Description</a></li>
+<li><a class="reference internal" href="#setting-up-your-developer-environment">Setting up your developer environment</a></li>
 <li><a class="reference internal" href="#build">Build</a><ul>
-<li><a class="reference internal" href="#runtime">Runtime</a></li>
+<li><a class="reference internal" href="#ahead-of-time">Ahead of time:</a></li>
+<li><a class="reference internal" href="#runtime">Runtime:</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#deploying-and-running-on-device">Deploying and Running on Device</a></li>
-<li><a class="reference internal" href="#conclusion-and-future-work">Conclusion and Future Work</a></li>
+<li><a class="reference internal" href="#deploying-and-running-on-a-device">Deploying and running on a device</a></li>
 </ul>
 </li>
 </ul>

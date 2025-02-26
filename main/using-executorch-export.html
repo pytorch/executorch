@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building with CMake &mdash; ExecuTorch main documentation</title>
+  <title>Model Export and Lowering &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="FAQs and Common Issues" href="getting-started-faqs.html" />
-    <link rel="prev" title="Exporting to ExecuTorch" href="export-overview.html" />
+    <link rel="next" title="Using ExecuTorch on Android" href="using-executorch-android.html" />
+    <link rel="prev" title="Getting Started with ExecuTorch" href="getting-started.html" />
 
 
   <!-- Google Tag Manager -->
@@ -322,88 +322,37 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Building with CMake</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-faqs.html">FAQs and Common Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/devtools-integration-tutorial.html">Using the ExecuTorch Developer Tools to Profile a Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
-<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mediatek-backend.html">Building and Running ExecuTorch with MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">ExecuTorch Runtime Python API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -417,6 +366,61 @@
 <li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
 <ul>
@@ -461,13 +465,13 @@
       </li>
 
         
-      <li>Building with CMake</li>
+      <li>Model Export and Lowering</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/runtime-build-and-cross-compilation.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/using-executorch-export.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -499,185 +503,168 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-with-cmake">
-<h1>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this heading">¶</a></h1>
-<p>ExecuTorch uses <a class="reference external" href="https://cmake.org/">CMake</a>  as its primary build system.
-Even if you don’t use CMake directly, CMake can emit scripts for other format
-like Make, Ninja or Xcode. For information, see <a class="reference external" href="https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html">cmake-generators(7)</a>.</p>
-<div class="section" id="targets-built-by-the-cmake-build-system">
-<h2>Targets Built by the CMake Build System<a class="headerlink" href="#targets-built-by-the-cmake-build-system" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch’s CMake build system covers the pieces of the runtime that are
-likely to be useful to embedded systems users.</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch.a</span></code>: The core of the ExecuTorch runtime. Does not contain any
-operator/kernel definitions or backend definitions.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code>: The implementations of ATen-compatible operators,
-following the signatures in <code class="docutils literal notranslate"><span class="pre">//kernels/portable/functions.yaml</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">libportable_kernels_bindings.a</span></code>: Generated code that registers the contents
-of <code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code> with the runtime.</p>
-<ul>
-<li><p>NOTE: This must be linked into your application with a flag like
-<code class="docutils literal notranslate"><span class="pre">-Wl,-force_load</span></code> or <code class="docutils literal notranslate"><span class="pre">-Wl,--whole-archive</span></code>. It contains load-time functions
-that automatically register the kernels, but linkers will often prune those
-functions by default because there are no direct calls to them.</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executor_runner</span></code>: An example tool that runs a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> program file using all
-<code class="docutils literal notranslate"><span class="pre">1</span></code> values as inputs, and prints the outputs to stdout. It is linked with
-<code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code>, so the program may use any of the operators it
-implements.</p></li>
-</ul>
+  <div class="section" id="model-export-and-lowering">
+<h1>Model Export and Lowering<a class="headerlink" href="#model-export-and-lowering" title="Permalink to this heading">¶</a></h1>
+<p>The section describes the process of taking a PyTorch model and converting to the runtime format used by ExecuTorch. This process is commonly known as “exporting”, as it uses the PyTorch export functionality to convert a PyTorch model into a format suitable for on-device execution. This process yields a .pte file which is optimized for on-device execution using a particular backend.</p>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<p>Exporting requires the ExecuTorch python libraries to be installed, typically by running <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">executorch</span></code>. See <a class="reference internal" href="getting-started.html#installation"><span class="std std-ref">Installation</span></a> for more information. This process assumes you have a PyTorch model, can instantiate it from Python, and can provide example input tensors to run the model.</p>
 </div>
-<div class="section" id="one-time-setup-to-prepare-for-cmake-build">
-<h2>One-time setup to prepare for CMake Build<a class="headerlink" href="#one-time-setup-to-prepare-for-cmake-build" title="Permalink to this heading">¶</a></h2>
-<p>Follow the steps below to have the tools ready before using CMake to build on your machine.</p>
+<div class="section" id="the-export-and-lowering-process">
+<h2>The Export and Lowering Process<a class="headerlink" href="#the-export-and-lowering-process" title="Permalink to this heading">¶</a></h2>
+<p>The process to export and lower a model to the .pte format typically involves the following steps:</p>
 <ol class="arabic simple">
-<li><p>If your system’s version of python3 is older than 3.11:</p>
+<li><p>Select a backend to target.</p></li>
+<li><p>Prepare the PyTorch model, including inputs and shape specification.</p></li>
+<li><p>Export the model using torch.export.export.</p></li>
+<li><p>Optimize the model for the target backend using to_edge_transform_and_lower.</p></li>
+<li><p>Create the .pte file by calling to_executorch and serializing the output.</p></li>
+</ol>
+<br/>
+<p>Quantization - the process of using reduced precision to reduce inference time and memory footprint - is also commonly done at this stage. See <a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization Overview</span></a> for more information.</p>
+</div>
+<div class="section" id="hardware-backends">
+<h2>Hardware Backends<a class="headerlink" href="#hardware-backends" title="Permalink to this heading">¶</a></h2>
+<p>ExecuTorch backends provide hardware acceleration for a specific hardware target. In order to achieve maximum performance on target hardware, ExecuTorch optimizes the model for a specific backend during the export and lowering process. This means that the resulting .pte file is specialized for the specific hardware. In order to deploy to multiple backends, such as Core ML on iOS and Arm CPU on Android, it is common to generate a dedicated .pte file for each.</p>
+<p>The choice of hardware backend is informed by the hardware that the model is intended to be deployed on. Each backend has specific hardware requires and level of model support. See the documentation for each hardware backend for more details.</p>
+<p>As part of the .pte file creation process, ExecuTorch identifies portions of the model (partitions) that are supported for the given backend. These sections are processed by the backend ahead of time to support efficient execution. Portions of the model that are not supported on the delegate, if any, are executed using the portable fallback implementation on CPU. This allows for partial model acceleration when not all model operators are supported on the backend, but may have negative performance implications. In addition, multiple partitioners can be specified in order of priority. This allows for operators not supported on GPU to run on CPU via XNNPACK, for example.</p>
+<div class="section" id="available-backends">
+<h3>Available Backends<a class="headerlink" href="#available-backends" title="Permalink to this heading">¶</a></h3>
+<p>Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. See the appropriate backend documentation and the <a class="reference internal" href="#export-and-lowering"><span class="std std-doc">Export and Lowering</span></a> section below for more information.</p>
 <ul class="simple">
-<li><p>Run <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">tomli</span></code></p></li>
+<li><p><a class="reference internal" href="backends-xnnpack.html"><span class="doc std std-doc">XNNPACK (Mobile CPU)</span></a></p></li>
+<li><p><a class="reference internal" href="backends-coreml.html"><span class="doc std std-doc">Core ML (iOS)</span></a></p></li>
+<li><p><a class="reference internal" href="backends-mps.html"><span class="doc std std-doc">Metal Performance Shaders (iOS GPU)</span></a></p></li>
+<li><p><a class="reference internal" href="backends-vulkan.html"><span class="doc std std-doc">Vulkan (Android GPU)</span></a></p></li>
+<li><p><a class="reference internal" href="backends-qualcomm.html"><span class="doc std std-doc">Qualcomm NPU</span></a></p></li>
+<li><p><a class="reference internal" href="backends-mediatek.html"><span class="doc std std-doc">MediaTek NPU</span></a></p></li>
+<li><p><a class="reference internal" href="backends-arm-ethos-u.html"><span class="doc std std-doc">Arm Ethos-U NPU</span></a></p></li>
+<li><p><a class="reference internal" href="backends-cadence.html"><span class="doc std std-doc">Cadence DSP</span></a></p></li>
 </ul>
-</li>
-<li><p>Install CMake version 3.19 or later:</p>
-<ul class="simple">
-<li><p>Run <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">cmake</span></code> or <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">cmake</span></code>.</p></li>
-</ul>
-</li>
-</ol>
 </div>
-<div class="section" id="configure-the-cmake-build">
-<h2>Configure the CMake Build<a class="headerlink" href="#configure-the-cmake-build" title="Permalink to this heading">¶</a></h2>
-<p>Follow these steps after cloning or pulling the upstream repo, since the build
-dependencies may have changed.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
-<span class="nb">cd</span><span class="w"> </span>executorch
+</div>
+<div class="section" id="model-preparation">
+<h2>Model Preparation<a class="headerlink" href="#model-preparation" title="Permalink to this heading">¶</a></h2>
+<p>The export process takes in a standard PyTorch model, typically a <code class="docutils literal notranslate"><span class="pre">torch.nn.Module</span></code>. This can be an custom model definition, or a model from an existing source, such as TorchVision or HuggingFace. See <a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started with ExecuTorch</span></a> for an example of lowering a TorchVision model.</p>
+<p>Model export is done from Python. This is commonly done through a Python script or from an interactive Python notebook, such as Jupyter or Colab. The example below shows instantiation and inputs for a simple PyTorch model. The inputs are prepared as a tuple of torch.Tensors, and the model can run with these inputs.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="c1"># Clean and configure the CMake build system. It&#39;s good practice to do this</span>
-<span class="c1"># whenever cloning or pulling the upstream repo.</span>
-./install_executorch.sh<span class="w"> </span>--clean
-<span class="o">(</span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
-</pre></div>
-</div>
-<p>Once this is done, you don’t need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.</p>
-<div class="section" id="cmake-build-options">
-<h3>CMake Build Options<a class="headerlink" href="#cmake-build-options" title="Permalink to this heading">¶</a></h3>
-<p>The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release
-</pre></div>
-</div>
-<p>To further optimize the release build for size, use both:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
--DOPTIMIZE_SIZE<span class="o">=</span>ON
-</pre></div>
-</div>
-<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CMakeLists.txt">CMakeLists.txt</a></p>
-</div>
-</div>
-<div class="section" id="build-the-runtime-components">
-<h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this heading">¶</a></h2>
-<p>Build all targets with</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
-<span class="nb">cd</span><span class="w"> </span>executorch
+<span class="k">class</span><span class="w"> </span><span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">AdaptiveAvgPool2d</span><span class="p">([[</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">]])</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">seq</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">y</span>
 
-<span class="c1"># Build using the configuration that you previously generated under the</span>
-<span class="c1"># `cmake-out` directory.</span>
-<span class="c1">#</span>
-<span class="c1"># NOTE: The `-j` argument specifies how many jobs/processes to use when</span>
-<span class="c1"># building, and tends to speed up the build significantly. It&#39;s typical to use</span>
-<span class="c1"># &quot;core count + 1&quot; as the `-j` value.</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j9
+<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">16</span><span class="p">,</span><span class="mi">16</span><span class="p">),)</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">inputs</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model output: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<div class="section" id="use-an-example-app-executor-runner-to-execute-a-pte-file">
-<h2>Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file<a class="headerlink" href="#use-an-example-app-executor-runner-to-execute-a-pte-file" title="Permalink to this heading">¶</a></h2>
-<p>First, generate an <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> or other ExecuTorch program file using the
-instructions as described in
-<span class="xref myst">Setting up ExecuTorch</span>.</p>
-<p>Then, pass it to the command line tool:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="w"> </span>path/to/add.pte
-</pre></div>
-</div>
-<p>If it worked, you should see the message “Model executed successfully” followed
-by the output values.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000526</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">82</span><span class="p">]</span> <span class="n">Model</span> <span class="n">file</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span> <span class="ow">is</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000595</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">91</span><span class="p">]</span> <span class="n">Using</span> <span class="n">method</span> <span class="n">forward</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000612</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">138</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">planned</span> <span class="n">buffer</span> <span class="mi">0</span><span class="p">,</span> <span class="n">size</span> <span class="mf">48.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000669</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">161</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000685</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">171</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000764</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">180</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000770</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">184</span><span class="p">]</span> <span class="mi">1</span> <span class="n">outputs</span><span class="p">:</span> 
-<span class="n">Output</span> <span class="mi">0</span><span class="p">:</span> <span class="n">tensor</span><span class="p">(</span><span class="n">sizes</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mf">2.</span><span class="p">])</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="cross-compilation">
-<h2>Cross compilation<a class="headerlink" href="#cross-compilation" title="Permalink to this heading">¶</a></h2>
-<p>Following are instruction on how to perform cross compilation for Android and iOS.</p>
-<div class="section" id="android">
-<h3>Android<a class="headerlink" href="#android" title="Permalink to this heading">¶</a></h3>
-<ul class="simple">
-<li><p>Prerequisite: <a class="reference external" href="https://developer.android.com/ndk">Android NDK</a>, choose one of the following:</p>
-<ul>
-<li><p>Option 1: Download Android Studio by following the instructions to <a class="reference external" href="https://developer.android.com/studio/projects/install-ndk">install ndk</a>.</p></li>
-<li><p>Option 2: Download Android NDK directly from <a class="reference external" href="https://developer.android.com/ndk/downloads">here</a>.</p></li>
-</ul>
-</li>
-</ul>
-<p>Assuming Android NDK is available, run:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Run the following lines from the `executorch/` folder</span>
-./install_executorch.sh<span class="w"> </span>--clean
-mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
+<div class="section" id="export-and-lowering">
+<h2>Export and Lowering<a class="headerlink" href="#export-and-lowering" title="Permalink to this heading">¶</a></h2>
+<p>To actually export and lower the model, call <code class="docutils literal notranslate"><span class="pre">export</span></code>, <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>, and <code class="docutils literal notranslate"><span class="pre">to_executorch</span></code> in sequence. This yields an ExecuTorch program which can be serialized to a file. Putting it all together, lowering the example model above using the XNNPACK delegate for mobile CPU performance can be done as follows:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dim</span><span class="p">,</span> <span class="n">export</span>
 
-<span class="c1"># point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed</span>
-cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>/Users/<span class="o">{</span>user_name<span class="o">}</span>/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake<span class="w">  </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span>..
+<span class="k">class</span><span class="w"> </span><span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">AdaptiveAvgPool2d</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">])</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">seq</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">y</span>
 
-<span class="nb">cd</span><span class="w">  </span>..
-cmake<span class="w"> </span>--build<span class="w">  </span>cmake-android-out<span class="w">  </span>-j9
+<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">16</span><span class="p">,</span><span class="mi">16</span><span class="p">),)</span>
+<span class="n">dynamic_shapes</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="mi">2</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;h&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+        <span class="mi">3</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+    <span class="p">}</span>
+<span class="p">}</span>
 
-adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/executorch
-<span class="c1"># push the binary to an Android device</span>
-adb<span class="w"> </span>push<span class="w">  </span>cmake-android-out/executor_runner<span class="w">  </span>/data/local/tmp/executorch
-<span class="c1"># push the model file</span>
-adb<span class="w"> </span>push<span class="w">  </span>add.pte<span class="w">  </span>/data/local/tmp/executorch
+<span class="n">exported_program</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shapes</span><span class="p">)</span>
+<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">exported_program</span><span class="p">,</span>
+    <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
-</div>
-<div class="section" id="ios">
-<h3>iOS<a class="headerlink" href="#ios" title="Permalink to this heading">¶</a></h3>
-<p>For iOS we’ll build <a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle">frameworks</a> instead of static libraries, that will also contain the public headers inside.</p>
-<ol class="arabic simple">
-<li><p>Install Xcode from the
-<a class="reference external" href="https://apps.apple.com/app/xcode/id497799835">Mac App Store</a> and then install
-the Command Line Tools using the terminal:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>xcode-select<span class="w"> </span>--install
+<p>This yields a <code class="docutils literal notranslate"><span class="pre">model.pte</span></code> file which can be run on mobile devices.</p>
+<div class="section" id="supporting-varying-input-sizes-dynamic-shapes">
+<h3>Supporting Varying Input Sizes (Dynamic Shapes)<a class="headerlink" href="#supporting-varying-input-sizes-dynamic-shapes" title="Permalink to this heading">¶</a></h3>
+<p>The PyTorch export process uses the example inputs provided to trace through the model and reason about the size and type of tensors at each step. Unless told otherwise, export will assume a fixed input size equal to the example inputs and will use this information to optimize the model.</p>
+<p>Many models require support for varying input sizes. To support this, export takes a <code class="docutils literal notranslate"><span class="pre">dynamic_shapes</span></code> parameter, which informs the compiler of which dimensions can vary and their bounds. This takes the form of a nested dictionary, where keys correspond to input names and values specify the bounds for each input.</p>
+<p>In the example model, inputs are provided as 4-dimensions tensors following the standard convention of batch, channels, height, and width (NCHW). An input with the shape <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">3,</span> <span class="pre">16,</span> <span class="pre">16]</span></code> indicates 1 batch, 3 channels, and a height and width of 16.</p>
+<p>Suppose your model supports images with sizes between 16x16 and 1024x1024. The shape bounds can be specified as follows:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">dynamic_shapes</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="mi">2</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;h&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+        <span class="mi">3</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="n">ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shapes</span><span class="p">)</span>
 </pre></div>
 </div>
-<ol class="arabic simple" start="2">
-<li><p>Build the frameworks:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh
+<p>In the above example, <code class="docutils literal notranslate"><span class="pre">&quot;x&quot;</span></code> corresponds to the parameter name in <code class="docutils literal notranslate"><span class="pre">Model.forward</span></code>. The 2 and 3 keys correpond to dimensions 2 and 3, which are height and width. As there are no specifications for batch and channel dimensions, these values are fixed according to the example inputs.</p>
+<p>ExecuTorch uses the shape bounds both to optimize the model and to plan memory for model execution. For this reason, it is advised to set the dimension upper bounds to no higher than needed, as higher bounds increase memory consumption.</p>
+<p>For more complex use cases, dynamic shape specification allows for mathematical relationships between dimensions. For more information on dynamic shape specification, see <a class="reference external" href="https://pytorch.org/docs/stable/export.html#expressing-dynamism">Expressing Dynamism</a>.</p>
+</div>
+</div>
+<div class="section" id="testing-the-model">
+<h2>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h2>
+<p>Before integrating the runtime code, it is common to test the exported model from Python. This can be used to evaluate model accuracy and sanity check behavior before moving to the target device. Note that not all hardware backends are available from Python, as they may require specialized hardware to function. See the specific backend documentation for more information on hardware requirements and the availablilty of simulators. The XNNPACK delegate used in this example is always available on host machines.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+<span class="n">input_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
+<span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
 </pre></div>
 </div>
-<p>Run the above command with <code class="docutils literal notranslate"><span class="pre">--help</span></code> flag to learn more on how to build additional backends
-(like <a class="reference internal" href="build-run-coreml.html"><span class="doc std std-doc">Core ML</span></a>, <a class="reference internal" href="build-run-mps.html"><span class="doc std std-doc">MPS</span></a> or XNNPACK), etc.
-Note, some backends may require additional dependencies and certain versions of Xcode and iOS.</p>
-<ol class="arabic simple" start="3">
-<li><p>Copy over the generated <code class="docutils literal notranslate"><span class="pre">.xcframework</span></code> bundles to your Xcode project, link them against
-your targets and don’t forget to add an extra linker flag <code class="docutils literal notranslate"><span class="pre">-all_load</span></code>.</p></li>
-</ol>
-<p>Check out the <a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">iOS Demo App</span></a> tutorial for more info.</p>
-</div>
+<p>For more information, see <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.</p>
 </div>
 <div class="section" id="next-steps">
-<h2>Next steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
-<p>You have successfully cross-compiled <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:</p>
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
+<p>The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See <a class="reference external" href="https://pytorch.org/docs/main/export.html">torch.export</a> and <a class="reference internal" href="export-to-executorch-api-reference.html"><span class="doc std std-doc">Export API Reference</span></a> for more information.</p>
+<p>For advanced use cases, see the following:</p>
 <ul class="simple">
-<li><p><span class="xref myst">Selective build</span> to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.</p></li>
-<li><p>Tutorials on building <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">Android</span></a> and <a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">iOS</span></a> demo apps.</p></li>
-<li><p>Tutorials on deploying applications to embedded devices such as <a class="reference internal" href="executorch-arm-delegate-tutorial.html"><span class="doc std std-doc">ARM Cortex-M/Ethos-U</span></a> and <a class="reference internal" href="build-run-xtensa.html"><span class="doc std std-doc">XTensa HiFi DSP</span></a>.</p></li>
+<li><p><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization Overview</span></a> for information on quantizing models to reduce inference time and memory footprint.</p></li>
+<li><p><a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">Memory Planning</span></a> for information on controlling memory placement and planning.</p></li>
+<li><p><a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">Custom Compiler Passes</span></a> for information on writing custom compiler passes.</p></li>
+<li><p><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Export IR Specification</span></a> for information on the intermediate representation generated by export.</p></li>
 </ul>
 </div>
 </div>
@@ -690,10 +677,10 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="getting-started-faqs.html" class="btn btn-neutral float-right" title="FAQs and Common Issues" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="using-executorch-android.html" class="btn btn-neutral float-right" title="Using ExecuTorch on Android" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="export-overview.html" class="btn btn-neutral" title="Exporting to ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="getting-started.html" class="btn btn-neutral" title="Getting Started with ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -727,21 +714,20 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building with CMake</a><ul>
-<li><a class="reference internal" href="#targets-built-by-the-cmake-build-system">Targets Built by the CMake Build System</a></li>
-<li><a class="reference internal" href="#one-time-setup-to-prepare-for-cmake-build">One-time setup to prepare for CMake Build</a></li>
-<li><a class="reference internal" href="#configure-the-cmake-build">Configure the CMake Build</a><ul>
-<li><a class="reference internal" href="#cmake-build-options">CMake Build Options</a></li>
+<li><a class="reference internal" href="#">Model Export and Lowering</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#the-export-and-lowering-process">The Export and Lowering Process</a></li>
+<li><a class="reference internal" href="#hardware-backends">Hardware Backends</a><ul>
+<li><a class="reference internal" href="#available-backends">Available Backends</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#build-the-runtime-components">Build the runtime components</a></li>
-<li><a class="reference internal" href="#use-an-example-app-executor-runner-to-execute-a-pte-file">Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a></li>
-<li><a class="reference internal" href="#cross-compilation">Cross compilation</a><ul>
-<li><a class="reference internal" href="#android">Android</a></li>
-<li><a class="reference internal" href="#ios">iOS</a></li>
+<li><a class="reference internal" href="#model-preparation">Model Preparation</a></li>
+<li><a class="reference internal" href="#export-and-lowering">Export and Lowering</a><ul>
+<li><a class="reference internal" href="#supporting-varying-input-sizes-dynamic-shapes">Supporting Varying Input Sizes (Dynamic Shapes)</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#next-steps">Next steps</a></li>
+<li><a class="reference internal" href="#testing-the-model">Testing the Model</a></li>
+<li><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>
 </li>
 </ul>
