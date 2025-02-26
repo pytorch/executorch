@@ -386,7 +386,7 @@ jobs:
         bash backends/cadence/install_requirements.sh
 
         # run python unittest
-        python -m examples.cadence.operators.test_g3_ops
+        python -m examples.cadence.models.resnet50
 
   unittest:
     uses: ./.github/workflows/_unittest.yml
