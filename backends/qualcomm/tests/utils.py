@@ -235,6 +235,16 @@ class TestQNN(unittest.TestCase):
 
         return input_list, ref_outputs, pte_fname
 
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
     def verify_output(  # noqa: C901
         self,
         module: torch.nn.Module,
