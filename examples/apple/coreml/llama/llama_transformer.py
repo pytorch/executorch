@@ -131,6 +131,8 @@ class RMSNorm(torch.nn.Module):
         # Using torch.norm and preserving this op in CoreML improves stability
         # Note, we ignore eps, but could add it by using torch.norm(torch.concat(x, sqrt(n*eps))) in the denominator
         # In future, we want to add CoreML support for the functional RMSNorm op
+        # We have yet to do large scale evaluations on the numeric stability of this solution, but note that
+        # it appears better than what exists currently (removing FP32 casts and using FP16)
         rms_norm_eps0 = (
             x * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
         ) / torch.linalg.vector_norm(x, dim=-1, keepdim=True)
