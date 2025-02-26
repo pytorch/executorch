@@ -76,7 +76,7 @@ jobs:
         conda activate "${CONDA_ENV}"
         # Debug
         which pip
-        PYTHON_EXECUTABLE=python bash ./install_executorch.sh --editable-mode --pybind xnnpack --use-pt-pinned-commit
+        PYTHON_EXECUTABLE=python bash ./install_executorch.sh --editable --pybind xnnpack --use-pt-pinned-commit
         # Try to import extension library
         python -c "from executorch.extension.llm.custom_ops import custom_ops"
 

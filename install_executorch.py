@@ -65,6 +65,7 @@ REQUIRED_SUBMODULES = {
     "prelude": "BUCK",
     "pthreadpool": "CMakeLists.txt",
     "pybind11": "CMakeLists.txt",
+    "shim": "BUCK",
     "XNNPACK": "CMakeLists.txt",
 }
 
@@ -234,7 +235,9 @@ def main(args):
             "-m",
             "pip",
             "install",
-            "-e" if args.editable_mode else "",
+        ]
+        + (["--editable"] if args.editable else [])
+        + [
             ".",
             "--no-build-isolation",
             "-v",
