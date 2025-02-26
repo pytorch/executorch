@@ -1,4 +1,4 @@
-# FAQs and Common Issues
+# Frequently Asked Questions
 
 This page summarizes frequently asked questions and provides guidance on issues that commonly occur when adopting ExecuTorch.
 
