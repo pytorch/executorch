@@ -1,4 +1,4 @@
-# ExecuTorch XNNPACK delegate
+# XNNPACK Delegate Internals
 
 This is a high-level overview of the ExecuTorch XNNPACK backend delegate. This high performance delegate is aimed to reduce CPU inference latency for ExecuTorch models. We will provide a brief introduction to the XNNPACK library and explore the delegate’s overall architecture and intended use cases.
 

@@ -1,4 +1,4 @@
-# Building and Running ExecuTorch with MediaTek Backend
+# MediaTek Backend
 
 MediaTek backend empowers ExecuTorch to speed up PyTorch models on edge devices that equips with MediaTek Neuron Processing Unit (NPU). This document offers a step-by-step guide to set up the build environment for the MediaTek ExecuTorch libraries.
 
@@ -11,9 +11,9 @@ MediaTek backend empowers ExecuTorch to speed up PyTorch models on edge devices 
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Setting up ExecuTorch](getting-started-setup.md)
-* [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
+* [Introduction to ExecuTorch](./intro-how-it-works.md)
+* [Getting Started](./getting-started.md)
+* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
 :::
 ::::
 
@@ -34,7 +34,7 @@ MediaTek backend empowers ExecuTorch to speed up PyTorch models on edge devices 
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) guide for detailed instructions on setting up the ExecuTorch environment.
+1. **Setup ExecuTorch Environment**: Refer to the [Getting Started](getting-started.md) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup MediaTek Backend Environment**
 - Install the dependent libs. Ensure that you are inside `backends/mediatek/` directory
