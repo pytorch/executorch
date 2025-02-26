@@ -1,15 +1,11 @@
-# Using Android prebuilt libraries (AAR)
+# Using Android prebuilt library (AAR)
 
-We provide two prebuilt Android libraries (AAR), `executorch.aar` for generic use case (image/audio processing) and `executorch_llama.aar` for LLAMA use case.
+We provide a prebuilt Android library (AAR), `executorch.aar` for both generic (image/audio processing) and LLAMA use case.
 
-## Contents of libraries
+## Contents of library
 - `executorch.aar`
   - [Java library](https://github.com/pytorch/executorch/tree/main/extension/android/src/main/java/org/pytorch/executorch)
-  - JNI contains the JNI binding for [NativePeer.java](https://github.com/pytorch/executorch/blob/main/extension/android/src/main/java/org/pytorch/executorch/NativePeer.java) and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, and Quantized kernels.
-    - Comes with two ABI variants, arm64-v8a and x86_64.
-- `executorch_llama.aar`
-  - [Java library](https://github.com/pytorch/executorch/tree/main/extension/android/src/main/java/org/pytorch/executorch) (Note: it contains the same Java classes as the previous Java, but it does not contain the JNI binding for generic Module/NativePeer Java code).
-  - JNI contains the JNI binding for [LlamaModule.java](https://github.com/pytorch/executorch/blob/main/extension/android/src/main/java/org/pytorch/executorch/LlamaModule.java) and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.
+  - JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.
     - Comes with two ABI variants, arm64-v8a and x86_64.
 
 ## Downloading AAR
