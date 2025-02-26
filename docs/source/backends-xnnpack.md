@@ -121,4 +121,3 @@ target_link_libraries(
 ```
 
 No additional steps are necessary to use the backend beyond linking the target. Any XNNPACK-delegated .pte file will automatically run on the registered backend.
-
