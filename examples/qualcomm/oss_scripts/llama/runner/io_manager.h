@@ -139,6 +139,11 @@ class ShiftPointerIoMgr : public IoMgrBase {
   };
 
  private:
+  // If the cache length is zero, it indicates a BERT model, which does not use
+  // position ids or KV cache inputs.
+  bool is_bert() const {
+    return prefill_cache_len_ == 0;
+  }
   std::unique_ptr<executorch::aten::TensorImpl> kv_input_toks_;
   std::unique_ptr<executorch::aten::TensorImpl> kv_input_pos_;
   std::unique_ptr<executorch::aten::TensorImpl> kv_attention_mask_;
@@ -177,7 +182,6 @@ class ShiftPointerIoMgr : public IoMgrBase {
   std::string prefill_forward_name_;
   std::string kv_forward_name_;
   const bool use_int64_token_{false};
-  const bool is_bert_{false};
 };
 
 class SmartMaskIoMgr : public IoMgrBase {
@@ -270,6 +274,11 @@ class SmartMaskIoMgr : public IoMgrBase {
   };
 
  private:
+  // If the cache length is zero, it indicates a BERT model, which does not use
+  // position ids or KV cache inputs.
+  bool is_bert() const {
+    return prefill_cache_len_ == 0;
+  }
   std::unique_ptr<executorch::aten::TensorImpl> kv_input_toks_;
   std::unique_ptr<executorch::aten::TensorImpl> kv_input_pos_;
   std::unique_ptr<executorch::aten::TensorImpl> kv_attention_mask_;
@@ -308,9 +317,6 @@ class SmartMaskIoMgr : public IoMgrBase {
   std::string prefill_forward_name_;
   std::string kv_forward_name_;
   const bool use_int64_token_{false};
-  // If the cache length is zero, it indicates a BERT model, which does not use
-  // position ids or KV cache inputs.
-  const bool is_bert_{false};
 };
 
 } // namespace example
