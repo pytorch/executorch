@@ -11,13 +11,13 @@ import typing
 from typing import final, Optional, Sequence, Type
 
 import torch
-
 import torch.fx as fx
+
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
@@ -90,6 +90,7 @@ def tosa_support_factory(
     if not tosa_spec.support_float():
         negative_checks.append(NeedsDecompositionCheck())
         negative_checks.append(CheckProperQuantization())
+        negative_checks.append(EthosU55NotSupported(tosa_spec))
     return chain(
         any_chain(
             BaseTOSASupportList(),
@@ -111,6 +112,9 @@ class BaseTOSASupportList(OperatorSupportBase):
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.bitwise_and.Tensor,
+            exir_ops.edge.aten.bitwise_or.Tensor,
+            exir_ops.edge.aten.bitwise_xor.Tensor,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
             exir_ops.edge.aten.clamp.default,
@@ -168,6 +172,31 @@ class BaseTOSASupportList(OperatorSupportBase):
         ]
 
         return supported
+
+
+class EthosU55NotSupported(OperatorSupportBase):
+    """
+    Certain operators are not supported on U55. These are listed in `unsupported` in
+    is_node_supported().
+    """
+
+    def __init__(self, tosa_spec: TosaSpecification):
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
+            unsupported_ops = [
+                exir_ops.edge.aten.bitwise_and.Tensor,
+                exir_ops.edge.aten.bitwise_or.Tensor,
+                exir_ops.edge.aten.bitwise_xor.Tensor,
+            ]
+
+            if node.target in unsupported_ops:
+                return False
+
+        return True
 
 
 class NeedsDecompositionCheck(OperatorSupportBase):
@@ -310,11 +339,11 @@ class CheckProperQuantization(OperatorSupportBase):
         if not input_quantized:
             return False
 
-        output_quantized = output_quantized or all(
-            (output_node.target == self.q_op)
-            or (not get_first_fake_tensor(output_node).dtype.is_floating_point)
-            for output_node in node.users
+        all_q_users = all(
+            (output_node.target == self.q_op) for output_node in node.users
         )
+        is_floating_point = get_first_fake_tensor(node).dtype.is_floating_point
+        output_quantized = output_quantized or all_q_users or not is_floating_point
 
         if not output_quantized:
             return False

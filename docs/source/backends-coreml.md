@@ -1,4 +1,4 @@
-# Building and Running ExecuTorch with Core ML Backend
+# Core ML Backend
 
 Core ML delegate uses Core ML APIs to enable running neural networks via Apple's hardware acceleration. For more about Core ML you can read [here](https://developer.apple.com/documentation/coreml). In this tutorial, we will walk through the steps of lowering a PyTorch model to Core ML delegate
 
@@ -11,9 +11,9 @@ Core ML delegate uses Core ML APIs to enable running neural networks via Apple's
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Setting up ExecuTorch](getting-started-setup.md)
-* [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
+* [Introduction to ExecuTorch](./intro-how-it-works.md)
+* [Getting Started](./getting-started.md)
+* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
 * [ExecuTorch iOS Demo App](demo-apps-ios.md)
 :::
 ::::
