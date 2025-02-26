@@ -61,7 +61,7 @@ class TestLlama(unittest.TestCase):
             logging.warning(
                 "Skipping Llama test because of lack of input. To run use --llama_inputs <.pt> <.json>"
             )
-            return
+            return None, None, None
 
         assert os.path.isfile(checkpoint) and os.path.isfile(
             params_file
@@ -104,6 +104,9 @@ class TestLlama(unittest.TestCase):
 
     def test_llama_tosa_MI(self):
         llama_model, llama_inputs, llama_meta = self.prepare_model()
+
+        if llama_model is None and llama_inputs is None and llama_meta is None:
+            return
 
         with torch.no_grad():
             (
