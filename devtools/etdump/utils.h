@@ -13,7 +13,8 @@ namespace internal {
  * Aligns a pointer to the next multiple of `alignment`.
  *
  * @param[in] ptr Pointer to align.
- * @param[in] alignment Alignment to align to. Must be a power of 2.
+ * @param[in] alignment Alignment to align to. Must be a power of 2 and cannot
+ * be 0.
  *
  * @returns A pointer aligned to `alignment`.
  */
