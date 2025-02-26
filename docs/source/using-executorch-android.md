@@ -1,4 +1,8 @@
-# Using Android prebuilt library (AAR)
+# Using ExecuTorch on Android
+
+To use from Android, ExecuTorch provides Java API bindings and Android platform integration, available as a AAR file. The ExecuTorch C++ APIs can also be used from Android native.
+
+## Installation
 
 We provide a prebuilt Android library (AAR), `executorch.aar` for both generic (image/audio processing) and LLAMA use case.
 
@@ -6,7 +10,7 @@ We provide a prebuilt Android library (AAR), `executorch.aar` for both generic (
 - `executorch.aar`
   - [Java library](https://github.com/pytorch/executorch/tree/main/extension/android/src/main/java/org/pytorch/executorch)
   - JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.
-    - Comes with two ABI variants, arm64-v8a and x86_64.
+    - Comes with two ABI variants, arm64-v8a and x86\_64.
 
 ## Downloading AAR
 [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar)
@@ -31,3 +35,19 @@ dependencies {
 ```
 
 Now you can compile your app with the ExecuTorch Android library.
+
+### Building from Source
+
+TODO Instructions on re-creating and customizing the Android AAR.
+
+## Android Backends
+
+TODO Describe commonly used backends, including XNN, Vulkan, and NPUs.
+
+## Runtime Integration
+
+TODO Code sample in Java
+
+## Next Steps
+
+TODO Link to Java API reference and other relevant material

@@ -1,6 +1,8 @@
-# Integrating and Running ExecuTorch on Apple Platforms
+# Using ExecuTorch on iOS
 
-**Author:** [Anthony Shoumikhin](https://github.com/shoumikhin)
+ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML and Metal Performance Shaders (MPS) for hardware-accelerated execution on Apple platforms.
+
+## Integration
 
 The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
 
@@ -16,8 +18,6 @@ The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebu
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
 **Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed.
-
-## Integration
 
 ### Swift Package Manager
 
@@ -84,9 +84,9 @@ swift package resolve
 swift build
 ```
 
-### Local Build
+### Building from Source
 
-Another way to integrate the ExecuTorch runtime is to build the necessary components from sources locally and link against them. This route is more involved but certainly doable.
+Another way to integrate the ExecuTorch runtime is to build the necessary components from sources locally and link against them. This is useful when customizing the runtime.
 
 1. Install [Xcode](https://developer.apple.com/xcode/resources/) 15+ and Command Line Tools:
 
@@ -106,7 +106,7 @@ git clone https://github.com/pytorch/executorch.git --depth 1 --recurse-submodul
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](build-run-coreml.md) or [MPS](build-run-mps.md), if you plan to build them as well:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md), if you plan to build them as well:
 
 ```bash
 ./install_executorch.sh --pybind coreml mps xnnpack
@@ -195,7 +195,7 @@ import ExecuTorch
 
 ### Logging
 
-We provide extra APIs for logging in Objective-C and Swift as a lightweight wrapper of the internal ExecuTorch machinery. To use it, just import the main framework header in Objective-C. Then use the `ExecuTorchLog` interface (or the `Log` class in Swift) to subscribe your own implementation of the `ExecuTorchLogSink` protocol (or `LogSink` in Swift) to listen to log events.
+ExecuTorch provides extra APIs for logging in Objective-C and Swift as a lightweight wrapper of the internal ExecuTorch machinery. To use it, just import the main framework header in Objective-C. Then use the `ExecuTorchLog` interface (or the `Log` class in Swift) to subscribe your own implementation of the `ExecuTorchLogSink` protocol (or `LogSink` in Swift) to listen to log events.
 
 ```objectivec
 #import <ExecuTorch/ExecuTorch.h>
