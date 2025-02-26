@@ -843,6 +843,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
     )
 
     runner_cmd = ""
+    performance_output_path = "outputs/inference_speed.txt"
     if args.enable_x86_64:
         # x86 emulator is intended for CI and not performance. Check only the first few tokens.
         seq_len = min(seq_len, 16)
@@ -862,6 +863,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
                 f"--output_path {args.artifact}/outputs/outputs.txt",
+                f"--performance_output_path {performance_output_path}",
                 f"--kv_updater ShiftPointer",
                 runner_args,
             ]
@@ -874,7 +876,6 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
         )
         post_process()
     else:
-        performance_output_path = "outputs/inference_speed.txt"
         runner_cmd = " ".join(
             [
                 f"cd {workspace} &&",
