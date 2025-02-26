@@ -1,7 +1,7 @@
 # @noautodeps
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_library(
+runtime.python_library(
     name = "arm_partitioner",
     srcs = [
         "ethosu_backend.py",
@@ -18,7 +18,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "arm_backend",
     srcs = [
         "arm_backend.py",
@@ -37,7 +37,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "process_node",
     srcs = ["process_node.py"],
     typing = True,
@@ -51,7 +51,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "arm_vela",
     srcs = [
         "arm_vela.py",
@@ -62,7 +62,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "tosa_mapping",
     srcs = [
         "tosa_mapping.py",
@@ -74,7 +74,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "tosa_quant_utils",
     srcs = [
         "tosa_quant_utils.py",
@@ -89,7 +89,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "tosa_specification",
     srcs = [
         "tosa_specification.py",
@@ -101,7 +101,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "tosa_utils",
     srcs = [
         "tosa_utils.py",
@@ -114,7 +114,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "arm_model_evaluator",
     srcs = [
         "util/arm_model_evaluator.py",

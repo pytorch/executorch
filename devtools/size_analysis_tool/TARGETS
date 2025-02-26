@@ -1,10 +1,10 @@
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "size_analysis_tool_lib",
     srcs = [
         "size_analysis_tool.py",
