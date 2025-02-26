@@ -90,7 +90,7 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        return model in ["mv3", "vit", "qwen2_5"]  # TODO: remove, just to test the ci
+        return model in ["mv3", "vit"]
     elif event == "push":
         # These are super slow. Only run it periodically
         return model not in ["dl3", "edsr", "emformer_predict"]
@@ -104,8 +104,12 @@ def model_should_run_on_target_os(model: str, target_os: str) -> bool:
     For example, a big model can be disabled in macos due to the limited macos resources.
     """
     if target_os == "macos":
+        # Disabled in macos due to limited resources, and should stay that way even if
+        # we otherwise re-enable.
         return model not in ["llava"]
-    return True
+    # Disabled globally because we have test-llava-runner-linux that does a more
+    # comprehensive E2E test of llava.
+    return model not in ["llava"]
 
 
 def export_models_for_ci() -> dict[str, dict]:
