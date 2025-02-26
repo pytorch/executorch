@@ -3118,16 +3118,6 @@ class TestQNNQuantizedUtils(TestQNN):
 
 
 class TestExampleLLMScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_llama3_2_1b(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -3285,16 +3275,6 @@ class TestExampleLLMScript(TestQNN):
 
 
 class TestExampleOssScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_conv_former(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -3666,16 +3646,6 @@ class TestExampleOssScript(TestQNN):
 
 
 class TestExampleQaihubScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_utils_export(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             module = ContextBinaryExample()  # noqa: F405
@@ -3904,16 +3874,6 @@ class TestExampleQaihubScript(TestQNN):
 
 
 class TestExampleScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_mobilenet_v2(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -4179,38 +4139,6 @@ class TestExampleScript(TestQNN):
                 self.assertGreaterEqual(msg["MPA"], 0.70)
                 self.assertGreaterEqual(msg["MIoU"], 0.55)
 
-    def test_custom_op(self):
-        if not self.required_envs([self.op_package_dir]):
-            self.skipTest("missing required envs")
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_1.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--op_package_dir",
-            self.op_package_dir,
-            "--build_op_package",
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            self.assertTrue(msg["is_close"])
-
     @unittest.skip("dynamic shape inputs appear in recent torch.export.export")
     def test_mobilebert(self):
         if not self.required_envs([self.pretrained_weight]):
@@ -4355,6 +4283,40 @@ class TestExampleScript(TestQNN):
             self.assertTrue(
                 Path("{0}/{1}.pte".format(tmp_dir, self.model_name)).exists()
             )
+
+
+class TestUtilScript(TestQNN):
+    def test_custom_op(self):
+        if not self.required_envs([self.op_package_dir]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_1.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            self.op_package_dir,
+            "--build_op_package",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
 
 
 def setup_environment():
