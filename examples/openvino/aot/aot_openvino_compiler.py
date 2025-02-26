@@ -206,7 +206,7 @@ def validate_model(
 
     subprocess.run(
         [
-            "../../../cmake-openvino-out/examples/openvino/openvino_executor_runner",
+            "../../../cmake-out/examples/openvino/openvino_executor_runner",
             f"--model_path={model_file_name}",
             f"--input_list_path={inp_list_file}",
             f"--output_folder_path={out_path}",
