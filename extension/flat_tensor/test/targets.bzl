@@ -47,9 +47,6 @@ def define_common_targets(is_fbcode=False):
             deps = [
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/flat_tensor:flat_tensor_data_map",
-                "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
-                "//executorch/extension/flat_tensor/serialize:generated_headers",
-                "//executorch/extension/flat_tensor/serialize:schema",
                 "//executorch/runtime/core:named_data_map",
                 "//executorch/runtime/core/exec_aten:lib",
             ],
