@@ -44,6 +44,7 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         self.assertIn("llama3_coreml_ane", ios_configs)
         self.assertIn("llama3_spinquant", ios_configs)
         self.assertIn("llama3_qlora", ios_configs)
+        self.assertIn("llama3_mps_8da4w", ios_configs)
 
     def test_skip_disabled_configs(self):
         # Use patch as a context manager to avoid modifying DISABLED_CONFIGS and BENCHMARK_CONFIGS
@@ -110,7 +111,7 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         result = self.gather_benchmark_configs.generate_compatible_configs(
             model_name, target_os
         )
-        expected = ["llama3_fb16", "llama3_coreml_ane"]
+        expected = ["llama3_fb16", "llama3_coreml_ane", "llama3_mps_8da4w"]
         self.assertEqual(result, expected)
 
         target_os = "android"
