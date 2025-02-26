@@ -907,7 +907,6 @@ class TestQNNFloatingPointModel(TestQNN):
             # Fail during lowering Reopen once resolved
             # MobileBertModelExample(),
             # TorchVisionViTModel(),
-            # Encountered undefined symbol in mainline. Reopen once resolved.
             Wav2LetterModel(),
         ]
         expected_partitions = [
