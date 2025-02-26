@@ -28,6 +28,7 @@ from executorch.exir._serialize._program import (
     deserialize_pte_binary,
     serialize_pte_binary,
 )
+from executorch.exir._serialize.padding import aligned_size
 
 from executorch.exir.schema import (
     BackendDelegate,
@@ -691,10 +692,13 @@ class TestProgram(unittest.TestCase):
         # Create named data segment.
         named_data_buffers = [
             BufferEntry(
-                buffer=self.gen_blob_data(8, b"\x50\x55\x05"), alignment=8
-            ),  # expect lcm(8, 128) = 128
+                buffer=self.gen_blob_data(8, b"\x50\x55\x05"), alignment=3
+            ),  # expect lcm(3, 128) = 384
+            BufferEntry(
+                buffer=self.gen_blob_data(16, b"\x60\x66\x06"), alignment=256
+            ),  # expect lcm(256, 128) = 256
         ]
-        pte_named_data = {"key1": 0}
+        pte_named_data = {"key0": 0, "key1": 1}
         named_data = NamedDataStoreOutput(
             buffers=named_data_buffers, pte_data=pte_named_data, external_data={}
         )
@@ -745,15 +749,30 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(segment_table[1].size, SEGMENT_ALIGNMENT // 2)
         self.assertEqual(segment_table[2].offset, SEGMENT_ALIGNMENT * 2)
         self.assertEqual(segment_table[2].size, SEGMENT_ALIGNMENT + 1)
-        # Named data segment.
-        self.assertEqual(segment_table[3].offset, SEGMENT_ALIGNMENT * 4)
-        self.assertEqual(segment_table[3].size, 8)
+        # Named data segments.
+        expected_offset = aligned_size(
+            (segment_table[2].offset + segment_table[2].size),
+            math.lcm(named_data_buffers[0].alignment, SEGMENT_ALIGNMENT),
+        )
+        self.assertEqual(segment_table[3].offset, expected_offset)
+        self.assertEqual(segment_table[3].size, len(named_data_buffers[0].buffer))
+        expected_offset = aligned_size(
+            (segment_table[3].offset + segment_table[3].size),
+            math.lcm(named_data_buffers[1].alignment, SEGMENT_ALIGNMENT),
+        )
+        self.assertEqual(segment_table[4].offset, expected_offset)
+        self.assertEqual(segment_table[4].size, len(named_data_buffers[1].buffer))
 
         # Named data.
-        # pyre-ignore Incompatible parameter type [6]
-        self.assertEqual(len(program_with_segments.named_data), len(pte_named_data))
-        self.assertEqual(program_with_segments.named_data[0].key, "key1")
-        self.assertEqual(program_with_segments.named_data[0].segment_index, 3)
+        self.assertTrue(program_with_segments.named_data is not None)
+        program_named_data = program_with_segments.named_data
+        self.assertEqual(len(program_named_data), len(pte_named_data))
+
+        # Check named data values.
+        self.assertEqual(program_named_data[0].key, "key0")
+        self.assertEqual(program_named_data[0].segment_index, 3)
+        self.assertEqual(program_named_data[1].key, "key1")
+        self.assertEqual(program_named_data[1].segment_index, 4)
 
         # Check constant_segment index and offsets.
         subsegment_offsets: SubsegmentOffsets = program_with_segments.constant_segment
@@ -837,13 +856,21 @@ class TestProgram(unittest.TestCase):
             + b"\x40\x44\x44",
         )
 
-        # Check named data segment.
+        # Check named data segments
         self.assertEqual(
             segment_data[
                 segment_table[3].offset : segment_table[3].offset
                 + segment_table[3].size
             ],
             named_data_buffers[0].buffer,
+        )
+
+        self.assertEqual(
+            segment_data[
+                segment_table[4].offset : segment_table[4].offset
+                + segment_table[4].size
+            ],
+            named_data_buffers[1].buffer,
         )
 
         # Convert back.
@@ -904,8 +931,8 @@ class TestProgram(unittest.TestCase):
         # pyre-ignore Incompatible parameter type [6]
         self.assertEqual(len(program_with_segments.named_data), len(pte_named_data))
 
-        # Check named_data values.
-        # pyre-ignore Incompatible parameter type [6]
+        # Check Program.named_data values.
+        # pyre-ignore Undefined attribute [16]
         self.assertEqual(program_with_segments.named_data[0].key, "key1")
         self.assertEqual(program_with_segments.named_data[0].segment_index, 0)
         self.assertEqual(program_with_segments.named_data[1].key, "key2")
@@ -915,19 +942,19 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(program_with_segments.named_data[3].key, "key4")
         self.assertEqual(program_with_segments.named_data[3].segment_index, 2)
 
-        # Segment table should contain the named data segments.
+        # Check Program.segments values.
         segment_table: List[DataSegment] = program_with_segments.segments
         self.assertEqual(len(segment_table), 3)
-        self.assertEqual(segment_table[0].offset, 0)
-        self.assertEqual(segment_table[0].size, len(buffers[0].buffer))
-        self.assertEqual(
-            segment_table[1].offset, math.lcm(SEGMENT_ALIGNMENT, buffers[0].alignment)
-        )
-        self.assertEqual(segment_table[1].size, len(buffers[1].buffer))
-        self.assertEqual(
-            segment_table[2].offset, math.lcm(SEGMENT_ALIGNMENT, buffers[1].alignment)
-        )
-        self.assertEqual(segment_table[2].size, len(buffers[2].buffer))
+
+        for i in range(len(segment_table)):
+            segment_length = (
+                segment_table[i - 1].offset + segment_table[i - 1].size if i > 0 else 0
+            )
+            expected_offset = aligned_size(
+                segment_length, math.lcm(SEGMENT_ALIGNMENT, buffers[i].alignment)
+            )
+            self.assertEqual(segment_table[i].offset, expected_offset)
+            self.assertEqual(segment_table[i].size, len(buffers[i].buffer))
 
         # Check the pte data for buffer values.
         segment_data: bytes = pte_data[eh.segment_base_offset :]

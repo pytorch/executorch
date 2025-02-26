@@ -466,26 +466,23 @@ def serialize_pte_binary(
     # each segment begins at the required alignment.
     # Update program.segments with the offsets to each segment.
     segments_data = Cord()
-    prev_alignment = segment_alignment
     for segment in segments:
         prev_end = (
             (program.segments[-1].offset + program.segments[-1].size)
             if program.segments
             else 0
         )
+        alignment = math.lcm(segment_alignment, segment.alignment)
         program.segments.append(
             DataSegment(
-                offset=aligned_size(prev_end, prev_alignment), size=len(segment.data)
+                offset=aligned_size(prev_end, alignment), size=len(segment.data)
             )
         )
         # Add to aggregate segments cord with padding.
-        padding_length = padding_required(len(segments_data), prev_alignment)
+        padding_length = padding_required(len(segments_data), alignment)
         if padding_length > 0:
             segments_data.append(b"\x00" * padding_length)
         segments_data.append(segment.data)
-        # Update alignment for next segment. Take the lcm of the segment
-        # alignment and the segment.alignment.
-        prev_alignment = math.lcm(segment_alignment, segment.alignment)
 
     # Convert to a standard flatbuffer binary.
     result: _FlatbufferResult = _program_json_to_flatbuffer(
