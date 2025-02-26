@@ -36,7 +36,7 @@ For more information on the Module class, see [Running an ExecuTorch Model Using
 
 Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see [Running an ExecuTorch Model in C++ Tutorial](running-a-model-cpp-tutorial.md).
 
-## Building with C++
+## Building with CMake
 
 ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `executorch_module_static` and `executorch_tensor`, if desired.
 
