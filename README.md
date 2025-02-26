@@ -46,7 +46,7 @@ Key value propositions of ExecuTorch are:
   capabilities such as CPUs, NPUs, and DSPs.
 
 ## Getting Started
-To get started you can:
+To get started you can (noop build):
 
 - Visit the [Step by Step Tutorial](https://pytorch.org/executorch/main/index.html) on getting things running locally and deploy a model to a device
 - Use this [Colab Notebook](https://pytorch.org/executorch/stable/getting-started-setup.html#quick-setup-colab-jupyter-notebook-prototype) to start playing around right away
