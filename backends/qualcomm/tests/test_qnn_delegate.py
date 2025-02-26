@@ -55,12 +55,12 @@ import random
 from collections import defaultdict
 from typing import List
 
-from executorch.backends.qualcomm._passes.fuse_consecutive_transpose import (
+from executorch.backends.qualcomm._passes import (
     FuseConsecutiveTranspose,
+    InsertIOQDQ,
+    InsertRequantize,
+    LayoutTransform,
 )
-from executorch.backends.qualcomm._passes.insert_io_qdq import InsertIOQDQ
-from executorch.backends.qualcomm._passes.insert_requantize import InsertRequantize
-from executorch.backends.qualcomm._passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
@@ -107,6 +107,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 512, 7, 7),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_any(self):
+        modules = [Any(), Any(dim=[0, 1]), Any(dim=1, keepdim=True)]  # noqa: F405
+        sample_input = (torch.randn(3, 3, 3) > 0,)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_arange(self):
         modules = [
             Arange(start=1, end=11, step=1, dtype=torch.int32),  # noqa: F405
@@ -127,9 +134,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_batch_norm(self):
-        module = BatchNorm(32)  # noqa: F405
+        modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
         sample_input = (torch.randn([4, 32, 16, 16]),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_bmm(self):
         module = Bmm()  # noqa: F405
@@ -155,9 +164,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_clamp(self):
-        module = Clamp()  # noqa: F405
+        modules = [Clamp(), ClampMin(1e-10), ClampMax(1e10)]  # noqa: F405
         sample_input = (torch.randn((9, 4, 5, 3)),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv1d(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
@@ -352,9 +363,17 @@ class TestQNNFloatingPointOperator(TestQNN):
                     test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
                 )
 
-    def test_qnn_backend_expand_copy(self):
-        module = ExpandCopy()  # noqa: F405
+    def test_qnn_backend_expand(self):
+        modules = [ExpandAs(), ExpandCopy()]  # noqa: F405
         sample_input = (torch.randn([3, 1]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full(self):
+        shape = (1, 2, 3, 4)
+        module = Full(0.5, shape)  # noqa: F405
+        sample_input = (torch.randn(shape),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_full_like(self):
@@ -436,6 +455,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_instance_norm_2d(self):
+        modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
+        sample_input = (torch.randn([4, 32, 16, 16]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_interpolate_bilinear_2d(self):
         module = ResizeBilinear2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
@@ -507,6 +533,18 @@ class TestQNNFloatingPointOperator(TestQNN):
                     test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
                 )
 
+    def test_qnn_backend_linalg_vector_norm(self):
+        modules = [
+            LinalgVectorNorm(),  # noqa: F405
+            LinalgVectorNorm(ord=3.5),  # noqa: F405
+            LinalgVectorNorm(dim=1),  # noqa: F405
+            LinalgVectorNorm(dim=1, keepdim=True),  # noqa: F405
+        ]
+        sample_input = (torch.randn([3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_linear(self):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
@@ -559,6 +597,23 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = Neg()  # noqa: F405
         sample_input = (torch.randn(1, 4, 16, 16),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_not_equal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: NotEqual(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: NotEqualConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
 
     def test_qnn_backend_pad(self):
         module = Pad()  # noqa: F405
@@ -970,6 +1025,14 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_any(self):
+        modules = [Any(), Any(dim=[0, 1]), Any(dim=1, keepdim=True)]  # noqa: F405
+        sample_input = (torch.randn(3, 3, 3) > 0,)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input, bypass_check=True)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_arange(self):
         modules = [
             Arange(start=1, end=6, step=0.5, dtype=torch.float32),  # noqa: F405
@@ -993,10 +1056,12 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_batch_norm(self):
-        module = BatchNorm(32)  # noqa: F405
+        modules = [BatchNorm(32), BatchNorm(32, False)]  # noqa: F405
         sample_input = (torch.randn([4, 32, 16, 16]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_bmm(self):
         module = Bmm()  # noqa: F405
@@ -1020,10 +1085,12 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_clamp(self):
-        module = Clamp()  # noqa: F405
+        modules = [Clamp(), ClampMin(1e-10), ClampMax(1e10)]  # noqa: F405
         sample_input = (torch.randn((9, 4, 5, 3)),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv1d(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
@@ -1233,9 +1300,18 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
 
-    def test_qnn_backend_expand_copy(self):
-        module = ExpandCopy()  # noqa: F405
+    def test_qnn_backend_expand(self):
+        modules = [ExpandAs(), ExpandCopy()]  # noqa: F405
         sample_input = (torch.randn([3, 1]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_full(self):
+        shape = (1, 2, 3, 4)
+        module = Full(0.5, shape)  # noqa: F405
+        sample_input = (torch.randn(shape),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1328,6 +1404,14 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_instance_norm_2d(self):
+        modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
+        sample_input = (torch.randn([4, 32, 16, 16]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_interpolate_bilinear_2d(self):
         module = ResizeBilinear2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
@@ -1405,6 +1489,19 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
 
+    def test_qnn_backend_linalg_vector_norm(self):
+        modules = [
+            LinalgVectorNorm(),  # noqa: F405
+            LinalgVectorNorm(ord=3.5),  # noqa: F405
+            LinalgVectorNorm(dim=1),  # noqa: F405
+            LinalgVectorNorm(dim=1, keepdim=True),  # noqa: F405
+        ]
+        sample_input = (torch.randn([3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_linear(self):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
@@ -1476,6 +1573,24 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(1, 4, 16, 16),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_not_equal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: NotEqual(),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4)),
+            },
+            {
+                QCOM_MODULE: NotEqualConstant(0.5),  # noqa: F405
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 2, 3, 4),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
 
     def test_qnn_backend_pad(self):
         module = Pad()  # noqa: F405
@@ -2991,6 +3106,173 @@ class TestQNNQuantizedUtils(TestQNN):
         ), "Generated .dot file does not match the golden file."
 
 
+class TestExampleLLMScript(TestQNN):
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
+    def test_llama3_2_1b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+        assert (
+            self.llama_artifacts is not None
+        ), "Please provide path to llama artifacts"
+
+        prompt = "What is the meaning of life?"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--checkpoint",
+            f"{self.llama_artifacts}/consolidated.00.pth",
+            "--params",
+            f"{self.llama_artifacts}/params.json",
+            "--tokenizer_model",
+            f"{self.llama_artifacts}/tokenizer.model",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a4w",
+            "--temperature",
+            "0",
+            "--llama_model",
+            "llama3_2",
+            "--model_mode",
+            "hybrid",
+            "--prefill_ar_len",
+            "32",
+            "--max_seq_len",
+            "512",
+            "--num_sharding",
+            "4",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        golden_start_with = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>"
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    self.assertTrue(
+                        model_out.startswith(golden_start_with),
+                        f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                    )
+                # x86 does not allow weight sharing, so we don't check pte size.
+                # Inference speed on x86 is slow, so we only check when running on Android
+                if not self.enable_x86_64:
+                    pte_size = msg["pte_size"]
+                    self.assertLessEqual(pte_size, 1300000000)
+                if not self.compile_only and not self.enable_x86_64:
+                    self.assertGreaterEqual(msg["inference_speed"], 66)  # Lanai
+
+    def test_llama_stories_110m(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+        assert (
+            self.llama_artifacts is not None
+        ), "Please provide path to llama artifacts"
+
+        prompt = "Once"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--checkpoint",
+            f"{self.llama_artifacts}/stories110M.pt",
+            "--params",
+            f"{self.llama_artifacts}/params.json",
+            "--tokenizer_model",
+            f"{self.llama_artifacts}/tokenizer.model",
+            "--tokenizer_bin",
+            f"{self.llama_artifacts}/tokenizer.bin",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a4w",
+            "--temperature",
+            "0",
+            "--llama_model",
+            "stories110m",
+            "--model_mode",
+            "hybrid",
+            "--prefill_ar_len",
+            "32",
+            "--max_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        golden_start_with = "Once upon a time,"
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    self.assertTrue(
+                        model_out.startswith(golden_start_with),
+                        f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                    )
+                # x86 does not allow weight sharing, so we don't check pte size
+                if not self.enable_x86_64:
+                    pte_size = msg["pte_size"]
+                    self.assertLessEqual(pte_size, 130000000)
+                if not self.compile_only and not self.enable_x86_64:
+                    self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
+
+
 class TestExampleOssScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -3886,72 +4168,6 @@ class TestExampleScript(TestQNN):
                 self.assertGreaterEqual(msg["MPA"], 0.70)
                 self.assertGreaterEqual(msg["MIoU"], 0.55)
 
-    def test_stories_single_llama(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--checkpoint",
-            f"{self.artifact_dir}/stories110M.pt",
-            "--params",
-            f"{self.artifact_dir}/params.json",
-            "--tokenizer_model",
-            f"{self.artifact_dir}/tokenizer.model",
-            "--tokenizer_bin",
-            f"{self.artifact_dir}/tokenizer.bin",
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            "Once",
-            "--ptq",
-            "16a4w",
-            "--temperature",
-            "0",
-            "--llama_model",
-            "stories110m",
-            "--model_mode",
-            "hybrid",
-            "--prefill_seq_len",
-            "32",
-            "--kv_seq_len",
-            "128",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-
-        golden_start_with = "Once upon a time,"
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                if not self.compile_only:
-                    model_out = msg["result"][0]
-                    self.assertTrue(model_out.startswith(golden_start_with))
-                # x86 does not allow weight sharing, so we don't check pte size
-                if not self.enable_x86_64:
-                    pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 130000000)
-
     @unittest.skip("dynamic shape inputs appear in recent torch.export.export")
     def test_mobilebert(self):
         if not self.required_envs([self.pretrained_weight]):
@@ -4156,6 +4372,18 @@ def setup_environment():
         type=str,
     )
 
+    parser.add_argument(
+        "--pre_gen_pte",
+        help="Run the pre-generated pte in the given directory.",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--llama_artifacts",
+        help="A folder that contains: weight, tokenizer, and params.",
+        type=str,
+    )
+
     args, ns_args = parser.parse_known_args(namespace=unittest)
     TestQNN.host = args.host
     TestQNN.device = args.device
@@ -4174,6 +4402,8 @@ def setup_environment():
     TestQNN.enable_x86_64 = args.enable_x86_64
     TestQNN.dump_intermediate_outputs = args.dump_intermediate_outputs
     TestQNN.compile_only = args.compile_only
+    TestQNN.pre_gen_pte = args.pre_gen_pte
+    TestQNN.llama_artifacts = args.llama_artifacts
 
     return sys.argv[:1] + ns_args
 

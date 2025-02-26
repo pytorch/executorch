@@ -186,6 +186,10 @@ option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension"
        OFF
 )
 
+option(EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension"
+       OFF
+)
+
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
@@ -252,6 +256,11 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
   set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
+  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
@@ -718,6 +727,10 @@ if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor/serialize)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizer)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
 endif()
@@ -753,9 +766,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
-  if(NOT TARGET torch)
-    find_package(Torch CONFIG REQUIRED)
-  endif()
+  find_package_torch()
   find_library(
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )

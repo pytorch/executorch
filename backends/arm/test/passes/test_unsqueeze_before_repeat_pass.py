@@ -10,7 +10,7 @@ from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
     UnsqueezeBeforeRepeatPass,
 )
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[
     torch.Tensor, Dict[str, int], list[str]
@@ -47,7 +47,7 @@ def test_unsqueeze_before_repeat_tosa_MI(test_data):
     """
     module = Repeat()
     data, ops_after_pass, ops_not_after_pass = test_data
-    pipeline = TestPassPipeline(
+    pipeline = PassPipeline(
         module,
         data,
         tosa_version="TOSA-0.80+MI",

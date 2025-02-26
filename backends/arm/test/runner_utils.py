@@ -525,7 +525,7 @@ def corstone320_installed() -> bool:
 
 def get_elf_path(target_board):
     elf_path = os.path.join(
-        "cmake-out",
+        "arm_test",
         f"arm_semihosting_executor_runner_{target_board}",
         "arm_executor_runner",
     )

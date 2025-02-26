@@ -6,6 +6,7 @@
 # pyre-unsafe
 
 from . import (  # noqa
+    bitwise_support,
     convolution_support,
     pool_2d_support,
     reduce_sum_support,
