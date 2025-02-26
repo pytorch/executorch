@@ -347,7 +347,7 @@ The model, inputs, and output location are passed to `qnn_executorch_runner` by 
 ### Running a model via ExecuTorch's android demo-app
 
 An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
-`examples`. Please refer to android demo app [tutorial](https://pytorch.org/executorch/stable/demo-apps-android.html).
+`examples`. Please refer to android demo app [tutorial](demo-apps-android.md).
 
 ## Supported model list
 

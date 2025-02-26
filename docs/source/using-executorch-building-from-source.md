@@ -179,12 +179,12 @@ cmake --build cmake-out -j9
 
 First, generate an `add.pte` or other ExecuTorch program file using the
 instructions as described in
-[Setting up ExecuTorch](getting-started-setup.md#building-a-runtime).
+[Preparing a Model](getting-started.md#preparing-the-model).
 
 Then, pass it to the command line tool:
 
 ```bash
-./cmake-out/executor_runner --model_path path/to/add.pte
+./cmake-out/executor_runner --model_path path/to/model.pte
 ```
 
 If it worked, you should see the message "Model executed successfully" followed

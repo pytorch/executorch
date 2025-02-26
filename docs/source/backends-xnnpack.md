@@ -51,9 +51,57 @@ The XNNPACK partitioner API allows for configuration of the model delegation to 
 
 ### Quantization
 
-Placeholder - document available quantization flows (PT2E + ao), schemes, and operators.
+The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. 
+
+### Configuring the XNNPACKQuantizer
+
+```python
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+  XNNPACKQuantizer,
+  get_symmetric_quantization_config,
+)
+quantizer = XNNPACKQuantizer()
+quantizer.set_global(get_symmetric_quantization_config())
+```
+Here, the `XNNPACKQuantizer` is configured for symmetric quantization, indicating that the quantized zero point is set to zero with `qmin = -127` and `qmax = 127`. `get_symmetric_quantization_config()` can be configured with the following arguments:
+* `is_per_channel`
+    * Weights are quantized across channels
+* `is_qat`
+    * Quantize aware training
+* `is_dynamic`
+    * Dynamic quantization
+
+```python
+quantizer.set_global(quantization_config)
+    .set_object_type(torch.nn.Conv2d, quantization_config) # can configure by module type
+    .set_object_type(torch.nn.functional.linear, quantization_config) # or torch functional op typea
+    .set_module_name("foo.bar", quantization_config)  # or by module fully qualified name
+```
+
+#### Quantizing a model with the XNNPACKQuantizer
+After configuring the quantizer, the model can be quantized by via the `prepare_pt2e` and `convert_pt2e` APIs.
+```python
+from torch.export import export_for_training
+
+exported_model = export_for_training(model_to_quantize, example_inputs).module()
+prepared_model = prepare_pt2e(exported_model, quantizer)
+
+for cal_sample in cal_samples: # Replace with representative model inputs
+	prepared_model(cal_sample) # Calibrate
+
+quantized_model = convert_pt2e(prepared_model)
+```
+For static, post-training quantization (PTQ), the post-prepare\_pt2e model should beS run with a representative set of samples, which are used to determine the quantization parameters.
+
+After `convert_pt2e`, the model can be exported and lowered using the normal ExecuTorch XNNPACK flow. For more information on PyTorch 2 quantization [here](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html).
+
+### Testing the Model
+
+After generating the XNNPACK-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See [Testing the Model](using-executorch-export.md#testing-the-model) for more information.
 
 ## Runtime Integration
+
+To run the model on-device, use the standard ExecuTorch runtime APIs. See [Running on Device](getting-started.md#running-on-device) for more information.
 
 The XNNPACK delegate is included by default in the published Android, iOS, and pip packages. When building from source, pass `-DEXECUTORCH_BUILD_XNNPACK=ON` when configuring the CMake build to compile the XNNPACK backend.
 
@@ -61,9 +109,3 @@ To link against the backend, add the `xnnpack_backend` CMake target as a build d
 
 No additional steps are necessary to use the backend beyond linking the target. Any XNNPACK-delegated .pte file will automatically run on the registered backend.
 
-### Runner
-
-To test XNNPACK models on a development machine, the repository includes a runner binary, which can run XNNPACK delegated models. It is built by default when building the XNNPACK backend. The runner can be invoked with the following command, assuming that the CMake build directory is named cmake-out. Note that the XNNPACK delegate is also available by default from the Python runtime bindings (see [Testing the Model](using-executorch-export.md#testing-the-model) for more information).
-```
-./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_xnnpack.pte
-```
