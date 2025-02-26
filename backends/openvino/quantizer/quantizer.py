@@ -6,7 +6,6 @@
 
 from collections import defaultdict
 from enum import Enum
-from itertools import islice
 from typing import Dict, List, Optional, Tuple
 
 import nncf
