@@ -138,6 +138,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="build from the pinned PyTorch commit instead of nightly",
     )
+    parser.add_argument(
+        "--editable",
+        "-e",
+        action="store_true",
+        help="build an editable pip wheel, changes to python code will be "
+        "picked up without rebuilding the wheel. Extension libraries will be "
+        "installed inside the source tree.",
+    )
     return parser
 
 
@@ -226,6 +234,7 @@ def main(args):
             "-m",
             "pip",
             "install",
+            "-e" if args.editable_mode else "",
             ".",
             "--no-build-isolation",
             "-v",

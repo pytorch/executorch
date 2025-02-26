@@ -22,9 +22,6 @@ try:
     op2 = torch.ops.llama.fast_hadamard_transform.default
     assert op2 is not None
 except:
-    import glob
-    import os
-
     # This is needed to ensure that custom ops are registered
     from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
@@ -32,6 +29,7 @@ except:
     # PYATHONPATH can result in multiple locations.
     # ATM this is mainly used in CI for qnn runner. Will need to revisit this
     from pathlib import Path
+
     package_path = Path(__file__).parent.resolve()
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
 

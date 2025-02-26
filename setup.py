@@ -50,8 +50,8 @@ import contextlib
 import os
 import platform
 import re
-import sys
 import site
+import sys
 
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
@@ -372,12 +372,13 @@ class BuiltExtension(_BaseExtension):
 
 class InstallerBuildExt(build_ext):
     """Installs files that were built by cmake."""
+
     def __init__(self, *args, **kwargs):
         self._ran_build = False
         super().__init__(*args, **kwargs)
 
     def run(self):
-        # Run the build command first in editable mode. Since `build` command 
+        # Run the build command first in editable mode. Since `build` command
         # will also trigger `build_ext` command, only run this once.
         if self._ran_build:
             return
@@ -387,10 +388,9 @@ class InstallerBuildExt(build_ext):
             self.run_command("build")
         super().run()
 
-
     def copy_extensions_to_source(self) -> None:
-        """For each extension in `ext_modules`, we need to copy the extension 
-        file from the build directory to the correct location in the local 
+        """For each extension in `ext_modules`, we need to copy the extension
+        file from the build directory to the correct location in the local
         directory.
 
         This should only be triggered when inplace mode (editable mode) is enabled.
@@ -399,11 +399,11 @@ class InstallerBuildExt(build_ext):
 
         Returns:
         """
-        build_py = self.get_finalized_command('build_py')
+        build_py = self.get_finalized_command("build_py")
         for ext in self.extensions:
             if isinstance(ext, BuiltExtension):
-                modpath = ext.name.split('.')
-                package = '.'.join(modpath[:-1])
+                modpath = ext.name.split(".")
+                package = ".".join(modpath[:-1])
                 package_dir = os.path.abspath(build_py.get_package_dir(package))
             else:
                 # HACK: get rid of the leading "executorch" in ext.dst.
@@ -412,9 +412,11 @@ class InstallerBuildExt(build_ext):
 
             # Ensure that the destination directory exists.
             self.mkpath(os.fspath(package_dir))
-            
+
             regular_file = ext.src_path(self)
-            inplace_file = os.path.join(package_dir, os.path.basename(ext.src_path(self)))
+            inplace_file = os.path.join(
+                package_dir, os.path.basename(ext.src_path(self))
+            )
 
             # Always copy, even if source is older than destination, to ensure
             # that the right extensions for the current Python/platform are
@@ -428,7 +430,6 @@ class InstallerBuildExt(build_ext):
                 # Always compile stub and remove the original (leave the cache behind)
                 # (this behaviour was observed in previous iterations of the code)
 
-        
     # TODO(dbort): Depend on the "build" command to ensure it runs first
 
     def build_extension(self, ext: _BaseExtension) -> None:
@@ -688,7 +689,9 @@ class CustomBuild(build):
             # Dry run should log the command but not actually run it.
             (Path(cmake_cache_dir) / "CMakeCache.txt").unlink(missing_ok=True)
         # Set PYTHONPATH to the location of the pip package.
-        os.environ["PYTHONPATH"] = site.getsitepackages()[0] + ";" + os.environ["PYTHONPATH"]
+        os.environ["PYTHONPATH"] = (
+            site.getsitepackages()[0] + ";" + os.environ.get("PYTHONPATH", "")
+        )
         with Buck2EnvironmentFixer():
             # The context manager may patch the environment while running this
             # cmake command, which happens to run buck2 to get some source
