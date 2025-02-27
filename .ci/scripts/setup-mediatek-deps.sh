@@ -23,6 +23,12 @@ install_neuropilot() {
   ls -lah "${MEDIATEK_INSTALLATION_DIR}"
 }
 
+install_android() {
+  copy ../docker/common/install_android.sh install_android.sh
+  ./install_android.sh
+  rm install_android.sh
+}
+
 setup_neuropilot() {
   pip3 install -r ${EXECUTORCH_ROOT}/backends/mediatek/requirements.txt
   pip3 install ${MEDIATEK_INSTALLATION_DIR}/mtk_neuron-8.2.13-py3-none-linux_x86_64.whl
@@ -34,6 +40,7 @@ setup_calibration_data() {
   tar zxvf /tmp/imagenette2-160.tgz --strip-components=1 --directory "${MEDIATEK_INSTALLATION_DIR}"
 }
 
+install_android
 install_neuropilot
 setup_neuropilot
 setup_calibration_data
