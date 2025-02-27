@@ -100,12 +100,12 @@ for arg in "$@"; do
       -h|--help) usage ;;
       --output=*) OUTPUT="${arg#*=}" ;;
       --Release)
-        if [[ ! " ${MODES[*]} " =~ \bRelease\b ]]; then
+        if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
           MODES+=("Release")
         fi
         ;;
       --Debug)
-        if [[ ! " ${MODES[*]} " =~ \bDebug\b ]]; then
+        if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
           MODES+=("Debug")
         fi
         ;;
