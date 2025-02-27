@@ -976,8 +976,33 @@ def _remove_invalid_ops_for_not_decompose(
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
         if native_schema.is_mutable:
+            logging.warn(
+                f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
+            )
             return False
+
         if native_schema.aliased_return_names() != [None]:
+            logging.warn(
+                f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
+            )
+            return False
+
+        # Explicit block list of ops that don't work if asked for
+        # preservation
+        if op in [
+            # Hits infinte recursion error when op is in
+            # EDGE_DO_NOT_DECOMP namespace
+            torch.ops.aten._to_copy.default,
+            # scalar to tensor type promotion does not work on ops
+            # in EDGE_DO_NOT_DECOMP namespace
+            torch.ops.aten.mul.Tensor,
+            torch.ops.aten.add.Tensor,
+            torch.ops.aten.sub.Tensor,
+            torch.ops.aten.div.Tensor,
+        ]:
+            logging.warn(
+                f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."
+            )
             return False
         return True
 

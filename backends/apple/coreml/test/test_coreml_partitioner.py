@@ -85,9 +85,6 @@ class TestCoreMLPartitioner(unittest.TestCase):
             def __init__(self) -> None:
                 super().__init__()
 
-                buffer = torch.ones(1)
-                self.register_buffer("buffer", buffer)
-
             def forward(self, q, k, v, mask):
                 out = torch.ops.aten.scaled_dot_product_attention.default(
                     q, k, v, attn_mask=mask
@@ -99,7 +96,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 out = out.transpose(1, 2)
                 out = out.view(1, -1)
                 out = out.permute(0, 1)
-                out = out.add_(self.buffer)
+                out = out.add_(1.0)
+                out = out.mul_(2.0)
+                out = out.div_(3.0)
+                out = out.sub_(4.0)
                 out = torch.ops.aten.view_copy.default(out, (-1,))
                 out = out.select(0, 0)
                 return out
