@@ -12,7 +12,13 @@ import tempfile
 from typing import List
 
 import numpy as np
-from ethosu.vela import vela  # type: ignore
+
+try:
+    from ethosu.vela import vela  # type: ignore
+
+    has_vela = True
+except ImportError:
+    has_vela = False
 
 
 # Pack either input or output tensor block, compose the related arrays into
@@ -39,7 +45,17 @@ def vela_bin_pack_io(prefix, data, shape_order=None):
 # Output via Vela to binary stream for ArmBackendEthosU
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
-def vela_compile(tosa_flatbuffer: bytes, args: List[str], shape_order=None):
+def vela_compile(
+    tosa_flatbuffer: bytes, args: List[str], shape_order=None, verbose: bool = False
+):
+    """
+    Compile a TOSA graph to a binary stream for ArmBackendEthosU using Vela.
+    """
+    if not has_vela:
+        raise RuntimeError(
+            "ethos-u-vela pip package couldn't be imported. Make sure it's installed!"
+        )
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tosaname = "out.tosa"
         tosa_path = os.path.join(tmpdir, tosaname)
@@ -50,6 +66,8 @@ def vela_compile(tosa_flatbuffer: bytes, args: List[str], shape_order=None):
         output_dir = os.path.join(tmpdir, "output")
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
+        if verbose:
+            args.append("--verbose-all")
         vela.main(" ".join(args).split(" "))
 
         if any("ethos-u85" in arg for arg in args) or any(

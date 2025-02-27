@@ -1,5 +1,16 @@
 { "tests": [
     {
+        "directory": "extension/llm/custom_ops/spinquant/test",
+        "sources": [
+            "fast_hadamard_transform_test.cpp",
+            "fast_hadamard_transform_test_impl.cpp",
+            "op_fast_hadamard_transform_test.cpp"
+        ],
+        "additional_libs": [
+            "custom_ops"
+        ]
+    },
+    {
         "directory": "extension/data_loader/test",
         "sources": [
             "buffer_data_loader_test.cpp",
@@ -16,13 +27,6 @@
         "sources": [
             "print_evalue_test.cpp",
             "../print_evalue.cpp"
-        ]
-    },
-    {
-        "directory": "extension/flat_tensor/test",
-        "sources": [
-            "flat_tensor_data_map_test.cpp",
-            "flat_tensor_header_test.cpp"
         ]
     },
     {
@@ -68,12 +72,13 @@
     {
         "directory": "runtime/core/portable_type/test",
         "sources": [
-            "optional_test.cpp",
-            "tensor_test.cpp",
+            "bfloat16_test.cpp",
+            "dont_shadow_complex_test.c",
             "half_test.cpp",
+            "optional_test.cpp",
             "scalar_test.cpp",
             "tensor_impl_test.cpp",
-            "bfloat16_test.cpp"
+            "tensor_test.cpp"
         ]
     },
     {

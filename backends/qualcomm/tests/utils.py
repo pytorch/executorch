@@ -188,6 +188,9 @@ class TestQNN(unittest.TestCase):
     shared_buffer: bool = False
     enable_x86_64: bool = False
     compile_only: bool = False
+    pre_gen_pte: str = ""
+    llama_artifacts: str = ""
+    dump_intermediate_outputs: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -521,6 +524,7 @@ class TestQNN(unittest.TestCase):
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
         dynamic_shapes: Dict = None,
+        bypass_check: bool = False,
     ) -> torch.fx.GraphModule:
         m = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes).module()
 
@@ -540,7 +544,8 @@ class TestQNN(unittest.TestCase):
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
         }
-        self.assertTrue(nodes.intersection(q_and_dq))
+        if not bypass_check:
+            self.assertTrue(nodes.intersection(q_and_dq))
         return quantized_module
 
     def get_prepared_qat_module(

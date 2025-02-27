@@ -16,6 +16,7 @@ import torch
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.memory_planning import find_peak_memory_usage
 from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.utils import MemoryConfig
 from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import collect_specs_from_nodes
@@ -46,14 +47,13 @@ class TestMemPlanningPasses(unittest.TestCase):
         inputs = (torch.ones(batch_size, input_dim),)
         model = PeakMemoryTestModel(input_dim, hidden_dim, output_dim)
 
-        graph_module = (
-            compiler.export_to_executorch_gen_etrecord(model, inputs)
-            .exported_program()
-            .graph_module
-        )
+        exported_program = compiler.export_to_executorch_gen_etrecord(
+            model, inputs
+        ).exported_program()
 
         peak_usage, _ = find_peak_memory_usage(
-            graph_module,
+            exported_program.graph_module,
+            exported_program.graph_signature,
             mem_constraints=None,
             alloc_graph_input=True,
             alloc_graph_output=True,
@@ -73,14 +73,13 @@ class TestMemPlanningPasses(unittest.TestCase):
             input_dim, hidden_dim, hidden_dim, hidden_dim, output_dim
         )
 
-        graph_module = (
-            compiler.export_to_executorch_gen_etrecord(model, inputs)
-            .exported_program()
-            .graph_module
-        )
+        exported_program = compiler.export_to_executorch_gen_etrecord(
+            model, inputs
+        ).exported_program()
 
         peak_usage, _ = find_peak_memory_usage(
-            graph_module,
+            exported_program.graph_module,
+            exported_program.graph_signature,
             mem_constraints=None,
             alloc_graph_input=True,
             alloc_graph_output=True,
@@ -111,6 +110,7 @@ class TestMemPlanningPasses(unittest.TestCase):
         graph_module.graph.eliminate_dead_code()
         peak_usage, _ = find_peak_memory_usage(
             graph_module,
+            executorch_prog.exported_program().graph_signature,
             alloc_graph_input=False,
             alloc_graph_output=False,
             mem_constraints=None,
@@ -793,7 +793,9 @@ class TestMemTransform(unittest.TestCase):
                     mem_algo=mem_algo,
                     alloc_graph_input=False,
                     alloc_graph_output=False,
-                    mem_alignment=37,
+                    memory_config=MemoryConfig(
+                        memory_sizes=[0x1000000000], memory_alignments=[37]
+                    ),
                 )
                 .exported_program()
                 .graph_module

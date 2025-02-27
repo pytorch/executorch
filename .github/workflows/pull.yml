@@ -56,6 +56,30 @@ jobs:
         # Build and test ExecuTorch with the add model on portable backend.
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
 
+  test-pip-install-editable-mode-linux:
+    name: test-pip-install-editable-mode-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        # Debug
+        which pip
+        PYTHON_EXECUTABLE=python bash ./install_executorch.sh --editable --pybind xnnpack --use-pt-pinned-commit
+        # Try to import extension library
+        python -c "from executorch.extension.llm.custom_ops import custom_ops"
+
   test-models-linux:
     name: test-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -367,6 +391,18 @@ jobs:
       id-token: write
       contents: read
     with:
+      build-mode: Debug
+      build-tool: cmake
+      docker-image: executorch-ubuntu-22.04-clang12
+
+  unittest-buck:
+    uses: ./.github/workflows/_unittest.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      build-mode: Debug
+      build-tool: buck2
       docker-image: executorch-ubuntu-22.04-clang12
 
   unittest-arm:
@@ -468,7 +504,7 @@ jobs:
 
         # Setup install_requirements for llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
-        
+
         # Test static llama weight sharing and accuracy
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
 
