@@ -76,7 +76,7 @@ let package = Package(
       .target(
         name: "\(key)_dependencies",
         dependencies: [.target(name: key)],
-        path: ".package.swift/\(key)",
+        path: ".Package.swift/\(key)",
         linkerSettings:
           (value["frameworks"] as? [String] ?? []).map { .linkedFramework($0) } +
           (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
