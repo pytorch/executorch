@@ -125,7 +125,7 @@ phases:
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench"
         fi
-        adb -s $DEVICEFARM_DEVICE_UDID shell /data/local/tmp/minibench/xnn_executor_runner --model_path /data/local/tmp/minibench/*.pte --prof_result_path /data/local/tmp/prof_result.bin
+        adb -s $DEVICEFARM_DEVICE_UDID shell /data/local/tmp/minibench/xnn_executor_runner --model_path /data/local/tmp/minibench/*.pte --prof_result_path /data/local/tmp/prof_result.bin --num_warmup_iters 10
         adb -s $DEVICEFARM_DEVICE_UDID pull /data/local/tmp/prof_result.bin
         python -m profiler.profiler_results_cli --prof_results_bin prof_result.bin
 

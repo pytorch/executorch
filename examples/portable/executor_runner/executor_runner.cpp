@@ -257,14 +257,6 @@ int main(int argc, char** argv) {
 
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_iters; i++) {
-    Error status = method->execute();
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "Execution of method %s failed with status 0x%" PRIx32,
-        method_name,
-        (uint32_t)status);
-  }
-  for (uint32_t i = 0; i < FLAGS_num_iters; i++) {
     EXECUTORCH_PROFILE_CREATE_BLOCK("inference loop");
     uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("run model");
     Error status = method->execute();
