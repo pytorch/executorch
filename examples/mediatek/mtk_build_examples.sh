@@ -39,14 +39,14 @@ main() {
           -DBUCK2="$BUCK_PATH" \
           -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
           -DANDROID_ABI=arm64-v8a \
-          -DANDROID_NATIVE_API_LEVEL=23 \
+          -DANDROID_NATIVE_API_LEVEL=26 \
           -DEXECUTORCH_BUILD_NEURON=ON \
           -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
           -B"${build_dir}"
 
 
     # Build the project
-    cmake --build cmake-android-out --target install --config Release -j5
+    cmake --build "${build_dir}" --target install --config Release -j5
 
     ## Build example
     local example_dir=examples/mediatek
@@ -58,6 +58,7 @@ main() {
     cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
           -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
           -DANDROID_ABI=arm64-v8a \
+          -DANDROID_NATIVE_API_LEVEL=26 \
           -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
           -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
           -B"${example_build_dir}" \
