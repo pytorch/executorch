@@ -624,11 +624,10 @@ swift<span class="w"> </span>build
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--help
 </pre></div>
 </div>
-<p>For example, the following invocation will build the ExecuTorch Runtime and all currently available kernels and backends for the Apple platform:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--coreml<span class="w"> </span>--mps<span class="w"> </span>--xnnpack<span class="w"> </span>--custom<span class="w"> </span>--optimized<span class="w"> </span>--portable<span class="w"> </span>--quantized
+<p>For example, the following command will build the ExecuTorch Runtime along with all available kernels and backends for the Apple platform in both Release and Debug modes:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--Release<span class="w"> </span>--Debug<span class="w"> </span>--coreml<span class="w"> </span>--mps<span class="w"> </span>--xnnpack<span class="w"> </span>--custom<span class="w"> </span>--optimized<span class="w"> </span>--portable<span class="w"> </span>--quantized
 </pre></div>
 </div>
-<p>Append a <code class="docutils literal notranslate"><span class="pre">--Debug</span></code> flag to the above command to build the binaries with debug symbols if needed.</p>
 <p>After the build finishes successfully, the resulting frameworks can be found in the <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> directory.
 Copy them to your project and link them against your targets.</p>
 </div>
