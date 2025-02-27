@@ -31,8 +31,8 @@ def define_arm_tests():
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
             ],
             deps = [
-                ":arm_tester",
-                ":conftest",
+                "//executorch/backends/arm/test:arm_tester",
+                "//executorch/backends/arm/test:conftest",
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",

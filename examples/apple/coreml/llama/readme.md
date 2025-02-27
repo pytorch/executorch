@@ -4,7 +4,7 @@ This directory contains ANE-friendly Llama models.
 
 Export model with:
 ```
-python export.py -n /path/to/output/model.pte -p /path/to/params.json -c /path/to/model.pth --seq_length 64 --max_seq_length 1024 --coreml-quantize c4w
+python export.py -n /path/to/output/model.pte -p /path/to/params.json -c /path/to/model.pth --seq_length 64 --max_seq_length 1024 --coreml-quantize c4w --dtype fp16
 ```
 
 (Note the script should be run from the executorch/examples/apple/coreml/llama directory.)
@@ -16,6 +16,12 @@ Run model with:
 ```
 python run.py -m /path/to/model.pte -t /path/to/tokenizer.model --prompt "Once upon a time,"
 ```
+
+The runner can also be used to run an eager model model to compare with CoreML numerics (--use_eager).  In this case, you must specify:
+* --checkpoint
+* --dtype
+* --max_seq_length
+* --seq_length
 
 (Note the script should be run from the executorch/examples/apple/coreml/llama directory.)
 
