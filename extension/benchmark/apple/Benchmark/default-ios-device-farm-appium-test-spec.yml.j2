@@ -14,7 +14,7 @@ phases:
       - echo "The benchmark config is {{ benchmark_config_id }}"
 
       # Download the model from S3
-      - curl -s --fail '{{ model_path }}' -o model.zip
+      - curl -s --fail '{{ model_path }}' -o model.zip || false
       - unzip model.zip && ls -la
 
       # Extract the app
