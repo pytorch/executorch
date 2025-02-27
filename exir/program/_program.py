@@ -26,6 +26,7 @@ from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
 from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.operator.convert import _pybind_schema_to_native_schema
 from executorch.exir.pass_base import PassBase
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
@@ -836,6 +837,9 @@ def _replace_aten_ops_with_transformed_ops(
         ops_set_to_not_decompose, check_op_support = partitioner.ops_to_not_decompose(
             program
         )
+        ops_set_to_not_decompose = _remove_invalid_ops_for_not_decompose(
+            ops_set_to_not_decompose
+        )
 
         for op_aten in ops_set_to_not_decompose:
             _register_no_decomp_op(op_aten)
@@ -965,6 +969,21 @@ def _sanity_check_graph_for_non_decomp_ops(
                     logging.warning(warning_str)
 
 
+def _remove_invalid_ops_for_not_decompose(
+    ops_to_not_decompose: List[torch._ops.OpOverload],
+) -> List[torch._ops.OpOverload]:
+    def keep(op):
+        schema = op._schema
+        native_schema = _pybind_schema_to_native_schema(schema)
+        if native_schema.is_mutable:
+            return False
+        if native_schema.aliased_return_names() != [None]:
+            return False
+        return True
+
+    return list(filter(keep, ops_to_not_decompose))
+
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -992,6 +1011,9 @@ def _gen_edge_manager_for_partitioners(
             all_ops_no_decomp = set()
             for curr_partitioner in partitioner.get(name, []):
                 curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
+                curr_ops_no_decomp = _remove_invalid_ops_for_not_decompose(
+                    curr_ops_no_decomp
+                )
                 all_ops_no_decomp |= set(curr_ops_no_decomp)
 
             table = _default_decomposition_table()
@@ -1113,6 +1135,7 @@ def to_edge_transform_and_lower(
             curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose(
                 program
             )
+            curr_op_set = _remove_invalid_ops_for_not_decompose(curr_op_set)
             ops_set_to_not_decompose = ops_set_to_not_decompose.union(curr_op_set)
             _sanity_check_graph_for_non_decomp_ops(
                 name,

@@ -82,10 +82,27 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
     def test_ops_to_not_decompose(self):
         class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+                buffer = torch.ones(1)
+                self.register_buffer("buffer", buffer)
+
             def forward(self, q, k, v, mask):
-                return torch.ops.aten.scaled_dot_product_attention.default(
+                out = torch.ops.aten.scaled_dot_product_attention.default(
                     q, k, v, attn_mask=mask
                 )
+
+                # Add non-functional and alias ops
+                # These will be removed by ExecuTorch in non-decomposition
+                # table because they cannot be functionalized
+                out = out.transpose(1, 2)
+                out = out.view(1, -1)
+                out = out.permute(0, 1)
+                out = out.add_(self.buffer)
+                out = torch.ops.aten.view_copy.default(out, (-1,))
+                out = out.select(0, 0)
+                return out
 
         model = Model()
         model.eval()
@@ -106,6 +123,9 @@ class TestCoreMLPartitioner(unittest.TestCase):
         # Using to_edge_transform_and_lower, we expect SDPA will be preserved and show up in delegated graph
         edge_program_manager = executorch.exir.to_edge_transform_and_lower(
             ep, partitioner=[coreml_partitioner]
+        )
+        print(
+            format_delegated_graph(edge_program_manager.exported_program().graph_module)
         )
         self.assertTrue(
             "executorch.exir.dialects.edge._ops.aten.scaled_dot_product_attention.default"
