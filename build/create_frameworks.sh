@@ -76,8 +76,8 @@ create_xcframework() {
         fi
 
         local dir_suffix
-        dir_suffix=$(echo "$dir" | tr '[:upper:]' '[:lower:]' | sed 's/\//_/g')
-        local merged_lib="${output}/lib${target_library_name}_${dir_suffix}.a"
+        dir_suffix=$(echo "$dir" | tr '[:upper:]' '[:lower:]' | sed 's/\//-/g')
+        local merged_lib="${output}/lib${target_library_name}-${dir_suffix}.a"
 
         # Remove the existing .a file if it exists.
         if [ -f "${merged_lib}" ]; then
