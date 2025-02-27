@@ -82,6 +82,10 @@ class SpecVarList final {
 
   void append(const SpecVarList& other);
 
+  void reserve(const size_t size);
+
+  void append(const SpecVar& other);
+
   std::vector<VkSpecializationMapEntry> generate_map_entries() const;
 
   friend bool operator==(const SpecVarList& lhs, const SpecVarList& rhs);
@@ -121,7 +125,7 @@ VkImageLayout vk_layout(const PipelineStageFlags, const MemoryAccessFlags);
 
 class PipelineLayout final {
  public:
-  explicit PipelineLayout(VkDevice, VkDescriptorSetLayout);
+  explicit PipelineLayout(VkDevice, VkDescriptorSetLayout, const uint32_t);
 
   PipelineLayout(const PipelineLayout&) = delete;
   PipelineLayout& operator=(const PipelineLayout&) = delete;
@@ -152,6 +156,7 @@ class ComputePipeline final {
     VkPipelineLayout pipeline_layout;
     VkShaderModule shader_module;
     SpecVarList specialization_constants;
+    utils::WorkgroupSize local_wg_size;
   };
 
   explicit ComputePipeline(
@@ -193,13 +198,17 @@ class PipelineLayoutCache final {
   PipelineLayoutCache& operator=(PipelineLayoutCache&&) = delete;
 
   ~PipelineLayoutCache();
-
-  using Key = VkDescriptorSetLayout;
+  using Key = std::pair<VkDescriptorSetLayout, uint32_t>;
   using Value = PipelineLayout;
 
   struct Hasher {
-    inline size_t operator()(VkDescriptorSetLayout descriptor_layout) const {
-      return std::hash<VkDescriptorSetLayout>()(descriptor_layout);
+    inline size_t operator()(
+        std::pair<VkDescriptorSetLayout, uint32_t> key) const {
+      size_t seed = 0;
+      seed = utils::hash_combine(
+          seed, std::hash<VkDescriptorSetLayout>()(key.first));
+      seed = utils::hash_combine(seed, std::hash<uint32_t>()(key.second));
+      return seed;
     }
   };
 
@@ -212,7 +221,7 @@ class PipelineLayoutCache final {
   std::unordered_map<Key, Value, Hasher> cache_;
 
  public:
-  VkPipelineLayout retrieve(const Key&);
+  VkPipelineLayout retrieve(const VkDescriptorSetLayout, const uint32_t);
   void purge();
 };
 
@@ -264,6 +273,9 @@ class ComputePipelineCache final {
         }
         seed = utils::hash_combine(seed, new_seed);
       }
+
+      seed = utils::hash_combine(
+          seed, std::hash<uint32_t>()((uint32_t)descriptor.local_wg_size));
 
       return seed;
     }

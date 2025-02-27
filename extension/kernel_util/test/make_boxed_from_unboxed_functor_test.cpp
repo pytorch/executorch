@@ -15,11 +15,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
-using exec_aten::TensorImpl;
+using executorch::aten::ArrayRef;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::TensorImpl;
 using executorch::runtime::BoxedEvalueList;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;

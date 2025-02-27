@@ -15,8 +15,8 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/assert.h>
 
-using exec_aten::SizesType;
-using exec_aten::Tensor;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
 using torch::executor::Error;
 using torch::executor::resize_tensor;
 
@@ -28,27 +28,27 @@ constexpr size_t kTensorDimensionLimit = 16;
 
 namespace {
 bool get_view_target_size(
-    const exec_aten::Tensor self,
-    exec_aten::ArrayRef<int64_t> size,
+    const executorch::aten::Tensor self,
+    executorch::aten::ArrayRef<int64_t> size,
     int64_t dim,
-    exec_aten::SizesType* out_size) {
+    executorch::aten::SizesType* out_size) {
   ET_LOG_AND_RETURN_IF_FALSE(size.size() == dim);
   int minus1_dim = -1;
   int n_zero = 0;
   int64_t numel_without_minus_1 = 1;
   for (int i = 0; i < dim; i++) {
     if (size[i] == -1) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           minus1_dim == -1, "At most one view dim can be -1.");
       minus1_dim = i;
     } else {
       // The size[i] must be non-negative now, but we check size[i] >= -1
       // in case code is reordered in the future.
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           size[i] >= -1, "Negative sizes are not allowed.");
 
       numel_without_minus_1 *= size[i];
-      out_size[i] = static_cast<exec_aten::SizesType>(size[i]);
+      out_size[i] = static_cast<executorch::aten::SizesType>(size[i]);
 
       if (size[i] == 0) {
         n_zero++;
@@ -56,7 +56,7 @@ bool get_view_target_size(
     }
   }
   if (minus1_dim >= 0) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         n_zero == 0, "Cannot infer dimension size if there is a zero dim.");
     out_size[minus1_dim] = self.numel() / numel_without_minus_1;
   }

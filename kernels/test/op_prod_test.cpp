@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::optional;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::optional;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor&
@@ -45,6 +45,24 @@ class OpProdOutTest : public ::testing::Test {
     // first.
     torch::executor::runtime_init();
   }
+
+  template <ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<
+        executorch::runtime::isIntegralType(DTYPE, /*includeBool*/ true)
+            ? ScalarType::Long
+            : DTYPE>
+        tf_out;
+
+    Tensor self = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+    optional<ScalarType> dtype{};
+    Tensor out = tf_out.zeros({});
+    Tensor out_expected =
+        tf_out.make({}, {DTYPE == ScalarType::Bool ? 1 : 720});
+    op_prod_out(self, dtype, out);
+    EXPECT_TENSOR_CLOSE(out, out_expected);
+  }
 };
 
 class OpProdIntOutTest : public ::testing::Test {
@@ -54,30 +72,32 @@ class OpProdIntOutTest : public ::testing::Test {
     // first.
     torch::executor::runtime_init();
   }
+
+  template <ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor self = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+    int64_t dim = 0;
+    bool keepdim = false;
+    optional<ScalarType> dtype{};
+    Tensor out = tf.zeros({3});
+    Tensor out_expected = tf.make({3}, {4, 10, 18});
+    op_prod_int_out(self, dim, keepdim, dtype, out);
+    EXPECT_TENSOR_CLOSE(out, out_expected);
+  }
 };
 
-TEST_F(OpProdOutTest, SmokeTest) {
-  TensorFactory<ScalarType::Float> tfFloat;
-
-  Tensor self = tfFloat.make({2, 3}, {1, 2, 3, 4, 5, 6});
-  optional<ScalarType> dtype{};
-  Tensor out = tfFloat.zeros({});
-  Tensor out_expected = tfFloat.make({}, {720});
-  op_prod_out(self, dtype, out);
-  EXPECT_TENSOR_CLOSE(out, out_expected);
+TEST_F(OpProdOutTest, SmokeTest){
+#define TEST_ENTRY(ctype, dtype) test_dtype<ScalarType::dtype>();
+    ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY)
+#undef TEST_ENTRY
 }
 
-TEST_F(OpProdIntOutTest, SmokeTest) {
-  TensorFactory<ScalarType::Float> tfFloat;
-
-  Tensor self = tfFloat.make({2, 3}, {1, 2, 3, 4, 5, 6});
-  int64_t dim = 0;
-  bool keepdim = false;
-  optional<ScalarType> dtype{};
-  Tensor out = tfFloat.zeros({3});
-  Tensor out_expected = tfFloat.make({3}, {4, 10, 18});
-  op_prod_int_out(self, dim, keepdim, dtype, out);
-  EXPECT_TENSOR_CLOSE(out, out_expected);
+TEST_F(OpProdIntOutTest, SmokeTest){
+#define TEST_ENTRY(ctype, dtype) test_dtype<ScalarType::dtype>();
+    ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY)
+#undef TEST_ENTRY
 }
 
 TEST_F(OpProdIntOutTest, SmokeTestKeepdim) {

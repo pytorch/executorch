@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
@@ -129,7 +133,7 @@ def get_transposed_dims(node: torch.fx.Node, dims: List[int]) -> List[int]:
 
 
 # Capture the effect of permute op on incoming dimension order
-def get_permuted_dims(node: torch.fx.Node, dims: Optional[List[int]]) -> List[int]:
+def get_permuted_dims(node: torch.fx.Node, dims: Optional[Sequence[int]]) -> List[int]:
     """
     Given a permute node, and the incoming dimension ordering of the input
     tensor to the permute node, return the net effect of permute op on the
@@ -137,8 +141,8 @@ def get_permuted_dims(node: torch.fx.Node, dims: Optional[List[int]]) -> List[in
     """
     assert node.target == exir_ops.edge.aten.permute_copy.default
     # Permute each index of the dimension ordering (dims)
-    permute_dims = node.args[1]
-    assert isinstance(permute_dims, List)
+    # pyre-fixme[6]: This combined typecheck isn't supported yet.
+    permute_dims: List[int] = list(node.args[1])
     assert all(isinstance(x, int) for x in permute_dims)
     # If the dims is empty, we can simply return the permute order
     if not dims:

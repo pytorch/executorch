@@ -230,7 +230,7 @@ After exporting the model for training, we can now try learning using CMake. We 
 cd executorch
 
 # Get a clean cmake-out directory
-./install_requirements.sh --clean
+./install_executorch.sh --clean
 mkdir cmake-out
 
 # Configure cmake

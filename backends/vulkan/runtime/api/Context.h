@@ -11,6 +11,7 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
 #include <executorch/backends/vulkan/runtime/utils/MacroUtils.h>
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Command.h>
@@ -150,7 +151,7 @@ class Context final {
   void report_shader_dispatch_start(
       const std::string& shader_name,
       const utils::uvec3& global_wg_size,
-      const utils::uvec3& local_wg_size,
+      const utils::WorkgroupSize& local_wg_size,
       const uint32_t dispatch_id = UINT32_MAX);
 
   /*
@@ -185,15 +186,18 @@ class Context final {
     }
   }
 
+  void check_device_capabilities(const vkapi::ShaderInfo& shader);
+
   vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo&,
-      const utils::uvec3&,
-      const vkapi::SpecVarList&);
+      const utils::WorkgroupSize&,
+      const vkapi::SpecVarList&,
+      const uint32_t push_constants_size);
 
   inline vkapi::DescriptorSet get_descriptor_set(
       const vkapi::ShaderInfo& shader_descriptor,
-      const utils::uvec3& local_work_group_size) {
-    return get_descriptor_set(shader_descriptor, local_work_group_size, {});
+      const utils::WorkgroupSize& local_work_group_size) {
+    return get_descriptor_set(shader_descriptor, local_work_group_size, {}, 0u);
   }
 
   void register_shader_dispatch(
@@ -225,6 +229,36 @@ class Context final {
       const bool final_use = false);
 
   void flush();
+
+#ifdef VULKAN_DEBUG
+
+#ifdef VK_KHR_pipeline_executable_properties
+
+  VkPipeline get_shader_pipeline(
+      const vkapi::ShaderInfo& shader,
+      const vkapi::SpecVarList& spec_constants);
+
+  std::vector<VkPipelineExecutablePropertiesKHR> get_pipeline_executable_props(
+      const VkPipeline pipeline);
+
+  std::tuple<
+      std::vector<VkPipelineExecutableInternalRepresentationKHR>,
+      std::vector<std::vector<char>>>
+  get_shader_executable_irs(
+      const VkPipeline pipeline,
+      const uint32_t pipeline_exec_idx = 0u);
+
+  std::vector<VkPipelineExecutableStatisticKHR> get_shader_executable_stats(
+      const VkPipeline pipeline,
+      const uint32_t pipeline_exec_idx = 0u);
+
+  void print_shader_executable_properties(
+      const vkapi::ShaderInfo& shader,
+      const vkapi::SpecVarList& spec_constants);
+
+#endif // VK_KHR_pipeline_executable_properties
+
+#endif // VULKAN_DEBUG
 };
 
 bool available();
@@ -329,12 +363,17 @@ inline bool Context::submit_compute_job(
   report_shader_dispatch_start(
       shader.kernel_name,
       global_work_group,
-      local_work_group_size,
+      utils::WorkgroupSize(local_work_group_size),
       dispatch_id);
 
   // Factor out template parameter independent code to minimize code bloat.
+  // Note that push constants are not exposed yet via this API, therefore the
+  // push constants size is assumed to be 0.
   vkapi::DescriptorSet descriptor_set = get_descriptor_set(
-      shader, local_work_group_size, specialization_constants);
+      shader,
+      utils::WorkgroupSize(local_work_group_size),
+      specialization_constants,
+      0u);
 
   detail::bind(
       descriptor_set,

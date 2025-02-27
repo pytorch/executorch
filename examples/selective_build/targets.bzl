@@ -1,5 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "is_xplat", "runtime")
-load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib")
+load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib", "ScalarType")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -49,7 +49,9 @@ def define_common_targets():
     et_operator_library(
         name = "select_ops_in_dict",
         ops_dict = {
-            "aten::add.out": ["v1/3;0,1", "v1/6;0,1"],  # int, float
+            # 1. Use kernel key, generated with a model, or
+            # 2. Specify the dtype, from executorch/codegen/codegen.bzl
+            "aten::add.out": ["v1/3;0,1", ScalarType("Float")],  # int, float
             "aten::mm.out": [],  # all dtypes
         },
     )

@@ -18,14 +18,14 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using SizesType = exec_aten::SizesType;
+using Tensor = executorch::aten::Tensor;
+using SizesType = executorch::aten::SizesType;
 
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     const Tensor& running_mean,
     const Tensor& running_var,
     double momentum,
@@ -104,7 +104,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
 
   constexpr auto name = "native_batch_norm_legit_no_training.out";
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -139,8 +139,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     Tensor& running_mean,
     Tensor& running_var,
     bool training,
@@ -177,8 +177,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_out(
 std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     bool training,
     double momentum,
     double eps,
@@ -196,8 +196,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
           in,
           weight,
           bias,
-          exec_aten::optional<Tensor>(),
-          exec_aten::optional<Tensor>(),
+          executorch::aten::optional<Tensor>(),
+          executorch::aten::optional<Tensor>(),
           momentum,
           eps,
           out,
@@ -261,7 +261,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
 
   constexpr auto name = "_native_batch_norm_legit.no_stats_out";
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     CTYPE* mean_data = mean_out.mutable_data_ptr<CTYPE>();
@@ -282,10 +282,12 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
     }
 
     // Compute mean and invstd for each channel
+    const CTYPE elements_per_channel_ct =
+        static_cast<CTYPE>(elements_per_channel);
     for (size_t c = 0; c < C; ++c) {
-      CTYPE mean = mean_data[c] / elements_per_channel;
+      CTYPE mean = mean_data[c] / elements_per_channel_ct;
       // Var[x] = E[x^2] - E[x]^2
-      CTYPE var = invstd_data[c] / elements_per_channel - mean * mean;
+      CTYPE var = invstd_data[c] / elements_per_channel_ct - mean * mean;
       CTYPE invstd = 1.0 / std::sqrt(var + eps);
       mean_data[c] = mean;
       invstd_data[c] = invstd;

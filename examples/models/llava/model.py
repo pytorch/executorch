@@ -12,11 +12,16 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 import torch
-from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama.llama_transformer import Transformer
+from executorch.examples.models.llama.model_args import ModelArgs
 
+from executorch.examples.models.llama.source_transformation.quantized_kv_cache import (
+    replace_kv_cache_with_custom_kv_cache,
+)
 from executorch.examples.models.llama.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
+
 from executorch.examples.models.llava.image_util import prepare_image
 from executorch.examples.models.model_base import EagerModelBase
 from PIL import Image
@@ -44,6 +49,7 @@ class Llava(torch.nn.Module):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.model_ = llava_model
         self.image_processor = image_processor
+        # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `config`.
         self.vision_feature_layer = self.model_.config.vision_feature_layer
         self.vision_feature_select_strategy = (
             self.model_.config.vision_feature_select_strategy
@@ -62,6 +68,7 @@ class Llava(torch.nn.Module):
         self.text_model = Transformer(self.text_model_args)
         # use custom op for SDPA.
         if use_sdpa_with_kv_cache_op:
+            self.text_model = replace_kv_cache_with_custom_kv_cache(self.text_model)
             self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
@@ -71,6 +78,7 @@ class Llava(torch.nn.Module):
         )
 
     def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
+        # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `language_model`.
         state_dict = self.model_.language_model.state_dict()
         key_map = {
             # fmt: off
@@ -123,9 +131,11 @@ class Llava(torch.nn.Module):
         return self.model_.get_model()
 
     def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `language_model`.
         return self.model_.language_model.model.embed_tokens(tokens)
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
+        # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `dtype`.
         images = images.to(dtype=self.model_.dtype)
         if type(images) is list:
             image_features = []
@@ -139,15 +149,19 @@ class Llava(torch.nn.Module):
                 image_feature = self._feature_select(image_forward_out).to(image.dtype)
                 image_features.append(image_feature)
         else:
+            # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `vision_tower`.
             image_forward_outs = self.model_.vision_tower(
+                # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `device`.
                 images.to(device=self.model_.device, dtype=self.model_.dtype),
                 output_hidden_states=True,
             )
             image_features = self._feature_select(image_forward_outs).to(images.dtype)
+        # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `multi_modal_projector`.
         image_features = self.model_.multi_modal_projector(image_features)
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
+        # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_vision_objects.CLIPImageProcessor` has no attribute `crop_size`.
         target_h = self.image_processor.crop_size["height"]
         target_w = self.image_processor.crop_size["width"]
         # pad the image with median rgb value, to make a square
@@ -190,10 +204,15 @@ class Llava(torch.nn.Module):
         # print(resized.shape)
         # cropped = F.center_crop(img, output_size=[w, w])
         # print(cropped.shape)
+        # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_vision_objects.CLIPImageProcessor` has no attribute `rescale_factor`.
         scaled = resized * self.image_processor.rescale_factor
         # print(scaled)
         normed = F.normalize(
-            scaled, self.image_processor.image_mean, self.image_processor.image_std
+            scaled,
+            # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_vision_objects.CLIPImageProcessor` has no attribute `image_mean`.
+            self.image_processor.image_mean,
+            # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_vision_objects.CLIPImageProcessor` has no attribute `image_std`.
+            self.image_processor.image_std,
         )
         # print(normed)
         return normed.unsqueeze(0)
@@ -203,7 +222,7 @@ class Llava(torch.nn.Module):
     ) -> torch.Tensor:
         """Input is one token. Return logits for next token."""
         token_embeds = self.embed_tokens(token).unsqueeze(0)
-        return self.text_model.forward(None, input_pos, token_embeds)
+        return self.text_model.forward(None, {"input_pos": input_pos}, token_embeds)
 
     def image_embedding(self, images: torch.Tensor) -> torch.Tensor:
         preprocessed_img = self.image_preprocess(images)
@@ -231,7 +250,9 @@ class Llava(torch.nn.Module):
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
         # returns the prefilled token length too, because the text model generates one logits in each forward call.
-        return embeds.shape[1], self.text_model.forward(None, torch.tensor([0]), embeds)
+        return embeds.shape[1], self.text_model.forward(
+            None, {"input_pos": torch.tensor([0])}, embeds
+        )
 
     # reference prefill using the text model in HF
     def prefill_ref(
@@ -242,7 +263,9 @@ class Llava(torch.nn.Module):
     ) -> torch.Tensor:
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
+        # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `LlamaForCausalLM`.
         return LlamaForCausalLM.forward(
+            # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `language_model`.
             self.model_.language_model,
             inputs_embeds=embeds,
             return_dict=False,
@@ -261,12 +284,16 @@ class LlavaModel(EagerModelBase):
     def __init__(self, use_sdpa_with_kv_cache_op=True, max_seq_len=768):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.max_seq_len = max_seq_len
-        self.processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
+        self.processor = AutoProcessor.from_pretrained(
+            "llava-hf/llava-1.5-7b-hf",
+            revision="a272c74b2481d8aff3aa6fc2c4bf891fe57334fb",  # Need this for transformers >= 4.44.2
+        )
         self.tokenizer = self.processor.tokenizer
         self.image_processor = self.processor.image_processor
         self.model = LlavaForConditionalGeneration.from_pretrained(
             "llava-hf/llava-1.5-7b-hf",
             device_map="cpu",
+            revision="a272c74b2481d8aff3aa6fc2c4bf891fe57334fb",  # Need this for transformers >= 4.44.2
         )
         self.image = Image.open(
             requests.get(

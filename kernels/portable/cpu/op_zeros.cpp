@@ -9,6 +9,7 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstring>
 
@@ -16,15 +17,15 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 namespace {
 
 bool check_sizes(
-    exec_aten::ArrayRef<int64_t> size_int64_t,
-    exec_aten::ArrayRef<int32_t> size_int32_t) {
+    executorch::aten::ArrayRef<int64_t> size_int64_t,
+    executorch::aten::ArrayRef<int32_t> size_int32_t) {
   ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == size_int32_t.size());
-  for (int i = 0; i < size_int64_t.size(); i++) {
+  for (const auto i : c10::irange(size_int64_t.size())) {
     ET_LOG_AND_RETURN_IF_FALSE(((int64_t)size_int32_t[i] == size_int64_t[i]));
   }
 

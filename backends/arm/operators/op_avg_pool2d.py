@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 # pyre-unsafe
 from typing import List
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
 # pyre-fixme[21]: ' Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`
@@ -41,7 +41,7 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         output: TosaArg,
         input_zp: int,
         output_zp: int,
-        accumulator_type,
+        accumulator_type: ts.DType,
     ) -> None:
         input_tensor = inputs[0]
 
@@ -75,7 +75,6 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         input_tensor = inputs[0]
         assert input_tensor.dtype == ts.DType.INT8
@@ -107,14 +106,13 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
-        is_quant_node: bool,
     ) -> None:
         assert (
             inputs[0].dtype == ts.DType.INT8 or inputs[0].dtype == ts.DType.FP32
         ), "Only FP32 and INT8 supported"
 
         if inputs[0].dtype == ts.DType.INT8:
-            super().define_node(node, tosa_graph, inputs, output, is_quant_node)
+            super().define_node(node, tosa_graph, inputs, output)
 
         if inputs[0].dtype == ts.DType.FP32:
             accumulator_type = ts.DType.FP32

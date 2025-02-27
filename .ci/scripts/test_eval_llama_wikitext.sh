@@ -41,6 +41,7 @@ run_and_verify() {
 	-kv \
 	-d fp32 \
 	--max_seq_length 2048 \
+	--max_context_length 2048 \
 	--limit 5 > result.txt
 
     # Verify result.txt

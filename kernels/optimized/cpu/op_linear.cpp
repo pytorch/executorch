@@ -16,7 +16,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& opt_linear_out(
     RuntimeContext& ctx,
@@ -33,7 +33,7 @@ Tensor& opt_linear_out(
   ET_KERNEL_CHECK(ctx, check_linear_args(in, mat2, out), InvalidArgument, out);
 
   size_t output_ndim = 0;
-  std::array<exec_aten::SizesType, kTensorDimensionLimit> output_sizes;
+  std::array<executorch::aten::SizesType, kTensorDimensionLimit> output_sizes;
   get_linear_out_target_size(in, mat2, output_sizes.data(), &output_ndim);
   ET_KERNEL_CHECK(
       ctx,

@@ -187,6 +187,34 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "rank_0_to_rank_1",
+        srcs = [
+            "rank_0_to_rank_1.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_scalar_with_tensor",
+        srcs = [
+            "replace_scalar_with_tensor.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
     runtime.python_test(
         name = "test_duplicate_dynamic_quant_chain",
         srcs = [
@@ -195,7 +223,21 @@ def define_common_targets():
         deps = [
             "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
             ":duplicate_dynamic_quant_chain",
+            "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
             "//caffe2:torch",
             "//executorch/exir:lib",
+        ],
+    )
+
+
+    runtime.python_test(
+        name = "test_rank_0_to_rank_1",
+        srcs = [
+            "test/test_rank_0_to_rank_1.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":rank_0_to_rank_1",
         ],
     )

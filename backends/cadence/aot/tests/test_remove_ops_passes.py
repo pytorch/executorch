@@ -1,4 +1,10 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 
 
 import unittest
@@ -12,7 +18,7 @@ from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import export_to_edge
 
 from executorch.backends.cadence.aot.pass_utils import count_node
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
 from executorch.backends.cadence.aot.remove_ops import (
     RemoveAliasCopyOpPass,
     RemoveCloneOpPass,
@@ -465,7 +471,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
 
         # Run the standard quant/convert steps, but without fusing
         # this leaves two redundant quant/dequant pairs to test with
-        quantizer = CadenceQuantizer()
+        quantizer = CadenceDefaultQuantizer()
         model_exp = export_for_training(M(), (inp,)).module()
         prepared_model = prepare_pt2e(model_exp, quantizer)
         prepared_model(inp)

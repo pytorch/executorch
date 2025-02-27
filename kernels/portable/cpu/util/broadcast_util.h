@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
@@ -24,8 +25,8 @@ namespace executor {
  *
  */
 bool tensor_is_broadcastable_to(
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_to_shape);
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> broadcast_to_shape);
 
 /**
  * Check whether or not the broadcast_from tensor should and can be broadcasted
@@ -50,8 +51,8 @@ bool tensor_is_broadcastable_to(
  * @returns true if the tensors are broadcastable, false otherwise.
  */
 bool tensors_are_broadcastable_between(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_shape,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_shape);
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_shape,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_shape);
 
 /**
  * Convenience overload of the above function to accept Tensor inputs.
@@ -77,9 +78,9 @@ bool tensors_are_broadcastable_between(const Tensor& a, const Tensor& b);
  * repeated as appropriate. This tensor contains dynamically allocated memory
  * and must be freed using free_broadcast_tensor.
  */
-ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
-    const exec_aten::Tensor& broadcast_from,
-    const exec_aten::Tensor& broadcast_to);
+ET_DEPRECATED executorch::aten::Tensor broadcast_tensor(
+    const executorch::aten::Tensor& broadcast_from,
+    const executorch::aten::Tensor& broadcast_to);
 
 /**
  * Get the size of the target tensor that two input tensors would be broadcasted
@@ -98,8 +99,8 @@ ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
  * tensor
  */
 ET_NODISCARD Error get_broadcast_target_size(
-    const exec_aten::ArrayRef<Tensor::SizesType> a_size,
-    const exec_aten::ArrayRef<Tensor::SizesType> b_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> a_size,
+    const executorch::aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim);
@@ -203,7 +204,7 @@ ET_NODISCARD inline Error resize_to_broadcast_target_size(
  * @returns void
  */
 ET_DEPRECATED void free_broadcast_tensor(
-    const exec_aten::Tensor& broadcast_tensor);
+    const executorch::aten::Tensor& broadcast_tensor);
 
 /**
  * Delinearize a flattened index to per-dimension indexes.
@@ -216,7 +217,7 @@ ET_DEPRECATED void free_broadcast_tensor(
  */
 void delinearize_index(
     size_t linear_index,
-    exec_aten::ArrayRef<Tensor::SizesType> shape,
+    executorch::aten::ArrayRef<Tensor::SizesType> shape,
     size_t* out_indexes,
     const size_t out_indexes_len);
 
@@ -249,8 +250,8 @@ void delinearize_index(
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
     ssize_t broadcast_to_ndim,
-    exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
-    exec_aten::ArrayRef<Tensor::StridesType> broadcast_from_strides);
+    executorch::aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    executorch::aten::ArrayRef<Tensor::StridesType> broadcast_from_strides);
 
 /**
  * Return the linear index for broatcast_from tensor, given the indexes of
@@ -289,7 +290,7 @@ inline void apply_binary_elementwise_fn(
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < out.numel(); ++i) {
+  for (const auto i : c10::irange(out.numel())) {
     size_t a_linear_index = i;
     size_t b_linear_index = i;
 
@@ -337,7 +338,7 @@ inline void apply_ternary_elementwise_fn(
   const CTYPE_C* const data_c = c.const_data_ptr<CTYPE_C>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < out.numel(); ++i) {
+  for (const auto i : c10::irange(out.numel())) {
     size_t a_linear_index = i;
     size_t b_linear_index = i;
     size_t c_linear_index = i;

@@ -68,6 +68,10 @@ class FuseActivationPass(XNNPACKPass):
                         preceding_op.op == "call_function"
                         and preceding_op.target in self.FUSEABLE_OPS
                     ):
+                        # Check that current activation is the only user of the preceding op
+                        # so that we can fuse the activation into the preceding op
+                        if len(preceding_op.users) > 1:
+                            continue
                         # Delete activation, and embed metadata into preceding op
                         output_min_max = self.get_output_min_max_from_activation(
                             activation_node

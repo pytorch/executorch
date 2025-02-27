@@ -19,8 +19,10 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_test_srcs tensor_util_test.cpp scalar_type_util_test.cpp
-               operator_impl_example_test.cpp dim_order_util_test.cpp
+set(_test_srcs
+    dim_order_util_test.cpp operator_impl_example_test.cpp
+    scalar_type_util_test.cpp tensor_shape_to_c_string_test.cpp
+    tensor_util_test.cpp
 )
 
 et_cxx_test(runtime_core_exec_aten_util_test SOURCES ${_test_srcs} EXTRA_LIBS)

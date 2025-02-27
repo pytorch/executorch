@@ -1,9 +1,13 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Union
+from typing import Callable, List, Optional, Set, Type, Union
 
 import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -28,33 +32,33 @@ class CadencePassAttribute:
 
 
 # A dictionary that maps an ExportPass to its attributes.
-ALL_CADENCE_PASSES: dict[ExportPass, CadencePassAttribute] = {}
+ALL_CADENCE_PASSES: dict[Type[ExportPass], CadencePassAttribute] = {}
 
 
-def get_cadence_pass_attribute(p: ExportPass) -> CadencePassAttribute:
+def get_cadence_pass_attribute(p: Type[ExportPass]) -> CadencePassAttribute:
     return ALL_CADENCE_PASSES[p]
 
 
 # A decorator that registers a pass.
 def register_cadence_pass(
     pass_attribute: CadencePassAttribute,
-) -> Callable[[ExportPass], ExportPass]:
-    def wrapper(cls: ExportPass) -> ExportPass:
+) -> Callable[[Type[ExportPass]], Type[ExportPass]]:
+    def wrapper(cls: Type[ExportPass]) -> Type[ExportPass]:
         ALL_CADENCE_PASSES[cls] = pass_attribute
         return cls
 
     return wrapper
 
 
-def get_all_available_cadence_passes() -> Set[ExportPass]:
+def get_all_available_cadence_passes() -> Set[Type[ExportPass]]:
     return set(ALL_CADENCE_PASSES.keys())
 
 
 # Create a new filter to filter out relevant passes from all passes.
 def create_cadence_pass_filter(
     opt_level: int, debug: bool = False
-) -> Callable[[ExportPass], bool]:
-    def _filter(p: ExportPass) -> bool:
+) -> Callable[[Type[ExportPass]], bool]:
+    def _filter(p: Type[ExportPass]) -> bool:
         pass_attribute = get_cadence_pass_attribute(p)
         return (
             pass_attribute.opt_level is not None

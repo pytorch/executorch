@@ -2,7 +2,55 @@
 # targets.bzl. This file can contain fbcode-only targets.
 
 load(":targets.bzl", "define_common_targets")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
 define_common_targets()
+
+runtime.cxx_library(
+    name = "aot_ops_test_lib",
+    srcs = [
+        "register_ops_aot_for_test.cpp",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/extension/aten_util:aten_bridge",
+        "//executorch/kernels/portable/cpu:op_upsample_bilinear2d",
+        "//executorch/kernels/portable/cpu:op_upsample_nearest2d",
+        "//executorch/runtime/core/exec_aten:lib",
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+python_unittest(
+    name = "op_upsample_bilinear2d_test",
+    srcs = [
+        "op_upsample_bilinear2d_test.py",
+    ],
+    preload_deps = [
+        ":aot_ops_test_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_unittest(
+    name = "op_upsample_nearest2d_test",
+    srcs = [
+        "op_upsample_nearest2d_test.py",
+    ],
+    preload_deps = [
+        ":aot_ops_test_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

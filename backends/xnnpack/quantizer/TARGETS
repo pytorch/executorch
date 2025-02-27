@@ -1,0 +1,20 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "xnnpack_quantizer",
+    srcs = ["xnnpack_quantizer.py"],
+    deps = [
+        ":xnnpack_quantizer_utils",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_library(
+    name = "xnnpack_quantizer_utils",
+    srcs = ["xnnpack_quantizer_utils.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)

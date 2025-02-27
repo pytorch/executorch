@@ -1,34 +1,50 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
 
+import os
 from collections import Counter
 from pprint import pformat
-from typing import Any, Iterable, List, Literal, Optional, Tuple, Union
+from typing import Callable, Iterable, List, Optional, Tuple, Type, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
-import serializer.tosa_serializer as ts
+import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
 
 import torch.fx
+import torch.utils._pytree as pytree
 
-from executorch.backends.arm.arm_backend import get_intermediate_path, is_permute_memory
-from executorch.backends.arm.arm_partitioner import ArmPartitioner
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
-    get_symmetric_quantization_config,
+from executorch.backends.arm.arm_backend import (
+    get_intermediate_path,
+    get_tosa_spec,
+    is_ethosu,
+    is_tosa,
 )
-from executorch.backends.arm.test.common import get_target_board
+from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    EthosUQuantizer,
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
+)
+from executorch.backends.arm.test.runner_utils import (
+    dbg_tosa_fb_to_json,
+    get_elf_path,
+    get_output_nodes,
+    get_output_quantization_params,
+    get_target_board,
+    run_corstone,
+    TosaReferenceModelDispatch,
+)
 
-from executorch.backends.arm.test.runner_utils import dbg_tosa_fb_to_json, RunnerUtil
 from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
+from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
@@ -36,14 +52,20 @@ from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
     ExecutorchProgramManager,
+    ExportedProgram,
 )
+from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.pass_base import ExportPass
+from executorch.exir.program._program import _update_exported_program_graph_module
 
 from tabulate import tabulate
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
+from torch.utils._pytree import tree_flatten
+
 
 logger = logging.getLogger(__name__)
 
@@ -106,39 +128,84 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
 
 
 class Serialize(tester.Serialize):
-    def __init__(self, runner_util: RunnerUtil, timeout: int = 1):
+    def __init__(self, compile_spec: list[CompileSpec], timeout):
         super().__init__()
-        self.runner = runner_util
-        self.runner.set_timeout(timeout)
+        self.timeout = timeout
+        self.executorch_program_manager: ExecutorchProgramManager | None
+        self.compile_spec = compile_spec
+
+    def run(self, artifact: ExecutorchProgramManager, inputs=None) -> None:
+        super().run(artifact, inputs)
+        # Keep the entire ExecutorchProgramManager for execution.
+        self.executorch_program_manager = artifact
 
     def run_artifact(self, inputs):
-        return self.runner.run_corstone(inputs)
+        if self.executorch_program_manager is None:
+            raise RuntimeError(
+                "Tried running artifact from Serialize stage without running the stage."
+            )
+        inputs_flattened, _ = tree_flatten(inputs)
+        intermediate_path = get_intermediate_path(self.compile_spec)
+        target_board = get_target_board(self.compile_spec)
+        elf_path = get_elf_path(target_board)
 
-    def dump_artifact(self, path_to_dump: Optional[str]):
-        if not path_to_dump:
-            path_to_dump = self.path + "/program.pte"
-        super().dump_artifact(path_to_dump)
+        if not os.path.exists(elf_path):
+            raise FileNotFoundError(
+                f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+            )
+
+        return run_corstone(
+            self.executorch_program_manager,
+            inputs_flattened,
+            intermediate_path,
+            target_board,
+            elf_path,
+            self.timeout,
+        )
 
 
 class ToExecutorch(tester.ToExecutorch):
+    def run_artifact(self, inputs):
+        with TosaReferenceModelDispatch():
+            return super().run_artifact(inputs)
+
+
+class RunPasses(tester.RunPasses):
+
     def __init__(
         self,
-        tosa_test_util: RunnerUtil,
-        dynamic_shapes: Optional[Tuple[Any]] = None,
+        pass_list: Optional[List[Type[ExportPass]]] = None,
+        pass_functions: Optional[List[Callable]] = None,
+        passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
     ):
-        super().__init__(dynamic_shapes)
-        self.tosa_test_util = tosa_test_util
+        """Passes are run in the order they are passed: first pass_list, second pass_functions,
+        and lastly passes_with_exported_program."""
+        self.pass_with_exported_program = passes_with_exported_program
+        super().__init__(pass_list, pass_functions)
 
-    def run(self, artifact: EdgeProgramManager, inputs=None):
-        self.executorch_program = artifact.to_executorch(self.config)
-        if module := getattr(
-            artifact.exported_program().graph_module, "lowered_module_0", None
-        ):
-            self.buffer = module.processed_bytes
+    def run(
+        self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
+    ) -> None:
+        if self.pass_with_exported_program is not None:
+            self.pass_functions = self.pass_functions or []  # type: ignore
 
-    def run_artifact(self, inputs):
-        tosa_output = self.tosa_test_util.run_tosa_graph(self.buffer, inputs)
-        return tosa_output
+            # pass_function list from superclass expects functions that take in
+            # and return ExportedPrograms.
+            # Create a wrapper to fit pass_with_exported_program into this.
+            def wrap_ep_pass(ep_pass: Type[ExportPass]):
+                def wrapped_ep_pass(ep: ExportedProgram) -> ExportedProgram:
+                    pass_result = ep_pass(ep).call(ep.graph_module)
+                    with validation_disabled():
+                        return _update_exported_program_graph_module(
+                            ep, pass_result.graph_module
+                        )
+
+                return wrapped_ep_pass
+
+            self.pass_functions.extend(
+                [wrap_ep_pass(ep_pass) for ep_pass in self.pass_with_exported_program]
+            )
+        super().run(artifact, inputs)
 
 
 class InitialModel(tester.Stage):
@@ -167,9 +234,8 @@ class ArmTester(Tester):
     def __init__(
         self,
         model: torch.nn.Module,
-        example_inputs: Tuple[torch.Tensor],
-        compile_spec: List[CompileSpec] = None,
-        tosa_ref_model_path: str | None = None,
+        example_inputs: Tuple,
+        compile_spec: List[CompileSpec],
     ):
         """
         Args:
@@ -177,13 +243,6 @@ class ArmTester(Tester):
             example_inputs (Tuple[torch.Tensor]): Example inputs to the model
             compile_spec (List[CompileSpec]): The compile spec to use
         """
-
-        # Initiate runner_util
-        intermediate_path = get_intermediate_path(compile_spec)
-        self.runner_util = RunnerUtil(
-            intermediate_path=intermediate_path,
-            tosa_ref_model_path=tosa_ref_model_path,
-        )
 
         self.compile_spec = compile_spec
         super().__init__(model, example_inputs)
@@ -198,8 +257,14 @@ class ArmTester(Tester):
 
     def quantize(self, quantize_stage: Optional[tester.Quantize] = None):
         if quantize_stage is None:
+            quantizer = None
+            if is_tosa(self.compile_spec):
+                tosa_spec = get_tosa_spec(self.compile_spec)
+                quantizer = TOSAQuantizer(tosa_spec)
+            elif is_ethosu(self.compile_spec):
+                quantizer = EthosUQuantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
-                ArmQuantizer(),
+                quantizer,
                 get_symmetric_quantization_config(is_per_channel=False),
             )
         return super().quantize(quantize_stage)
@@ -215,13 +280,16 @@ class ArmTester(Tester):
             if config is not None:
                 to_edge_stage.edge_compile_conf = config
 
-        # TODO(T182928844): Delegate dim order op to backend.
-        to_edge_stage.edge_compile_conf._skip_dim_order = True
         return super().to_edge(to_edge_stage)
 
     def partition(self, partition_stage: Optional[Partition] = None):
         if partition_stage is None:
-            arm_partitioner = ArmPartitioner(compile_spec=self.compile_spec)
+            if is_tosa(self.compile_spec):
+                arm_partitioner = TOSAPartitioner(compile_spec=self.compile_spec)
+            elif is_ethosu(self.compile_spec):
+                arm_partitioner = EthosUPartitioner(compile_spec=self.compile_spec)
+            else:
+                raise ValueError("compile spec doesn't target any Arm Partitioner")
             partition_stage = Partition(arm_partitioner)
         return super().partition(partition_stage)
 
@@ -233,7 +301,14 @@ class ArmTester(Tester):
     ):
         if to_edge_and_lower_stage is None:
             if partitioners is None:
-                partitioners = [ArmPartitioner(compile_spec=self.compile_spec)]
+                arm_partitioner = None
+                if is_tosa(self.compile_spec):
+                    arm_partitioner = TOSAPartitioner(compile_spec=self.compile_spec)
+                elif is_ethosu(self.compile_spec):
+                    arm_partitioner = EthosUPartitioner(compile_spec=self.compile_spec)
+                else:
+                    raise ValueError("compile spec doesn't target any Arm Partitioner")
+                partitioners = [arm_partitioner]
             to_edge_and_lower_stage = ToEdgeTransformAndLower(
                 partitioners, edge_compile_config
             )
@@ -242,34 +317,31 @@ class ArmTester(Tester):
                 to_edge_and_lower_stage.partitioners = partitioners
             if edge_compile_config is not None:
                 to_edge_and_lower_stage.edge_compile_conf = edge_compile_config
-        to_edge_and_lower_stage.edge_compile_conf._skip_dim_order = True
         return super().to_edge_transform_and_lower(to_edge_and_lower_stage)
 
     def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
         if to_executorch_stage is None:
-            to_executorch_stage = ToExecutorch(self.runner_util)
+            to_executorch_stage = ToExecutorch()
         return super().to_executorch(to_executorch_stage)
 
     def serialize(
-        self, serialize_stage: Optional[Serialize] = None, timeout: int = 120
+        self, serialize_stage: Optional[Serialize] = None, timeout: int = 480
     ):
         if serialize_stage is None:
-            serialize_stage = Serialize(self.runner_util, timeout=timeout)
+            serialize_stage = Serialize(self.compile_spec, timeout)
         assert (
             get_intermediate_path(self.compile_spec) is not None
         ), "Can't dump serialized file when compile specs do not contain an artifact path."
 
-        return (
-            super()
-            .serialize(serialize_stage)
-            .dump_artifact(get_intermediate_path(self.compile_spec) + "/program.pte")
-        )
+        return super().serialize(serialize_stage)
+
+    def is_quantized(self) -> bool:
+        return self.stages[self.stage_name(tester.Quantize)] is not None
 
     def run_method_and_compare_outputs(
         self,
         inputs: Optional[Tuple[torch.Tensor]] = None,
         stage: Optional[str] = None,
-        target_board: Optional[str] = None,
         num_runs=1,
         atol=1e-03,
         rtol=1e-03,
@@ -294,61 +366,33 @@ class ArmTester(Tester):
         if edge_stage is None:
             edge_stage = self.stages[self.stage_name(tester.ToEdgeTransformAndLower)]
         assert (
-            self.runner_util is not None
-        ), "self.tosa_test_util is not initialized, cannot use run_method()"
-        assert (
             edge_stage is not None
         ), "To compare outputs, at least the ToEdge or ToEdgeTransformAndLower stage needs to be run."
 
         stage = stage or self.cur
         test_stage = self.stages[stage]
-        is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
+        is_quantized = self.is_quantized()
 
-        if target_board is None:
-            target_board = get_target_board(self.compile_spec)
-
-        exported_program = self.stages[self.stage_name(tester.Export)].artifact
-        edge_program = edge_stage.artifact.exported_program()
-        self.runner_util.init_run(
-            exported_program,
-            edge_program,
-            is_quantized,
-            target_board,
-        )
-
-        quantization_scale = None
         if is_quantized:
             reference_stage = self.stages[self.stage_name(tester.Quantize)]
-            # bool output is quantized with none quantized output so allow
-            # self.runner_util.qp_output to be none
-            if self.runner_util.qp_output is not None:
-                quantization_scale = self.runner_util.qp_output.scale
         else:
             reference_stage = self.stages[self.stage_name(InitialModel)]
+
+        exported_program = self.stages[self.stage_name(tester.Export)].artifact
+        output_nodes = get_output_nodes(exported_program)
+        output_qparams = get_output_quantization_params(output_nodes)
+
+        quantization_scales = []
+        for node in output_qparams:
+            quantization_scales.append(getattr(output_qparams[node], "scale", None))
 
         logger.info(
             f"Comparing Stage '{self.stage_name(test_stage)}' with Stage '{self.stage_name(reference_stage)}'"
         )
-        is_nhwc = is_permute_memory(self.compile_spec)
 
         # Loop inputs and compare reference stage with the compared stage.
         for run_iteration in range(num_runs):
             reference_input = inputs if inputs else next(self.generate_random_inputs())
-
-            # Test parameters can include constants that are used in eager mode but are already set as attributes
-            # in TOSA. Therefore, only accept torch.Tensor inputs.
-            test_input: list[torch.Tensor] = []
-            for arg in reference_input:
-                if isinstance(arg, torch.Tensor):
-                    test_input.append(arg.clone())
-                if isinstance(arg, tuple) and isinstance(arg[0], torch.Tensor):
-                    test_input.extend([tensor.clone() for tensor in arg])
-
-            if (
-                is_nhwc
-                and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
-            ):
-                test_input = self.transpose_data_format(test_input, "NHWC")
 
             input_shapes = [
                 generated_input.shape if hasattr(generated_input, "shape") else (1,)
@@ -357,23 +401,25 @@ class ArmTester(Tester):
             input_shape_str = ", ".join([str(list(i)) for i in input_shapes])
             logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
 
-            reference_output = reference_stage.run_artifact(reference_input)
-            test_output = test_stage.run_artifact(test_input)
-            if (
-                is_nhwc
-                and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
-            ):
-                test_output = self.transpose_data_format(test_output, "NCHW")
-
-            self._compare_outputs(
-                reference_output,
-                test_output,
-                quantization_scale,
-                atol,
-                rtol,
-                qtol,
-                error_callbacks,
+            reference_outputs, _ = pytree.tree_flatten(
+                reference_stage.run_artifact(reference_input)
             )
+            test_outputs, _ = pytree.tree_flatten(
+                test_stage.run_artifact(reference_input)
+            )
+
+            for reference_output, test_output, quantization_scale in zip(
+                reference_outputs, test_outputs, quantization_scales
+            ):
+                self._compare_outputs(
+                    reference_output,
+                    test_output,
+                    quantization_scale,
+                    atol,
+                    rtol,
+                    qtol,
+                    error_callbacks,
+                )
 
         return self
 
@@ -499,19 +545,6 @@ class ArmTester(Tester):
         """
 
         return module.forward(*inputs)
-
-    def transpose_data_format(
-        self, data: Tuple[torch.Tensor], to: Literal["NHWC", "NCHW"]
-    ):
-        if to == "NCHW":
-            dim_order = (0, 3, 1, 2)
-        if to == "NHWC":
-            dim_order = (0, 2, 3, 1)
-        inputs_transposed = list(data)
-        for i in range(len(data)):
-            if hasattr(data[i], "shape") and len(data[i].shape) == 4:
-                inputs_transposed[i] = torch.permute(data[i], dim_order)
-        return tuple(inputs_transposed)
 
     def _compare_outputs(
         self,

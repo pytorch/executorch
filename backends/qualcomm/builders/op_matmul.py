@@ -15,7 +15,7 @@ from .qnn_constants import OpMatMul, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Matmul(NodeVisitor):
-    target = ["aten.matmul.default"]
+    target = ["aten.matmul.default", "aten.mm.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -32,20 +32,20 @@ class Matmul(NodeVisitor):
 
             input_tensor_wrapper = self.define_tensor(
                 input_node,
+                node,
                 input_tensor,
                 PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
-                is_input_tensor=True,
             )
             matmul_input_tensors.append(input_tensor_wrapper)
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         matmul_output_tensors = [output_tensor_wrapper]
 

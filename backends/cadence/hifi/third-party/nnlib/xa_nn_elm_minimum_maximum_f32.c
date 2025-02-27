@@ -21,10 +21,7 @@
 ******************************************************************************/
 #include "xa_type_def.h"
 #include "xa_nnlib_common_fpu.h"
-#include "xa_nn_common.h"
 #include "xa_nnlib_err_chk.h"
-// #include "xa_nn_basic_state.h"
-#include "xa_nnlib_kernels_api.h"
 
 #if !HAVE_VFPU
 DISCARD_FUN_FOR_NONVOID_RETURN(
@@ -844,4 +841,5 @@ WORD32 xa_nn_elm_minimum_broadcast_4D_f32xf32_f32(FLOAT32 * __restrict__ p_out,
   }
   return 0;
 }
+
 #endif

@@ -7,7 +7,6 @@ from typing import Dict
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class DecomposeSilu(ExportPass):
@@ -22,22 +21,23 @@ class DecomposeSilu(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        partitions = get_source_partitions(graph, [torch.nn.functional.silu])
-        for _, src_partitions in partitions.items():
-            for src_partition in src_partitions:
-
-                inputs = src_partition.input_nodes
-                silu_node = src_partition.nodes[0]
-                with graph_module.graph.inserting_after(inputs[0]):
+        for node in graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.silu.default
+            ):
+                silu_node = node
+                silu_node_input = node.args[0]
+                with graph_module.graph.inserting_after(silu_node_input):
                     sigmoid_node = graph.create_node(
-                        "call_function", torch.ops.aten.sigmoid, (inputs[0],)
+                        "call_function", torch.ops.aten.sigmoid, (silu_node_input,)
                     )
                     sigmoid_node.meta = self._copy_meta(silu_node.meta)
                     with graph_module.graph.inserting_after(sigmoid_node):
                         mul_node = graph.create_node(
                             "call_function",
                             torch.ops.aten.mul,
-                            (inputs[0], sigmoid_node),
+                            (silu_node_input, sigmoid_node),
                         )
                         mul_node.meta = self._copy_meta(silu_node.meta)
                         for user in silu_node.users.copy():

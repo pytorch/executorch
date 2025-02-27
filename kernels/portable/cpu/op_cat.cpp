@@ -15,11 +15,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& cat_out(
     KernelRuntimeContext& ctx,
-    exec_aten::ArrayRef<Tensor> tensors,
+    executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   if (dim < 0) {
@@ -56,12 +56,12 @@ Tensor& cat_out(
   const size_t ninputs = tensors.size();
 
   const auto out_type = out.scalar_type();
-  ET_SWITCH_REALHB_TYPES(out_type, ctx, "cat.out", CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "cat.out", CTYPE_OUT, [&] {
     CTYPE_OUT* out_ptr = out.mutable_data_ptr<CTYPE_OUT>();
     for (size_t i = 0; i < outer; ++i) {
       for (size_t j = 0; j < ninputs; ++j) {
         const auto in_type = tensors[j].scalar_type();
-        ET_SWITCH_REALHB_TYPES(in_type, ctx, "cat.out", CTYPE_IN, [&] {
+        ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "cat.out", CTYPE_IN, [&] {
           if (tensors[j].numel() == 0) {
             return;
           }

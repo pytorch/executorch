@@ -15,9 +15,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpHardTanhTest : public OperatorTest {
@@ -30,15 +30,31 @@ class OpHardTanhTest : public OperatorTest {
     return torch::executor::aten::hardtanh_outf(
         context_, self, min_val, max_val, out);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+    CTYPE lowest_test_element;
+    CTYPE lower_bound;
+    if constexpr (std::numeric_limits<CTYPE>::is_signed) {
+      lowest_test_element = -3;
+      lower_bound = -2;
+    } else {
+      lowest_test_element = 0;
+      lower_bound = 0;
+    }
+    Tensor in = tf.make({2, 2}, {lowest_test_element, 0, 1, 100});
+    Tensor out = tf.zeros({2, 2});
+
+    Tensor ret = op_hardtanh_out(in, lower_bound, 2, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {lower_bound, 0, 1, 2}));
+  }
 };
 
 TEST_F(OpHardTanhTest, SanityCheck) {
-  TensorFactory<ScalarType::Float> tf;
-  Tensor in = tf.ones({2, 2});
-  Tensor out = tf.zeros({2, 2});
-
-  Tensor ret = op_hardtanh_out(in, -2, 2, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, tf.ones({2, 2}));
+#define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -16,7 +16,6 @@ import torch
 from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized
 
@@ -108,10 +107,6 @@ test_data_suite_rank4 = [
 class TestLinear(unittest.TestCase):
     """tests the linear operation y = Ax + b"""
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
-
     class Linear(torch.nn.Module):
         def __init__(
             self,
@@ -137,13 +132,13 @@ class TestLinear(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+MI",
                 ),
             )
             .export()
             .check_count({"torch.ops.aten.linear.default": 1})
             .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=test_data)
@@ -157,14 +152,14 @@ class TestLinear(unittest.TestCase):
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=True
+                    "TOSA-0.80+BI",
                 ),
             )
             .quantize()
             .export()
             .check_count({"torch.ops.aten.linear.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
@@ -186,7 +181,7 @@ class TestLinear(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.linear.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower(edge_compile_config=self._edge_compile_config)
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()

@@ -14,9 +14,9 @@
 namespace torch {
 namespace executor {
 namespace native {
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using Scalar = exec_aten::Scalar;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using Scalar = executorch::aten::Scalar;
 namespace {
 
 /**
@@ -81,6 +81,20 @@ bool tensors_are_close(
     return data_is_close<double>(
         a.const_data_ptr<double>(),
         b.const_data_ptr<double>(),
+        a.numel(),
+        rtol,
+        atol);
+  } else if (a.scalar_type() == ScalarType::Half) {
+    return data_is_close<Half>(
+        a.const_data_ptr<Half>(),
+        b.const_data_ptr<Half>(),
+        a.numel(),
+        rtol,
+        atol);
+  } else if (a.scalar_type() == ScalarType::BFloat16) {
+    return data_is_close<BFloat16>(
+        a.const_data_ptr<BFloat16>(),
+        b.const_data_ptr<BFloat16>(),
         a.numel(),
         rtol,
         atol);

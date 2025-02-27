@@ -31,7 +31,10 @@ jobs:
   build-aar:
     name: build-aar
     needs: check-if-aar-exists
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -50,7 +53,7 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
-        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
 
         shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 

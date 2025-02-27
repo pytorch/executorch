@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,11 +9,14 @@ project(arm_executor_runner)
 option(SEMIHOSTING "Enable semihosting" OFF)
 option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size" OFF)
 option(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE to specify temp alloction pool size" OFF)
+option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
+option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
+option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
     FATAL_ERROR
-      "ET_PTE_FILE_PATH must specify a model .pte, for bare metal systems the "
+      "ET_PTE_FILE_PATH must specify a model .pte or .bpte, for bare metal systems the "
       "model is built into the binary."
   )
 endif()
@@ -42,6 +45,39 @@ set(ETHOS_SDK_PATH
 set(PYTHON_EXECUTABLE
     "python"
     CACHE PATH "Define to override python executable used"
+)
+
+# Download ethos_u dependency if needed.
+file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
+
+include(FetchContent)
+set(ethos_u_base_rev "24.08")
+FetchContent_Declare(
+  ethos_u
+  GIT_REPOSITORY https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
+  GIT_TAG ${ethos_u_base_rev}
+  SOURCE_DIR ${ETHOS_SDK_PATH}
+  BINARY_DIR ${ETHOS_SDK_PATH}
+  SUBBUILD_DIR ${ETHOS_SDK_PATH}/../ethos_u-subbuild
+  SOURCE_SUBDIR none
+  )
+
+FetchContent_MakeAvailable(ethos_u)
+
+# Get ethos_u externals only if core_platform folder does not already exist.
+if(NOT EXISTS "${ETHOS_SDK_PATH}/core_platform")
+  execute_process(COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c ${ethos_u_base_rev}.json fetch
+                  WORKING_DIRECTORY ${ETHOS_SDK_PATH}
+                  COMMAND_ECHO STDOUT
+  )
+endif()
+
+# Always patch the core_platform repo since this is fast enough.
+set(core_platform_base_rev "b728c774158248ba2cad8e78a515809e1eb9b77f")
+set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
+execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
+  WORKING_DIRECTORY ${ET_DIR_PATH}
+  COMMAND_ECHO STDOUT
 )
 
 # Selects timing adapter values matching system_config.
@@ -340,6 +376,18 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   )
 endif()
 
+if(ET_BUNDLE_IO)
+  add_library(bundled_program STATIC IMPORTED)
+  set_property(
+    TARGET bundled_program
+    PROPERTY IMPORTED_LOCATION
+        "${ET_BUILD_DIR_PATH}/lib/libbundled_program.a"
+  )
+  list(APPEND arm_executor_runner_link
+    bundled_program
+  )
+endif()
+
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
 # bin size as we link in a number of other symbols
 target_link_libraries(
@@ -351,8 +399,9 @@ target_link_options( arm_executor_runner PUBLIC LINKER:-Map=arm_executor_runner.
 
 # ET headers and generated headers includes
 target_include_directories(
-  arm_executor_runner PRIVATE ${ET_INCLUDE_PATH} ${CMAKE_CURRENT_BINARY_DIR}
+  arm_executor_runner PRIVATE ${ET_INCLUDE_PATH} ${ET_DIR_PATH}/runtime/core/portable_type/c10 ${CMAKE_CURRENT_BINARY_DIR}
 )
+target_compile_definitions(arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
 
 if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
@@ -366,6 +415,18 @@ endif()
 
 if(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE)
   target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE})
+endif()
+
+if(ET_BUNDLE_IO)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_BUNDLE_IO)
+endif()
+
+if(ET_ATOL)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_ATOL=${ET_ATOL})
+endif()
+
+if(ET_RTOL)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_RTOL=${ET_RTOL})
 endif()
 
 # Fixup compilation of retarget.c

@@ -4,20 +4,7 @@ oncall("executorch")
 
 python_library(
     name = "xnnpack_passes",
-    srcs = [
-        "__init__.py",
-        "channels_last_tagged_reshape_pass.py",
-        "conv1d_unsqueeze_pass.py",
-        "convert_to_linear.py",
-        "convert_to_sdpa.py",
-        "convert_to_upsample_bilinear2d.py",
-        "fuse_activation_pass.py",
-        "fuse_batch_norm_with_conv.py",
-        "prelu_reshape_pass.py",
-        "remove_getitem_op.py",
-        "tag_implicit_q_dq_pass.py",
-        "xnnpack_pass.py",
-    ],
+    srcs = native.glob(["*.py"]),
     deps = [
         "//caffe2:torch",
         "//executorch/backends/transforms:addmm_mm_to_linear",

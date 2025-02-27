@@ -45,7 +45,12 @@ class GeneratedOpsTest_{op_name} : public ::testing::Test {{
 test_suite_template = """
 TEST_P(GeneratedOpsTest_{op_name}, {case_name}) {{
 {create_ref_data}
+try {{
 {create_and_check_out}
+}}
+catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {{
+    GTEST_SKIP() << e.what();
+}}
 }}
 """
 

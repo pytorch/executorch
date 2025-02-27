@@ -720,6 +720,10 @@ class SPVGenerator:
         if "codegen-nosub" in input_text:
             return input_text
 
+        # Remove extension requirement so that generated ShaderInfo does not mark it
+        input_text = input_text.replace(
+            "#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require", ""
+        )
         input_text = input_text.replace("u16vec", "ivec")
         input_text = input_text.replace("uint16_t", "int")
         return input_text
@@ -791,6 +795,9 @@ class ShaderInfo:
     weight_storage_type: str = ""
     bias_storage_type: str = ""
     register_for: Optional[Tuple[str, List[str]]] = None
+    requires_shader_int16_ext: bool = False
+    requires_16bit_storage_ext: bool = False
+    requires_8bit_storage_ext: bool = False
 
 
 def getName(filePath: str) -> str:
@@ -858,6 +865,11 @@ def findRegisterFor(lineStr: str) -> Tuple[str, List[str]]:
     return (matches_list[0], matches_list[1:])
 
 
+def isExtensionRequireLine(lineStr: str) -> bool:
+    extension_require_id = r"^#extension ([A-Za-z0-9_]+)\s*:\s*require"
+    return re.search(extension_require_id, lineStr) is not None
+
+
 typeIdMapping = {
     r"image[123]D\b": "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE",
     r"sampler[123]D\b": "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER",
@@ -889,6 +901,13 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:
                 shader_info.bias_storage_type = getBiasStorageType(line)
             if isRegisterForLine(line):
                 shader_info.register_for = findRegisterFor(line)
+            if isExtensionRequireLine(line):
+                if "GL_EXT_shader_explicit_arithmetic_types_int16" in line:
+                    shader_info.requires_shader_int16_ext = True
+                if "GL_EXT_shader_16bit_storage" in line:
+                    shader_info.requires_16bit_storage_ext = True
+                if "GL_EXT_shader_8bit_storage" in line:
+                    shader_info.requires_8bit_storage_ext = True
 
     return shader_info
 
@@ -952,12 +971,18 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
 
     shader_info_layouts = "{{{}}}".format(",\n ".join(shader_info.layouts))
 
+    def to_cpp_str(val: bool):
+        return "true" if val else "false"
+
     shader_info_args = [
         f'"{name}"',
         f"{name}_bin",
         str(sizeBytes),
         shader_info_layouts,
         tile_size,
+        to_cpp_str(shader_info.requires_shader_int16_ext),
+        to_cpp_str(shader_info.requires_16bit_storage_ext),
+        to_cpp_str(shader_info.requires_8bit_storage_ext),
     ]
 
     shader_info_str = textwrap.indent(

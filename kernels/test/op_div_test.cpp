@@ -17,9 +17,9 @@
 #include <cmath>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 namespace {
@@ -81,6 +81,52 @@ class OpDivOutTest : public OperatorTest {
     Tensor out = tf_out.zeros(sizes);
 
     ET_EXPECT_KERNEL_FAILURE(context_, op_div_out(a, b, out));
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_3D() {
+    TensorFactory<DTYPE> tf_a;
+
+    Tensor a =
+        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor b = tf_a.make({2, 1, 3}, /*data=*/{2, 3, 4, 5, 6, 7});
+
+    // Destination for output of mul.
+    Tensor out =
+        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor expected = tf_a.make(
+        {2, 2, 3},
+        /*data=*/
+        {0.5000,
+         0.6667,
+         0.75002,
+         2.0000,
+         1.6667,
+         1.5000,
+         1.4000,
+         1.3333,
+         1.2857,
+         2.0000,
+         1.8333,
+         1.7143});
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE_WITH_TOL(op_div_out(a, b, out), expected, 1e-4, 1e-4);
+    expected = tf_a.make(
+        {2, 2, 3},
+        /*data=*/
+        {2.0000,
+         1.5000,
+         1.3333,
+         0.5000,
+         0.6000,
+         0.6667,
+         0.7143,
+         0.7500,
+         0.7778,
+         0.5000,
+         0.5455,
+         0.5833});
+    EXPECT_TENSOR_CLOSE_WITH_TOL(op_div_out(b, a, out), expected, 1e-4, 1e-4);
   }
 
   /**
@@ -455,6 +501,14 @@ TEST_F(OpDivOutTest, DynamicShapeUpperBoundLargerThanExpected) {
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpDivOutTest, BroadcastNDTest) {
+  // Test 3D tensors
+  test_broadcast_3D<ScalarType::Float>();
+  // half and bfloat16 are not supported for div quite yet
+  // test_broadcast_3D<ScalarType::Half>();
+  // test_broadcast_3D<ScalarType::BFloat16>();
 }
 
 TEST_F(OpDivOutTest, DynamicShapeUnbound) {

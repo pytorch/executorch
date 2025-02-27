@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/index_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cstring>
@@ -14,8 +15,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -28,14 +29,14 @@ void scatter_add_helper(
     const Tensor& index,
     Tensor& out,
     int64_t dim) {
-  for (size_t ix = 0; ix < index.numel(); ++ix) {
+  for (const auto ix : c10::irange(index.numel())) {
     size_t ix_coord[kTensorDimensionLimit];
     indexToCoordinate(index, ix, ix_coord);
 
     size_t src_ix = coordinateToIndex(src, ix_coord);
 
     size_t out_coord[kTensorDimensionLimit];
-    for (size_t i = 0; i < out.dim(); ++i) {
+    for (const auto i : c10::irange(out.dim())) {
       if (i == dim) {
         out_coord[i] = index_data[ix];
       } else {

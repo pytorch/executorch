@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::IntArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::IntArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_flip_out(const Tensor& input, IntArrayRef dims, Tensor& out) {
@@ -33,20 +33,26 @@ class OpFlipOutTest : public ::testing::Test {
     // first.
     torch::executor::runtime_init();
   }
+
+  template <ScalarType DTYPE>
+  void test_1d_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor input = tf.make({4, 1, 3}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    int64_t dims_data[1] = {-1};
+    IntArrayRef dims = IntArrayRef(dims_data, 1);
+    Tensor out = tf.zeros({4, 1, 3});
+    Tensor out_expected =
+        tf.make({4, 1, 3}, {3, 2, 1, 6, 5, 4, 9, 8, 7, 12, 11, 10});
+    op_flip_out(input, dims, out);
+    EXPECT_TENSOR_CLOSE(out, out_expected);
+  }
 };
 
 TEST_F(OpFlipOutTest, SmokeTest1Dim) {
-  TensorFactory<ScalarType::Float> tfFloat;
-
-  Tensor input =
-      tfFloat.make({4, 1, 3}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
-  int64_t dims_data[1] = {-1};
-  IntArrayRef dims = IntArrayRef(dims_data, 1);
-  Tensor out = tfFloat.zeros({4, 1, 3});
-  Tensor out_expected =
-      tfFloat.make({4, 1, 3}, {3, 2, 1, 6, 5, 4, 9, 8, 7, 12, 11, 10});
-  op_flip_out(input, dims, out);
-  EXPECT_TENSOR_CLOSE(out, out_expected);
+#define TEST_ENTRY(ctype, dtype) test_1d_dtype<ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
 TEST_F(OpFlipOutTest, SmokeTest2Dims) {

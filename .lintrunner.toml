@@ -1,4 +1,4 @@
-merge_base_with = "origin/main"
+merge_base_with = "main"
 
 [[linter]]
 code = 'FLAKE8'
@@ -78,6 +78,8 @@ exclude_patterns = [
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
+    # Want to be able to keep c10 in sync with PyTorch core.
+    'runtime/core/portable_type/c10/**',
 ]
 command = [
     'python',
@@ -261,6 +263,8 @@ exclude_patterns = [
     'extension/**',
     'kernels/optimized/**',
     'runtime/core/exec_aten/**',
+    # Want to be able to keep c10 in sync with PyTorch core.
+    'runtime/core/portable_type/c10/**',
     'runtime/executor/tensor_parser_aten.cpp',
     'scripts/**',
     'test/**',
@@ -284,4 +288,55 @@ command = [
     """,
     '--',
     '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'MYPY'
+include_patterns = [
+    # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
+    # 'backends/**/*.py',
+    'backends/arm/**/*.py',
+    'build/**/*.py',
+    'codegen/**/*.py',
+    # 'devtools/**/*.py',
+    'devtools/visualization/**/*.py',
+    'docs/**/*.py',
+    # 'examples/**/*.py',
+    # 'exir/**/*.py',
+    # 'extension/**/*.py',
+    'kernels/**/*.py',
+    'profiler/**/*.py',
+    'runtime/**/*.py',
+    'scripts/**/*.py',
+    'test/**/*.py',
+    'util/**/*.py',
+    '*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    'scripts/check_binary_dependencies.py',
+    'profiler/test/test_profiler_e2e.py',
+    'backends/arm/test/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'mypy_linter',
+    '--config=.mypy.ini',
+    '--show-disable',
+    '--',
+    '--explicit-package-bases',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
 ]

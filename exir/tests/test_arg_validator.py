@@ -64,7 +64,7 @@ class TestArgValidator(unittest.TestCase):
             ops.edge.aten._log_softmax.default.name(),
         )
         self.assertDictEqual(
-            validator.violating_ops[key],
+            validator.violating_ops[key][0],
             {
                 "self": torch.bfloat16,
                 "__ret_0": torch.bfloat16,

@@ -26,8 +26,8 @@
 using namespace ::testing;
 using namespace executorch::extension::training::optimizer;
 using namespace torch::executor::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
 

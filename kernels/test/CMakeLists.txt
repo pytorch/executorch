@@ -66,7 +66,7 @@ foreach(kernel ${_kernels})
       cp
       "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/*.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
-      DEPENDS "${kernel}_ops_lib"
+    DEPENDS "${kernel}_ops_lib"
   )
 endforeach()
 
@@ -117,6 +117,7 @@ set(all_test_sources
     "op_clamp_test.cpp"
     "op_clone_test.cpp"
     "op_constant_pad_nd_test.cpp"
+    "op_convolution_backward_test.cpp"
     "op_convolution_test.cpp"
     "op_copy_test.cpp"
     "op_cos_test.cpp"
@@ -139,6 +140,7 @@ set(all_test_sources
     "op_fmod_test.cpp"
     "op_full_like_test.cpp"
     "op_full_test.cpp"
+    "op_gather_test.cpp"
     "op_ge_test.cpp"
     "op_gelu_test.cpp"
     "op_glu_test.cpp"
@@ -199,6 +201,7 @@ set(all_test_sources
     "op_rsqrt_test.cpp"
     "op_rsub_test.cpp"
     "op_scalar_tensor_test.cpp"
+    "op_scatter_test.cpp"
     "op_scatter_add_test.cpp"
     "op_select_scatter_test.cpp"
     "op_select_copy_test.cpp"
@@ -220,11 +223,14 @@ set(all_test_sources
     "op_tan_test.cpp"
     "op_tanh_test.cpp"
     "op_to_copy_test.cpp"
+    "op_topk_test.cpp"
     "op_transpose_copy_test.cpp"
     "op_tril_test.cpp"
     "op_trunc_test.cpp"
     "op_unbind_copy_test.cpp"
     "op_unsqueeze_copy_test.cpp"
+    "op_upsample_bilinear2d_test.cpp"
+    "op_upsample_nearest2d_test.cpp"
     "op_var_test.cpp"
     "op_view_copy_test.cpp"
     "op_where_test.cpp"
@@ -259,20 +265,18 @@ set(_optimized_kernels_test_sources
     "op_bmm_test.cpp"
     "op_div_test.cpp"
     "op_exp_test.cpp"
+    "op_fft_r2c_test.cpp"
     "op_gelu_test.cpp"
     "op_le_test.cpp"
+    "op_linear_test.cpp"
     "op_log_softmax_test.cpp"
+    "op_mm_test.cpp"
     "op_mul_test.cpp"
     "op_native_layer_norm_test.cpp"
     "op_neg_test.cpp"
     "op_sub_test.cpp"
     "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
-    ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
-)
-
-# We don't have sleef on OSS so we don't have gelu and log_softmax
-list(REMOVE_ITEM _optimized_kernels_test_sources "op_gelu_test.cpp"
-     "op_log_softmax_test.cpp"
+    ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
 )
 
 et_cxx_test(

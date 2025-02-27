@@ -18,24 +18,24 @@ class BinaryLogicalOpTest : public OperatorTest {
  protected:
   // Implement this to call the torch::executor::aten::op_outf function for the
   // op.
-  virtual exec_aten::Tensor& op_out(
-      const exec_aten::Tensor& lhs,
-      const exec_aten::Tensor& rhs,
-      exec_aten::Tensor& out) = 0;
+  virtual executorch::aten::Tensor& op_out(
+      const executorch::aten::Tensor& lhs,
+      const executorch::aten::Tensor& rhs,
+      executorch::aten::Tensor& out) = 0;
 
   // Scalar reference implementation of the function in question for testing.
   virtual double op_reference(double x, double y) const = 0;
 
   template <
-      exec_aten::ScalarType IN_DTYPE,
-      exec_aten::ScalarType IN_DTYPE2,
-      exec_aten::ScalarType OUT_DTYPE>
+      executorch::aten::ScalarType IN_DTYPE,
+      executorch::aten::ScalarType IN_DTYPE2,
+      executorch::aten::ScalarType OUT_DTYPE>
   void test_op_out() {
     TensorFactory<IN_DTYPE> tf_in;
     TensorFactory<IN_DTYPE2> tf_in2;
     TensorFactory<OUT_DTYPE> tf_out;
 
-    exec_aten::Tensor out = tf_out.zeros({1, 4});
+    executorch::aten::Tensor out = tf_out.zeros({1, 4});
 
     using CTYPE1 = typename decltype(tf_in)::ctype;
     std::vector<CTYPE1> test_vector1 = {0, CTYPE1(-1), CTYPE1(0), CTYPE1(31)};

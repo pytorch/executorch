@@ -11,20 +11,24 @@
 namespace executorch {
 namespace runtime {
 template <>
-exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>>
-BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>::get() const {
-  for (typename exec_aten::ArrayRef<
-           exec_aten::optional<exec_aten::Tensor>>::size_type i = 0;
+executorch::aten::ArrayRef<executorch::aten::optional<executorch::aten::Tensor>>
+BoxedEvalueList<executorch::aten::optional<executorch::aten::Tensor>>::get()
+    const {
+  for (typename executorch::aten::ArrayRef<
+           executorch::aten::optional<executorch::aten::Tensor>>::size_type i =
+           0;
        i < wrapped_vals_.size();
        i++) {
     if (wrapped_vals_[i] == nullptr) {
-      unwrapped_vals_[i] = exec_aten::nullopt;
+      unwrapped_vals_[i] = executorch::aten::nullopt;
     } else {
       unwrapped_vals_[i] =
-          wrapped_vals_[i]->to<exec_aten::optional<exec_aten::Tensor>>();
+          wrapped_vals_[i]
+              ->to<executorch::aten::optional<executorch::aten::Tensor>>();
     }
   }
-  return exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>>{
+  return executorch::aten::ArrayRef<
+      executorch::aten::optional<executorch::aten::Tensor>>{
       unwrapped_vals_, wrapped_vals_.size()};
 }
 } // namespace runtime

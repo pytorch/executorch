@@ -17,6 +17,20 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+  COMMAND python3 -m test.models.export_program --modules "ModuleAdd" --outdir
+          "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+  WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+)
+
+add_custom_target(
+  executorch_runner_util_test_resources
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
+)
+
+set(test_env "ET_MODULE_ADD_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte")
+
 set(_test_srcs inputs_test.cpp)
 
 et_cxx_test(
@@ -29,7 +43,6 @@ et_cxx_test(
   portable_kernels
   portable_ops_lib
 )
-set_property(
-  TEST extension_runner_util_test
-  PROPERTY ENVIRONMENT "ET_MODULE_ADD_PATH=${CMAKE_BINARY_DIR}/ModuleAdd.pte"
-)
+
+add_dependencies(extension_runner_util_test executorch_runner_util_test_resources)
+set_property(TEST extension_runner_util_test PROPERTY ENVIRONMENT ${test_env})

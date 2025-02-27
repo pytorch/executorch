@@ -1,7 +1,9 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 
 
 import logging
@@ -27,7 +29,7 @@ class RightShiftSupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
-    def is_node_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
+    def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
 
         # TODO MLETORCH-525 Remove warning
         if isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset:

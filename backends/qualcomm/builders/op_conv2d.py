@@ -119,16 +119,16 @@ class Conv2d(NodeVisitor):
         op_wrapper_list = []  # op_wrapper to return
         unsqueeze_input_node = node.args[0]
         input_quant_encoding, input_quant_configs = self.get_quant_encoding_conf(
-            unsqueeze_input_node,
+            unsqueeze_input_node, node
         )
 
         unsqueeze_input_tensor = self.get_tensor(unsqueeze_input_node, node)
         unsqueeze_input_tensor_wrapper = self.define_tensor(
             unsqueeze_input_node,
+            node,
             unsqueeze_input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         unsqueeze_output_tensor = unsqueeze_input_tensor.unsqueeze(1).contiguous()
         dtype = self.get_data_type(unsqueeze_output_tensor, input_quant_configs)
@@ -165,10 +165,10 @@ class Conv2d(NodeVisitor):
         filter_tensor = filter_tensor.permute(dims=filter_axis_order).contiguous()
         filter_tensor_wrapper = self.define_tensor(
             filter_node,
+            node,
             filter_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         conv_input_tensors = [unsqueeze_output_tensor_wrapper, filter_tensor_wrapper]
         if node.args[2] is not None:
@@ -176,10 +176,10 @@ class Conv2d(NodeVisitor):
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
+                node,
                 bias_tensor,
                 PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
                 nodes_to_wrappers,
-                is_input_tensor=False,
             )
             conv_input_tensors.append(bias_tensor_wrapper)
 
@@ -238,7 +238,7 @@ class Conv2d(NodeVisitor):
             padding_shape,
             dilation,
             dilation_shape,
-            groups,
+            groups=groups,
         )
         op_wrapper_list.append(conv_op)
 
@@ -250,10 +250,10 @@ class Conv2d(NodeVisitor):
         squeeze_output_tensor = self.get_tensor(node, node)
         squeeze_output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             squeeze_output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
             node_name=node.name,
         )
         squeeze_op.AddInputTensors([conv_output_tensor_wrapper])
@@ -274,10 +274,10 @@ class Conv2d(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         filter_node = node.args[1]
@@ -288,10 +288,10 @@ class Conv2d(NodeVisitor):
         filter_tensor = filter_tensor.permute(dims=filter_axis_order).contiguous()
         filter_tensor_wrapper = self.define_tensor(
             filter_node,
+            node,
             filter_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         conv_input_tensors = [input_tensor_wrapper, filter_tensor_wrapper]
 
@@ -300,20 +300,20 @@ class Conv2d(NodeVisitor):
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
+                node,
                 bias_tensor,
                 PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
                 nodes_to_wrappers,
-                is_input_tensor=False,
             )
             conv_input_tensors.append(bias_tensor_wrapper)
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         conv_output_tensors = [output_tensor_wrapper]
 

@@ -10,6 +10,7 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 
@@ -36,6 +37,32 @@
 namespace executorch {
 namespace extension {
 
+namespace {
+runtime::Result<std::unique_ptr<runtime::DataLoader>> load_file(
+    const std::string& file_path,
+    Module::LoadMode mode) {
+  std::unique_ptr<runtime::DataLoader> res = nullptr;
+  switch (mode) {
+    case Module::LoadMode::File:
+      res = ET_UNWRAP_UNIQUE(FileDataLoader::from(file_path.c_str()));
+      break;
+    case Module::LoadMode::Mmap:
+      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
+          file_path.c_str(), MmapDataLoader::MlockConfig::NoMlock));
+      break;
+    case Module::LoadMode::MmapUseMlock:
+      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(file_path.c_str()));
+      break;
+    case Module::LoadMode::MmapUseMlockIgnoreErrors:
+      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
+          file_path.c_str(),
+          MmapDataLoader::MlockConfig::UseMlockIgnoreErrors));
+      break;
+  }
+  return res;
+}
+} // namespace
+
 Module::Module(
     const std::string& file_path,
     const LoadMode load_mode,
@@ -44,7 +71,25 @@ Module::Module(
       load_mode_(load_mode),
       memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
       temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)) {
+      event_tracer_(std::move(event_tracer)),
+      data_map_loader_(nullptr),
+      data_map_(nullptr) {
+  runtime::runtime_init();
+}
+
+Module::Module(
+    const std::string& file_path,
+    const std::string& data_map_path,
+    const LoadMode load_mode,
+    std::unique_ptr<runtime::EventTracer> event_tracer)
+    : file_path_(file_path),
+      data_map_path_(data_map_path),
+      load_mode_(load_mode),
+      memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
+      temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
+      event_tracer_(std::move(event_tracer)),
+      data_map_loader_(nullptr),
+      data_map_(nullptr) {
   runtime::runtime_init();
 }
 
@@ -52,7 +97,8 @@ Module::Module(
     std::unique_ptr<runtime::DataLoader> data_loader,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
-    std::unique_ptr<runtime::EventTracer> event_tracer)
+    std::unique_ptr<runtime::EventTracer> event_tracer,
+    std::unique_ptr<runtime::DataLoader> data_map_loader)
     : data_loader_(std::move(data_loader)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
@@ -60,7 +106,9 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)) {
+      event_tracer_(std::move(event_tracer)),
+      data_map_loader_(std::move(data_map_loader)),
+      data_map_(nullptr) {
   runtime::runtime_init();
 }
 
@@ -68,7 +116,8 @@ Module::Module(
     std::shared_ptr<runtime::Program> program,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
-    std::unique_ptr<runtime::EventTracer> event_tracer)
+    std::unique_ptr<runtime::EventTracer> event_tracer,
+    std::unique_ptr<runtime::DataLoader> data_map_loader)
     : program_(std::move(program)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
@@ -76,33 +125,37 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)) {
+      event_tracer_(std::move(event_tracer)),
+      data_map_loader_(std::move(data_map_loader)),
+      data_map_(nullptr) {
   runtime::runtime_init();
 }
 
 runtime::Error Module::load(const runtime::Program::Verification verification) {
   if (!is_loaded()) {
+    // Load the program
     if (!data_loader_) {
-      switch (load_mode_) {
-        case LoadMode::File:
-          data_loader_ =
-              ET_UNWRAP_UNIQUE(FileDataLoader::from(file_path_.c_str()));
-          break;
-        case LoadMode::Mmap:
-          data_loader_ = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
-              file_path_.c_str(), MmapDataLoader::MlockConfig::NoMlock));
-          break;
-        case LoadMode::MmapUseMlock:
-          data_loader_ =
-              ET_UNWRAP_UNIQUE(MmapDataLoader::from(file_path_.c_str()));
-          break;
-        case LoadMode::MmapUseMlockIgnoreErrors:
-          data_loader_ = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
-              file_path_.c_str(),
-              MmapDataLoader::MlockConfig::UseMlockIgnoreErrors));
-          break;
+      auto res = load_file(file_path_, load_mode_);
+      if (!res.ok()) {
+        return res.error();
       }
-    };
+      data_loader_ = std::move(res.get());
+    }
+    // If a .ptd path was given load it.
+    if (data_map_path_ != "") {
+      auto res = load_file(data_map_path_, load_mode_);
+      if (!res.ok()) {
+        return res.error();
+      }
+      data_map_loader_ = std::move(res.get());
+    }
+    // If we have a .ptd loader, then load the map.
+    if (data_map_loader_) {
+      data_map_ =
+          ET_UNWRAP_UNIQUE(FlatTensorDataMap::load(data_map_loader_.get()));
+    }
+    // else: either the map itself was provided or we have no data map, either
+    // way no work to do.
     auto program = ET_UNWRAP_UNIQUE(
         runtime::Program::load(data_loader_.get(), verification));
     program_ = std::shared_ptr<runtime::Program>(
@@ -130,6 +183,7 @@ runtime::Error Module::load_method(
     ET_CHECK_OK_OR_RETURN_ERROR(load());
 
     MethodHolder method_holder;
+
     const auto method_metadata =
         ET_UNWRAP(program_->method_meta(method_name.c_str()));
     const auto planned_buffersCount =
@@ -155,7 +209,8 @@ runtime::Error Module::load_method(
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
-        event_tracer ? event_tracer : this->event_tracer()));
+        event_tracer ? event_tracer : this->event_tracer(),
+        data_map_.get()));
     method_holder.inputs.resize(method_holder.method->inputs_size());
     methods_.emplace(method_name, std::move(method_holder));
   }
@@ -184,8 +239,9 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
     ET_CHECK_OR_RETURN_ERROR(
         !inputs[i].isNone(), InvalidArgument, "input %zu is none", i);
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(method->set_inputs(
-      exec_aten::ArrayRef<runtime::EValue>(inputs.data(), inputs.size())));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      method->set_inputs(executorch::aten::ArrayRef<runtime::EValue>(
+          inputs.data(), inputs.size())));
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
 
   const auto outputs_size = method->outputs_size();

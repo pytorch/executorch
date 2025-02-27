@@ -191,9 +191,10 @@ int32_t Sampler::sample(T* logits) {
 }
 
 template int32_t Sampler::sample<float>(float* logits);
-template int32_t Sampler::sample<exec_aten::Half>(exec_aten::Half* logits);
-template int32_t Sampler::sample<exec_aten::BFloat16>(
-    exec_aten::BFloat16* logits);
+template int32_t Sampler::sample<executorch::aten::Half>(
+    executorch::aten::Half* logits);
+template int32_t Sampler::sample<executorch::aten::BFloat16>(
+    executorch::aten::BFloat16* logits);
 
 } // namespace llm
 } // namespace extension

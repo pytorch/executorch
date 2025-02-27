@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/flat_tensor/serialize/serialize.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/extension/training/module/training_module.h>
 #include <executorch/extension/training/optimizer/sgd.h>
@@ -105,4 +106,11 @@ int main(int argc, char** argv) {
     }
     optimizer.step(mod.named_gradients("forward").get());
   }
+  std::map<std::string, exec_aten::Tensor> param_map;
+  for (auto& param : param_res.get()) {
+    param_map.insert(std::pair<std::string, exec_aten::Tensor>{
+        std::string(param.first.data()), param.second});
+  }
+
+  executorch::extension::flat_tensor::save_ptd("xor.ptd", param_map, 16);
 }

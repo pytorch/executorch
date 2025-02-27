@@ -57,7 +57,7 @@ void check_tensor(const TensorInfo& tensor_info) {
   EXPECT_EQ(sizes.size(), 2);
   EXPECT_EQ(sizes[0], 2);
   EXPECT_EQ(sizes[1], 2);
-  EXPECT_EQ(tensor_info.scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(tensor_info.scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(dim_order.size(), 2);
   EXPECT_EQ(dim_order[0], 0);
   EXPECT_EQ(dim_order[1], 1);

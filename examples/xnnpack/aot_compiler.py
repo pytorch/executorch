@@ -92,6 +92,7 @@ if __name__ == "__main__":
         logging.info("Quantizing Model...")
         # TODO(T165162973): This pass shall eventually be folded into quantizer
         model = quantize(model, example_inputs)
+        ep = torch.export.export_for_training(model, example_inputs)
 
     edge = to_edge_transform_and_lower(
         ep,

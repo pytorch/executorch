@@ -79,7 +79,7 @@ inline double calculate_scale(const Tensor& query, optional<double> scale) {
 
 } // namespace util
 namespace vec = ::executorch::vec;
-using Tensor = exec_aten::Tensor;
+using Tensor = ::executorch::aten::Tensor;
 
 namespace {
 
@@ -594,46 +594,46 @@ bool validate_flash_attention_args(
     const Tensor& key,
     const Tensor& value,
     const optional<Tensor>& attn_mask) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(query.dim() == 4, "query must be a 4D tensor");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(key.dim() == 4, "key must be a 4D tensor");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(value.dim() == 4, "value must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(query.dim() == 4, "query must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(key.dim() == 4, "key must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(value.dim() == 4, "value must be a 4D tensor");
 
   // Sizes
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (query.size(3) == value.size(3)) && (key.size(3) == value.size(3)),
       "scaled_dot_product_attention_flash_attention: Q/K/V should have the same head size");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == ScalarType::Float), "Query must be Float type");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == key.scalar_type()) &&
           (query.scalar_type() == value.scalar_type()),
       "Key and Value must have the same data type as Query");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !attn_mask.has_value() || attn_mask.value().dim() == 2,
       "Attention mask must be a 2D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !attn_mask.has_value() ||
           attn_mask.value().scalar_type() == query.scalar_type(),
       "Attention mask must be a 2D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(query.dim_order().data(), query.dim()),
       "key cache must be in contiguous dim order");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(key.dim_order().data(), key.dim()),
       "value cache must be in contiguous dim order");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(value.dim_order().data(), value.dim()),
       "value cache must be in contiguous dim order");
 
   if (attn_mask.has_value()) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         is_contiguous_dim_order(
             attn_mask.value().dim_order().data(), attn_mask.value().dim()),
         "value cache must be in contiguous dim order");
@@ -647,21 +647,19 @@ bool validate_cache_params(
     const Tensor& v_cache,
     int64_t start_pos,
     int64_t seq_length) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      k_cache.dim() == 4, "kcache must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(k_cache.dim() == 4, "kcache must be a 4D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      v_cache.dim() == 4, "v_cache must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(v_cache.dim() == 4, "v_cache must be a 4D tensor");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       start_pos < k_cache.size(1),
       "start_pos must be less than key cache at dim 1");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       start_pos < v_cache.size(1),
       "start_pos must be less than value cache at dim 1");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (start_pos + seq_length) <= k_cache.size(1),
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
@@ -671,7 +669,7 @@ bool validate_cache_params(
       seq_length,
       k_cache.size(1));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       (start_pos + seq_length) <= v_cache.size(1),
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
@@ -682,11 +680,11 @@ bool validate_cache_params(
       v_cache.size(1));
 
   // Make sure they are in contiguous dim order
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(k_cache.dim_order().data(), k_cache.dim()),
       "key cache must be in contiguous dim order");
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(v_cache.dim_order().data(), v_cache.dim()),
       "value cache must be in contiguous dim order");
 
@@ -727,23 +725,23 @@ void update_cache(
   ET_CHECK_MSG(cache_data, "cache data is null");
 
   auto cache_strides = cache.strides();
-  exec_aten::StridesType cache_batch_dim_stride = cache_strides[0];
-  exec_aten::StridesType cache_seq_dim_stride = cache_strides[1];
+  ::executorch::aten::StridesType cache_batch_dim_stride = cache_strides[0];
+  ::executorch::aten::StridesType cache_seq_dim_stride = cache_strides[1];
 
   auto value_strides = projected_value.strides();
-  exec_aten::StridesType value_batch_dim_stride = value_strides[0];
+  ::executorch::aten::StridesType value_batch_dim_stride = value_strides[0];
 
-  exec_aten::SizesType num_bytes_to_copy =
+  ::executorch::aten::SizesType num_bytes_to_copy =
       (projected_value.numel() / projected_value.size(0)) *
       projected_value.element_size();
 
   for (int64_t batch_line = 0; batch_line < projected_value.size(0);
        ++batch_line) {
-    exec_aten::SizesType cache_pos_offset =
+    ::executorch::aten::SizesType cache_pos_offset =
         (batch_line * cache_batch_dim_stride +
          start_pos * cache_seq_dim_stride) *
         cache.element_size();
-    exec_aten::SizesType value_pos_offset =
+    ::executorch::aten::SizesType value_pos_offset =
         (batch_line * value_batch_dim_stride) * cache.element_size();
 
     std::memcpy(
@@ -863,14 +861,14 @@ Tensor& custom_sdpa_out(
 
   // Refactor the following into create_view util perhaps using
   // TensorPtr
-  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_key_dim_order{
-      0, 1, 2, 3};
-  std::array<exec_aten::SizesType, util::kKVDim> sliced_key_sizes;
+  std::array<::executorch::aten::DimOrderType, util::kKVDim>
+      sliced_key_dim_order{0, 1, 2, 3};
+  std::array<::executorch::aten::SizesType, util::kKVDim> sliced_key_sizes;
   sliced_key_sizes[0] = k.size(0);
   sliced_key_sizes[1] = start_pos + seq_len; // key_cache.size(2);
   sliced_key_sizes[2] = k.size(2);
   sliced_key_sizes[3] = k.size(3);
-  std::array<exec_aten::StridesType, util::kKVDim> sliced_key_strides;
+  std::array<::executorch::aten::StridesType, util::kKVDim> sliced_key_strides;
   dim_order_to_stride_nocheck(
       sliced_key_sizes.data(),
       sliced_key_dim_order.data(),
@@ -889,14 +887,15 @@ Tensor& custom_sdpa_out(
       TensorShapeDynamism::STATIC);
   Tensor sliced_key_cache(&k_impl);
 
-  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_value_dim_order{
-      0, 1, 2, 3};
-  std::array<exec_aten::SizesType, util::kKVDim> sliced_value_sizes;
+  std::array<::executorch::aten::DimOrderType, util::kKVDim>
+      sliced_value_dim_order{0, 1, 2, 3};
+  std::array<::executorch::aten::SizesType, util::kKVDim> sliced_value_sizes;
   sliced_value_sizes[0] = v.size(0);
   sliced_value_sizes[1] = start_pos + seq_len; // value_cache.size(2);
   sliced_value_sizes[2] = v.size(2);
   sliced_value_sizes[3] = v.size(3);
-  std::array<exec_aten::StridesType, util::kKVDim> sliced_value_strides;
+  std::array<::executorch::aten::StridesType, util::kKVDim>
+      sliced_value_strides;
   dim_order_to_stride_nocheck(
       sliced_value_sizes.data(),
       sliced_value_dim_order.data(),

@@ -11,8 +11,11 @@
 #include <algorithm>
 #include <cstdint>
 
+#include <c10/util/irange.h>
+
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <executorch/runtime/core/portable_type/qint_types.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/platform/assert.h>
@@ -29,7 +32,7 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
       dim == 0 || sizes != nullptr,
       "Sizes must be provided for non-scalar tensors");
   ssize_t numel = 1; // Zero-dimensional tensors (scalars) have numel == 1.
-  for (ssize_t i = 0; i < dim; ++i) {
+  for (const auto i : c10::irange(dim)) {
     ET_CHECK_MSG(
         sizes[i] >= 0,
         "Size must be non-negative, got %d at dimension %zd",
@@ -90,24 +93,38 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   if (dim_ == 0) {
     return Error::Ok;
   }
+
   switch (shape_dynamism_) {
     case TensorShapeDynamism::STATIC:
-      ET_CHECK_OR_RETURN_ERROR(
-          std::equal(sizes_, sizes_ + dim_, new_sizes.begin()),
-          NotSupported,
-          "Attempted to resize a static tensor");
+      if (!std::equal(sizes_, sizes_ + dim_, new_sizes.begin())) {
+#if ET_LOG_ENABLED
+        executorch::runtime::Span<const SizesType> sizes_span(
+            sizes().data(), sizes().size());
+        executorch::runtime::Span<const SizesType> new_sizes_span(
+            new_sizes.data(), new_sizes.size());
+        ET_LOG(
+            Error,
+            "Attempted to resize a static tensor. Expected shape %s, but received %s.",
+            executorch::runtime::tensor_shape_to_c_string(sizes_span).data(),
+            executorch::runtime::tensor_shape_to_c_string(new_sizes_span)
+                .data());
+#endif
+        return executorch::runtime::Error::NotSupported;
+      }
+
       break;
     case TensorShapeDynamism::DYNAMIC_BOUND:
       // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
       // supported: treat them as upper-bounded.
     case TensorShapeDynamism::DYNAMIC_UNBOUND: {
       const auto new_numel = compute_numel(new_sizes.data(), dim_);
+
       ET_CHECK_OR_RETURN_ERROR(
           new_numel <= numel_bound_,
           NotSupported,
-          "Attempted to resize a bounded tensor with capacity of %zu elements to %zu elements.",
-          new_numel,
-          numel_bound_);
+          "Attempted to resize a bounded tensor with a maximum capacity of %zu elements to %zu elements.",
+          numel_bound_,
+          new_numel);
 
       if (strides_ && dim_order_) {
         auto error =

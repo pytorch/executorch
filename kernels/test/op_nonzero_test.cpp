@@ -14,8 +14,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpNonzeroTest : public OperatorTest {
@@ -24,14 +24,12 @@ class OpNonzeroTest : public OperatorTest {
     return torch::executor::aten::nonzero_outf(context_, self, out);
   }
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
   void test_dtype() {
     TensorFactory<DTYPE> tf_input;
     TensorFactory<ScalarType::Long> tf_long;
-    // clang-format off
-    Tensor a = tf_input.make(/*sizes=*/{2, 2}, /*data=*/{2, 0,
-                                                         2, 4});
-    // clang-format on
+    Tensor a = tf_input.make(
+        /*sizes=*/{2, 2}, /*data=*/{CTYPE(2), CTYPE(0), CTYPE(2), CTYPE(4)});
     Tensor out = tf_long.zeros({3, 2});
 
     op_nonzero_out(a, out);
@@ -45,7 +43,7 @@ class OpNonzeroTest : public OperatorTest {
 
 TEST_F(OpNonzeroTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

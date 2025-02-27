@@ -101,7 +101,7 @@ struct KernelControl {
     // Float with dim order (0, 1)
 
     // Construct a kernel key with the following meta:
-    // exec_aten::DimOrderType contiguous[] = {0, 1};
+    // executorch::aten::DimOrderType contiguous[] = {0, 1};
     // TensorMeta float_contiguous[] = {
     //     TensorMeta(ScalarType::Float, contiguous), // self
     //     TensorMeta(ScalarType::Float, contiguous), // other

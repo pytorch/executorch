@@ -29,7 +29,7 @@ classifiers = [
     #   3 - Alpha
     #   4 - Beta
     #   5 - Production/Stable
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
@@ -55,15 +55,13 @@ dependencies=[
   "flatbuffers",
   "hypothesis",
   "mpmath==1.3.0",
-  "numpy==1.21.3; python_version == '3.10'",
-  "numpy==1.23.2; python_version == '3.11'",
-  "numpy; python_version >= '3.12'",
+  "numpy>=2.0.0; python_version >= '3.10'",
   "packaging",
-  "pandas==2.0.3; python_version == '3.10'",
-  "pandas; python_version >= '3.11'",
+  "pandas>=2.2.2; python_version >= '3.10'",
   "parameterized",
   "pytest",
   "pytest-xdist",
+  "pytest-rerunfailures",
   "pyyaml",
   "ruamel.yaml",
   "sympy",
@@ -83,6 +81,25 @@ Changelog = "https://github.com/pytorch/executorch/releases"
 # path.
 [project.scripts]
 flatc = "executorch.data.bin:flatc"
+
+# TODO(dbort): Could use py_modules to restrict the set of modules we
+# package, and package_data to restrict the set up non-python files we
+# include. See also setuptools/discovery.py for custom finders.
+[tool.setuptools.package-dir]
+"executorch.backends" = "backends"
+"executorch.codegen" = "codegen"
+# TODO(mnachin T180504136): Do not put examples/models
+# into core pip packages. Refactor out the necessary utils
+# or core models files into a separate package.
+"executorch.examples.models" = "examples/models"
+"executorch.exir" = "exir"
+"executorch.extension" = "extension"
+"executorch.kernels.quantized" = "kernels/quantized"
+"executorch.schema" = "schema"
+"executorch.devtools" = "devtools"
+"executorch.devtools.bundled_program" = "devtools/bundled_program"
+"executorch.runtime" = "runtime"
+"executorch.util" = "util"
 
 [tool.setuptools.package-data]
 # TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we

@@ -6,6 +6,8 @@
 
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
+- op: _fft_r2c.out
+
 - op: _linalg_det.result
 
 - op: _linalg_svd.U
@@ -257,6 +259,8 @@
 
 - op: mean.out
 
+- op: mean.dtype_out
+
 - op: min.dim_min
 
 - op: min.unary_out
@@ -405,7 +409,7 @@
 
 - op: unsqueeze_copy.out
 
-- op: upsample_nearest2d.out
+- op: upsample_bilinear2d.vec_out
 
 - op: upsample_nearest2d.vec_out
 

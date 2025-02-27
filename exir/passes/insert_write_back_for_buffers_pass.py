@@ -100,19 +100,23 @@ def insert_write_back_for_buffers_pass(
             input_name_to_node[lifted_node] = input_node
 
     # Grab the mutable buffer nodes in the outputs,
-    mutated_outputs: List[Optional[str]] = [
-        (
-            out_spec.target
-            if out_spec.kind
+    mutated_outputs: List[Optional[str]] = []
+    for out_spec in ep.graph_signature.output_specs:
+        # if the output arg is the input value then all operations on it are in-place
+        # so there's no need to add a copy_ node
+        if (
+            out_spec.kind
             in (OutputKind.BUFFER_MUTATION, OutputKind.USER_INPUT_MUTATION)
-            and out_spec.arg.name
-            not in {
-                val.name for val in input_name_to_node.values()
-            }  # if the output arg is the input value then all operations on it are in-place so theres no need to add a copy_ node
-            else None
-        )
-        for out_spec in ep.graph_signature.output_specs
-    ]
+            and
+            # explicitly check if target exists (it should always be there)
+            out_spec.target in input_name_to_node
+            and
+            # if the arg and target are not the same, we add a copy_ node.
+            out_spec.arg.name != input_name_to_node[out_spec.target].name
+        ):
+            mutated_outputs.append(out_spec.target)
+        else:
+            mutated_outputs.append(None)
 
     # insert the copy ops and update the outputs
     buffer_output_nodes = _insert_copy(gm, mutated_outputs, input_name_to_node)

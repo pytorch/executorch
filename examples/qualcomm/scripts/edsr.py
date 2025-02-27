@@ -102,14 +102,17 @@ def main(args):
             "Please specify a device serial by -s/--device argument."
         )
 
-    dataset = get_dataset(
-        args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
-    )
-
-    inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
-    pte_filename = "edsr_qnn_q8"
     instance = EdsrModel()
+    if args.compile_only:
+        inputs = instance.get_example_inputs()
+    else:
+        dataset = get_dataset(
+            args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
+        )
 
+        inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
+
+    pte_filename = "edsr_qnn_q8"
     build_executorch_binary(
         instance.get_eager_model().eval(),
         (inputs[0],),

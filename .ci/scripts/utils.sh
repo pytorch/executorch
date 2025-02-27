@@ -17,7 +17,7 @@ retry () {
 }
 
 clean_executorch_install_folders() {
-  ./install_requirements.sh --clean
+  ./install_executorch.sh --clean
 }
 
 install_executorch() {
@@ -25,9 +25,9 @@ install_executorch() {
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
   if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
-    ./install_requirements.sh --pybind xnnpack --use-pt-pinned-commit
+    ./install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
   else
-    ./install_requirements.sh --pybind xnnpack
+    ./install_executorch.sh --pybind xnnpack
   fi
   # Just print out the list of packages for debugging
   pip list
@@ -38,6 +38,42 @@ install_pip_dependencies() {
   # Install all Python dependencies, including PyTorch
   pip install --progress-bar off -r requirements-ci.txt
   popd || return
+}
+
+install_domains() {
+  echo "Install torchvision and torchaudio"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+}
+
+install_pytorch_and_domains() {
+  pushd .ci/docker || return
+  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+  popd || return
+
+  git clone https://github.com/pytorch/pytorch.git
+
+  # Fetch the target commit
+  pushd pytorch || return
+  git checkout "${TORCH_VERSION}"
+  git submodule update --init --recursive
+
+  export USE_DISTRIBUTED=1
+  # Then build and install PyTorch
+  python setup.py bdist_wheel
+  pip install "$(echo dist/*.whl)"
+
+  # Grab the pinned audio and vision commits from PyTorch
+  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  export TORCHAUDIO_VERSION
+  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  export TORCHVISION_VERSION
+
+  install_domains
+
+  popd || return
+  # Print sccache stats for debugging
+  sccache --show-stats || true
 }
 
 install_flatc_from_source() {
@@ -59,17 +95,6 @@ install_flatc_from_source() {
   popd || return
 }
 
-install_arm() {
-  # NB: This function could be used to install Arm dependencies
-  # Setup arm example environment (including TOSA tools)
-  git config --global user.email "github_executorch@arm.com"
-  git config --global user.name "Github Executorch"
-  bash examples/arm/setup.sh --i-agree-to-the-contained-eula
-
-  # Test tosa_reference flow
-  source examples/arm/ethos-u-scratch/setup_path.sh
-}
-
 build_executorch_runner_buck2() {
   # Build executorch runtime with retry as this step is flaky on macos CI
   retry buck2 build //examples/portable/executor_runner:executor_runner
@@ -84,7 +109,7 @@ build_executorch_runner_cmake() {
   pushd "${CMAKE_OUTPUT_DIR}" || return
   # This command uses buck2 to gather source files and buck2 could crash flakily
   # on MacOS
-  retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE=Release ..
+  retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
   popd || return
 
   if [ "$(uname)" == "Darwin" ]; then
@@ -99,7 +124,7 @@ build_executorch_runner() {
   if [[ $1 == "buck2" ]]; then
     build_executorch_runner_buck2
   elif [[ $1 == "cmake" ]]; then
-    build_executorch_runner_cmake
+    build_executorch_runner_cmake "$2"
   else
     echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
     exit 1

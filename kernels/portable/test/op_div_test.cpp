@@ -16,11 +16,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::Scalar;
-using exec_aten::ScalarType;
-using exec_aten::SizesType;
-using exec_aten::StridesType;
-using exec_aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::aten::ScalarType;
+using executorch::aten::SizesType;
+using executorch::aten::StridesType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 // Note: This file is used for testing op_div for *portable kernel specific*.
@@ -32,7 +32,7 @@ class OpDivScalarOutKernelTest : public OperatorTest {
   Tensor& op_div_out_mode(
       const Tensor& a,
       const Tensor& b,
-      exec_aten::optional<exec_aten::string_view> mode,
+      executorch::aten::optional<executorch::aten::string_view> mode,
       Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, mode, out);
   }
@@ -43,7 +43,7 @@ class OpDivScalarModeOutKernelTest : public OperatorTest {
   Tensor& op_div_scalar_mode_out(
       const Tensor& a,
       const Scalar& b,
-      exec_aten::optional<exec_aten::string_view> mode,
+      executorch::aten::optional<executorch::aten::string_view> mode,
       Tensor& out) {
     return torch::executor::aten::div_outf(context_, a, b, mode, out);
   }
@@ -60,7 +60,7 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeTrunc) {
   op_div_out_mode(
       tf_a.make(sizes, {1, 2, 4, -9}),
       tf_a.make(sizes, {2, 2, 2, 2}),
-      exec_aten::optional<exec_aten::string_view>("trunc"),
+      executorch::aten::optional<executorch::aten::string_view>("trunc"),
       out);
 
   // Check that it matches the expected output.
@@ -78,7 +78,7 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeFloor) {
   op_div_out_mode(
       tf_a.make(sizes, {1, 2, 4, -9}),
       tf_a.make(sizes, {2, 2, 2, 2}),
-      exec_aten::optional<exec_aten::string_view>("floor"),
+      executorch::aten::optional<executorch::aten::string_view>("floor"),
       out);
 
   // Check that it matches the expected output.
@@ -95,7 +95,7 @@ TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeTrunc) {
   op_div_scalar_mode_out(
       tf.make(sizes, {1, 2, 4, -9}),
       2,
-      exec_aten::optional<exec_aten::string_view>("trunc"),
+      executorch::aten::optional<executorch::aten::string_view>("trunc"),
       out);
 
   // Check that it matches the expected output.
@@ -112,7 +112,7 @@ TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeFloor) {
   op_div_scalar_mode_out(
       tf.make(sizes, {1, 2, 4, -9}),
       2,
-      exec_aten::optional<exec_aten::string_view>("floor"),
+      executorch::aten::optional<executorch::aten::string_view>("floor"),
       out);
 
   // Check that it matches the expected output.

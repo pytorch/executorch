@@ -16,7 +16,7 @@ namespace executor {
 bool check__to_dim_order_copy_args(
     const Tensor& input,
     bool non_blocking,
-    exec_aten::OptionalArrayRef<int64_t> dim_order,
+    executorch::aten::OptionalArrayRef<int64_t> dim_order,
     Tensor& out);
 
 } // namespace executor

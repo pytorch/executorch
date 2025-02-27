@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.partition.graphs import bilinear_2d
@@ -23,6 +25,10 @@ class ConvertToUpsampleBilinear2d(XNNPACKPass):
         align_corners: bool,
     ):
         output = internal_match.returning_nodes[0]
+        if output.target == exir_ops.edge.aten.upsample_bilinear2d.vec:
+            # Op was not decomposed, do nothing
+            return
+
         output_shape = output.meta["val"].shape
         output_h = output_shape[-2]
         output_w = output_shape[-1]

@@ -8,14 +8,15 @@
   root = .
   prelude = third-party/prelude
   shim = shim
+  shim_et = shim_et
 
 [repository_aliases]
   config = prelude
   ovr_config = prelude
-  toolchains = shim
-  fbcode = shim
-  fbcode_macros = shim
-  fbsource = shim
+  toolchains = shim_et
+  fbcode = shim_et
+  fbcode_macros = shim_et
+  fbsource = shim_et
   buck = shim
 
 [cxx]
@@ -33,3 +34,6 @@
       **/.git, \
       cmake-out, \
       pip-out
+
+[buck2]
+restarter=true

@@ -31,8 +31,11 @@ struct ETDumpStaticAllocator {
     data_size = alloc_buf_size;
     allocated = 0;
     out_size = total_buf_size - alloc_buf_size;
-    front_cursor = &buffer[alloc_buf_size];
-    front_left = out_size / 2;
+    // The front of the buffer is the end of the allocation buffer.
+    // We start writing from the end of the allocation buffer, and
+    // move backwards.
+    front_cursor = &buffer[alloc_buf_size + out_size];
+    front_left = out_size;
   }
 
   // Pointer to backing buffer to allocate from.
@@ -103,7 +106,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
-      const exec_aten::Tensor& output) override;
+      const executorch::aten::Tensor& output) override;
 
   /**
    * Log an intermediate tensor array output from a delegate.
@@ -111,7 +114,8 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
-      const ::executorch::runtime::ArrayRef<exec_aten::Tensor> output) override;
+      const ::executorch::runtime::ArrayRef<executorch::aten::Tensor> output)
+      override;
 
   /**
    * Log an intermediate int output from a delegate.
@@ -154,7 +158,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
 
   void check_ready_to_add_events();
   int64_t create_string_entry(const char* name);
-  size_t copy_tensor_to_debug_buffer(exec_aten::Tensor tensor);
+  size_t copy_tensor_to_debug_buffer(executorch::aten::Tensor tensor);
 
   /**
    * Templated helper function used to log various types of intermediate output.

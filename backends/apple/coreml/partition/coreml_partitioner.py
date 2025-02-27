@@ -3,7 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 import logging
-from typing import List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import coremltools as ct
 
@@ -104,3 +104,17 @@ class CoreMLPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+    def ops_to_not_decompose(
+        self, ep: ExportedProgram
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        do_not_decompose = []
+        op_support = OperatorsSupportedForCoreMLBackend()
+        for node in ep.graph.nodes:
+            if (
+                node.op == "call_function"
+                and isinstance(node.target, torch._ops.OpOverload)
+                and op_support.is_node_supported(None, node)
+            ):
+                do_not_decompose.append(node.target)
+        return do_not_decompose, None

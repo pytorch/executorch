@@ -16,10 +16,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::IntArrayRef;
-using exec_aten::Tensor;
-using OptionalIntArrayRef = exec_aten::OptionalArrayRef<int64_t>;
-using DimOrderArrayRef = exec_aten::ArrayRef<executorch::aten::DimOrderType>;
+using executorch::aten::IntArrayRef;
+using executorch::aten::Tensor;
+using OptionalIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
+using DimOrderArrayRef =
+    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
 // Out Aten tensor shall have same memory format stride as dim_order
 const size_t kMaxNumOfDimensions = 16;
 
@@ -28,18 +29,18 @@ namespace {
 inline bool _check__empty_out_dim_order(
     OptionalIntArrayRef dim_order,
     Tensor& out) {
-  exec_aten::ArrayRef<int64_t> dim_order_ref;
+  executorch::aten::ArrayRef<int64_t> dim_order_ref;
   std::vector<int64_t> dim_order_vec;
 
   if (dim_order.has_value()) {
     // out tensor's dim order shall equal to input dim order
-    dim_order_ref = exec_aten::ArrayRef<int64_t>(
+    dim_order_ref = executorch::aten::ArrayRef<int64_t>(
         dim_order.value().data(), dim_order.value().size());
   } else { // dim_order is not set, out tensor should be contiguous dim order
     for (int i = 0; i < out.dim(); i++) {
       dim_order_vec.push_back(i);
     }
-    dim_order_ref = exec_aten::ArrayRef<int64_t>(dim_order_vec);
+    dim_order_ref = executorch::aten::ArrayRef<int64_t>(dim_order_vec);
   }
 
   // dim order size shall equal to input dim
@@ -50,7 +51,7 @@ inline bool _check__empty_out_dim_order(
       is_contiguous_dim_order(dim_order_ref.data(), dim_order_ref.size()));
 
   ET_LOG_AND_RETURN_IF_FALSE(kMaxNumOfDimensions >= out.dim());
-  exec_aten::StridesType target_strides[kMaxNumOfDimensions];
+  executorch::aten::StridesType target_strides[kMaxNumOfDimensions];
   dim_order_to_stride_nocheck(
       out.sizes().data(),
       dim_order_ref.data(),

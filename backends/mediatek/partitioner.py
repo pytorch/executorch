@@ -44,6 +44,11 @@ class NeuropilotOperatorsSupport(OperatorSupportBase):
             return False
 
         op_type = node.target.__name__
+
+        # Skip until we can handle the dimension order representation
+        if op_type == "aten._to_copy.default":
+            return False
+
         if op_type in self._op_types_to_skip or node.name in self._op_names_to_skip:
             print(
                 f"[Neuropilot Backend] The {op_type} operator with name '{node.name}' is skipped."

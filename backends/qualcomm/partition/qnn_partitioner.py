@@ -29,6 +29,7 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 from .common_defs import (
     allow_list_operator,
+    constant_operator,
     not_supported_operator,
     to_be_implemented_operator,
 )
@@ -82,6 +83,8 @@ class QnnOperatorSupport(OperatorSupportBase):
         op_wrapper = self.node_visitors[node.target.__name__].define_node(
             node, self.nodes_to_wrappers
         )
+        if node.target in constant_operator:
+            return True
 
         op_wrapper_list = []
         if isinstance(op_wrapper, List):

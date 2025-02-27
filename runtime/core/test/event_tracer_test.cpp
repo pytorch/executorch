@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -16,7 +17,7 @@
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 using executorch::runtime::AllocatorID;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::ChainID;
@@ -207,7 +208,7 @@ TEST(TestEventTracer, SimpleEventTracerTest) {
   // and also with a null pointer (to test that the null case works).
   DummyEventTracer dummy;
   std::vector<DummyEventTracer*> dummy_event_tracer_arr = {&dummy, nullptr};
-  for (size_t i = 0; i < dummy_event_tracer_arr.size(); i++) {
+  for (const auto i : c10::irange(dummy_event_tracer_arr.size())) {
     RunSimpleTracerTest(&dummy);
     RunSimpleTracerTest(nullptr);
   }
@@ -234,7 +235,7 @@ TEST(TestEventTracer, SimpleEventTracerTestDelegate) {
   // and also with a null pointer (to test that the null case works).
   DummyEventTracer dummy;
   std::vector<DummyEventTracer*> dummy_event_tracer_arr = {&dummy, nullptr};
-  for (size_t i = 0; i < dummy_event_tracer_arr.size(); i++) {
+  for (const auto i : c10::irange(dummy_event_tracer_arr.size())) {
     RunSimpleTracerTestDelegate(&dummy);
     RunSimpleTracerTestDelegate(nullptr);
   }

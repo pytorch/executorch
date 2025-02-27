@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
@@ -13,14 +14,14 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 bool check_batch_norm_args(
     const Tensor& in,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
-    const exec_aten::optional<Tensor>& running_mean,
-    const exec_aten::optional<Tensor>& running_var,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& running_mean,
+    const executorch::aten::optional<Tensor>& running_var,
     double momentum,
     double eps,
     Tensor& out,
@@ -75,27 +76,27 @@ bool check_batch_norm_args(
 bool check_layer_norm_args(
     const Tensor& in,
     IntArrayRef normalized_shape,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     Tensor& out,
     Tensor& mean_out,
     Tensor& rstd_out) {
   size_t ndim = normalized_shape.size();
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       ndim >= 1,
       "Expected normalized_shape to be at least 1-dimensional, i.e., containing at least one element.");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      in.dim() >= ndim,
+  ET_CHECK_OR_RETURN_FALSE(
+      in.dim() >= static_cast<ssize_t>(ndim),
       "Expected input tensor to have rank >= the length of normalized_shape.");
   size_t shift = in.dim() - ndim;
-  for (size_t d = 0; d < ndim; ++d) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  for (const auto d : c10::irange(ndim)) {
+    ET_CHECK_OR_RETURN_FALSE(
         in.size(d + shift) == normalized_shape[d],
         "Expected normalized_shape to match the sizes of input's rightmost dimensions.");
   }
-  exec_aten::SizesType shape[ndim];
-  for (size_t i = 0; i < ndim; ++i) {
-    shape[i] = static_cast<exec_aten::SizesType>(normalized_shape[i]);
+  executorch::aten::SizesType shape[ndim];
+  for (const auto i : c10::irange(ndim)) {
+    shape[i] = static_cast<executorch::aten::SizesType>(normalized_shape[i]);
   }
 
   if (weight.has_value()) {
@@ -121,8 +122,8 @@ void get_layer_norm_out_target_size(
     size_t* mean_rstd_ndim) {
   *mean_rstd_ndim = in.dim();
 
-  for (size_t d = 0; d < in.dim(); ++d) {
-    if (d < in.dim() - normalized_shape.size()) {
+  for (const auto d : c10::irange(in.dim())) {
+    if (d < static_cast<long>(in.dim() - normalized_shape.size())) {
       mean_rstd_sizes[d] = in.size(d);
     } else {
       mean_rstd_sizes[d] = 1;
@@ -132,8 +133,8 @@ void get_layer_norm_out_target_size(
 
 bool check_group_norm_args(
     const Tensor& in,
-    const exec_aten::optional<Tensor>& weight,
-    const exec_aten::optional<Tensor>& bias,
+    const executorch::aten::optional<Tensor>& weight,
+    const executorch::aten::optional<Tensor>& bias,
     int64_t N,
     int64_t C,
     int64_t HxW,
@@ -144,16 +145,16 @@ bool check_group_norm_args(
   ET_LOG_AND_RETURN_IF_FALSE(in.size(0) == N);
   ET_LOG_AND_RETURN_IF_FALSE(in.size(1) == C);
   ET_LOG_AND_RETURN_IF_FALSE(in.numel() == N * C * HxW);
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       group > 0, "Expected number of groups to be greater than 0");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       C % group == 0,
       "Expected number of channels in input to be divisible by number of groups");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !weight.has_value() ||
           (weight.value().dim() == 1 && weight.value().size(0) == C),
       "Expected weight to be a vector of size equal to the number of channels in input");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       !bias.has_value() ||
           (bias.value().dim() == 1 && bias.value().size(0) == C),
       "Expected bias to be a vector of size equal to the number of channels in input");

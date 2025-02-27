@@ -18,18 +18,18 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-using Scalar = exec_aten::Scalar;
-using SizesType = exec_aten::SizesType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using Scalar = executorch::aten::Scalar;
+using SizesType = executorch::aten::SizesType;
 
 constexpr const size_t kTensorDimensionLimit{16};
 
 namespace {
 
 size_t map_expand_to_repeats(
-    exec_aten::ArrayRef<SizesType> self_sizes,
-    exec_aten::ArrayRef<int64_t> expand_sizes,
+    executorch::aten::ArrayRef<SizesType> self_sizes,
+    executorch::aten::ArrayRef<int64_t> expand_sizes,
     int64_t* repeats,
     const size_t repeats_size) {
   auto j{expand_sizes.size()};
@@ -70,7 +70,7 @@ Tensor& expand_copy_out(
   const auto& self_sizes = self.sizes();
 
   // Holds the result of converting -1 to the original dim sizes
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   size_t output_rank = 0;
   ET_KERNEL_CHECK(
       ctx,

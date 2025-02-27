@@ -35,6 +35,7 @@ runtime.python_test(
     ],
     deps = [
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/devtools:lib",
         "//executorch/devtools/bundled_program:config",
@@ -74,5 +75,21 @@ runtime.python_test(
     ]),
     deps = [
         "//executorch/backends/xnnpack:xnnpack_preprocess",
+    ],
+)
+
+runtime.python_test(
+    name = "test_xnnpack_quantizer",
+    srcs = glob([
+        "quantizer/*.py",
+    ]),
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//pytorch/ao:torchao",  # @manual
+        "//caffe2:torch",
+    ],
+    external_deps = [
+        "libtorch",
     ],
 )

@@ -26,7 +26,7 @@ class ET_EXPERIMENTAL LlavaImagePrefiller
    * @param start_pos The starting position in KV cache of the input in the LLM
    * @return logits of the image prefill.
    */
-  inline ::executorch::runtime::Result<exec_aten::Tensor> prefill(
+  inline ::executorch::runtime::Result<executorch::aten::Tensor> prefill(
       ::executorch::extension::llm::Image& image,
       int64_t& start_pos) override {
     auto image_tensor = executorch::extension::from_blob(

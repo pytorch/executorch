@@ -15,8 +15,9 @@ from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
+from executorch.examples.models.llama.llama_transformer import Transformer
 
-from executorch.examples.models.llama.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama.model_args import ModelArgs
 
 try:
     from .fairseq2 import convert_to_llama_checkpoint
@@ -52,7 +53,12 @@ class Llama2Model(EagerModelBase):
         self.input_prune_map_path = kwargs.get("input_prune_map_path", None)
         self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
         self.max_seq_len = kwargs.get("max_seq_len", 128)
+        self.max_context_len = kwargs.get("max_context_len", 128)
         self.args = kwargs.get("args", None)
+
+        assert (
+            self.max_context_len >= self.max_seq_len
+        ), f"max_context_len({self.max_context_len}) must be >= max_seq_len({self.max_seq_len})"
 
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model.
@@ -136,6 +142,7 @@ the checkpoint format to avoid generating faulty models.
 
         model_args: ModelArgs = ModelArgs(
             max_seq_len=self.max_seq_len,
+            max_context_len=self.max_context_len,
             max_batch_size=1,
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
@@ -219,7 +226,7 @@ the checkpoint format to avoid generating faulty models.
             window_size = int(attention_sink_params[1])
             eviction_batch_size = int(attention_sink_params[2])
 
-            assert self.args.max_seq_length == sink_size + window_size
+            assert self.args.max_context_length == sink_size + window_size
 
             self.model_ = enable_attention_sink(
                 module=self.model_,
@@ -229,21 +236,33 @@ the checkpoint format to avoid generating faulty models.
                 eviction_batch_size=eviction_batch_size,
             )
 
-        # assign=True: load params/buffers by assignment instead of performing an in-place copy.
-        # Because we are using device="meta", tensors do not have memory associated with them
-        # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
-        missing, unexpected = self.model_.load_state_dict(
-            checkpoint,
-            strict=False,
-            assign=True,
-        )  # self.model_ = Transformer(gptconf)
-        if kwargs.get("verbose", False):
-            print("============= missing keys ================")
-            print(missing)
-            print("============= /missing ================")
-            print("============= unexpected keys ================")
-            print(unexpected)
-            print("============= /unexpected ================")
+        missing, unexpected = None, None
+        try:
+            # assign=True: load params/buffers by assignment instead of performing an in-place copy.
+            # Because we are using device="meta", tensors do not have memory associated with them
+            # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
+            missing, unexpected = self.model_.load_state_dict(
+                checkpoint,
+                strict=False,
+                assign=True,
+            )  # self.model_ = Transformer(gptconf)
+        except RuntimeError as e:
+            print(
+                "Could not load checkpoint into mode, defaulting to random uninitialized weights."
+            )
+            print(f"Error: {e}")
+            # Need to provide concrete (empty) values for meta-initialized tensors for quantization.
+            self.model_.to_empty(device="cpu")
+
+        if missing:
+            missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
+            if missing_weights:
+                raise ValueError(
+                    f"The provided checkpoint is missing the following weights that are expected by the model: {missing_weights}. Please fix the fqn's in your checkpoint to match."
+                )
+        if unexpected:
+            if kwargs.get("verbose", False):
+                print(f"Unexpected keys: {unexpected}")
 
         # Prune the input layer if input_prune_map is provided
         if input_prune_map is not None:
@@ -282,16 +301,18 @@ the checkpoint format to avoid generating faulty models.
         if self.enable_dynamic_shape:
             return (
                 torch.tensor([[2, 3, 4]], dtype=torch.long),
-                torch.tensor([0], dtype=torch.long),
+                {"input_pos": torch.tensor([0], dtype=torch.long)},
             )
         else:
             return (
                 torch.tensor(
                     [[1]], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
-                torch.tensor(
-                    [0], dtype=torch.long
-                ),  # start_pos, what token of output are we on.
+                {
+                    "input_pos": torch.tensor(
+                        [0], dtype=torch.long
+                    )  # start_pos, what token of output are we on.
+                },
             )
 
     def _transform_for_pre_quantization(self, checkpoint, model_args):

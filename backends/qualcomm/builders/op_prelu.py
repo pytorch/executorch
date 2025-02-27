@@ -38,10 +38,10 @@ class PReLU(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         prelu_inp_tensor_wrapper = self.define_tensor(
             input_node,
+            node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
 
         if node.target.__name__ == "aten.leaky_relu.default":
@@ -89,20 +89,20 @@ class PReLU(NodeVisitor):
 
         scalar_tensor_wrapper = self.define_tensor(
             scalar_node,
+            node,
             coeff_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=True,
         )
         prelu_input_tensors = [prelu_inp_tensor_wrapper, scalar_tensor_wrapper]
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
+            node,
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            is_input_tensor=False,
         )
         prelu_output_tensors = [output_tensor_wrapper]
 

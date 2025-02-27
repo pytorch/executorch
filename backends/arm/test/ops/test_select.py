@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -19,7 +19,7 @@ test_data_t = tuple[torch.Tensor, int, int]
 test_data_suite: list[tuple[test_data_t]] = [
     # (test_data, dim, index)
     ((torch.zeros(5, 3, 20), -1, 0),),
-    ((torch.zeros(5, 3, 20), 0, -1),),
+    ((torch.rand(5, 3, 20), 0, -1),),
     ((torch.zeros(5, 3, 20), 0, 4),),
     ((torch.ones(10, 10, 10), 0, 2),),
     ((torch.rand(5, 3, 20, 2), 0, 2),),
@@ -51,15 +51,11 @@ class TestSelect(unittest.TestCase):
         test_data: test_data_t,
         export_target: str,
     ):
-        # For 4D tensors, do not permute to NHWC
-        permute = False if len(test_data[0].shape) == 4 else True
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI", permute_memory_to_nhwc=permute
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
             )
             .export()
             .check([export_target])
@@ -77,15 +73,11 @@ class TestSelect(unittest.TestCase):
         test_data: test_data_t,
         export_target: str,
     ):
-        # For 4D tensors, do not permute to NHWC
-        permute = False if len(test_data[0].shape) == 4 else True
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI", permute_memory_to_nhwc=permute
-                ),
+                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
             )
             .quantize()
             .export()
@@ -117,8 +109,6 @@ class TestSelect(unittest.TestCase):
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
-            .dump_artifact()
-            .dump_operator_distribution()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
@@ -126,10 +116,8 @@ class TestSelect(unittest.TestCase):
     def _test_select_tosa_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: test_data_t, export_target: str
     ):
-        # For 4D tensors, do not permute to NHWC
-        permute = False if len(test_data[0].shape) == 4 else True
         self._test_select_ethos_BI_pipeline(
-            common.get_u55_compile_spec(permute_memory_to_nhwc=permute),
+            common.get_u55_compile_spec(),
             module,
             test_data,
             export_target,
@@ -138,10 +126,8 @@ class TestSelect(unittest.TestCase):
     def _test_select_tosa_u85_BI_pipeline(
         self, module: torch.nn.Module, test_data: test_data_t, export_target: str
     ):
-        # For 4D tensors, do not permute to NHWC
-        permute = False if len(test_data[0].shape) == 4 else True
         self._test_select_ethos_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=permute),
+            common.get_u85_compile_spec(),
             module,
             test_data,
             export_target,

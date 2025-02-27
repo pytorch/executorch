@@ -8,6 +8,3 @@
 pip install torchvision
 pip install torchtune
 pip install tiktoken
-
-# Install torchao.
-pip install "$(dirname "$0")/../../../third-party/ao"

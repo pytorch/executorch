@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -12,9 +12,8 @@ et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 ethos_u_root_dir=${et_root_dir}/examples/arm/ethos-u-scratch/ethos-u
 
 toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
-et_build_dir=${et_root_dir}/cmake-out
-build_root_test_dir=${et_build_dir}/arm_semihosting_executor_runner
-fvp_model=FVP_Corstone_SSE-300_Ethos-U55
+et_build_dir=${et_root_dir}/arm_test/cmake-out
+build_root_test_dir=${et_root_dir}/arm_test/arm_semihosting_executor_runner
 
 # Build Arm Baremetal executor_runner in semihosting mode.
 # Put in backends/arm/test/res to be used by unit tests.
@@ -39,12 +38,12 @@ function build_semihosting_executorch_runner() {
           -DTARGET_CPU=${target_cpu}                         \
           -DSEMIHOSTING=ON                                   \
           -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${build_test_dir} \
-          -B ${build_test_dir}                               \
           -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}          \
           -DET_DIR_PATH:PATH=${et_root_dir}                  \
           -DET_BUILD_DIR_PATH:PATH=${et_build_dir}           \
           -DPYTHON_EXECUTABLE=$(which python3)               \
-          -DSYSTEM_CONFIG=${system_config}
+          -DSYSTEM_CONFIG=${system_config}                   \
+          -B ${build_test_dir}
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
@@ -52,6 +51,8 @@ function build_semihosting_executorch_runner() {
     echo "[${FUNCNAME[0]}] Generated baremetal elf file: with semihosting enabled"
     find ${build_test_dir} -name "arm_executor_runner"
 }
+
+cd $et_root_dir && backends/arm/scripts/build_quantized_ops_aot_lib.sh
 
 # Use most optimal system_configs for testing
 build_semihosting_executorch_runner corstone-300 Ethos_U55_High_End_Embedded

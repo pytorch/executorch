@@ -16,16 +16,16 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
 bool check_repeat_args(
     Tensor self,
-    exec_aten::ArrayRef<int64_t> repeats,
+    executorch::aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
   // Ensure the self tensors list is non-empty.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       repeats.size() >= self.dim(),
       "Number of dimensions of repeat dims can not be smaller than number of dimensions of tensor");
 
@@ -34,11 +34,11 @@ bool check_repeat_args(
   for (auto repeat : repeats) {
     all_non_negative = all_non_negative && (repeat >= 0);
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       all_non_negative, "Trying to create tensor with negative dimension");
 
   /// Check if out.size() is legal.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() == repeats.size(),
       "The dimension of out shall equal size of repeats, but now is %zd and %zd",
       out.dim(),
@@ -47,7 +47,7 @@ bool check_repeat_args(
   // Right now we only support the tensors whose dimension is no greater than
   // kTensorDimensionLimit. Only check out tensor because the number of
   // dimension of out tensor shall have more than or equal to self tensor
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() <= kTensorDimensionLimit,
       "The dimension of input and output should not be larger than %zd",
       kTensorDimensionLimit);
@@ -66,8 +66,9 @@ bool check_repeat_args(
     reformat_self_size[out.dim() - 1 - i] = self.size(self.dim() - 1 - i);
   }
   for (size_t i = 0; i < repeats.size(); i++) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
-        reformat_self_size[i] * repeats[i] == out.size(i),
+    ET_CHECK_OR_RETURN_FALSE(
+        reformat_self_size[i] * repeats[i] ==
+            static_cast<uint64_t>(out.size(i)),
         "Expect out size at dimension %zu is %" PRId64 ", but now is %zd",
         i,
         reformat_self_size[i] * repeats[i],
@@ -108,8 +109,8 @@ void repeat_internal(
   // Treats zero-dim self as one-dim tensor with size {1}.
   ssize_t self_dim = self.dim() ? self.dim() : 1;
   int32_t one = 1;
-  exec_aten::ArrayRef<int32_t> self_size =
-      self.dim() ? self.sizes() : exec_aten::ArrayRef<int32_t>(&one, 1);
+  executorch::aten::ArrayRef<int32_t> self_size =
+      self.dim() ? self.sizes() : executorch::aten::ArrayRef<int32_t>(&one, 1);
 
   // Get the size of the array in bytes.
   size_t num_bytes = self_size[self_dim - 1] * out.element_size();
@@ -167,7 +168,7 @@ void repeat_internal(
 // than kTensorDimensionLimit.
 Error repeat_tensor(
     const Tensor& self,
-    exec_aten::ArrayRef<int64_t> repeats,
+    executorch::aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
   // Verify that the args are valid.
   ET_CHECK_OR_RETURN_ERROR(
@@ -194,8 +195,8 @@ Error repeat_tensor(
   // Treats zero-dim self as one-dim tensor with size {1}.
   ssize_t self_dim = self.dim() ? self.dim() : 1;
   int32_t one = 1;
-  exec_aten::ArrayRef<int32_t> self_size = self.sizes().empty()
-      ? exec_aten::ArrayRef<int32_t>(&one, 1)
+  executorch::aten::ArrayRef<int32_t> self_size = self.sizes().empty()
+      ? executorch::aten::ArrayRef<int32_t>(&one, 1)
       : self.sizes();
 
   // Compute the stride (in bytes) along each out tensor dimension.
@@ -242,7 +243,7 @@ Error repeat_tensor(
   // one array a time. To do so, we iterate over all the valid values of slots
   // array. The repeat_internal() takes care of replicating the array along the
   // coordinates specified by repeats array.
-  while (slots[0] != limits[0]) {
+  while (static_cast<int64_t>(slots[0]) != limits[0]) {
     // Compute the offset (from origin) in the out tensor where the self
     // array (with indices in self tensor indicated by slots) will be copied.
     size_t out_offset = compute_access_offset(slots, strides, self_dim);
@@ -256,7 +257,7 @@ Error repeat_tensor(
     slots[index]++;
     // If we have reached the limit in the innermost dimension, successively
     // increment the slot index of outer dimensions.
-    while (slots[index] == limits[index]) {
+    while (static_cast<int64_t>(slots[index]) == limits[index]) {
       if (index == 0) {
         break;
       }

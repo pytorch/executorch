@@ -20,9 +20,9 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
-using Tensor = exec_aten::Tensor;
+using Scalar = executorch::aten::Scalar;
+using ScalarType = executorch::aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
 
 namespace {
 
@@ -70,8 +70,8 @@ ET_NODISCARD bool check_bounds(
 Tensor& clamp_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const exec_aten::optional<Scalar>& min_opt,
-    const exec_aten::optional<Scalar>& max_opt,
+    const executorch::aten::optional<Scalar>& min_opt,
+    const executorch::aten::optional<Scalar>& max_opt,
     Tensor& out) {
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();
@@ -160,8 +160,8 @@ Tensor& clamp_out(
 Tensor& clamp_tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const exec_aten::optional<Tensor>& min_opt,
-    const exec_aten::optional<Tensor>& max_opt,
+    const executorch::aten::optional<Tensor>& min_opt,
+    const executorch::aten::optional<Tensor>& max_opt,
     Tensor& out) {
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();

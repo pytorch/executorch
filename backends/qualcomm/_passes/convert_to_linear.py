@@ -39,6 +39,7 @@ class ConvertToLinear(ExportPass):
     mm = exir_ops.edge.aten.mm.default
 
     addmm_patterns = [
+        {view_copy: 1, permute_copy: 1, addmm: 1},
         {view_copy: 2, permute_copy: 1, addmm: 1},
         {permute_copy: 1, addmm: 1},
     ]
@@ -110,11 +111,11 @@ class ConvertToLinear(ExportPass):
         # Since QNN has no keep dims for linear op, we will need to add squeeze and unsqueeze around linear node
         # TODO: Find a more general conditional statement.
         linear_output = linear_node.meta["val"]
-        if linear_output.dim() == 3 and linear_output.shape[0] == 1:
+        if linear_output.dim() >= 3:
             with gm.graph.inserting_after(input_node):
                 input_users = list(input_node.users.keys())
                 input_tensor = input_node.meta["val"]
-                squeeze_dim = input_tensor.shape[-2:]
+                squeeze_dim = (-1, input_tensor.shape[-1])
                 squeeze_node = gm.graph.create_node(
                     "call_function",
                     self.view_copy,
@@ -149,7 +150,7 @@ class ConvertToLinear(ExportPass):
                     unsqueeze_node.meta[k] = v
                 # update linear node's shape
                 linear_node.meta["val"] = linear_output.reshape(
-                    linear_output.shape[-2:]
+                    (squeeze_node.meta["val"].shape[0], linear_output.shape[-1])
                 )
                 for user in output_users:
                     user.replace_input_with(linear_node, unsqueeze_node)
@@ -190,7 +191,9 @@ class ConvertToLinear(ExportPass):
         return ret
 
     def _convert(self, graph_module: torch.fx.GraphModule):
-        partitions = get_source_partitions(graph_module.graph, [torch.nn.Linear])
+        partitions = get_source_partitions(
+            graph_module.graph, [torch.nn.Linear, torch.ops.aten.linear.default]
+        )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
                 op_cnt = Counter(

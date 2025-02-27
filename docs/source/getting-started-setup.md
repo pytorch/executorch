@@ -92,13 +92,25 @@ Alternatively, if you would like to experiment with ExecuTorch quickly and easil
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
-   ./install_requirements.sh
+   ./install_executorch.sh
    ```
 
-   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29) to install with pybindings and dependencies for other backends.
+   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends.
    ```bash
-   ./install_requirements.sh --pybind <coreml | mps | xnnpack>
+   ./install_executorch.sh --pybind <coreml | mps | xnnpack>
+
+   # Example: pybindings with CoreML *only*
+   ./install_executorch.sh --pybind coreml
+
+   # Example: pybinds with CoreML *and* XNNPACK
+   ./install_executorch.sh --pybind coreml xnnpack
    ```
+
+   By default, `./install_executorch.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
+   ```bash
+   ./install_executorch.sh --pybind off
+   ```
+
 After setting up your environment, you are ready to convert your PyTorch programs
 to ExecuTorch.
 
@@ -113,7 +125,7 @@ to ExecuTorch.
 >
 > ```bash
 > # From the root of the executorch repo:
-> ./install_requirements.sh --clean
+> ./install_executorch.sh --clean
 > git submodule sync
 > git submodule update --init
 > ```
@@ -126,7 +138,7 @@ to ExecuTorch.
 ### Export a Program
 ExecuTorch provides APIs to compile a PyTorch [`nn.Module`](https://pytorch.org/docs/stable/generated/torch.nn.Module.html) to a `.pte` binary consumed by the ExecuTorch runtime.
 1. [`torch.export`](https://pytorch.org/docs/stable/export.html)
-1. [`exir.to_edge`](https://pytorch.org/executorch/stable/export-to-executorch-api-reference.html#exir.to_edge)
+1. [`exir.to_edge`](export-to-executorch-api-reference.md#exir.to_edge)
 1. [`exir.to_executorch`](ir-exir.md)
 1. Save the result as a [`.pte` binary](pte-file-format.md) to be consumed by the ExecuTorch runtime.
 
@@ -196,8 +208,11 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
   ```bash
   # Clean and configure the CMake build system. Compiled programs will
   # appear in the executorch/cmake-out directory we create here.
-  ./install_requirements.sh --clean
+  ./install_executorch.sh --clean
   (mkdir cmake-out && cd cmake-out && cmake ..)
+
+  # Go to work directory.
+  cd ..
 
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9
@@ -214,7 +229,7 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
 >
 > ```bash
 > # From the root of the executorch repo:
-> ./install_requirements.sh --clean
+> ./install_executorch.sh --clean
 > git submodule sync
 > git submodule update --init
 > ```

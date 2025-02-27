@@ -39,10 +39,17 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
       num_compute_queues(0),
       supports_int16_shader_types(false),
       has_unified_memory(false),
-      has_timestamps(properties.limits.timestampComputeAndGraphics),
-      timestamp_period(properties.limits.timestampPeriod) {
+      has_timestamps(false),
+      timestamp_period(0),
+      min_ubo_alignment(0) {
   // Extract physical device properties
   vkGetPhysicalDeviceProperties(handle, &properties);
+
+  // Extract fields of interest
+  has_timestamps = properties.limits.timestampComputeAndGraphics;
+  timestamp_period = properties.limits.timestampPeriod;
+  min_ubo_alignment = properties.limits.minUniformBufferOffsetAlignment;
+
   vkGetPhysicalDeviceMemoryProperties(handle, &memory_properties);
 
   VkPhysicalDeviceFeatures2 features2{

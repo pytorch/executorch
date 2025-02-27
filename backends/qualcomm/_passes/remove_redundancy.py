@@ -14,31 +14,37 @@ class RemoveRedundancy(ExportPass):
     Trim certain operators to reduce unnecessary overhead.
     """
 
-    redundant_ops = {
-        torch.clone,
-        torch.ops.aten.clone.default,
-        exir_ops.edge.aten.clone.default,
-        torch.ops.aten.alias.default,
-        exir_ops.edge.aten.alias.default,
-        exir_ops.edge.aten.lift_fresh_copy.default,
-        # remove this target if '_skip_dim_order' is set to False
-        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-        # remove channel_last / contiguous _to_copy if '_skip_dim_order' is set to True
-        exir_ops.edge.aten._to_copy.default,
-    }
-
     def __init__(self):
         super(RemoveRedundancy, self).__init__()
+        self.redundant_ops = {
+            torch.clone: self._default_condition,
+            torch.ops.aten.clone.default: self._default_condition,
+            exir_ops.edge.aten.clone.default: self._default_condition,
+            torch.ops.aten.alias.default: self._default_condition,
+            exir_ops.edge.aten.alias.default: self._default_condition,
+            exir_ops.edge.aten.lift_fresh_copy.default: self._default_condition,
+            # remove this target if '_skip_dim_order' is set to False
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default: self._dim_order_op_condition,
+            # remove channel_last / contiguous _to_copy if '_skip_dim_order' is set to True
+            exir_ops.edge.aten._to_copy.default: self._to_copy_op_condition,
+        }
+
+    def _dim_order_op_condition(self, node):
+        dim_order = node.kwargs.get("dim_order")
+        # skip if there contains layout hint
+        # e.g. (0, 2, 3, 1) != (0, 1, 2, 3)
+        return dim_order != list(range(len(dim_order)))
+
+    def _to_copy_op_condition(self, node):
+        return "memory_format" in node.kwargs
+
+    def _default_condition(self, ndoe):
+        return True
 
     def _remove(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
-            if n.target not in self.redundant_ops:
-                continue
-
-            # do not remove cast operator
-            if (
-                n.target == exir_ops.edge.aten._to_copy.default
-                and "memory_format" not in n.kwargs
+            if n.target not in self.redundant_ops or not self.redundant_ops[n.target](
+                n
             ):
                 continue
 

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 #include <tuple>
 
@@ -26,9 +27,9 @@ constexpr CTYPE lower_bound() {
 
 } // namespace
 
-using ScalarType = exec_aten::ScalarType;
-using SizesType = exec_aten::SizesType;
-using Tensor = exec_aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+using SizesType = executorch::aten::SizesType;
+using Tensor = executorch::aten::Tensor;
 
 std::tuple<Tensor&, Tensor&> max_out(
     KernelRuntimeContext& ctx,
@@ -82,7 +83,7 @@ std::tuple<Tensor&, Tensor&> max_out(
         CTYPE* max_data = max.mutable_data_ptr<CTYPE>();
         long* max_indices_data = max_indices.mutable_data_ptr<long>();
 
-        for (size_t out_ix = 0; out_ix < max.numel(); ++out_ix) {
+        for (const auto out_ix : c10::irange(max.numel())) {
           std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
               [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
                 if (!std::isnan(acc_val) && (std::isnan(v) || v > acc_val)) {
@@ -124,7 +125,7 @@ max_unary_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       const auto data_in = in.const_data_ptr<CTYPE_IN>();
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = lower_bound<CTYPE_OUT>();
-      for (auto i = 0; i < in.numel(); ++i) {
+      for (const auto i : c10::irange(in.numel())) {
         CTYPE_OUT val = static_cast<CTYPE_OUT>(data_in[i]);
         if (std::isnan(val)) {
           data_out[0] = val;

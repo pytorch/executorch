@@ -16,12 +16,12 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::DimOrderType;
-using exec_aten::IntArrayRef;
-using exec_aten::optional;
-using exec_aten::OptionalArrayRef;
-using exec_aten::ScalarType;
-using exec_aten::Tensor;
+using executorch::aten::DimOrderType;
+using executorch::aten::IntArrayRef;
+using executorch::aten::optional;
+using executorch::aten::OptionalArrayRef;
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 class OpEmptyDimOrderOutTest : public OperatorTest {
@@ -38,7 +38,7 @@ class OpEmptyDimOrderOutTest : public OperatorTest {
   void test_op_empty_dim_order_out(std::vector<int32_t>&& size_int32_t) {
     TensorFactory<DTYPE> tf;
     std::vector<int64_t> sizes(size_int32_t.begin(), size_int32_t.end());
-    auto aref = exec_aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
+    auto aref = executorch::aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
     OptionalArrayRef<int64_t> dim_order;
     Tensor out = tf.ones(size_int32_t);
 
@@ -49,7 +49,7 @@ class OpEmptyDimOrderOutTest : public OperatorTest {
     TensorFactory<ScalarType::Float> tf;
 
     int64_t sizes[3] = {3, 2, 4};
-    auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+    auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
 
     int64_t raw_dim_order[2] = {0, 1};
     auto dim_order = OptionalArrayRef<int64_t>(raw_dim_order);
@@ -63,7 +63,7 @@ class OpEmptyDimOrderOutTest : public OperatorTest {
     TensorFactory<ScalarType::Float> tf;
 
     int64_t sizes[2] = {3, 2};
-    auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+    auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
 
     int64_t raw_dim_order[2] = {1, 2};
     auto dim_order = OptionalArrayRef<int64_t>(raw_dim_order);
@@ -77,7 +77,7 @@ class OpEmptyDimOrderOutTest : public OperatorTest {
     TensorFactory<ScalarType::Float> tf;
 
     int64_t sizes[4] = {3, 2, 4, 5};
-    auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+    auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
 
     // should be {0, 2, 3, 1}
     int64_t raw_dim_order[4] = {0, 1, 2, 3};
@@ -102,7 +102,7 @@ TEST_F(OpEmptyDimOrderOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   OptionalArrayRef<int64_t> dim_order;
   Tensor out =
       tf.ones({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -113,7 +113,7 @@ TEST_F(OpEmptyDimOrderOutTest, ContiguousDimOrderSuccees) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
 
   int64_t raw_dim_order[2] = {0, 1};
   auto dim_order = OptionalArrayRef<int64_t>(raw_dim_order);
@@ -126,7 +126,7 @@ TEST_F(OpEmptyDimOrderOutTest, ChannelsLastsDimOrderSuccees) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[4] = {3, 2, 4, 5};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
 
   int64_t raw_dim_order[4] = {0, 2, 3, 1};
   auto dim_order = OptionalArrayRef<int64_t>(raw_dim_order);
@@ -139,7 +139,7 @@ TEST_F(OpEmptyDimOrderOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   OptionalArrayRef<int64_t> dim_order;
   Tensor out =
       tf.ones({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -153,7 +153,7 @@ TEST_F(OpEmptyDimOrderOutTest, DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
-  auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
+  auto sizes_aref = executorch::aten::ArrayRef<int64_t>(sizes);
   OptionalArrayRef<int64_t> dim_order;
   Tensor out =
       tf.ones({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);

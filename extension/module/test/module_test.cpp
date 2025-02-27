@@ -22,13 +22,19 @@ using namespace ::executorch::runtime;
 class ModuleTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
-    model_path_ = std::getenv("RESOURCES_PATH") + std::string("/add.pte");
+    std::string resources_path;
+    if (const char* env = std::getenv("RESOURCES_PATH")) {
+      resources_path = env;
+    }
+    model_path_ = resources_path + "/add.pte";
+    linear_path_ = resources_path + "/linear.pte";
+    linear_data_path_ = resources_path + "/linear.ptd";
   }
 
-  static std::string model_path_;
+  static inline std::string model_path_;
+  static inline std::string linear_path_;
+  static inline std::string linear_data_path_;
 };
-
-std::string ModuleTest::model_path_;
 
 TEST_F(ModuleTest, TestLoad) {
   Module module(model_path_);
@@ -102,13 +108,13 @@ TEST_F(ModuleTest, TestMethodMeta) {
 
   const auto input_meta = meta->input_tensor_meta(0);
   EXPECT_EQ(input_meta.error(), Error::Ok);
-  EXPECT_EQ(input_meta->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(input_meta->scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(input_meta->sizes().size(), 1);
   EXPECT_EQ(input_meta->sizes()[0], 1);
 
   const auto output_meta = meta->output_tensor_meta(0);
   EXPECT_EQ(output_meta.error(), Error::Ok);
-  EXPECT_EQ(output_meta->scalar_type(), exec_aten::ScalarType::Float);
+  EXPECT_EQ(output_meta->scalar_type(), executorch::aten::ScalarType::Float);
   EXPECT_EQ(output_meta->sizes().size(), 1);
   EXPECT_EQ(output_meta->sizes()[0], 1);
 }
@@ -434,4 +440,15 @@ TEST_F(ModuleTest, TestSetOutputInvalidType) {
   Module module(model_path_);
 
   EXPECT_NE(module.set_output(EValue()), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestPTD) {
+  Module module(linear_path_, linear_data_path_);
+
+  ASSERT_EQ(module.load_method("forward"), Error::Ok);
+
+  auto tensor1 =
+      make_tensor_ptr({3, 3}, {2.f, 3.f, 4.f, 2.f, 3.f, 4.f, 2.f, 3.f, 4.f});
+
+  ASSERT_EQ(module.forward(tensor1).error(), Error::Ok);
 }

@@ -163,6 +163,28 @@ class TestMaxPool2d(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    def test_fp32_maxpool2d_unsupported_stride(self):
+        """
+        XNNPACK MaxPool2d requires stride <= kernel_size.
+        """
+        inputs = (torch.randn(1, 32, 23, 23),)
+        (
+            Tester(self.MaxPool2d(kernel_size=2, stride=3), inputs)
+            .export()
+            .check_count({"torch.ops.aten.max_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            # We expect it not be be delegated.
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1
+                }
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_qs8_maxpool2d(self):
         class MaxPool(torch.nn.Module):
             def __init__(self, maxpool_params):

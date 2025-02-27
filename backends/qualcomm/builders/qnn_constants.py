@@ -76,6 +76,11 @@ class OpDequantize:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAbs:
+    op_name: str = "ElementWiseAbs"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseAdd:
     op_name: str = "ElementWiseAdd"
 
@@ -96,8 +101,53 @@ class OpElementWiseDivide:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseEqual:
+    op_name: str = "ElementWiseEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseGreater:
+    op_name: str = "ElementWiseGreater"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseGreaterEqual:
+    op_name: str = "ElementWiseGreaterEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLess:
+    op_name: str = "ElementWiseLess"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLessEqual:
+    op_name: str = "ElementWiseLessEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseLog:
+    op_name: str = "ElementWiseLog"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseMaximum:
+    op_name: str = "ElementWiseMaximum"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseMinimum:
+    op_name: str = "ElementWiseMinimum"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseMultiply:
     op_name: str = "ElementWiseMultiply"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseNeg:
+    op_name: str = "ElementWiseNeg"
 
 
 @dataclass(init=False, frozen=True)
@@ -106,6 +156,16 @@ class OpElementWiseNeuron:
     param_operation: str = "operation"
     param_alpha: str = "alpha"
     param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseNot:
+    op_name: str = "ElementWiseNot"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseNotEqual:
+    op_name: str = "ElementWiseNotEqual"
 
 
 @dataclass(init=False, frozen=True)
@@ -121,6 +181,11 @@ class OpElementWiseRsqrt:
 @dataclass(init=False, frozen=True)
 class OpElementWiseSin:
     op_name: str = "ElementWiseSin"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseSelect:
+    op_name = "ElementWiseSelect"
 
 
 @dataclass(init=False, frozen=True)
@@ -166,6 +231,15 @@ class OpGroupNorm:
 @dataclass(init=False, frozen=True)
 class OpHardSwish:
     op_name: str = "HardSwish"
+
+
+@dataclass(init=False, frozen=True)
+class OpInstanceNorm:
+    op_name: str = "InstanceNorm"
+    param_epsilon = "epsilon"
+    param_mode = "mode"
+    param_normalize_variance = "normalize_variance"
+    param_region = "region"
 
 
 @dataclass(init=False, frozen=True)
@@ -253,6 +327,13 @@ class OpQuantize:
 class OpReduceMean:
     op_name: str = "ReduceMean"
     param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
+class OpArgmin:
+    op_name: str = "Argmin"
+    param_axis: str = "axis"
     param_keep_dims: str = "keep_dims"
 
 

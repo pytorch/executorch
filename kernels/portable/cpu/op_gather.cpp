@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
@@ -17,8 +18,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
@@ -37,12 +38,12 @@ void gather_helper(
     return;
   }
 
-  for (size_t ix = 0; ix < index.numel(); ++ix) {
+  for (const auto ix : c10::irange(index.numel())) {
     size_t ix_coord[kTensorDimensionLimit];
     indexToCoordinate(index, ix, ix_coord);
 
     size_t in_coord[kTensorDimensionLimit];
-    for (size_t i = 0; i < out.dim(); ++i) {
+    for (const auto i : c10::irange(out.dim())) {
       if (i == dim) {
         in_coord[i] = index_data[ix];
       } else {
@@ -86,7 +87,7 @@ Tensor& gather_out(
 
   constexpr auto name = "gather.out";
 
-  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     gather_helper<CTYPE>(in, index, out, dim);
   });
 

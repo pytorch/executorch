@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +10,7 @@ from typing import Union
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from parameterized import parameterized
+from parameterized import parameterized  # type: ignore[import-untyped]
 
 
 class LiftedTensor(torch.nn.Module):
@@ -23,14 +23,14 @@ class LiftedTensor(torch.nn.Module):
         (operator.sub, (torch.rand(2, 2), 2)),
     ]
 
-    def __init__(self, op: callable):
+    def __init__(self, op: callable):  # type: ignore[valid-type]
         super().__init__()
         self.op = op
         self.lifted_tensor = torch.Tensor([[1, 2], [3, 4]])
 
     def forward(self, x: torch.Tensor, length) -> torch.Tensor:
         sliced = self.lifted_tensor[:, :length]
-        return self.op(sliced, x)
+        return self.op(sliced, x)  # type: ignore[misc]
 
 
 class LiftedScalarTensor(torch.nn.Module):
@@ -42,13 +42,13 @@ class LiftedScalarTensor(torch.nn.Module):
         (operator.sub, (torch.randn(3),), 1.0),
     ]
 
-    def __init__(self, op: callable, arg1: Union[int, float, torch.tensor]):
+    def __init__(self, op: callable, arg1: Union[int, float, torch.tensor]):  # type: ignore[valid-type]
         super().__init__()
         self.op = op
         self.arg1 = arg1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.op(x, self.arg1)
+        return self.op(x, self.arg1)  # type: ignore[misc]
 
 
 class TestLiftedTensor(unittest.TestCase):

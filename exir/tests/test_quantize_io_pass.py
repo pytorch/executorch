@@ -8,6 +8,11 @@ import copy
 import unittest
 
 import torch
+
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.passes.quantize_io_pass import (
     get_config_method_name,
@@ -16,11 +21,6 @@ from executorch.exir.passes.quantize_io_pass import (
 )
 from executorch.exir.tensor import get_scalar_type
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from torch.testing import FileCheck
 
 op_str = {

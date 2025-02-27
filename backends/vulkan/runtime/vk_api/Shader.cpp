@@ -28,14 +28,20 @@ ShaderInfo::ShaderInfo(
     const uint32_t* const spirv_bin,
     const uint32_t size,
     std::vector<VkDescriptorType>  layout,
-    const utils::uvec3 tile_size)
+    const utils::uvec3 tile_size,
+    const bool requires_shader_int16_ext,
+    const bool requires_16bit_storage_ext,
+    const bool requires_8bit_storage_ext)
     : src_code{
           spirv_bin,
           size,
       },
       kernel_name{std::move(name)},
       kernel_layout{std::move(layout)},
-      out_tile_size(tile_size) {
+      out_tile_size(tile_size),
+      requires_shader_int16(requires_shader_int16_ext),
+      requires_16bit_storage(requires_16bit_storage_ext),
+      requires_8bit_storage(requires_8bit_storage_ext) {
 }
 
 bool operator==(const ShaderInfo& _1, const ShaderInfo& _2) {

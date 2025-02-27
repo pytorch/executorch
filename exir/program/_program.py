@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,12 +10,14 @@
 import copy
 import io
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Union
+import os
+from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Type, Union
 
 import torch
 import torch._export
-from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._serialize import serialize_for_executorch
+from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner
@@ -33,7 +36,10 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
-from executorch.exir.passes.external_constants_pass import external_constants_pass
+from executorch.exir.passes.external_constants_pass import (
+    external_constants_pass,
+    external_mutable_weights_pass,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -59,7 +65,9 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
+from executorch.extension.flat_tensor.serialize.serialize import FlatTensorSerializer
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
@@ -207,21 +215,29 @@ def _transform(self, *passes: PassType) -> "ExportedProgram":
     if transformed_gm is self.graph_module and not res.modified:
         return self
 
+    return _update_exported_program_graph_module(self, transformed_gm)
+
+
+def _update_exported_program_graph_module(
+    exported_program: ExportedProgram,
+    gm: torch.fx.GraphModule,
+    override_verifiers: None | list[Type[Verifier]] = None,
+) -> "ExportedProgram":
     transformed_ep = ExportedProgram(
-        root=transformed_gm,
-        graph=transformed_gm.graph,
+        root=gm,
+        graph=gm.graph,
         graph_signature=_get_updated_graph_signature(
-            self.graph_signature, transformed_gm
+            exported_program.graph_signature, gm
         ),
-        state_dict=self.state_dict,
-        range_constraints=_get_updated_range_constraints(transformed_gm),
-        module_call_graph=copy.deepcopy(self._module_call_graph),
-        example_inputs=self.example_inputs,
-        constants=self.constants,
-        verifiers=[self.verifier],
+        state_dict=exported_program.state_dict,
+        range_constraints=_get_updated_range_constraints(gm),
+        module_call_graph=copy.deepcopy(exported_program._module_call_graph),
+        example_inputs=exported_program.example_inputs,
+        constants=exported_program.constants,
+        verifiers=override_verifiers or [exported_program.verifier],
     )
-    transformed_ep.graph_module.meta.update(self.graph_module.meta)
-    transformed_ep.graph_module.meta.update(res.graph_module.meta)
+    transformed_ep.graph_module.meta.update(exported_program.graph_module.meta)
+    transformed_ep.graph_module.meta.update(gm.meta)
     return transformed_ep
 
 
@@ -497,6 +513,7 @@ class ExecutorchProgram:
             )
         self.exported_program = exir_exported_program.exported_program
         self._pte_data: Optional[Cord] = None
+        self._tensor_data: Optional[Dict[str, Cord]] = None
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -504,16 +521,28 @@ class ExecutorchProgram:
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
+        self._data_serializer: DataSerializer = FlatTensorSerializer()
+
+    def _get_emitter_output(self) -> EmitterOutput:
+        if self._emitter_output is None:
+            self._emitter_output = emit_program(
+                self.exported_program, self._emit_stacktrace
+            )
+        return self._emitter_output
 
     def _get_pte_data(self) -> Cord:
         if self._pte_data is None:
-            self._pte_data = _serialize_pte_binary(
-                program=self.program,
-                extract_delegate_segments=self._extract_delegate_segments,
-                segment_alignment=self._segment_alignment,
-                constant_tensor_alignment=self._constant_tensor_alignment,
-                delegate_alignment=self._delegate_alignment,
+            self._pte_data, self._tensor_data = serialize_for_executorch(
+                self._get_emitter_output(),
+                ExecutorchBackendConfig(
+                    extract_delegate_segments=self._extract_delegate_segments,
+                    segment_alignment=self._segment_alignment,
+                    constant_tensor_alignment=self._constant_tensor_alignment,
+                    delegate_alignment=self._delegate_alignment,
+                ),
+                self._data_serializer,
             )
+        assert self._pte_data is not None
         return self._pte_data
 
     @property
@@ -532,11 +561,7 @@ class ExecutorchProgram:
 
     @property
     def program(self) -> Program:
-        if self._emitter_output is None:
-            self._emitter_output = emit_program(
-                self.exported_program, self._emit_stacktrace
-            )
-        return self._emitter_output.program
+        return self._get_emitter_output().program
 
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
@@ -570,6 +595,17 @@ class ExecutorchProgram:
         reducing the peak memory usage.
         """
         self._get_pte_data().write_to_file(open_file)
+
+    def write_tensor_data_to_file(self, outdir) -> None:
+        """
+        Writes the serialized ExecuTorch data files to the directory at `outdir`.
+        """
+        assert self._tensor_data is not None
+        # pyre-ignore[16]: `Optional` has no attribute `items`.
+        for filename, cord in self._tensor_data.items():
+            with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
+                logging.info(f"Writing data file to {filename}.ptd")
+                cord.write_to_file(f)
 
 
 def _get_aten_to_edge_passes(config: EdgeCompileConfig):
@@ -1377,6 +1413,14 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
+            # Extract constants if the config says too.
+            if config.external_constants:
+                new_gm_res = external_constants_pass(new_gm)
+                new_gm = new_gm_res.graph_module
+            elif config.external_mutable_weights:
+                new_gm_res = external_mutable_weights_pass(new_gm, program)
+                new_gm = new_gm_res.graph_module
+
             if isinstance(config.memory_planning_pass, dict):
                 memory_planning_pass = config.memory_planning_pass.get(
                     name, ExecutorchBackendConfig().memory_planning_pass
@@ -1391,8 +1435,8 @@ class EdgeProgramManager:
             else:
                 new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
 
-            if config.external_constants:
-                new_gm_res = external_constants_pass(new_gm_res)
+            # WARNING: DO NOT ADD ANY MORE PASSES AFTER MEMORY PLANNING PASS.
+            # THERE ARE A LOT OF ASSUMPTIONS IN THE STACK THAT MEMORY PLANNING IS THE LAST PASS BEFORE THE EMITTER.
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
@@ -1453,13 +1497,9 @@ class ExecutorchProgramManager:
         )
 
         # Serialize emitter output, ready to be written to a file.
-        self._pte_data: Cord = _serialize_pte_binary(
-            program=self._emitter_output.program,
-            mutable_data=self._emitter_output.mutable_data,
-            extract_delegate_segments=backend_config.extract_delegate_segments,
-            segment_alignment=backend_config.segment_alignment,
-            constant_tensor_alignment=backend_config.constant_tensor_alignment,
-            delegate_alignment=backend_config.delegate_alignment,
+        self._data_serializer = FlatTensorSerializer()
+        self._pte_data, self._tensor_data = serialize_for_executorch(
+            self._emitter_output, backend_config, self._data_serializer
         )
         self._buffer: Optional[bytes] = None
 
@@ -1541,6 +1581,16 @@ class ExecutorchProgramManager:
         reducing the peak memory usage.
         """
         self._pte_data.write_to_file(open_file)
+
+    def write_tensor_data_to_file(self, outdir) -> None:
+        """
+        Writes the serialized ExecuTorch data files to the directory at `outdir`.
+        """
+        assert self._tensor_data is not None
+        for filename, cord in self._tensor_data.items():
+            with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
+                logging.info(f"Writing data file to {filename}")
+                cord.write_to_file(f)
 
     def save(self, path: str) -> None:
         """

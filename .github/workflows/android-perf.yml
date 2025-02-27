@@ -74,19 +74,27 @@ jobs:
           CRON_DEFAULT_DEVICES: samsung_galaxy_s22
         run: |
           set -eux
+
+          ARGS="--os android"
+
           MODELS="${{ inputs.models }}"
           if [ -z "$MODELS" ]; then
             MODELS="$CRON_DEFAULT_MODELS"
           fi
+          ARGS="$ARGS --models $MODELS"
+
           DEVICES="${{ inputs.devices }}"
           if [ -z "$DEVICES" ]; then
             DEVICES="$CRON_DEFAULT_DEVICES"
           fi
+          ARGS="$ARGS --devices $DEVICES"
 
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py \
-            --os "android" \
-            --models $MODELS \
-            --devices $DEVICES
+          BENCHMARK_CONFIGS="${{ inputs.benchmark_configs }}"
+          if [ -n "$BENCHMARK_CONFIGS" ]; then
+            ARGS="$ARGS --configs $BENCHMARK_CONFIGS"
+          fi
+
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py $ARGS
 
   prepare-test-specs:
     runs-on: linux.2xlarge
@@ -98,7 +106,10 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Prepare the spec
+        id: prepare
         shell: bash
+        env:
+          BENCHMARK_CONFIG: ${{ toJSON(matrix) }}
         working-directory: extension/benchmark/android/benchmark
         run: |
           set -eux
@@ -108,10 +119,19 @@ jobs:
           # We could write a script to properly use jinja here, but there is only one variable,
           # so let's just sed it
           sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
-          cp android-llm-device-farm-test-spec.yml.j2 android-llm-device-farm-test-spec.yml
 
+          BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
+          # The config for this benchmark runs, we save it in the test spec so that it can be fetched
+          # later by the upload script
+          sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' android-llm-device-farm-test-spec.yml.j2
+
+          cp android-llm-device-farm-test-spec.yml.j2 android-llm-device-farm-test-spec.yml
           # Just print the test spec for debugging
           cat android-llm-device-farm-test-spec.yml
+
+          # Save the benchmark configs so that we can use it later in the dashboard
+          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_ID}.json"
+          echo "benchmark-config-id=${BENCHMARK_CONFIG_ID}" >> $GITHUB_OUTPUT
 
       - name: Upload the spec
         uses: seemethere/upload-artifact-s3@v5
@@ -123,9 +143,22 @@ jobs:
           if-no-files-found: error
           path: extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml
 
+      - name: Update the benchmark configs
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/android/benchmark/${{ steps.prepare.outputs.benchmark-config-id }}.json
+
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     needs: set-parameters
     secrets: inherit
     strategy:
@@ -189,6 +222,7 @@ jobs:
                       --preq_mode 8da4w_output_8da8w \
                       --preq_group_size 32 \
                       --max_seq_length 2048 \
+                      --max_context_length 2048 \
                       --output_name "${OUT_ET_MODEL_NAME}.pte" \
                       -kv \
                       -d fp32 \
@@ -220,6 +254,7 @@ jobs:
                       --xnnpack-extended-ops \
                       -d fp32 \
                       --max_seq_length 2048 \
+                      --max_context_length 2048 \
                       --output_name "${OUT_ET_MODEL_NAME}.pte" \
                       --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
@@ -238,7 +273,7 @@ jobs:
                       --output_name="${OUT_ET_MODEL_NAME}.pte"
                     ls -lh "${OUT_ET_MODEL_NAME}.pte"
                 elif [[ ${{ matrix.config }} == "llama3_qnn_htp" ]]; then
-                    export QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728
+                    export QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029
                     export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
                     export PYTHONPATH=$(pwd)/..
 
@@ -302,7 +337,10 @@ jobs:
 
   build-benchmark-app:
     name: build-benchmark-app
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
     needs: set-parameters
     with:
       runner: linux.2xlarge
@@ -325,7 +363,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
         export ANDROID_ABIS="arm64-v8a"
-        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.25.0.240728 bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029 bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   benchmark-on-device:
@@ -397,6 +435,20 @@ jobs:
 
           ls -lah artifacts
 
+      - name: Download the list of benchmark configs from S3
+        env:
+          BENCHMARK_CONFIGS_DIR: s3://gha-artifacts/${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+        shell: bash
+        run: |
+          set -eux
+
+          mkdir -p benchmark-configs
+          pushd benchmark-configs
+          ${CONDA_RUN} aws s3 sync "${BENCHMARK_CONFIGS_DIR}" .
+          popd
+
+          ls -lah benchmark-configs
+
       - name: Extract the benchmark results JSON
         shell: bash
         run: |
@@ -414,7 +466,8 @@ jobs:
               --head-branch ${{ github.head_ref || github.ref_name }} \
               --workflow-name "${{ github.workflow }}" \
               --workflow-run-id ${{ github.run_id }} \
-              --workflow-run-attempt ${{ github.run_attempt }}
+              --workflow-run-attempt ${{ github.run_attempt }} \
+              --benchmark-configs benchmark-configs
           done
 
           for SCHEMA in v2 v3; do

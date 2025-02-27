@@ -14,7 +14,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_INSERTED_PERMUTE,
     QCOM_LAYOUT_CHANGE,
     QCOM_QUANT_ATTRS,
-    QCOM_REQUANTIZE,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -31,10 +30,13 @@ class LayoutTransform(ExportPass):
     """
 
     layout_sensitive_ops = {
+        exir_ops.edge.aten.adaptive_avg_pool2d.default,
         exir_ops.edge.aten.avg_pool2d.default,
         exir_ops.edge.aten.convolution.default,
+        exir_ops.edge.aten.instance_norm.default,
         exir_ops.edge.aten.max_pool2d_with_indices.default,
         exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+        exir_ops.edge.aten._native_batch_norm_legit.no_stats,
         exir_ops.edge.aten.native_group_norm.default,
         exir_ops.edge.aten.pixel_shuffle.default,
         exir_ops.edge.aten.pixel_unshuffle.default,
@@ -43,6 +45,7 @@ class LayoutTransform(ExportPass):
     }
 
     layout_agnostic_ops = {
+        exir_ops.edge.aten.abs.default,
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.cat.default,
@@ -50,27 +53,47 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.clamp.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.eq.Scalar,
+        exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.full.default,
+        exir_ops.edge.aten.full_like.default,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.gelu.default,
+        exir_ops.edge.aten.gt.Scalar,
+        exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.hardswish.default,
         exir_ops.edge.aten.hardsigmoid.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.leaky_relu.default,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.linear.default,
+        exir_ops.edge.aten.log.default,
+        exir_ops.edge.aten.logical_not.default,
+        exir_ops.edge.aten.lt.Scalar,
+        exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten._log_softmax.default,
+        exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.ne.Scalar,
+        exir_ops.edge.aten.ne.Tensor,
+        exir_ops.edge.aten.neg.default,
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.prelu.default,
+        exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
         exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.split_with_sizes.default,
         exir_ops.edge.aten.sqrt.default,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,
         exir_ops.edge.aten.topk.default,
         exir_ops.edge.aten._to_copy.default,
-        exir_ops.edge.aten.split_with_sizes.default,
+        exir_ops.edge.aten.where.self,
         *q_ops,
         *dq_ops,
         _operator.getitem,
@@ -133,8 +156,6 @@ class LayoutTransform(ExportPass):
             # if dimemsion is not kept, we'll have no clue how to do layout transform
             if len(node.args) < 3 or not node.args[2]:
                 return False
-        if node.target in self.qdq_opset:
-            return QCOM_REQUANTIZE in node.meta
         return node.target in self.layout_agnostic_ops
 
     def is_edge_condition(self, node):

@@ -14,19 +14,88 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     QuantizationConfig,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.ao.quantization.observer import MinMaxObserver
+from torch.ao.quantization.observer import FixedQParamsObserver, MinMaxObserver
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
+    QuantizationSpec,
     SharedQuantizationSpec,
 )
 from torch.fx import Node
 
 
-def annotate_matmul_16a8w(  # noqa: C901
-    gm: torch.fx.GraphModule, traverse_input1=True
-) -> None:
+def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
+    def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_spec = quantization_config.input_activation
+        input_qspec_map[input_act] = input_spec
+
+        weight = node.args[1]
+        input_qspec_map[weight] = quantization_config.weight
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    )
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target == torch.ops.aten.conv2d.default:
+            if "nn_module_stack" in node.meta:
+                module_values_list = list(node.meta["nn_module_stack"].values())
+                full_qualified_name = module_values_list[-1][0]
+                if full_qualified_name == "output.conv":
+                    annotate_conv2d(
+                        node, quantization_config=quantization_config_16a8w_per_channel
+                    )
+
+
+def annotate_prefill_kv_output(gm: torch.fx.GraphModule, kv_quant_attrs: dict):
+    for node in gm.graph.nodes:
+        if node.op == "output":
+            for index, prefill_output in enumerate(node.args[0]):
+                kv_quant_attr = kv_quant_attrs[index]
+                fixed_observer = FixedQParamsObserver.with_args(
+                    scale=kv_quant_attr[0],
+                    zero_point=kv_quant_attr[1],
+                    quant_min=kv_quant_attr[2],
+                    quant_max=kv_quant_attr[3],
+                    dtype=kv_quant_attr[4],
+                    qscheme=torch.torch.per_tensor_affine,
+                )
+
+                fixed_output_spec = QuantizationSpec(
+                    quant_min=kv_quant_attr[2],
+                    quant_max=kv_quant_attr[3],
+                    dtype=kv_quant_attr[4],
+                    ch_axis=0,
+                    observer_or_fake_quant_ctr=fixed_observer,
+                )
+
+                input_qspec_map = {}
+                for input in prefill_output.args:
+                    if isinstance(input, Node):
+                        input_qspec_map[input] = fixed_output_spec
+
+                prefill_output.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                    input_qspec_map=input_qspec_map,
+                    output_qspec=fixed_output_spec,
+                    _annotated=True,
+                )
+
+
+def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
     """
     This function is specific for matmul op 16a8w.
+    For k, we will tag such as the below, and
+    for v, we will tag 8a until conv op.
+                                                              q (16 bits) ──┬─> matmul op (16 bits)
+                                       past k (8 bits) ┬─> cat op (8 bits) ─┘
+    rotatary add (16 bits) ─┬> cat op (new k) (8 bits) ┘
+    rotatary sub (16 bits) ─┘
     """
 
     def annotate_matmul(node: Node, quantization_config: QuantizationConfig):
@@ -65,6 +134,21 @@ def annotate_matmul_16a8w(  # noqa: C901
             _annotated=True,
         )
 
+    def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_spec = quantization_config.input_activation
+        input_qspec_map[input_act] = input_spec
+
+        weight = node.args[1]
+        input_qspec_map[weight] = quantization_config.weight
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
     def annotate_single_in_single_out(
         node: Node, quantization_config: QuantizationConfig
     ) -> None:
@@ -83,17 +167,37 @@ def annotate_matmul_16a8w(  # noqa: C901
         quantization_config_8a8w = get_8a8w_qnn_ptq_config(
             act_symmetric=True, act_observer=MinMaxObserver
         )
+        quantization_config_8a4w_per_channel = get_ptq_per_channel_quant_config(
+            act_dtype=torch.uint8,
+            weight_dtype="int4",
+            act_observer=MinMaxObserver,
+            act_symmetric=True,
+        )
         while isinstance(node, Node) and node.op == "call_function":
             if node.target in [
                 torch.ops.aten.permute.default,
+                torch.ops.aten.squeeze.dim,
                 torch.ops.aten.transpose.int,
+                torch.ops.aten.view.default,
+                torch.ops.aten.reshape.default,
             ]:
                 annotate_single_in_single_out(node, quantization_config_8a8w)
                 node = node.args[0]
             elif node.target == torch.ops.aten.cat.default:
                 annotate_cat(node, quantization_config_8a8w)
-                node = node.args[0][0]
+                # For v, we tag 8a until conv op.
+                # For k, we tag 8a until add or sub op (rotatary embedding).
+                # The arguments of cat op: (the past kv cache, the new kv cache)
+                node = node.args[0][1]
+            elif node.target == torch.ops.aten.conv2d.default:
+                annotate_conv2d(
+                    node, quantization_config=quantization_config_8a4w_per_channel
+                )
+                break
+            elif node.target in [torch.ops.aten.add.Tensor, torch.ops.aten.sub.Tensor]:
+                break
             else:
+                print(f"The node ({node}) is not expected in the input1 of the matmul")
                 node = node.args[0]
 
     quantization_config_16a8w = get_16a8w_qnn_ptq_config(act_observer=MinMaxObserver)
@@ -101,8 +205,7 @@ def annotate_matmul_16a8w(  # noqa: C901
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
             annotate_matmul(node, quantization_config_16a8w)
-            if traverse_input1:
-                annotate_matmul_input1(node.args[1])
+            annotate_matmul_input1(node.args[1])
 
 
 def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
@@ -271,7 +374,7 @@ def get_custom_quant_ios_dtype(
     """
     This function is specific for llama inputs and outputs
     """
-    if node.op == "placeholder" and "attention_sdpa_kv_cache_past_" in node.name:
+    if node.op == "placeholder" and "attention_kv_cache_past_" in node.name:
         return kv_dtype
 
     # Tag index put node before copy node, because copy is a skipped node in qnn

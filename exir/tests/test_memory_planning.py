@@ -49,6 +49,7 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
 )
 from torch.export import export
+from torch.export.experimental import _export_forward_backward
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
@@ -104,6 +105,28 @@ class ModelWithDifferentTensorSizes(torch.nn.Module):
 
     def get_random_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(2),)
+
+
+class LinearsWithDifferentSizeAndViewOps(torch.nn.Module):
+    def __init__(self) -> None:
+        super(LinearsWithDifferentSizeAndViewOps, self).__init__()
+        self.linears = torch.nn.ModuleList()
+        for x in [8, 16, 32, 64]:
+            self.linears.append(torch.nn.Linear(x, x * 2))
+
+    def forward(self, i: torch.Tensor) -> torch.Tensor:
+        o1 = i
+        for linear in self.linears:
+            o1 = linear(o1)
+        o1 = o1.view(-1, 64, 2)
+        o1 = o1 + 1
+        o2 = i
+        for linear in self.linears:
+            o2 = linear(o2)
+        return o1.view(-1, 128) + o2
+
+    def get_random_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(3, 8),)
 
 
 class ModuleReturnTwo(nn.Module):
@@ -360,6 +383,13 @@ class TestMemoryPlanning(unittest.TestCase):
         ],
     )
 
+    test_linear_with_view: Callable[..., None] = maketest(
+        LinearsWithDifferentSizeAndViewOps,
+        criteria=[
+            (greedy, True),
+        ],
+    )
+
     # greedy algorithm will reuse memory if we let the algorithm allocate
     # memory for both graph input and output.
     test_list_arg: Callable[..., None] = maketest(
@@ -508,16 +538,60 @@ class TestMisc(unittest.TestCase):
         verifier.verify_graph_input_output()
 
         idx = 0
+        reference_output = {}
+        actual_output = {}
         for node in graph_module.graph.nodes:
             if node.op == "placeholder" or (
                 node.op == "call_function"
                 and node.target in (torch.ops.aten.add.out, torch.ops.aten.mul.out)
             ):
                 mem_id, mem_offset = expected_allocs[idx]
-                self.assertEqual(node.meta["spec"].mem_id, mem_id)
-                self.assertEqual(node.meta["spec"].mem_offset, mem_offset)
+                actual_mem_id, actual_mem_offset = (
+                    node.meta["spec"].mem_id,
+                    node.meta["spec"].mem_offset,
+                )
+                if (mem_id, mem_offset) not in reference_output:
+                    reference_output[(mem_id, mem_offset)] = 1
+                    actual_output[(actual_mem_id, actual_mem_offset)] = 1
+                else:
+                    reference_output[(mem_id, mem_offset)] += 1
+                    actual_output[(actual_mem_id, actual_mem_offset)] += 1
                 idx += 1
+        self.assertEqual(reference_output, actual_output)
         self.assertEqual(graph_module.meta["non_const_buffer_sizes"], expected_bufsizes)
+
+    def test_mutation_not_double_allocated(self) -> None:
+        class Simple(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("constant", torch.ones(5, 5))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.constant.add_(1)
+                return x - self.constant
+
+        model = Simple()
+        inputs = (torch.ones(5, 5),)
+
+        et = to_edge(export(model, inputs, strict=True)).to_executorch()
+
+        # 0 and 11 should refer to the same tensor. 0 is the input, 11 is the output of copy_
+        self.assertEqual(
+            et.executorch_program.execution_plan[0]
+            .values[0]
+            .val.allocation_info.memory_offset_low,
+            et.executorch_program.execution_plan[0]
+            .values[11]
+            .val.allocation_info.memory_offset_low,
+        )
+        self.assertEqual(
+            et.executorch_program.execution_plan[0]
+            .values[0]
+            .val.allocation_info.memory_offset_high,
+            et.executorch_program.execution_plan[0]
+            .values[11]
+            .val.allocation_info.memory_offset_high,
+        )
 
     def test_constants_not_memory_planned(self) -> None:
         class Simple(torch.nn.Module):
@@ -651,3 +725,49 @@ class TestMisc(unittest.TestCase):
                     self.assertIsNone(node.meta["spec"].mem_offset)
                     self.assertIsNone(node.meta["spec"].mem_id)
         self.assertEqual(constants, 2)
+
+    def test_none_output(self) -> None:
+        class Net(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = nn.Conv2d(6, 6, 5)
+                self.linear = nn.Linear(6, 2)
+
+            def forward(self, x):
+                return self.linear(self.conv1(x).flatten(1))
+
+        class TrainingNet(nn.Module):
+            def __init__(self, net):
+                super().__init__()
+                self.net = net
+                self.loss = nn.CrossEntropyLoss()
+
+            def forward(self, input, label):
+                pred = self.net(input)
+                return self.loss(pred, label)
+
+        net = TrainingNet(Net())
+        inputs = (torch.randn(1, 6, 5, 5), torch.ones(1, dtype=torch.int64))
+
+        ep = export(net, inputs)
+        ep = _export_forward_backward(ep)
+        ep = to_edge(ep)
+        ep = ep.to_executorch()
+
+        ep.dump_executorch_program(True)
+
+        # 147 just so happens to be the index of the user_grad output arg of
+        # convolution_backward.out. This is fairly fragile.
+        # Check that the None output is not memory planned.
+        self.assertEqual(
+            ep.executorch_program.execution_plan[0]
+            .values[147]
+            .val.data_buffer_idx,  # pyright: ignore
+            0,
+        )
+        self.assertEqual(
+            ep.executorch_program.execution_plan[0]
+            .values[147]
+            .val.allocation_info,  # pyright: ignore
+            None,
+        )

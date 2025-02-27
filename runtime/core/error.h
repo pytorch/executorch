@@ -79,6 +79,12 @@ enum class Error : error_code_t {
   /// Error caused by the contents of a program.
   InvalidProgram = 0x23,
 
+  /// Error caused by the contents of external data.
+  InvalidExternalData = 0x24,
+
+  /// Does not have enough resources to perform the requested operation.
+  OutOfResources = 0x25,
+
   /*
    * Delegate errors.
    */
@@ -121,6 +127,22 @@ using ::executorch::runtime::error_code_t;
       ET_LOG(Error, message__, ##__VA_ARGS__);                    \
       return ::executorch::runtime::Error::error__;               \
     }                                                             \
+  }
+
+/**
+ * A convenience macro to be used in utility functions that check whether input
+ * tensor(s) are valid, which are expected to return a boolean. Checks whether
+ * `cond` is true; if not, log the failed check with `message` and return false.
+ *
+ * @param[in] cond the condition to check
+ * @param[in] message an additional message to log with `cond`
+ */
+#define ET_CHECK_OR_RETURN_FALSE(cond__, message__, ...)                      \
+  {                                                                           \
+    if (!(cond__)) {                                                          \
+      ET_LOG(Error, "Check failed (%s): " message__, #cond__, ##__VA_ARGS__); \
+      return false;                                                           \
+    }                                                                         \
   }
 
 /**

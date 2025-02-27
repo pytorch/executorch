@@ -21,9 +21,8 @@ class RecomposePixelUnshuffle(ExportPass):
         self.view_target = exir_ops.edge.aten.view_copy.default
         self.op = exir_ops.edge.aten.pixel_unshuffle.default
 
-        self.quantization_capture = quantization_capture
         if quantization_capture:
-            self.reshape_target = torch.ops.aten._unsafe_view.default
+            self.reshape_target = torch.ops.aten.reshape.default
             self.permute_target = torch.ops.aten.permute.default
             self.view_target = torch.ops.aten.view.default
             self.op = torch.ops.aten.pixel_unshuffle.default
@@ -35,12 +34,7 @@ class RecomposePixelUnshuffle(ExportPass):
             if node.op == "call_function" and node.target == self.reshape_target:
                 with graph.inserting_after(node):
 
-                    # Clone op still exists between permute and reshape_target during quantization,
-                    # so we need to check for args[0].args[0] to get permute node
-                    if self.quantization_capture:
-                        premute_node = node.args[0].args[0]
-                    else:
-                        premute_node = node.args[0]
+                    premute_node = node.args[0]
                     if any(
                         [
                             len(node.args[1]) != 4,

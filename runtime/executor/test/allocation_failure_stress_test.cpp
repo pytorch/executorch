@@ -21,9 +21,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using exec_aten::ArrayRef;
-using exec_aten::Scalar;
-using exec_aten::Tensor;
+using executorch::aten::ArrayRef;
+using executorch::aten::Scalar;
+using executorch::aten::Tensor;
 using executorch::extension::FileDataLoader;
 using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -10,7 +10,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
@@ -121,7 +121,7 @@ class TestMeanDim(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -141,7 +141,10 @@ class TestMeanDim(unittest.TestCase):
             )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(inputs=test_data)
 
     def _test_meandim_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
@@ -188,7 +191,7 @@ class TestMeanDim(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.tensor],
     ):
-        (
+        tester = (
             ArmTester(
                 module,
                 example_inputs=test_data,
@@ -207,7 +210,10 @@ class TestMeanDim(unittest.TestCase):
             )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .serialize()
         )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
     @parameterized.expand(AdaptiveAveragePool2d.test_data_suite)
     def test_adaptive_avg_pool2d_tosa_MI(
@@ -269,10 +275,8 @@ class TestMeanDim(unittest.TestCase):
     ):
         self._test_meandim_tosa_BI_pipeline(self.MeanDim(dim, keepdim), (test_data,))
 
-    # Expected to fail as this is not supported on u55.
     @parameterized.expand(MeanDim.test_data_suite)
-    @unittest.expectedFailure
-    def test_meandim_tosa_u55_BI_xfails(
+    def test_meandim_tosa_u55_BI(
         self,
         test_name: str,
         test_data: torch.Tensor,

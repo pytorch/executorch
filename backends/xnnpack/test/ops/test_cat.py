@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 
 import torch
@@ -11,28 +13,14 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestCat(unittest.TestCase):
-    class Cat2(torch.nn.Module):
-        def forward(self, arg1, arg2):
-            xs = [arg1, arg2]
-            x = torch.cat(xs)
-            return x + x  # Quantize by propagation.
+    class Cat(torch.nn.Module):
+        def __init__(self, dim=0):
+            super().__init__()
+            self.dim = dim
 
-    class Cat3(torch.nn.Module):
-        def forward(self, arg1, arg2, arg3):
-            xs = [arg1, arg2, arg3]
-            x = torch.cat(xs)
-            return x + x  # Quantize by propagation.
-
-    class Cat4(torch.nn.Module):
-        def forward(self, arg1, arg2, arg3, arg4):
-            xs = [arg1, arg2, arg3, arg4]
-            x = torch.cat(xs)
-            return x + x  # Quantize by propagation.
-
-    class Cat5(torch.nn.Module):
-        def forward(self, arg1, arg2, arg3, arg4, arg5):
-            xs = [arg1, arg2, arg3, arg4, arg5]
-            x = torch.cat(xs)
+        def forward(self, *args):
+            xs = [*args]
+            x = torch.cat(xs, dim=self.dim)
             return x + x  # Quantize by propagation.
 
     def _test_cat(self, module, inputs, cat_num=1, quant=False, quant_ops=2):
@@ -43,7 +31,6 @@ class TestCat(unittest.TestCase):
                 tester.quantize()
 
             tester.export().check_count({"torch.ops.aten.cat": 1})
-            tester.dump_artifact()
 
             if quant:
                 # Expect multiple quantize ops - one per input, cat, and add.
@@ -84,7 +71,7 @@ class TestCat(unittest.TestCase):
             torch.randn(1, 2, 3).to(torch.float16),
             torch.randn(3, 2, 3).to(torch.float16),
         )
-        self._test_cat(self.Cat2(), inputs)
+        self._test_cat(self.Cat(), inputs)
 
     def test_fp16_cat3(self):
         """
@@ -95,7 +82,7 @@ class TestCat(unittest.TestCase):
             torch.randn(3, 2, 3).to(torch.float16),
             torch.randn(2, 2, 3).to(torch.float16),
         )
-        self._test_cat(self.Cat3(), inputs)
+        self._test_cat(self.Cat(), inputs)
 
     def test_fp16_cat4(self):
         """
@@ -107,15 +94,38 @@ class TestCat(unittest.TestCase):
             torch.randn(2, 2, 3).to(torch.float16),
             torch.randn(5, 2, 3).to(torch.float16),
         )
-        self._test_cat(self.Cat4(), inputs)
+        self._test_cat(self.Cat(), inputs)
+
+    def test_fp16_cat5(self):
+        """
+        Using Clamp2 because fp16 add is done in fp32 ATM. Need to fix that first.
+        """
+        inputs = (
+            torch.randn(1, 2, 3).to(torch.float16),
+            torch.randn(3, 2, 3).to(torch.float16),
+            torch.randn(2, 2, 3).to(torch.float16),
+            torch.randn(5, 2, 3).to(torch.float16),
+            torch.randn(5, 2, 3).to(torch.float16),
+        )
+        self._test_cat(self.Cat(), inputs)
+
+    def test_fp16_cat_gt_5(self):
+        """
+        Using Clamp2 because fp16 add is done in fp32 ATM. Need to fix that first.
+        """
+        for num_inputs in range(6, 10):
+            inputs = []
+            for _ in range(num_inputs):
+                inputs.append(torch.randn(1, 2, 3).to(torch.float16))
+            self._test_cat(self.Cat(), tuple(inputs))
 
     def test_fp32_cat2(self):
         inputs = (torch.randn(1, 2, 3), torch.randn(3, 2, 3))
-        self._test_cat(self.Cat2(), inputs)
+        self._test_cat(self.Cat(), inputs)
 
     def test_fp32_cat3(self):
         inputs = (torch.randn(1, 2, 3), torch.randn(3, 2, 3), torch.randn(2, 2, 3))
-        self._test_cat(self.Cat3(), inputs)
+        self._test_cat(self.Cat(), inputs)
 
     def test_fp32_cat4(self):
         inputs = (
@@ -124,15 +134,32 @@ class TestCat(unittest.TestCase):
             torch.randn(2, 2, 3),
             torch.randn(5, 2, 3),
         )
-        self._test_cat(self.Cat4(), inputs)
+        self._test_cat(self.Cat(), inputs)
+
+    def test_fp32_cat5(self):
+        inputs = (
+            torch.randn(1, 2, 3),
+            torch.randn(3, 2, 3),
+            torch.randn(2, 2, 3),
+            torch.randn(5, 2, 3),
+            torch.randn(1, 2, 3),
+        )
+        self._test_cat(self.Cat(), inputs)
+
+    def test_fp32_cat_gt_5(self):
+        for num_inputs in range(6, 10):
+            inputs = []
+            for _ in range(num_inputs):
+                inputs.append(torch.randn(1, 2, 3))
+            self._test_cat(self.Cat(), tuple(inputs))
 
     def test_qs8_cat2(self):
         inputs = (torch.randn(1, 2, 3), torch.randn(3, 2, 3))
-        self._test_cat(self.Cat2(), inputs, cat_num=2, quant=True)
+        self._test_cat(self.Cat(), inputs, cat_num=2, quant=True)
 
     def test_qs8_cat3(self):
         inputs = (torch.randn(1, 2, 3), torch.randn(3, 2, 3), torch.randn(2, 2, 3))
-        self._test_cat(self.Cat3(), inputs, cat_num=3, quant=True)
+        self._test_cat(self.Cat(), inputs, cat_num=3, quant=True)
 
     def test_qs8_cat4(self):
         inputs = (
@@ -141,46 +168,33 @@ class TestCat(unittest.TestCase):
             torch.randn(2, 2, 3),
             torch.randn(5, 2, 3),
         )
-        self._test_cat(self.Cat4(), inputs, cat_num=4, quant=True)
+        self._test_cat(self.Cat(), inputs, cat_num=4, quant=True)
 
-    def test_fp32_cat_unsupported(self):
-        """
-        XNNPACK only supports concatenating up to 4 values, so it should not delegate here.
-        """
+    def test_qs8_cat5(self):
         inputs = (
             torch.randn(1, 2, 3),
             torch.randn(3, 2, 3),
             torch.randn(2, 2, 3),
             torch.randn(5, 2, 3),
-            torch.randn(1, 2, 3),
+            torch.randn(5, 2, 3),
         )
-        (
-            Tester(self.Cat5(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.cat": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
-        )
+        self._test_cat(self.Cat(), inputs, cat_num=5, quant=True)
 
-    def test_fp32_cat_unsupported_legacy_mode(self):
-        """
-        XNNPACK only supports concatenating up to 4 values, so it should not delegate here.
-        """
+    def test_qs8_cat_gt_5(self):
+        for num_inputs in range(6, 10):
+            inputs = []
+            for _ in range(num_inputs):
+                inputs.append(torch.randn(1, 2, 3))
+            self._test_cat(self.Cat(), tuple(inputs), cat_num=num_inputs, quant=True)
+
+    def test_qs8_cat_with_empty_tensor(self):
         inputs = (
+            torch.randn(0, 2, 3),
             torch.randn(1, 2, 3),
             torch.randn(3, 2, 3),
-            torch.randn(2, 2, 3),
-            torch.randn(5, 2, 3),
-            torch.randn(1, 2, 3),
+            torch.randn(0, 2, 3),
         )
-        (
-            Tester(self.Cat5(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.cat": 1})
-            .to_edge()
-            .partition()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
-        )
+        self._test_cat(self.Cat(), inputs, cat_num=4, quant=True)
 
     class CatNegativeDim(torch.nn.Module):
         def __init__(self):

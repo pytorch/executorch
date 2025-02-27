@@ -13,6 +13,7 @@ from executorch.extension.training.examples.XOR.export_model import _export_mode
 
 class TestXORExport(unittest.TestCase):
     def test(self):
-        _ = _export_model()
+        ep = _export_model()
+        self.assertTrue(ep is not None)
         # Expect that we reach this far without an exception being thrown.
         self.assertTrue(True)

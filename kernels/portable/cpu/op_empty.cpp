@@ -16,7 +16,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
+using executorch::aten::Tensor;
 
 /*
  * Empty out tensor
@@ -26,7 +26,7 @@ using exec_aten::Tensor;
 Tensor& empty_out(
     KernelRuntimeContext& context,
     IntArrayRef size,
-    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)context;
 

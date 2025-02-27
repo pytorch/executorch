@@ -7,6 +7,7 @@
  */
 
 #pragma once
+#include <c10/util/irange.h>
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -16,14 +17,14 @@ namespace executor {
 bool check_padding_args(
     int64_t n,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> padding,
+    executorch::aten::ArrayRef<int64_t> padding,
     Tensor& out,
     bool reflection = false);
 
 void get_padding_out_target_size(
     int64_t n,
     const Tensor& in,
-    exec_aten::ArrayRef<int64_t> padding,
+    executorch::aten::ArrayRef<int64_t> padding,
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
@@ -42,7 +43,7 @@ void pad1d(
     const PaddingIx& padding_ix,
     const Tensor& in,
     Tensor& out,
-    exec_aten::ArrayRef<int64_t> padding) {
+    executorch::aten::ArrayRef<int64_t> padding) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -51,11 +52,10 @@ void pad1d(
   const auto in_width = in.size(dim);
   const auto out_width = out.size(dim);
   const auto pad_left = padding[0];
-
-  for (size_t i = 0; i < outer; i++) {
+  for (const auto i : c10::irange(outer)) {
     size_t out_i_base = i * out_width;
     size_t in_i_base = i * in_width;
-    for (size_t w = 0; w < out_width; w++) {
+    for (const auto w : c10::irange(out_width)) {
       out_data[out_i_base + w] =
           in_data[in_i_base + padding_ix(w, in_width, pad_left)];
     }
@@ -67,7 +67,7 @@ void pad2d(
     const PaddingIx& padding_ix,
     const Tensor& in,
     Tensor& out,
-    exec_aten::ArrayRef<int64_t> padding) {
+    executorch::aten::ArrayRef<int64_t> padding) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -80,14 +80,14 @@ void pad2d(
   const auto pad_left = padding[0];
   const auto pad_top = padding[2];
 
-  for (size_t i = 0; i < outer; i++) {
+  for (const auto i : c10::irange(outer)) {
     size_t out_i_base = i * out_height * out_width;
     size_t in_i_base = i * in_height * in_width;
-    for (size_t h = 0; h < out_height; h++) {
+    for (const auto h : c10::irange(out_height)) {
       size_t out_h_base = out_i_base + h * out_width;
       size_t in_h_base =
           in_i_base + padding_ix(h, in_height, pad_top) * in_width;
-      for (size_t w = 0; w < out_width; w++) {
+      for (const auto w : c10::irange(out_width)) {
         out_data[out_h_base + w] =
             in_data[in_h_base + padding_ix(w, in_width, pad_left)];
       }
@@ -100,7 +100,7 @@ void pad3d(
     const PaddingIx& padding_ix,
     const Tensor& in,
     Tensor& out,
-    exec_aten::ArrayRef<int64_t> padding) {
+    executorch::aten::ArrayRef<int64_t> padding) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -116,18 +116,18 @@ void pad3d(
   const auto pad_top = padding[2];
   const auto pad_front = padding[4];
 
-  for (size_t i = 0; i < outer; i++) {
+  for (const auto i : c10::irange(outer)) {
     size_t out_i_base = i * out_depth * out_height * out_width;
     size_t in_i_base = i * in_depth * in_height * in_width;
-    for (size_t d = 0; d < out_depth; d++) {
+    for (const auto d : c10::irange(out_depth)) {
       size_t out_d_base = out_i_base + d * out_height * out_width;
       size_t in_d_base =
           in_i_base + padding_ix(d, in_depth, pad_front) * in_height * in_width;
-      for (size_t h = 0; h < out_height; h++) {
+      for (const auto h : c10::irange(out_height)) {
         size_t out_h_base = out_d_base + h * out_width;
         size_t in_h_base =
             in_d_base + padding_ix(h, in_height, pad_top) * in_width;
-        for (size_t w = 0; w < out_width; w++) {
+        for (const auto w : c10::irange(out_width)) {
           out_data[out_h_base + w] =
               in_data[in_h_base + padding_ix(w, in_width, pad_left)];
         }

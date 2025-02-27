@@ -9,6 +9,7 @@ from itertools import chain
 from typing import cast, List, Optional, Tuple
 
 import torch
+from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
@@ -209,6 +210,11 @@ class GEMMConfig(XNNPartitionerConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         gemm_deps = []
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force force_fp32_dynamic_linear is enabled, then we
+            # do not partition the weight node
+            return (True, gemm_deps)
+
         if len(node.all_input_nodes) > 2 and self.bias_idx is not None:
             bias_node = get_input_node(node, self.bias_idx)
             if bias_node:
@@ -317,7 +323,7 @@ class ConvolutionConfig(GEMMConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Currently we have no support for convolution 3d and transposed convolution
+        Currently we have no support for convolution 3d
         """
         if not super().check_constraints(node, ep):
             return False
@@ -327,11 +333,36 @@ class ConvolutionConfig(GEMMConfig):
             why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
-        transposed = cast(bool, node.args[6])
-        if transposed:
-            why(node, "Transposed Conv is not supported")
-            return False  # Currently don't support transposed conv
+        kernel_node = get_input_node(node, 1)
+        weight_quant_params = QuantParams.from_weights(kernel_node, ep)
 
+        is_transpose = node.args[6]
+        groups = cast(int, node.args[8])
+
+        # XNNPack does not support non-zero output padding in transposed
+        # convolutions.
+        if is_transpose and any(
+            out_pad != 0 for out_pad in cast(List[int], node.args[7])
+        ):
+            why(
+                node,
+                "XNNPACK does not support transposed convolutions with"
+                "non-zero output padding",
+            )
+            return False
+
+        if (
+            is_transpose
+            and weight_quant_params is not None
+            and weight_quant_params.per_channel
+            and (groups > 1 or weight_quant_params.axis != 1)
+        ):
+            why(
+                node,
+                "XNNPACK does not support per input channel quantization"
+                "for transpose convolutions with groups > 1",
+            )
+            return False
         return True
 
     def supported_precision_types(self):
@@ -451,7 +482,15 @@ class AddmmConfig(GEMMConfig):
         node.args = old_args
         node.users = old_users
 
-        return valid_deps, list(set(deps) | set(src_partition.nodes))
+        # When using force_fp32_dynamic_linear, we want to get_deps to overwrite the source partition nodes.
+        # Else we want to be greedy.
+        ret_deps = (
+            list(set(deps) & set(src_partition.nodes))
+            if self.force_fp32_dynamic_linear
+            else list(set(deps) | set(src_partition.nodes))
+        )
+
+        return valid_deps, ret_deps
 
     def supported_precision_types(self):
         return [

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstring>
 
@@ -16,15 +17,15 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
+using Tensor = executorch::aten::Tensor;
 
 Tensor& slice_scatter_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& src,
     int64_t dim,
-    exec_aten::optional<int64_t> start_val,
-    exec_aten::optional<int64_t> end_val,
+    executorch::aten::optional<int64_t> start_val,
+    executorch::aten::optional<int64_t> end_val,
     int64_t step,
     Tensor& out) {
   (void)ctx;
@@ -85,10 +86,10 @@ Tensor& slice_scatter_out(
 
           size_t src_offset = 0;
 
-          for (int i = 0; i < leading_dims; i++) {
+          for (const auto i : c10::irange(leading_dims)) {
             size_t out_offset = (i * dim_length + start) * trailing_dims;
-            for (int j = 0; j < num_values; j++) {
-              for (size_t k = 0; k < trailing_dims; ++k) {
+            for ([[maybe_unused]] const auto j : c10::irange(num_values)) {
+              for (const auto k : c10::irange(trailing_dims)) {
                 out_data[out_offset + k] =
                     convert<CTYPE, CTYPE_SRC>(src_data[src_offset + k]);
               }
