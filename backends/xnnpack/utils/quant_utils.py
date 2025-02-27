@@ -88,6 +88,13 @@ def is_per_channel(node: torch.fx.Node) -> bool:
 
     return is_per_channel or is_affine_per_channel_group
 
+def is_per_tensor(node: torch.fx.Node) -> bool:
+    if not (is_quant(node) or is_dequant(node)):
+        return False
+    
+    is_per_tensor = "per_tensor" in node.target.__name__  # pyre-ignore
+
+    return is_per_tensor and not (is_per_channel(node))
 
 def is_affine_qdq(node: torch.fx.Node) -> bool:
     if not (is_quant(node) or is_dequant(node)):

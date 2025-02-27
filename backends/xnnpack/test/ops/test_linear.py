@@ -520,7 +520,7 @@ class TestLinear(unittest.TestCase):
                 #     qtol=bool(quant_config), atol=atol
                 # )
 
-    def _test_qd8_per_channel_linear(self, dtype: torch.dtype = torch.float):
+    def _test_qd8_linear(self, dtype: torch.dtype = torch.float, is_per_channel:bool=True):
         for uses_bias in (False, True):
             module = BaseLinear(
                 in_size=8,
@@ -535,7 +535,7 @@ class TestLinear(unittest.TestCase):
                 module,
                 inputs,
                 dynamic_shapes=({1: torch.export.Dim("batch", max=100)},),
-                is_per_channel=True,
+                is_per_channel=is_per_channel,
                 uses_bias=uses_bias,
             )
 
@@ -695,11 +695,29 @@ class TestLinear(unittest.TestCase):
 
     # Tests for q[dp]8-f16-qc8w
     def test_qd8_f16_per_channel_linear(self):
-        self._test_qd8_per_channel_linear(dtype=torch.half)
+        self._test_qd8_linear(dtype=torch.half)
+
+    @unittest.expectedFailure
+    def test_qd8_f16_per_tensor_linear(self):
+        """
+        XNNPACK doesn't support per_tensor quantized weights for dynamic quantized linear op.
+        This test is to verify that we can't lower per_tensor quantized weights to per_channel quantized weights.
+        """
+        self._test_qd8_linear(dtype=torch.half, is_per_channel=False)
+
+
 
     # Tests for q[dp]8-f32-qc8w
     def test_qd8_f32_per_channel_linear(self):
-        self._test_qd8_per_channel_linear(dtype=torch.float)
+        self._test_qd8_linear(dtype=torch.float)
+
+    @unittest.expectedFailure
+    def test_qd8_f32_per_tensor_linear(self):
+        """
+        XNNPACK doesn't support per_tensor quantized weights for dynamic quantized linear op.
+        This test is to verify that we can't lower per_tensor quantized weights to per_channel quantized weights.
+        """ 
+        self._test_qd8_linear(dtype=torch.half, is_per_channel=False)
 
     # Tests for q[dp]8-f16-qc4w
     def test_linear_qd8_f16_per_channel_int4(self):
