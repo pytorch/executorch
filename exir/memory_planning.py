@@ -8,6 +8,7 @@
 
 import collections
 import functools
+import heapq
 import itertools
 import logging
 import operator
@@ -707,6 +708,137 @@ def _contains_xnnpack_delegate(graph_module: torch.fx.GraphModule) -> bool:
                 return True
     return False
 
+def heap_optimized_greedy(
+    graph_module: torch.fx.GraphModule,
+    alignment: int,
+    graph_signature: Optional[ExportGraphSignature] = None,
+    alloc_graph_input: bool = True,
+    alloc_graph_output: bool = True,
+    allow_overlapping_allocations: bool = True
+) -> MemoryAlgoResult:
+    """
+    This function implements a memory allocation strategy using a greedy approach
+    with a priority queue (heap) to manage memory blocks.
+    The algorithm processes each buffer specification by sorting them based on size and
+    start time. It attempts to fit each buffer into an existing memory block without
+    overlapping in time. If no suitable block is found, a new block is created.
+    The format of the entries in the heap is (end_time, max_size, block_intervals, block_id),
+    so whenever we pop an entry from the heap we're popping the block with the earliest end time.
+    """
+
+    greedy_result = MemoryAlgoResult({}, [])
+
+    extra_padded_bytes = 0
+    if _contains_xnnpack_delegate(graph_module):
+        extra_padded_bytes = 64
+    
+    # Don't do assertion in collect_specs_from_nodes if we have already encountered
+    # and ignored some to_out_variant errors.
+    do_assertion = not getattr(graph_module, "encounter_to_out_var_failure", False)
+
+    specs_list = collect_specs_from_nodes(
+        graph_module.graph.nodes,
+        graph_signature,
+        do_assertion=do_assertion,
+        ignore_graph_input=not alloc_graph_input,
+        ignore_graph_output=not alloc_graph_output,
+    )
+    # Sort based on the size of the spec, and then the starting lifetime of the spec if
+    # the size is same.
+    specs_list = sorted(specs_list, key=lambda x: (-x.allocated_memory, x.lifetime[0]))
+        
+    # This is a dict where the key is the memory id and the value is the heap
+    # for that memory id.
+    # Format of priority queue: (end_time, max_size, block_intervals)
+    heap_dict = defaultdict(list)
+    # In this dict we store a mapping from memory id to the max block id that has been
+    # assigned to that memory id. This is used to assign unique block ids to each block
+    # in the heap.
+    block_ids = defaultdict(int)
+    spec_to_block_id = defaultdict(list)
+    
+    for spec in specs_list:
+        spec.realign(alignment)
+        size, start, end = spec.allocated_memory, spec.lifetime[0], spec.lifetime[1]
+        assigned = False
+        
+        spec_alloc_result = greedy_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
+        if spec.mem_id is None:
+            spec_alloc_result.mem_id = 1
+        else:
+            spec_alloc_result.mem_id = spec.mem_id
+        greedy_result.spec_dict[spec] = spec_alloc_result
+        
+        # Get the heap for the memory id of the spec.
+        heap = heap_dict[spec_alloc_result.mem_id]
+        
+        # Check the heap for compatible blocks
+        temp = []
+        while heap:
+            block_end, block_size, block_intervals, block_id = heapq.heappop(heap)
+            # Block can fit the buffer if:
+            # 1. Its max_size >= buffer size
+            # 2. No overlap with existing intervals
+            if (block_size >= size and
+                not any(s < end and start < e for (s, e) in block_intervals)):
+                # Add buffer to the block
+                block_intervals.append((start, end))
+                new_block_end = max(block_end, end)
+                heapq.heappush(heap, (new_block_end, block_size, block_intervals, block_id))
+                # Keep track of all the specs that are assigned to this block id.
+                spec_to_block_id[block_id] += [spec]
+                assigned = True
+                break
+            else:
+                # If the block is not compatible, add it to a temporary list so that
+                # we can restore it to the heap later.
+                temp.append((block_end, block_size, block_intervals, block_id))
+        
+        # Restore popped blocks to the heap
+        for item in temp:
+            heapq.heappush(heap, item)
+        
+        # Create a new block if no existing block fits
+        if not assigned:
+            # Get max block id assigned till now for this memory id.
+            block_id = block_ids.get(spec_alloc_result.mem_id, 0)
+            new_block = (end, size, [(start, end)], block_id)
+            # Add this spec to the list of specs assigned to this block id.
+            spec_to_block_id[block_id] += [spec]
+            # Increment the max block id assigned for this memory id.
+            block_ids[spec_alloc_result.mem_id] += 1
+            heapq.heappush(heap, new_block)
+
+    # Now that we have the heap for each memory id, we can assign offsets to each
+    # spec based on the heap.
+    # Format of priority queue: (end_time, max_size, block_intervals, block_id)
+    if len(heap_dict) == 0:
+        # Cannot find any tensor in the graph that needs to be allocated.
+        # Return [0, 0] to be consistent with default behavior of naive.
+        bufsize = [0, 0]
+    else:
+        bufsize = [0] * (max(heap_dict.keys()) + 1)
+    for mem_id, heap in heap_dict.items():
+        input_total_size = 0
+        total_size = 0
+        if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
+            # pyre-fixme[6]: For 1st argument expected
+            #  `pyre_extensions.ReadOnly[Sized]` but got `Union[Tensor, Module]`.
+            if len(bufsizes) > mem_id:
+                # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.Ten...
+                input_total_size = bufsizes[mem_id]
+        while heap:
+            block_end, block_size, block_intervals, block_id = heapq.heappop(heap)
+            spec_list = spec_to_block_id[block_id]
+            for spec in spec_list:
+                spec_alloc_result = greedy_result.spec_dict.get(spec, None)
+                assert spec_alloc_result is not None, f"Spec {spec} not found."
+                spec_alloc_result.mem_offset = total_size
+            total_size += block_size
+        bufsize[mem_id] = input_total_size + total_size + extra_padded_bytes
+
+    greedy_result.bufsizes = bufsize
+    return greedy_result
 
 def greedy(
     graph_module: torch.fx.GraphModule,
@@ -818,7 +950,7 @@ def memory_planning_algorithm_suite(
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
     allow_overlapping_allocations: bool = True,
-    algo_list: List[Callable[..., MemoryAlgoResult]] = [greedy],
+    algo_list: List[Callable[..., MemoryAlgoResult]] = [greedy, heap_optimized_greedy],
 ) -> List[int]:
     r"""
     Memory planning algorithm suite that runs a list of memory planning algorithms

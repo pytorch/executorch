@@ -20,6 +20,7 @@ from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
     greedy,
+    heap_optimized_greedy,
     memory_planning_algorithm_suite,
     MemoryAlgoResult,
     naive,
@@ -254,6 +255,7 @@ def maketest(
                 (naive, False),
                 # greedy algorithm should reuse tensor storages in the testing model
                 (greedy, True),
+                (heap_optimized_greedy, True),
             ]
 
         for algo, expect_reuse in criteria:
@@ -383,6 +385,7 @@ class TestMemoryPlanning(unittest.TestCase):
         criteria=[
             (naive, False),
             (greedy, True),
+            (heap_optimized_greedy, True)
         ],
     )
 
@@ -390,6 +393,7 @@ class TestMemoryPlanning(unittest.TestCase):
         LinearsWithDifferentSizeAndViewOps,
         criteria=[
             (greedy, True),
+            (heap_optimized_greedy, True)
         ],
     )
 
@@ -400,6 +404,7 @@ class TestMemoryPlanning(unittest.TestCase):
         criteria=[
             (naive, False),
             (greedy, True),
+            (heap_optimized_greedy, True)
         ],
         extra_check=ModuleListArg.extra_check,
     )
