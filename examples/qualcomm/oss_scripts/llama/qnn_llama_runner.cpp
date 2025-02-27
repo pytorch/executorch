@@ -30,6 +30,10 @@ DEFINE_string(
     output_path,
     "outputs.txt",
     "Executorch inference data output path.");
+DEFINE_string(
+    performance_output_path,
+    "inference_speed.txt",
+    "Records inference speed. For CI purpose.");
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 DEFINE_string(
@@ -63,6 +67,7 @@ int main(int argc, char** argv) {
   example::Runner runner(
       {FLAGS_model_path},
       FLAGS_tokenizer_path.c_str(),
+      FLAGS_performance_output_path.c_str(),
       FLAGS_logits_scale,
       FLAGS_logits_offset,
       FLAGS_temperature,

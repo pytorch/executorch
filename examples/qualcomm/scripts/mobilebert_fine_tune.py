@@ -169,7 +169,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     dataset_train = TensorDataset(input_ids_train, attention_masks_train, labels_train)
     dataset_val = TensorDataset(input_ids_val, attention_masks_val, labels_val)
 
-    epochs = 5
+    epochs = args.num_epochs
     dataloader_train = DataLoader(
         dataset_train,
         sampler=RandomSampler(dataset_train),
@@ -364,6 +364,13 @@ if __name__ == "__main__":
         help="Location of pretrained weight",
         default=None,
         type=str,
+    )
+
+    parser.add_argument(
+        "--num_epochs",
+        help="If no pretrained weights are provided, set number of epochs to train the model",
+        default=5,
+        type=int,
     )
 
     parser.add_argument(
