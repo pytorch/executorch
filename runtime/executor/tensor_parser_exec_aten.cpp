@@ -224,17 +224,12 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
       if (!planned_ptr.ok()) {
         return planned_ptr.error();
       }
-      auto size =
+      auto load_error =
           named_data_map->load_data_into(fqn, planned_ptr.get(), nbytes);
-      if (size.error() != Error::Ok) {
-        return size.error();
+      if (load_error != Error::Ok) {
+        return load_error;
       }
-      ET_CHECK_OR_RETURN_ERROR(
-          size.get() == nbytes,
-          InvalidExternalData,
-          "Expected to load %zu bytes, actually loaded %u bytes",
-          nbytes,
-          static_cast<unsigned int>(size.get()));
+
       return planned_ptr;
     }
   }

@@ -190,6 +190,7 @@ class TestQNN(unittest.TestCase):
     compile_only: bool = False
     pre_gen_pte: str = ""
     llama_artifacts: str = ""
+    dump_intermediate_outputs: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
