@@ -1,25 +1,27 @@
-.hypothesis
-buck-out/
-.mypy_cache/
-buck2-bin/
-cmake-out*
 .DS_Store
+.hypothesis
+.mypy_cache/
+.venv/
+__pycache__/
+buck-out/
+buck2-bin/
 cmake-android-out/
-cmake-out-android/
 cmake-ios-out/
+cmake-out*
+cmake-out-android/
 ethos-u-scratch/
 executorch.egg-info
 pip-out/
-__pycache__/
 
 # Any exported models and profiling outputs
-*.pte
-*.model
-!test_tiktoken_tokenizer.model
 *.bin
+*.model
+*.pte
 !test_bpe_tokenizer.bin
+!test_tiktoken_tokenizer.model
 
 # Editor temporaries
+*.idea
 *.swa
 *.swb
 *.swc
@@ -38,4 +40,3 @@ __pycache__/
 *.swp
 *~
 .~lock.*
-*.idea
