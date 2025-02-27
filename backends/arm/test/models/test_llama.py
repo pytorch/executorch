@@ -20,7 +20,6 @@ from executorch.examples.models.llama.export_llama_lib import (
     get_llama_model,
 )
 
-from executorch.exir import EdgeCompileConfig
 
 # Add project dir to sys path to workaround importlib.import_module() conditions in model_factory.py
 this_files_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,11 +36,6 @@ class TestLlama(unittest.TestCase):
     --llama_inputs <path to .pt file> <path to json file>
     Example: --llama_inputs stories110M/stories110M.pt stories110M/params.json
     """
-
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _check_ir_validity=False,
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
 
     def prepare_model(self):
 
@@ -117,12 +111,10 @@ class TestLlama(unittest.TestCase):
                     constant_methods=llama_meta,
                 )
                 .export()
-                .to_edge_transform_and_lower(
-                    edge_compile_config=self._edge_compile_config
-                )
+                .to_edge_transform_and_lower()
                 .check_count({"torch.ops.higher_order.executorch_call_delegate": 14})
                 .to_executorch()
                 .run_method_and_compare_outputs(
-                    inputs=llama_inputs, atol=1.8, rtol=0.01
+                    inputs=llama_inputs, atol=1.8, rtol=0.01  # TODO: decrease tolerance
                 )
             )

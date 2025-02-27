@@ -33,7 +33,8 @@ class SliceVisitor(NodeVisitor):
     ) -> None:
 
         # See slice_copy_support.py
-        assert len(inputs) == 4 or (len(inputs) == 5 and inputs[4].number == 1)
+        if not (len(inputs) == 4 or (len(inputs) == 5 and inputs[4].number == 1)):
+            raise ValueError("Unsupported combination of inputs")
 
         # aten.slice_copy supports slicing in 1d at a time.
         # The arguments are the actual input, dimension of slicing, start index, end index and optinal step or stride.
