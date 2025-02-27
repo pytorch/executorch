@@ -75,17 +75,20 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
       static_assert(
           std::is_same_v<OUT_T, float>,
           "Below loop actually only supports float.");
-      const VecIn max_input_vec(max_input);
-      for (; d + VecOut::size() < dim_size; d += VecOut::size()) {
-        auto index = d * dim_stride;
-        auto in = VecIn::loadu(&input_data[index]);
-        auto out_ = (in - max_input_vec).exp();
-        out_.store(&output_data[index]);
+      // It is not correct to vectorize if dim is not contiguous!
+      if (dim_stride == 1) {
+        const VecIn max_input_vec(max_input);
+        for (; d + VecOut::size() < dim_size; d += VecOut::size()) {
+          auto index = d * dim_stride;
+          auto in = VecIn::loadu(&input_data[index]);
+          auto out_ = (in - max_input_vec).exp();
+          out_.store(&output_data[index]);
 #if defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE)
-        temp_sum += vaddvq_f32(out_);
+          temp_sum += vaddvq_f32(out_);
 #else
-        temp_sum += at::vec::vec_reduce_all<float>(std::plus<VecOut>(), out_);
+          temp_sum += at::vec::vec_reduce_all<float>(std::plus<VecOut>(), out_);
 #endif
+        }
       }
       for (; d < dim_size; ++d) {
         output_data[d * dim_stride] =

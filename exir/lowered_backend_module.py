@@ -890,7 +890,7 @@ def _unsafe_adjust_original_program(  # noqa: C901
             del original_program._state_dict[input_target]
         elif input_spec.kind == InputKind.BUFFER:
             if input_spec.persistent:
-                del original_program._state_dict[input_target]
+                original_program._state_dict.pop(input_target, None)
             else:
                 del original_program._constants[input_spec.target]
         elif input_spec.kind == InputKind.CONSTANT_TENSOR:

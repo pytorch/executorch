@@ -34,6 +34,7 @@ MODEL_NAME_TO_MODEL = {
     "resnet50": ("resnet", "ResNet50Model"),
     "llava": ("llava", "LlavaModel"),
     "efficient_sam": ("efficient_sam", "EfficientSAM"),
+    "qwen2_5": ("qwen2_5", "Qwen2_5Model"),
 }
 
 __all__ = [
