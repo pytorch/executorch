@@ -121,7 +121,7 @@ jobs:
           sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
 
 
-          BINARY_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/xnn_executor_runner
+          BINARY_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/xnn_executor_runner"
           sed -i -e 's,{{ binary_path }},'"${BINARY_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
 
           BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
