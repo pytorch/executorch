@@ -12,7 +12,7 @@ phases:
       - echo "The benchmark config is {{ benchmark_config_id }}"
 
       # Download the model from S3
-      - curl -s --fail '{{ model_path }}' -o model.zip || false
+      - curl -s --fail '{{ model_path }}' -o model.zip
       - unzip model.zip && ls -la
 
       # Copy the model to sdcard. This prints too much progress info when the files
@@ -35,6 +35,10 @@ phases:
 
   test:
     commands:
+      # Fail the test if the model doesn't exist, doing it here so that AWS can report the status back
+      - echo "Verify model"
+      - curl -I --fail '{{ model_path }}' || false
+
       # By default, the following ADB command is used by Device Farm to run your Instrumentation test.
       # Please refer to Android's documentation for more options on running instrumentation tests with adb:
       # https://developer.android.com/studio/test/command-line#run-tests-with-adb
