@@ -42,6 +42,25 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_library(
+        name = "core_data_map",
+        srcs = [
+            "core_data_map.cpp",
+        ],
+        exported_headers = [
+            "core_data_map.h",
+        ],
+        visibility = [
+            "//executorch/runtime/executor/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:named_data_map",
+            "//executorch/schema:program",
+        ],
+    )
+
     for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
@@ -59,6 +78,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "program_no_prim_ops" + aten_suffix,
             srcs = [
+                "core_data_map.cpp",
                 "method.cpp",
                 "method_meta.cpp",
                 "program.cpp",
@@ -69,6 +89,7 @@ def define_common_targets():
                 "platform_memory_allocator.h",
             ],
             exported_headers = [
+                "core_data_map.h",
                 "method.h",
                 "method_meta.h",
                 "program.h",

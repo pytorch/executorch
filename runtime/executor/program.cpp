@@ -150,6 +150,21 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
 
+  // Instantiate CoreDataMap if named_data is present.
+  const auto named_data = flatbuffer_program->named_data();
+  std::optional<CoreDataMap> core_data_map = std::nullopt;
+  if (named_data != nullptr) {
+    Result<CoreDataMap> core_data_map_result = CoreDataMap::load(
+        loader,
+        segment_base_offset,
+        named_data,
+        flatbuffer_program->segments());
+    if (!core_data_map_result.ok()) {
+      return core_data_map_result.error();
+    }
+    core_data_map.emplace(std::move(core_data_map_result.get()));
+  }
+
   // Constant data may live inside the flatbuffer data (constant_buffer) or in a
   // separate segment (constant_segment). It should not be in both.
   // Check constant_segment->offsets()->size() > 1, as the offsets list will
@@ -199,7 +214,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         segment_base_offset,
         std::move(program_data.get()),
         flatbuffer_program,
-        std::move(constant_segment_data.get()));
+        std::move(constant_segment_data.get()),
+        std::move(core_data_map));
   } else {
     // The constant data is stored inside the flatbuffer, so this program does
     // not contain a separate segment for it.
@@ -208,7 +224,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         segment_base_offset,
         std::move(program_data.get()),
         flatbuffer_program,
-        /*constant_segment_data=*/FreeableBuffer{});
+        /*constant_segment_data=*/FreeableBuffer{},
+        std::move(core_data_map));
   }
 }
 

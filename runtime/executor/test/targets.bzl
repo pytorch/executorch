@@ -171,6 +171,20 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "core_data_map_test",
+            srcs = [
+                "core_data_map_test.cpp",
+            ],
+            deps = [
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/testing_util:temp_file",
+                "//executorch/runtime/core:named_data_map",
+                "//executorch/runtime/executor:core_data_map",
+                "//executorch/schema:program",
+            ],
+        )
+
+        runtime.cxx_test(
             name = "kernel_resolution_test",
             srcs = [
                 "kernel_resolution_test.cpp",
