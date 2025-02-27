@@ -69,37 +69,6 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   ~ETDumpGen() override;
   void clear_builder();
 
-  void create_event_block(const char* name) override;
-  virtual ::executorch::runtime::EventTracerEntry start_profiling(
-      const char* name,
-      ::executorch::runtime::ChainID chain_id = -1,
-      ::executorch::runtime::DebugHandle debug_handle = 0) override;
-  virtual void end_profiling(
-      ::executorch::runtime::EventTracerEntry prof_entry) override;
-  virtual ::executorch::runtime::EventTracerEntry start_profiling_delegate(
-      const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index) override;
-  virtual void end_profiling_delegate(
-      ::executorch::runtime::EventTracerEntry prof_entry,
-      const void* metadata,
-      size_t metadata_len) override;
-  virtual void log_profiling_delegate(
-      const char* name,
-      ::executorch::runtime::DebugHandle delegate_debug_index,
-      et_timestamp_t start_time,
-      et_timestamp_t end_time,
-      const void* metadata,
-      size_t metadata_len) override;
-  virtual void track_allocation(
-      ::executorch::runtime::AllocatorID id,
-      size_t size) override;
-  virtual ::executorch::runtime::AllocatorID track_allocator(
-      const char* name) override;
-  virtual void log_evalue(
-      const ::executorch::runtime::EValue& evalue,
-      ::executorch::runtime::LoggedEValueType evalue_type =
-          ::executorch::runtime::LoggedEValueType::kIntermediateOutput)
-      override;
   /**
    * Log an intermediate tensor output from a delegate.
    */
