@@ -24,8 +24,6 @@ bool loadLibrary() {
   }
 
   create_func = (CreateFunc)dlsym(handle, "neuron_buffer_allocator_create");
-  // destroy_func = (DestroyFunc)dlsym(handle,
-  // "neuron_buffer_allocator_destroy");
   allocate_func = (AllocateFunc)dlsym(handle, "neuron_buffer_allocate");
   remove_func = (RemoveFunc)dlsym(handle, "neuron_buffer_remove");
   find_func = (FindFunc)dlsym(handle, "neuron_buffer_find");

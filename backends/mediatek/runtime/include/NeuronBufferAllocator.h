@@ -28,7 +28,6 @@
 
 // Define the types for the function pointers
 typedef void* (*CreateFunc)();
-// typedef void (*DestroyFunc)(void*);
 typedef void* (*AllocateFunc)(void*, size_t);
 typedef bool (*RemoveFunc)(void*, void*);
 typedef const void* (*FindFunc)(void*, void*);
