@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 
 #include <fstream>
@@ -84,7 +85,7 @@ bool populate_available_cpu_mids() {
   cpu_midrs->resize(num_possible_cores);
   const std::string kMidrFilePathPrefix = "/sys/devices/system/cpu/cpu";
   const std::string kMidrFilePathSuffix = "/regs/identification/midr_el1";
-  for (int32_t i = 0; i < num_possible_cores; ++i) {
+  for (const auto i : c10::irange(num_possible_cores)) {
     std::string midr_file_path =
         kMidrFilePathPrefix + std::to_string(i) + kMidrFilePathSuffix;
     ET_LOG(Info, "Reading file %s", midr_file_path.c_str());
@@ -115,7 +116,7 @@ uint32_t _get_num_performant_cores() {
     ET_LOG(Info, "CPU info and manual query on # of cpus dont match.");
     return 0;
   }
-  for (int32_t i = 0; i < cpu_midrs->size(); ++i) {
+  for (const auto i : c10::irange(cpu_midrs->size())) {
     uint32_t masked_midr = (*cpu_midrs)[i] & RIVISION_MASK;
     switch (masked_midr) {
       case CPUINFO_ARM_MIDR_CORTEX_A520:
@@ -148,7 +149,7 @@ uint32_t get_num_performant_cores() {
   uint32_t num_possible_cores = cpuinfo_get_processors_count();
   uint32_t num_non_performant_core = 0;
   if (uarch_count > 1) {
-    for (int32_t i = 0; i < uarch_count; ++i) {
+    for (const auto i : c10::irange(uarch_count)) {
       const struct cpuinfo_uarch_info* uarch_info = cpuinfo_get_uarch(i);
       if (is_non_performant_core(uarch_info)) {
         num_non_performant_core += uarch_info->processor_count;
