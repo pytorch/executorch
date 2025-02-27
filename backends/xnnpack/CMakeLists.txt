@@ -141,7 +141,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   target_link_libraries(
     xnn_executor_runner gflags portable_ops_lib ${xnn_executor_runner_libs}
   )
-  target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
+  target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options} "-DPROFILING_ENABLED")
 endif()
 
 install(

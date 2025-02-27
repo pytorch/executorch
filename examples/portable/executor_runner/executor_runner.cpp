@@ -44,6 +44,11 @@ DEFINE_string(
     "model.pte",
     "Model serialized in flatbuffer format.");
 
+DEFINE_string(
+    prof_result_path,
+    "prof_result.bin",
+    "ExecuTorch profiler output path.");
+
 DEFINE_int32(
     num_warmup_iters,
     0,
@@ -245,8 +250,13 @@ int main(int argc, char** argv) {
       (uint32_t)inputs.error());
   ET_LOG(Info, "Inputs prepared.");
 
-  // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_warmup_iters; i++) {
+    Error status = method->execute();
+  }
+  ET_LOG(Info, "Warm up complete.");
+
+  // Run the model.
+  for (uint32_t i = 0; i < FLAGS_num_iters; i++) {
     Error status = method->execute();
     ET_CHECK_MSG(
         status == Error::Ok,
@@ -286,6 +296,14 @@ int main(int argc, char** argv) {
     // command line flag.
     Error status = tracer.write_etdump_to_file();
     ET_CHECK_MSG(status == Error::Ok, "Failed to save ETDump file.");
+  }
+
+  executorch::runtime::prof_result_t prof_result;
+  EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
+  if (prof_result.num_bytes != 0) {
+    FILE* ptr = fopen(FLAGS_prof_result_path.c_str(), "w+");
+    fwrite(prof_result.prof_data, 1, prof_result.num_bytes, ptr);
+    fclose(ptr);
   }
 
   return 0;
