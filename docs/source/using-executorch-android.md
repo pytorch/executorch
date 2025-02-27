@@ -13,8 +13,18 @@ We provide a prebuilt Android library (AAR), `executorch.aar` for both generic (
     - Comes with two ABI variants, arm64-v8a and x86\_64.
 
 ## Downloading AAR
-[executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar)
-[executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar.sha256sums)
+
+### Released versions (recommended)
+
+| Version | AAR | SHASUMS |
+| ------- | --- | ------- |
+| [v0.5.0](https://github.com/pytorch/executorch/releases/tag/v0.5.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar) |
+
+### Snapshots from main branch
+
+| Date | AAR | SHASUMS |
+| ------- | --- | ------- |
+| 2025-02-27 | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-20250227/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-20250227/executorch.aar.sha256sums) |
 
 ## Using prebuilt libraries
 
