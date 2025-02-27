@@ -49,8 +49,8 @@ Tensor& argmin_out(
     for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
       std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
           [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-            // the below condition as written is equivalent to !isnan(accval) && (isnan(v) || v < acc_val).
-            // cases:
+            // the below condition as written is equivalent to !isnan(accval) &&
+            // (isnan(v) || v < acc_val). cases:
             // - if neither acc_val nor v is NaN, !(v >= acc_val) is
             //   trivially equivalent to v < acc_val.
             // - if acc_val is NaN, the whole thing is trivially false.
