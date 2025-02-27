@@ -12,7 +12,7 @@ from pathlib import Path
 
 import executorch
 
-import nncf
+import nncf.torch
 import numpy as np
 import timm
 import torch
