@@ -170,24 +170,14 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         backends/apple/mps/install_requirements.sh
 
-        # Build Release iOS Frameworks
+        # Build iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack --Release --Debug
 
-        # Bundle Release iOS Frameworks
+        # Bundle iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
           cd cmake-out && \
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
-        ) done
-
-        # Build Debug iOS Frameworks
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack --Debug
-
-        # Bundle Debug iOS Frameworks
-        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cd cmake-out && \
-          mv "${FRAMEWORK}.xcframework" "${FRAMEWORK}_debug.xcframework" && \
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}_debug-${VERSION}.zip" "${FRAMEWORK}_debug.xcframework"
         ) done
 
