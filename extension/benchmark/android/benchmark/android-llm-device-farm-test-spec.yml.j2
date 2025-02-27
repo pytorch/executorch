@@ -13,6 +13,9 @@ phases:
 
       # Download the model from S3
       - curl -s --fail '{{ model_path }}' -o model.zip
+      - curl -s --fail '{{ binary_path }}' -o xnn_executor_runner
+
+
       - unzip model.zip && ls -la
 
       # Copy the model to sdcard. This prints too much progress info when the files
@@ -21,9 +24,12 @@ phases:
       - adb -s $DEVICEFARM_DEVICE_UDID push *.model /sdcard > /dev/null && echo OK
       - adb -s $DEVICEFARM_DEVICE_UDID push *.pte /sdcard > /dev/null && echo OK
 
+      - adb -s $DEVICEFARM_DEVICE_UDID push xnn_executor_runner /sdcard > /dev/null && echo OK
+
       # Prepare the model and the tokenizer
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mkdir -p /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/xnn_executor_runner /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.bin /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.model /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.pte /data/local/tmp/minibench/"
@@ -32,6 +38,8 @@ phases:
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.pte"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "run-as org.pytorch.minibench rm -rf files"
+
+      - adb -s $DEVICEFARM_DEVICE_UDID shell chmod +x /data/local/tmp/minibench/xnn_executor_runner
 
   test:
     commands:
@@ -117,6 +125,9 @@ phases:
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench"
         fi
+        adb -s $DEVICEFARM_DEVICE_UDID shell /data/local/tmp/minibench/xnn_executor_runner --model_path /data/local/tmp/minibench/*.pte --prof_result_path /data/local/tmp/prof_result.bin
+        adb -s $DEVICEFARM_DEVICE_UDID pull /data/local/tmp/prof_result.bin
+        python -m profiler.profiler_results_cli --prof_results_bin prof_result.bin
 
 
   post_test:

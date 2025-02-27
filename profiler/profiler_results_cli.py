@@ -7,7 +7,7 @@
 import argparse
 import sys
 
-from executorch.profiler.parse_profiler_results import (  # type: ignore[import-not-found]
+from .parse_profiler_results import (  # type: ignore[import-not-found]
     deserialize_profile_results,
     mem_profile_table,
     profile_aggregate_framework_tax,
