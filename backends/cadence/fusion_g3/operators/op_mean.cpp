@@ -118,7 +118,7 @@ Tensor& mean_out(
     for (int i = 0; i < kNnlibMaxDim; i++) {
       out_shape[i] = 1;
       inp_shape[i] = 1;
-      p_axis[i] = 1;
+      p_axis[i] = -1;
     }
 
     int num_axis_dims = prepare_data(
@@ -132,6 +132,10 @@ Tensor& mean_out(
         num_out_dims);
 
     if ((num_axis_dims == num_inp_dims) || (!dim_list.has_value())) {
+      num_out_dims = 1;
+    }
+
+    if ((out.dim() == 0) && (out.numel())) {
       num_out_dims = 1;
     }
 
