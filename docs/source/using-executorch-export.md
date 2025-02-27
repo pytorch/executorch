@@ -58,7 +58,7 @@ class Model(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Conv2d(8, 16, 3),
             torch.nn.ReLU(),
-            torch.nn.AdaptiveAvgPool2d([[1,1]])
+            torch.nn.AdaptiveAvgPool2d((1,1))
         )
         self.linear = torch.nn.Linear(16, 10)
     
