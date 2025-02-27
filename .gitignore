@@ -1,8 +1,13 @@
+# System files
 .DS_Store
+
+# Python environment and cache
 .hypothesis
 .mypy_cache/
 .venv/
 __pycache__/
+
+# Build and tool-generated files
 buck-out/
 buck2-bin/
 cmake-android-out/
@@ -22,21 +27,6 @@ pip-out/
 
 # Editor temporaries
 *.idea
-*.swa
-*.swb
-*.swc
-*.swd
-*.swe
-*.swf
-*.swg
-*.swh
-*.swi
-*.swj
-*.swk
-*.swl
-*.swm
-*.swn
-*.swo
-*.swp
+*.sw[a-z]
 *~
 .~lock.*
