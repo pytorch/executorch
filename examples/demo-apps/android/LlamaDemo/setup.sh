@@ -8,7 +8,7 @@
 set -eu
 
 BASEDIR=$(dirname "$0")
-source "$BASEDIR"/../../../../build/build_android_llm_demo.sh
+source "$BASEDIR"/../../../../build/build_android_library.sh
 
 BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR

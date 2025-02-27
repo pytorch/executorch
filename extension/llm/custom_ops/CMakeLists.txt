@@ -45,6 +45,22 @@ list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
 list(APPEND custom_ops_libs eigen_blas)
 
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
+  list(APPEND _custom_ops__srcs
+       "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
+  )
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+  list(APPEND _custom_ops__srcs
+       "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
+  )
+else()
+  message(
+    FATAL_ERROR
+      "Unsupported CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}. (If \
+32-bit x86, try using fht_avx.c and send a PR if it works!)"
+  )
+endif()
+
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 if(NOT EXECUTORCH_BUILD_XNNPACK)
@@ -120,4 +136,9 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   install(TARGETS custom_ops_aot_lib
           LIBRARY DESTINATION executorch/extension/llm/custom_ops
   )
+endif()
+
+add_subdirectory(spinquant/third-party/FFHT)
+if(BUILD_TESTING)
+  add_subdirectory(spinquant/test)
 endif()

@@ -66,7 +66,7 @@ foreach(kernel ${_kernels})
       cp
       "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/*.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
-      DEPENDS "${kernel}_ops_lib"
+    DEPENDS "${kernel}_ops_lib"
   )
 endforeach()
 
@@ -270,17 +270,13 @@ set(_optimized_kernels_test_sources
     "op_le_test.cpp"
     "op_linear_test.cpp"
     "op_log_softmax_test.cpp"
+    "op_mm_test.cpp"
     "op_mul_test.cpp"
     "op_native_layer_norm_test.cpp"
     "op_neg_test.cpp"
     "op_sub_test.cpp"
     "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
-    ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
-)
-
-# We don't have sleef on OSS so we don't have gelu and log_softmax
-list(REMOVE_ITEM _optimized_kernels_test_sources "op_gelu_test.cpp"
-     "op_log_softmax_test.cpp"
+    ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
 )
 
 et_cxx_test(

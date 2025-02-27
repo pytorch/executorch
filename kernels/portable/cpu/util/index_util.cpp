@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/index_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -35,7 +36,7 @@ bool check_gather_args(
     dim += nonzero_dim(in);
   }
 
-  for (size_t d = 0; d < nonzero_dim(in); ++d) {
+  for (const auto d : c10::irange(nonzero_dim(in))) {
     if (d != dim) {
       ET_CHECK_OR_RETURN_FALSE(
           nonempty_size(index, d) <= nonempty_size(in, d),
@@ -46,7 +47,7 @@ bool check_gather_args(
     }
   }
   const long* index_data = index.const_data_ptr<long>();
-  for (size_t i = 0; i < index.numel(); ++i) {
+  for (const auto i : c10::irange(index.numel())) {
     ET_CHECK_OR_RETURN_FALSE(
         index_data[i] >= 0 && index_data[i] < nonempty_size(in, dim),
         "Index is out of bounds for dimension %zd with size %zd",
@@ -84,7 +85,7 @@ bool check_index_select_args(
 
   if (index.scalar_type() == ScalarType::Long) {
     const int64_t* const index_ptr = index.const_data_ptr<int64_t>();
-    for (size_t i = 0; i < index.numel(); ++i) {
+    for (const auto i : c10::irange(index.numel())) {
       ET_CHECK_OR_RETURN_FALSE(
           index_ptr[i] >= 0 && index_ptr[i] < nonempty_size(in, dim),
           "index[%zu] = %" PRId64 " is out of range [0, %zd)",
@@ -94,7 +95,7 @@ bool check_index_select_args(
     }
   } else {
     const int32_t* const index_ptr = index.const_data_ptr<int32_t>();
-    for (size_t i = 0; i < index.numel(); ++i) {
+    for (const auto i : c10::irange(index.numel())) {
       ET_CHECK_OR_RETURN_FALSE(
           index_ptr[i] >= 0 && index_ptr[i] < nonempty_size(in, dim),
           "index[%zu] = %" PRId32 " is out of range [0, %zd)",
@@ -114,7 +115,7 @@ void get_index_select_out_target_size(
     executorch::aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
-  for (size_t i = 0; i < in.dim(); ++i) {
+  for (const auto i : c10::irange(in.dim())) {
     if (i == dim) {
       out_sizes[i] = index.numel();
     } else {
@@ -166,7 +167,7 @@ bool check_scatter_add_args(
     dim += nonzero_dim(self);
   }
 
-  for (size_t d = 0; d < nonzero_dim(self); ++d) {
+  for (const auto d : c10::irange(nonzero_dim(self))) {
     ET_CHECK_OR_RETURN_FALSE(
         nonempty_size(index, d) <= nonempty_size(src, d),
         "size of dimension %zd of index should be smaller than the size of that dimension of src",
@@ -181,7 +182,7 @@ bool check_scatter_add_args(
     }
   }
   const long* index_data = index.const_data_ptr<long>();
-  for (size_t i = 0; i < index.numel(); ++i) {
+  for (const auto i : c10::irange(index.numel())) {
     ET_CHECK_OR_RETURN_FALSE(
         index_data[i] >= 0 && index_data[i] < nonempty_size(self, dim),
         "Index is out of bounds for dimension %zd with size %zd",

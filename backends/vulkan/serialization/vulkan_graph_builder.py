@@ -267,7 +267,6 @@ class VkGraphBuilder:
         elif isinstance(arg, list) and isinstance(arg[0], Node):
             return self.create_value_list_value(arg)
         elif isinstance(arg, torch.fx.immutable_collections.immutable_list):
-            # pyre-ignore[6]
             return self.create_value_list_value(arg)
         elif isinstance(arg, str):
             return self.create_string_value(arg)

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
@@ -91,25 +92,25 @@ void conv2d_impl(
   if (!transposed) {
     w_coord[0] = out_c;
     // Compute 2D output region
-    for (size_t out_y = 0; out_y < out_H; ++out_y) {
+    for (const auto out_y : c10::irange(out_H)) {
       out_coord[2] = out_y;
-      for (size_t out_x = 0; out_x < out_W; ++out_x) {
+      for (const auto out_x : c10::irange(out_W)) {
         out_coord[3] = out_x;
 
         CTYPE accum = 0.0f;
-        for (size_t in_c = in_c_start; in_c < in_c_start + in_C_per_group;
-             ++in_c) {
+        for (const auto in_c :
+             c10::irange(in_c_start, in_c_start + in_C_per_group)) {
           in_coord[1] = in_c;
           w_coord[1] = in_c - in_c_start;
 
-          for (size_t w_y = 0; w_y < w_H; ++w_y) {
+          for (const auto w_y : c10::irange(w_H)) {
             w_coord[2] = w_y;
 
             size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
             in_coord[2] = in_y;
             // Only proceed if input y coordinate is within bounds
             if (in_y >= 0 && in_y < in_H) {
-              for (size_t w_x = 0; w_x < w_W; ++w_x) {
+              for (const auto w_x : c10::irange(w_W)) {
                 w_coord[3] = w_x;
 
                 size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
@@ -143,14 +144,14 @@ void conv2d_impl(
   } else { // transposed convolution
     w_coord[1] = out_c - out_c_start;
 
-    for (size_t in_y = 0; in_y < in_H; ++in_y) {
+    for (const auto in_y : c10::irange(in_H)) {
       in_coord[2] = in_y;
 
-      for (size_t in_x = 0; in_x < in_W; ++in_x) {
+      for (const auto in_x : c10::irange(in_W)) {
         in_coord[3] = in_x;
 
-        for (size_t in_c = in_c_start; in_c < in_c_start + in_C_per_group;
-             ++in_c) {
+        for (const auto in_c :
+             c10::irange(in_c_start, in_c_start + in_C_per_group)) {
           in_coord[1] = in_c;
 
           size_t in_idx =
@@ -158,14 +159,14 @@ void conv2d_impl(
           CTYPE in_val = in_ptr[in_idx];
 
           w_coord[0] = in_c;
-          for (size_t w_y = 0; w_y < w_H; ++w_y) {
+          for (const auto w_y : c10::irange(w_H)) {
             w_coord[2] = w_y;
             size_t out_y = stride_y * in_y + dilation_y * w_y - padding_y;
             out_coord[2] = out_y;
 
             // Only proceed if output y coordinate is within bounds
             if (out_y >= 0 && out_y < out_H) {
-              for (size_t w_x = 0; w_x < w_W; ++w_x) {
+              for (const auto w_x : c10::irange(w_W)) {
                 w_coord[3] = w_x;
                 size_t out_x = stride_x * in_x + dilation_x * w_x - padding_x;
                 out_coord[3] = out_x;
@@ -302,7 +303,7 @@ void convolution_wrapper(
       memset(out_ptr, 0, out.nbytes());
     } else {
       // If bias is present, we initialize the output to the bias value
-      for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+      for (const auto out_ix : c10::irange(out.numel())) {
         out_ptr[out_ix] = load_bias(&bias_ptr
                                         [((out_ix / out_strides[1]) % out_C) *
                                          bias.value().element_size()]);
@@ -310,13 +311,13 @@ void convolution_wrapper(
     }
   }
 
-  for (size_t batch = 0; batch < out_N; ++batch) {
-    for (size_t group = 0; group < groups; ++group) {
+  for (const auto batch : c10::irange(out_N)) {
+    for (const auto group : c10::irange(groups)) {
       // Align channel offset based on the group
       size_t out_c_start = group * out_C_per_group;
       // Populate all the out channels in the group
-      for (size_t out_c = out_c_start; out_c < out_c_start + out_C_per_group;
-           ++out_c) {
+      for (const auto out_c :
+           c10::irange(out_c_start, out_c_start + out_C_per_group)) {
         conv2d_impl(
             in_ptr,
             in_sizes,

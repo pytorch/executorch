@@ -53,10 +53,9 @@ class ET_EXPERIMENTAL NamedDataMap {
    * size of the data for a given key.
    * @param buffer The buffer to load the data into. Must point to at least
    * `size` bytes of memory.
-   * @return Result containing the number of bytes written on success. This will
-   * fail if the buffer is too small.
+   * @returns an Error indicating if the load was successful.
    */
-  ET_NODISCARD virtual Result<size_t>
+  ET_NODISCARD virtual Error
   load_data_into(const char* key, void* buffer, size_t size) const = 0;
 
   /**

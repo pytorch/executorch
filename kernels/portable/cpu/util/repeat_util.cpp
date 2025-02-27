@@ -67,7 +67,8 @@ bool check_repeat_args(
   }
   for (size_t i = 0; i < repeats.size(); i++) {
     ET_CHECK_OR_RETURN_FALSE(
-        reformat_self_size[i] * repeats[i] == out.size(i),
+        reformat_self_size[i] * repeats[i] ==
+            static_cast<uint64_t>(out.size(i)),
         "Expect out size at dimension %zu is %" PRId64 ", but now is %zd",
         i,
         reformat_self_size[i] * repeats[i],
@@ -242,7 +243,7 @@ Error repeat_tensor(
   // one array a time. To do so, we iterate over all the valid values of slots
   // array. The repeat_internal() takes care of replicating the array along the
   // coordinates specified by repeats array.
-  while (slots[0] != limits[0]) {
+  while (static_cast<int64_t>(slots[0]) != limits[0]) {
     // Compute the offset (from origin) in the out tensor where the self
     // array (with indices in self tensor indicated by slots) will be copied.
     size_t out_offset = compute_access_offset(slots, strides, self_dim);
@@ -256,7 +257,7 @@ Error repeat_tensor(
     slots[index]++;
     // If we have reached the limit in the innermost dimension, successively
     // increment the slot index of outer dimensions.
-    while (slots[index] == limits[index]) {
+    while (static_cast<int64_t>(slots[index]) == limits[index]) {
       if (index == 0) {
         break;
       }

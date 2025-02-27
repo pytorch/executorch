@@ -186,7 +186,7 @@ size_t get_init_index(
   size_t mutable_out_ix = out_ix;
   auto strides = in.strides();
   for (int64_t d = in.dim() - 1; d >= 0; d--) {
-    if (d != non_neg_dim) {
+    if (d != static_cast<int64_t>(non_neg_dim)) {
       init_ix += (mutable_out_ix % in.size(d)) * strides[d];
       mutable_out_ix /= in.size(d);
     }

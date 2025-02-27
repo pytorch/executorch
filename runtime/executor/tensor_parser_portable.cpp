@@ -43,11 +43,7 @@ Result<Tensor> parseTensor(
 
   ScalarType scalar_type = static_cast<ScalarType>(s_tensor->scalar_type());
   ET_CHECK_OR_RETURN_ERROR(
-      isValid(scalar_type) &&
-          // Types that do not yet have deserialization support.
-          scalar_type != executorch::aten::ScalarType::ComplexHalf &&
-          scalar_type != executorch::aten::ScalarType::ComplexFloat &&
-          scalar_type != executorch::aten::ScalarType::ComplexDouble,
+      isValid(scalar_type),
       InvalidProgram,
       "Invalid or unsupported ScalarType %" PRId8,
       static_cast<int8_t>(scalar_type));

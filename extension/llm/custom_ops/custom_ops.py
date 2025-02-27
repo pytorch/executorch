@@ -22,23 +22,19 @@ try:
     op2 = torch.ops.llama.fast_hadamard_transform.default
     assert op2 is not None
 except:
-    import glob
-
-    import executorch
-
     # This is needed to ensure that custom ops are registered
     from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
     # Ideally package is installed in only one location but usage of
     # PYATHONPATH can result in multiple locations.
     # ATM this is mainly used in CI for qnn runner. Will need to revisit this
-    executorch_package_path = executorch.__path__[-1]
-    logging.info(f"Looking for libcustom_ops_aot_lib.so in {executorch_package_path}")
-    libs = list(
-        glob.glob(
-            f"{executorch_package_path}/**/libcustom_ops_aot_lib.*", recursive=True
-        )
-    )
+    from pathlib import Path
+
+    package_path = Path(__file__).parent.resolve()
+    logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
+
+    libs = list(package_path.glob("**/libcustom_ops_aot_lib.*"))
+
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])

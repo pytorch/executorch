@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstring>
 
@@ -21,10 +22,10 @@ bool check_padding_args(
     executorch::aten::ArrayRef<int64_t> padding,
     Tensor& out,
     bool reflection) {
-  ET_LOG_AND_RETURN_IF_FALSE(padding.size() == 2 * n);
+  ET_LOG_AND_RETURN_IF_FALSE(static_cast<int64_t>(padding.size()) == 2 * n);
   ET_LOG_AND_RETURN_IF_FALSE(in.dim() == n + 1 || in.dim() == n + 2);
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  for (size_t i = 1; i <= n; ++i) {
+  for (const auto i : c10::irange(1, n + 1)) {
     ET_LOG_AND_RETURN_IF_FALSE(
         in.size(in.dim() - i) + padding[2 * i - 2] + padding[2 * i - 1] >= 0);
     if (reflection) {
@@ -43,10 +44,10 @@ void get_padding_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
-  for (size_t i = 0; i < in.dim(); ++i) {
+  for (const auto i : c10::irange(in.dim())) {
     out_sizes[i] = in.size(i);
   }
-  for (size_t i = 1; i <= n; ++i) {
+  for (const auto i : c10::irange(1, n + 1)) {
     out_sizes[in.dim() - i] =
         in.size(in.dim() - i) + padding[2 * i - 2] + padding[2 * i - 1];
   }

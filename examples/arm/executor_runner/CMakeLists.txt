@@ -9,11 +9,14 @@ project(arm_executor_runner)
 option(SEMIHOSTING "Enable semihosting" OFF)
 option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size" OFF)
 option(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE to specify temp alloction pool size" OFF)
+option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
+option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
+option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
     FATAL_ERROR
-      "ET_PTE_FILE_PATH must specify a model .pte, for bare metal systems the "
+      "ET_PTE_FILE_PATH must specify a model .pte or .bpte, for bare metal systems the "
       "model is built into the binary."
   )
 endif()
@@ -373,6 +376,18 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   )
 endif()
 
+if(ET_BUNDLE_IO)
+  add_library(bundled_program STATIC IMPORTED)
+  set_property(
+    TARGET bundled_program
+    PROPERTY IMPORTED_LOCATION
+        "${ET_BUILD_DIR_PATH}/lib/libbundled_program.a"
+  )
+  list(APPEND arm_executor_runner_link
+    bundled_program
+  )
+endif()
+
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
 # bin size as we link in a number of other symbols
 target_link_libraries(
@@ -400,6 +415,18 @@ endif()
 
 if(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE)
   target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE})
+endif()
+
+if(ET_BUNDLE_IO)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_BUNDLE_IO)
+endif()
+
+if(ET_ATOL)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_ATOL=${ET_ATOL})
+endif()
+
+if(ET_RTOL)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_RTOL=${ET_RTOL})
 endif()
 
 # Fixup compilation of retarget.c

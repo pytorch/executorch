@@ -29,7 +29,7 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
-        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+        bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:

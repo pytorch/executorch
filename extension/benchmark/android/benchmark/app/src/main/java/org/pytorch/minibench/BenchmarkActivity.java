@@ -44,7 +44,7 @@ public class BenchmarkActivity extends Activity {
             .get();
 
     int numIter = intent.getIntExtra("num_iter", 50);
-    int numWarmupIter = intent.getIntExtra("num_warm_up_iter", 5);
+    int numWarmupIter = intent.getIntExtra("num_warm_up_iter", 10);
 
     // TODO: Format the string with a parsable format
     Stats stats = new Stats();

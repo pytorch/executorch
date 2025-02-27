@@ -8,7 +8,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
 
-from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -28,7 +28,7 @@ def test_int64_model_tosa_BI():
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
         "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
     }
-    pipeline = TestPassPipeline[input_t](
+    pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
         tosa_version="TOSA-0.80+BI",

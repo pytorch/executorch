@@ -22,8 +22,6 @@ from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale_conv_output
 from executorch.backends.arm.tosa_utils import build_reshape, tosa_shape
 
-from serializer.tosa_serializer import TosaOp
-
 
 @register_node_visitor
 class Conv2dVisitor(NodeVisitor):
@@ -36,8 +34,12 @@ class Conv2dVisitor(NodeVisitor):
     # `(input + 2 * pad - dilation * (weight - 1) - 1) / stride`
     # must be an integer, but tosa currently strictly require this property.
     # This function adjusts the pad value to meet the requirement.
-    def adjust_pad_if_needed(self, input, weight, stride, pad, dilation):
-        mod_remainder = (input + 2 * pad - dilation * (weight - 1) - 1) % stride
+    def adjust_pad_if_needed(
+        self, input_size: int, input_weight: int, stride: int, pad: int, dilation: int
+    ) -> int:
+        mod_remainder = (
+            input_size + 2 * pad - dilation * (input_weight - 1) - 1
+        ) % stride
 
         # No need to adjust
         if mod_remainder == 0:
@@ -143,11 +145,11 @@ class Conv2dVisitor(NodeVisitor):
             build_reshape(
                 tosa_graph, weight.name, weight_post_shape, weight_reshaped.name
             )
-            tosa_op = TosaOp.Op().DEPTHWISE_CONV2D
+            tosa_op = ts.TosaOp.Op().DEPTHWISE_CONV2D
             weight_name = weight_reshaped.name
         else:
             """Regular convolution case"""
-            tosa_op = TosaOp.Op().CONV2D
+            tosa_op = ts.TosaOp.Op().CONV2D
             weight_name = weight.name
 
         tosa_graph.addOperator(

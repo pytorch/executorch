@@ -14,8 +14,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from executorch.backends.vulkan._passes import VkInt4WeightOnlyQuantizer
-
 from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
@@ -180,6 +178,8 @@ def quantize(  # noqa C901
         model = gptq_quantizer.quantize(model, inputs)
         return model
     elif qmode == "vulkan_4w":
+        from executorch.backends.vulkan._passes import VkInt4WeightOnlyQuantizer
+
         q_group_size = 256 if group_size is None else group_size
         model = VkInt4WeightOnlyQuantizer(groupsize=q_group_size).quantize(model)
 

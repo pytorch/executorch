@@ -11,7 +11,7 @@ from executorch.backends.arm._passes.meandim_to_averagepool_pass import (
     ConvertMeanDimToAveragePoolPass,
 )
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x
@@ -65,7 +65,7 @@ def test_meandim_to_avgpool_tosa_BI(module):
     Tests the MeanDimToAveragePool2dPass which converts mean.dim to average_pool2d
     for the special case where dim is [-1, -2] and keepdim is True.
     """
-    pipeline = TestPassPipeline[input_t](
+    pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
         tosa_version="TOSA-0.80+BI",

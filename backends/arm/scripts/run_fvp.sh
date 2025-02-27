@@ -19,12 +19,14 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 elf_file=""
 target="ethos-u55-128"
+timeout="240"
 
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --elf=<ELF_FILE>         elf file to run"
     echo "  --target=<TARGET>        Target to build and run for Default: ${target}"
+    echo "  --timeout=<TIME_IN_SEC>  Maximum target runtime, used to detect hanging, might need to be higer on large models Default: ${timeout}"
     exit 0
 }
 
@@ -33,6 +35,7 @@ for arg in "$@"; do
       -h|--help) help ;;
       --elf=*) elf_file="${arg#*=}";;
       --target=*) target="${arg#*=}";;
+      --timeout=*) timeout="${arg#*=}";;
       *)
       ;;
     esac
@@ -63,6 +66,7 @@ num_macs=$(echo ${target} | cut -d - -f 3)
 
 echo "--------------------------------------------------------------------------------"
 echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
+echo "WARNING: Corstone FVP is not cycle accurate and should NOT be used to determine valid runtime"
 echo "--------------------------------------------------------------------------------"
 
 log_file=$(mktemp)
@@ -75,7 +79,7 @@ if [[ ${target} == *"ethos-u55"*  ]]; then
         -C mps3_board.uart0.out_file='-'                    \
         -C mps3_board.uart0.shutdown_on_eot=1               \
         -a "${elf_file}"                                         \
-        --timelimit 220 2>&1 | tee ${log_file} || true # seconds
+        --timelimit ${timeout} 2>&1 | tee ${log_file} || true # seconds
     echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
 elif [[ ${target} == *"ethos-u85"*  ]]; then
     ${fvp_model}                                            \
@@ -86,7 +90,7 @@ elif [[ ${target} == *"ethos-u85"*  ]]; then
         -C mps4_board.uart0.out_file='-'                    \
         -C mps4_board.uart0.shutdown_on_eot=1               \
         -a "${elf_file}"                                         \
-        --timelimit 220 2>&1 | tee ${log_file} || true # seconds
+        --timelimit ${timeout} 2>&1 | tee ${log_file} || true # seconds
     echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
 else
     echo "Running ${elf_file} for ${target} is not supported"

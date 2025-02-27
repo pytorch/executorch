@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -40,20 +41,21 @@ void diagonal_copy_impl(
 
   size_t new_ndim = out.dim();
   int64_t new_sizes[kTensorDimensionLimit];
-  for (size_t i = 0; i < new_ndim; ++i) {
+  for (const auto i : c10::irange(new_ndim)) {
     new_sizes[i] = out.size(i);
   }
 
   int64_t new_strides[kTensorDimensionLimit];
   size_t shift = 0;
-  for (size_t d = 0; d < in.dim(); ++d) {
-    if (d == dim1 || d == dim2) {
+  size_t in_dim = in.dim();
+  for (const auto d : c10::irange(in_dim)) {
+    if (static_cast<int64_t>(d) == dim1 || static_cast<int64_t>(d) == dim2) {
       shift++;
     } else {
       new_strides[d - shift] = in.strides().at(d);
     }
   }
-  new_strides[in.dim() - 2] = in.strides().at(dim1) + in.strides().at(dim2);
+  new_strides[in_dim - 2] = in.strides().at(dim1) + in.strides().at(dim2);
 
   as_strided_copy<CTYPE>(
       in, {new_sizes, new_ndim}, {new_strides, new_ndim}, storage_offset, out);

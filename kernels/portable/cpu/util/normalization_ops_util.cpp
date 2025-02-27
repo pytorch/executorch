@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
@@ -85,16 +86,16 @@ bool check_layer_norm_args(
       ndim >= 1,
       "Expected normalized_shape to be at least 1-dimensional, i.e., containing at least one element.");
   ET_CHECK_OR_RETURN_FALSE(
-      in.dim() >= ndim,
+      in.dim() >= static_cast<ssize_t>(ndim),
       "Expected input tensor to have rank >= the length of normalized_shape.");
   size_t shift = in.dim() - ndim;
-  for (size_t d = 0; d < ndim; ++d) {
+  for (const auto d : c10::irange(ndim)) {
     ET_CHECK_OR_RETURN_FALSE(
         in.size(d + shift) == normalized_shape[d],
         "Expected normalized_shape to match the sizes of input's rightmost dimensions.");
   }
   executorch::aten::SizesType shape[ndim];
-  for (size_t i = 0; i < ndim; ++i) {
+  for (const auto i : c10::irange(ndim)) {
     shape[i] = static_cast<executorch::aten::SizesType>(normalized_shape[i]);
   }
 
@@ -121,8 +122,8 @@ void get_layer_norm_out_target_size(
     size_t* mean_rstd_ndim) {
   *mean_rstd_ndim = in.dim();
 
-  for (size_t d = 0; d < in.dim(); ++d) {
-    if (d < in.dim() - normalized_shape.size()) {
+  for (const auto d : c10::irange(in.dim())) {
+    if (d < static_cast<long>(in.dim() - normalized_shape.size())) {
       mean_rstd_sizes[d] = in.size(d);
     } else {
       mean_rstd_sizes[d] = 1;

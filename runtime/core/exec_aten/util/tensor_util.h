@@ -8,11 +8,13 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <algorithm>
 #include <array> // std::array
 #include <cinttypes> // PRId64
 #include <cmath>
 #include <cstddef> // size_t
+
 #include <limits>
 
 #include <executorch/runtime/core/array_ref.h>

@@ -17,7 +17,7 @@ This guide explains how to setup ExecuTorch for Android using a demo app. The ap
 * Refer to [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
 * Download and install [Android Studio and SDK](https://developer.android.com/studio).
 * Supported Host OS: CentOS, macOS Ventura (M1/x86_64). See below for Qualcomm HTP specific requirements.
-* *Qualcomm HTP Only[^1]:* To build and run on Qualcomm's AI Engine Direct, please follow [Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend](build-run-qualcomm-ai-engine-direct-backend.md) for hardware and software pre-requisites. The version we use for this tutorial is 2.19. The chip we use for this tutorial is SM8450.
+* *Qualcomm HTP Only[^1]:* To build and run on Qualcomm's AI Engine Direct, please follow [Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend](backends-qualcomm.md) for hardware and software pre-requisites. The version we use for this tutorial is 2.19. The chip we use for this tutorial is SM8450.
 :::
 ::::
 
@@ -44,11 +44,11 @@ mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 cp dl3_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
-For more detailed tutorial of lowering to XNNPACK, please see [XNNPACK backend](tutorial-xnnpack-delegate-lowering.md).
+For more detailed tutorial of lowering to XNNPACK, please see [XNNPACK backend](backends-xnnpack.md).
 
 #### Qualcomm Hexagon NPU
 
-For delegating to Qualcomm Hexagon NPU, please follow the tutorial [here](build-run-qualcomm-ai-engine-direct-backend.md).
+For delegating to Qualcomm Hexagon NPU, please follow the tutorial [here](backends-qualcomm.md).
 
 After generating the model, copy the model to `assets` directory.
 
@@ -164,7 +164,7 @@ This allows the Android app to load ExecuTorch runtime with XNNPACK backend as a
 mkdir -p ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
-We need to push some additional Qualcomm HTP backend libraries to the app. Please refer to [Qualcomm docs](build-run-qualcomm-ai-engine-direct-backend.md) here.
+We need to push some additional Qualcomm HTP backend libraries to the app. Please refer to [Qualcomm docs](backends-qualcomm.md) here.
 
 ```bash
 cp ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so \

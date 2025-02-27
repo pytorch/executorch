@@ -11,7 +11,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     FoldAndAnnotateQParamsPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
-from executorch.backends.arm.test.tester.test_pipeline import TestPassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -27,7 +27,7 @@ class Sigmoid(torch.nn.Module):
 
 def test_insert_table_tosa_BI():
     module = Sigmoid()
-    pipeline = TestPassPipeline[input_t](
+    pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
         tosa_version="TOSA-0.80+BI",

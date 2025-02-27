@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
@@ -71,7 +72,7 @@ inline void apply_unitensor_elementwise_fn(
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
 
   auto out_numel = out.numel();
-  for (size_t i = 0; i < out_numel; ++i) {
+  for (const auto i : c10::irange(out_numel)) {
     auto result = compute_fun(load_a_to_common(&data_a[i * a_element_size]));
     store_common_to_out(result, &data_out[i * out_element_size]);
   }
@@ -120,7 +121,7 @@ inline void apply_bitensor_elementwise_fn(
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
 
   auto out_numel = out.numel();
-  for (size_t i = 0; i < out_numel; ++i) {
+  for (const auto i : c10::irange(out_numel)) {
     size_t a_linear_index = i;
     size_t b_linear_index = i;
 
@@ -210,7 +211,7 @@ inline void apply_tritensor_elementwise_fn(
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
 
   auto out_numel = out.numel();
-  for (size_t i = 0; i < out_numel; ++i) {
+  for (const auto i : c10::irange(out_numel)) {
     size_t a_linear_index = i;
     size_t b_linear_index = i;
     size_t c_linear_index = i;

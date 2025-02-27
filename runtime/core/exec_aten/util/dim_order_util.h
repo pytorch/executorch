@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -254,7 +255,7 @@ ET_NODISCARD inline Error stride_to_dim_order(
 
   sorter.quick_sort(array, 0, dims - 1);
 
-  for (auto i = 0; i < dims; i++) {
+  for (const auto i : c10::irange(dims)) {
     dim_order[i] = array[i].dim_order;
   }
   return Error::Ok;

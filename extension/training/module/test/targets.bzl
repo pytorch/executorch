@@ -17,6 +17,8 @@ def define_common_targets(is_fbcode = False):
             # intentionally don't work in xplat (since they're host-only tools).
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
             "ET_MODULE_SIMPLE_TRAIN_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleSimpleTrain.pte])",
+            "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
+            "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
         }
 
         runtime.cxx_test(
@@ -29,6 +31,20 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/kernels/portable:generated_lib",
+            ],
+            env = modules_env,
+        )
+
+        runtime.cxx_test(
+            name = "state_dict_util_test",
+            srcs = [
+                "state_dict_util_test.cpp",
+            ],
+            deps = [
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
+                "//executorch/extension/training/module:state_dict_util",
+                "//executorch/runtime/core/exec_aten:lib",
             ],
             env = modules_env,
         )
