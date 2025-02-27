@@ -158,7 +158,7 @@ class TestLayerNorm(unittest.TestCase):
             self.LayerNorm(*model_params), (test_data,)
         )
 
-    @parameterized.expand(test_data_suite[4:])
+    @parameterized.expand(test_data_suite)
     @pytest.mark.corstone_fvp
     def test_layer_norm_u55_BI(
         self,
@@ -170,36 +170,7 @@ class TestLayerNorm(unittest.TestCase):
             self.LayerNorm(*model_params), common.get_u55_compile_spec(), (test_data,)
         )
 
-    # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    # Skip tests that require transposes.
-    @parameterized.expand(test_data_suite[:4])
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_layer_norm_u55_BI_xfails(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params,
-    ):
-        self._test_layernorm_ethosu_BI_pipeline(
-            self.LayerNorm(*model_params), common.get_u55_compile_spec(), (test_data,)
-        )
-
-    # Numerical issues on FVP likely due to mul op, MLETORCH-521
-    @parameterized.expand(test_data_suite[:-2])
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_layer_norm_u85_BI_xfails(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params,
-    ):
-        self._test_layernorm_ethosu_BI_pipeline(
-            self.LayerNorm(*model_params), common.get_u85_compile_spec(), (test_data,)
-        )
-
-    @parameterized.expand(test_data_suite[-2:])
+    @parameterized.expand(test_data_suite)
     @pytest.mark.corstone_fvp
     def test_layer_norm_u85_BI(
         self,

@@ -1,17 +1,12 @@
 /* Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2023-2024 Arm Limited and/or its affiliates.
+ * Copyright 2023-2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
 #include <errno.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <memory>
-#include <vector>
-
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/memory_allocator.h>
@@ -19,8 +14,17 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <memory>
+#include <vector>
 
 #include "arm_perf_monitor.h"
+
+#if defined(ET_BUNDLE_IO)
+#include <executorch/devtools/bundled_program/bundled_program.h>
+#endif
+
 #if defined(ET_EVENT_TRACER_ENABLED)
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #if !defined(SEMIHOSTING)
@@ -101,6 +105,24 @@ const size_t method_allocation_pool_size =
 unsigned char __attribute__((
     section("input_data_sec"),
     aligned(16))) method_allocation_pool[method_allocation_pool_size];
+
+#if defined(ET_BUNDLE_IO)
+
+const size_t testset_idx = 0; // BundleIO test indexes to test if used
+
+#if defined(ET_ATOL)
+const float et_atol = ET_ATOL;
+#else
+const float et_atol = 0.01;
+#endif
+
+#if defined(ET_RTOL)
+const float et_rtol = ET_RTOL;
+#else
+const float et_rtol = 0.01;
+#endif
+
+#endif
 
 /**
  * The temp_allocation_pool is used for allocating temporary data during kernel
@@ -409,15 +431,41 @@ int main(int argc, const char* argv[]) {
     }
   }
 #endif
-  ET_LOG(Info, "Model in %p %c", model_pte, model_pte[0]);
-  auto loader = BufferDataLoader(model_pte, pte_size);
-  ET_LOG(Info, "Model PTE file loaded. Size: %lu bytes.", pte_size);
+  ET_LOG(
+      Info, "PTE in %p %c Size: %lu bytes", model_pte, model_pte[0], pte_size);
+
+  // Find the offset to the embedded Program.
+  const void* program_data = model_pte;
+  size_t program_data_len = pte_size;
+
+#if defined(ET_BUNDLE_IO)
+  bool bundle_io = executorch::bundled_program::is_bundled_program(
+      reinterpret_cast<void*>(model_pte), pte_size);
+  if (bundle_io) {
+    // BundleIO bpte is provided, dig out the actual model from the data area
+    Error status = executorch::bundled_program::get_program_data(
+        reinterpret_cast<void*>(model_pte),
+        pte_size,
+        &program_data,
+        &program_data_len);
+
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "get_program_data() from bundle PTE failed: 0x%x",
+        (unsigned int)status);
+  }
+#endif
+  auto loader = BufferDataLoader(program_data, program_data_len);
+  ET_LOG(Info, "PTE Model data loaded. Size: %lu bytes.", program_data_len);
+
+  // Parse the program file. This is immutable, and can also be reused
+  // between multiple execution invocations across multiple threads.
   Result<Program> program = Program::load(&loader);
   if (!program.ok()) {
     ET_LOG(
         Info,
         "Program loading failed @ 0x%p: 0x%" PRIx32,
-        model_pte,
+        program_data,
         program.error());
   }
 
@@ -483,6 +531,7 @@ int main(int argc, const char* argv[]) {
   executorch::runtime::EventTracer* event_tracer_ptr = nullptr;
 
 #if defined(ET_EVENT_TRACER_ENABLED)
+  ET_LOG(Info, "Setting up ETDump");
   torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
   event_tracer_ptr = &etdump_gen;
 #endif
@@ -499,21 +548,75 @@ int main(int argc, const char* argv[]) {
   }
   size_t method_loaded_memsize =
       method_allocator.used_size() - method_loaded_membase;
-  ET_LOG(Info, "Method loaded.");
+  ET_LOG(Info, "Method '%s' loaded.", method_name);
 
   ET_LOG(Info, "Preparing inputs...");
   size_t input_membase = method_allocator.used_size();
 
-  auto inputs =
-      ::prepare_input_tensors(*method, method_allocator, input_buffers);
+#if defined(ET_BUNDLE_IO)
+  if (bundle_io) {
+    // Get inputs from bundled IO ".bpte" data
+    // Useful for testing
+    ET_LOG(Info, "Input testset[%d] from bundled bpte", testset_idx);
+    Error status = executorch::bundled_program::load_bundled_input(
+        *method, model_pte, testset_idx);
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "load_bundled_input failed with status 0x%" PRIx32,
+        status);
+  } else
+#endif
+  {
+    // Here you would add code to get input from your Hardware
+    // Get inputs from SEMIHOSTING or fake it with a lot of "1"
+    // Use "static" to force to compiler to remove this when it goes out of
+    // scope
+    static auto prepared_inputs =
+        ::prepare_input_tensors(*method, method_allocator, input_buffers);
 
-  if (!inputs.ok()) {
-    ET_LOG(
-        Info,
-        "Preparing inputs tensors for method %s failed with status 0x%" PRIx32,
-        method_name,
-        inputs.error());
+    if (!prepared_inputs.ok()) {
+      ET_LOG(
+          Info,
+          "Preparing inputs tensors for method %s failed with status 0x%" PRIx32,
+          method_name,
+          prepared_inputs.error());
+    }
   }
+#ifdef DUMP_INPUT
+  {
+    std::vector<EValue> inputs(method->inputs_size());
+    ET_LOG(Info, "%zu inputs: ", inputs.size());
+    Error status = method->get_inputs(inputs.data(), inputs.size());
+    ET_CHECK(status == Error::Ok);
+
+    for (int i = 0; i < inputs.size(); ++i) {
+      Tensor t = inputs[i].toTensor();
+      // The output might be collected and parsed so printf() is used instead
+      // of ET_LOG() here
+      for (int j = 0; j < inputs[i].toTensor().numel(); ++j) {
+        if (t.scalar_type() == ScalarType::Int) {
+          printf(
+              "Input[%d][%d]: (int) %d\n",
+              i,
+              j,
+              inputs[i].toTensor().const_data_ptr<int>()[j]);
+        } else if (t.scalar_type() == ScalarType::Float) {
+          printf(
+              "Input[%d][%d]: (float) %f\n",
+              i,
+              j,
+              inputs[i].toTensor().const_data_ptr<float>()[j]);
+        } else if (t.scalar_type() == ScalarType::Char) {
+          printf(
+              "Input[%d][%d]: (char) %d\n",
+              i,
+              j,
+              inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+        }
+      }
+    }
+  }
+#endif
   size_t input_memsize = method_allocator.used_size() - input_membase;
   ET_LOG(Info, "Input prepared.");
 
@@ -524,7 +627,8 @@ int main(int argc, const char* argv[]) {
   StopMeasurements();
   size_t executor_memsize = method_allocator.used_size() - executor_membase;
 
-  ET_LOG(Info, "model_pte_loaded_size:     %lu bytes.", pte_size);
+  ET_LOG(Info, "model_pte_program_size:     %lu bytes.", program_data_len);
+  ET_LOG(Info, "model_pte_loaded_size:      %lu bytes.", pte_size);
 #if defined(SEMIHOSTING)
   if (input_file_allocator.size() > 0) {
     ET_LOG(
@@ -575,49 +679,33 @@ int main(int argc, const char* argv[]) {
   ET_LOG(Info, "%zu outputs: ", outputs.size());
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
+
   for (int i = 0; i < outputs.size(); ++i) {
     Tensor t = outputs[i].toTensor();
 #if !defined(SEMIHOSTING)
+#if !defined(ET_BUNDLE_IO)
     // The output might be collected and parsed so printf() is used instead
     // of ET_LOG() here
     for (int j = 0; j < outputs[i].toTensor().numel(); ++j) {
       if (t.scalar_type() == ScalarType::Int) {
         printf(
-            "Output[%d][%d]: %d\n",
+            "Output[%d][%d]: (int) %d\n",
             i,
             j,
             outputs[i].toTensor().const_data_ptr<int>()[j]);
       } else if (t.scalar_type() == ScalarType::Float) {
         printf(
-            "Output[%d][%d]: %f\n",
+            "Output[%d][%d]: (float) %f\n",
             i,
             j,
             outputs[i].toTensor().const_data_ptr<float>()[j]);
       } else if (t.scalar_type() == ScalarType::Char) {
         printf(
-            "Output[%d][%d]: %d\n",
+            "Output[%d][%d]: (char) %d\n",
             i,
             j,
             outputs[i].toTensor().const_data_ptr<int8_t>()[j]);
       }
-    }
-#if defined(ET_EVENT_TRACER_ENABLED)
-    ETDumpResult result = etdump_gen.get_etdump_data();
-    if (result.buf != nullptr && result.size > 0) {
-      // On a device with no file system we can't just write it out
-      // to the file-system so we base64 encode it and dump it on the log.
-      int mode = 0;
-      size_t len = result.size;
-      size_t encoded_len = base64_encoded_size(result.size, mode);
-      uint8_t* encoded_buf = reinterpret_cast<uint8_t*>(
-          method_allocator.allocate(encoded_len + 1));
-      int ret = base64_encode(
-          encoded_buf, (uint8_t*)result.buf, &encoded_len, &len, mode);
-      encoded_buf[encoded_len] = 0x00; // Ensure null termination
-      ET_LOG(Info, "Writing etdump.bin [base64]");
-      printf(
-          "#---\nbase64 -i -d <<<\"\\\n%s\\\n\" >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
-          encoded_buf);
     }
 #endif
 #else
@@ -631,21 +719,66 @@ int main(int argc, const char* argv[]) {
         outputs[i].toTensor().nbytes(),
         out_file);
     fclose(out_file);
-#if defined(ET_EVENT_TRACER_ENABLED)
-    etdump_result result = etdump_gen.get_etdump_data();
-    if (result.buf != nullptr && result.size > 0) {
-      // On a device with a file system we can just write it out
-      // to the file-system.
-      char etdump_filename = "etdump.bin";
-      ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
-      FILE* f = fopen(etdump_filename, "w+");
-      fwrite((uint8_t*)result.buf, 1, result.size, f);
-      fclose(f);
-      free(result.buf);
-    }
-#endif
 #endif
   }
+
+#if defined(ET_BUNDLE_IO)
+  if (bundle_io) {
+    // Verify the result.
+    status = executorch::bundled_program::verify_method_outputs(
+        *method, model_pte, testset_idx, et_rtol, et_atol);
+    if (status == Error::Ok) {
+      ET_LOG(Info, "Model output match expected BundleIO bpte ref data.");
+      ET_LOG(Info, "TEST: BundleIO index[%d] Test_result: PASS", testset_idx);
+    } else {
+      ET_LOG(
+          Error,
+          "Model output don't match expected BundleIO bpte ref data. rtol=%f atol=%f",
+          et_rtol,
+          et_atol);
+      ET_LOG(Error, "TEST: BundleIO index[%d] Test_result: FAIL", testset_idx);
+    }
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Bundle verification failed with status 0x%" PRIx32,
+        status);
+  }
+#endif
+
+#if defined(ET_EVENT_TRACER_ENABLED)
+#if !defined(SEMIHOSTING)
+  ETDumpResult result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    // On a device with no file system we can't just write it out
+    // to the file-system so we base64 encode it and dump it on the log.
+    int mode = 0;
+    size_t len = result.size;
+    size_t encoded_len = base64_encoded_size(result.size, mode);
+    uint8_t* encoded_buf =
+        reinterpret_cast<uint8_t*>(method_allocator.allocate(encoded_len + 1));
+    int ret = base64_encode(
+        encoded_buf, (uint8_t*)result.buf, &encoded_len, &len, mode);
+    encoded_buf[encoded_len] = 0x00; // Ensure null termination
+    ET_LOG(Info, "Writing etdump.bin [base64]");
+    printf(
+        "#---\nbase64 -i -d <<<\"\\\n%s\\\n\" >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
+        encoded_buf);
+  }
+#else
+  etdump_result result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    // On a device with a file system we can just write it out
+    // to the file-system.
+    char etdump_filename = "etdump.bin";
+    ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
+    FILE* f = fopen(etdump_filename, "w+");
+    fwrite((uint8_t*)result.buf, 1, result.size, f);
+    fclose(f);
+    free(result.buf);
+  }
+#endif
+#endif
+
 out:
   ET_LOG(Info, "Program complete, exiting.");
 #if defined(SEMIHOSTING)

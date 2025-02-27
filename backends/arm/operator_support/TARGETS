@@ -5,8 +5,9 @@ python_library(
     srcs = glob(["*.py"]),
     typing = True,
     deps = [
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/arm:tosa_specification",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/exir:lib",
-        "//executorch/backends/arm:tosa_specification"
     ],
 )

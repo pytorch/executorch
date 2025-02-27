@@ -14,25 +14,39 @@ else
   exit 1
 fi
 
+BUILD_MODE=$2
+if [[ "${BUILD_MODE:-}" =~ ^(Debug|Release)$ ]]; then
+    echo "Running tests in build mode ${BUILD_MODE} ..."
+else
+    echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
+    exit 1
+fi
+
 # The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"
 CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
 conda activate "${CONDA_ENV}"
 
-# Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
-source .ci/scripts/setup-vulkan-linux-deps.sh
-
-PYTHON_EXECUTABLE=python \
-EXECUTORCH_BUILD_PYBIND=ON \
-CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
-.ci/scripts/setup-linux.sh "$BUILD_TOOL"
-
-# Install llama3_2_vision dependencies.
-PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
-
 if [[ "$BUILD_TOOL" == "cmake" ]]; then
+    # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+    source .ci/scripts/setup-vulkan-linux-deps.sh
+
+    PYTHON_EXECUTABLE=python \
+    EXECUTORCH_BUILD_PYBIND=ON \
+    CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
+    .ci/scripts/setup-linux.sh "$BUILD_TOOL" "$BUILD_MODE"
+
+    # Install llama3_2_vision dependencies.
+    PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
+
     .ci/scripts/unittest-linux-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
+    # Removing this breaks sccache in the Buck build, apparently
+    # because TMPDIR gets messed up? Please feel free to fix this and
+    # speed up this CI job!
+    PYTHON_EXECUTABLE=python \
+    .ci/scripts/setup-linux.sh "$BUILD_TOOL" "$BUILD_MODE"
+
     .ci/scripts/unittest-buck2.sh
 else
     echo "Unknown build tool $BUILD_TOOL"

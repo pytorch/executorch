@@ -3167,9 +3167,9 @@ class TestExampleLLMScript(TestQNN):
             "llama3_2",
             "--model_mode",
             "hybrid",
-            "--prefill_seq_len",
+            "--prefill_ar_len",
             "32",
-            "--kv_seq_len",
+            "--max_seq_len",
             "512",
             "--num_sharding",
             "4",
@@ -3247,9 +3247,9 @@ class TestExampleLLMScript(TestQNN):
             "stories110m",
             "--model_mode",
             "hybrid",
-            "--prefill_seq_len",
+            "--prefill_ar_len",
             "32",
-            "--kv_seq_len",
+            "--max_seq_len",
             "128",
         ]
         if self.compile_only:
