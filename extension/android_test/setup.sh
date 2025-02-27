@@ -11,7 +11,7 @@ BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR
 
 BASEDIR=$(dirname "$0")
-source "$BASEDIR"/../../build/build_android_llm_demo.sh
+source "$BASEDIR"/../../build/build_android_library.sh
 
 build_native_library() {
   ANDROID_ABI="$1"
