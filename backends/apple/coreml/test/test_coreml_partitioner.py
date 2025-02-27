@@ -124,9 +124,6 @@ class TestCoreMLPartitioner(unittest.TestCase):
         edge_program_manager = executorch.exir.to_edge_transform_and_lower(
             ep, partitioner=[coreml_partitioner]
         )
-        print(
-            format_delegated_graph(edge_program_manager.exported_program().graph_module)
-        )
         self.assertTrue(
             "executorch.exir.dialects.edge._ops.aten.scaled_dot_product_attention.default"
             in format_delegated_graph(
