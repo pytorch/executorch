@@ -39,7 +39,7 @@ def query(buck2: str, target: str, attribute: str) -> str:
 
 
 # Cache to store results for exported headers per target.
-_exported_headers_cache = {}
+_exported_headers_cache: dict[str, Set[str]] = {}
 
 
 def exported_headers(buck2: str, target: str) -> Set[str]:
