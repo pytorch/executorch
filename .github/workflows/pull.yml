@@ -148,7 +148,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch "use-pt-pinned-commit"
+        install_executorch "--use-pt-pinned-commit"
         BUILD_TOOL="cmake"
         PYTHON_EXECUTABLE=python \
         bash .ci/scripts/build_llama_android.sh  "${BUILD_TOOL}"
