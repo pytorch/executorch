@@ -173,15 +173,15 @@ parse_args() {
   for ((i=0; i<${#args[@]}; i++)); do
     case "${args[$i]}" in
       --build-tool)
-        BUILD_TOOL="${args[$((i+1))]:-}"
+        BUILD_TOOL="${args[$((i+1))]}"
         i=$((i+1))
         ;;
       --build-mode)
-        BUILD_MODE="${args[$((i+1))]:-Release}"
+        BUILD_MODE="${args[$((i+1))]}"
         i=$((i+1))
         ;;
       --editable)
-        EDITABLE="${args[$((i+1))]:-false}"
+        EDITABLE="${args[$((i+1))]}"
         i=$((i+1))
         ;;
       *)
@@ -200,14 +200,14 @@ parse_args() {
     echo "Require buck2 or cmake for --build-tool, got ${BUILD_TOOL}, exiting..."
     exit 1
   fi
-
+  BUILD_MODE="${BUILD_MODE:-Release}"
   if [[ "$BUILD_MODE" =~ ^(Debug|Release)$ ]]; then
     echo "Running tests in build mode ${BUILD_MODE} ..."
   else
     echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
     exit 1
   fi
-
+  EDITABLE="${EDITABLE:-false}"
   if [[ $EDITABLE =~ ^(true|false)$ ]]; then
     echo "Editable mode is ${EDITABLE} ..."
   else
