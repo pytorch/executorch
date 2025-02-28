@@ -30,3 +30,9 @@ pip-out/
 *.sw[a-z]
 *~
 .~lock.*
+
+# Xcode
+xcuserdata/
+.swiftpm/
+*.xcworkspace/
+*.xcframework/
