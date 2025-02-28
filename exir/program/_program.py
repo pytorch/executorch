@@ -972,6 +972,7 @@ def _sanity_check_graph_for_non_decomp_ops(
 def _remove_invalid_ops_for_not_decompose(
     ops_to_not_decompose: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
+    # To address https://github.com/pytorch/executorch/issues/8781
     def keep(op):
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
