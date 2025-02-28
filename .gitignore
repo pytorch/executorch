@@ -33,6 +33,7 @@ pip-out/
 
 # Xcode
 xcuserdata/
+.build/
 .swiftpm/
 *.xcworkspace/
 *.xcframework/
