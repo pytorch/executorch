@@ -43,18 +43,20 @@ class TestLSTM(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
-    def test_fp32_lstm_force_dynamic_linear(self):
+    def test_lstm_with_force_non_static_weights_for_f32_linear(self):
         (
             Tester(self.LSTMLinear(32, 32, 10), (torch.rand(1, 32, 32),))
             .export()
             .to_edge_transform_and_lower(
                 ToEdgeTransformAndLower(
-                    partitioners=[XnnpackPartitioner(force_fp32_dynamic_linear=True)]
+                    partitioners=[
+                        XnnpackPartitioner(force_non_static_weights_for_f32_linear=True)
+                    ]
                 )
             )
             .check_not(["executorch_exir_dialects_edge__ops_aten_addmm_default"])
             # Weights are supplied as input to linears
-            # Biases are not owned by delegates when force_fp32_dynamic_linear is set
+            # Biases are not owned by delegates when force_non_static_weights_for_f32_linear is set
             .check(["p_lstm_weight_hh_l0", "p_lstm_weight_ih_l0", "p_lstm_bias"])
             .to_executorch()
             .serialize()
