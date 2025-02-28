@@ -116,11 +116,9 @@ TODO Describe commonly used backends, including XNN, Vulkan, and NPUs.
 
 ## Runtime Integration
 
-TODO Code sample in Java
-
 Here is an example code sample in Java that demonstrates how to integrate ExecuTorch into an Android app:
 
-```
+```{java}
 import org.pytorch.executorch.EValue;
 import org.pytorch.executorch.Module;
 import org.pytorch.executorch.Tensor;
