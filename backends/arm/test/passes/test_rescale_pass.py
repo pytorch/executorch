@@ -14,6 +14,8 @@ from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from parameterized import parameterized
 
+class OpCheckError(Exception):
+    pass
 
 def test_rescale_op():
     sample_inputs = [
@@ -63,7 +65,7 @@ def test_nonzero_zp_for_int32():
         ),
     ]
     for sample_input in sample_inputs:
-        with pytest.raises(Exception):
+        with pytest.raises(OpCheckError):
             torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
 
 
@@ -86,7 +88,7 @@ def test_zp_outside_range():
         ),
     ]
     for sample_input in sample_inputs:
-        with pytest.raises(Exception):
+        with pytest.raises(OpCheckError):
             torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
 
 

@@ -95,7 +95,7 @@ def get_u55_compile_spec(
     macs: int = 128,
     system_config: str = "Ethos_U55_High_End_Embedded",
     memory_mode: str = "Shared_Sram",
-    extra_flags:str = "--debug-force-regor --output-format=raw",
+    extra_flags: str = "--debug-force-regor --output-format=raw",
     custom_path: Optional[str] = None,
 ) -> list[CompileSpec]:
     """
@@ -114,7 +114,7 @@ def get_u85_compile_spec(
     macs: int = 128,
     system_config="Ethos_U85_SYS_DRAM_Mid",
     memory_mode="Shared_Sram",
-    extra_flags="--output-format=raw", 
+    extra_flags="--output-format=raw",
     custom_path=None,
 ) -> list[CompileSpec]:
     """
@@ -133,7 +133,7 @@ def get_u55_compile_spec_unbuilt(
     macs: int,
     system_config: str,
     memory_mode: str,
-    extra_flags:str,
+    extra_flags: str,
     custom_path: Optional[str],
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
