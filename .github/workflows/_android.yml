@@ -25,7 +25,7 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
