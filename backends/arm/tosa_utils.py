@@ -7,7 +7,7 @@
 
 import logging
 import os
-from typing import Any
+from typing import Any, Tuple
 
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
@@ -153,7 +153,7 @@ def get_resize_parameters(
     output_size: torch.Tensor,
     resize_mode: int,
     align_corners: bool,
-):
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Get the tosa.resize parameters based on the input and output size.
 
     Args:

@@ -40,19 +40,6 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "common",
-    srcs = ["common.py"],
-    deps = [
-        ":runner_utils",
-        "//executorch/backends/xnnpack/test/tester:tester",
-        "//executorch/backends/arm:arm_backend",
-        "//executorch/exir:lib",
-        "//executorch/exir/backend:compile_spec_schema",
-        "fbsource//third-party/pypi/pytest:pytest",
-    ]
-)
-
-runtime.python_library(
     name = "arm_tester",
     srcs = glob(["tester/*.py"]),
     deps = [
@@ -67,4 +54,4 @@ runtime.python_library(
     ]
 )
 
-define_arm_tests() 
+define_arm_tests()

@@ -14,8 +14,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from executorch.backends.vulkan._passes import VkInt4WeightOnlyQuantizer
-
 from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
@@ -119,10 +117,11 @@ def quantize(  # noqa C901
         # Check for required args
         if group_size is None:
             raise Exception("For 8da4w quantization, group size must be specified.")
+        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-        from torchao.quantization import int8_dynamic_activation_int4_weight, quantize_
-
-        quantize_(model, int8_dynamic_activation_int4_weight(group_size=group_size))
+        model = Int8DynActInt4WeightQuantizer(
+            precision=torch_dtype, groupsize=group_size
+        ).quantize(model)
 
         if verbose:
             print("quantized model:", model)
@@ -179,6 +178,8 @@ def quantize(  # noqa C901
         model = gptq_quantizer.quantize(model, inputs)
         return model
     elif qmode == "vulkan_4w":
+        from executorch.backends.vulkan._passes import VkInt4WeightOnlyQuantizer
+
         q_group_size = 256 if group_size is None else group_size
         model = VkInt4WeightOnlyQuantizer(groupsize=q_group_size).quantize(model)
 
@@ -662,7 +663,7 @@ class EmbeddingQuantHandler(QuantHandler):
     def quantized_model(self) -> nn.Module:
         model_updated_state_dict = self.create_quantized_state_dict(self.packed)
         self.convert_for_runtime()
-        self.mod.load_state_dict(model_updated_state_dict, assign=True)
+        self.mod.load_state_dict(model_updated_state_dict)
         return self.mod
 
 

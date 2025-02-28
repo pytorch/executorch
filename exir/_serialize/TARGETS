@@ -32,6 +32,7 @@ runtime.python_library(
         "_cord.py",
         "_dataclass.py",
         "_flatbuffer.py",
+        "_named_data_store.py",
         "_program.py",
         "_serialize.py",
         "data_serializer.py",

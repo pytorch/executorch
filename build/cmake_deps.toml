@@ -386,10 +386,7 @@ buck_targets = [
   "//extension/llm/custom_ops:custom_ops",
 ]
 filters = [
-  # Second clause is to pick up fht_neon.c/fht_avx.c from FFHT. TODO:
-  # remove filters and patch extract_sources.py's Buck query to fetch
-  # srcs; presumably filters is here to remove .h files.
-  "(.cpp$)|(fht.*\\.c$)",
+  ".cpp$",
 ]
 excludes = [
   "^codegen",

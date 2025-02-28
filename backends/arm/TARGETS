@@ -1,6 +1,5 @@
 # @noautodeps
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-
 runtime.python_library(
     name = "arm_partitioner",
     srcs = [
@@ -9,7 +8,6 @@ runtime.python_library(
         "tosa_backend.py",
         "tosa_partitioner.py",
     ],
-    typing = True,
     deps = [
         ":arm_backend",
         "//executorch/backends/arm/operator_support:operator_support",
@@ -17,13 +15,11 @@ runtime.python_library(
         "//executorch/exir:lib",
     ],
 )
-
 runtime.python_library(
     name = "arm_backend",
     srcs = [
         "arm_backend.py",
     ],
-    typing = True,
     deps = [
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
@@ -36,11 +32,9 @@ runtime.python_library(
         "//executorch/backends/arm/_passes:passes",
     ],
 )
-
 runtime.python_library(
     name = "process_node",
     srcs = ["process_node.py"],
-    typing = True,
     deps = [
         "fbsource//third-party/serialization_lib/python/tosa:tosa",
         "//executorch/backends/arm/operators:node_visitor",
@@ -50,36 +44,30 @@ runtime.python_library(
         "//executorch/exir:lib",
     ],
 )
-
 runtime.python_library(
     name = "arm_vela",
     srcs = [
         "arm_vela.py",
     ],
-    typing = True,
     deps = [
         "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
     ],
 )
-
 runtime.python_library(
     name = "tosa_mapping",
     srcs = [
         "tosa_mapping.py",
     ],
-    typing = True,
     deps = [
         "fbsource//third-party/serialization_lib/python/serializer:serializer",
         "//caffe2:torch",
     ],
 )
-
 runtime.python_library(
     name = "tosa_quant_utils",
     srcs = [
         "tosa_quant_utils.py",
     ],
-    typing = True,
     deps = [
         "fbsource//third-party/pypi/numpy:numpy",
         "fbsource//third-party/serialization_lib/python/serializer:serializer",
@@ -88,38 +76,32 @@ runtime.python_library(
         "//executorch/exir/dialects:lib",
     ],
 )
-
 runtime.python_library(
     name = "tosa_specification",
     srcs = [
         "tosa_specification.py",
     ],
-    typing = True,
     deps = [
         "fbsource//third-party/pypi/packaging:packaging",
         "//executorch/exir/backend:compile_spec_schema",
     ],
 )
-
 runtime.python_library(
     name = "tosa_utils",
     srcs = [
         "tosa_utils.py",
     ],
-    typing = True,
     deps = [
         "fbsource//third-party/serialization_lib/python/serializer:serializer",
         ":tosa_quant_utils",
         "//executorch/backends/arm/operators:node_visitor",
     ],
 )
-
 runtime.python_library(
     name = "arm_model_evaluator",
     srcs = [
         "util/arm_model_evaluator.py",
     ],
-    typing = True,
     deps = [
         "//caffe2:torch",
     ]
