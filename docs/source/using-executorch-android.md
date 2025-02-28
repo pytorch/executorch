@@ -6,7 +6,7 @@ Note: This page covers Android app integration through the AAR library. The Exec
 
 ## Installation
 
-We package all ExecuTorch Android libraries into an Android library (AAR), `executorch.aar` for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, we will upload the prebuilt AAR artifacts. Users can also build the AAR from source.
+All ExecuTorch Android libraries are packaged into an Android library (AAR), `executorch.aar` for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, prebuilt AAR artifacts are uploaded to S3. Users can also build the AAR from source.
 
 ### Contents of library
 
