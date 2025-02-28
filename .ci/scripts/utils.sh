@@ -168,20 +168,20 @@ parse_args() {
   local args=("$@")
   local i
   local BUILD_TOOL=""
-  local BUILD_TYPE=""
+  local BUILD_MODE=""
   local EDITABLE=""
   for ((i=0; i<${#args[@]}; i++)); do
     case "${args[$i]}" in
       --build-tool)
-        BUILD_TOOL="${args[$((i+1))]}"
+        BUILD_TOOL="${args[$((i+1))]:-}"
         i=$((i+1))
         ;;
-      --build-type)
-        BUILD_TYPE="${args[$((i+1))]}"
+      --build-mode)
+        BUILD_MODE="${args[$((i+1))]:Release}"
         i=$((i+1))
         ;;
       --editable)
-        EDITABLE="${args[$((i+1))]}"
+        EDITABLE="${args[$((i+1))]:false}"
         i=$((i+1))
         ;;
       *)
@@ -201,10 +201,8 @@ parse_args() {
     exit 1
   fi
 
-  if [[ "${BUILD_MODE:-}" =~ ^(Debug|Release)$ ]]; then
+  if [[ "$BUILD_MODE" =~ ^(Debug|Release)$ ]]; then
     echo "Running tests in build mode ${BUILD_MODE} ..."
-  elif [ -z "$BUILD_MODE" ]; then
-    BUILD_MODE="Release"
   else
     echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
     exit 1
@@ -212,14 +210,12 @@ parse_args() {
 
   if [[ $EDITABLE =~ ^(true|false)$ ]]; then
     echo "Editable mode is ${EDITABLE} ..."
-  elif [ -z "$EDITABLE" ]; then
-    EDITABLE="false"
   else
     echo "Require true or false for --editable, got ${EDITABLE}, exiting..."
     exit 1
   fi
 
   echo "BUILD_TOOL=$BUILD_TOOL"
-  echo "BUILD_TYPE=${BUILD_TYPE:-Release}"
-  echo "EDITABLE=${EDITABLE:-false}"
+  echo "BUILD_MODE=$BUILD_MODE"
+  echo "EDITABLE=$EDITABLE"
 }
