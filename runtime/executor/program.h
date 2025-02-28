@@ -108,6 +108,12 @@ class Program final {
       const;
 
   /**
+   * Get the named data map from the program.
+   * @return The named data map.
+   */
+  Result<const NamedDataMap*> get_named_data_map() const;
+
+  /**
    * Returns the number of methods in the program.
    */
   size_t num_methods() const;
