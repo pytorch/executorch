@@ -9,13 +9,13 @@
 
 import PackageDescription
 
-let version = "__VERSION__"
+let version = "0.5.0.20250228"
 let url = "https://ossci-ios.s3.amazonaws.com/executorch/"
 let debug = "_debug"
 let deliverables = [
   "backend_coreml": [
-    "sha256": "__SHA256_backend_coreml__",
-    "sha256" + debug: "__SHA256_backend_coreml_debug__",
+    "sha256": "665d37d00a7869fb806ca0850ad315a14086ebd13509ef9c1b579486e7a9952b",
+    "sha256" + debug: "68ceaa5fb269712729c05910e5d3177453a37ae65d047bf664a5903f287bbffc",
     "frameworks": [
       "Accelerate",
       "CoreML",
@@ -25,8 +25,8 @@ let deliverables = [
     ],
   ],
   "backend_mps": [
-    "sha256": "__SHA256_backend_mps__",
-    "sha256" + debug: "__SHA256_backend_mps_debug__",
+    "sha256": "8b39adf65f6fdddb8fd4be5e4668c8c65c519127ef7b3bb7ad620f95e8bda450",
+    "sha256" + debug: "832730178782a9e7d01a558ce01612a4ebdeb24c6a6237ab3e318c7c738b7605",
     "frameworks": [
       "Metal",
       "MetalPerformanceShaders",
@@ -34,28 +34,28 @@ let deliverables = [
     ],
   ],
   "backend_xnnpack": [
-    "sha256": "__SHA256_backend_xnnpack__",
-    "sha256" + debug: "__SHA256_backend_xnnpack_debug__",
+    "sha256": "fa91c3f62b5d0405a5999373e5ca6b3da6482991e60b6cefaca6c96d153e60a0",
+    "sha256" + debug: "382cffe84bcb709db7674adddd0eb8fb43272de029e81769be3558060a72e619",
   ],
   "executorch": [
-    "sha256": "__SHA256_executorch__",
-    "sha256" + debug: "__SHA256_executorch_debug__",
+    "sha256": "bd97275f7f5468f4850a713b2f8acfd0abc7cdbc64ca93847e18d6b41716d6f3",
+    "sha256" + debug: "1ee26b0928118967789caf9126e9a2ef6fdcc4c7ad623630d10286c616bac69a",
   ],
   "kernels_custom": [
-    "sha256": "__SHA256_kernels_custom__",
-    "sha256" + debug: "__SHA256_kernels_custom_debug__",
+    "sha256": "22b34f0fbf82df3b27ebcfd4c8041011efea94de5267056fc75bbca54198af8e",
+    "sha256" + debug: "329503216b6d63cc1c9a7cfa1bf7137db67deb64ecad1b530262feae4f82037d",
   ],
   "kernels_optimized": [
-    "sha256": "__SHA256_kernels_optimized__",
-    "sha256" + debug: "__SHA256_kernels_optimized_debug__",
+    "sha256": "4624ae15d2c275c680d8712946ba0a77a38c6aacef6b4b753b701984ce2cac5c",
+    "sha256" + debug: "25e63184cd13583a2fed832fe035bf4a7fc326dd5c03f3482b501a343771cf62",
   ],
   "kernels_portable": [
-    "sha256": "__SHA256_kernels_portable__",
-    "sha256" + debug: "__SHA256_kernels_portable_debug__",
+    "sha256": "20438e55f5a7dc81e895b65285a2eca0e2b053ef84a13218e8028411facd5d83",
+    "sha256" + debug: "af6c5a437bc9b75b96ff7887d60b644f83014590e6d0f4ad83b2bf1fa39c890a",
   ],
   "kernels_quantized": [
-    "sha256": "__SHA256_kernels_quantized__",
-    "sha256" + debug: "__SHA256_kernels_quantized_debug__",
+    "sha256": "b07d192cfbf4817d4a024786e46185061a9a1dbe37100324faf60d78a09d1880",
+    "sha256" + debug: "a8d4411900f9db1e45f704e32a0011f2c4771390ed736c75f3bd587fb0e8deca",
   ],
 ].reduce(into: [String: [String: Any]]()) {
   $0[$1.key] = $1.value
