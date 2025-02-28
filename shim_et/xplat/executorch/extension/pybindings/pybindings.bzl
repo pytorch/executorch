@@ -52,7 +52,6 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
         ],
         deps = [
-            "//executorch/exir:_warnings",
             "//executorch/runtime/core:core",
         ] + cppdeps,
         external_deps = [
