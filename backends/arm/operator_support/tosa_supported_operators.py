@@ -169,6 +169,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             exir_ops.edge.aten.constant_pad_nd.default,
+            exir_ops.edge.aten.amax.default,
+            exir_ops.edge.aten.amin.default,
         ]
 
         return supported
@@ -191,6 +193,8 @@ class EthosU55NotSupported(OperatorSupportBase):
                 exir_ops.edge.aten.bitwise_and.Tensor,
                 exir_ops.edge.aten.bitwise_or.Tensor,
                 exir_ops.edge.aten.bitwise_xor.Tensor,
+                exir_ops.edge.aten.amax.default,
+                exir_ops.edge.aten.amin.default,
             ]
 
             if node.target in unsupported_ops:
