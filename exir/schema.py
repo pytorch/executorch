@@ -291,6 +291,12 @@ class SubsegmentOffsets:
 
 
 @dataclass
+class NamedData:
+    key: str
+    segment_index: int
+
+
+@dataclass
 class Program:
     version: int
     execution_plan: List[ExecutionPlan]
@@ -299,3 +305,4 @@ class Program:
     segments: List[DataSegment]
     constant_segment: SubsegmentOffsets
     mutable_data_segments: Optional[List[SubsegmentOffsets]] = None
+    named_data: Optional[List[NamedData]] = None

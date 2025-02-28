@@ -58,8 +58,8 @@ class Model(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Conv2d(8, 16, 3),
             torch.nn.ReLU(),
-            torch.nn.AdaptiveAvgPool2d([[1,1]])
-        )
+            torch.nn.AdaptiveAvgPool2d((1,1))
+       )
         self.linear = torch.nn.Linear(16, 10)
     
     def forward(self, x):
@@ -68,11 +68,13 @@ class Model(torch.nn.Module):
         y = self.linear(y)
         return y
 
-model = Model()
+model = Model().eval()
 inputs = (torch.randn(1,1,16,16),)
 outputs = model(*inputs)
 print(f"Model output: {outputs}")
 ```
+
+Note that the model is set to evaluation mode using `.eval()`. Models should always be exported in evaluation mode unless performing on-device training. This mode configures certain operations with training-specific behavior, such as batch norm or dropout, to use the inference-mode configuration.
 
 ## Export and Lowering
 
@@ -92,7 +94,7 @@ class Model(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Conv2d(8, 16, 3),
             torch.nn.ReLU(),
-            torch.nn.AdaptiveAvgPool2d([1,1])
+            torch.nn.AdaptiveAvgPool2d((1,1))
         )
         self.linear = torch.nn.Linear(16, 10)
     
