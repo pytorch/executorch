@@ -10,19 +10,17 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-BUILD_TOOL=$1
-if [[ -z "${BUILD_TOOL:-}" ]]; then
-  echo "Missing build tool (require buck2 or cmake), exiting..."
-  exit 1
-else
-  echo "Setup Linux for ${BUILD_TOOL} ..."
-fi
+parse_args "$@"
 
 # As Linux job is running inside a Docker container, all of its dependencies
 # have already been installed, so we use PyTorch build from source here instead
 # of nightly. This allows CI to test against latest commits from PyTorch
-install_executorch "use-pt-pinned-commit"
-build_executorch_runner "${BUILD_TOOL}" "${2:-Release}"
+if [[ "$EDITABLE" == "true" ]]; then
+  install_executorch "--use-pt-pinned-commit" "--editable"
+else
+  install_executorch "--use-pt-pinned-commit"
+fi
+build_executorch_runner "${BUILD_TOOL}" "${BUILD_TYPE}"
 
 if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
   do_not_use_nightly_on_ci

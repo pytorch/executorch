@@ -6,21 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
-BUILD_TOOL=$1
-if [[ $BUILD_TOOL =~ ^(cmake|buck2)$ ]]; then
-    echo "Running unittests for ${BUILD_TOOL} ..."
-else
-  echo "Missing build tool (require buck2 or cmake), exiting..."
-  exit 1
-fi
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-BUILD_MODE=$2
-if [[ "${BUILD_MODE:-}" =~ ^(Debug|Release)$ ]]; then
-    echo "Running tests in build mode ${BUILD_MODE} ..."
-else
-    echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
-    exit 1
-fi
+parse_args "$@"
 
 # The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"
@@ -34,7 +23,7 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     PYTHON_EXECUTABLE=python \
     EXECUTORCH_BUILD_PYBIND=ON \
     CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
-    .ci/scripts/setup-linux.sh "$BUILD_TOOL" "$BUILD_MODE"
+    .ci/scripts/setup-linux.sh "$@"
 
     # Install llama3_2_vision dependencies.
     PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
@@ -45,7 +34,7 @@ elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     # because TMPDIR gets messed up? Please feel free to fix this and
     # speed up this CI job!
     PYTHON_EXECUTABLE=python \
-    .ci/scripts/setup-linux.sh "$BUILD_TOOL" "$BUILD_MODE"
+    .ci/scripts/setup-linux.sh "$@"
 
     .ci/scripts/unittest-buck2.sh
 else

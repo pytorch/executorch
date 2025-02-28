@@ -15,6 +15,10 @@ on:
         required: true
         type: string
         description: Build tool to use, cmake or buck2.
+      editable:
+        required: false
+        type: string
+        description: Install ExecuTorch in editable or not.
       python-version:
         required: false
         type: string
@@ -34,7 +38,7 @@ jobs:
       timeout: 90
       script: |
         set -eux
-        .ci/scripts/unittest-linux.sh "${{ inputs.build-tool }}" "${{ inputs.build-mode }}"
+        .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
 
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -45,4 +49,4 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
-        .ci/scripts/unittest-macos.sh "${{ inputs.build-tool }}" "${{ inputs.build-mode }}"
+        .ci/scripts/unittest-macos.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"

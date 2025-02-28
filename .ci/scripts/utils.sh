@@ -24,11 +24,7 @@ install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
-  if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
-    ./install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
-  else
-    ./install_executorch.sh --pybind xnnpack
-  fi
+  ./install_executorch.sh --pybind xnnpack "$@"
   # Just print out the list of packages for debugging
   pip list
 }
@@ -165,4 +161,65 @@ do_not_use_nightly_on_ci() {
     echo "Unexpected torch version. Expected binary built from source, got ${TORCH_VERSION}"
     exit 1
   fi
+}
+
+
+parse_args() {
+  local args=("$@")
+  local i
+  local BUILD_TOOL=""
+  local BUILD_TYPE=""
+  local EDITABLE=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    case "${args[$i]}" in
+      --build-tool)
+        BUILD_TOOL="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      --build-type)
+        BUILD_TYPE="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      --editable)
+        EDITABLE="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      *)
+        echo "Invalid argument: ${args[$i]}"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ $BUILD_TOOL =~ ^(cmake|buck2)$ ]]; then
+    echo "Build tool is ${BUILD_TOOL} ..."
+  elif [ -z "$BUILD_TOOL" ]; then
+    echo "Missing build tool (require buck2 or cmake), exiting..."
+    exit 1
+  else
+    echo "Require buck2 or cmake for --build-tool, got ${BUILD_TOOL}, exiting..."
+    exit 1
+  fi
+
+  if [[ "${BUILD_MODE:-}" =~ ^(Debug|Release)$ ]]; then
+    echo "Running tests in build mode ${BUILD_MODE} ..."
+  elif [ -z "$BUILD_MODE" ]; then
+    BUILD_MODE="Release"
+  else
+    echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
+    exit 1
+  fi
+
+  if [[ $EDITABLE =~ ^(true|false)$ ]]; then
+    echo "Editable mode is ${EDITABLE} ..."
+  elif [ -z "$EDITABLE" ]; then
+    EDITABLE="false"
+  else
+    echo "Require true or false for --editable, got ${EDITABLE}, exiting..."
+    exit 1
+  fi
+
+  echo "BUILD_TOOL=$BUILD_TOOL"
+  echo "BUILD_TYPE=${BUILD_TYPE:-Release}"
+  echo "EDITABLE=${EDITABLE:-false}"
 }
