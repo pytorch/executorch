@@ -30,13 +30,15 @@ class DecomposeSilu(ExportPass):
                 silu_node_input = node.args[0]
                 with graph_module.graph.inserting_after(silu_node_input):
                     sigmoid_node = graph.create_node(
-                        "call_function", torch.ops.aten.sigmoid, (silu_node_input,)
+                        "call_function",
+                        torch.ops.aten.sigmoid.default,
+                        (silu_node_input,),
                     )
                     sigmoid_node.meta = self._copy_meta(silu_node.meta)
                     with graph_module.graph.inserting_after(sigmoid_node):
                         mul_node = graph.create_node(
                             "call_function",
-                            torch.ops.aten.mul,
+                            torch.ops.aten.mul.Tensor,
                             (silu_node_input, sigmoid_node),
                         )
                         mul_node.meta = self._copy_meta(silu_node.meta)
