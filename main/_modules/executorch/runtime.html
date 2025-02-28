@@ -641,6 +641,12 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_get_registered_backend_names</span><span class="p">()</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_available</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">backend_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the names of all registered backends as a list of strings.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_is_available</span><span class="p">(</span><span class="n">backend_name</span><span class="p">)</span>
+
 
 <div class="viewcode-block" id="OperatorRegistry"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.OperatorRegistry">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">OperatorRegistry</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The registry of operators that are available to the runtime.&quot;&quot;&quot;</span>
