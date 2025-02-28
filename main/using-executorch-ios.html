@@ -526,7 +526,7 @@
 <p>The prebuilt ExecuTorch runtime, backend, and kernels are available as a <a class="reference external" href="https://www.swift.org/documentation/package-manager/">Swift PM</a> package.</p>
 <div class="section" id="xcode">
 <h4>Xcode<a class="headerlink" href="#xcode" title="Permalink to this heading">¶</a></h4>
-<p>In Xcode, go to <code class="docutils literal notranslate"><span class="pre">File</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Package</span> <span class="pre">Dependencies</span></code>. Paste the URL of the <a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch repo</a> into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-<version>”, (e.g. “swiftpm-0.5.0”), or a branch name in format “swiftpm-<version>.&lt;year_month_date&gt;” (e.g. “swiftpm-0.5.0-20250130”) for a nightly build on a specific date.</p>
+<p>In Xcode, go to <code class="docutils literal notranslate"><span class="pre">File</span> <span class="pre">&gt;</span> <span class="pre">Add</span> <span class="pre">Package</span> <span class="pre">Dependencies</span></code>. Paste the URL of the <a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch repo</a> into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format “swiftpm-<version>”, (e.g. “swiftpm-0.5.0”), or a branch name in format “swiftpm-<version>.&lt;year_month_date&gt;” (e.g. “swiftpm-0.5.0-20250228”) for a nightly build on a specific date.</p>
 <p><img alt="" src="_images/swiftpm_xcode1.png" /></p>
 <p>Then select which ExecuTorch framework should link against which target.</p>
 <p><img alt="" src="_images/swiftpm_xcode2.png" /></p>
@@ -641,15 +641,15 @@ ET_PLATFORM[sdk=iphoneos*] = ios
 ET_PLATFORM[sdk=macos*] = macos
 
 OTHER_LDFLAGS = $(inherited) \
-    -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-$(ET_PLATFORM)-release.a
+    -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch_debug_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_$(ET_PLATFORM).a
 </pre></div>
 </div>
-<p>For a Debug build configuration, replace <code class="docutils literal notranslate"><span class="pre">release</span></code> with <code class="docutils literal notranslate"><span class="pre">debug</span></code> in the library file names. Remember to link against the ExecuTorch runtime (<code class="docutils literal notranslate"><span class="pre">libexecutorch</span></code>) in Debug mode even if other components are built for Release to preserve logs if needed.</p>
+<p><strong>Note:</strong> In the example above, we link against the Debug version of the ExecuTorch runtime (<code class="docutils literal notranslate"><span class="pre">libexecutorch_debug</span></code>) to preserve the logs. Normally, that does not impact the performance too much. Nevertheless, remember to link against the release version of the runtime (<code class="docutils literal notranslate"><span class="pre">libexecutorch</span></code>) for the best performance and no logs.</p>
 <p>You can assign such a config file to your target in Xcode:</p>
 <ol class="arabic simple">
 <li><p>Add the <code class="docutils literal notranslate"><span class="pre">.xcconfig</span></code> file to your project.</p></li>

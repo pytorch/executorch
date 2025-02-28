@@ -25,7 +25,7 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.5.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.5.0-20250130") for a nightly build on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.5.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.5.0-20250228") for a nightly build on a specific date.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -153,15 +153,15 @@ ET_PLATFORM[sdk=iphoneos*] = ios
 ET_PLATFORM[sdk=macos*] = macos
 
 OTHER_LDFLAGS = $(inherited) \
-    -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized-$(ET_PLATFORM)-release.a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized-$(ET_PLATFORM)-release.a
+    -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch_debug_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_$(ET_PLATFORM).a
 ```
 
-For a Debug build configuration, replace `release` with `debug` in the library file names. Remember to link against the ExecuTorch runtime (`libexecutorch`) in Debug mode even if other components are built for Release to preserve logs if needed.
+**Note:** In the example above, we link against the Debug version of the ExecuTorch runtime (`libexecutorch_debug`) to preserve the logs. Normally, that does not impact the performance too much. Nevertheless, remember to link against the release version of the runtime (`libexecutorch`) for the best performance and no logs.
 
 You can assign such a config file to your target in Xcode:
 
