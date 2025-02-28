@@ -6,21 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
-BUILD_TOOL=$1
-if [[ $BUILD_TOOL =~ ^(cmake|buck2)$ ]]; then
-    echo "Running unittests for ${BUILD_TOOL} ..."
-else
-  echo "Missing build tool (require buck2 or cmake), exiting..."
-  exit 1
-fi
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-BUILD_MODE=$2
-if [[ $BUILD_MODE =~ ^(Debug|Release)$ ]]; then
-    echo "Running tests in build mode ${BUILD_MODE} ..."
-else
-    echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
-    exit 1
-fi
+read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 
 bash .ci/scripts/setup-conda.sh
 eval "$(conda shell.bash hook)"
@@ -36,7 +25,7 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     EXECUTORCH_BUILD_PYBIND=ON \
     CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
     ${CONDA_RUN} --no-capture-output \
-    .ci/scripts/setup-macos.sh "${BUILD_TOOL}" "${BUILD_MODE}"
+    .ci/scripts/setup-macos.sh "$@"
 
     # Install llama3_2_vision dependencies.
     PYTHON_EXECUTABLE=python \

@@ -69,7 +69,7 @@ jobs:
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
@@ -160,7 +160,7 @@ jobs:
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
         # Install CoreML Backend Requirements
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
@@ -293,7 +293,7 @@ jobs:
         BUILD_TOOL=cmake
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Setup Apple certificate for iOS development
