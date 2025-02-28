@@ -10,6 +10,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@available(*, message: "This API is experimental")
 NS_SWIFT_NAME(Tensor)
 @interface ExecuTorchTensor : NSObject
 
