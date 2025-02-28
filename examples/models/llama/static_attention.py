@@ -209,7 +209,9 @@ class StaticAttention(Attention):
         self.head_dim = config.head_dim
         self.inv_scale = 1.0 / (float(self.head_dim) ** 0.5)
         self.attention_qkv_bias = config.attention_qkv_bias
+        self.use_qk_norm = config.use_qk_norm
 
+        assert self.use_qk_norm == False, "QK norm not supported in static attention yet"
         self.wqs = nn.ModuleList(
             [
                 nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
@@ -238,6 +240,7 @@ class StaticAttention(Attention):
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
         self.rope = _Rope(rope.params.use_hf_rope)
 
+
     def forward(
         self,
         x: torch.Tensor,
@@ -258,7 +261,7 @@ class StaticAttention(Attention):
         new_vs = [self.wvs[i](x) for i in range(self.n_kv_heads)]
         new_qs = [self.rope(q, freqs_cos, freqs_sin) for q in new_qs]
         new_ks = [self.rope(k, freqs_cos, freqs_sin) for k in new_ks]
-
+    
         all_ks = []
         all_vs = []
         for i in range(self.n_kv_heads):
