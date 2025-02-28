@@ -161,17 +161,18 @@ class GEMMConfig(XNNPartitionerConfig):
                 return False, []
             gemm_deps.append(weight)
 
+            if is_per_tensor(dequant_node) and precision == ConfigPrecisionType.DYNAMIC_QUANT:
+                why(node, "XNNPACK does not support per tensor quantized weights for dynamic quantization of activations")
+                return False, []
+
             if is_per_channel(dequant_node) or is_per_channel_group(dequant_node):
                 if len(dequant_node.all_input_nodes) < 2:
                     # Expected channel quantized to have scale/zp nodes
                     why(node, "Expected channel quantized to have scale/zp nodes")
                     return False, []
 
-            if is_per_tensor(dequant_node) and precision == ConfigPrecisionType.DYNAMIC_QUANT:
-                why(node, "XNNPACK does not support per tensor quantized weights for dynamic quantization of activations")
-                return False, []
-
                 gemm_deps.extend(dequant_node.all_input_nodes[1:3])
+
             return (True, gemm_deps)
 
     def _get_output_deps(
