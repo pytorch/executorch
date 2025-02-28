@@ -10,8 +10,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-__attribute__((deprecated("This API is experimental and may change without notice.")))
 NS_SWIFT_NAME(Module)
+__attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchModule : NSObject
 
 + (instancetype)new NS_UNAVAILABLE;

@@ -10,8 +10,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-__attribute__((deprecated("This API is experimental and may change without notice.")))
 NS_SWIFT_NAME(Value)
+__attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchValue : NSObject
 
 @end
