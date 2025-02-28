@@ -505,25 +505,29 @@
               
   <div class="section" id="using-executorch-on-android">
 <h1>Using ExecuTorch on Android<a class="headerlink" href="#using-executorch-on-android" title="Permalink to this heading">¶</a></h1>
-<p>To use from Android, ExecuTorch provides Java API bindings and Android platform integration, available as a AAR file. The ExecuTorch C++ APIs can also be used from Android native.</p>
+<p>To use from Android, ExecuTorch provides Java/Kotlin API bindings and Android platform integration, available as an AAR file.</p>
+<p>Note: This page covers Android app integration through the AAR library. The ExecuTorch C++ APIs can also be used from Android native, and the documentation can be found on <a class="reference external" href="https://pytorch.org/executorch/main/using-executorch-building-from-source.html#cross-compilation">this page about cross compilation</a>.</p>
 <div class="section" id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading">¶</a></h2>
-<p>We provide a prebuilt Android library (AAR), <code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code> for both generic (image/audio processing) and LLAMA use case.</p>
-</div>
+<p>We package all ExecuTorch Android libraries into an Android library (AAR), <code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code> for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, we will upload the prebuilt AAR artifacts. Users can also build the AAR from source.</p>
 <div class="section" id="contents-of-library">
-<h2>Contents of library<a class="headerlink" href="#contents-of-library" title="Permalink to this heading">¶</a></h2>
+<h3>Contents of library<a class="headerlink" href="#contents-of-library" title="Permalink to this heading">¶</a></h3>
+<p>The AAR artifact contains the Java library for users to integrate with their Java/Kotlin application code, as well as the corresponding JNI library (.so file), which is loaded by the Java code during initialization.</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code></p>
-<ul>
 <li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/android/src/main/java/org/pytorch/executorch">Java library</a></p></li>
-<li><p>JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.</p>
+<li><p>JNI contains the JNI binding for the corresponding Java code, and ExecuTorch native library, including</p>
 <ul>
+<li><p>core ExecuTorch runtime libraries</p></li>
+<li><p>XNNPACK backend</p></li>
+<li><p>Portable kernels</p></li>
+<li><p>Optimized kernels</p></li>
+<li><p>Quantized kernels</p></li>
+<li><p>LLaMa-specific Custom ops library.</p></li>
+</ul>
+</li>
 <li><p>Comes with two ABI variants, arm64-v8a and x86_64.</p></li>
 </ul>
-</li>
-</ul>
-</li>
-</ul>
+</div>
 </div>
 <div class="section" id="downloading-aar">
 <h2>Downloading AAR<a class="headerlink" href="#downloading-aar" title="Permalink to this heading">¶</a></h2>
@@ -564,20 +568,34 @@
 </div>
 <div class="section" id="using-prebuilt-libraries">
 <h2>Using prebuilt libraries<a class="headerlink" href="#using-prebuilt-libraries" title="Permalink to this heading">¶</a></h2>
-<p>To add the Java library to your app, simply download the AAR, and add it to your gradle build rule.</p>
-<p>In your app working directory, such as example executorch/examples/demo-apps/android/LlamaDemo,</p>
+<p>To add the Java library to your app:</p>
+<ol class="arabic simple">
+<li><p>Download the AAR.</p></li>
+<li><p>Add it to your gradle build rule as a file path.</p></li>
+</ol>
+<p>The Java package requires <code class="docutils literal notranslate"><span class="pre">fbjni</span></code> and <code class="docutils literal notranslate"><span class="pre">soloader</span></code>, and currently requires users to explicitly declare the dependency. Therefore, two more <code class="docutils literal notranslate"><span class="pre">dependencies</span></code> in gradle rule is required:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.5.1&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="section" id="example-usage">
+<h3>Example usage<a class="headerlink" href="#example-usage" title="Permalink to this heading">¶</a></h3>
+<p>In your app working directory, such as executorch/examples/demo-apps/android/LlamaDemo,</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span>
-<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">executorch</span><span class="o">-</span><span class="mi">241002</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
+<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">v0</span><span class="mf">.5.0</span><span class="o">-</span><span class="n">rc3</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
 </pre></div>
 </div>
 <p>And include it in gradle:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># app/build.grardle.kts</span>
 <span class="n">dependencies</span> <span class="p">{</span>
     <span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s2">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
+    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
+    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.5.1&quot;</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 <p>Now you can compile your app with the ExecuTorch Android library.</p>
+</div>
 <div class="section" id="building-from-source">
 <h3>Building from Source<a class="headerlink" href="#building-from-source" title="Permalink to this heading">¶</a></h3>
 <p>TODO Instructions on re-creating and customizing the Android AAR.</p>
@@ -643,14 +661,17 @@
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Using ExecuTorch on Android</a><ul>
-<li><a class="reference internal" href="#installation">Installation</a></li>
+<li><a class="reference internal" href="#installation">Installation</a><ul>
 <li><a class="reference internal" href="#contents-of-library">Contents of library</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#downloading-aar">Downloading AAR</a><ul>
 <li><a class="reference internal" href="#released-versions-recommended">Released versions (recommended)</a></li>
 <li><a class="reference internal" href="#snapshots-from-main-branch">Snapshots from main branch</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#using-prebuilt-libraries">Using prebuilt libraries</a><ul>
+<li><a class="reference internal" href="#example-usage">Example usage</a></li>
 <li><a class="reference internal" href="#building-from-source">Building from Source</a></li>
 </ul>
 </li>
