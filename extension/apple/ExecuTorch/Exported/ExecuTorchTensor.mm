@@ -6,8 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchError.h"
-#import "ExecuTorchLog.h"
-#import "ExecuTorchModule.h"
 #import "ExecuTorchTensor.h"
-#import "ExecuTorchValue.h"
+
+#import "ExecuTorchError.h"
+
+#import <executorch/extension/tensor/tensor.h>
+
+@implementation ExecuTorchTensor {
+  ::executorch::extension::TensorPtr _tensor;
+}
+
+@end
