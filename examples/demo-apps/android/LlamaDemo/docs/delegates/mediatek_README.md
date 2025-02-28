@@ -123,7 +123,7 @@ The Mediatek runner (`examples/mediatek/executor_runner/mtk_llama_runner.cpp`) c
 
 Next we need to build and compile the MediaTek backend and MediaTek Llama runner. By setting  `NEURON_BUFFER_ALLOCATOR_LIB`, the script will build the MediaTek backend.
 ```
-sh build/build_android_llm_demo.sh
+sh build/build_android_library.sh
 ```
 
 **Output**: This will generate an .aar file that is already imported into the expected directory for the Android app. It will live in `examples/demo-apps/android/Llamademo/app/libs`.
