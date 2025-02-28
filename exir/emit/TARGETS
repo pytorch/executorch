@@ -1,8 +1,8 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = [
         "__init__.py",
@@ -12,7 +12,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "emit",
     srcs = [
         "_emit_program.py",
