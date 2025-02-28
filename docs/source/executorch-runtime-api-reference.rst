@@ -1,4 +1,4 @@
-ExecuTorch Runtime API Reference
+Runtime API Reference
 ================================
 
 The ExecuTorch C++ API provides an on-device execution framework for exported PyTorch models.

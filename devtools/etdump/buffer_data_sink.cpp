@@ -11,9 +11,26 @@
 
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
+using ::executorch::runtime::Span;
 
 namespace executorch {
 namespace etdump {
+
+Result<BufferDataSink> BufferDataSink::create(
+    Span<uint8_t> buffer,
+    size_t alignment) noexcept {
+  // Check if alignment is a power of two and greater than 0
+  if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+    return Error::InvalidArgument;
+  }
+
+  return BufferDataSink(buffer, alignment);
+}
+
+Result<BufferDataSink>
+BufferDataSink::create(void* ptr, size_t size, size_t alignment) noexcept {
+  return BufferDataSink::create({(uint8_t*)ptr, size}, alignment);
+}
 
 Result<size_t> BufferDataSink::write(const void* ptr, size_t length) {
   if (length == 0) {
