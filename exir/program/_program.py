@@ -16,10 +16,6 @@ from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Type
 import torch
 import torch._export
 from executorch.exir._serialize._cord import Cord
-from executorch.exir._serialize._named_data_store import (
-    NamedDataStore,
-    NamedDataStoreOutput,
-)
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
 from executorch.exir._warnings import experimental
@@ -1263,8 +1259,6 @@ class EdgeProgramManager:
         self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
 
-        self._named_data_store = NamedDataStore()
-
     @property
     def methods(self) -> Set[str]:
         """
@@ -1450,10 +1444,7 @@ class EdgeProgramManager:
             execution_programs[name] = program
 
         return ExecutorchProgramManager(
-            execution_programs,
-            self._config_methods,
-            config,
-            self._named_data_store.get_named_data_store_output(),
+            execution_programs, self._config_methods, config
         )
 
 
@@ -1474,7 +1465,6 @@ class ExecutorchProgramManager:
         execution_programs: Dict[str, ExportedProgram],
         config_methods: Optional[Dict[str, Any]] = None,
         backend_config: Optional[ExecutorchBackendConfig] = None,
-        named_data: Optional[NamedDataStoreOutput] = None,
     ):
         """
         End users should not call this constructor directly. Instead, they should use
@@ -1497,9 +1487,6 @@ class ExecutorchProgramManager:
         self._execution_programs: Dict[str, ExportedProgram] = execution_programs
         self._config_methods: Optional[Dict[str, Any]] = config_methods
 
-        # Named data from EdgeProgramManager
-        self._named_data: Optional[NamedDataStoreOutput] = named_data
-
         backend_config = backend_config or ExecutorchBackendConfig()
 
         # Emit methods
@@ -1512,10 +1499,7 @@ class ExecutorchProgramManager:
         # Serialize emitter output, ready to be written to a file.
         self._data_serializer = FlatTensorSerializer()
         self._pte_data, self._tensor_data = serialize_for_executorch(
-            self._emitter_output,
-            backend_config,
-            self._data_serializer,
-            self._named_data,
+            self._emitter_output, backend_config, self._data_serializer
         )
         self._buffer: Optional[bytes] = None
 
