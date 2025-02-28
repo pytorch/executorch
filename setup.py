@@ -170,7 +170,7 @@ class Version:
 # set to a non-empty value, the build type is Debug. Otherwise, the build type
 # is Release.
 def get_build_type(is_debug=None) -> str:
-    debug = int(os.environ.get("DEBUG", 0)) if is_debug is None else is_debug
+    debug = int(os.environ.get("DEBUG", 0) or 0) if is_debug is None else is_debug
     cfg = "Debug" if debug else "Release"
     return cfg
 
