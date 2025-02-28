@@ -30,7 +30,7 @@ endif()
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-set(_openvino_executor_runner__srcs 
+set(_openvino_executor_runner__srcs
     ${CMAKE_CURRENT_LIST_DIR}/../openvino/executor_runner/openvino_executor_runner.cpp
 )
 
@@ -53,11 +53,11 @@ target_include_directories(openvino_portable_ops_lib PUBLIC ${_common_include_di
 add_executable(openvino_executor_runner ${_openvino_executor_runner__srcs})
 
 target_include_directories(
-  openvino_executor_runner PUBLIC ${_common_include_directories} ${EXECUTORCH_ROOT}/cmake-openvino-out/third-party/gflags/include
+  openvino_executor_runner PUBLIC ${_common_include_directories} ${EXECUTORCH_ROOT}/cmake-out/third-party/gflags/include
 )
 
 # Set Library Directory
-set(LIBRARY_DIR "${CMAKE_CURRENT_LIST_DIR}/../../cmake-openvino-out/lib/;${CMAKE_CURRENT_LIST_DIR}/../../cmake-openvino-out/third-party/gflags")
+set(LIBRARY_DIR "${CMAKE_CURRENT_LIST_DIR}/../../cmake-out/lib/;${CMAKE_CURRENT_LIST_DIR}/../../cmake-out/third-party/gflags")
 message(STATUS "Library directory path: ${LIBRARY_DIR}")
 
 # Locate OpenVINO Backend Library
