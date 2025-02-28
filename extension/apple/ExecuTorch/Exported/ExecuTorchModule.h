@@ -6,8 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchError.h"
-#import "ExecuTorchLog.h"
-#import "ExecuTorchModule.h"
-#import "ExecuTorchTensor.h"
 #import "ExecuTorchValue.h"
+
+NS_ASSUME_NONNULL_BEGIN
+
+NS_SWIFT_NAME(Module)
+@interface ExecuTorchModule : NSObject
+
++ (instancetype)new NS_UNAVAILABLE;
+- (instancetype)init NS_UNAVAILABLE;
+
+@end
+
+NS_ASSUME_NONNULL_END
