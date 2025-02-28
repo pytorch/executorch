@@ -596,9 +596,45 @@
 </div>
 <p>Now you can compile your app with the ExecuTorch Android library.</p>
 </div>
+</div>
 <div class="section" id="building-from-source">
-<h3>Building from Source<a class="headerlink" href="#building-from-source" title="Permalink to this heading">¶</a></h3>
-<p>TODO Instructions on re-creating and customizing the Android AAR.</p>
+<h2>Building from Source<a class="headerlink" href="#building-from-source" title="Permalink to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">build/build_android_library.sh</span></code> is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file. It can also build
+demo apps to showcase the AAR is integrated into a user app correctly.</p>
+<p>You need Android <a class="reference external" href="https://developer.android.com/studio">SDK</a> and <a class="reference external" href="https://developer.android.com/ndk/downloads">NDK</a> to use it.</p>
+<p>Current NDK version used in ExecuTorch CI: r27b.</p>
+<p>You need to set <code class="docutils literal notranslate"><span class="pre">ANDROID_NDK</span></code> to the correct NDK root (containing NOTICE file).</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">export</span> <span class="n">ANDROID_NDK</span><span class="o">=/</span><span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">ndk</span>
+<span class="n">sh</span> <span class="n">build</span><span class="o">/</span><span class="n">build_android_library</span><span class="o">.</span><span class="n">sh</span>
+</pre></div>
+</div>
+<div class="section" id="optional-environment-variables">
+<h3>Optional environment variables<a class="headerlink" href="#optional-environment-variables" title="Permalink to this heading">¶</a></h3>
+<p>Optionally, set these environment variables before running <code class="docutils literal notranslate"><span class="pre">build_android_library.sh</span></code>.</p>
+<div class="section" id="android-abis">
+<h4>ANDROID_ABIS<a class="headerlink" href="#android-abis" title="Permalink to this heading">¶</a></h4>
+<p>Set environment variable <code class="docutils literal notranslate"><span class="pre">ANDROID_ABIS</span></code> to either <code class="docutils literal notranslate"><span class="pre">arm64-v8a</span></code> or <code class="docutils literal notranslate"><span class="pre">x86_64</span></code> if you only need to build the native library for one ABI only.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">export</span> <span class="n">ANDROID_ABIS</span><span class="o">=</span><span class="n">arm64</span><span class="o">-</span><span class="n">v8a</span>
+<span class="c1"># or</span>
+<span class="c1"># export ANDROID_ABIS=x86_64</span>
+<span class="n">sh</span> <span class="n">build</span><span class="o">/</span><span class="n">build_android_library</span><span class="o">.</span><span class="n">sh</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="executorch-cmake-build-type">
+<h4>EXECUTORCH_CMAKE_BUILD_TYPE<a class="headerlink" href="#executorch-cmake-build-type" title="Permalink to this heading">¶</a></h4>
+<p>Set environment variable <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_CMAKE_BUILD_TYPE</span></code> to <code class="docutils literal notranslate"><span class="pre">Release</span></code> or <code class="docutils literal notranslate"><span class="pre">Debug</span></code> based on your needs.</p>
+</div>
+<div class="section" id="using-mediatek-backend">
+<h4>Using MediaTek backend<a class="headerlink" href="#using-mediatek-backend" title="Permalink to this heading">¶</a></h4>
+<p>To use <a class="reference external" href="https://pytorch.org/executorch/main/backends-mediatek.html">MediaTek backend</a>,
+after installing and setting up the SDK, set <code class="docutils literal notranslate"><span class="pre">NEURON_BUFFER_ALLOCATOR_LIB</span></code> and <code class="docutils literal notranslate"><span class="pre">NEURON_USDK_ADAPTER_LIB</span></code> to the corresponding path.</p>
+</div>
+<div class="section" id="using-qualcomm-ai-engine-backend">
+<h4>Using Qualcomm AI Engine Backend<a class="headerlink" href="#using-qualcomm-ai-engine-backend" title="Permalink to this heading">¶</a></h4>
+<p>To use <a class="reference external" href="https://pytorch.org/executorch/main/backends-qualcomm.html#qualcomm-ai-engine-backend">Qualcomm AI Engine Backend</a>,
+after installing and setting up the SDK, set <code class="docutils literal notranslate"><span class="pre">QNN_SDK_ROOT</span></code> to the corresponding path</p>
+</div>
 </div>
 </div>
 <div class="section" id="android-backends">
@@ -607,7 +643,35 @@
 </div>
 <div class="section" id="runtime-integration">
 <h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
-<p>TODO Code sample in Java</p>
+<p>Here is an example code sample in Java that demonstrates how to integrate ExecuTorch into an Android app:</p>
+<div class="highlight-none notranslate highlight-java"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.EValue</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.Module</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.Tensor</span><span class="p">;</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">MainActivity</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">Activity</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">Module</span><span class="w"> </span><span class="n">module</span><span class="p">;</span>
+
+<span class="w">    </span><span class="nd">@Override</span>
+<span class="w">    </span><span class="kd">protected</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onCreate</span><span class="p">(</span><span class="n">Bundle</span><span class="w"> </span><span class="n">savedInstanceState</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">super</span><span class="p">.</span><span class="na">onCreate</span><span class="p">(</span><span class="n">savedInstanceState</span><span class="p">);</span>
+<span class="w">        </span><span class="c1">// Load the ExecuTorch module</span>
+<span class="w">        </span><span class="n">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Module</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">&quot;/path/to/module.pte&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">runInference</span><span class="p">(</span><span class="n">View</span><span class="w"> </span><span class="n">view</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Prepare input data</span>
+<span class="w">        </span><span class="n">Tensor</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="n">getInputData</span><span class="p">());</span>
+<span class="w">        </span><span class="c1">// Run inference</span>
+<span class="w">        </span><span class="n">Tensor</span><span class="w"> </span><span class="n">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="na">forward</span><span class="p">(</span><span class="n">EValue</span><span class="p">.</span><span class="na">from</span><span class="p">(</span><span class="n">input</span><span class="p">))</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span><span class="p">.</span><span class="na">toTensor</span><span class="p">();</span>
+<span class="w">        </span><span class="c1">// Process output data</span>
+<span class="w">        </span><span class="n">processOutput</span><span class="p">(</span><span class="n">output</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>This example loads an ExecuTorch module, prepares input data, runs inference, and processes the output data.</p>
+<p>Please use <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/ExecuTorchDemo">ExecuTorchDemo</a>
+and <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo">LlamaDemo</a> for the code examples
+using ExecuTorch AAR package.</p>
 </div>
 <div class="section" id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
@@ -672,7 +736,16 @@
 </li>
 <li><a class="reference internal" href="#using-prebuilt-libraries">Using prebuilt libraries</a><ul>
 <li><a class="reference internal" href="#example-usage">Example usage</a></li>
-<li><a class="reference internal" href="#building-from-source">Building from Source</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#building-from-source">Building from Source</a><ul>
+<li><a class="reference internal" href="#optional-environment-variables">Optional environment variables</a><ul>
+<li><a class="reference internal" href="#android-abis">ANDROID_ABIS</a></li>
+<li><a class="reference internal" href="#executorch-cmake-build-type">EXECUTORCH_CMAKE_BUILD_TYPE</a></li>
+<li><a class="reference internal" href="#using-mediatek-backend">Using MediaTek backend</a></li>
+<li><a class="reference internal" href="#using-qualcomm-ai-engine-backend">Using Qualcomm AI Engine Backend</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a class="reference internal" href="#android-backends">Android Backends</a></li>
