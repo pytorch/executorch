@@ -892,7 +892,7 @@ class TestLinear(unittest.TestCase):
                 },
             )
 
-    def test_linear_fp32_with_force_as_mm(self):
+    def test_linear_with_force_non_static_weights_for_f32_linear(self):
         def check_signature(
             signature: ExportGraphSignature,
             force_flag: bool,
@@ -925,7 +925,7 @@ class TestLinear(unittest.TestCase):
                     inputs = module.get_inputs()
                     tester = Tester(module, inputs).export()
                     partitioner = XnnpackPartitioner(
-                        force_fp32_dynamic_linear=force_flag
+                        force_non_static_weights_for_f32_linear=force_flag
                     )
                     if legacy_mode:
                         tester.to_edge()

@@ -41,7 +41,7 @@ class XNNPartitionerConfig(PartitionerConfig):
         super().__init__()
         self.enabled_precision_types = self.supported_precision_types()
         # Flag used in GEMMConfig()
-        self.force_fp32_dynamic_linear = kwargs.get("force_fp32_dynamic_linear", False)
+        self.force_non_static_weights_for_f32_linear = kwargs.get("force_non_static_weights_for_f32_linear", False)
 
     def get_partition(
         self, node: torch.fx.Node, ep: ExportedProgram
