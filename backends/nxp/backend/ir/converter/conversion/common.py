@@ -22,6 +22,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     max_pool_2d_options,
     transpose_conv_options,
 )
+from torch.fx import Node
 
 
 def exactly_one_is_none(obj1: Optional, obj2: Optional) -> bool:
@@ -163,6 +164,34 @@ def uses_shape_broadcasting(t_op: tflite_model.Operator) -> bool:
 
     return any(
         input_tensor.shape != first_input_shape for input_tensor in t_op.tmp_inputs[1:]
+    )
+
+
+def node_uses_shape_broadcasting(node: Node) -> bool:
+    """Determine if given PyTorch fx Node uses shape broadcasting for it's input nodes or not.
+
+    :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+    :return: True, if the node uses shape broadcasting for it's input nodes.
+             False otherwise.
+    """
+
+    if node.all_input_nodes is None:
+        logger.e(
+            logger.Code.INTERNAL_ERROR,
+            "common.node_uses_shape_broadcasting(): 'all_input_nodes' are None!",
+        )
+
+    if len(node.all_input_nodes) == 0:
+        logger.e(
+            logger.Code.INTERNAL_ERROR,
+            "common.node_uses_shape_broadcasting(): Operator has no inputs!",
+        )
+
+    first_input_shape = node.all_input_nodes[0].meta["val"].shape
+
+    return any(
+        input_tensor.meta["val"].shape != first_input_shape
+        for input_tensor in node.all_input_nodes[1:]
     )
 
 

@@ -1,3 +1,6 @@
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.add_tensor_converter import (
+    AddTensorConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.addmm_converter import (
     AddMMConverter,
 )
@@ -51,5 +54,6 @@ __all__ = [
     "ReLUConverter",
     "MaxPool2dConverter",
     "AvgPool2dConverter",
+    "AddTensorConverter",
     "HardTanhConverter",
 ]

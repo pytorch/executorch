@@ -135,6 +135,36 @@ class AddmmPattern(QuantizationPattern):
         )
 
 
+class AddTensorPattern(QuantizationPattern):
+    """
+    Quantization pattern for Add Tensor quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
+        return [torch.ops.aten.add.Tensor]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+        inputs = [(node, 0)]
+        if len(fused_partition[0].input_nodes) == 2:
+            inputs = [(node, 0), (node, 1)]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+    def replacement_op(self):
+        # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
+        raise AssertionError()
+
+
 class AvgPoolPattern(SharedSpecPattern):
     """
     Quantizer for AvgPool2D operator.
