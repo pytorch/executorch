@@ -9,7 +9,7 @@ set -eux
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-parse_args "$@"
+read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 
 bash .ci/scripts/setup-conda.sh
 eval "$(conda shell.bash hook)"

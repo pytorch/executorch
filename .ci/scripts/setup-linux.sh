@@ -10,7 +10,7 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-parse_args "$@"
+read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 
 # As Linux job is running inside a Docker container, all of its dependencies
 # have already been installed, so we use PyTorch build from source here instead

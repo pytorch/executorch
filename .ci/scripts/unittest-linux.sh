@@ -9,7 +9,7 @@ set -eux
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-parse_args "$@"
+read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 
 # The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"

@@ -191,31 +191,23 @@ parse_args() {
     esac
   done
 
-  if [[ $BUILD_TOOL =~ ^(cmake|buck2)$ ]]; then
-    echo "Build tool is ${BUILD_TOOL} ..."
-  elif [ -z "$BUILD_TOOL" ]; then
+  if [ -z "$BUILD_TOOL" ]; then
     echo "Missing build tool (require buck2 or cmake), exiting..."
     exit 1
-  else
+  elif ! [[ $BUILD_TOOL =~ ^(cmake|buck2)$ ]]; then
     echo "Require buck2 or cmake for --build-tool, got ${BUILD_TOOL}, exiting..."
     exit 1
   fi
   BUILD_MODE="${BUILD_MODE:-Release}"
-  if [[ "$BUILD_MODE" =~ ^(Debug|Release)$ ]]; then
-    echo "Running tests in build mode ${BUILD_MODE} ..."
-  else
+  if ! [[ "$BUILD_MODE" =~ ^(Debug|Release)$ ]]; then
     echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
     exit 1
   fi
   EDITABLE="${EDITABLE:-false}"
-  if [[ $EDITABLE =~ ^(true|false)$ ]]; then
-    echo "Editable mode is ${EDITABLE} ..."
-  else
+  if ! [[ $EDITABLE =~ ^(true|false)$ ]]; then
     echo "Require true or false for --editable, got ${EDITABLE}, exiting..."
     exit 1
   fi
 
-  echo "BUILD_TOOL=$BUILD_TOOL"
-  echo "BUILD_MODE=$BUILD_MODE"
-  echo "EDITABLE=$EDITABLE"
+  echo "$BUILD_TOOL $BUILD_MODE $EDITABLE"
 }

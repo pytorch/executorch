@@ -10,7 +10,7 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-parse_args "$@"
+read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 
 install_buck() {
   if ! command -v zstd &> /dev/null; then
@@ -130,9 +130,9 @@ install_pytorch_and_domains
 # We build PyTorch from source here instead of using nightly. This allows CI to test against
 # the pinned commit from PyTorch
 if [[ "$EDITABLE" == "true" ]]; then
-  install_executorch "--use-pt-pinned-commit" "--editable"
+  install_executorch --use-pt-pinned-commit --editable
 else
-  install_executorch "--use-pt-pinned-commit"
+  install_executorch --use-pt-pinned-commit
 fi
 build_executorch_runner "${BUILD_TOOL}" "${BUILD_MODE}"
 
