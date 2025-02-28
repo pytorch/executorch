@@ -49,7 +49,9 @@ class TestLSTM(unittest.TestCase):
             .export()
             .to_edge_transform_and_lower(
                 ToEdgeTransformAndLower(
-                    partitioners=[XnnpackPartitioner(force_non_static_weights_for_f32_linear=True)]
+                    partitioners=[
+                        XnnpackPartitioner(force_non_static_weights_for_f32_linear=True)
+                    ]
                 )
             )
             .check_not(["executorch_exir_dialects_edge__ops_aten_addmm_default"])

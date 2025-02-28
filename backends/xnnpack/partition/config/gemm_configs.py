@@ -125,6 +125,7 @@ class GEMMConfig(XNNPartitionerConfig):
             # detected precision but it is either disabled or not supported
             why(node, f"Unsupported precision type {precision}")
             return (False, [])
+        _, precision = self._overwrite_precision(node)
         valid_bias, bias_deps = self._get_bias_deps(node, ep, precision)
         valid_weight, weight_deps = self._get_weight_deps(node, ep, precision)
         valid_act, act_deps = self._get_act_deps(node, ep, precision)
@@ -139,11 +140,6 @@ class GEMMConfig(XNNPartitionerConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         gemm_deps = []
-        if precision == ConfigPrecisionType.FP32 and self.force_non_static_weights_for_f32_linear:
-            # if force_non_static_weights_for_f32_linear is enabled, then we
-            # do not partition the weight node
-            return (True, gemm_deps)
-
         if precision == ConfigPrecisionType.FP32:
             # First find the weight
             weight_node = get_input_node(node, self.weight_idx)
@@ -225,8 +221,11 @@ class GEMMConfig(XNNPartitionerConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         gemm_deps = []
-        if precision == ConfigPrecisionType.FP32 and self.force_non_static_weights_for_f32_linear:
-            # if force for_fp32_linear_as_matmul is enabled, then we
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is enabled, then we
             # do not partition the weight node
             return (True, gemm_deps)
 
@@ -304,6 +303,14 @@ class LinearConfig(GEMMConfig):
     def _get_weight_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is enabled, then we
+            # do not partition the weight node
+            return (True, [])
+
         # Since we are in Linear, we may assume that the weights are indeed static.
         overwritten_linear_precision, new_precision = self._overwrite_precision(node)
         if new_precision == ConfigPrecisionType.FP32 and overwritten_linear_precision:
@@ -402,6 +409,19 @@ class AddmmConfig(GEMMConfig):
         )
         self.src_partitions = None
         self.linear_modules = [torch.nn.functional.linear, torch.nn.Linear]
+
+    def _get_weight_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            return (True, [])
+
+        return super()._get_weight_deps(node, ep, precision)
 
     def get_deps(
         self,
@@ -510,6 +530,19 @@ class MMConfig(AddmmConfig):
         self.bias_idx = None
         self.weight_idx = 1
         self.act_idx = 0
+
+    def _get_weight_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is on and we detected this as fp32, then we
+            # do not partition the weight node
+            return (True, [])
+
+        return super()._get_weight_deps(node, ep, precision)
 
     def supported_precision_types(self):
         return [
