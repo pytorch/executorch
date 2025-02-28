@@ -220,36 +220,49 @@ class _BaseExtension(Extension):
         """
         # Share the cmake-out location with CustomBuild.
         build_cmd = installer.get_finalized_command("build")
-        if hasattr(build_cmd, "cmake_cache_dir"):
-            cmake_cache_dir = Path(build_cmd.cmake_cache_dir)
+        if "%CMAKE_CACHE_DIR%" in self.src:
+            if not hasattr(build_cmd, "cmake_cache_dir"):
+                raise RuntimeError(
+                    f"Extension {self.name} has a src {self.src} that contains"
+                    " %CMAKE_CACHE_DIR% but CMake does not run in the `build` "
+                    "command. Please double check if the command is correct."
+                )
+            else:
+                build_dir = Path(build_cmd.cmake_cache_dir)
         else:
-            # If we're in editable mode, use a default or fallback value for cmake_cache_dir
-            # This could be a hardcoded path, or a path derived from the current working directory
-            cmake_cache_dir = Path(".")
+            # If the src path doesn't contain %CMAKE_CACHE_DIR% placeholder,
+            # try to find it under the current directory.
+            build_dir = Path(".")
+
+        src_path = self.src.replace("%CMAKE_CACHE_DIR%/", "")
+
         cfg = get_build_type(installer.debug)
 
         if os.name == "nt":
             # Replace %BUILD_TYPE% with the current build type.
-            self.src = self.src.replace("%BUILD_TYPE%", cfg)
+            src_path = src_path.replace("%BUILD_TYPE%", cfg)
         else:
             # Remove %BUILD_TYPE% from the path.
-            self.src = self.src.replace("/%BUILD_TYPE%", "")
+            src_path = src_path.replace("/%BUILD_TYPE%", "")
 
         # Construct the full source path, resolving globs. If there are no glob
         # pattern characters, this will just ensure that the source file exists.
-        srcs = tuple(cmake_cache_dir.glob(self.src))
+        srcs = tuple(build_dir.glob(src_path))
         if len(srcs) != 1:
             raise ValueError(
-                f"""Expected exactly one file matching '{self.src}' in {cmake_cache_dir}; found {repr(srcs)}.
-
-If that file is a CMake-built extension module file, and we are installing in editable mode, please disable the corresponding build option since it's not supported yet.
-
-Try:
-
-EXECUTORCH_BUILD_FLATC=OFF EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=OFF pip install -e .
-"""
+                f"Expecting exactly 1 file matching {self.src} in {build_dir}, "
+                f"found {repr(srcs)}. Resolved src pattern: {src_path}."
             )
         return srcs[0]
+
+    def inplace_dir(self, installer: "InstallerBuildExt") -> Path:
+        """Returns the path of this file to be installed to, under inplace mode.
+
+        It will be a relative path to the project root directory. For more info
+        related to inplace/editable mode, please checkout this doc:
+        https://setuptools.pypa.io/en/latest/userguide/development_mode.html
+        """
+        raise NotImplementedError()
 
 
 class BuiltFile(_BaseExtension):
@@ -316,6 +329,18 @@ class BuiltFile(_BaseExtension):
             # Destination looks like a file.
             return dst_root / Path(self.dst)
 
+    def inplace_dir(self, installer: "InstallerBuildExt") -> Path:
+        """For a `BuiltFile`, we use self.dst as its inplace directory path.
+        Need to handle directory vs file.
+        """
+        # HACK: get rid of the leading "executorch" in ext.dst.
+        # This is because we don't have a root level "executorch" module.
+        package_dir = self.dst.removeprefix("executorch/")
+        # If dst is a file, use it's directory
+        if not package_dir.endswith("/"):
+            package_dir = os.path.dirname(package_dir)
+        return Path(package_dir)
+
 
 class BuiltExtension(_BaseExtension):
     """An extension that installs a python extension that was built by cmake."""
@@ -369,6 +394,15 @@ class BuiltExtension(_BaseExtension):
         # path: that's the file we're creating.
         return Path(installer.get_ext_fullpath(self.dst))
 
+    def inplace_dir(self, installer: "InstallerBuildExt") -> Path:
+        """For BuiltExtension, deduce inplace dir path from extension name."""
+        build_py = installer.get_finalized_command("build_py")
+        modpath = self.name.split(".")
+        package = ".".join(modpath[:-1])
+        package_dir = os.path.abspath(build_py.get_package_dir(package))
+
+        return Path(package_dir)
+
 
 class InstallerBuildExt(build_ext):
     """Installs files that were built by cmake."""
@@ -399,23 +433,15 @@ class InstallerBuildExt(build_ext):
 
         Returns:
         """
-        build_py = self.get_finalized_command("build_py")
         for ext in self.extensions:
-            if isinstance(ext, BuiltExtension):
-                modpath = ext.name.split(".")
-                package = ".".join(modpath[:-1])
-                package_dir = os.path.abspath(build_py.get_package_dir(package))
-            else:
-                # HACK: get rid of the leading "executorch" in ext.dst.
-                # This is because we don't have a root level "executorch" module.
-                package_dir = ext.dst.removeprefix("executorch/")
+            package_dir = ext.inplace_dir(self)
 
             # Ensure that the destination directory exists.
             self.mkpath(os.fspath(package_dir))
 
             regular_file = ext.src_path(self)
             inplace_file = os.path.join(
-                package_dir, os.path.basename(ext.src_path(self))
+                package_dir, os.path.basename(ext.dst_path(self))
             )
 
             # Always copy, even if source is older than destination, to ensure
@@ -724,20 +750,6 @@ class CustomBuild(build):
         # Build the system.
         self.spawn(["cmake", "--build", cmake_cache_dir, *build_args])
 
-        # Non-python files should live under this data directory.
-        data_root = os.path.join(self.build_lib, "executorch", "data")
-
-        # Directories like bin/ and lib/ live under data/.
-        bin_dir = os.path.join(data_root, "bin")
-
-        # Copy the bin wrapper so that users can run any executables under
-        # data/bin, as long as they are listed in the [project.scripts] section
-        # of pyproject.toml.
-        self.mkpath(bin_dir)
-        self.copy_file(
-            "build/pip_data_bin_init.py.in",
-            os.path.join(bin_dir, "__init__.py"),
-        )
         # Share the cmake-out location with _BaseExtension.
         self.cmake_cache_dir = cmake_cache_dir
 
@@ -749,13 +761,20 @@ def get_ext_modules() -> List[Extension]:
     """Returns the set of extension modules to build."""
     ext_modules = []
     if ShouldBuild.flatc():
-        ext_modules.append(
-            BuiltFile(
-                src_dir="third-party/flatbuffers/%BUILD_TYPE%/",
-                src_name="flatc",
-                dst="executorch/data/bin/",
-                is_executable=True,
-            )
+        ext_modules.extend(
+            [
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers/%BUILD_TYPE%/",
+                    src_name="flatc",
+                    dst="executorch/data/bin/",
+                    is_executable=True,
+                ),
+                BuiltFile(
+                    src_dir="build/",
+                    src_name="pip_data_bin_init.py.in",
+                    dst="executorch/data/bin/__init__.py",
+                ),
+            ]
         )
 
     if ShouldBuild.pybindings():
@@ -778,16 +797,16 @@ def get_ext_modules() -> List[Extension]:
     if ShouldBuild.llama_custom_ops():
         ext_modules.append(
             BuiltFile(
-                src_dir="extension/llm/custom_ops/%BUILD_TYPE%/",
+                src_dir="%CMAKE_CACHE_DIR%/extension/llm/custom_ops/%BUILD_TYPE%/",
                 src_name="custom_ops_aot_lib",
-                dst="executorch/extension/llm/custom_ops",
+                dst="executorch/extension/llm/custom_ops/",
                 is_dynamic_lib=True,
             )
         )
         ext_modules.append(
             # Install the prebuilt library for quantized ops required by custom ops.
             BuiltFile(
-                src_dir="kernels/quantized/%BUILD_TYPE%/",
+                src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/%BUILD_TYPE%/",
                 src_name="quantized_ops_aot_lib",
                 dst="executorch/kernels/quantized/",
                 is_dynamic_lib=True,
