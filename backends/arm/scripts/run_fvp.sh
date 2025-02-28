@@ -69,10 +69,21 @@ echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num
 echo "WARNING: Corstone FVP is not cycle accurate and should NOT be used to determine valid runtime"
 echo "--------------------------------------------------------------------------------"
 
+# Check if stdbuf is intalled and use stdbuf -oL together with tee below to make the output
+# go all the way to the console more directly and not be buffered
+
+if hash stdbuf 2>/dev/null; then
+    nobuf="stdbuf -oL"
+else
+    nobuf=""
+fi
+
 log_file=$(mktemp)
 
+
+
 if [[ ${target} == *"ethos-u55"*  ]]; then
-    ${fvp_model}                                            \
+    ${nobuf} ${fvp_model}                                            \
         -C ethosu.num_macs=${num_macs}                      \
         -C mps3_board.visualisation.disable-visualisation=1 \
         -C mps3_board.telnetterminal0.start_telnet=0        \
@@ -82,7 +93,7 @@ if [[ ${target} == *"ethos-u55"*  ]]; then
         --timelimit ${timeout} 2>&1 | tee ${log_file} || true # seconds
     echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
 elif [[ ${target} == *"ethos-u85"*  ]]; then
-    ${fvp_model}                                            \
+    ${nobuf} ${fvp_model}                                            \
         -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
         -C mps4_board.visualisation.disable-visualisation=1 \
         -C vis_hdlcd.disable_visualisation=1                \
