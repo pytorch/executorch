@@ -175,9 +175,6 @@ jobs:
       script: |
         set -eux
 
-        # TESTING
-        exit 1
-
         echo "::group::Setting up CI environment"
         .ci/scripts/setup-conda.sh
 

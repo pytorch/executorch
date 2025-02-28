@@ -173,9 +173,6 @@ jobs:
       upload-artifact-to-s3: true
       secrets-env: EXECUTORCH_HF_TOKEN
       script: |
-        # TESTING
-        exit 1
-
         # The generic Linux job chooses to use base env, not the one setup by the image
         echo "::group::Setting up dev environment"
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
