@@ -32,9 +32,9 @@ class DecomposeLinalgVectorNorm(ExportPass):
     Decompose for math equivalent op.
     """
 
-    def __init__(self, quantization_capture=False) -> None:
+    def __init__(self, aten_dialect_capture=False) -> None:
         super().__init__()
-        self.quantization_capture = quantization_capture
+        self.aten_dialect_capture = aten_dialect_capture
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
@@ -44,7 +44,7 @@ class DecomposeLinalgVectorNorm(ExportPass):
                 dim = node.args[2] if len(node.args) > 2 else None
                 keepdim = node.args[3] if len(node.args) > 3 else False
                 model = LinalgVectorNorm(ord, dim, keepdim)
-                if self.quantization_capture:
+                if self.aten_dialect_capture:
                     decomposed_module = torch.export.export(
                         model, (node.args[0].meta["val"],)
                     ).module()
