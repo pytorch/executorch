@@ -12,6 +12,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 )
 from executorch.backends.nxp.quantizer.patterns import (
     AddmmPattern,
+    AddTensorPattern,
     AvgPoolPattern,
     Conv1dPattern,
     Conv2dPattern,
@@ -195,6 +196,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(Conv1dPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv2dPattern(), static_qconfig),
                 NeutronAtenQuantizer(LinearPattern(), static_fc_qconfig),
+                NeutronAtenQuantizer(AddTensorPattern(), static_qconfig),
                 NeutronAtenQuantizer(MaxPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
                 NeutronAtenQuantizer(ReshapePattern(), static_qconfig),

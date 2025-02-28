@@ -198,6 +198,7 @@ supported_ops = {
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
+    exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
 }
 
 
