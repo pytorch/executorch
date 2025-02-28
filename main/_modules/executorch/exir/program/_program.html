@@ -528,6 +528,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.emit._emitter</span><span class="w"> </span><span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.error</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportError</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.graph_module</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.operator.convert</span><span class="w"> </span><span class="kn">import</span> <span class="n">_pybind_schema_to_native_schema</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_base</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassBase</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassType</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -1338,6 +1339,9 @@
         <span class="n">ops_set_to_not_decompose</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span>
             <span class="n">program</span>
         <span class="p">)</span>
+        <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="n">_remove_invalid_ops_for_not_decompose</span><span class="p">(</span>
+            <span class="n">ops_set_to_not_decompose</span>
+        <span class="p">)</span>
 
         <span class="k">for</span> <span class="n">op_aten</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span><span class="p">:</span>
             <span class="n">_register_no_decomp_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">)</span>
@@ -1467,6 +1471,47 @@
                     <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_remove_invalid_ops_for_not_decompose</span><span class="p">(</span>
+    <span class="n">ops_to_not_decompose</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]:</span>
+    <span class="c1"># To address https://github.com/pytorch/executorch/issues/8781</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">keep</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
+        <span class="n">schema</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">_schema</span>
+        <span class="n">native_schema</span> <span class="o">=</span> <span class="n">_pybind_schema_to_native_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">native_schema</span><span class="o">.</span><span class="n">is_mutable</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is mutable.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="k">if</span> <span class="n">native_schema</span><span class="o">.</span><span class="n">aliased_return_names</span><span class="p">()</span> <span class="o">!=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it aliases output.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="c1"># Explicit block list of ops that don&#39;t work if asked for</span>
+        <span class="c1"># preservation</span>
+        <span class="k">if</span> <span class="n">op</span> <span class="ow">in</span> <span class="p">[</span>
+            <span class="c1"># Hits infinte recursion error when op is in</span>
+            <span class="c1"># EDGE_DO_NOT_DECOMP namespace</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">_to_copy</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
+            <span class="c1"># scalar to tensor type promotion does not work on ops</span>
+            <span class="c1"># in EDGE_DO_NOT_DECOMP namespace</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">mul</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">sub</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">div</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="p">]:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is in a blocklist.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="n">keep</span><span class="p">,</span> <span class="n">ops_to_not_decompose</span><span class="p">))</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
     <span class="n">partitioner</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">]],</span>
     <span class="n">aten_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">],</span>
@@ -1494,6 +1539,9 @@
             <span class="n">all_ops_no_decomp</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
             <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[]):</span>
                 <span class="n">curr_ops_no_decomp</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+                <span class="n">curr_ops_no_decomp</span> <span class="o">=</span> <span class="n">_remove_invalid_ops_for_not_decompose</span><span class="p">(</span>
+                    <span class="n">curr_ops_no_decomp</span>
+                <span class="p">)</span>
                 <span class="n">all_ops_no_decomp</span> <span class="o">|=</span> <span class="nb">set</span><span class="p">(</span><span class="n">curr_ops_no_decomp</span><span class="p">)</span>
 
             <span class="n">table</span> <span class="o">=</span> <span class="n">_default_decomposition_table</span><span class="p">()</span>
@@ -1615,6 +1663,7 @@
             <span class="n">curr_op_set</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span>
                 <span class="n">program</span>
             <span class="p">)</span>
+            <span class="n">curr_op_set</span> <span class="o">=</span> <span class="n">_remove_invalid_ops_for_not_decompose</span><span class="p">(</span><span class="n">curr_op_set</span><span class="p">)</span>
             <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="n">ops_set_to_not_decompose</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">curr_op_set</span><span class="p">)</span>
             <span class="n">_sanity_check_graph_for_non_decomp_ops</span><span class="p">(</span>
                 <span class="n">name</span><span class="p">,</span>
