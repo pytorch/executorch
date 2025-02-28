@@ -33,7 +33,7 @@
 #define ET_LOG_TENSOR_META(meta_list)                                 \
   for (const auto& meta : meta_list) {                                \
     ET_LOG(Error, "dtype: %d | dim order: [", int(meta.dtype_));      \
-    for (int i = 0; i < meta.dim_order_.size(); i++) {                \
+    for (size_t i = 0; i < meta.dim_order_.size(); i++) {             \
       ET_LOG(Error, "%d,", static_cast<int32_t>(meta.dim_order_[i])); \
     }                                                                 \
     ET_LOG(Error, "]");                                               \
@@ -74,7 +74,7 @@ struct TensorMeta {
     if (dim_order_.size() != other.dim_order_.size()) {
       return false;
     }
-    for (int i = 0; i < dim_order_.size(); i++) {
+    for (size_t i = 0; i < dim_order_.size(); i++) {
       if (dim_order_[i] != other.dim_order_[i]) {
         return false;
       }

@@ -129,7 +129,8 @@ void track_allocation(int32_t id, uint32_t size) {
 uint32_t track_allocator(const char* name) {
   ET_CHECK_MSG(
       prof_header->allocator_entries < MEM_PROFILE_MAX_ALLOCATORS,
-      "Out of allocator tracking space, %d is needed. Increase MEM_PROFILE_MAX_ALLOCATORS and re-compile",
+      "Out of allocator tracking space, %" PRIu32
+      " is needed. Increase MEM_PROFILE_MAX_ALLOCATORS and re-compile",
       prof_header->allocator_entries);
   size_t str_len = strlen(name);
   size_t num_allocators = prof_header->allocator_entries;
@@ -151,7 +152,8 @@ void profiling_create_block(const char* name) {
     num_blocks += 1;
     ET_CHECK_MSG(
         num_blocks <= MAX_PROFILE_BLOCKS,
-        "Only %d blocks are supported and they've all been used up but %d is used. Increment MAX_PROFILE_BLOCKS and re-run",
+        "Only %d blocks are supported and they've all been used up but %" PRIu32
+        " is used. Increment MAX_PROFILE_BLOCKS and re-run",
         MAX_PROFILE_BLOCKS,
         num_blocks);
   }
