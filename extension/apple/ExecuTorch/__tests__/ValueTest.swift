@@ -6,8 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchError.h"
-#import "ExecuTorchLog.h"
-#import "ExecuTorchModule.h"
-#import "ExecuTorchTensor.h"
-#import "ExecuTorchValue.h"
+@testable import ExecuTorch
+
+import XCTest
+
+class ValueTest: XCTestCase {
+  func test() {
+  }
+}
