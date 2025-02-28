@@ -28,7 +28,7 @@ main() {
 
 
     # Build the project
-    cmake --build cmake-out --target install --config Release -j5
+    cmake --build ${build_dir} --target install --config Release -j$(nproc)
 
     # Switch back to the original directory
     cd - > /dev/null
