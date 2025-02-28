@@ -580,6 +580,54 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         self.add_stage(self.tester.run_method_and_compare_outputs)
 
 
+class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
+    """
+    Runs transform_for_annotation_pipeline passes directly on an exported program and checks output.
+
+    Attributes:
+        module: The module which the pipeline is applied to.
+        test_data: Data used for testing the module.
+        tosa_version: The TOSA-version which to test for.
+
+        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        tosa_version: str,
+        custom_path: str = None,
+    ):
+        compile_spec = common.get_tosa_compile_spec(
+            tosa_version, custom_path=custom_path
+        )
+        super().__init__(
+            module,
+            test_data,
+            None,
+            compile_spec,
+            None,
+            use_to_edge_transform_and_lower=True,
+        )
+        self.add_stage_after(
+            "export", self.tester.run_transform_for_annotation_pipeline
+        )
+
+        # Delete most of the pipeline
+        self.pop_stage("check_not.exir")
+        self.pop_stage("check_count.exir")
+        self.pop_stage("to_executorch")
+        self.pop_stage("to_edge_transform_and_lower")
+        self.pop_stage("check.aten")
+        self.add_stage(
+            self.tester.run_method_and_compare_outputs,
+            inputs=test_data,
+            run_eager_mode=True,
+        )
+
+
 class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
     """
     Runs the partitioner on a module and checks that ops are not delegated to test

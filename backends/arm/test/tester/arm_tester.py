@@ -16,6 +16,7 @@ import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
 
 import torch.fx
 import torch.utils._pytree as pytree
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.arm_backend import (
     get_intermediate_path,
@@ -59,7 +60,10 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
-from executorch.exir.program._program import _update_exported_program_graph_module
+from executorch.exir.program._program import (
+    _copy_module,
+    _update_exported_program_graph_module,
+)
 
 from tabulate import tabulate
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
@@ -181,6 +185,7 @@ class RunPasses(tester.RunPasses):
         """Passes are run in the order they are passed: first pass_list, second pass_functions,
         and lastly passes_with_exported_program."""
         self.pass_with_exported_program = passes_with_exported_program
+
         super().__init__(pass_list, pass_functions)
 
     def run(
@@ -347,6 +352,7 @@ class ArmTester(Tester):
         rtol=1e-03,
         qtol=0,
         error_callbacks=None,
+        run_eager_mode=False,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -362,12 +368,23 @@ class ArmTester(Tester):
             inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
                 The default is random data.
         """
-        edge_stage = self.stages[self.stage_name(tester.ToEdge)]
-        if edge_stage is None:
-            edge_stage = self.stages[self.stage_name(tester.ToEdgeTransformAndLower)]
-        assert (
-            edge_stage is not None
-        ), "To compare outputs, at least the ToEdge or ToEdgeTransformAndLower stage needs to be run."
+
+        if not run_eager_mode:
+            edge_stage = self.stages[self.stage_name(tester.ToEdge)]
+            if edge_stage is None:
+                edge_stage = self.stages[
+                    self.stage_name(tester.ToEdgeTransformAndLower)
+                ]
+            assert (
+                edge_stage is not None
+            ), "To compare outputs, at least the ToEdge or ToEdgeTransformAndLower stage needs to be run."
+        else:
+            # Run models in eager mode. We do this when we want to check that the passes
+            # are numerically accurate and the exported graph is correct.
+            export_stage = self.stages[self.stage_name(tester.Export)]
+            assert (
+                export_stage is not None
+            ), "To compare outputs in eager mode, the model must be at Export stage"
 
         stage = stage or self.cur
         test_stage = self.stages[stage]
@@ -380,6 +397,7 @@ class ArmTester(Tester):
 
         exported_program = self.stages[self.stage_name(tester.Export)].artifact
         output_nodes = get_output_nodes(exported_program)
+
         output_qparams = get_output_quantization_params(output_nodes)
 
         quantization_scales = []
@@ -404,9 +422,19 @@ class ArmTester(Tester):
             reference_outputs, _ = pytree.tree_flatten(
                 reference_stage.run_artifact(reference_input)
             )
-            test_outputs, _ = pytree.tree_flatten(
-                test_stage.run_artifact(reference_input)
-            )
+
+            if run_eager_mode:
+                # Run exported module directly
+                test_outputs, _ = pytree.tree_flatten(
+                    self._calculate_reference_output(
+                        exported_program.module(), reference_input
+                    )
+                )
+            else:
+                # Run lowered model with target
+                test_outputs, _ = pytree.tree_flatten(
+                    test_stage.run_artifact(reference_input)
+                )
 
             for reference_output, test_output, quantization_scale in zip(
                 reference_outputs, test_outputs, quantization_scales
@@ -532,6 +560,32 @@ class ArmTester(Tester):
         to_print += _format_dict(dtype_dist, print_table) + "\n"
         _dump_str(to_print, path_to_dump)
         return self
+
+    def run_transform_for_annotation_pipeline(
+        self, stage: str | None = None
+    ) -> torch.fx.GraphModule:
+        """Run transform_for_annotation_pipeline on exported program to ensure
+        passes do not break the initial model before quantization.
+
+        There are caveats to this however. As we register buffers to the graph modules
+        the resulting exported graph can fail. Use this only to compare numerical correctness
+        in eager mode.
+
+        Returns exported program with passes applied.
+        """
+
+        if stage is None:
+            stage = self.cur
+        # We need to clone the artifact in order to ensure that the state_dict is preserved after passes are run.
+        artifact = self.get_artifact(stage)
+        if self.cur == self.stage_name(tester.Export):
+            new_gm = ArmPassManager(get_tosa_spec(self.compile_spec)).transform_for_annotation_pipeline(  # type: ignore[arg-type]
+                graph_module=artifact.graph_module
+            )
+        else:
+            raise RuntimeError("Can only run passes on Export stage.")
+        _copy_module(artifact.graph_module, new_gm)
+        return artifact
 
     @staticmethod
     def _calculate_reference_output(
