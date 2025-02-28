@@ -8,6 +8,7 @@
 __pycache__/
 
 # Build and tool-generated files
+arm_test/
 buck-out/
 buck2-bin/
 cmake-android-out/
@@ -33,6 +34,7 @@ pip-out/
 
 # Xcode
 xcuserdata/
+.build/
 .swiftpm/
 *.xcworkspace/
 *.xcframework/
