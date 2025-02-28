@@ -15,10 +15,10 @@ parse_args "$@"
 # As Linux job is running inside a Docker container, all of its dependencies
 # have already been installed, so we use PyTorch build from source here instead
 # of nightly. This allows CI to test against latest commits from PyTorch
-if [[ "$EDITABLE" == "true" ]]; then
-  install_executorch "--use-pt-pinned-commit" "--editable"
+if [[ "${EDITABLE:-false}" == "true" ]]; then
+  install_executorch --use-pt-pinned-commit --editable
 else
-  install_executorch "--use-pt-pinned-commit"
+  install_executorch --use-pt-pinned-commit
 fi
 build_executorch_runner "${BUILD_TOOL}" "${BUILD_MODE}"
 
