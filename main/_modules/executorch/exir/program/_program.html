@@ -518,6 +518,10 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch._export</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._cord</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cord</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._named_data_store</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">NamedDataStore</span><span class="p">,</span>
+    <span class="n">NamedDataStoreOutput</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">serialize_for_executorch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize.data_serializer</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataSerializer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._warnings</span><span class="w"> </span><span class="kn">import</span> <span class="n">experimental</span>
@@ -1810,6 +1814,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="n">edge_programs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="o">=</span> <span class="n">constant_methods</span>
 
+        <span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store</span> <span class="o">=</span> <span class="n">NamedDataStore</span><span class="p">()</span>
+
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1995,7 +2001,10 @@
             <span class="n">execution_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
 
         <span class="k">return</span> <span class="n">ExecutorchProgramManager</span><span class="p">(</span>
-            <span class="n">execution_programs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">,</span> <span class="n">config</span>
+            <span class="n">execution_programs</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">,</span>
+            <span class="n">config</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store</span><span class="o">.</span><span class="n">get_named_data_store_output</span><span class="p">(),</span>
         <span class="p">)</span></div>
 
 
@@ -2016,6 +2025,7 @@
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">],</span>
         <span class="n">config_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">backend_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">named_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">NamedDataStoreOutput</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        End users should not call this constructor directly. Instead, they should use</span>
@@ -2038,6 +2048,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="n">execution_programs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">config_methods</span>
 
+        <span class="c1"># Named data from EdgeProgramManager</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_named_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">NamedDataStoreOutput</span><span class="p">]</span> <span class="o">=</span> <span class="n">named_data</span>
+
         <span class="n">backend_config</span> <span class="o">=</span> <span class="n">backend_config</span> <span class="ow">or</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span>
 
         <span class="c1"># Emit methods</span>
@@ -2050,7 +2063,10 @@
         <span class="c1"># Serialize emitter output, ready to be written to a file.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span> <span class="o">=</span> <span class="n">FlatTensorSerializer</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="o">=</span> <span class="n">serialize_for_executorch</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">,</span> <span class="n">backend_config</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">,</span>
+            <span class="n">backend_config</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_data_serializer</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_named_data</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
