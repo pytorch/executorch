@@ -177,11 +177,11 @@ parse_args() {
         i=$((i+1))
         ;;
       --build-mode)
-        BUILD_MODE="${args[$((i+1))]:Release}"
+        BUILD_MODE="${args[$((i+1))]:-Release}"
         i=$((i+1))
         ;;
       --editable)
-        EDITABLE="${args[$((i+1))]:false}"
+        EDITABLE="${args[$((i+1))]:-false}"
         i=$((i+1))
         ;;
       *)
