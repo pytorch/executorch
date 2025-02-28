@@ -42,6 +42,25 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_library(
+        name = "pte_data_map",
+        srcs = [
+            "pte_data_map.cpp",
+        ],
+        exported_headers = [
+            "pte_data_map.h",
+        ],
+        visibility = [
+            "//executorch/runtime/executor/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:named_data_map",
+            "//executorch/schema:program",
+        ],
+    )
+
     for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
@@ -77,6 +96,7 @@ def define_common_targets():
             preprocessor_flags = _program_preprocessor_flags(),
             exported_deps = [
                 ":memory_manager",
+                ":pte_data_map",
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:named_data_map",
