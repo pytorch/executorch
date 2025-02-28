@@ -20,7 +20,7 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: stories110M
+        default: llama
       devices:
         description: Target devices to run benchmark
         required: false
@@ -36,7 +36,7 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: stories110M
+        default: llama
       devices:
         description: Target devices to run benchmark
         required: false

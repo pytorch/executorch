@@ -17,21 +17,20 @@ import executorch.exir as exir
 
 import torch
 from executorch.backends.qualcomm._passes import (
-    AnnotateAndQuantScalar,
     AnnotateDecomposed,
     AnnotateQuantAttrs,
     ConstantI64toI32,
-    ConvertBinaryOpsWithScalar,
     ConvertBmmToMatmul,
     ConvertInterpolateWithUpsample2D,
-    ConvertPReLU,
     ConvertToLinear,
     DecomposeAny,
     DecomposeLinalgVectorNorm,
     ExpandBroadcastTensorShape,
     FoldQDQ,
     LayoutTransform,
+    LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
+    RecomposePReLU,
     RecomposeRmsNorm,
     RemoveRedundancy,
     ReplaceIndexPutInput,
@@ -72,6 +71,9 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
     QCOM_QNN_COMPILE_SPEC,
     QCOM_QUANTIZED_IO,
+)
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
 )
 
 from executorch.exir import (
@@ -350,19 +352,18 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
-        (AnnotateAndQuantScalar, True),
         (AnnotateDecomposed, True),
         (AnnotateQuantAttrs, True),
         (ConstantI64toI32, True),
         (ConvertBmmToMatmul, True),
         (ConvertInterpolateWithUpsample2D, True),
-        (ConvertPReLU, True),
         (ConvertToLinear, True),
         (DecomposeAny, True),
         (DecomposeLinalgVectorNorm, True),
         (ExpandBroadcastTensorShape, False),
         (FoldQDQ, True),
         (LayoutTransform, True),
+        (RecomposePReLU, True),
         (RecomposePixelUnshuffle, True),
         (RecomposeRmsNorm, True),
         (RemoveRedundancy, True),
@@ -432,22 +433,29 @@ def _transform(
     return edge_program
 
 
+# Modify the fx graph at very beginning for floating point model
+# Aim to reduce registration of scalar at graph_module or program
+def _preprocess_module(module: torch.nn.Module, inputs: Tuple[torch.Tensor]):
+    if isinstance(module, torch.fx.graph_module.GraphModule):
+        return module
+    module = torch.export.export(module, inputs, strict=True).module()
+    module = DecomposeScaledDotProductAttention()(module).graph_module
+    module = DecomposeLinalgVectorNorm(True)(module).graph_module
+    module = LiftConstantScalarOperands()(module).graph_module
+    return module
+
+
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
     passes_job: OrderedDict = None,
     dynamic_shapes: Dict = None,
 ) -> exir.ExirExportedProgram:
+    module = _preprocess_module(module, inputs)
     ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
-    # We choose call_operator by target in ConvertBinaryOpsWithScalar
-    # because it is the same source_fn_stack for MultiheadAttention
-    # TODO: Should modify the scalar op in the op builder instead of
-    #       using transformation
     core_ep = ExirExportedProgram(decomposed_ep, False)
-    core_ep.transform(
-        TensorI64toI32(edge_program=core_ep), ConvertBinaryOpsWithScalar()
-    )
+    core_ep.transform(TensorI64toI32(edge_program=core_ep))
     edge_ep = core_ep.to_edge(qnn_edge_config())
     _transform(edge_ep.exported_program, passes_job)
     return edge_ep

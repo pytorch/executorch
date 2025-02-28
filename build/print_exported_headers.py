@@ -38,8 +38,15 @@ def query(buck2: str, target: str, attribute: str) -> str:
         raise SystemExit("Error: " + str(e))
 
 
+# Cache to store results for exported headers per target.
+_exported_headers_cache: dict[str, Set[str]] = {}
+
+
 def exported_headers(buck2: str, target: str) -> Set[str]:
-    """Get all exported headers of a target and its dependencies."""
+    """Get all exported headers of a target and its dependencies, with caching."""
+    if target in _exported_headers_cache:
+        return _exported_headers_cache[target]
+
     deps = query(buck2, target, "exported_deps")
     headers = set(query(buck2, target, "exported_headers"))
     headers.update(
@@ -48,13 +55,14 @@ def exported_headers(buck2: str, target: str) -> Set[str]:
         for header in exported_headers(buck2, dep.split()[0])
         if header.endswith(".h")
     )
+    _exported_headers_cache[target] = headers
     return headers
 
 
 def expand_target(buck2: str, target: str) -> List[str]:
     """Expand a target into a list of targets if applicable."""
     output = run([buck2, "cquery", target])
-    # Buck's output format is "<target> (<build platform>)", we take only the target part.
+    # Buck's output format is "<target> (<build platform>)", so we take only the target part.
     targets = [line.split(" ")[0] for line in output.strip().split("\n")]
     return targets
 
