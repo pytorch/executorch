@@ -509,7 +509,7 @@
 <p>Note: This page covers Android app integration through the AAR library. The ExecuTorch C++ APIs can also be used from Android native, and the documentation can be found on <a class="reference external" href="https://pytorch.org/executorch/main/using-executorch-building-from-source.html#cross-compilation">this page about cross compilation</a>.</p>
 <div class="section" id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading">¶</a></h2>
-<p>We package all ExecuTorch Android libraries into an Android library (AAR), <code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code> for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, we will upload the prebuilt AAR artifacts. Users can also build the AAR from source.</p>
+<p>All ExecuTorch Android libraries are packaged into an Android library (AAR), <code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code> for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, prebuilt AAR artifacts are uploaded to S3. Users can also build the AAR from source.</p>
 <div class="section" id="contents-of-library">
 <h3>Contents of library<a class="headerlink" href="#contents-of-library" title="Permalink to this heading">¶</a></h3>
 <p>The AAR artifact contains the Java library for users to integrate with their Java/Kotlin application code, as well as the corresponding JNI library (.so file), which is loaded by the Java code during initialization.</p>
