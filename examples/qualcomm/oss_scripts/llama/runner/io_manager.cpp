@@ -81,8 +81,7 @@ ShiftPointerIoMgr::ShiftPointerIoMgr(
       eval_mode_(eval_mode),
       prefill_forward_name_(prefill_forward_name),
       kv_forward_name_(kv_forward_name),
-      use_int64_token_(use_int64_token),
-      is_bert_(prefill_cache_len_ == 0) {
+      use_int64_token_(use_int64_token) {
   if (!prefill_forward_name_.empty()) {
     input_tensors_[prefill_forward_name_] =
         std::vector<std::vector<executorch::aten::TensorImpl*>>(modules.size());
@@ -343,7 +342,7 @@ void ShiftPointerIoMgr::prepare_prefill_io(
   input_tensors_[prefill_forward_name_][0].push_back(
       prefill_attention_mask_.get());
 
-  if (!is_bert_) {
+  if (!is_bert()) {
     // [I]: prefill_input_pos
     Result<TensorInfo> prefill_input_pos =
         methods_meta[0]->input_tensor_meta(2);
@@ -496,7 +495,7 @@ void ShiftPointerIoMgr::update_prefill_to_kv_io(
   size_t copied_size = pos * sizeof(uint8_t);
   for (int i = 0; i < k_cache_in.size(); ++i) {
     uint8_t* ptr_in = k_cache_in[i]->mutable_data<uint8_t>();
-    if (is_bert_) {
+    if (is_bert()) {
       const uint8_t* ptr_out = k_cache_out[i]->data<uint8_t>();
       for (size_t j = 0, offset = kv_cache_len_; j < head_dim_;
            ++j, offset += kv_cache_len_) {
@@ -572,7 +571,7 @@ void ShiftPointerIoMgr::update_prefill_io(
   (void)cur_token;
   (void)output_tensors;
 
-  if (!is_bert_) {
+  if (!is_bert()) {
     // update v_cache
     auto& v_cache_in = v_cache_in_[prefill_forward_name_];
     auto& v_cache_out = v_cache_out_[prefill_forward_name_];
@@ -620,7 +619,7 @@ void ShiftPointerIoMgr::fill_prefill_toks(
     std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
   for (int i = 0; i < prefill_ar_len_; i++) {
-    if (!is_bert_) {
+    if (!is_bert()) {
       ptr->prefill_input_pos[i] = start_pos + i;
     }
 
@@ -687,8 +686,7 @@ SmartMaskIoMgr::SmartMaskIoMgr(
       eval_mode_(eval_mode),
       prefill_forward_name_(prefill_forward_name),
       kv_forward_name_(kv_forward_name),
-      use_int64_token_(use_int64_token),
-      is_bert_(prefill_cache_len == 0) {
+      use_int64_token_(use_int64_token) {
   if (!prefill_forward_name_.empty()) {
     input_tensors_[prefill_forward_name_] =
         std::vector<std::vector<executorch::aten::TensorImpl*>>(modules.size());
@@ -1132,7 +1130,7 @@ void SmartMaskIoMgr::prepare_prefill_io(
       executorch::aten::ScalarType::Bits16,
       prefill_attention_mask.get());
 
-  if (!is_bert_) {
+  if (!is_bert()) {
     // [I]: prefill_input_pos
     Result<TensorInfo> prefill_input_pos =
         methods_meta[0]->input_tensor_meta(2);
@@ -1255,7 +1253,7 @@ void SmartMaskIoMgr::update_prefill_to_kv_io(
     ptr->kv_attention_mask[i] = 65535;
   }
 
-  if (is_bert_) {
+  if (is_bert()) {
     // update v_cache
     auto& v_cache_in = v_cache_in_[kv_forward_name_];
     auto& v_cache_out = v_cache_out_[prefill_forward_name_];
@@ -1302,7 +1300,7 @@ void SmartMaskIoMgr::update_prefill_io(
     std::vector<std::vector<Tensor>>& output_tensors) {
   (void)output_tensors;
 
-  if (!is_bert_) {
+  if (!is_bert()) {
     // update v_cache
     auto& v_cache_in = v_cache_in_[prefill_forward_name_];
     auto& v_cache_out = v_cache_out_[prefill_forward_name_];
@@ -1336,7 +1334,7 @@ void SmartMaskIoMgr::fill_prefill_toks(
     std::vector<uint64_t>& prompt_tokens) {
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
   for (int i = 0; i < prefill_ar_len_; i++) {
-    if (!is_bert_) {
+    if (!is_bert()) {
       ptr->prefill_input_pos[i] = start_pos + i;
     }
 
