@@ -181,7 +181,7 @@ jobs:
             PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
             PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         fi
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
@@ -356,7 +356,7 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
