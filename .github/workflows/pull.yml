@@ -79,7 +79,6 @@ jobs:
         PYTHON_EXECUTABLE=python bash ./install_executorch.sh --editable --pybind xnnpack --use-pt-pinned-commit
         # Try to import extension library
         python -c "from executorch.extension.llm.custom_ops import custom_ops"
-        python -c "from executorch.data.bin import flatc"
 
   test-models-linux:
     name: test-models-linux

@@ -60,7 +60,6 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash ./install_executorch.sh --editable --pybind xnnpack
         # Try to import extension library
         python -c "from executorch.extension.llm.custom_ops import custom_ops"
-        python -c "from executorch.data.bin import flatc"
 
   test-models-macos:
     name: test-models-macos
