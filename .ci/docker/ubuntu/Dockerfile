@@ -82,6 +82,13 @@ ARG ARM_SDK
 
 ARG QNN_SDK
 
+ARG CADENCE_SDK
+# Install cadence if needed
+COPY ./common/install_cadence.sh install_cadence.sh
+RUN if [ -n "${CADENCE_SDK}" ]; then bash ./install_cadence.sh; fi
+RUN rm install_cadence.sh
+
+
 ARG MEDIATEK_SDK
 
 USER ci-user
