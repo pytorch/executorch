@@ -42,10 +42,17 @@ def get_node_debug_info(node: torch.fx.Node) -> str:
         "  Node.meta = \n"
     )
     for k, v in node.meta.items():
-        output += f"    '{k}' = {v}\n"
-        if isinstance(v, list):
-            for i in v:
-                output += f"      {i}\n"
+        if k == "stack_trace":
+            matches = v.split("\n")
+            output += "      'stack_trace =\n"
+            for m in matches:
+                output += f"      {m}\n"
+        else:
+            output += f"    '{k}' = {v}\n"
+
+            if isinstance(v, list):
+                for i in v:
+                    output += f"      {i}\n"
     return output
 
 
