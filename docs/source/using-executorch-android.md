@@ -38,7 +38,9 @@ The AAR artifact contains the Java library for users to integrate with their Jav
 
 ## Using prebuilt libraries
 
-To add the Java library to your app, simply download the AAR, and add it to your gradle build rule.
+To add the Java library to your app:
+1. Download the AAR.
+2. Add it to your gradle build rule as a file path.
 
 The Java package requires `fbjni` and `soloader`, and currently requires users to explicitly declare the dependency. Therefore, two more `dependencies` in gradle rule is required:
 ```
@@ -48,7 +50,7 @@ implementation("com.facebook.fbjni:fbjni:0.5.1")
 
 ### Example usage
 
-In your app working directory, such as example executorch/examples/demo-apps/android/LlamaDemo,
+In your app working directory, such as executorch/examples/demo-apps/android/LlamaDemo,
 ```
 mkdir -p app/libs
 curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar -o app/libs/executorch.aar
