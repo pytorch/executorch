@@ -512,17 +512,8 @@
 <li><p>Run the model using the ExecuTorch runtime APIs on your development platform.</p></li>
 <li><p>Deploy the model to the target platform using the ExecuTorch runtime.</p></li>
 </ul>
-<div class="section" id="installation">
-<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading">¶</a></h2>
-<p>To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries.</p>
-<p>Pip is the recommended way to install the ExecuTorch python package. This package includes the dependencies needed to export a PyTorch model, as well as Python runtime bindings for model testing and evaluation. It is common to install the package within a Python virtual environment, in order to meet the Python and dependency version requirements.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="n">executorch</span>
-</pre></div>
-</div>
-<p>To build the framework from source, see <a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building From Source</span></a>.</p>
-<p>Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.</p>
 <div class="section" id="system-requirements">
-<h3>System Requirements<a class="headerlink" href="#system-requirements" title="Permalink to this heading">¶</a></h3>
+<h2>System Requirements<a class="headerlink" href="#system-requirements" title="Permalink to this heading">¶</a></h2>
 <p>The following are required to install the ExecuTorch host libraries, needed to export models and run from Python. Requirements for target end-user devices are backend dependent. See the appropriate backend documentation for more information.</p>
 <ul class="simple">
 <li><p>Python 3.10 - 3.12</p></li>
@@ -533,8 +524,16 @@
 </ul>
 </li>
 </ul>
-<hr/>
 </div>
+<div class="section" id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading">¶</a></h2>
+<p>To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package.</p>
+<p>This package includes the dependencies needed to export a PyTorch model, as well as Python runtime bindings for model testing and evaluation. Consider installing ExecuTorch within a virtual environment, such as one provided by <a class="reference external" href="https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#creating-environments">conda</a> or <a class="reference external" href="https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/#create-and-use-virtual-environments">venv</a>.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="n">executorch</span>
+</pre></div>
+</div>
+<p>To build the framework from source, see <a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building From Source</span></a>. Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.</p>
+<hr/>
 </div>
 <div class="section" id="preparing-the-model">
 <h2>Preparing the Model<a class="headerlink" href="#preparing-the-model" title="Permalink to this heading">¶</a></h2>
@@ -555,14 +554,18 @@
 </div>
 <div class="section" id="exporting">
 <h3>Exporting<a class="headerlink" href="#exporting" title="Permalink to this heading">¶</a></h3>
-<p>Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">executorch</span>
+<p>Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows. This example uses the MobileNet V2 image classification model implementation in torchvision, but the process supports any <a class="reference external" href="https://pytorch.org/docs/stable/export.html">export-compliant</a> PyTorch model.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
 
-<span class="n">model</span> <span class="o">=</span> <span class="n">MyModel</span><span class="p">()</span> <span class="c1"># The PyTorch model to export</span>
-<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="mi">64</span><span class="p">,</span><span class="mi">64</span><span class="p">),)</span> <span class="c1"># A tuple of inputs</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
-<span class="n">et_program</span> <span class="o">=</span> <span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">),</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
     <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
@@ -571,21 +574,23 @@
 </pre></div>
 </div>
 <p>If the model requires varying input sizes, you will need to specify the varying dimensions and bounds as part of the <code class="docutils literal notranslate"><span class="pre">export</span></code> call. See <a class="reference internal" href="using-executorch-export.html"><span class="doc std std-doc">Model Export and Lowering</span></a> for more information.</p>
-<p>The hardware backend to target is controlled by the partitioner parameter to to_edge_transform_and_lower. In this example, the XnnpackPartitioner is used to target mobile CPUs. See the delegate-specific documentation for a full description of the partitioner and available options.</p>
+<p>The hardware backend to target is controlled by the partitioner parameter to to_edge_transform_and_lower. In this example, the XnnpackPartitioner is used to target mobile CPUs. See the <a class="reference internal" href="backends-overview.html"><span class="doc std std-doc">backend-specific documentation</span></a> for information on how to use each backend.</p>
 <p>Quantization can also be done at this stage to reduce model size and runtime. Quantization is backend-specific. See the documentation for the target backend for a full description of supported quantization schemes.</p>
 </div>
 <div class="section" id="testing-the-model">
 <h3>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h3>
 <p>After successfully generating a .pte file, it is common to use the Python runtime APIs to validate the model on the development platform. This can be used to evaluate model accuracy before running on-device.</p>
-<p>Inference can be run as follows:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+<p>For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with a dimensions of (batch, channels, height, width). The output See <a class="reference external" href="https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html">torchvision.models.mobilenet_v2</a> for more information on the input and output tensor format for this model.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
 
 <span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
 
-<span class="n">input_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="mi">128</span><span class="p">,</span><span class="mi">128</span><span class="p">)</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;/path/to/mode.pte&quot;</span><span class="p">)</span>
+<span class="n">input_tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
 <span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
-<span class="n">outputs</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
+<span class="n">outputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
 </pre></div>
 </div>
 <hr/>
@@ -607,13 +612,15 @@
 <p>ExecuTorch provides Java bindings for Android usage, which can be consumed from both Java and Kotlin.
 To add the library to your app, download the AAR, and add it to the gradle build rule.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span>
-<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">executorch</span><span class="o">-</span><span class="mi">241002</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
+<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">v0</span><span class="mf">.5.0</span><span class="o">-</span><span class="n">rc3</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
 </pre></div>
 </div>
 <p>And in gradle,</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># app/build.gradle.kts</span>
 <span class="n">dependencies</span> <span class="p">{</span>
     <span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s2">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
+    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
+    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.5.1&quot;</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -765,10 +772,8 @@ To add the library to your app, download the AAR, and add it to the gradle build
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Getting Started with ExecuTorch</a><ul>
-<li><a class="reference internal" href="#installation">Installation</a><ul>
 <li><a class="reference internal" href="#system-requirements">System Requirements</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#installation">Installation</a></li>
 <li><a class="reference internal" href="#preparing-the-model">Preparing the Model</a><ul>
 <li><a class="reference internal" href="#requirements">Requirements</a></li>
 <li><a class="reference internal" href="#selecting-a-backend">Selecting a Backend</a></li>
