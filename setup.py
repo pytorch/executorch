@@ -360,7 +360,7 @@ class BuiltExtension(_BaseExtension):
             "/" not in modpath
         ), f"modpath must be a dotted python module path: saw '{modpath}'"
         # This is a real extension, so use the modpath as the name.
-        super().__init__(src=src, dst=modpath, name=modpath)
+        super().__init__(src=f"%CMAKE_CACHE_DIR%/{src}", dst=modpath, name=modpath)
 
     def src_path(self, installer: "InstallerBuildExt") -> Path:
         """Returns the path to the source file, resolving globs.
