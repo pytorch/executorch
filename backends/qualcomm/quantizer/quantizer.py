@@ -12,6 +12,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeEinsum,
     DecomposeLinalgVectorNorm,
     DecomposeSilu,
+    LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
     ReduceDynamicRange,
     ReplaceInfBuffer,
@@ -224,8 +225,9 @@ class QnnQuantizer(Quantizer):
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
         model = DecomposeEinsum()(model).graph_module
-        model = DecomposeLinalgVectorNorm(quantization_capture=True)(model).graph_module
+        model = DecomposeLinalgVectorNorm(aten_dialect_capture=True)(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
+        model = LiftConstantScalarOperands()(model).graph_module
         return model
 
     def validate(self, model: GraphModule) -> None:
