@@ -27,18 +27,6 @@
         <uses-native-library android:name="libcdsprpc.so"
             android:required="false"/>
 
-        <uses-native-library android:name="libQnnHtp.so"
-            android:required="false"/>
-
-        <uses-native-library android:name="libQnnHtpV69Skel.so"
-            android:required="false"/>
-
-        <uses-native-library android:name="libQnnHtpV69Stub.so"
-            android:required="false"/>
-
-        <uses-native-library android:name="libQnnSystem.so"
-            android:required="false"/>
-
         <activity
             android:name=".MainActivity"
             android:exported="true"

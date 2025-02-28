@@ -14,6 +14,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
     BmmPattern,
+    CatPattern,
     Conv1dPattern,
     Conv2dPattern,
     LayerNormPattern,
@@ -144,17 +145,38 @@ class CadenceAtenQuantizer(Quantizer):
                         "quantization_annotation",
                         QuantizationAnnotation(_annotated=True),
                     )
-                    # pyre-ignore[16]: no attribute
-                    annotation.input_qspec_map[node.args[idx]] = (
+                    arg = (
+                        # pyre-ignore[16]: no attribute
+                        node.args[idx]
+                        if isinstance(idx, int)
+                        # pyre-ignore[16]: no attribute
+                        else node.args[idx[0]][idx[1]]
+                    )
+                    annotation.input_qspec_map[arg] = (
                         custom_spec[0] if custom_spec else spec
                     )
                     # pyre-ignore[16]: no attribute
                     node.meta["quantization_annotation"] = annotation
 
-            annotate_inputs(anchors.inputs, input_act_qspec)
-            annotate_inputs(anchors.weights, weight_qspec)
+            def annotate_weights_or_biases(
+                weights_or_biases: List[Tuple[fx.Node, int]],
+                spec: Optional[QuantizationSpec],
+            ) -> None:
+                for node, idx, *custom_spec in weights_or_biases:
+                    annotation = node.meta.get(
+                        "quantization_annotation",
+                        QuantizationAnnotation(_annotated=True),
+                    )
+                    annotation.input_qspec_map[node.args[idx]] = (
+                        custom_spec[0] if custom_spec else spec
+                    )
+                    node.meta["quantization_annotation"] = annotation
+
             # pyre-ignore[6]: incompatible parameter type
-            annotate_inputs(anchors.biases, bias_qspec)
+            annotate_inputs(anchors.inputs, input_act_qspec)
+            annotate_weights_or_biases(anchors.weights, weight_qspec)
+            # pyre-ignore[6]: incompatible parameter type
+            annotate_weights_or_biases(anchors.biases, bias_qspec)
         return model
 
     def validate(self, model: fx.GraphModule) -> None:
@@ -223,4 +245,5 @@ class CadenceWakeWordQuantizer(CadenceQuantizer):
         if quantizers is None:
             quantizers = get_cadence_default_quantizers()
         quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8uW8u))
+        quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8uW8u))
         super().__init__(quantizers)

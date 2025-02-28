@@ -106,7 +106,7 @@ class NodeVisitor:
             return node.meta["val"]
 
         tensor = _get_tensor(input_node, idx)
-        if len(tensor.shape) != 0 and QCOM_AXIS_ORDER in op_node.meta:
+        if len(tensor.shape) > 1 and QCOM_AXIS_ORDER in op_node.meta:
             tensor = tensor.permute(dims=op_node.meta[QCOM_AXIS_ORDER]).contiguous()
         return tensor
 
