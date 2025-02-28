@@ -39,27 +39,28 @@ from tosa import TosaGraph
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
 
-# Copied from PyTorch. 
+# Copied from PyTorch.
 # From torch/testing/_internal/common_utils.py:torch_to_numpy_dtype_dict
 # To avoid a dependency on _internal stuff.
 _torch_to_numpy_dtype_dict = {
-    torch.bool      : np.bool_,
-    torch.uint8     : np.uint8,
-    torch.uint16    : np.uint16,
-    torch.uint32    : np.uint32,
-    torch.uint64    : np.uint64,
-    torch.int8      : np.int8,
-    torch.int16     : np.int16,
-    torch.int32     : np.int32,
-    torch.int64     : np.int64,
-    torch.float16   : np.float16,
-    torch.float32   : np.float32,
-    torch.float64   : np.float64,
-    torch.bfloat16  : np.float32,
-    torch.complex32 : np.complex64,
-    torch.complex64 : np.complex64,
-    torch.complex128: np.complex128
+    torch.bool: np.bool_,
+    torch.uint8: np.uint8,
+    torch.uint16: np.uint16,
+    torch.uint32: np.uint32,
+    torch.uint64: np.uint64,
+    torch.int8: np.int8,
+    torch.int16: np.int16,
+    torch.int32: np.int32,
+    torch.int64: np.int64,
+    torch.float16: np.float16,
+    torch.float32: np.float32,
+    torch.float64: np.float64,
+    torch.bfloat16: np.float32,
+    torch.complex32: np.complex64,
+    torch.complex64: np.complex64,
+    torch.complex128: np.complex128,
 }
+
 
 class QuantizationParams:
     __slots__ = ["node_name", "zp", "scale", "qmin", "qmax", "dtype"]
