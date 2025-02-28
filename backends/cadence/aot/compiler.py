@@ -142,8 +142,6 @@ def quantize_pt2(
     Prepare, convert and fuse the model using the given quantizer.
     Returns a GraphModule with the quantized model.
     """
-    # Make the model inference mode by calling model.eval()
-    model.eval()
 
     # Instantiate the quantizer to CadenceQuantizer if not supplied
     if not quantizer:
