@@ -134,11 +134,21 @@ class RotaryEmbedding(torch.nn.Module):
 
 
 # Based on https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py#L77
-def hf_precompute_freqs_cis(dim: int, end: int, theta: float):
+# and https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_rope_utils.py#L242.
+# Current only support non-long rope.
+def hf_precompute_freqs_cis(
+    dim: int, end: int, theta: float, partial_rotary_factor: float = 1.0
+):
+    # Partial rotary embeddings.
+    dim = int(dim * partial_rotary_factor)
+
+    # Short factor scaling.
     freqs = 1.0 / (
         theta
         ** (torch.arange(0, dim, 2, device="cpu", dtype=torch.int64).float() / dim)
     )
+    # TODO: support long factor scaling.
+
     # pyre-ignore Undefined attribute [16]: `float` has no attribute `device`.
     t = torch.arange(end, device=freqs.device, dtype=torch.int64).type_as(
         freqs  # pyre-ignore
