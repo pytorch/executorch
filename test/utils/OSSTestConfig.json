@@ -7,7 +7,8 @@
             "op_fast_hadamard_transform_test.cpp"
         ],
         "additional_libs": [
-            "custom_ops"
+            "custom_ops",
+            "dumb_fht"
         ]
     },
     {
@@ -62,6 +63,7 @@
         "directory": "kernels/portable/cpu/util/test",
         "sources": [
             "broadcast_test.cpp",
+            "delinearized_indexes_range_test.cpp",
             "reduce_test.cpp"
         ],
         "additional_libs": [
