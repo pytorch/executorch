@@ -88,6 +88,7 @@ flatc = "executorch.data.bin:flatc"
 [tool.setuptools.package-dir]
 "executorch.backends" = "backends"
 "executorch.codegen" = "codegen"
+"executorch.data.bin" = "data/bin"
 # TODO(mnachin T180504136): Do not put examples/models
 # into core pip packages. Refactor out the necessary utils
 # or core models files into a separate package.
