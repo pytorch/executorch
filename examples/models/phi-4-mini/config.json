@@ -10,5 +10,6 @@
   "use_scaled_rope": false,
   "vocab_size": 200064,
   "use_hf_rope": true,
+  "partial_rotary_factor": 0.75,
   "attention_qkv_bias": false
 }

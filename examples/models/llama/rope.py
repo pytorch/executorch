@@ -190,8 +190,13 @@ def hf_apply_rotary_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
+
+    rotary_dim = cos.shape[-1]
+    q_rot, q_pass = q[..., :rotary_dim], q[..., rotary_dim:]
+    k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
+
+    q_embed = torch.cat([(q_rot * cos) + (rotate_half(q_rot) * sin), q_pass], dim=-1)
+    k_embed = torch.cat([(k_rot * cos) + (rotate_half(k_rot) * sin), k_pass], dim=-1)
     return q_embed, k_embed
 
 
@@ -227,7 +232,10 @@ class Rope(torch.nn.Module):
 
         # Choose the appropriate RoPE implementation
         if self.params.use_hf_rope:
-            self.precompute_freqs_cis = hf_precompute_freqs_cis
+            self.precompute_freqs_cis = partial(
+                hf_precompute_freqs_cis,
+                partial_rotary_factor=self.params.partial_rotary_factor,
+            )
             self.apply_rotary_emb = hf_apply_rotary_emb
         else:
             self.precompute_freqs_cis = partial(
