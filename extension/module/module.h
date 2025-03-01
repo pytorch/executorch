@@ -152,6 +152,8 @@ class Module {
    * needed. The loaded method is cached to reuse the next time it's executed.
    *
    * @param[in] method_name The name of the method to load.
+   * @param[in] planned_memory The memory-planned buffers to use for mutable
+   * tensor data when executing a method.
    * @param[in] event_tracer Per-method event tracer to profile/trace methods
    * individually. When not given, the event tracer passed to the Module
    * constructor is used. Otherwise, this per-method event tracer takes
@@ -162,20 +164,35 @@ class Module {
   ET_NODISCARD
   runtime::Error load_method(
       const std::string& method_name,
+      runtime::HierarchicalAllocator* planned_memory = nullptr,
       torch::executor::EventTracer* event_tracer = nullptr);
+
+  ET_DEPRECATED ET_NODISCARD runtime::Error inline load_method(
+      const std::string& method_name,
+      torch::executor::EventTracer* event_tracer) {
+    return load_method(method_name, nullptr, event_tracer);
+  }
 
   /**
    * Load the 'forward' method from the program and set up memory management if
    * needed. The loaded method is cached to reuse the next time it's executed.
    *
+   * @param[in] planned_memory The memory-planned buffers to use for mutable
+   * tensor data when executing the 'forward' method.
    * @param[in] event_tracer An event tracer used for tracking and logging
    * events.
    *
    * @returns An Error to indicate success or failure.
    */
   ET_NODISCARD inline runtime::Error load_forward(
+      runtime::HierarchicalAllocator* planned_memory = nullptr,
       torch::executor::EventTracer* event_tracer = nullptr) {
-    return load_method("forward", event_tracer);
+    return load_method("forward", planned_memory, event_tracer);
+  }
+
+  ET_DEPRECATED ET_NODISCARD inline runtime::Error load_forward(
+      torch::executor::EventTracer* event_tracer) {
+    return load_forward(nullptr, event_tracer);
   }
 
   /**
