@@ -33,15 +33,16 @@ class optional final {
   using value_type = T;
 
   /// Constructs an optional object that does not contain a value.
-  /* implicit */ optional() noexcept : storage_(trivial_init), init_(false) {}
+  /* implicit */ optional() noexcept
+      : storage_(trivial_init_t{}), init_(false) {}
 
   /// Constructs an optional object that does not contain a value.
   /* implicit */ optional(nullopt_t) noexcept
-      : storage_(trivial_init), init_(false) {}
+      : storage_(trivial_init_t{}), init_(false) {}
 
   /// Constructs an optional object that matches the state of v.
   /* implicit */ optional(const optional<T>& v)
-      : storage_(trivial_init), init_(v.init_) {
+      : storage_(trivial_init_t{}), init_(v.init_) {
     if (init_) {
       new (&storage_.value_) T(v.storage_.value_);
     }
@@ -53,7 +54,7 @@ class optional final {
   /// Constructs an optional object from v.
   /* implicit */ optional(optional<T>&& v) noexcept(
       std::is_nothrow_move_constructible<T>::value)
-      : storage_(trivial_init), init_(v.init_) {
+      : storage_(trivial_init_t{}), init_(v.init_) {
     if (init_) {
       new (&storage_.value_) T(std::forward<T>(v.storage_.value_));
     }
@@ -134,8 +135,7 @@ class optional final {
  private:
   // Used to invoke the dummy ctor of storage_t in the initializer lists of
   // optional_base as default ctor is implicitly deleted because T is nontrivial
-  struct trivial_init_t {
-  } trivial_init{};
+  struct trivial_init_t {};
 
   /**
    * A wrapper type that lets us avoid constructing a T when there is no value.
