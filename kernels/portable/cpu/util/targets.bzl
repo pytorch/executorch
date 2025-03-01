@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -44,6 +44,7 @@ def define_common_targets():
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
@@ -73,8 +74,8 @@ def define_common_targets():
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             ":repeat_util",
-            ":tensor_util",
             "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
@@ -117,6 +118,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             ":broadcast_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
@@ -269,16 +271,6 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "tensor_util",
-        srcs = ["tensor_util.cpp"],
-        exported_headers = ["tensor_util.h"],
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-        ],
-        visibility = ["//executorch/kernels/portable/cpu/..."],
-    )
-
-    runtime.cxx_library(
         name = "upsample_util",
         srcs = ["upsample_util.cpp"],
         exported_headers = ["upsample_util.h"],
@@ -289,7 +281,7 @@ def define_common_targets():
     )
 
     # Utility functions that can be used by operators that perform reduction
-    for aten_mode in [True, False]:
+    for aten_mode in get_aten_mode_options():
         suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
             name = "reduce_util{}".format(suffix),

@@ -25,7 +25,7 @@ bool check_repeat_args(
     executorch::aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
   // Ensure the self tensors list is non-empty.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       repeats.size() >= self.dim(),
       "Number of dimensions of repeat dims can not be smaller than number of dimensions of tensor");
 
@@ -34,11 +34,11 @@ bool check_repeat_args(
   for (auto repeat : repeats) {
     all_non_negative = all_non_negative && (repeat >= 0);
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       all_non_negative, "Trying to create tensor with negative dimension");
 
   /// Check if out.size() is legal.
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() == repeats.size(),
       "The dimension of out shall equal size of repeats, but now is %zd and %zd",
       out.dim(),
@@ -47,7 +47,7 @@ bool check_repeat_args(
   // Right now we only support the tensors whose dimension is no greater than
   // kTensorDimensionLimit. Only check out tensor because the number of
   // dimension of out tensor shall have more than or equal to self tensor
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       out.dim() <= kTensorDimensionLimit,
       "The dimension of input and output should not be larger than %zd",
       kTensorDimensionLimit);
@@ -66,8 +66,9 @@ bool check_repeat_args(
     reformat_self_size[out.dim() - 1 - i] = self.size(self.dim() - 1 - i);
   }
   for (size_t i = 0; i < repeats.size(); i++) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
-        reformat_self_size[i] * repeats[i] == out.size(i),
+    ET_CHECK_OR_RETURN_FALSE(
+        reformat_self_size[i] * repeats[i] ==
+            static_cast<uint64_t>(out.size(i)),
         "Expect out size at dimension %zu is %" PRId64 ", but now is %zd",
         i,
         reformat_self_size[i] * repeats[i],
@@ -242,7 +243,7 @@ Error repeat_tensor(
   // one array a time. To do so, we iterate over all the valid values of slots
   // array. The repeat_internal() takes care of replicating the array along the
   // coordinates specified by repeats array.
-  while (slots[0] != limits[0]) {
+  while (static_cast<int64_t>(slots[0]) != limits[0]) {
     // Compute the offset (from origin) in the out tensor where the self
     // array (with indices in self tensor indicated by slots) will be copied.
     size_t out_offset = compute_access_offset(slots, strides, self_dim);
@@ -256,7 +257,7 @@ Error repeat_tensor(
     slots[index]++;
     // If we have reached the limit in the innermost dimension, successively
     // increment the slot index of outer dimensions.
-    while (slots[index] == limits[index]) {
+    while (static_cast<int64_t>(slots[index]) == limits[index]) {
       if (index == 0) {
         break;
       }

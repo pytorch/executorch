@@ -14,9 +14,6 @@
 import re
 from typing import List
 
-from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-untyped]
-    CompileSpec,
-)
 from packaging.version import Version
 
 
@@ -54,21 +51,6 @@ class TosaSpecification:
 
     def __init__(self, version: Version):
         self.version = version
-
-    @staticmethod
-    def create_from_compilespecs(
-        compile_specs: List[CompileSpec],
-    ) -> "TosaSpecification":
-        """
-        Search the CompileSpec list for 'tosa_version' and instantiate a
-        class from the found value or return None on failure.
-        """
-        for spec in compile_specs:
-            if spec.key == "tosa_version":
-                return TosaSpecification.create_from_string(spec.value.decode())
-        raise ValueError(
-            "No TOSA version key found in any of the supplied CompileSpecs"
-        )
 
     @staticmethod
     def create_from_string(repr: str) -> "TosaSpecification":
@@ -130,7 +112,7 @@ class Tosa_0_80(TosaSpecification):
         if len(extras) > 0:
             raise ValueError(f"Unhandled extras found: {extras}")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         extensions = ""
         if self.level_8k:
             extensions += "+8k"

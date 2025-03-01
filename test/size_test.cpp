@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/executor/method.h>
@@ -92,10 +93,10 @@ int main(int argc, char** argv) {
   ET_CHECK(status == Error::Ok);
 
   // It assumes the outputs are all tensors.
-  for (size_t i = 0; i < method->outputs_size(); i++) {
+  for (const auto i : c10::irange(method->outputs_size())) {
     auto output_tensor = output_list[i].toTensor();
     [[maybe_unused]] auto data_output = output_tensor.const_data_ptr<float>();
-    for (size_t j = 0; j < output_list[i].toTensor().numel(); ++j) {
+    for (const auto j : c10::irange(output_tensor.numel())) {
       ET_LOG(Info, "%f", data_output[j]);
     }
   }

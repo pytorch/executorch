@@ -45,7 +45,7 @@ You can also download above models from [Hugging Face](https://huggingface.co/).
 
 
 ```Python
-from torchtune.utils import FullModelHFCheckpointer
+from torchtune.training.checkpointing import FullModelHFCheckpointer
 from torchtune.models import convert_weights
 import torch
 

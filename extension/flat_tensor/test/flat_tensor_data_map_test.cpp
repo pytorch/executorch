@@ -8,8 +8,8 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
-#include <executorch/extension/flat_tensor/serialize/schema_generated.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -35,7 +35,7 @@ class FlatTensorDataMapTest : public ::testing::Test {
 
     // Load data map. The eager linear model is defined at:
     // //executorch/test/models/linear_model.py
-    const char* path = std::getenv("ET_MODULE_LINEAR_DATA");
+    const char* path = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
 
@@ -136,4 +136,27 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
   // Check get_key fails when out of bounds.
   Result<const char*> key2_res = data_map->get_key(2);
   EXPECT_EQ(key2_res.error(), Error::InvalidArgument);
+}
+
+TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(data_map_loader_.get());
+  EXPECT_EQ(data_map.error(), Error::Ok);
+
+  // get the metadata
+  auto meta_data_res = data_map->get_metadata("a");
+  ASSERT_EQ(meta_data_res.error(), Error::Ok);
+
+  // get data blob
+  void* data = malloc(meta_data_res->nbytes());
+  auto load_into_error =
+      data_map->load_data_into("a", data, meta_data_res->nbytes());
+  ASSERT_EQ(load_into_error, Error::Ok);
+
+  // Check tensor data is correct.
+  float* data_a = static_cast<float*>(data);
+  for (int i = 0; i < 4; i++) {
+    EXPECT_EQ(data_a[i], 3.0);
+  }
+  free(data);
 }

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
@@ -41,7 +42,7 @@ void scatter_src_helper(
     dim += nonzero_dim(in);
   }
 
-  for (size_t ix = 0; ix < index.numel(); ++ix) {
+  for (const auto ix : c10::irange(index.numel())) {
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     size_t ix_coord[kTensorDimensionLimit];
     indexToCoordinate(index, ix, ix_coord);
@@ -50,7 +51,7 @@ void scatter_src_helper(
 
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     size_t out_coord[kTensorDimensionLimit];
-    for (size_t i = 0; i < out.dim(); ++i) {
+    for (const auto i : c10::irange(out.dim())) {
       if (i == dim) {
         out_coord[i] = index_data[ix];
       } else {
@@ -80,14 +81,14 @@ void scatter_value_helper(
     dim += nonzero_dim(in);
   }
 
-  for (size_t ix = 0; ix < index.numel(); ++ix) {
+  for (const auto ix : c10::irange(index.numel())) {
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     size_t ix_coord[kTensorDimensionLimit];
     indexToCoordinate(index, ix, ix_coord);
 
     // @lint-ignore CLANGTIDY facebook-hte-CArray
     size_t out_coord[kTensorDimensionLimit];
-    for (size_t i = 0; i < out.dim(); ++i) {
+    for (const auto i : c10::irange(out.dim())) {
       if (i == dim) {
         out_coord[i] = index_data[ix];
       } else {
@@ -156,7 +157,7 @@ Tensor& scatter_value_out(
 
   ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, name, CTYPE_VAL, [&] {
     CTYPE_VAL val;
-    utils::extract_scalar(value, &val);
+    ET_KERNEL_CHECK(ctx, utils::extract_scalar(value, &val), InvalidArgument, );
 
     ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
       scatter_value_helper<CTYPE>(in, dim, index, val, out);

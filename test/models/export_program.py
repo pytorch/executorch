@@ -264,6 +264,8 @@ def main() -> None:
             # Skip type promotion to keep the model in fp16.
             # Type promotion will convert to fp32.
             skip_type_promotion = True
+        if args.external_constants:
+            module_name = f"{module_name}Program"
         outfile = os.path.join(args.outdir, f"{module_name}.pte")
         prog = export_module_to_program(
             module_class,
@@ -274,6 +276,11 @@ def main() -> None:
             prog.write_to_file(fp)
             print(f"Exported {module_name} and wrote program data to {outfile}")
 
+        if args.external_constants:
+            # current infra doesnt easily allow renaming this file, so just hackily do it here.
+            prog._tensor_data[f"{module_name}"] = prog._tensor_data.pop(
+                "_default_external_constant"
+            )
         prog.write_tensor_data_to_file(args.outdir)
 
 

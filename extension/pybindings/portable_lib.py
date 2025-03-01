@@ -38,6 +38,8 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     _create_profile_block,  # noqa: F401
     _dump_profile_results,  # noqa: F401
     _get_operator_names,  # noqa: F401
+    _get_registered_backend_names,  # noqa: F401
+    _is_available,  # noqa: F401
     _load_bundled_program_from_buffer,  # noqa: F401
     _load_for_executorch,  # noqa: F401
     _load_for_executorch_from_buffer,  # noqa: F401

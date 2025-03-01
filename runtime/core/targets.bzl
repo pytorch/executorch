@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def event_tracer_enabled():
     return native.read_config("executorch", "event_tracer_enabled", "false") == "true"
@@ -50,6 +50,7 @@ def define_common_targets():
         ],
         exported_preprocessor_flags = get_core_flags(),
         exported_deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
             "//executorch/runtime/platform:platform",
         ],
     )
@@ -73,6 +74,7 @@ def define_common_targets():
         ],
         exported_deps = [
             ":core",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         visibility = [
             "//executorch/...",
@@ -80,7 +82,7 @@ def define_common_targets():
         ],
     )
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(
             name = "evalue" + aten_suffix,
@@ -145,13 +147,16 @@ def define_common_targets():
             ":tensor_layout",
         ],
     )
-    
+
     runtime.cxx_library(
         name = "tensor_layout",
         srcs = ["tensor_layout.cpp"],
         exported_headers = ["tensor_layout.h"],
+        deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
+        ],
         exported_deps = [
-            ":core", 
+            ":core",
             "//executorch/runtime/core/exec_aten:lib",
         ],
         visibility = ["//executorch/..."],

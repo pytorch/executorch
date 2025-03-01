@@ -49,17 +49,19 @@ target_compile_options(cpublas PUBLIC ${_common_compile_options})
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in optimized.yaml
-set(_yaml "${CMAKE_CURRENT_LIST_DIR}/optimized-oss.yaml")
+set(_yaml "${CMAKE_CURRENT_LIST_DIR}/optimized.yaml")
 gen_selected_ops(LIB_NAME "optimized_ops_lib" OPS_SCHEMA_YAML "${_yaml}")
 
 generate_bindings_for_kernels(
   LIB_NAME "optimized_ops_lib" FUNCTIONS_YAML
-  ${CMAKE_CURRENT_SOURCE_DIR}/optimized-oss.yaml
+  ${CMAKE_CURRENT_SOURCE_DIR}/optimized.yaml
+  ADD_EXCEPTION_BOUNDARY
 )
 message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
+target_include_directories(optimized_kernels PRIVATE ${TORCH_INCLUDE_DIRS} "${EXECUTORCH_ROOT}/third-party/pocketfft")
 target_link_libraries(
   optimized_kernels PRIVATE executorch_core cpublas extension_threadpool
 )

@@ -13,6 +13,8 @@ class ForwardOptions(TypedDict, total=False):
 
     mask: Optional[torch.Tensor]
     input_pos: Optional[torch.Tensor]
+    freqs_cos_override: Optional[torch.Tensor]
+    freqs_sin_override: Optional[torch.Tensor]
     in_cache_state: Optional[Any]
     out_cache_state: Optional[Any]
 
@@ -173,9 +175,16 @@ class AttentionMHA(Attention):
         self.max_batch_size = args.max_batch_size
         self.max_context_len = args.max_context_len
         self.dim = args.dim
-        self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.attention_qkv_bias = args.attention_qkv_bias
+        self.wq = nn.Linear(
+            self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
+        )
+        self.wk = nn.Linear(
+            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+        )
+        self.wv = nn.Linear(
+            self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
+        )
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
 
         self.layer_id = layer_id
@@ -236,7 +245,7 @@ class AttentionMHA(Attention):
             assert input_pos is not None
             k, v = self.kv_cache.update(input_pos, k, v)
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
-            return self.wo(output)
+            return self.wo(output), None
 
         # grouped multiquery attention: expand out keys and values
         k = k.repeat_interleave(self.n_rep, dim=1)
@@ -252,4 +261,4 @@ class AttentionMHA(Attention):
 
         output = self.wo(output)
 
-        return output
+        return output, None

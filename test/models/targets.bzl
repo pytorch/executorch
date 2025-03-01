@@ -90,13 +90,21 @@ def define_common_targets():
         # case, and typically shouldn't be done.
         _is_external_target = True,
     )
+
+    # Class names of nn.Modules for :exported_programs to export.
+    MODULES_AND_DATA_TO_EXPORT = [
+        "ModuleLinear",
+        "ModuleSimpleTrain",
+    ]
     
     runtime.genrule(
-        name = "exported_programs_with_data_separated",
-        cmd = "$(exe :export_program) --modules ModuleLinear --external-constants --outdir $OUT",
+        name = "exported_program_and_data",
+        cmd = "$(exe :export_program) --modules " + ",".join(MODULES_AND_DATA_TO_EXPORT) + " --external-constants --outdir $OUT",
         outs = {
-            "ModuleLinear.pte": ["ModuleLinear.pte"],
-            "ModuleLinear.ptd": ["_default_external_constant.ptd"],
+            "ModuleLinear.pte": ["ModuleLinearProgram.pte"],
+            "ModuleLinear.ptd": ["ModuleLinearProgram.ptd"],
+            "ModuleSimpleTrainProgram.pte": ["ModuleSimpleTrainProgram.pte"],
+            "ModuleSimpleTrain.ptd": ["ModuleSimpleTrainProgram.ptd"],
         },
         default_outs = ["."],
         visibility = [

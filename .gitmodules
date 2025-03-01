@@ -67,3 +67,9 @@
 [submodule "backends/cadence/utils/FACTO"]
 	path = backends/cadence/utils/FACTO
 	url = https://github.com/pytorch-labs/FACTO.git
+[submodule "third-party/pocketfft"]
+	path = third-party/pocketfft
+	url = https://github.com/mreineck/pocketfft
+[submodule "shim"]
+	path = shim
+	url = https://github.com/facebook/buck2-shims-meta

@@ -212,7 +212,25 @@ def _load_bundled_program_from_buffer(
     ...
 
 @experimental("This API is experimental and subject to change without notice.")
+def _is_available(backend_name: str) -> bool:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
 def _get_operator_names() -> List[str]:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _get_registered_backend_names() -> List[str]:
     """
     .. warning::
 

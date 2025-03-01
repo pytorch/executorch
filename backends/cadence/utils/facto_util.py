@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
@@ -14,6 +18,7 @@ from facto.specdb.db import SpecDictDB
 
 # seed to generate identical cases every run to reproduce from bisect
 random_manager.seed(1729)
+MAX_CASES = 50
 
 
 def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> None:
@@ -40,6 +45,14 @@ def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> N
                     cp.Rank.Le(lambda deps: 2**3),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**2)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**2),
+                ]
+            )
+        case "slice_copy.Tensor":
+            tensor_constraints.extend(
+                [
+                    cp.Rank.Le(lambda deps: 2),
+                    cp.Value.Ge(lambda deps, dtype, struct: 1),
+                    cp.Value.Le(lambda deps, dtype, struct: 2),
                 ]
             )
         case _:
@@ -120,4 +133,4 @@ def facto_testcase_gen(op_name: str) -> List[Tuple[List[str], OrderedDict[str, s
     return [
         (posargs, inkwargs)
         for posargs, inkwargs, _ in ArgumentTupleGenerator(spec).gen()
-    ]
+    ][:MAX_CASES]

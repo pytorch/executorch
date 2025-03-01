@@ -35,21 +35,18 @@ def define_common_targets(is_fbcode=False):
             # The tests use this var to find the program file to load. This uses
             # an fbcode target path because the authoring/export tools
             # intentionally don't work in xplat (since they're host-only tools).
-            "ET_MODULE_LINEAR_PROGRAM": "$(location fbcode//executorch/test/models:exported_programs_with_data_separated[ModuleLinear.pte])",
-            "ET_MODULE_LINEAR_DATA": "$(location fbcode//executorch/test/models:exported_programs_with_data_separated[ModuleLinear.ptd])",
+            "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
+            "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
         }
 
         runtime.cxx_test(
-            name = "flat_tensor_data_map",
+            name = "flat_tensor_data_map_test",
             srcs = [
                 "flat_tensor_data_map_test.cpp",
             ],
             deps = [
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/flat_tensor:flat_tensor_data_map",
-                "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
-                "//executorch/extension/flat_tensor/serialize:generated_headers",
-                "//executorch/extension/flat_tensor/serialize:schema",
                 "//executorch/runtime/core:named_data_map",
                 "//executorch/runtime/core/exec_aten:lib",
             ],

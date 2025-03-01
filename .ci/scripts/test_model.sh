@@ -91,22 +91,29 @@ test_model() {
     # Install requirements for llama vision.
     bash examples/models/llama3_2_vision/install_requirements.sh
   fi
-  # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
+  if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
+      # Install requirements for export_llama
+      bash examples/models/llama/install_requirements.sh
+      # Test export_llama script: python3 -m examples.models.llama.export_llama.
+      # Use Llama random checkpoint with Qwen 2.5 1.5b model configuration.
+      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/qwen2_5/1_5b_config.json
+      rm "./${MODEL_NAME}.pte"
+      return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
+  fi
+
+  # Export a basic .pte and run the model.
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
 }
 
 build_cmake_xnn_executor_runner() {
   echo "Building xnn_executor_runner"
-  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
   (rm -rf ${CMAKE_OUTPUT_DIR} \
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
     && retry cmake -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   cmake --build ${CMAKE_OUTPUT_DIR} -j4

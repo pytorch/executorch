@@ -23,6 +23,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/method.h>
@@ -87,10 +88,14 @@ using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::runtime::ArrayRef;
+using ::executorch::runtime::BackendInterface;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
+using ::executorch::runtime::get_backend_class;
+using ::executorch::runtime::get_backend_name;
+using ::executorch::runtime::get_num_registered_backends;
 using ::executorch::runtime::get_registered_kernels;
 using ::executorch::runtime::HierarchicalAllocator;
 using ::executorch::runtime::Kernel;
@@ -975,6 +980,26 @@ py::list get_operator_names() {
   return res;
 }
 
+py::list get_registered_backend_names() {
+  size_t n_of_registered_backends = get_num_registered_backends();
+  py::list res;
+  for (size_t i = 0; i < n_of_registered_backends; i++) {
+    auto backend_name_res = get_backend_name(i);
+    THROW_IF_ERROR(backend_name_res.error(), "Failed to get backend name");
+    auto backend_name = backend_name_res.get();
+    res.append(backend_name);
+  }
+  return res;
+}
+
+py::bool_ is_available(const std::string& backend_name) {
+  BackendInterface* backend = get_backend_class(backend_name.c_str());
+  if (backend == nullptr) {
+    return false;
+  }
+  return backend->is_available();
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
@@ -1028,7 +1053,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
             prof_result.num_bytes);
       },
       call_guard);
+  m.def(
+      "_get_registered_backend_names",
+      &get_registered_backend_names,
+      call_guard);
   m.def("_get_operator_names", &get_operator_names);
+  m.def("_is_available", &is_available, py::arg("backend_name"), call_guard);
   m.def("_create_profile_block", &create_profile_block, call_guard);
   m.def(
       "_reset_profile_results",

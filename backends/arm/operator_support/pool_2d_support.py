@@ -26,8 +26,8 @@ def stride_check(strides: tuple[int, int]) -> bool:
 
 
 def dim_check(shape=torch.Size) -> bool:
-    check = shape[0] == 1
-    for dim in shape:
+    check = True
+    for dim in shape[1:]:
         check &= 1 <= dim <= 65536
     return check
 
@@ -43,7 +43,7 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
-    def is_node_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
+    def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
         if not (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset):
             return True
 
@@ -59,7 +59,7 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
             if not kernel_check(kernel):
                 return False
 
-        return dim_check(shape) and stride_check(stride)
+        return dim_check(shape) and shape[0] == 1 and stride_check(stride)
 
 
 @register_tosa_support_check
@@ -73,7 +73,7 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
     ]
 
-    def is_node_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
+    def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
         if not (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset):
             return True
 

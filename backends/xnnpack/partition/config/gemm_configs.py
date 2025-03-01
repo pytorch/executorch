@@ -210,6 +210,11 @@ class GEMMConfig(XNNPartitionerConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         gemm_deps = []
+        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
+            # if force force_fp32_dynamic_linear is enabled, then we
+            # do not partition the weight node
+            return (True, gemm_deps)
+
         if len(node.all_input_nodes) > 2 and self.bias_idx is not None:
             bias_node = get_input_node(node, self.bias_idx)
             if bias_node:
@@ -333,6 +338,18 @@ class ConvolutionConfig(GEMMConfig):
 
         is_transpose = node.args[6]
         groups = cast(int, node.args[8])
+
+        # XNNPack does not support non-zero output padding in transposed
+        # convolutions.
+        if is_transpose and any(
+            out_pad != 0 for out_pad in cast(List[int], node.args[7])
+        ):
+            why(
+                node,
+                "XNNPACK does not support transposed convolutions with"
+                "non-zero output padding",
+            )
+            return False
 
         if (
             is_transpose
@@ -465,7 +482,15 @@ class AddmmConfig(GEMMConfig):
         node.args = old_args
         node.users = old_users
 
-        return valid_deps, list(set(deps) | set(src_partition.nodes))
+        # When using force_fp32_dynamic_linear, we want to get_deps to overwrite the source partition nodes.
+        # Else we want to be greedy.
+        ret_deps = (
+            list(set(deps) & set(src_partition.nodes))
+            if self.force_fp32_dynamic_linear
+            else list(set(deps) | set(src_partition.nodes))
+        )
+
+        return valid_deps, ret_deps
 
     def supported_precision_types(self):
         return [
