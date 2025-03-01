@@ -386,25 +386,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch iOS frameworks"
-        FRAMEWORKS=(
-          "executorch"
-          "backend_coreml"
-          "backend_mps"
-          "backend_xnnpack"
-          "kernels_custom"
-          "kernels_optimized"
-          "kernels_portable"
-          "kernels_quantized"
-        )
-
-        # Build Release iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
-
-        mkdir -p extension/benchmark/apple/Benchmark/Frameworks
-        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/benchmark/apple/Benchmark/Frameworks/
-        ) done
+          build/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
         echo "::endgroup::"
 
         # NB: Although exported models can be copied to this directory and bundled together with the
