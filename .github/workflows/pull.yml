@@ -371,6 +371,17 @@ jobs:
       build-tool: cmake
       docker-image: executorch-ubuntu-22.04-clang12
 
+  unittest-editable:
+    uses: ./.github/workflows/_unittest.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      build-mode: Debug
+      build-tool: cmake
+      editable: true
+      docker-image: executorch-ubuntu-22.04-clang12
+
   unittest-buck:
     uses: ./.github/workflows/_unittest.yml
     permissions:
