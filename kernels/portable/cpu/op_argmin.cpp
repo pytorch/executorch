@@ -50,7 +50,17 @@ Tensor& argmin_out(
     for (const auto out_ix : c10::irange(out.numel())) {
       std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
           [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-            if (!std::isnan(acc_val) && (std::isnan(v) || v < acc_val)) {
+            // the below condition as written is equivalent to !isnan(accval) &&
+            // (isnan(v) || v < acc_val). cases:
+            // - if neither acc_val nor v is NaN, !(v >= acc_val) is
+            //   trivially equivalent to v < acc_val.
+            // - if acc_val is NaN, the whole thing is trivially false.
+            // - if acc_val is not NaN and v is NaN, then v >= acc_val
+            // - is false because all comparisons involving NaN are
+            // - false, so the result is true. The result is trivially
+            // - true for the above condition that uses isnan(v) as
+            // - well.
+            if (!std::isnan(acc_val) && !(v >= acc_val)) {
               acc_val = v;
               acc_ix = ix;
             }
