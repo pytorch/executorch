@@ -21,6 +21,7 @@ from executorch.backends.cadence.aot.pass_utils import count_node
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
 from executorch.backends.cadence.aot.remove_ops import (
     RemoveAliasCopyOpPass,
+    RemoveCatFromSliceCopyPass,
     RemoveCloneOpPass,
     RemoveContiguousOpPass,
     RemoveDetachCopyPass,
@@ -709,3 +710,54 @@ class TestRemoveOpsPasses(unittest.TestCase):
         self.assertEqual(
             count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 2
         )
+
+    def test_remove_cat_from_slice_copy_all_removal(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x1 = torch.cat((x, y), 0)  # (2, 4)
+                return torch.slice_copy(x1, dim=0, start=0, end=1)
+
+        inputs = tuple(torch.randn(2, 4) for _ in range(2))
+        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        p = RemoveCatFromSliceCopyPass()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Ensure both cat nodes were removed
+        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 0)
+
+    def test_remove_cat_from_slice_copy_no_removal(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x1 = torch.cat((x, y), 0)  # (2, 4)
+                return torch.slice_copy(x1, dim=0, start=0, end=3)
+
+        inputs = tuple(torch.randn(2, 4) for _ in range(2))
+        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        p = RemoveCatFromSliceCopyPass()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Ensure both cat nodes were removed
+        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 1)
+
+    def test_remove_cat_from_slice_copy_zero_range(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x1 = torch.cat((x, y), 0)  # (2, 4)
+                return torch.slice_copy(x1, dim=0, start=0, end=0)
+
+        inputs = tuple(torch.randn(2, 4) for _ in range(2))
+        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        p = RemoveCatFromSliceCopyPass()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
+
+        # Ensure both cat nodes were removed
+        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 0)
