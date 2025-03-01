@@ -101,3 +101,8 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::opt_sub_scalar_out
+
+- op: where.self_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_where_out
