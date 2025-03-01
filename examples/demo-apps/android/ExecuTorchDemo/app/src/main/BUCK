@@ -1,9 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//tools/build_defs:manifold.bzl", "manifold_get")
 load("@fbsource//tools/build_defs/android:fb_android_binary.bzl", "fb_android_binary")
 load("@fbsource//tools/build_defs/android:fb_android_library.bzl", "fb_android_library")
 load("@fbsource//tools/build_defs/android:fb_android_resource.bzl", "fb_android_resource")
 
-manifold_get(
+non_fbcode_target(_kind = manifold_get,
     name = "dl3_xnnpack_fp32",
     out = "dl3_xnnpack_fp32.pte",
     api_key = "executorch-key",
@@ -13,21 +14,21 @@ manifold_get(
     timeout_msec = 120000,
 )
 
-fb_android_resource(
+non_fbcode_target(_kind = fb_android_resource,
     name = "app_res",
     assets = "assets",
     package = "com.example.executorchdemo",
     res = "res",
 )
 
-fb_android_resource(
+non_fbcode_target(_kind = fb_android_resource,
     name = "model_res",
     assets = {"dl3_xnnpack_fp32.pte": ":dl3_xnnpack_fp32"},
     package = "com.example.executorchdemo",
     res = "res",
 )
 
-fb_android_library(
+non_fbcode_target(_kind = fb_android_library,
     name = "app_lib",
     srcs = [
         "java/com/example/executorchdemo/ClassificationActivity.java",
@@ -43,7 +44,7 @@ fb_android_library(
     ],
 )
 
-fb_android_binary(
+non_fbcode_target(_kind = fb_android_binary,
     name = "ExecuTorchDemo",
     keystore = "//fbandroid/keystores:debug",
     manifest = "AndroidManifest.xml",
