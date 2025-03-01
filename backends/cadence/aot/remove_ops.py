@@ -745,6 +745,65 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return [shape[p] for p in permute_dims]
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=3))
+class RemoveCatFromSliceCopyPass(ExportPass):
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        graph = graph_module.graph
+        slice_copy_nodes = [
+            node
+            for node in graph.nodes
+            if node.target == exir_ops.edge.aten.slice_copy.Tensor
+        ]
+        for slice_copy_node in slice_copy_nodes:
+            slice_dim, start_idx, end_idx, step = 0, 0, float("inf"), 1
+            input_node, *other_args = slice_copy_node.args
+            if len(other_args) >= 1:
+                slice_dim = other_args[0]
+            if len(other_args) >= 2:
+                start_idx = other_args[1]
+            if len(other_args) >= 3:
+                end_idx = other_args[2]
+            if len(other_args) >= 4:
+                step = other_args[3]
+            if step != 1:
+                continue
+            slice_copy_dtype = slice_copy_node.meta["val"].dtype
+            if input_node.target != exir_ops.edge.aten.cat.default:
+                continue
+            cat_dtype = input_node.meta["val"].dtype
+            if slice_copy_dtype != cat_dtype:
+                continue
+            cat_dim = input_node.args[1:]
+            if len(cat_dim) == 0:
+                cat_dim = 0
+            if cat_dim != slice_dim:
+                continue
+            base_idx = 0
+            cat_input_to_keep = None
+            for cat_input_node in input_node.args[0]:
+                cat_input_dtype = cat_input_node.meta["val"].dtype
+                if slice_copy_dtype != cat_input_dtype:
+                    continue
+                cat_input_shape = cat_input_node.meta["val"].shape
+
+                # check if the slice range overlaps with the cat range
+                if (
+                    max(start_idx, base_idx)
+                    < min(end_idx, list(cat_input_shape)[cat_dim] + base_idx)
+                ) or (start_idx == end_idx == base_idx):
+                    if cat_input_to_keep is not None:
+                        # need more than one cat inputs, keep the cat
+                        cat_input_to_keep = None
+                        break
+                    cat_input_to_keep = cat_input_node
+                base_idx += list(cat_input_shape)[cat_dim]
+            if cat_input_to_keep is not None:
+                slice_copy_node.replace_input_with(input_node, cat_input_to_keep)
+        graph_module.recompile()
+        graph_module.graph.eliminate_dead_code()
+        return super().call(graph_module)
+
+
 # The following class consolidates functions to remove ops that are redundant
 # in Jarvis. Currently, each function in this class iterates over each node of
 # the graph module once. In future, we could consolidate them into a monolithic
@@ -765,4 +824,5 @@ class CadenceRemoveNops:
         RemoveNopMulOpPass,
         RemoveNopAddOpPass,
         RemoveNopLinalgVectorNormOpPass,
+        RemoveCatFromSliceCopyPass,
     ]
