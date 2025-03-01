@@ -276,6 +276,11 @@ def main() -> None:
             prog.write_to_file(fp)
             print(f"Exported {module_name} and wrote program data to {outfile}")
 
+        if args.external_constants:
+            # current infra doesnt easily allow renaming this file, so just hackily do it here.
+            prog._tensor_data[f"{module_name}"] = prog._tensor_data.pop(
+                "_default_external_constant"
+            )
         prog.write_tensor_data_to_file(args.outdir)
 
 
