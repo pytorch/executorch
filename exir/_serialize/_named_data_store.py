@@ -181,3 +181,30 @@ class NamedDataStore:
         # Clean up empty maps inside self.external_data
         self.external_data = {k: v for k, v in self.external_data.items() if len(v) > 0}
         return NamedDataStoreOutput(self.buffers, self.pte_data, self.external_data)
+
+    def merge_named_data_store(self, other: NamedDataStoreOutput) -> None:
+        """
+        Merge another NamedDataStore into this one.
+        Args:
+            other (NamedDataStore): the other NamedDataStore to merge.
+        Raises:
+            ValueError: when the key exists in both stores, and corresponding
+                data is different between them.
+        """
+        # Merge the pte_data.
+        for key, buffer_idx in other.pte_data.items():
+            self.add_named_data(
+                key,
+                other.buffers[buffer_idx].buffer,
+                other.buffers[buffer_idx].alignment,
+            )
+
+        # Merge the external_data.
+        for filename, key_to_buffer_idx in other.external_data.items():
+            for key, buffer_idx in key_to_buffer_idx.items():
+                self.add_named_data(
+                    key,
+                    other.buffers[buffer_idx].buffer,
+                    other.buffers[buffer_idx].alignment,
+                    external_tag=filename,
+                )
