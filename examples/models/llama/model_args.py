@@ -38,6 +38,7 @@ class ModelArgs:
     apply_embedding: bool = True  # Use embedding inside the transformer
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
+    partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )
