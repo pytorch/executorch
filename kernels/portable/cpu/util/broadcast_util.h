@@ -9,6 +9,7 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/util/delinearized_indexes_range.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
@@ -290,23 +291,27 @@ inline void apply_binary_elementwise_fn(
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (const auto i : c10::irange(out.numel())) {
-    size_t a_linear_index = i;
-    size_t b_linear_index = i;
-
-    if (any_is_broadcasted) {
-      size_t out_indexes[kTensorDimensionLimit];
-      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
-
+  if (any_is_broadcasted) {
+    size_t i = 0;
+    for (const auto& delinearized_indexes : DelinearizedIndexesRange(out)) {
+      size_t a_linear_index = i;
+      size_t b_linear_index = i;
       if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
+        a_linear_index = linearize_access_indexes(delinearized_indexes, out.dim(), a);
       }
       if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
+        b_linear_index = linearize_access_indexes(delinearized_indexes, out.dim(), b);
       }
-    }
 
-    data_out[i] = compute_fun(data_a[a_linear_index], data_b[b_linear_index]);
+      data_out[i++] = compute_fun(data_a[a_linear_index], data_b[b_linear_index]);
+    }
+  } else {
+    for (const auto i : c10::irange(out.numel())) {
+      size_t a_linear_index = i;
+      size_t b_linear_index = i;
+
+      data_out[i] = compute_fun(data_a[a_linear_index], data_b[b_linear_index]);
+    }
   }
 }
 
@@ -338,28 +343,28 @@ inline void apply_ternary_elementwise_fn(
   const CTYPE_C* const data_c = c.const_data_ptr<CTYPE_C>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (const auto i : c10::irange(out.numel())) {
-    size_t a_linear_index = i;
-    size_t b_linear_index = i;
-    size_t c_linear_index = i;
-
-    if (any_is_broadcasted) {
-      size_t out_indexes[kTensorDimensionLimit];
-      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
-
+  if (any_is_broadcasted) {
+    size_t i = 0;
+    for (const auto& delinearized_indexes : DelinearizedIndexesRange(out)) {
+      size_t a_linear_index = i;
+      size_t b_linear_index = i;
+      size_t c_linear_index = i;
       if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
+        a_linear_index = linearize_access_indexes(delinearized_indexes, out.dim(), a);
       }
       if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
+        b_linear_index = linearize_access_indexes(delinearized_indexes, out.dim(), b);
       }
       if (c_is_broadcasted) {
-        c_linear_index = linearize_access_indexes(out_indexes, out.dim(), c);
+        c_linear_index = linearize_access_indexes(delinearized_indexes, out.dim(), c);
       }
-    }
 
-    data_out[i] = compute_fun(
-        data_a[a_linear_index], data_b[b_linear_index], data_c[c_linear_index]);
+      data_out[i++] = compute_fun(data_a[a_linear_index], data_b[b_linear_index], data_c[c_linear_index]);
+    }
+  } else {
+    for (const auto i : c10::irange(out.numel())) {
+      data_out[i] = compute_fun(data_a[i], data_b[i], data_c[i]);
+    }
   }
 }
 
