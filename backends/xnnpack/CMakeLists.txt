@@ -139,7 +139,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   endif()
 
   target_link_libraries(
-    xnn_executor_runner gflags portable_ops_lib ${xnn_executor_runner_libs}
+    xnn_executor_runner gflags optimized_native_cpu_ops_lib ${xnn_executor_runner_libs}
   )
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
