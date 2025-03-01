@@ -149,6 +149,9 @@ def define_common_targets():
     runtime.python_library(
         name = "utils",
         srcs = ["utils.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:lib",
