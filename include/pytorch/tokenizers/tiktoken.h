@@ -36,8 +36,10 @@ class Tiktoken : public detail::BPETokenizerBase {
       : _special_tokens(std::move(special_tokens)),
         _bos_token_index(bos_token_index),
         _eos_token_index(eos_token_index) {
-    assert(_bos_token_index < _special_tokens->size());
-    assert(_eos_token_index < _special_tokens->size());
+    if (_bos_token_index >= _special_tokens->size() ||
+        _eos_token_index >= _special_tokens->size()) {
+      abort();
+    }
   };
 
   explicit Tiktoken()
