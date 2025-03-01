@@ -280,6 +280,19 @@ def define_common_targets():
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
+    runtime.cxx_library(
+        name = "delinearized_indexes_range",
+        exported_headers = ["delinearized_indexes_range.h"],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     # Utility functions that can be used by operators that perform reduction
     for aten_mode in get_aten_mode_options():
         suffix = "_aten" if aten_mode else ""
