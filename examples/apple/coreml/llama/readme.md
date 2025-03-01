@@ -38,8 +38,9 @@ The runner can also be used to run an eager model model to compare with CoreML n
 
 We are actively experimenting with different settings.  But here are ones that we've found work well for Llama1B on iPhone 15 Pro:
 
-* Set use_cache_list
-* Split linear layers with target_split_size=1024, max_splits=8
-* Use seq_length=32 or seq_length=64, both of which offer reasonable tradeoffs for prefill and decode performance.  seq_length=32 is better at decode and seq_length=64 is better at prefill.
-
-In our tests, we set max_seq_length=1024, but if your application allows for it, performance can improve with max_seq_length=512 or by keeping max_seq_length=1024 and setting cache_size=512-seq_length.
+* Set use_cache_list.
+* Use seq_length = 32, which offers a good balance between prefill/decode performance.
+* Split out_features in linear layers with target_split_size=1024, max_splits=8.
+* For ANE, set dtype = fp16, coreml-quantize = c4w.  The requires doing QAT on Llama1B for good accuracy.
+* Set embedding-quantize to "4,32".
+* Set max_seq_length to 128, 256, 512, 1024, and 2048, depending on needed context.  Note that performance drops with max_seq_length.  More specifically, performance drops with cache_size, and the best experience may require a good cache eviction policy.  The python runner in run.py uses a last-in-last-out policy when cache_size is specified.
