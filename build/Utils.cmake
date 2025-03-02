@@ -117,6 +117,10 @@ function(executorch_print_configuration_summary)
   )
   message(
     STATUS
+    "  EXECUTORCH_BUILD_OPENVINO                : ${EXECUTORCH_BUILD_OPENVINO}"
+  )
+  message(
+    STATUS
       "  EXECUTORCH_BUILD_PTHREADPOOL           : ${EXECUTORCH_BUILD_PTHREADPOOL}"
   )
   message(

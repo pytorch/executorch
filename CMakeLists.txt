@@ -204,6 +204,8 @@ option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
 
+option(EXECUTORCH_BUILD_OPENVINO "Build the Openvino backend" OFF)
+
 option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
@@ -689,6 +691,10 @@ endif()
 
 if(EXECUTORCH_BUILD_NEURON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
+endif()
+
+if(EXECUTORCH_BUILD_OPENVINO)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/openvino)
 endif()
 
 if(EXECUTORCH_BUILD_QNN)
