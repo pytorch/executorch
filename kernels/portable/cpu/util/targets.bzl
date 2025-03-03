@@ -61,7 +61,6 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
@@ -71,7 +70,6 @@ def define_common_targets():
         exported_headers = [
             "broadcast_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             ":repeat_util",
             "//executorch/runtime/kernel:kernel_includes",
@@ -281,8 +279,8 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "delinearized_indexes_range",
-        exported_headers = ["delinearized_indexes_range.h"],
+        name = "broadcast_indexes_range",
+        exported_headers = ["broadcast_indexes_range.h"],
         deps = [
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",

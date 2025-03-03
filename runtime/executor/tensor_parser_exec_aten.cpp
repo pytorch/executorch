@@ -64,7 +64,8 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
         "size_t cannot hold memory offset 0x%08" PRIx32 ".%08" PRIx32,
         memory_offset_high,
         memory_offset_low);
-    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
+    memory_offset |= static_cast<size_t>(memory_offset_high)
+        << (sizeof(size_t) - sizeof(uint32_t));
   }
   return allocator->get_offset_address(memory_id, memory_offset, nbytes);
 }
@@ -94,7 +95,7 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
   size_t output_idx = 0;
   for (int32_t tensor_index : *tensor_indices) {
     ET_CHECK_OR_RETURN_ERROR(
-        tensor_index >= 0 && tensor_index < values_len,
+        tensor_index >= 0 && static_cast<size_t>(tensor_index) < values_len,
         InvalidProgram,
         "Invalid value index %" PRId32 " for TensorList",
         tensor_index);
@@ -123,7 +124,9 @@ ET_NODISCARD Error validateTensorLayout(
       static_cast<int8_t>(expected_layout.scalar_type()));
   int dim = s_tensor->sizes()->size();
   ET_CHECK_OR_RETURN_ERROR(
-      dim == expected_layout.sizes().size(),
+      dim >= 0, InvalidExternalData, "Dim is negative: %d", dim)
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<size_t>(dim) == expected_layout.sizes().size(),
       InvalidExternalData,
       "Dim mismatch. Expected %d, got %zu.",
       dim,
@@ -150,7 +153,7 @@ ET_NODISCARD Error validateTensorLayout(
 // Check if key exists in entries. If it does, return a pointer to the entry
 // otherwise return a nullptr.
 NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
-  for (int i = 0; i < entries.size(); i++) {
+  for (const auto i : c10::irange(entries.size())) {
     if (strcmp(key, entries[i].key) == 0) {
       return &entries[i];
     }
