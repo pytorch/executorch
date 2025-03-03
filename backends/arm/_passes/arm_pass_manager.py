@@ -78,7 +78,9 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
-
+from executorch.backends.transforms.replace_scalar_tensor_with_full import (
+    ReplaceScalarTensorWithFullPass,
+)
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -133,6 +135,7 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(ReplaceScalarTensorWithFullPass())
         self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
@@ -194,4 +197,5 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxesPass())
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ReplaceScalarTensorWithFullPass())
         return self._transform(graph_module)

@@ -171,6 +171,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.constant_pad_nd.default,
             exir_ops.edge.aten.amax.default,
             exir_ops.edge.aten.amin.default,
+            torch.ops.aten.scalar_tensor.default,
         ]
 
         return supported
