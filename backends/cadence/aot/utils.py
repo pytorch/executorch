@@ -256,12 +256,18 @@ def save_bpte_program(
 @dataclass
 class MemoryConfig:
     memory_sizes: List[int]
+    # Alignment constraint for each memory region in bytes.
+    memory_alignments: Optional[List[int]] = None
 
     # Optional fields for logs
     memory_names: Optional[List[str]] = None
     base_addrs: Optional[List[int]] = None
     memory_xml_path: Optional[str] = None
     MemorySpace: Optional[enum.Enum] = None
+
+    def __post_init__(self) -> None:
+        if self.memory_alignments is None:
+            self.memory_alignments = [1] * len(self.memory_sizes)
 
     # get num memories indexed from 1..N, compatible with EXIR's spec.mem_id
     def get_num_memories(self) -> int:

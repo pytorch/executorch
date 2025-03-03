@@ -15,7 +15,7 @@ Minibench is usedful for giving reference performance data when developers integ
 You will need executorch AAR for Java and JNI dependencies.
 ```
 export ANDROID_NDK=<path_to_android_ndk>
-sh build/build_android_llm_demo.sh
+sh build/build_android_library.sh
 ```
 and copy the AAR to `app/libs`.
 ```
