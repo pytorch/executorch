@@ -495,6 +495,34 @@ jobs:
         # Test static llama weight sharing and accuracy
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
 
+  test-static-llama-ane:
+    name: test-static-llama-ane
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_PYBIND=ON \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
+        ${CONDA_RUN} --no-capture-output \
+        .ci/scripts/setup-macos.sh "$@"
+
+        # Install llama3_2_vision dependencies.
+        PYTHON_EXECUTABLE=python \
+        ${CONDA_RUN} --no-capture-output \
+        ./examples/models/llama3_2_vision/install_requirements.sh
+
+        # Test ANE llama
+        sh .ci/scripts/test_ane_static_llama.sh
+
   test-qnn-models-linux:
     name: test-qnn-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
