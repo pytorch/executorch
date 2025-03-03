@@ -67,12 +67,11 @@ def main():
     checkpointer = FullModelHFCheckpointer(
         checkpoint_dir=args.input_dir,
         checkpoint_files=[
-            "model-00001-of-00003.safetensors",
-            "model-00002-of-00003.safetensors",
-            "model-00003-of-00003.safetensors",
+            "model-00001-of-00002.safetensors",
+            "model-00002-of-00002.safetensors",
         ],
         output_dir=".",
-        model_type="PHI4_MINI",
+        model_type="PHI3_MINI",
     )
 
     print("Loading checkpoint...")
