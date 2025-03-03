@@ -62,8 +62,8 @@
     {
         "directory": "kernels/portable/cpu/util/test",
         "sources": [
+            "broadcast_indexes_range_test.cpp",
             "broadcast_test.cpp",
-            "delinearized_indexes_range_test.cpp",
             "reduce_test.cpp"
         ],
         "additional_libs": [

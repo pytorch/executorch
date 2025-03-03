@@ -94,47 +94,13 @@ def define_common_targets():
             "utils.h",
         ],
         visibility = [
-
+            "//executorch/devtools/etdump/...",
         ],
     )
 
     for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
 
-        runtime.cxx_library(
-            name = "data_sink_base" + aten_suffix,
-            exported_headers = [
-                "data_sink_base.h",
-            ],
-            exported_deps = [
-                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
-            ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-        )
-
-        runtime.cxx_library(
-            name = "buffer_data_sink" + aten_suffix,
-            exported_headers = [
-                "buffer_data_sink.h",
-            ],
-            srcs = [
-                "buffer_data_sink.cpp",
-            ],
-            deps = [
-                ":utils",
-            ],
-            exported_deps = [
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                ":data_sink_base" + aten_suffix,
-            ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-        )
         runtime.cxx_library(
             name = "etdump_flatcc" + aten_suffix,
             srcs = [
@@ -153,8 +119,8 @@ def define_common_targets():
             exported_deps = [
                 ":etdump_schema_flatcc",
                 ":utils",
-                ":data_sink_base" + aten_suffix,
-                ":buffer_data_sink" + aten_suffix,
+                "//executorch/devtools/etdump/data_sinks:data_sink_base" + aten_suffix,
+                "//executorch/devtools/etdump/data_sinks:buffer_data_sink" + aten_suffix,
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],

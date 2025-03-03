@@ -35,7 +35,7 @@ jobs:
         # For mypy linting, we need to first install executorch first so that
         # it builds the python package information.
         BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
 
         CACHE_DIRECTORY="/tmp/.lintbin"
         # Try to recover the cached binaries
