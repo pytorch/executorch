@@ -13,10 +13,11 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "delinearized_indexes_range_test",
-        srcs = ["delinearized_indexes_range_test.cpp"],
+        name = "broadcast_indexes_range_test",
+        srcs = ["broadcast_indexes_range_test.cpp"],
         deps = [
-            "//executorch/kernels/portable/cpu/util:delinearized_indexes_range",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
