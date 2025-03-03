@@ -63,7 +63,7 @@ def test_nonzero_zp_for_int32():
         ),
     ]
     for sample_input in sample_inputs:
-        with pytest.raises(Exception, match="OpCheckError"):
+        with pytest.raises(Exception, match="opcheck"):
             torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
 
 
@@ -86,7 +86,7 @@ def test_zp_outside_range():
         ),
     ]
     for sample_input in sample_inputs:
-        with pytest.raises(Exception, match="OpCheckError"):
+        with pytest.raises(Exception, match="opcheck"):
             torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
 
 
