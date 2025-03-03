@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/devtools/etdump/data_sink_base.h>
+#include <executorch/devtools/etdump/data_sinks/data_sink_base.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/span.h>
 
@@ -38,6 +38,26 @@ class BufferDataSink : public DataSinkBase {
   static ::executorch::runtime::Result<BufferDataSink> create(
       ::executorch::runtime::Span<uint8_t> buffer,
       size_t alignment = 64) noexcept;
+
+  /**
+   * Creates a BufferDataSink with a given span buffer.
+   *
+   * @param[in] ptr A pointer to the data blob where data will be stored.
+   * @param[in] size The size of the data blob in bytes.
+   * @param[in] alignment The alignment requirement for the buffer. It must be
+   * a power of two and greater than zero. Default is 64.
+   * @return A Result object containing either:
+   *         - A BufferDataSink object if succees, or
+   *         - An error code indicating the failure reason, if any issue
+   *           occurs during the creation process.
+   */
+  static ::executorch::runtime::Result<BufferDataSink>
+  create(void* ptr, size_t size, size_t alignment = 64) noexcept;
+
+  /**
+   * Creates a empty BufferDataSink;
+   */
+  BufferDataSink() = default;
 
   // Uncopiable and unassignable to avoid double assignment and free of the
   // internal buffer.

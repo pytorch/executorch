@@ -169,24 +169,8 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
   const executorch_flatbuffer::AllocationDetails* allocation_info =
       s_tensor->allocation_info();
 
-  // Memory Planned, with initial state
-  if (data_buffer_idx > 0 && allocation_info != nullptr) {
-    auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
-    if (!planned_ptr.ok()) {
-      return planned_ptr.error();
-    }
-    auto err = TensorParser::load_mutable_subsegment_into(
-        program, 0, s_tensor->data_buffer_idx(), nbytes, planned_ptr.get());
-
-    if (err != Error::Ok) {
-      return err;
-    }
-    return planned_ptr;
-  }
-
   // External tensors.
-  else if (
-      s_tensor->extra_tensor_info() != nullptr &&
+  if (s_tensor->extra_tensor_info() != nullptr &&
       s_tensor->extra_tensor_info()->location() ==
           executorch_flatbuffer::TensorDataLocation::EXTERNAL) {
     // Check that fqn is not null.
@@ -232,10 +216,9 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
 
       return planned_ptr;
     }
-  }
 
-  // Constant, stored in PTE file.
-  else if (data_buffer_idx > 0 && allocation_info == nullptr) {
+    // Constant, stored in PTE file.
+  } else if (data_buffer_idx > 0 && allocation_info == nullptr) {
     auto const_data =
         program->get_constant_buffer_data(data_buffer_idx, nbytes);
     if (!const_data.ok()) {
@@ -245,6 +228,20 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     // The const_cast is 'ok' here because the program and runtime should
     // guarantee that this data is never modified.
     return const_cast<void*>(const_data.get());
+
+    // Memory Planned, with initial state
+  } else if (data_buffer_idx > 0 && allocation_info != nullptr) {
+    auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
+    if (!planned_ptr.ok()) {
+      return planned_ptr.error();
+    }
+    auto err = TensorParser::load_mutable_subsegment_into(
+        program, 0, s_tensor->data_buffer_idx(), nbytes, planned_ptr.get());
+
+    if (err != Error::Ok) {
+      return err;
+    }
+    return planned_ptr;
 
     // Memory planned, no initial state
   } else if (data_buffer_idx == 0 && allocation_info != nullptr) {

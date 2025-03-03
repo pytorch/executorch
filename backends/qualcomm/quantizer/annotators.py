@@ -194,39 +194,37 @@ def annotate_sub(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.eq.Scalar, torch.ops.aten.eq.Tensor])
+@register_annotator([torch.ops.aten.eq.Tensor])
 def annotate_eq(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.ne.Scalar, torch.ops.aten.ne.Tensor])
+@register_annotator([torch.ops.aten.ne.Tensor])
 def annotate_ne(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.ge.Scalar, torch.ops.aten.ge.Tensor])
+@register_annotator([torch.ops.aten.ge.Tensor])
 def annotate_ge(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.gt.Scalar, torch.ops.aten.gt.Tensor])
+@register_annotator([torch.ops.aten.gt.Tensor])
 def annotate_gt(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.le.Scalar, torch.ops.aten.le.Tensor])
+@register_annotator([torch.ops.aten.le.Tensor])
 def annotate_le(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.lt.Scalar, torch.ops.aten.lt.Tensor])
+@register_annotator([torch.ops.aten.lt.Tensor])
 def annotate_lt(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator(
-    [torch.ops.aten.mul, torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar]
-)
+@register_annotator([torch.ops.aten.mul, torch.ops.aten.mul.Tensor])
 def annotate_mul(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
@@ -308,7 +306,7 @@ def annotate_div(node: Node, quantization_config: QuantizationConfig) -> None:
         raise NotImplementedError(f"No quant annotation is implemented for {node}.")
 
 
-@register_annotator([torch.ops.aten.rsub.Scalar])
+@register_annotator([torch.ops.aten.rsub.Tensor])
 def annotate_rsub(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
@@ -460,15 +458,9 @@ def annotate_permute(node: Node, quantization_config: QuantizationConfig) -> Non
         annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator(
-    [
-        torch.ops.aten.leaky_relu.default,
-        torch.ops.aten.leaky_relu_.default,
-        torch.ops.aten.prelu.default,
-    ]
-)
+@register_annotator([torch.ops.aten.prelu.default])
 def annotate_prelu(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_single_out(node, quantization_config)
+    annotate_binary(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default])
@@ -688,7 +680,7 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         )
 
 
-@register_annotator([torch.ops.aten.pow.Tensor_Scalar])
+@register_annotator([torch.ops.aten.pow.Tensor_Tensor])
 def annotate_pow(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
