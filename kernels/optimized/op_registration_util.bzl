@@ -2,8 +2,8 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
-    "get_vec_preprocessor_flags",
     "get_vec_deps",
+    "get_vec_preprocessor_flags",
 )
 load(
     "@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl",
@@ -137,7 +137,3 @@ def define_op_target(name, compiler_flags, deps):
         compiler_flags = compiler_flags,
         deps = deps,
     )
-
-def is_op_disabled(name):
-    # All ops are enabled for internal builds.
-    return False

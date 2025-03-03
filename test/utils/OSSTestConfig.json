@@ -1,5 +1,16 @@
 { "tests": [
     {
+        "directory": "extension/llm/custom_ops/spinquant/test",
+        "sources": [
+            "fast_hadamard_transform_test.cpp",
+            "fast_hadamard_transform_test_impl.cpp",
+            "op_fast_hadamard_transform_test.cpp"
+        ],
+        "additional_libs": [
+            "custom_ops"
+        ]
+    },
+    {
         "directory": "extension/data_loader/test",
         "sources": [
             "buffer_data_loader_test.cpp",
