@@ -6,8 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchError.h"
-#import "ExecuTorchLog.h"
-#import "ExecuTorchModule.h"
-#import "ExecuTorchTensor.h"
-#import "ExecuTorchValue.h"
+#import <Foundation/Foundation.h>
+
+NS_ASSUME_NONNULL_BEGIN
+
+FOUNDATION_EXPORT NSErrorDomain const ExecuTorchErrorDomain NS_SWIFT_NAME(ErrorDomain);
+
+NS_ASSUME_NONNULL_END
