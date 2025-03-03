@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
+from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 import torch
 from executorch.backends.arm.test import common
@@ -20,16 +20,19 @@ T = TypeVar("T")
 
 class BasePipelineMaker(Generic[T]):
     """
-    The BasePiplineMaker defines a list of stages to be applied to a torch.nn.module for lowering it in the Arm backend. To be inherited and adjusted for particular targets.
-    Importantly, the pipeline list can be modified before running the pipeline to support various pipeline extensions and debugging usecases.
+    The BasePiplineMaker defines a list of stages to be applied to a torch.nn.module for lowering it
+    in the Arm backend. To be inherited and adjusted for particular targets. Importantly, the
+    pipeline list can be modified before running the pipeline to support various pipeline extensions
+    and debugging usecases.
 
     Attributes:
         module: The module which the pipeline is applied to.
         test_data: Data used for quantizing and testing the module.
         aten_ops: Aten dialect ops expected to be found in the graph after export.
-        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
-        compile_spec: The compile spec used in the lowering process
-        use_edge_to_transform_and_lower: Selects betweeen two possible routes for lowering the module:
+        compile_spec: The compile spec used in the lowering process.
+        exir_ops: Exir dialect ops expected to be found in the graph after to_edge if not using
+                  use_edge_to_transform_and_lower.
+        use_edge_to_transform_and_lower: Selects betweeen two possible routes for lowering:
                 tester.to_edge_transform_and_lower()
             or
                 tester.to_edge().check(exir_ops).partition()
@@ -40,11 +43,11 @@ class BasePipelineMaker(Generic[T]):
         Helper class to store a pipeline stage as a function call + args for calling later on.
 
         Attributes:
-            id: name of the function to be called, used for refering to stages in the pipeline
-            func: handle to the function to be called
-            args: args used when called
-            kwargs: kwargs used when called
-            is_called: keeps track of if the function has been called
+            id: name of the function to be called, used for refering to stages in the pipeline.
+            func: handle to the function to be called.
+            args: args used when called.
+            kwargs: kwargs used when called.
+            is_called: keeps track of if the function has been called.
         """
 
         def __init__(self, func: Callable, id: str, *args, **kwargs):
@@ -73,9 +76,9 @@ class BasePipelineMaker(Generic[T]):
         module: torch.nn.Module,
         test_data: T,
         aten_ops: str | List[str],
-        exir_ops: str | List[str],
         compile_spec: List[CompileSpec],
-        use_to_edge_transform_and_lower: bool = False,
+        exir_ops: Optional[str | List[str]] = None,
+        use_to_edge_transform_and_lower: bool = True,
     ):
 
         self.tester = ArmTester(
@@ -83,7 +86,12 @@ class BasePipelineMaker(Generic[T]):
         )
 
         self.aten_ops = aten_ops if isinstance(aten_ops, list) else [aten_ops]
-        self.exir_ops = exir_ops if isinstance(exir_ops, list) else [exir_ops]
+        if exir_ops is None:
+            self.exir_ops = []
+        elif isinstance(exir_ops, list):
+            self.exir_ops = exir_ops
+        else:
+            self.exir_ops = [exir_ops]
         self.test_data = test_data
         self._stages = []
 
@@ -152,10 +160,11 @@ class BasePipelineMaker(Generic[T]):
 
                 suffix = str(len(stages_containing_stage_id))
 
-            stage_id = stage_id + "." + suffix
+            if not suffix == "0":
+                stage_id = stage_id + "." + suffix
 
-            if stage_id in id_list:
-                raise ValueError("Suffix must be unique in pipeline")
+                if stage_id in id_list:
+                    raise ValueError("Suffix must be unique in pipeline")
 
         pipeline_stage = self.PipelineStage(func, stage_id, *args, **kwargs)
         self._stages.insert(pos, pipeline_stage)
@@ -230,26 +239,42 @@ class BasePipelineMaker(Generic[T]):
 
 
 class TosaPipelineBI(BasePipelineMaker, Generic[T]):
-    """Lowers a graph to BI TOSA spec (with quantization) and tests it with the TOSA reference model."""
+    """
+    Lowers a graph to BI TOSA spec (with quantization) and tests it with the TOSA reference model.
+
+    Attributes:
+       module: The module which the pipeline is applied to.
+       test_data: Data used for quantizing and testing the module.
+
+       aten_ops: Aten dialect ops expected to be found in the graph after export.
+       exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
+       if not using use_edge_to_transform_and_lower.
+
+       tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
+                     options.
+       use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
+       custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+    """
 
     def __init__(
         self,
         module: torch.nn.Module,
-        test_data: Any,
-        aten_op: str,
-        exir_op: str,
+        test_data: T,
+        aten_op: str | List[str],
+        exir_op: Optional[str | List[str]] = None,
         tosa_version: str = "TOSA-0.80+BI",
-        use_to_edge_transform_and_lower: bool = False,
+        use_to_edge_transform_and_lower: bool = True,
+        custom_path: str = None,
     ):
         compile_spec = common.get_tosa_compile_spec(
-            tosa_version,
+            tosa_version, custom_path=custom_path
         )
         super().__init__(
             module,
             test_data,
             aten_op,
-            exir_op,
             compile_spec,
+            exir_op,
             use_to_edge_transform_and_lower,
         )
         self.add_stage(self.tester.quantize, pos=0)
@@ -284,26 +309,42 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
 
 
 class TosaPipelineMI(BasePipelineMaker, Generic[T]):
-    """Lowers a graph to MI TOSA spec and tests it with the TOSA reference model"""
+    """
+    Lowers a graph to MI TOSA spec and tests it with the TOSA reference model.
+
+    Attributes:
+       module: The module which the pipeline is applied to.
+       test_data: Data used for quantizing and testing the module.
+
+       aten_ops: Aten dialect ops expected to be found in the graph after export.
+       exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
+       if not using use_edge_to_transform_and_lower.
+
+       tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
+                     options.
+       use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
+       custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+    """
 
     def __init__(
         self,
         module: torch.nn.Module,
-        test_data: Any,
-        aten_op: str,
-        exir_op: str,
+        test_data: T,
+        aten_op: str | List[str],
+        exir_op: Optional[str | List[str]] = None,
         tosa_version: str = "TOSA-0.80+MI",
-        use_to_edge_transform_and_lower: bool = False,
+        use_to_edge_transform_and_lower: bool = True,
+        custom_path: str = None,
     ):
         compile_spec = common.get_tosa_compile_spec(
-            tosa_version,
+            tosa_version, custom_path=custom_path
         )
         super().__init__(
             module,
             test_data,
             aten_op,
-            exir_op,
             compile_spec,
+            exir_op,
             use_to_edge_transform_and_lower,
         )
         self.add_stage_after(
@@ -322,24 +363,38 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
 
 
 class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
-    """Lowers a graph to u55 BI TOSA spec and tests it on the Corstone300 FVP, if run_on_fvp is true."""
+    """
+    Lowers a graph to u55 BI TOSA spec and tests it on the Corstone300 FVP, if run_on_fvp is true.
+
+    Attributes:
+       module: The module which the pipeline is applied to.
+       test_data: Data used for quantizing and testing the module.
+       aten_ops: Aten dialect ops expected to be found in the graph after export.
+
+       exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
+       if not using use_edge_to_transform_and_lower.
+       run_on_fvp: Set to true to test the pte fileon a fvp simulator.
+       use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
+       custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+    """
 
     def __init__(
         self,
         module: torch.nn.Module,
         test_data: T,
         aten_ops: str | List[str],
-        exir_ops: str | List[str],
+        exir_ops: Optional[str | List[str]] = None,
         run_on_fvp: bool = False,
         use_to_edge_transform_and_lower: bool = False,
+        custom_path: str = None,
     ):
-        compile_spec = common.get_u55_compile_spec()
+        compile_spec = common.get_u55_compile_spec(custom_path=custom_path)
         super().__init__(
             module,
             test_data,
             aten_ops,
-            exir_ops,
             compile_spec,
+            exir_ops,
             use_to_edge_transform_and_lower,
         )
         self.add_stage(self.tester.quantize, pos=0)
@@ -378,24 +433,38 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
 
 
 class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
-    """Lowers a graph to u85 BI TOSA spec and tests it on the Corstone320 FVP, if run_on_fvp is true."""
+    """
+    Lowers a graph to u85 BI TOSA spec and tests it on the Corstone320 FVP, if run_on_fvp is true.
+
+    Attributes:
+       module: The module which the pipeline is applied to.
+       test_data: Data used for quantizing and testing the module.
+       aten_ops: Aten dialect ops expected to be found in the graph after export.
+
+       exir_ops: Exir dialect ops expected to be found in the graph after to_edge if not using
+                 use_edge_to_transform_and_lower.
+       run_on_fvp: Set to true to test the pte fileon a fvp simulator.
+       use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
+       custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+    """
 
     def __init__(
         self,
         module: torch.nn.Module,
         test_data: T,
         aten_ops: str | List[str],
-        exir_ops: str | List[str],
+        exir_ops: str | List[str] = None,
         run_on_fvp: bool = False,
         use_to_edge_transform_and_lower: bool = False,
+        custom_path: str = None,
     ):
-        compile_spec = common.get_u85_compile_spec()
+        compile_spec = common.get_u85_compile_spec(custom_path=custom_path)
         super().__init__(
             module,
             test_data,
             aten_ops,
-            exir_ops,
             compile_spec,
+            exir_ops,
             use_to_edge_transform_and_lower,
         )
         self.add_stage(self.tester.quantize, pos=0)
@@ -433,7 +502,7 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
             )
 
 
-class TestPassPipeline(BasePipelineMaker, Generic[T]):
+class PassPipeline(BasePipelineMaker, Generic[T]):
     """
     Runs single passes directly on an edge_program and checks operators before/after.
 
@@ -450,6 +519,7 @@ class TestPassPipeline(BasePipelineMaker, Generic[T]):
         pass_list: List of regular passes.
         pass_functions: List of functions applied directly to the exported program.
         passes_with_exported_program: List of passes initiated with an exported_program.
+        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
 
     Passes are run in order pass_list -> pass_functions -> passes_with_exported_program.
     See arm_tester.RunPasses() for more information.
@@ -467,16 +537,17 @@ class TestPassPipeline(BasePipelineMaker, Generic[T]):
         pass_list: Optional[List[Type[PassType]]] = None,
         pass_functions: Optional[List[Callable]] = None,
         passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
+        custom_path: str = None,
     ):
         compile_spec = common.get_tosa_compile_spec(
-            tosa_version,
+            tosa_version, custom_path=custom_path
         )
         super().__init__(
             module,
             test_data,
             None,
-            None,
             compile_spec,
+            None,
             use_to_edge_transform_and_lower=False,
         )
 
@@ -507,3 +578,52 @@ class TestPassPipeline(BasePipelineMaker, Generic[T]):
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
         self.add_stage(self.tester.run_method_and_compare_outputs)
+
+
+class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
+    """
+    Runs the partitioner on a module and checks that ops are not delegated to test
+    SupportedTOSAOperatorChecks.
+
+    Attributes:
+        module: The module which the pipeline is applied to.
+        test_data: Data with a representative shape which the operator_check is performed on.
+        tosa_version: The TOSA-version which to test for.
+
+        non_delegated_ops : Exir ops expected not to be delegated.
+        n_expected_delegates : Number of delegate calls (0 in the usual case).
+        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        tosa_version: str,
+        non_delegated_ops: Dict[str, int],
+        n_expected_delegates: int = 0,
+        custom_path: str = None,
+    ):
+        compile_spec = common.get_tosa_compile_spec(
+            tosa_version, custom_path=custom_path
+        )
+        super().__init__(
+            module,
+            test_data,
+            [],
+            compile_spec,
+            [],
+        )
+
+        if "BI" in tosa_version:
+            self.add_stage(self.tester.quantize, pos=0)
+
+        self.change_args("check_not.exir", [])
+        self.change_args(
+            "check_count.exir",
+            {
+                "torch.ops.higher_order.executorch_call_delegate": n_expected_delegates,
+                **non_delegated_ops,
+            },
+        )
+        self.pop_stage("to_executorch")

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -232,8 +232,24 @@ class TestMaxPool2d(unittest.TestCase):
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
+    @parameterized.expand(test_data_suite_mult_batches)
+    @pytest.mark.corstone_fvp
+    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
+    def test_maxpool2d_tosa_u55_BI_mult_batches(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        model_params: int | Tuple[int, int],
+    ):
+        tester = self._test_maxpool2d_tosa_ethos_BI_pipeline(
+            self.MaxPool2d(*model_params),
+            common.get_u55_compile_spec(),
+            (test_data,),
+        )
+        if conftest.is_option_enabled("corstone_fvp"):
+            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
+
     reject_data_suite = [
-        (MaxPool2d(1, 1, 0), torch.rand(2, 5, 5, 5)),
         (MaxPool2d(1, 4, 0), torch.rand(1, 10, 10, 10)),
         (MaxPool2d((1, 257), 1, 0), torch.rand(1, 16, 5, 300)),
         (MaxPool2d((800, 90), 1, 0), torch.rand(1, 16, 850, 100)),

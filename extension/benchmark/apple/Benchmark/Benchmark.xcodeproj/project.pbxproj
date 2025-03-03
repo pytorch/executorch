@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -20,21 +20,15 @@
 		03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B011902CAD114E00054791 /* ResourceTestCase.m */; };
 		03B2D3682C8A515A0046936E /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3672C8A515A0046936E /* App.swift */; };
 		03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3792C8A515C0046936E /* GenericTests.mm */; };
-		03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */; };
-		03DD00AA2C8FE44600FE4619 /* kernels_custom.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */; };
-		03DD00AF2C8FE44600FE4619 /* kernels_portable.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */; };
-		03DD00B02C8FE44600FE4619 /* kernels_optimized.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A02C8FE44600FE4619 /* kernels_optimized.xcframework */; };
-		03DD00B12C8FE44600FE4619 /* backend_xnnpack.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A12C8FE44600FE4619 /* backend_xnnpack.xcframework */; };
-		03DD00B22C8FE44600FE4619 /* backend_mps.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A22C8FE44600FE4619 /* backend_mps.xcframework */; };
-		03DD00B32C8FE44600FE4619 /* executorch.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A32C8FE44600FE4619 /* executorch.xcframework */; settings = {ATTRIBUTES = (Required, ); }; };
-		03DD00B52C8FE44600FE4619 /* kernels_quantized.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A52C8FE44600FE4619 /* kernels_quantized.xcframework */; };
 		03E7E6792CBDCAE900205E71 /* CoreMLTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */; };
-		03ED6D0F2C8AAFE900F2D6EE /* libsqlite3.0.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D0E2C8AAFE900F2D6EE /* libsqlite3.0.tbd */; };
-		03ED6D112C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D102C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework */; };
-		03ED6D132C8AAFF700F2D6EE /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D122C8AAFF700F2D6EE /* MetalPerformanceShaders.framework */; };
-		03ED6D152C8AAFFF00F2D6EE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D142C8AAFFF00F2D6EE /* Metal.framework */; };
-		03ED6D172C8AB00500F2D6EE /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D162C8AB00500F2D6EE /* CoreML.framework */; };
-		03ED6D192C8AB00A00F2D6EE /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */; };
+		03F1814E2D7262FC0058BDF9 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1814D2D7262FC0058BDF9 /* backend_coreml */; };
+		03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1814F2D7262FC0058BDF9 /* backend_mps */; };
+		03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181512D7262FC0058BDF9 /* backend_xnnpack */; };
+		03F181542D7262FC0058BDF9 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181532D7262FC0058BDF9 /* executorch */; };
+		03F181562D7262FC0058BDF9 /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181552D7262FC0058BDF9 /* kernels_custom */; };
+		03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181572D7262FC0058BDF9 /* kernels_optimized */; };
+		03F1815A2D7262FC0058BDF9 /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181592D7262FC0058BDF9 /* kernels_portable */; };
+		03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1815B2D7262FC0058BDF9 /* kernels_quantized */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,21 +77,7 @@
 		03B2D3752C8A515C0046936E /* Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		03B2D3792C8A515C0046936E /* GenericTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GenericTests.mm; sourceTree = "<group>"; };
 		03C7FA322C8AA24200E6E9AE /* Resources */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources; sourceTree = SOURCE_ROOT; };
-		03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_coreml.xcframework; path = Frameworks/backend_coreml.xcframework; sourceTree = "<group>"; };
-		03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_custom.xcframework; path = Frameworks/kernels_custom.xcframework; sourceTree = "<group>"; };
-		03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_portable.xcframework; path = Frameworks/kernels_portable.xcframework; sourceTree = "<group>"; };
-		03DD00A02C8FE44600FE4619 /* kernels_optimized.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_optimized.xcframework; path = Frameworks/kernels_optimized.xcframework; sourceTree = "<group>"; };
-		03DD00A12C8FE44600FE4619 /* backend_xnnpack.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_xnnpack.xcframework; path = Frameworks/backend_xnnpack.xcframework; sourceTree = "<group>"; };
-		03DD00A22C8FE44600FE4619 /* backend_mps.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_mps.xcframework; path = Frameworks/backend_mps.xcframework; sourceTree = "<group>"; };
-		03DD00A32C8FE44600FE4619 /* executorch.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = executorch.xcframework; path = Frameworks/executorch.xcframework; sourceTree = "<group>"; };
-		03DD00A52C8FE44600FE4619 /* kernels_quantized.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_quantized.xcframework; path = Frameworks/kernels_quantized.xcframework; sourceTree = "<group>"; };
 		03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CoreMLTests.mm; sourceTree = "<group>"; };
-		03ED6D0E2C8AAFE900F2D6EE /* libsqlite3.0.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.0.tbd; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/usr/lib/libsqlite3.0.tbd; sourceTree = DEVELOPER_DIR; };
-		03ED6D102C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShadersGraph.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/MetalPerformanceShadersGraph.framework; sourceTree = DEVELOPER_DIR; };
-		03ED6D122C8AAFF700F2D6EE /* MetalPerformanceShaders.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShaders.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/MetalPerformanceShaders.framework; sourceTree = DEVELOPER_DIR; };
-		03ED6D142C8AAFFF00F2D6EE /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/Metal.framework; sourceTree = DEVELOPER_DIR; };
-		03ED6D162C8AB00500F2D6EE /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
-		03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,20 +92,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03ED6D192C8AB00A00F2D6EE /* Accelerate.framework in Frameworks */,
-				03ED6D172C8AB00500F2D6EE /* CoreML.framework in Frameworks */,
-				03ED6D152C8AAFFF00F2D6EE /* Metal.framework in Frameworks */,
-				03ED6D132C8AAFF700F2D6EE /* MetalPerformanceShaders.framework in Frameworks */,
-				03ED6D112C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework in Frameworks */,
-				03ED6D0F2C8AAFE900F2D6EE /* libsqlite3.0.tbd in Frameworks */,
-				03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */,
-				03DD00B22C8FE44600FE4619 /* backend_mps.xcframework in Frameworks */,
-				03DD00B12C8FE44600FE4619 /* backend_xnnpack.xcframework in Frameworks */,
-				03DD00B32C8FE44600FE4619 /* executorch.xcframework in Frameworks */,
-				03DD00AA2C8FE44600FE4619 /* kernels_custom.xcframework in Frameworks */,
-				03DD00B02C8FE44600FE4619 /* kernels_optimized.xcframework in Frameworks */,
-				03DD00AF2C8FE44600FE4619 /* kernels_portable.xcframework in Frameworks */,
-				03DD00B52C8FE44600FE4619 /* kernels_quantized.xcframework in Frameworks */,
+				03F181542D7262FC0058BDF9 /* executorch in Frameworks */,
+				03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */,
+				03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */,
+				03F1814E2D7262FC0058BDF9 /* backend_coreml in Frameworks */,
+				03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */,
+				03F181562D7262FC0058BDF9 /* kernels_custom in Frameworks */,
+				03F1815A2D7262FC0058BDF9 /* kernels_portable in Frameworks */,
+				03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -204,7 +178,6 @@
 			isa = PBXGroup;
 			children = (
 				03B2D3662C8A515A0046936E /* App */,
-				03ED6CEB2C8AAF5300F2D6EE /* Frameworks */,
 				03C7FA322C8AA24200E6E9AE /* Resources */,
 				03B2D3782C8A515C0046936E /* Tests */,
 				03B0118D2CAC567900054791 /* TestUtils */,
@@ -240,27 +213,6 @@
 				037C96A02C8A570B00B3DF38 /* Tests.xctestplan */,
 			);
 			path = Tests;
-			sourceTree = SOURCE_ROOT;
-		};
-		03ED6CEB2C8AAF5300F2D6EE /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */,
-				03ED6D162C8AB00500F2D6EE /* CoreML.framework */,
-				03ED6D142C8AAFFF00F2D6EE /* Metal.framework */,
-				03ED6D122C8AAFF700F2D6EE /* MetalPerformanceShaders.framework */,
-				03ED6D102C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework */,
-				03ED6D0E2C8AAFE900F2D6EE /* libsqlite3.0.tbd */,
-				03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */,
-				03DD00A22C8FE44600FE4619 /* backend_mps.xcframework */,
-				03DD00A12C8FE44600FE4619 /* backend_xnnpack.xcframework */,
-				03DD00A32C8FE44600FE4619 /* executorch.xcframework */,
-				03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */,
-				03DD00A02C8FE44600FE4619 /* kernels_optimized.xcframework */,
-				03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */,
-				03DD00A52C8FE44600FE4619 /* kernels_quantized.xcframework */,
-			);
-			name = Frameworks;
 			sourceTree = SOURCE_ROOT;
 		};
 /* End PBXGroup section */
@@ -329,6 +281,9 @@
 				Base,
 			);
 			mainGroup = 03B2D35B2C8A515A0046936E;
+			packageReferences = (
+				03F1814C2D7262FC0058BDF9 /* XCLocalSwiftPackageReference "../../../.." */,
+			);
 			productRefGroup = 03B2D3652C8A515A0046936E /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -671,6 +626,48 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		03F1814C2D7262FC0058BDF9 /* XCLocalSwiftPackageReference "../../../.." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../../..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		03F1814D2D7262FC0058BDF9 /* backend_coreml */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = backend_coreml;
+		};
+		03F1814F2D7262FC0058BDF9 /* backend_mps */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = backend_mps;
+		};
+		03F181512D7262FC0058BDF9 /* backend_xnnpack */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = backend_xnnpack;
+		};
+		03F181532D7262FC0058BDF9 /* executorch */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = executorch;
+		};
+		03F181552D7262FC0058BDF9 /* kernels_custom */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = kernels_custom;
+		};
+		03F181572D7262FC0058BDF9 /* kernels_optimized */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = kernels_optimized;
+		};
+		03F181592D7262FC0058BDF9 /* kernels_portable */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = kernels_portable;
+		};
+		03F1815B2D7262FC0058BDF9 /* kernels_quantized */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = kernels_quantized;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 03B2D35C2C8A515A0046936E /* Project object */;
 }

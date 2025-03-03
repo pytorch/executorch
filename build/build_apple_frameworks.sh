@@ -9,7 +9,7 @@ set -euo pipefail
 
 SOURCE_ROOT_DIR=""
 OUTPUT="cmake-out"
-MODE="Release"
+MODES=()
 TOOLCHAIN=""
 PYTHON=$(which python3)
 FLATC=$(which flatc)
@@ -77,20 +77,21 @@ usage() {
   echo
   echo "Options:"
   echo "  --output=DIR         Output directory. Default: 'cmake-out'"
-  echo "  --Debug              Use Debug build mode. Default: Uses Release build mode."
-  echo "  --toolchain=FILE     Cmake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake'"
-  echo "  --python=FILE        Python executable path. Default: Path of python3 found in the current \$PATH"
-  echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: Path of flatc found in the current \$PATH"
-  echo "  --coreml             Include this flag to build the Core ML backend."
-  echo "  --custom             Include this flag to build the Custom kernels."
-  echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
-  echo "  --optimized          Include this flag to build the Optimized kernels."
-  echo "  --portable           Include this flag to build the Portable kernels."
-  echo "  --quantized          Include this flag to build the Quantized kernels."
-  echo "  --xnnpack            Include this flag to build the XNNPACK backend."
+  echo "  --Debug              Build Debug version."
+  echo "  --Release            Build Release version."
+  echo "  --toolchain=FILE     CMake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake'"
+  echo "  --python=FILE        Python executable path. Default: Path of python3 in \$PATH"
+  echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: Path of flatc in \$PATH"
+  echo "  --coreml             Build the Core ML backend."
+  echo "  --custom             Build the Custom kernels."
+  echo "  --mps                Build the Metal Performance Shaders backend."
+  echo "  --optimized          Build the Optimized kernels."
+  echo "  --portable           Build the Portable kernels."
+  echo "  --quantized          Build the Quantized kernels."
+  echo "  --xnnpack            Build the XNNPACK backend."
   echo
   echo "Example:"
-  echo "  $0 /path/to/source/root --output=cmake-out --toolchain=/path/to/cmake/toolchain --python=/path/to/python3 --coreml --mps --xnnpack"
+  echo "  $0 /path/to/source/root --output=cmake-out --toolchain=/path/to/toolchain --python=/path/to/python3 --coreml --mps --xnnpack"
   exit 0
 }
 
@@ -98,7 +99,16 @@ for arg in "$@"; do
   case $arg in
       -h|--help) usage ;;
       --output=*) OUTPUT="${arg#*=}" ;;
-      --Debug) MODE="Debug" ;;
+      --Release)
+        if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
+          MODES+=("Release")
+        fi
+        ;;
+      --Debug)
+        if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
+          MODES+=("Debug")
+        fi
+        ;;
       --toolchain=*) TOOLCHAIN="${arg#*=}" ;;
       --python=*) PYTHON="${arg#*=}" ;;
       --flatc=*) FLATC="${arg#*=}" ;;
@@ -119,6 +129,10 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [ ${#MODES[@]} -eq 0 ]; then
+  MODES=("Release")
+fi
 
 if [[ -z "$SOURCE_ROOT_DIR" ]]; then
     SOURCE_ROOT_DIR=$(pwd)
@@ -146,10 +160,11 @@ cmake_build() {
     local platform=$1
     local platform_flag=$2
     local platform_target=$3
-    echo "Building for $platform with flag $platform_flag"
-    mkdir "$platform" && cd "$platform" || exit 1
+    local mode=$4
+    echo "Building for $platform ($mode) with flag $platform_flag"
+    mkdir -p "$platform" && cd "$platform" || exit 1
     cmake "$SOURCE_ROOT_DIR" -G Xcode \
-        -DCMAKE_BUILD_TYPE="$MODE" \
+        -DCMAKE_BUILD_TYPE="$mode" \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
@@ -173,13 +188,15 @@ cmake_build() {
         ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
         --log-level=VERBOSE
     cmake --build . \
-        --config $MODE \
+        --config "$mode" \
         --verbose
     cd ..
 }
 
 for index in ${!PLATFORMS[*]}; do
-  cmake_build "${PLATFORMS[$index]}" "${PLATFORM_FLAGS[$index]}" "${PLATFORM_TARGET[$index]}"
+  for mode in "${MODES[@]}"; do
+    cmake_build "${PLATFORMS[$index]}" "${PLATFORM_FLAGS[$index]}" "${PLATFORM_TARGET[$index]}" "$mode"
+  done
 done
 
 echo "Exporting headers"
@@ -206,42 +223,51 @@ check_command "$BUCK2"
 # So, just patch our generated framework to do that.
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
-' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h
-sed -i '' '1i\
-#define C10_USING_CUSTOM_GENERATED_MACROS
-' $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h
-cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_PATH/"
+' \
+"$HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
+"$HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h"
 
+cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_PATH/"
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.modulemap "$HEADERS_PATH"
 
 echo "Creating frameworks"
 
-for platform in "${PLATFORMS[@]}"; do
-  echo "Directory: $platform/$MODE"
-  FRAMEWORK_FLAGS+=("--directory=$platform/$MODE")
-done
-
 append_framework_flag() {
   local flag="$1"
   local framework="$2"
+  local mode="${3:-}"
   if [[ $flag == ON ]]; then
+    if [[ -n "$mode" && "$mode" != "Release" ]]; then
+      local name spec
+      name=$(echo "$framework" | cut -d: -f1)
+      spec=$(echo "$framework" | cut -d: -f2-)
+      framework="${name}_$(echo "$mode" | tr '[:upper:]' '[:lower:]'):${spec}"
+    fi
     echo "Framework: $framework"
     FRAMEWORK_FLAGS+=("--framework=$framework")
   fi
 }
 
-append_framework_flag "ON" "$FRAMEWORK_EXECUTORCH"
-append_framework_flag "$COREML" "$FRAMEWORK_BACKEND_COREML"
-append_framework_flag "$MPS" "$FRAMEWORK_BACKEND_MPS"
-append_framework_flag "$XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK"
-append_framework_flag "$CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM"
-append_framework_flag "$OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED"
-append_framework_flag "$PORTABLE" "$FRAMEWORK_KERNELS_PORTABLE"
-append_framework_flag "$QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED"
+for mode in "${MODES[@]}"; do
+  FRAMEWORK_FLAGS=()
+  for platform in "${PLATFORMS[@]}"; do
+    echo "Directory: $platform/$mode"
+    FRAMEWORK_FLAGS+=("--directory=$platform/$mode")
+  done
 
-"$SOURCE_ROOT_DIR"/build/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
+  append_framework_flag "ON" "$FRAMEWORK_EXECUTORCH" "$mode"
+  append_framework_flag "$COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
+  append_framework_flag "$MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
+  append_framework_flag "$XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
+  append_framework_flag "$CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
+  append_framework_flag "$OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
+  append_framework_flag "$PORTABLE" "$FRAMEWORK_KERNELS_PORTABLE" "$mode"
+  append_framework_flag "$QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
+
+  "$SOURCE_ROOT_DIR"/build/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
+done
 
 echo "Cleaning up"
 

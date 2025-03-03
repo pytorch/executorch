@@ -111,10 +111,16 @@ class CoreMLPartitioner(Partitioner):
         do_not_decompose = []
         op_support = OperatorsSupportedForCoreMLBackend()
         for node in ep.graph.nodes:
-            if (
-                node.op == "call_function"
-                and isinstance(node.target, torch._ops.OpOverload)
-                and op_support.is_node_supported(None, node)
+            if node.op == "call_function" and isinstance(
+                node.target, torch._ops.OpOverload
             ):
-                do_not_decompose.append(node.target)
+                try:
+                    if op_support.is_node_supported(None, node):
+                        do_not_decompose.append(node.target)
+                except Exception as e:
+                    # CoreML's op_support.is_node_supported will sometimes throw
+                    # for unsupported ops, rather than returning False
+                    logger.warning(
+                        f"Encountered exception when checking node support: {e}"
+                    )
         return do_not_decompose, None
