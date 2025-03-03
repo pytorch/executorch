@@ -43,7 +43,7 @@ namespace runtime {
 // increment this to support their use case. In post-processing the stats for
 // all these iterations will be consolidated.
 #ifndef MAX_PROFILE_BLOCKS
-#define MAX_PROFILE_BLOCKS 2
+#define MAX_PROFILE_BLOCKS 1024
 #endif
 
 #define PROF_NAME_MAX_LEN 32
