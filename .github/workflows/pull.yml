@@ -505,6 +505,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
+        export BUILD_TOOL="cmake"
         bash .ci/scripts/setup-conda.sh
         eval "$(conda shell.bash hook)"
 
