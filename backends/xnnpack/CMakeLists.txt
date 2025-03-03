@@ -142,6 +142,10 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
     xnn_executor_runner gflags optimized_native_cpu_ops_lib ${xnn_executor_runner_libs}
   )
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
+  if(EXECUTORCH_BUILD_PTHREADPOOL)
+    target_link_libraries(xnn_executor_runner extension_threadpool pthreadpool)
+    target_compile_definitions(xnn_executor_runner PRIVATE ET_USE_THREADPOOL)
+  endif()
 endif()
 
 install(
