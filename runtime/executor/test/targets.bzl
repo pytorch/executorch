@@ -92,6 +92,18 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "pte_data_map_test",
+        srcs = [
+            "pte_data_map_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/data_loader:file_data_loader",
+            "//executorch/extension/testing_util:temp_file",
+            "//executorch/runtime/executor:pte_data_map",
+        ],
+    )
+
     # TODO(dbort): Find a way to make these run for ANDROID/APPLE in xplat. The
     # android and ios test determinators don't like the reference to the model
     # file in fbcode. See https://fburl.com/9esapdmd
@@ -168,18 +180,6 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/schema:program",
             ],
             env = modules_env,
-        )
-
-        runtime.cxx_test(
-            name = "pte_data_map_test",
-            srcs = [
-                "pte_data_map_test.cpp",
-            ],
-            deps = [
-                "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/extension/testing_util:temp_file",
-                "//executorch/runtime/executor:pte_data_map",
-            ],
         )
 
         runtime.cxx_test(
