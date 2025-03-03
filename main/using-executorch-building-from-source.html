@@ -590,6 +590,13 @@ git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>off
 </pre></div>
 </div>
+<p>For development, install the package in <code class="docutils literal notranslate"><span class="pre">--editable</span></code> mode, which allows to modify Python source code and see changes reflected immediately.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">install_executorch</span><span class="o">.</span><span class="n">sh</span> <span class="o">--</span><span class="n">editable</span> <span class="p">[</span><span class="o">--</span><span class="n">pybind</span> <span class="n">xnnpack</span><span class="p">]</span>
+
+<span class="c1"># Or you can directly do the following if dependencies are already installed.</span>
+<span class="n">pip</span> <span class="n">install</span> <span class="o">-</span><span class="n">e</span> <span class="o">.</span>
+</pre></div>
+</div>
 <blockquote>
 <div><p><strong><em>NOTE:</em></strong>  Cleaning the build system</p>
 <p>When fetching a new version of the upstream repo (via <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">fetch</span></code> or <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code>) it is a good idea to clean the old build artifacts. The build system
