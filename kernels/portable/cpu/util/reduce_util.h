@@ -50,7 +50,7 @@ void apply_on_flat_ix_with_dim_mask_and_base(
     const size_t start,
     const size_t end) {
   // Compute innermost dim from dim list
-  size_t inner_dim = in.dim() - 1;
+  int64_t inner_dim = in.dim() - 1;
   while (!dim_mask[inner_dim]) {
     inner_dim--;
   }
@@ -58,7 +58,7 @@ void apply_on_flat_ix_with_dim_mask_and_base(
   // Initialize array of indices per dimension. This array is used to maintain
   // the per-dimension index of the element in `in` that is being reduced over
   // Only the dims that are in the dim list are relevant.
-  size_t dim_index[kTensorDimensionLimit];
+  int64_t dim_index[kTensorDimensionLimit];
   for (int64_t d = 0; d < in.dim(); d++) {
     dim_index[d] = 0;
   }

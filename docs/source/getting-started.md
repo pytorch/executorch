@@ -5,26 +5,25 @@ This section is intended to describe the necessary steps to take PyTorch model a
 - Run the model using the ExecuTorch runtime APIs on your development platform.
 - Deploy the model to the target platform using the ExecuTorch runtime.
 
-## Installation
-To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries.
-
-Pip is the recommended way to install the ExecuTorch python package. This package includes the dependencies needed to export a PyTorch model, as well as Python runtime bindings for model testing and evaluation. It is common to install the package within a Python virtual environment, in order to meet the Python and dependency version requirements.
-
-```
-pip install executorch
-```
-
-To build the framework from source, see [Building From Source](using-executorch-building-from-source.md).
-
-Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.
-
-#### System Requirements
+## System Requirements
 The following are required to install the ExecuTorch host libraries, needed to export models and run from Python. Requirements for target end-user devices are backend dependent. See the appropriate backend documentation for more information.
 
 - Python 3.10 - 3.12
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
 - Linux or MacOS operating system (Arm or x86).
   - Windows is supported via WSL.
+
+## Installation
+To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package. 
+
+This package includes the dependencies needed to export a PyTorch model, as well as Python runtime bindings for model testing and evaluation. Consider installing ExecuTorch within a virtual environment, such as one provided by [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#creating-environments) or [venv](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/#create-and-use-virtual-environments).
+
+```
+pip install executorch
+```
+
+To build the framework from source, see [Building From Source](using-executorch-building-from-source.md). Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.
+
 
 <hr/>
 
@@ -44,15 +43,20 @@ ExecuTorch provides hardware acceleration for a wide variety of hardware. The mo
 For mobile use cases, consider using XNNPACK for Android and Core ML or XNNPACK for iOS as a first step. See [Hardware Backends](backends-overview.md) for more information.
 
 ### Exporting
-Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows:
+Exporting is done using Python APIs. ExecuTorch provides a high degree of customization during the export process, but the typical flow is as follows. This example uses the MobileNet V2 image classification model implementation in torchvision, but the process supports any [export-compliant](https://pytorch.org/docs/stable/export.html) PyTorch model.
+
 ```python
-import executorch
+import torch
+import torchvision.models as models
+from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import to_edge_transform_and_lower
 
-model = MyModel() # The PyTorch model to export
-example_inputs = (torch.randn(1,3,64,64),) # A tuple of inputs
+model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
+sample_inputs = (torch.randn(1, 3, 224, 224), )
 
-et_program = executorch.exir.to_edge_transform_and_lower(
-    torch.export.export(model, example_inputs),
+et_program = to_edge_transform_and_lower(
+    torch.export.export(model, sample_inputs),
     partitioner=[XnnpackPartitioner()]
 ).to_executorch()
 
@@ -62,7 +66,7 @@ with open("model.pte", "wb") as f:
 
 If the model requires varying input sizes, you will need to specify the varying dimensions and bounds as part of the `export` call. See [Model Export and Lowering](using-executorch-export.md) for more information.
 
-The hardware backend to target is controlled by the partitioner parameter to to\_edge\_transform\_and\_lower. In this example, the XnnpackPartitioner is used to target mobile CPUs. See the delegate-specific documentation for a full description of the partitioner and available options.
+The hardware backend to target is controlled by the partitioner parameter to to\_edge\_transform\_and\_lower. In this example, the XnnpackPartitioner is used to target mobile CPUs. See the [backend-specific documentation](backends-overview.md) for information on how to use each backend.
 
 Quantization can also be done at this stage to reduce model size and runtime. Quantization is backend-specific. See the documentation for the target backend for a full description of supported quantization schemes.
 
@@ -70,16 +74,19 @@ Quantization can also be done at this stage to reduce model size and runtime. Qu
 
 After successfully generating a .pte file, it is common to use the Python runtime APIs to validate the model on the development platform. This can be used to evaluate model accuracy before running on-device. 
 
-Inference can be run as follows:
+For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with a dimensions of (batch, channels, height, width). The output See [torchvision.models.mobilenet_v2](https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html) for more information on the input and output tensor format for this model.
+
 ```python
+import torch
 from executorch.runtime import Runtime
+from typing import List
 
 runtime = Runtime.get()
 
-input_tensor = torch.randn(1,3,128,128)
-program = runtime.load_program("/path/to/mode.pte")
+input_tensor: torch.Tensor = torch.randn(1, 3, 224, 224)
+program = runtime.load_program("model.pte")
 method = program.load_method("forward")
-outputs = method.execute([input_tensor])
+outputs: List[torch.Tensor] = method.execute([input_tensor])
 ```
 
 
@@ -101,13 +108,15 @@ To add the library to your app, download the AAR, and add it to the gradle build
 
 ```
 mkdir -p app/libs
-curl https://ossci-android.s3.amazonaws.com/executorch/release/executorch-241002/executorch.aar -o app/libs/executorch.aar
+curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar -o app/libs/executorch.aar
 ```
 And in gradle,
 ```
 # app/build.gradle.kts
 dependencies {
     implementation(files("libs/executorch.aar"))
+    implementation("com.facebook.soloader:soloader:0.10.5")
+    implementation("com.facebook.fbjni:fbjni:0.5.1")
 }
 ```
 

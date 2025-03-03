@@ -80,6 +80,14 @@ portability details.
    ./install_executorch.sh --pybind off
    ```
 
+   For development, install the package in `--editable` mode, which allows to modify Python source code and see changes reflected immediately.
+   ```
+   ./install_executorch.sh --editable [--pybind xnnpack]
+   
+   # Or you can directly do the following if dependencies are already installed.
+   pip install -e .
+   ```
+
 > **_NOTE:_**  Cleaning the build system
 >
 > When fetching a new version of the upstream repo (via `git fetch` or `git
@@ -218,7 +226,7 @@ Assuming Android NDK is available, run:
 mkdir cmake-android-out && cd cmake-android-out
 
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
+cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
 
 cd  ..
 cmake --build  cmake-android-out  -j9

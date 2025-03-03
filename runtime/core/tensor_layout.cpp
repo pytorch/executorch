@@ -20,7 +20,7 @@ Result<size_t> calculate_nbytes(
     const Span<const int32_t>& sizes,
     const executorch::aten::ScalarType& scalar_type) {
   ssize_t n = 1;
-  for (ssize_t i = 0; i < sizes.size(); i++) {
+  for (const auto i : c10::irange(sizes.size())) {
     if (sizes[i] < 0) {
       return Error::InvalidArgument;
     }
