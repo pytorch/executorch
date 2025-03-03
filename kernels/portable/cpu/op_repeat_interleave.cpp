@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -30,13 +31,13 @@ bool check_repeat_interleave_args(
 
   if (repeats.scalar_type() == ScalarType::Long) {
     const int64_t* const repeats_data = repeats.const_data_ptr<int64_t>();
-    for (size_t i = 0; i < repeats.numel(); ++i) {
+    for (const auto i : c10::irange(repeats.numel())) {
       ET_CHECK_OR_RETURN_FALSE(
           repeats_data[i] >= 0, "repeats cannot be negative");
     }
   } else {
     const int32_t* const repeats_data = repeats.const_data_ptr<int32_t>();
-    for (size_t i = 0; i < repeats.numel(); ++i) {
+    for (const auto i : c10::irange(repeats.numel())) {
       ET_CHECK_OR_RETURN_FALSE(
           repeats_data[i] >= 0, "repeats cannot be negative");
     }
@@ -62,7 +63,7 @@ Tensor& repeat_interleave_Tensor_out(
 
   ET_SWITCH_TWO_TYPES(Int, Long, repeats.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* repeats_data = repeats.const_data_ptr<CTYPE>();
-    for (size_t ix = 0; ix < repeats.numel(); ++ix) {
+    for (const auto ix : c10::irange(repeats.numel())) {
       repeats_sum += static_cast<int64_t>(repeats_data[ix]);
     }
   });
@@ -96,7 +97,7 @@ Tensor& repeat_interleave_Tensor_out(
     const CTYPE* repeats_data = repeats.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     size_t out_ix = 0;
-    for (size_t ix = 0; ix < repeats.numel(); ix++) {
+    for (const auto ix : c10::irange(repeats.numel())) {
       for (CTYPE i = 0; i < repeats_data[ix]; i++, out_ix++) {
         out_data[out_ix] = static_cast<CTYPE>(ix);
       }

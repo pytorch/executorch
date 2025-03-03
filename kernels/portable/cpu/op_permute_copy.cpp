@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -26,7 +27,7 @@ void increment_coordinate_permuted(
   for (int i = dims.size() - 1; i >= 0; i--) {
     size_t d = dims[i] >= 0 ? dims[i] : dims[i] + tensor.dim();
     coordinate[d]++;
-    if (coordinate[d] == tensor.size(d)) {
+    if (static_cast<ssize_t>(coordinate[d]) == tensor.size(d)) {
       coordinate[d] = 0;
     } else {
       return;
@@ -70,7 +71,7 @@ Tensor& permute_copy_out(
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
-    for (size_t i = 0; i < out.numel(); ++i) {
+    for (const auto i : c10::irange(out.numel())) {
       out_data[i] =
           in_data[executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
               in, in_coord, trailing_dims_memo)];

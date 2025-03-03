@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import argparse
 import sys
 
@@ -11,7 +17,7 @@ from executorch.runtime import Runtime
 sys.path.insert(0, ".")
 from executorch.examples.models.llama.runner.generation import next_token
 from executorch.examples.models.llama.tokenizer import tiktoken
-from llama_transformer import InputManager
+from llama_transformer import InputManager, load_model
 
 
 class Tokenizer:
@@ -71,28 +77,90 @@ def main() -> None:
         type=float,
         default=0.9,
     )
+    parser.add_argument(
+        "--use_eager",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-p",
+        "--params",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "-c",
+        "--checkpoint",
+        type=str,
+        default=None,
+    )
+    parser.add_argument("--dtype", type=str, choices=["fp16", "fp32"], default=None)
+    parser.add_argument(
+        "--seq_length",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--max_seq_length",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--cache_size",
+        type=int,
+        default=None,
+    )
 
     args = parser.parse_args()
 
     tokenizer = Tokenizer(args.tokenizer)
 
     runtime = Runtime.get()
-    program = runtime.load_program(args.model)
-    method = program.load_method("forward")
+    if args.use_eager:
+        assert args.params is not None
+        assert args.checkpoint is not None
+        assert args.dtype is not None
+        assert args.max_seq_length is not None
+        assert args.seq_length is not None
 
-    metadata = method.metadata
-    print("Method metadata: ", metadata, "\n\n")
+        max_seq_length = args.max_seq_length
+        seq_length = args.seq_length
+        model = load_model(
+            args.checkpoint,
+            args.params,
+            max_seq_length=max_seq_length,
+            use_cache_list=False,
+        )
+        n_layers = model.params.n_layers
+        max_batch_size = model.params.max_batch_size
+        n_kv_heads = model.params.n_kv_heads
+        head_dim = model.params.head_dim
+        cache_size = args.cache_size
 
-    assert (
-        metadata.num_inputs() == 6
-    ), "Do not export with --use_cache_list for use in pybindings"
-    # k_cache input
-    n_layers, max_batch_size, n_kv_heads, cache_size, head_dim = (
-        metadata.input_tensor_meta(3).sizes()
-    )
+        float_dtype = {"fp16": torch.float16, "fp32": torch.float32}[
+            args.dtype
+        ]  # dtype for model/inputs
+        model.eval()
+        model.to(float_dtype)
+    else:
+        program = runtime.load_program(args.model)
+        method = program.load_method("forward")
 
-    # mask input
-    seq_length, max_seq_length = metadata.input_tensor_meta(5).sizes()
+        metadata = method.metadata
+        print("Method metadata: ", metadata, "\n\n")
+
+        assert (
+            metadata.num_inputs() == 6
+        ), "Do not export with --use_cache_list for use in pybindings"
+        # k_cache input
+        n_layers, max_batch_size, n_kv_heads, cache_size, head_dim = (
+            metadata.input_tensor_meta(3).sizes()
+        )
+        float_dtype = {5: torch.float16, 6: torch.float32}[
+            metadata.input_tensor_meta(3).dtype()
+        ]
+
+        # mask input
+        seq_length, max_seq_length = metadata.input_tensor_meta(5).sizes()
 
     input_manager = InputManager(
         n_layers=n_layers,
@@ -102,7 +170,7 @@ def main() -> None:
         head_dim=head_dim,
         use_cache_list=False,
         seq_length=seq_length,
-        dtype=torch.float16,
+        dtype=float_dtype,
         minus_infinity=-30000.0,
         cache_size=cache_size,
     )
@@ -117,7 +185,11 @@ def main() -> None:
                 tokens
             )
             processed_tokens = len(tokens) - len(remaining_tokens)
-            logits, k, v = method.execute(inputs)
+            if args.use_eager:
+                logits, k, v = model(*inputs)
+            else:
+                logits, k, v = method.execute(inputs)
+
             input_manager.update(
                 input_length=processed_tokens, new_k_caches=k, new_v_caches=v
             )

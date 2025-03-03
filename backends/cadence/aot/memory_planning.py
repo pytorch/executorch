@@ -40,6 +40,12 @@ def get_size(memory_config: MemoryConfig, exir_id: int) -> int:
     return memory_config.memory_sizes[exir_id - 1]
 
 
+def get_alignment(memory_config: MemoryConfig, exir_id: int) -> int:
+    # EXIR's spec.mem_id is indexed from 1..N.
+    assert memory_config.memory_alignments is not None
+    return memory_config.memory_alignments[exir_id - 1]
+
+
 def get_aligned_offset(pre_aligned_offset: int, alignment: int) -> int:
     return int(math.ceil(pre_aligned_offset / alignment) * alignment)
 
@@ -84,6 +90,10 @@ def position_based_greedy_with_hierarchy(
         ]
     ] = None,
 ) -> List[int]:
+    # We do not use the `alignment` parameter and instead use the per-memory alignment
+    # constraints from `memory_config`.
+    del alignment
+
     num_memories = get_num_memories(memory_config)
     bufsizes = [0] * num_memories
     allocated_buffers: List[List[TensorSpec]] = [[] for _ in range(num_memories)]
@@ -103,7 +113,8 @@ def position_based_greedy_with_hierarchy(
 
     def memory_available(spec: TensorSpec) -> bool:
         return get_aligned_offset(
-            spec.mem_offset + spec.allocated_memory, alignment
+            spec.mem_offset + spec.allocated_memory,
+            get_alignment(memory_config, spec.mem_id),
         ) <= get_size(memory_config, spec.mem_id)
 
     # Iterate over all the specs in sorted order
@@ -124,7 +135,8 @@ def position_based_greedy_with_hierarchy(
             spec.mem_offset = 0
             while memory_available(spec) and (overlapped := overlap(spec)):
                 spec.mem_offset = get_aligned_offset(
-                    overlapped.mem_offset + overlapped.allocated_memory, alignment
+                    overlapped.mem_offset + overlapped.allocated_memory,
+                    get_alignment(memory_config, spec.mem_id),
                 )
             if memory_available(spec):
                 allocated_buffers[spec.mem_id].append(spec)
@@ -172,6 +184,10 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
         ]
     ] = None,
 ) -> List[int]:
+    # We do not use the `alignment` parameter and instead use the per-memory alignment
+    # constraints from `memory_config`.
+    del alignment
+
     num_memories = get_num_memories(memory_config)
     bufsizes = [0] * num_memories
     allocated_buffers = [[] for _ in range(num_memories)]
@@ -213,13 +229,14 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
                     prev_offset = max(
                         get_aligned_offset(
                             allocated_spec.mem_offset + allocated_spec.allocated_memory,
-                            alignment,
+                            get_alignment(memory_config, spec.mem_id),
                         ),
                         prev_offset,
                     )
             if spec.mem_offset is None:
                 if get_aligned_offset(
-                    prev_offset + spec.allocated_memory, alignment
+                    prev_offset + spec.allocated_memory,
+                    get_alignment(memory_config, spec.mem_id),
                 ) > get_size(memory_config, spec.mem_id):
                     continue
                 else:
@@ -439,7 +456,6 @@ class CadenceMemoryPlanning:
                 ]
             ]
         ] = None,
-        mem_alignment: int = 1,
     ) -> None:
         self._init_mem_algos()
 
@@ -449,9 +465,6 @@ class CadenceMemoryPlanning:
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
         self.additional_constraint_gen_passes = additional_constraint_gen_passes
-
-        assert mem_alignment > 0, "mem_alignment must be positive"
-        self.mem_alignment = mem_alignment
 
     def _init_mem_algos(self) -> None:
         self.available_mem_algos = [
@@ -489,7 +502,6 @@ class CadenceMemoryPlanning:
             allow_lifetime_and_storage_overlap=(self.opt_level >= 2),
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
-            alignment=self.mem_alignment,
         )
         mem_planning.run(graph_module, graph_signature)
 
