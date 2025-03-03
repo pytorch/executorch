@@ -89,6 +89,10 @@ class ConvolutionConverter(NodeConverter):
             if weight_tensor.dtype not in [torch.float32, torch.int8, torch.uint8]:
                 return False
 
+        if node.args[0].meta["val"].shape[0] != 1:
+            # Only batch size 1 is supported on neutron.
+            return False
+
         return True
 
     Stride = Padding = Dilation = OutPadding = list[int]
