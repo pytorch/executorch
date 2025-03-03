@@ -5,7 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-
+#include <c10/util/irange.h>
 #include <cmath>
 
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
@@ -44,7 +44,7 @@ Tensor& amin_out(
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "amin.out", CTYPE, [&]() {
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+    for (const auto out_ix : c10::irange(out.numel())) {
       out_data[out_ix] = reduce_over_dim_list<CTYPE>(
           [](CTYPE v, CTYPE min_v) {
             return std::isnan(v) || v < min_v ? v : min_v;
