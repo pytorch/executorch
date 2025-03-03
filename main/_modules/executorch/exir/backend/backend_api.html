@@ -502,6 +502,7 @@
   <h1>Source code for executorch.exir.backend.backend_api</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) Meta Platforms, Inc. and affiliates.</span>
 <span class="c1"># All rights reserved.</span>
+<span class="c1"># Copyright 2025 Arm Limited and/or its affiliates.</span>
 <span class="c1">#</span>
 <span class="c1"># This source code is licensed under the BSD-style license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
@@ -558,9 +559,9 @@
 <span class="sd">     ) -&gt; LoweredBackendModule:</span>
 
 <span class="sd">     def to_backend(</span>
-<span class="sd">         graph_module: torch.fx.GraphModule,</span>
-<span class="sd">         partitioner: Type[TPartitioner],</span>
-<span class="sd">     ) -&gt; torch.fx.GraphModule</span>
+<span class="sd">         edge_program: ExportedProgram,</span>
+<span class="sd">         partitioner: Partitioner,</span>
+<span class="sd">     ) -&gt; ExportedProgram:</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">pass</span></div>
 

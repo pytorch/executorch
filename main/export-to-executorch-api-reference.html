@@ -620,9 +620,9 @@ argument (type annotation is required). However, it can’t take multiple types 
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span>
-    <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
-    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 </pre></div>
 </div>
 </dd></dl>
