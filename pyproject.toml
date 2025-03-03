@@ -111,6 +111,8 @@ flatc = "executorch.data.bin:flatc"
   "*.fbs",
   # Some kernel libraries need their .yaml files.
   "*.yaml",
+  # Add trained models from backends/nxp/experimental
+  "backends/nxp/experimental/*.pth",
 ]
 
 [tool.setuptools.exclude-package-data]
