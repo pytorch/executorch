@@ -7,7 +7,5 @@
  */
 
 #import "ExecuTorchError.h"
-#import "ExecuTorchLog.h"
-#import "ExecuTorchModule.h"
-#import "ExecuTorchTensor.h"
-#import "ExecuTorchValue.h"
+
+NSErrorDomain const ExecuTorchErrorDomain = @"org.pytorch.executorch.error";

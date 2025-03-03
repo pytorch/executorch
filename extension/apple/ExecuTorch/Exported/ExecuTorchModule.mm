@@ -6,8 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchError.h"
-#import "ExecuTorchLog.h"
 #import "ExecuTorchModule.h"
-#import "ExecuTorchTensor.h"
-#import "ExecuTorchValue.h"
+
+#import "ExecuTorchError.h"
+
+#import <executorch/extension/module/module.h>
+#import <executorch/extension/tensor/tensor.h>
+
+@implementation ExecuTorchModule {
+  std::unique_ptr<executorch::extension::Module> _module;
+}
+
+@end
