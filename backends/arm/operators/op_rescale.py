@@ -50,14 +50,14 @@ class RescaleVisitor(NodeVisitor):
 
         scale_width = 32 if output_dtype == torch.int32 else 16
         multiplier, shift = tosa_quant_utils.compute_multiplier_and_shift(
-            scale, scale_width
+            [scale], scale_width
         )
         attr_rescale = ts.TosaSerializerAttribute()
         attr_rescale.RescaleAttribute(
             input_zp=input_zp,
             output_zp=output_zp,
-            multiplier=[multiplier],
-            shift=[shift],
+            multiplier=multiplier,
+            shift=shift,
             scale32=output_dtype == torch.int32,
             double_round=False,
             per_channel=False,
