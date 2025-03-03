@@ -96,9 +96,9 @@ class GEMMConfig(XNNPartitionerConfig):
     def _overwrite_precision(self, node: torch.fx.Node):
         precision = self._detect_precision(node)
         if precision not in self.enabled_precision_types:
-            # detected precision is not enabled, lets try to partition it as fp32
+            # detected precision is not enabled, try to partition it as fp32
             if self.enabled_precision_types == [ConfigPrecisionType.FP32]:
-                # if only fp32 is enabled, then we can still partition fp32 gemms
+                # when only fp32 is enabled, then we can still partition fp32 gemms
                 # even with in a quantized graph
                 if precision in [
                     ConfigPrecisionType.STATIC_QUANT,
@@ -107,6 +107,7 @@ class GEMMConfig(XNNPartitionerConfig):
                     precision = ConfigPrecisionType.FP32
                     logging.info(f"Overwriting precision, partitioning {node} as FP32")
                     return True, precision
+
         return False, precision
 
     def get_deps(
@@ -226,8 +227,11 @@ class GEMMConfig(XNNPartitionerConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         gemm_deps = []
-        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
-            # if force force_fp32_dynamic_linear is enabled, then we
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is enabled, then we
             # do not partition the weight node
             return (True, gemm_deps)
 
@@ -305,8 +309,11 @@ class LinearConfig(GEMMConfig):
     def _get_weight_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
-        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
-            # if force fp32_dynamic_linear is enabled, then we
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is enabled, then we
             # do not partition the weight node
             return (True, [])
 
@@ -412,9 +419,11 @@ class AddmmConfig(GEMMConfig):
     def _get_weight_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
-        # TODO(maxren, T210537195):
-        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
-            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is on and we detected this as fp32, then we
             # do not partition the weight node
             return (True, [])
 
@@ -501,11 +510,11 @@ class AddmmConfig(GEMMConfig):
         node.args = old_args
         node.users = old_users
 
-        # When using force_fp32_dynamic_linear, we want to get_deps to overwrite the source partition nodes.
+        # When using force_non_static_weights_for_f32_linear, we want to get_deps to overwrite the source partition nodes.
         # Else we want to be greedy.
         ret_deps = (
             list(set(deps) & set(src_partition.nodes))
-            if self.force_fp32_dynamic_linear
+            if self.force_non_static_weights_for_f32_linear
             else list(set(deps) | set(src_partition.nodes))
         )
 
@@ -531,8 +540,11 @@ class MMConfig(AddmmConfig):
     def _get_weight_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
-        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
-            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is on and we detected this as fp32, then we
             # do not partition the weight node
             return (True, [])
 
