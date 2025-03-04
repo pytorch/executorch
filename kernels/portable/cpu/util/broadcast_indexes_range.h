@@ -158,7 +158,8 @@ class BroadcastIndexesIterator {
   // output_dim. This is straightforwardly implementable with an
   // adjusted stride array that contains 0s where the padded input
   // shape would contain 1s.
-  std::array<ShapeType, kNumInputs> effective_input_broadcast_strides_ = {{0}};
+  std::array<ShapeType, kNumInputs> effective_input_broadcast_strides_ = {
+      {{0}}};
 };
 } // namespace internal
 
