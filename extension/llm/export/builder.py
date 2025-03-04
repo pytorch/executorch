@@ -448,6 +448,8 @@ class LLMEdgeManager:
             compile_config=edge_config,
             constant_methods=self.metadata,
         )
+        if self.verbose:
+            logging.info(f"Exported graph:\n{self.edge_manager.exported_program()}")
         return self
 
     def to_executorch(
