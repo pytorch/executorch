@@ -13,17 +13,31 @@
 
 // Forward declare flatbuffer types. This is a public header and must not
 // include the generated flatbuffer header.
-namespace flatbuffers {
-template <typename T>
-class Vector;
-template <typename T>
-struct Offset;
-} // namespace flatbuffers
-
 namespace executorch_flatbuffer {
 struct NamedData;
 struct DataSegment;
 } // namespace executorch_flatbuffer
+
+namespace flatbuffers {
+// TODO(T216992074): update internal flatbuffers (v1.12) to match OSS (v24.3.5).
+template <typename T>
+struct Offset;
+#if EXECUTORCH_INTERNAL == 1
+template <typename T>
+class Vector;
+using FlatbufferNamedData =
+    flatbuffers::Vector<flatbuffers::Offset<executorch_flatbuffer::NamedData>>;
+using FlatbufferDataSegment = flatbuffers::Vector<
+    flatbuffers::Offset<executorch_flatbuffer::DataSegment>>;
+#else
+template <typename T, typename SizeT>
+class Vector;
+using FlatbufferNamedData = flatbuffers::
+    Vector<flatbuffers::Offset<executorch_flatbuffer::NamedData>, uint32_t>;
+using FlatbufferDataSegment = flatbuffers::
+    Vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>, uint32_t>;
+#endif
+} // namespace flatbuffers
 
 namespace executorch {
 namespace runtime {
@@ -50,10 +64,8 @@ class PteDataMap final : public NamedDataMap {
   static Result<PteDataMap> create(
       DataLoader* loader,
       size_t segment_base_offset,
-      const flatbuffers::Vector<
-          flatbuffers::Offset<executorch_flatbuffer::NamedData>>* named_data,
-      const flatbuffers::Vector<
-          flatbuffers::Offset<executorch_flatbuffer::DataSegment>>* segments);
+      const flatbuffers::FlatbufferNamedData* named_data,
+      const flatbuffers::FlatbufferDataSegment* segments);
 
   /**
    * The PteDataMap currently only handles opaque data that does not contain
@@ -103,10 +115,8 @@ class PteDataMap final : public NamedDataMap {
   PteDataMap(
       DataLoader* loader,
       size_t segment_base_offset,
-      const flatbuffers::Vector<
-          flatbuffers::Offset<executorch_flatbuffer::NamedData>>* named_data,
-      const flatbuffers::Vector<
-          flatbuffers::Offset<executorch_flatbuffer::DataSegment>>* segments)
+      const flatbuffers::FlatbufferNamedData* named_data,
+      const flatbuffers::FlatbufferDataSegment* segments)
       : loader_(loader),
         segment_base_offset_(segment_base_offset),
         named_data_(named_data),
@@ -124,12 +134,10 @@ class PteDataMap final : public NamedDataMap {
   size_t segment_base_offset_;
 
   // Named data, containing name and segment index.
-  const flatbuffers::Vector<
-      flatbuffers::Offset<executorch_flatbuffer::NamedData>>* named_data_;
+  const flatbuffers::FlatbufferNamedData* named_data_;
 
   // Segments, to retrieve offset and size for the loader.
-  const flatbuffers::Vector<
-      flatbuffers::Offset<executorch_flatbuffer::DataSegment>>* segments_;
+  const flatbuffers::FlatbufferDataSegment* segments_;
 };
 
 } // namespace internal
