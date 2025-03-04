@@ -275,14 +275,14 @@ class Program final {
       FreeableBuffer&& program_data,
       const executorch_flatbuffer::Program* internal_program,
       FreeableBuffer&& constant_segment_data,
-      std::optional<internal::PteDataMap>&& core_data_map)
+      std::optional<internal::PteDataMap>&& pte_data_map)
       : program_data_(std::move(program_data)),
         // Don't need the loader if there are no segments.
         loader_(segment_base_offset > 0 ? loader : nullptr),
         internal_program_(internal_program),
         segment_base_offset_(segment_base_offset),
         constant_segment_data_(std::move(constant_segment_data)),
-        core_data_map_(std::move(core_data_map)) {}
+        pte_data_map_(std::move(pte_data_map)) {}
 
   // Not copyable or assignable.
   Program(const Program& rhs) = delete;
@@ -307,7 +307,7 @@ class Program final {
   FreeableBuffer constant_segment_data_;
 
   /// NamedDataMap holding named data from the program.
-  std::optional<internal::PteDataMap> core_data_map_;
+  std::optional<internal::PteDataMap> pte_data_map_;
 };
 
 } // namespace runtime

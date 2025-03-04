@@ -179,10 +179,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     ET_CHECK_OR_RETURN_ERROR(
         constant_buffer == nullptr || constant_buffer->size() == 0,
         InvalidProgram,
-        "constant_buffer contains %u items, "
-        "constant_segment.offsets contains %u items. Only one should be used.",
-        constant_buffer->size(),
-        constant_segment->offsets()->size());
+        "constant_buffer contains %zu items, "
+        "constant_segment.offsets contains %zu items. Only one should be used.",
+        static_cast<size_t>(constant_buffer->size()),
+        static_cast<size_t>(constant_segment->offsets()->size()));
     const auto* segments = flatbuffer_program->segments();
     ET_CHECK_OR_RETURN_ERROR(
         segments != nullptr, InvalidProgram, "No segments in program");
@@ -192,9 +192,9 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     ET_CHECK_OR_RETURN_ERROR(
         constant_segment->segment_index() < segments->size(),
         InvalidProgram,
-        "Constant segment index %d invalid for program segments range %d",
-        constant_segment->segment_index(),
-        segments->size());
+        "Constant segment index %zu invalid for program segments range %zu",
+        static_cast<size_t>(constant_segment->segment_index()),
+        static_cast<size_t>(segments->size()));
 
     const executorch_flatbuffer::DataSegment* data_segment =
         segments->Get(constant_segment->segment_index());
@@ -365,8 +365,8 @@ Result<const void*> Program::get_constant_buffer_data(
     ET_CHECK_OR_RETURN_ERROR(
         storage_size <= nbytes,
         InvalidArgument,
-        "Constant buffer size %u larger than allocated nbytes %zu",
-        storage_size,
+        "Constant buffer size %zu larger than allocated nbytes %zu",
+        static_cast<size_t>(constant_buffer[buffer_index]->storage()->size()),
         nbytes);
 
     return storage->data();
@@ -374,8 +374,8 @@ Result<const void*> Program::get_constant_buffer_data(
 }
 
 Result<const NamedDataMap*> Program::get_named_data_map() const {
-  if (core_data_map_.has_value()) {
-    return &core_data_map_.value();
+  if (pte_data_map_.has_value()) {
+    return &pte_data_map_.value();
   }
   return Error::NotFound;
 }
@@ -504,8 +504,8 @@ Error Program::load_mutable_subsegment_into(
   if (segment_offsets->segment_index() >= num_segments) {
     ET_LOG(
         Error,
-        "Segment index %u out of range (>= %zu)",
-        segment_offsets->segment_index(),
+        "Segment index %zu out of range (>= %zu)",
+        static_cast<size_t>(segment_offsets->segment_index()),
         num_segments);
     return Error::NotFound;
   }
