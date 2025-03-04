@@ -229,7 +229,7 @@ jobs:
         # see if we can import the module successfully
         ${CONDA_RUN} python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
 
-    test-static-llama-ane:
+  test-static-llama-ane:
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
