@@ -107,12 +107,12 @@ Result<Tensor> parseTensor(
   // detect bad positive values, but we can reject negative values, which would
   // otherwise panic in the TensorImpl ctor. dim_order_to_stride() will validate
   // dim_order.
-  for (int i = 0; i < dim; i++) {
+  for (flatbuffers::uoffset_t i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
         sizes[i] >= 0,
         InvalidProgram,
-        "Negative size[%d] %" PRId32,
-        i,
+        "Negative size[%zu] %" PRId32,
+        static_cast<size_t>(i),
         sizes[i]);
   }
 
