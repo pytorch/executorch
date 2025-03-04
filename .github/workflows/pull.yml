@@ -509,12 +509,12 @@ jobs:
         eval "$(conda shell.bash hook)"
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        BUILD_TOOL=cmake \
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
         CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         ${CONDA_RUN} --no-capture-output \
-        .ci/scripts/setup-macos.sh "$@"
+        .ci/scripts/setup-macos.sh cmake debug false
+
 
         # Install llama3_2_vision dependencies.
         PYTHON_EXECUTABLE=python \
