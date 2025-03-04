@@ -23,6 +23,7 @@ def define_common_targets():
         srcs = _THREADPOOL_SRCS,
         deps = [
             "//executorch/runtime/core:core",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         exported_headers = _THREADPOOL_HEADERS,
         exported_deps = [
