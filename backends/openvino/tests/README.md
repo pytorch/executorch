@@ -20,19 +20,12 @@ backends/openvino/tests
 ### Prerequisites
 
 Before you begin, refer to instructions provided in [OpenVINO Backend for ExecuTorch](../README.md) to install openvino and setup executorch environment.
-Once openvino is installed and executorch environment is set, refer to [OpenVINO Backend Examples](../../../examples/openvino/README.md) to build openvino_example_runner.
 
 ### Usage
 
 `test_runner.py` allows to run op or model tests for openvino backend.
 
 ### **Arguments**
-- **`--build_folder`** (required):  
-  Path to cmake binary directory. (Refer to [OpenVINO Backend Examples](../../../examples/openvino/README.md))   
-  Examples:
-  - `../../../cmake-openvino-out` (Relative path from `backends/openvino/tests` directory)
-  - `<executorch_root>/cmake-openvino-out` (Absolute path to the default build folder)
-
 - **`--test_type`** (optional):  
   Type of the tests to run.  
   Supported values:
@@ -54,14 +47,14 @@ Once openvino is installed and executorch environment is set, refer to [OpenVINO
 
 ### Execute Tests for All Ops on CPU
 ```bash
-python test_runner.py --build_folder ../../../cmake-openvino-out --device CPU --test_type ops
+python test_runner.py --device CPU --test_type ops
 ```
 
 ### Execute Convolution Op Tests on CPU
 ```bash
-python test_runner.py --build_folder ../../../cmake-openvino-out --device CPU --test_type ops --pattern test_convolution.py
+python test_runner.py --device CPU --test_type ops --pattern test_convolution.py
 ```
 
 ### Execute Tests for all Models on GPU
 ```bash
-python test_runner.py --build_folder ../../../cmake-openvino-out --device GPU --test_type models
+python test_runner.py --device GPU --test_type models
