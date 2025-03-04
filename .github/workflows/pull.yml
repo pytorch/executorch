@@ -522,7 +522,7 @@ jobs:
         ./examples/models/llama3_2_vision/install_requirements.sh
 
         # Install coreml
-        sh ./backends/apple/coreml/scripts/install_requirements.sh
+        pip install coremltools
 
         # Test ANE llama
         sh .ci/scripts/test_ane_static_llama.sh
