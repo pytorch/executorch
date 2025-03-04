@@ -79,10 +79,15 @@ Follow the steps below to setup your build environment:
   Note: To achieve optimal performance with NNCF quantization, you should install the latest development version of NNCF (version 2.16.0.dev0+191b53d9 or higher).
 3. Navigate to `scripts/` directory.
 
-4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-openvino-out/backends/openvino/` as `libopenvino_backend.so`
+4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process. By default, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
 
    ```bash
    ./openvino_build.sh
+   ```
+   **Build OpenVINO Backend with Pybinding**: To build and install the OpenVINO backend with Python bindings, run the `openvino_build.sh` script with the `pybinding` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment.
+
+   ```bash
+   ./openvino_build.sh pybinding
    ```
 
 ### Run
