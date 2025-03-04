@@ -31,7 +31,7 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(in));
 
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
-  const size_t dim_size = in.size(non_negative_dim);
+  const ssize_t dim_size = in.size(non_negative_dim);
 
   ET_CHECK_OR_RETURN_FALSE(
       dim_size % 2 == 0,
