@@ -15,7 +15,7 @@
 // include the generated flatbuffer header.
 namespace flatbuffers {
 typedef uint32_t uoffset_t;
-template <typename T, typename SizeT>
+template <typename T, typename SizeT = uoffset_t>
 class Vector;
 template <typename T>
 struct Offset;
