@@ -19,7 +19,7 @@ backends/openvino/tests
 
 ### Prerequisites
 
-Before you begin, refer to instructions provided in [OpenVINO Backend for ExecuTorch](../README.md) to install openvino and setup executorch environment.
+Before you begin, refer to instructions provided in [OpenVINO Backend for ExecuTorch](../README.md) to install OpenVINO and ExecuTorch Python package with the OpenVINO backend into your Python environment.
 
 ### Usage
 
