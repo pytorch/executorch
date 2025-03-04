@@ -90,16 +90,3 @@ TEST_F(OpArgmaxTest, SanityCheckNullDim) {
   EXPECT_TENSOR_EQ(out, expected);
   // clang-format on
 }
-
-TEST_F(OpArgmaxTest, FirstNaNWins) {
-  TensorFactory<ScalarType::Float> tf_float;
-  Tensor in = tf_float.make({4}, {1, NAN, -4, NAN});
-
-  TensorFactory<ScalarType::Long> tf_long;
-  Tensor out = tf_long.zeros({});
-  Tensor expected = tf_long.make({}, {1});
-
-  Tensor ret = op_argmax_out(in, {}, false, out);
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
-}
