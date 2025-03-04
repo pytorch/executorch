@@ -7,9 +7,12 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <cinttypes>
 #include <cstdint>
@@ -308,4 +311,6 @@ using ::executorch::runtime::Program;
 } // namespace executor
 } // namespace torch
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
