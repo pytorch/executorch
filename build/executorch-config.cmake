@@ -67,6 +67,7 @@ set(lib_list
     portable_ops_lib
     extension_module
     extension_module_static
+    extension_parallel
     extension_runner_util
     extension_tensor
     extension_threadpool
@@ -114,3 +115,7 @@ foreach(lib ${lib_list})
     list(APPEND EXECUTORCH_LIBRARIES ${lib})
   endif()
 endforeach()
+
+# TODO: investigate use of install(EXPORT) to cleanly handle
+# target_compile_options/target_compile_definitions for everything.
+target_link_libraries(cpublas INTERFACE extension_parallel)
