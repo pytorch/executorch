@@ -39,9 +39,14 @@ We generate the model file for the ExecuTorch runtime in Android Demo App.
 For delegating DeepLab v3 to XNNPACK backend, please do the following to export the model:
 
 ```bash
+cd executorch # go to executorch root
 python3 -m examples.xnnpack.aot_compiler --model_name="dl3" --delegate
-mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-cp dl3_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+```
+
+Then push the pte file to Android device:
+
+```bash
+adb push dl3_xnnpack_fp32.pte /data/local/tmp/dl3_xnnpack_fp32.pte
 ```
 
 For more detailed tutorial of lowering to XNNPACK, please see [XNNPACK backend](backends-xnnpack.md).
@@ -55,6 +60,12 @@ After generating the model, copy the model to `assets` directory.
 ```bash
 python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8450 -s <adb_connected_device_serial>
 cp deeplab_v3/dlv3_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+```
+
+Then push the pte file to Android device:
+
+```bash
+adb push deeplab_v3/dlv3_qnn.pte /data/local/tmp/dlv3_qnn.pte
 ```
 
 ### Runtime
