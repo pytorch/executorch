@@ -461,7 +461,7 @@ class LlamaModel(nn.Module):
             "get_bos_id": 1,
             "get_eos_id": 2,
             "get_dim": self.dim,
-            "get_head_dim": self.dim // self.n_heads,
+            "get_head_dim": self.head_dim,
             "get_max_batch_size": self.max_batch_size,
             "get_max_seq_len": self.max_seq_len,
             "get_n_bos": 1,

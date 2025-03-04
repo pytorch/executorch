@@ -34,13 +34,16 @@ namespace example {
 
 namespace {
 static constexpr auto kTopp = 0.9f;
-void printReport(const Runner::Stats& stats);
+void printReport(
+    const Runner::Stats& stats,
+    const std::string& performance_output_path);
 std::string statsToJsonString(const Runner::Stats& stats);
 } // namespace
 
 Runner::Runner(
     const std::vector<std::string>& models_path,
     const std::string& tokenizer_path,
+    const std::string& performance_output_path,
     const float logits_scale,
     const int32_t logits_offset,
     const float temperature,
@@ -49,6 +52,7 @@ Runner::Runner(
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
+      performance_output_path_(performance_output_path),
       logits_scale_(logits_scale),
       logits_offset_(logits_offset),
       temperature_(temperature),
@@ -437,7 +441,7 @@ Error Runner::generate(
 
   stats_.num_prompt_tokens = num_prompt_tokens;
   stats_.num_generated_tokens = pos - num_prompt_tokens;
-  printReport(stats_);
+  printReport(stats_, performance_output_path_);
   if (stats_callback) {
     stats_callback(stats_);
   }
@@ -446,7 +450,9 @@ Error Runner::generate(
 }
 
 namespace {
-void printReport(const Runner::Stats& stats) {
+void printReport(
+    const Runner::Stats& stats,
+    const std::string& performance_output_path) {
   printf("PyTorchObserver %s\n", statsToJsonString(stats).c_str());
 
   ET_LOG(
@@ -507,7 +513,8 @@ void printReport(const Runner::Stats& stats) {
 
   // For now, we just print the total inference time for CI, can save more info
   // in future if needed.
-  std::ofstream outfile("outputs/inference_speed.txt");
+
+  std::ofstream outfile(performance_output_path.c_str());
   if (outfile.is_open()) {
     double num_tok = (stats.num_generated_tokens) /
         (double)(stats.inference_end_ms - stats.inference_start_ms) *
