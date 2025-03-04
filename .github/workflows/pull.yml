@@ -513,7 +513,7 @@ jobs:
         EXECUTORCH_BUILD_PYBIND=ON \
         CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         ${CONDA_RUN} --no-capture-output \
-        .ci/scripts/setup-macos.sh cmake debug false
+        .ci/scripts/setup-macos.sh --build-tool cmake --build-mode Debug --editable false
 
 
         # Install llama3_2_vision dependencies.
