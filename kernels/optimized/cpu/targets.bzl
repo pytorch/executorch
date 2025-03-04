@@ -95,12 +95,6 @@ _OPTIMIZED_ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
     ),
-    op_target(
-        name = "op_where",
-        deps = [
-            "//executorch/kernels/portable/cpu/util:elementwise_util",
-        ],
-    ),
 )
 
 

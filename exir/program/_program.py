@@ -978,6 +978,18 @@ def _remove_invalid_ops_for_not_decompose(
 ) -> List[torch._ops.OpOverload]:
     # To address https://github.com/pytorch/executorch/issues/8781
     def keep(op):
+        # Explicit allow list
+        allow_list = []
+        try:
+            # Ops in torch.ops.quant are not always loaded, so we use try/except
+            # Aliases output, but we need to allow it for XNNPACK
+            allow_list.append(torch.ops.quant.choose_qparams_affine.default)
+        except:
+            pass
+
+        if op in allow_list:
+            return True
+
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
         if native_schema.is_mutable:
