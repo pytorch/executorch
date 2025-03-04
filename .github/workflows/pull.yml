@@ -523,6 +523,7 @@ jobs:
 
         # Install coreml
         pip install coremltools
+        sh install_requirements.sh
 
         # Test ANE llama
         sh .ci/scripts/test_ane_static_llama.sh
