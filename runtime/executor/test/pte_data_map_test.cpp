@@ -55,8 +55,10 @@ class PteDataMapTest : public ::testing::Test {
     // Create segments.
     const flatbuffers::Offset<executorch_flatbuffer::DataSegment>
         segment_arr[2] = {
+            // NOLINT facebook-hte-BadArgumentComment
             executorch_flatbuffer::CreateDataSegment(
                 builder_, /*offset=*/0, /*size=*/kSegmentSizes[0]),
+            // NOLINT facebook-hte-BadArgumentComment
             executorch_flatbuffer::CreateDataSegment(
                 builder_,
                 /*offset=*/kSegmentAlignment * 2,

@@ -19,25 +19,30 @@ struct DataSegment;
 } // namespace executorch_flatbuffer
 
 namespace flatbuffers {
-// TODO(T216992074): update internal flatbuffers (v1.12) to match OSS (v24.3.5).
 template <typename T>
 struct Offset;
-#if EXECUTORCH_INTERNAL == 1
+} // namespace flatbuffers
+
+#if EXECUTORCH_INTERNAL_FLATBUFFERS == 1
+// TODO(T216992074): update internal flatbuffers (v1.12) to match OSS (v24.3.5).
+namespace flatbuffers {
 template <typename T>
 class Vector;
 using FlatbufferNamedData =
     flatbuffers::Vector<flatbuffers::Offset<executorch_flatbuffer::NamedData>>;
 using FlatbufferDataSegment = flatbuffers::Vector<
     flatbuffers::Offset<executorch_flatbuffer::DataSegment>>;
+} // namespace flatbuffers
 #else
+namespace flatbuffers {
 template <typename T, typename SizeT>
 class Vector;
 using FlatbufferNamedData = flatbuffers::
     Vector<flatbuffers::Offset<executorch_flatbuffer::NamedData>, uint32_t>;
 using FlatbufferDataSegment = flatbuffers::
     Vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>, uint32_t>;
-#endif
 } // namespace flatbuffers
+#endif
 
 namespace executorch {
 namespace runtime {

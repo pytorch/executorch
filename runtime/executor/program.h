@@ -13,7 +13,6 @@
 
 #include <cinttypes>
 #include <cstdint>
-#include <optional>
 
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
