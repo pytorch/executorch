@@ -524,8 +524,9 @@ jobs:
         # Install coreml
         pip install coremltools
         sh install_requirements.sh
-        sh examples/models/llama/install_requirements.sh
+        sh backends/apple/coreml/scripts/install_requirements.sh
         python install_executorch.py --pybind coreml
+        sh examples/models/llama/install_requirements.sh
 
 
         # Test ANE llama
