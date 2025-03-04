@@ -164,6 +164,7 @@ test_model_with_qnn() {
   export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
   export PYTHONPATH=$EXECUTORCH_ROOT/..
 
+  EXTRA_FLAGS=""
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
   elif [[ "${MODEL_NAME}" == "mv3" ]]; then
@@ -176,6 +177,12 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=inception_v3
   elif [[ "${MODEL_NAME}" == "vit" ]]; then
     EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "mb" ]]; then
+    EXPORT_SCRIPT=mobilebert_fine_tune
+    EXTRA_FLAGS="--num_epochs 1"
+    pip install scikit-learn
+  elif [[ "${MODEL_NAME}" == "w2l" ]]; then
+    EXPORT_SCRIPT=wav2letter
   elif [[ "${MODEL_NAME}" == "edsr" ]]; then
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
@@ -189,7 +196,7 @@ test_model_with_qnn() {
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
