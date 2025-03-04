@@ -8,6 +8,7 @@
 
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -26,7 +27,7 @@ bool check_repeat_args(
     Tensor& out) {
   // Ensure the self tensors list is non-empty.
   ET_CHECK_OR_RETURN_FALSE(
-      repeats.size() >= self.dim(),
+      static_cast<ssize_t>(repeats.size()) >= self.dim(),
       "Number of dimensions of repeat dims can not be smaller than number of dimensions of tensor");
 
   // Repeat arrayref shall not contain negative element.
@@ -39,7 +40,7 @@ bool check_repeat_args(
 
   /// Check if out.size() is legal.
   ET_CHECK_OR_RETURN_FALSE(
-      out.dim() == repeats.size(),
+      static_cast<size_t>(out.dim()) == repeats.size(),
       "The dimension of out shall equal size of repeats, but now is %zd and %zd",
       out.dim(),
       repeats.size());
@@ -48,7 +49,7 @@ bool check_repeat_args(
   // kTensorDimensionLimit. Only check out tensor because the number of
   // dimension of out tensor shall have more than or equal to self tensor
   ET_CHECK_OR_RETURN_FALSE(
-      out.dim() <= kTensorDimensionLimit,
+      static_cast<size_t>(out.dim()) <= kTensorDimensionLimit,
       "The dimension of input and output should not be larger than %zd",
       kTensorDimensionLimit);
 
@@ -58,7 +59,7 @@ bool check_repeat_args(
   // repeats, and called it reformat_self_size. We then make point-to-point mul
   // of reformat_self_size and repeats. The result should equal out.size().
   size_t reformat_self_size[kTensorDimensionLimit];
-  for (size_t i = 0; i < out.dim() - self.dim(); i++) {
+  for (ssize_t i = 0; i < out.dim() - self.dim(); i++) {
     reformat_self_size[i] = 1;
   }
 
@@ -131,7 +132,7 @@ void repeat_internal(
   // The increment along index of slot array to reach the next possible valid
   // value.
   int64_t incr[kTensorDimensionLimit];
-  for (size_t i = 0; i < self_dim; i++) {
+  for (size_t i = 0; i < static_cast<size_t>(self_dim); i++) {
     incr[i] = self_size[i];
   }
 
@@ -141,7 +142,7 @@ void repeat_internal(
   // than self).
   size_t index = self_dim - 1;
   size_t start = out.dim() - self_dim;
-  while (slots[0] != out.size(start)) {
+  while (slots[0] != static_cast<size_t>(out.size(start))) {
     // Compute the offset (from origin) in the out tensor where this self
     // data will be copied to.
     size_t offset = compute_access_offset(slots, strides, self_dim);
@@ -151,7 +152,7 @@ void repeat_internal(
     slots[index] += incr[index];
     // If we have reached the limit in the innermost dimension, successively
     // increment the slot index of outer dimensions.
-    while (slots[index] == out.size(start + index)) {
+    while (slots[index] == static_cast<size_t>(out.size(start + index))) {
       if (index == 0) {
         break;
       }
@@ -227,7 +228,7 @@ Error repeat_tensor(
   // so we reset the upper bound of innermost dim to 1. 'in_incr' indicates
   // the size (in bytes) of the self data.
   int64_t limits[kTensorDimensionLimit];
-  for (size_t i = 0; i < self_dim; i++) {
+  for (ssize_t i = 0; i < self_dim; i++) {
     limits[i] = self_size[i];
   }
 
