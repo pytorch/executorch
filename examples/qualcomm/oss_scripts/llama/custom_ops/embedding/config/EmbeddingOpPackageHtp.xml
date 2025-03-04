@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright (c) Qualcomm Innovation Center, Inc.
+All rights reserved
+
+This source code is licensed under the BSD-style license found in the
+LICENSE file in the root directory of this source tree.
+-->
+<OpDefCollection
+        PackageName="EmbeddingOpPackage"
+        Domain="executorch"
+        Version="1.0"
+>
+    <OpDefList>
+        <OpDef>
+            <Name>Embedding</Name>
+            <Description>
+                <Content>implmentation of torch.nn.Embedding</Content>
+            </Description>
+
+            <Reference Source="PyTorch Documentation"
+                       Url="torch.nn.Embedding &lt;https://pytorch.org/docs/stable/generated/torch.nn.Embedding.html&gt;"/>
+
+            <Input>
+                <Name>input</Name>
+                <Description>
+                    <Content>data table</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>BACKEND_SPECIFIC</Datatype>
+                <Shape>
+                    <Rank>2D</Rank>
+                    <Text>a tensor of 2 dimension</Text>
+                </Shape>
+            </Input>
+
+            <Input>
+                <Name>indices</Name>
+                <Description>
+                    <Content>indices to extract data</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>QNN_DATATYPE_INT_32</Datatype>
+                <Shape>
+                    <Rank>ND</Rank>
+                    <Text>a tensor of N dimension</Text>
+                </Shape>
+            </Input>
+
+            <Output>
+                <Name>output</Name>
+                <Description>
+                    <Content>output activation</Content>
+                </Description>
+                <Mandatory>true</Mandatory>
+                <Datatype>BACKEND_SPECIFIC</Datatype>
+                <Shape>
+                    <Rank>ND</Rank>
+                    <Text>a tensor of N dimension</Text>
+                </Shape>
+            </Output>
+
+            <!--This Op is implemented on these Backends-->
+            <SupportedBackend>HTP</SupportedBackend>
+        </OpDef>
+
+    </OpDefList>
+
+    <SupplementalOpDefList Backend="HTP">
+        <SupportedOps>
+            <OpName>Embedding</OpName>
+        </SupportedOps>
+
+        <!--Embedding-->
+        <SupplementalOpDef>
+            <Name>Embedding</Name>
+
+            <Input>
+                <Name>input</Name>
+                <Datatype>QNN_DATATYPE_SFIXED_POINT_8</Datatype>
+            </Input>
+
+            <Output>
+                <Name>output</Name>
+                <Datatype>QNN_DATATYPE_SFIXED_POINT_8</Datatype>
+            </Output>
+        </SupplementalOpDef>
+    </SupplementalOpDefList>
+
+</OpDefCollection>

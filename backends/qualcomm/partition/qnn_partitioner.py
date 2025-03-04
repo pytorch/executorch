@@ -111,7 +111,13 @@ class QnnOperatorSupport(OperatorSupportBase):
         return supported
 
     def __del__(self):
-        self.qnn_manager.Destroy()
+        # HTP op package contains some static data structures
+        # which will trigger preparation failure in qnn_preprocess
+        # if libQnnHtp.so is not fully unloaded
+        # ---
+        # currently we'll just keep manager alive for simplicity
+        #self.qnn_manager.Destroy()
+        pass
 
 
 class QnnPartitioner(Partitioner):
@@ -179,7 +185,12 @@ class QnnPartitioner(Partitioner):
                 # pop certain keys in meta for not affecting the passes in compilation
                 # TODO: need to put property name in common definitions
                 node.meta.pop(QCOM_AXIS_ORDER, "")
-        del self.op_support_checker
+        # HTP op package contains some static data structures
+        # which will trigger preparation failure in qnn_preprocess
+        # if libQnnHtp.so is not fully unloaded
+        # ---
+        # currently we'll just keep manager alive for simplicity
+        #del self.op_support_checker
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )
