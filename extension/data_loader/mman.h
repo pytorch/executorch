@@ -18,7 +18,9 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-ET_INLINE long get_os_page_size(){return sysconf(_SC_PAGESIZE)}
+ET_INLINE size_t get_os_page_size() {
+  return sysconf(_SC_PAGESIZE);
+}
 
 #else
 

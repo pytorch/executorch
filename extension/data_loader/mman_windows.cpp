@@ -17,11 +17,11 @@
  * memory mapping Windows API.
  */
 
+#include <executorch/extension/data_loader/mman_windows.h>
+
 #include <errno.h>
 #include <io.h>
 #include <windows.h>
-
-#include "mman_windows.h"
 
 #ifndef STATUS_SECTION_TOO_BIG
 #define STATUS_SECTION_TOO_BIG ((NTSTATUS)0xC0000040L)

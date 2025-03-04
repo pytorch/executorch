@@ -6,13 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/data_loader/mman.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 
 #include <cstring>
 
 #include <gtest/gtest.h>
 
+#include <executorch/extension/data_loader/mman.h>
 #include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>

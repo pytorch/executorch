@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/data_loader/mman.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 
 #include <cerrno>
@@ -17,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <executorch/extension/data_loader/mman.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -184,16 +184,14 @@ Result<FreeableBuffer> MmapDataLoader::load(
       get_overlapping_pages(static_cast<uintptr_t>(offset), size, page_size_);
 
   size_t map_size = range.size;
-#ifdef _WIN32
-  // On Windows, don't mmap-in memory past end of on-disk file.
-  //
-  // The Windows implementation of mmap uses CreateFileMapping which returns
-  // error STATUS_SECTION_TOO_BIG (0xc0000040) if we try to map past the end
-  // of the last page of a file mapped in as read-only.
-  if (range.start + range.size > file_size_) {
+  if (range.start + map_size > file_size_) {
+    // Clamp to the end of the file.
+    //
+    // The Windows implementation of mmap uses CreateFileMapping which returns
+    // error STATUS_SECTION_TOO_BIG (0xc0000040) if we try to map past the end
+    // of the last page of a file mapped in as read-only.
     map_size = file_size_ - range.start;
   }
-#endif
 
   // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
   // the data is read-only, but use PRIVATE just to further avoid accidentally

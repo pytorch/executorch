@@ -17,8 +17,7 @@
  * memory mapping Windows API.
  */
 
-#ifndef _SYS_MMAN_H_
-#define _SYS_MMAN_H_
+#pragma once
 
 #ifndef _WIN32_WINNT // Allow use of features specific to Windows XP or later.
 #define _WIN32_WINNT \
@@ -67,5 +66,3 @@ int munlock(const void* addr, size_t len);
 #ifdef __cplusplus
 };
 #endif
-
-#endif /*  _SYS_MMAN_H_ */
