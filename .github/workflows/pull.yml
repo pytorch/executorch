@@ -521,6 +521,9 @@ jobs:
         ${CONDA_RUN} --no-capture-output \
         ./examples/models/llama3_2_vision/install_requirements.sh
 
+        # Install coreml
+        sh ./backends/apple/coreml/scripts/install_requirements.sh
+
         # Test ANE llama
         sh .ci/scripts/test_ane_static_llama.sh
 
