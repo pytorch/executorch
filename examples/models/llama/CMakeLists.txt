@@ -84,14 +84,6 @@ if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
   target_link_options_shared_lib(executorch)
 endif()
 
-# custom ops library
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/custom_ops
-    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
-  )
-endif()
-
 # llama_runner library
 add_subdirectory(runner)
 
@@ -119,7 +111,6 @@ target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
 
