@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
+
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
@@ -41,7 +43,7 @@ int64_t coordinateToIndexWithDimOrder(
 
   dim_order_to_stride_nocheck(
       sizes.data(), dim_order.data(), sizes.size(), strides);
-  for (size_t i = 0; i < self.dim(); ++i) {
+  for (const auto i : c10::irange(self.dim())) {
     index += cur_indices[i] * strides[i];
   }
   return index;
@@ -59,7 +61,7 @@ void _to_dim_order_copy_impl(const Tensor& self, Tensor& out) {
   for (ssize_t i = 0; i < self.numel(); i++) {
     // Update the current indices.
     for (ssize_t j = self.dim() - 1; j >= 0; j--) {
-      if (coordinate[j] + 1 < self.size(j)) {
+      if (coordinate[j] + 1 < static_cast<size_t>(self.size(j))) {
         coordinate[j]++;
         break;
       } else {
