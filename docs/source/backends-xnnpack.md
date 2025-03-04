@@ -81,6 +81,10 @@ quantizer.set_global(quantization_config)
 #### Quantizing a model with the XNNPACKQuantizer
 After configuring the quantizer, the model can be quantized by via the `prepare_pt2e` and `convert_pt2e` APIs.
 ```python
+from torch.ao.quantization.quantize_pt2e import (
+  prepare_pt2e,
+  convert_pt2e,
+)
 from torch.export import export_for_training
 
 exported_model = export_for_training(model_to_quantize, example_inputs).module()

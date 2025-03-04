@@ -107,7 +107,10 @@ class TosaArg:
         if isinstance(argument, (int, float)):
             self.__process_number(argument)
             return
+        if isinstance(argument, torch.dtype):
+            # Dtype is parsed from fake tensor
+            return
 
-        RuntimeError(
+        raise RuntimeError(
             f"Unhandled node input argument: {argument}, of type {type(argument)}"
         )
