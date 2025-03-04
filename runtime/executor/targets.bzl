@@ -59,6 +59,7 @@ def define_common_targets():
             "//executorch/runtime/core:named_data_map",
             "//executorch/schema:program",
         ],
+        exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL=1"],
     )
 
     for aten_mode in get_aten_mode_options():

@@ -16,12 +16,8 @@ namespace internal {
 /* static */ executorch::runtime::Result<PteDataMap> PteDataMap::create(
     executorch::runtime::DataLoader* loader,
     size_t segment_base_offset,
-    const flatbuffers::Vector<
-        flatbuffers::Offset<executorch_flatbuffer::NamedData>,
-        uint32_t>* named_data,
-    const flatbuffers::Vector<
-        flatbuffers::Offset<executorch_flatbuffer::DataSegment>,
-        uint32_t>* segments) {
+    const flatbuffers::FlatbufferNamedData* named_data,
+    const flatbuffers::FlatbufferDataSegment* segments) {
   ET_CHECK_OR_RETURN_ERROR(
       loader != nullptr && named_data != nullptr && segments != nullptr,
       InvalidArgument,
