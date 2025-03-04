@@ -283,35 +283,24 @@ class MemoryAllocator {
 /**
  * The recommended alternative for statement expression-incompatible compilers
  * is to directly allocate the memory.
- * e.g. memory_allocator__->allocate(nbytes__);
  */
 #define ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, ...) \
-  static_assert(                                              \
-      false,                                                  \
-      "ET_TRY_ALLOCATE_OR uses statement expressions and \
-      thus is not available for use with this compiler.");
+  memory_allocator__->allocate(nbytes__);
 
 /**
  * The recommended alternative for statement expression-incompatible compilers
  * is to directly allocate the memory.
- * e.g. memory_allocator__->allocateInstance<type__>();
  */
 #define ET_TRY_ALLOCATE_INSTANCE_OR(memory_allocator__, type__, ...) \
-  static_assert(                                                     \
-      false,                                                         \
-      "ET_TRY_ALLOCATE_INSTANCE_OR uses statement \
-    expressions and thus is not available for use with this compiler.");
+  memory_allocator__->allocateInstance<type__>();
 
 /**
  * The recommended alternative for statement expression-incompatible compilers
  * is to directly use allocate the memory.
- * e.g. memory_allocator__->allocateList<type__>(nelem__);
  */
 #define ET_TRY_ALLOCATE_LIST_OR(memory_allocator__, type__, nelem__, ...) \
-  static_assert(                                                          \
-      false,                                                              \
-      "ET_TRY_ALLOCATE_LIST_OR uses statement \
-    expressions and thus is not available for use with this compiler.");
+  memory_allocator__->allocateList<type__>(nelem__);
+
 #endif // !ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 
 /**
