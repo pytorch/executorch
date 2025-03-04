@@ -1480,6 +1480,18 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]:</span>
     <span class="c1"># To address https://github.com/pytorch/executorch/issues/8781</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">keep</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
+        <span class="c1"># Explicit allow list</span>
+        <span class="n">allow_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Ops in torch.ops.quant are not always loaded, so we use try/except</span>
+            <span class="c1"># Aliases output, but we need to allow it for XNNPACK</span>
+            <span class="n">allow_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quant</span><span class="o">.</span><span class="n">choose_qparams_affine</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="k">if</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">allow_list</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
         <span class="n">schema</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">_schema</span>
         <span class="n">native_schema</span> <span class="o">=</span> <span class="n">_pybind_schema_to_native_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">native_schema</span><span class="o">.</span><span class="n">is_mutable</span><span class="p">:</span>
