@@ -9,7 +9,7 @@ echo EXECUTORCH_ROOT=${EXECUTORCH_ROOT}
 
 main() {
     # Set build directory
-    local build_dir="cmake-openvino-out"
+    local build_dir="cmake-out"
 
     # Create and enter the build directory
     cd "$EXECUTORCH_ROOT"
@@ -28,7 +28,7 @@ main() {
 
 
     # Build the project
-    cmake --build cmake-openvino-out --target install --config Release -j5
+    cmake --build ${build_dir} --target install --config Release -j$(nproc)
 
     # Switch back to the original directory
     cd - > /dev/null

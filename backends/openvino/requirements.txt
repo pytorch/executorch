@@ -1,9 +1,2 @@
-datasets
-huggingface-hub
-safetensors
-sentencepiece
-tokenizers
 transformers
-piq
-pillow
 git+https://github.com/openvinotoolkit/nncf@191b53d#egg=nncf

@@ -8,25 +8,22 @@ import argparse
 import os
 import shutil
 import subprocess
-from itertools import islice
 from pathlib import Path
 
 import executorch
 
-import nncf
+import nncf.torch
 import numpy as np
 import timm
 import torch
 import torchvision.models as torchvision_models
-from executorch.backends.openvino import OpenVINOQuantizer
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+from executorch.backends.openvino.quantizer.quantizer import quantize_model
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
-from nncf.experimental.torch.fx.quantization.quantize_pt2e import quantize_pt2e
 from sklearn.metrics import accuracy_score
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export
 from torch.export.exported_program import ExportedProgram
 from torchvision import datasets
@@ -129,55 +126,6 @@ def dump_inputs(calibration_dataset, dest_path):
     return input_files, targets
 
 
-def quantize_model(
-    captured_model: torch.fx.GraphModule,
-    calibration_dataset: torch.utils.data.DataLoader,
-    use_nncf: bool,
-) -> torch.fx.GraphModule:
-    """
-    Quantizes a model using either NNCF-based or PTQ-based quantization.
-
-    :param captured_model: The model to be quantized, represented as a torch.fx.GraphModule.
-    :param calibration_dataset: A DataLoader containing calibration data for quantization.
-    :param use_nncf: Whether to use NNCF-based quantization (True) or standard PTQ (False).
-    :return: The quantized model as a torch.fx.GraphModule.
-    """
-    quantizer = OpenVINOQuantizer()
-
-    print("PTQ: Quantize the model")
-    default_subset_size = 300
-    batch_size = calibration_dataset.batch_size
-    subset_size = (default_subset_size // batch_size) + int(
-        default_subset_size % batch_size > 0
-    )
-
-    def transform(x):
-        return x[0]
-
-    if use_nncf:
-
-        quantized_model = quantize_pt2e(
-            captured_model,
-            quantizer,
-            subset_size=subset_size,
-            calibration_dataset=nncf.Dataset(
-                calibration_dataset, transform_func=transform
-            ),
-            fold_quantize=False,
-        )
-    else:
-        annotated_model = prepare_pt2e(captured_model, quantizer)
-
-        print("PTQ: Calibrate the model...")
-        for data in islice(calibration_dataset, subset_size):
-            annotated_model(transform(data))
-
-        print("PTQ: Convert the quantized model...")
-        quantized_model = convert_pt2e(annotated_model, fold_quantize=False)
-
-    return quantized_model
-
-
 def validate_model(
     model_file_name: str, calibration_dataset: torch.utils.data.DataLoader
 ) -> float:
@@ -206,7 +154,7 @@ def validate_model(
 
     subprocess.run(
         [
-            "../../../cmake-openvino-out/examples/openvino/openvino_executor_runner",
+            "../../../cmake-out/examples/openvino/openvino_executor_runner",
             f"--model_path={model_file_name}",
             f"--input_list_path={inp_list_file}",
             f"--output_folder_path={out_path}",
@@ -231,7 +179,6 @@ def main(
     dataset_path: str,
     device: str,
     batch_size: int,
-    quantization_flow: str,
 ):
     """
     Main function to load, quantize, and validate a model.
@@ -244,7 +191,6 @@ def main(
     :param dataset_path: Path to the dataset for calibration/validation.
     :param device: The device to run the model on (e.g., "cpu", "gpu").
     :param batch_size: Batch size for dataset loading.
-    :param quantization_flow: The quantization method to use.
     """
 
     # Load the selected model
@@ -281,7 +227,6 @@ def main(
         quantized_model = quantize_model(
             aten_dialect.module(),
             calibration_dataset,
-            use_nncf=quantization_flow == "nncf",
         )
 
         aten_dialect: ExportedProgram = export(quantized_model, example_args)
@@ -360,15 +305,6 @@ if __name__ == "__main__":
         default="CPU",
         help="Target device for compiling the model (e.g., CPU, GPU). Default is CPU.",
     )
-    parser.add_argument(
-        "--quantization_flow",
-        type=str,
-        choices=["pt2e", "nncf"],
-        default="nncf",
-        help="Select the quantization flow (nncf or pt2e):"
-        " pt2e is the default torch.ao quantization flow, while"
-        " nncf is a custom method with additional algorithms to improve model performance.",
-    )
 
     args = parser.parse_args()
 
@@ -384,5 +320,4 @@ if __name__ == "__main__":
             args.dataset,
             args.device,
             args.batch_size,
-            args.quantization_flow,
         )
