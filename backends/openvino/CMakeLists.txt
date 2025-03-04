@@ -28,10 +28,11 @@ set(COMMON_INCLUDE_DIRS ${EXECUTORCH_ROOT}/..)
 # Include utility CMake scripts from ExecuteTorch
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
+# Find OpenVINO libraries
 find_package(OpenVINO REQUIRED)
 
-# Define OpenVINO backend as a shared library
-add_library(openvino_backend SHARED .)
+# Define OpenVINO backend as a static library
+add_library(openvino_backend STATIC .)
 
 # Enable exceptions and RTTI for OpenVINO backend
 target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
@@ -44,6 +45,8 @@ target_link_libraries(openvino_backend PRIVATE openvino::runtime executorch_core
 
 # Add source files for OpenVINO backend
 target_sources(openvino_backend PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/OpenvinoBackend.cpp)
+
+target_link_options_shared_lib(openvino_backend)
 
 # Install OpenVINO backend library to the lib directory
 install(TARGETS openvino_backend DESTINATION lib)

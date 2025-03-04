@@ -1,5 +1,5 @@
 /*  Copyright (c) Intel Corporation
- * 
+ *
  *  Licensed under the BSD License (the "License"); you may not use this file
  *  except in compliance with the License. See the license file found in the
  *  LICENSE file in the root directory of this source tree.
@@ -23,15 +23,7 @@ namespace executorch {
 namespace backends {
 namespace openvino {
 
-OpenvinoBackend::OpenvinoBackend() {
-  if (!is_available()) {
-    // ET_LOG(Error, "OpenVINO runtime is not available. Initialization
-    // failed.");
-    throw std::runtime_error("OpenVINO runtime not available");
-  }
-
-  // ET_LOG(Info, "OpenVINO runtime successfully verified and initialized.");
-}
+OpenvinoBackend::OpenvinoBackend() {}
 
 bool OpenvinoBackend::is_available() const {
   try {
@@ -92,6 +84,7 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
   exr::MemoryAllocator* allocator = context.get_runtime_allocator();
   ExecutionHandle* handle =
       ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
+  new (handle) ExecutionHandle;
   handle->compiled_model = std::make_shared<ov::CompiledModel>(compiled_model);
   handle->infer_request = infer_request;
 

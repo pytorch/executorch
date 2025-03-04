@@ -66,6 +66,13 @@ if(NOT OPENVINO_BACKEND_LIB)
     message(FATAL_ERROR "OpenVINO backend library not found in ${LIBRARY_DIR}")
 endif()
 
+# Locate OpenVINO Library
+find_package(OpenVINO REQUIRED)
+
+# Add OpenVINO Backend Library
+add_library(openvino_backend STATIC IMPORTED)
+set_property(TARGET openvino_backend PROPERTY IMPORTED_LOCATION ${OPENVINO_BACKEND_LIB})
+
 # Locate OpenVINO Backend Library
 find_library(GFLAGS_LIB NAMES gflags_nothreads PATHS ${LIBRARY_DIR} NO_DEFAULT_PATH)
 if(NOT GFLAGS_LIB)
@@ -74,7 +81,8 @@ endif()
 
 # Link Libraries
 target_link_libraries(openvino_executor_runner PRIVATE
-    ${OPENVINO_BACKEND_LIB}
+    openvino_backend
+    openvino::runtime
     ${GFLAGS_LIB}
     executorch
     executorch_core
@@ -83,6 +91,8 @@ target_link_libraries(openvino_executor_runner PRIVATE
     extension_runner_util
     pthreadpool
 )
+
+target_link_options_shared_lib(openvino_backend)
 
 # Ensure Proper RPATH Handling
 set_target_properties(openvino_executor_runner PROPERTIES INSTALL_RPATH "$ORIGIN")
