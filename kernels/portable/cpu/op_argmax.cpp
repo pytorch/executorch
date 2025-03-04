@@ -50,10 +50,7 @@ Tensor& argmax_out(
     for (const auto out_ix : c10::irange(out.numel())) {
       std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
           [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-            // the below condition as written is equivalent to
-            // !isnan(accval) && (isnan(v) || v > acc_val). See
-            // argument in op_argmin.cpp.
-            if (!std::isnan(acc_val) && !(v <= acc_val)) {
+            if (!std::isnan(acc_val) && (std::isnan(v) || v > acc_val)) {
               acc_val = v;
               acc_ix = ix;
             }
