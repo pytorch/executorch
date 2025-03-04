@@ -5,8 +5,8 @@
  *  LICENSE file in the root directory of this source tree.
  */
 
-#ifndef OPENVINO_BACKEND_HPP
-#define OPENVINO_BACKEND_HPP
+#ifndef OPENVINO_BACKEND_H
+#define OPENVINO_BACKEND_H
 
 #include <openvino/openvino.hpp>
 #include <iostream>
@@ -56,4 +56,4 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
 } // namespace backends
 } // namespace executorch
 
-#endif // OPENVINO_BACKEND_HPP
+#endif // OPENVINO_BACKEND_H
