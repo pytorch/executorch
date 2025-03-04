@@ -508,22 +508,25 @@ jobs:
         bash .ci/scripts/setup-conda.sh
         eval "$(conda shell.bash hook)"
 
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python \
-        EXECUTORCH_BUILD_PYBIND=ON \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
-        ${CONDA_RUN} --no-capture-output \
-        .ci/scripts/setup-macos.sh --build-tool cmake --build-mode Debug --editable false
+        # # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        # PYTHON_EXECUTABLE=python \
+        # EXECUTORCH_BUILD_PYBIND=ON \
+        # CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
+        # ${CONDA_RUN} --no-capture-output \
+        # .ci/scripts/setup-macos.sh --build-tool cmake --build-mode Debug --editable false
 
 
-        # Install llama3_2_vision dependencies.
-        PYTHON_EXECUTABLE=python \
-        ${CONDA_RUN} --no-capture-output \
-        ./examples/models/llama3_2_vision/install_requirements.sh
+        # # Install llama3_2_vision dependencies.
+        # PYTHON_EXECUTABLE=python \
+        # ${CONDA_RUN} --no-capture-output \
+        # ./examples/models/llama3_2_vision/install_requirements.sh
 
         # Install coreml
         pip install coremltools
         sh install_requirements.sh
+        sh examples/models/llama/install_requirements.sh
+        python install_executorch.py --pybind coreml
+
 
         # Test ANE llama
         sh .ci/scripts/test_ane_static_llama.sh
