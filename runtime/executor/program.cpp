@@ -373,6 +373,13 @@ Result<const void*> Program::get_constant_buffer_data(
   }
 }
 
+Result<const NamedDataMap*> Program::get_named_data_map() const {
+  if (pte_data_map_.has_value()) {
+    return &pte_data_map_.value();
+  }
+  return Error::NotFound;
+}
+
 Result<const char*> Program::get_output_flattening_encoding(
     const char* method_name) const {
   auto plan = get_execution_plan(internal_program_, method_name);
