@@ -23,12 +23,18 @@ using executorch::extension::training::optimizer::SGDOptions;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 DEFINE_string(model_path, "xor.pte", "Model serialized in flatbuffer format.");
+DEFINE_string(ptd_path, "", "Model weights serialized in flatbuffer format.");
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
-  if (argc != 1) {
+  if (argc == 0) {
+    ET_LOG(Error, "Please provide a model path.");
+    return 1;
+  } else if (argc > 2) {
     std::string msg = "Extra commandline args: ";
-    for (int i = 1 /* skip argv[0] (program name) */; i < argc; i++) {
+    for (int i = 2 /* skip argv[0] (pte path) and argv[1] (ptd path) */;
+         i < argc;
+         i++) {
       msg += argv[i];
     }
     ET_LOG(Error, "%s", msg.c_str());
@@ -46,7 +52,21 @@ int main(int argc, char** argv) {
   auto loader = std::make_unique<executorch::extension::FileDataLoader>(
       std::move(loader_res.get()));
 
-  auto mod = executorch::extension::training::TrainingModule(std::move(loader));
+  std::unique_ptr<executorch::extension::FileDataLoader> ptd_loader = nullptr;
+  if (!FLAGS_ptd_path.empty()) {
+    executorch::runtime::Result<executorch::extension::FileDataLoader>
+        ptd_loader_res =
+            executorch::extension::FileDataLoader::from(FLAGS_ptd_path.c_str());
+    if (ptd_loader_res.error() != Error::Ok) {
+      ET_LOG(Error, "Failed to open ptd file: %s", FLAGS_ptd_path.c_str());
+      return 1;
+    }
+    ptd_loader = std::make_unique<executorch::extension::FileDataLoader>(
+        std::move(ptd_loader_res.get()));
+  }
+
+  auto mod = executorch::extension::training::TrainingModule(
+      std::move(loader), nullptr, nullptr, nullptr, std::move(ptd_loader));
 
   // Create full data set of input and labels.
   std::vector<std::pair<
@@ -70,7 +90,10 @@ int main(int argc, char** argv) {
   // Get the params and names
   auto param_res = mod.named_parameters("forward");
   if (param_res.error() != Error::Ok) {
-    ET_LOG(Error, "Failed to get named parameters");
+    ET_LOG(
+        Error,
+        "Failed to get named parameters, error: %d",
+        static_cast<int>(param_res.error()));
     return 1;
   }
 
@@ -112,5 +135,6 @@ int main(int argc, char** argv) {
         std::string(param.first.data()), param.second});
   }
 
-  executorch::extension::flat_tensor::save_ptd("xor.ptd", param_map, 16);
+  executorch::extension::flat_tensor::save_ptd(
+      "trained_xor.ptd", param_map, 16);
 }
