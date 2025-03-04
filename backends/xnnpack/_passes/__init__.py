@@ -14,9 +14,6 @@ from executorch.backends.xnnpack._passes.conv1d_unsqueeze_pass import (
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack._passes.convert_to_sdpa import ConvertToSDPAPass
-from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
-    ConvertToUpsampleBilinear2d,
-)
 from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatenate
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
@@ -58,7 +55,6 @@ class XNNPACKPassManager:
             self.passes = [
                 # TODO - remove this pass once we have a better support for dim_order ops lowering
                 DimOrderOpsRevertPass,
-                ConvertToUpsampleBilinear2d,
                 ConvertToLinearPass,
                 ConvertToSDPAPass,
                 ConstPropPass,
