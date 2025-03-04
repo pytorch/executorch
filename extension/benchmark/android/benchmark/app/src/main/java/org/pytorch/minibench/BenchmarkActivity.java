@@ -85,8 +85,8 @@ public class BenchmarkActivity extends Activity {
         // 80% samples in the middle (trimmean 0.2)
         Collections.sort(stats.latency);
         int resultSize = stats.latency.size();
-        List<Double> usedLatencyResults = stats.latency.subList(
-            resultSize / 10, resultSize * 9 / 10);
+        List<Double> usedLatencyResults =
+            stats.latency.subList(resultSize / 10, resultSize * 9 / 10);
 
         results.add(
             new BenchmarkMetric(
