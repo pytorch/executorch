@@ -505,14 +505,14 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
-        export BUILD_TOOL="cmake"
         bash .ci/scripts/setup-conda.sh
         eval "$(conda shell.bash hook)"
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        BUILD_TOOL=cmake \
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh "$@"
 
