@@ -69,11 +69,13 @@ TEST(BroadcastIndexesRangeTest, ScalarBroadcastToOneD) {
 }
 
 // [1] -> [H, W]
+// [W] -> [H, W]
+// [1, 1] -> [H, W]
 // [1, W] -> [H, W]
 // [H, 1] -> [H, W]
 // [H, W] -> [H, W]
 // Cover all these at the same time to also exercise multiple input tensors.
-TEST(BroadcastIndexesRangeTest, TwoDExhaustive) {
+TEST(BroadcastIndexesRangeTest, OneAndTwoDExhaustive) {
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.zeros({3, 4});
   Tensor in_0d_scalar = tf.zeros({});
@@ -112,37 +114,53 @@ TEST(BroadcastIndexesRangeTest, TwoDExhaustive) {
 
 // Here we assume that the previous tests established that padding
 // with leading 1s is working, and test:
+// [1, 1, 1] -> [C, H, W]
 // [C, H, 1] -> [C, H, W]
 // [C, 1, W] -> [C, H, W]
+// [1, H, W] -> [C, H, W]
 // [C, 1, 1] -> [C, H, W]
 // [1, H, 1] -> [C, H, W]
+// [1, 1, W] -> [C, H, W]
 // [C, H, W] -> [C, H, W]
 TEST(BroadcastIndexesRangeTest, ThreeDBroadcasting) {
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.zeros({2, 3, 4});
-  Tensor in_broadcast_w = tf.zeros({2, 3, 1});
-  Tensor in_broadcast_h = tf.zeros({2, 1, 4});
-  Tensor in_broadcast_hw = tf.zeros({2, 1, 1});
-  Tensor in_broadcast_cw = tf.zeros({1, 3, 1});
-  Tensor in_not_broadcast = tf.zeros({2, 3, 4});
-  auto actual = range_to_vec(BroadcastIndexesRange<5>(
-      out,
-      in_broadcast_w,
-      in_broadcast_h,
-      in_broadcast_hw,
-      in_broadcast_cw,
-      in_not_broadcast));
-  decltype(actual) expected = {
-      {0, 0, 0, 0, 0, 0},   {1, 0, 1, 0, 0, 1},   {2, 0, 2, 0, 0, 2},
-      {3, 0, 3, 0, 0, 3},   {4, 1, 0, 0, 1, 4},   {5, 1, 1, 0, 1, 5},
-      {6, 1, 2, 0, 1, 6},   {7, 1, 3, 0, 1, 7},   {8, 2, 0, 0, 2, 8},
-      {9, 2, 1, 0, 2, 9},   {10, 2, 2, 0, 2, 10}, {11, 2, 3, 0, 2, 11},
-      {12, 3, 4, 1, 0, 12}, {13, 3, 5, 1, 0, 13}, {14, 3, 6, 1, 0, 14},
-      {15, 3, 7, 1, 0, 15}, {16, 4, 4, 1, 1, 16}, {17, 4, 5, 1, 1, 17},
-      {18, 4, 6, 1, 1, 18}, {19, 4, 7, 1, 1, 19}, {20, 5, 4, 1, 2, 20},
-      {21, 5, 5, 1, 2, 21}, {22, 5, 6, 1, 2, 22}, {23, 5, 7, 1, 2, 23},
+  std::array<Tensor, 8> input_tensors = {
+      tf.zeros({2, 3, 1}),
+      tf.zeros({2, 1, 4}),
+      tf.zeros({1, 3, 4}),
+      tf.zeros({2, 1, 1}),
+      tf.zeros({1, 3, 1}),
+      tf.zeros({1, 1, 4}),
+      tf.zeros({1, 1, 1}),
+      tf.zeros({2, 3, 4}),
   };
-  EXPECT_EQ(expected, actual);
+  // Writing out all the indexes would be too cumbersome, so here we
+  // take the opportunity to mutation test against delinearize_index
+  // and linearize_access_indexes.
+  int idx = 0;
+  for (const auto indexes : BroadcastIndexesRange<8>(
+           out,
+           input_tensors[0],
+           input_tensors[1],
+           input_tensors[2],
+           input_tensors[3],
+           input_tensors[4],
+           input_tensors[5],
+           input_tensors[6],
+           input_tensors[7])) {
+    const auto out_idx = indexes[0];
+    EXPECT_EQ(out_idx, idx++);
+    size_t out_indexes[executorch::runtime::kTensorDimensionLimit];
+    delinearize_index(
+        out_idx, out, out_indexes, executorch::runtime::kTensorDimensionLimit);
+    for (const auto tensor_idx : c10::irange(0, input_tensors.size())) {
+      EXPECT_EQ(
+          indexes[tensor_idx + 1],
+          linearize_access_indexes(
+              out_indexes, out.dim(), input_tensors[tensor_idx]));
+    }
+  }
 }
 
 // 4-D should generalize, but we will go ahead and test:
@@ -154,10 +172,10 @@ TEST(BroadcastIndexesRangeTest, FourDBroadcasting) {
   Tensor in_broadcast_cw = tf.zeros({2, 1, 4, 1});
   Tensor in_broadcast_nh = tf.zeros({1, 3, 1, 5});
 
-  int idx = 0;
-  // Writing out all the indices would be too cumbersome, so here we
+  // Writing out all the indexes would be too cumbersome, so here we
   // take the opportunity to mutation test against delinearize_index
   // and linearize_access_indexes.
+  int idx = 0;
   for (const auto [out_idx, in_cw_idx, in_nh_idx] :
        BroadcastIndexesRange<2>(out, in_broadcast_cw, in_broadcast_nh)) {
     EXPECT_EQ(out_idx, idx++);

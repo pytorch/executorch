@@ -75,9 +75,9 @@ class BroadcastIndexesIterator {
     // TODO: add optimization for particular input tensors not being
     // broadcasted?
     for (auto ii = output_dim_ - 1; ii >= 0; --ii) {
-      // You might wonder what happens if output_shape_[ii] == 0. In that case,
-      // output.numel() would be 0, and thus the iterator would be the end()
-      // iterator, which is not legal to increment.
+      // You might wonder what happens if output_shape_[ii] == 0. In
+      // that case, output.numel() would be 0, and thus we would have
+      // begin() == end() and no iteration.
       if ET_UNLIKELY (delinearized_output_index_[ii] == output_shape_[ii] - 1) {
         const auto old_delinearized_output_index_item =
             delinearized_output_index_[ii];
@@ -163,22 +163,24 @@ class BroadcastIndexesIterator {
 };
 } // namespace internal
 
-// Efficient mechanism for looping over the index space for an output
-// tensor and kNumInputs possibly-broadcasted input tensors. Use as follows:
-//
-// auto* output_data = output.mutable_data_ptr<OutputType>();
-// const auto* a_data = a.mutable_data_ptr<AType>();
-// const auto* b_data = b.mutable_data_ptr<BType>();
-// for (const auto [output_index, a_index, b_index] :
-// BroadcastIndexesRange<2>(output, a, b)) {
-//   // Access output_data[output_index], a_data[a_index], and b_data[b_index].
-// }
-//
-// (where OutputType, AType, and BType are known concrete types.)
-//
-// Unlike looping using delinearize_index() and
-// linearize_access_indexes(), BroadcastIndexesRange avoids expensive
-// division and modulo operations on each iteration.
+/**
+ * Efficient mechanism for looping over the index space for an output
+ * tensor and kNumInputs possibly-broadcasted input tensors. Use as follows:
+ *
+ * auto* output_data = output.mutable_data_ptr<OutputType>();
+ * const auto* a_data = a.mutable_data_ptr<AType>();
+ * const auto* b_data = b.mutable_data_ptr<BType>();
+ * for (const auto [output_index, a_index, b_index] :
+ *      BroadcastIndexesRange<2>(output, a, b)) {
+ *   // Access output_data[output_index], a_data[a_index], and b_data[b_index].
+ * }
+ *
+ * (where OutputType, AType, and BType are known concrete types.)
+ *
+ * Unlike looping using delinearize_index() and
+ * linearize_access_indexes(), BroadcastIndexesRange avoids expensive
+ * division and modulo operations on each iteration.
+ */
 template <std::size_t kNumInputs>
 class BroadcastIndexesRange {
  public:
