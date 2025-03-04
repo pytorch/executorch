@@ -96,63 +96,6 @@ jobs:
 
           PYTHONPATH="${PWD}" python .ci/scripts/gather_benchmark_configs.py $ARGS
 
-  prepare-test-specs:
-    runs-on: linux.2xlarge
-    needs: set-parameters
-    strategy:
-      matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Prepare the spec
-        id: prepare
-        shell: bash
-        env:
-          BENCHMARK_CONFIG: ${{ toJSON(matrix) }}
-        working-directory: extension/benchmark/android/benchmark
-        run: |
-          set -eux
-
-          # The model will be exported in the next step to this S3 path
-          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/model.zip"
-          # We could write a script to properly use jinja here, but there is only one variable,
-          # so let's just sed it
-          sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
-
-          BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
-          # The config for this benchmark runs, we save it in the test spec so that it can be fetched
-          # later by the upload script
-          sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' android-llm-device-farm-test-spec.yml.j2
-
-          cp android-llm-device-farm-test-spec.yml.j2 android-llm-device-farm-test-spec.yml
-          # Just print the test spec for debugging
-          cat android-llm-device-farm-test-spec.yml
-
-          # Save the benchmark configs so that we can use it later in the dashboard
-          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_ID}.json"
-          echo "benchmark-config-id=${BENCHMARK_CONFIG_ID}" >> $GITHUB_OUTPUT
-
-      - name: Upload the spec
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}
-          retention-days: 1
-          if-no-files-found: error
-          path: extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml
-
-      - name: Update the benchmark configs
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
-          retention-days: 1
-          if-no-files-found: error
-          path: extension/benchmark/android/benchmark/${{ steps.prepare.outputs.benchmark-config-id }}.json
-
   export-models:
     name: export-models
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -181,7 +124,7 @@ jobs:
             PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
             PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         fi
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
@@ -335,6 +278,69 @@ jobs:
         fi
         echo "::endgroup::"
 
+  prepare-test-specs:
+    runs-on: linux.2xlarge
+    needs:
+      - set-parameters
+      - export-models
+    strategy:
+      matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Prepare the spec
+        id: prepare
+        shell: bash
+        env:
+          BENCHMARK_CONFIG: ${{ toJSON(matrix) }}
+        working-directory: extension/benchmark/android/benchmark
+        run: |
+          set -eux
+
+          # The model will be exported in the next step to this S3 path
+          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/model.zip"
+
+          # Check if the model artifact exists, fail this step skip generating test-spec.
+          curl -s --head -f ${MODEL_PATH}
+
+          # We could write a script to properly use jinja here, but there is only one variable,
+          # so let's just sed it
+          sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' android-llm-device-farm-test-spec.yml.j2
+
+          BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
+          # The config for this benchmark runs, we save it in the test spec so that it can be fetched
+          # later by the upload script
+          sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' android-llm-device-farm-test-spec.yml.j2
+
+          cp android-llm-device-farm-test-spec.yml.j2 android-llm-device-farm-test-spec.yml
+          # Just print the test spec for debugging
+          cat android-llm-device-farm-test-spec.yml
+
+          # Save the benchmark configs so that we can use it later in the dashboard
+          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_ID}.json"
+          echo "benchmark-config-id=${BENCHMARK_CONFIG_ID}" >> $GITHUB_OUTPUT
+
+      - name: Upload the spec
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/android/benchmark/android-llm-device-farm-test-spec.yml
+
+      - name: Update the benchmark configs
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/android/benchmark/${{ steps.prepare.outputs.benchmark-config-id }}.json
+
   build-benchmark-app:
     name: build-benchmark-app
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -356,7 +362,7 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh

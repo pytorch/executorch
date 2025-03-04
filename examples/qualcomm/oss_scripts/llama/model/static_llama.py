@@ -37,7 +37,7 @@ class LlamaAttention(nn.Module):
         super().__init__()
         self.dim = config.dim
         self.n_heads = config.n_heads
-        self.head_dim = config.dim // config.n_heads
+        self.head_dim = config.head_dim
         self.n_kv_heads = config.n_kv_heads
         self.num_key_value_groups = config.n_heads // self.n_kv_heads
         self.max_seq_len = config.max_seq_len
@@ -304,7 +304,7 @@ class LlamaModel(nn.Module):
     ):
         super().__init__()
         self.dim = config.dim
-        self.head_dim = config.dim // config.n_heads
+        self.head_dim = config.head_dim
         self.max_batch_size = config.max_batch_size
         self.max_seq_len = config.max_seq_len
         self.n_heads = config.n_heads
@@ -328,9 +328,11 @@ class LlamaModel(nn.Module):
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         freqs_cos, freqs_sin = precompute_freqs_cis(
-            config.dim // config.n_heads,
+            config.head_dim,
             config.max_seq_len,
             config.rope_freq_base,
+            config.use_scaled_rope,
+            config.rope_scale_factor,
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
@@ -459,7 +461,7 @@ class LlamaModel(nn.Module):
             "get_bos_id": 1,
             "get_eos_id": 2,
             "get_dim": self.dim,
-            "get_head_dim": self.dim // self.n_heads,
+            "get_head_dim": self.head_dim,
             "get_max_batch_size": self.max_batch_size,
             "get_max_seq_len": self.max_seq_len,
             "get_n_bos": 1,
