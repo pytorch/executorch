@@ -43,7 +43,7 @@ endif()
 list(TRANSFORM _optimized_cpublas__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(cpublas STATIC ${_optimized_cpublas__srcs})
 target_link_libraries(
-  cpublas PRIVATE executorch_core eigen_blas extension_threadpool
+  cpublas PRIVATE executorch_core eigen_blas extension_parallel extension_threadpool
 )
 target_compile_options(cpublas PUBLIC ${_common_compile_options})
 
