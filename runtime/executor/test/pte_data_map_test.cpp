@@ -36,8 +36,8 @@ class PteDataMapTest : public ::testing::Test {
     // Create a sample Program with only named_data and segments. Technically
     // not a valid Program; only used to test the PteDataMap.
     // Create named data.
-    const flatbuffers::Offset<executorch_flatbuffer::NamedData>
-        named_data_arr[4] = {
+    std::array<const flatbuffers::Offset<executorch_flatbuffer::NamedData>, 4>
+        named_data_arr = {
             executorch_flatbuffer::CreateNamedDataDirect(
                 builder_, "key0", /*segment_index=*/0),
             executorch_flatbuffer::CreateNamedDataDirect(
@@ -50,18 +50,21 @@ class PteDataMapTest : public ::testing::Test {
             executorch_flatbuffer::CreateNamedDataDirect(
                 builder_, "key_invalid", /*segment_index=*/10),
         };
-    const auto named_data = builder_.CreateVector(named_data_arr, 4);
+    const auto named_data =
+        builder_.CreateVector(named_data_arr.data(), named_data_arr.size());
 
     // Create segments.
-    const flatbuffers::Offset<executorch_flatbuffer::DataSegment>
-        segment_arr[2] = {
-            executorch_flatbuffer::CreateDataSegment(
-                builder_, /*offset=*/0, /*size=*/kSegmentSizes[0]),
-            executorch_flatbuffer::CreateDataSegment(
-                builder_,
-                /*offset=*/kSegmentAlignment * 2,
-                /*size=*/kSegmentSizes[1])};
-    const auto segments = builder_.CreateVector(segment_arr, 2);
+    std::array<const flatbuffers::Offset<executorch_flatbuffer::DataSegment>, 2>
+        segment_arr = {// @lint-ignore CLANGTIDY facebook-hte-BadArgumentComment
+                       executorch_flatbuffer::CreateDataSegment(
+                           builder_, /*offset=*/0, /*size=*/kSegmentSizes[0]),
+                       // @lint-ignore CLANGTIDY facebook-hte-BadArgumentComment
+                       executorch_flatbuffer::CreateDataSegment(
+                           builder_,
+                           /*offset=*/kSegmentAlignment * 2,
+                           /*size=*/kSegmentSizes[1])};
+    const auto segments =
+        builder_.CreateVector(segment_arr.data(), segment_arr.size());
 
     // Create Program.
     const auto program = executorch_flatbuffer::CreateProgram(

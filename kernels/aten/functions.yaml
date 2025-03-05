@@ -249,6 +249,8 @@
 
 - op: max_pool2d_with_indices.out
 
+- op: max_pool2d_with_indices_backward.grad_input
+
 - op: max.dim_max
 
 - op: max.unary_out
@@ -402,6 +404,8 @@
 - op: trunc.out
 
 - op: unbind_copy.int_out
+
+- op: unfold_copy.out
 
 - op: unsafe_split.Tensor_out
 

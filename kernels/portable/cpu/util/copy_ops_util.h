@@ -233,5 +233,19 @@ void get_diagonal_copy_out_target_size(
     executorch::aten::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_unfold_copy_args(
+    const Tensor& self,
+    int64_t dim,
+    int64_t size,
+    int64_t step);
+
+void get_unfold_copy_out_target_size(
+    const Tensor& self,
+    int64_t dim,
+    int64_t size,
+    int64_t step,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim);
+
 } // namespace executor
 } // namespace torch

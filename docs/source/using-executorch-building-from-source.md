@@ -81,10 +81,11 @@ portability details.
    ```
 
    For development, install the package in `--editable` mode, which allows to modify Python source code and see changes reflected immediately.
-   ```
+   ```bash
    ./install_executorch.sh --editable [--pybind xnnpack]
    
-   # Or you can directly do the following if dependencies are already installed.
+   # Or you can directly do the following if dependencies are already installed
+   # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
    pip install -e .
    ```
 
