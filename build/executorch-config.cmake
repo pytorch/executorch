@@ -129,3 +129,4 @@ if(TARGET cpublas)
     cpublas PROPERTIES INTERFACE_LINK_LIBRARIES extension_parallel
   )
 endif()
+target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)

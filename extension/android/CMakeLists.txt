@@ -119,7 +119,6 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
 endif()
 
 if(TARGET pthreadpool)
-  target_compile_definitions(executorch_jni PRIVATE ET_USE_THREADPOOL=1)
   target_include_directories(
     executorch_jni
     PUBLIC
