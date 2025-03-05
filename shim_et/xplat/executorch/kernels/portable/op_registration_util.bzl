@@ -1224,6 +1224,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_unfold_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_unsqueeze_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
