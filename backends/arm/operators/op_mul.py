@@ -13,10 +13,7 @@ import executorch.backends.arm.tosa_utils as tutils
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
-# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    get_input_qparams,
-)
+from executorch.backends.arm._passes import get_input_qparams
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -45,7 +42,7 @@ class MulVisitor_080_BI(NodeVisitor):
         assert inputs[0].dtype == inputs[1].dtype == output.dtype == ts.DType.INT8
         input_A = inputs[0]
         input_B = inputs[1]
-        input_qparams = get_input_qparams(node)  # pyre-ignore[16]
+        input_qparams = get_input_qparams(node)
         input_A_qargs = input_qparams[0]
         input_B_qargs = input_qparams[1]
         input_A.shape = tutils.tosa_shape(input_A.shape, input_A.dim_order)
