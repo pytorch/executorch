@@ -24,6 +24,8 @@
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#else
+#error "threadpool is required"
 #endif
 
 #include <fbjni/ByteBuffer.h>
