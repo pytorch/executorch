@@ -133,8 +133,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  auto cpu_threads = FLAGS_cpu_threads;
 #if defined(ET_USE_THREADPOOL)
+  auto cpu_threads = FLAGS_cpu_threads;
   uint32_t num_performant_cores = cpu_threads == -1
       ? ::executorch::extension::cpuinfo::get_num_performant_cores()
       : static_cast<uint32_t>(cpu_threads);
