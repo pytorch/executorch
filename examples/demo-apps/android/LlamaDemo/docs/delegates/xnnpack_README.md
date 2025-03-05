@@ -34,12 +34,7 @@ cd executorch
 git submodule sync
 git submodule update --init
 ```
-Install dependencies
-```
-./install_executorch.sh
-```
-
-Optional: Use the --pybind flag to install with pybindings.
+Install dependencies with --pybind flag to install pybindings
 ```
 ./install_executorch.sh --pybind xnnpack
 ```
@@ -63,7 +58,7 @@ python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <pa
 Meta has released prequantized INT4 QAT+LoRA Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
 * Export Llama model and generate .pte file as below:
 ```
-python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -qat -lora 16 -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --max_context_length 2048--preq_embedding_quantize 8,0 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_qat_lora.pte"
+python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -qat -lora 16 -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --max_context_length 2048 --preq_embedding_quantize 8,0 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_qat_lora.pte"
 ```
 
 ### For Llama 3.2 1B and 3B BF16 models
