@@ -19,7 +19,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
