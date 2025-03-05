@@ -28,6 +28,9 @@ from torch.export import export
 from torch.export.exported_program import ExportedProgram
 from torchvision import datasets
 from transformers import AutoModel
+from executorch.extension.pybindings.portable_lib import (  # @manual
+    _load_for_executorch_from_buffer,
+)
 
 
 # Function to load a model based on the selected suite
@@ -104,69 +107,29 @@ def load_calibration_dataset(
     return calibration_dataset
 
 
-def dump_inputs(calibration_dataset, dest_path):
-    """
-    Dumps the input data from a calibration dataset to raw files.
-
-    :param calibration_dataset: The dataset containing calibration inputs.
-    :param dest_path: The destination directory to save the raw input files.
-    :return: A tuple containing a list of input file paths and the corresponding target labels.
-    """
-    input_files, targets = [], []
-    for idx, data in enumerate(calibration_dataset):
-        feature, target = data
-        targets.extend(target)
-        file_name = f"input_{idx}_0.raw"
-        file_path = f"{dest_path}/{file_name}"
-        if not isinstance(feature, torch.Tensor):
-            feature = torch.tensor(feature)
-        feature.detach().numpy().tofile(file_path)
-        input_files.append(file_name)
-
-    return input_files, targets
-
-
 def validate_model(
-    model_file_name: str, calibration_dataset: torch.utils.data.DataLoader
+    exec_prog: EdgeProgramManager, calibration_dataset: torch.utils.data.DataLoader
 ) -> float:
     """
     Validates the model using the calibration dataset.
 
-    :param model_file_name: The path to the quantized model file.
+    :param exec_prog: EdgeProgramManager of the lowered model
     :param calibration_dataset: A DataLoader containing calibration data.
     :return: The accuracy score of the model.
     """
-    # 1: Dump inputs
-    dest_path = Path("tmp_inputs")
-    out_path = Path("tmp_outputs")
-    for d in [dest_path, out_path]:
-        if os.path.exists(d):
-            shutil.rmtree(d)
-        os.makedirs(d)
+    # 1: Load model from buffer
+    executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
 
-    input_files, targets = dump_inputs(calibration_dataset, dest_path)
-    inp_list_file = dest_path / "in_list.txt"
-    with open(inp_list_file, "w") as f:
-        f.write("\n".join(input_files) + "\n")
-
-    # 2: Run the executor
-    print("Run openvino_executor_runner...")
-
-    subprocess.run(
-        [
-            "../../../cmake-out/examples/openvino/openvino_executor_runner",
-            f"--model_path={model_file_name}",
-            f"--input_list_path={inp_list_file}",
-            f"--output_folder_path={out_path}",
-        ]
-    )
-
-    # 3: load the outputs and compare with the targets
+    # 2: Iterate over the dataset and run the executor
     predictions = []
-    for i in range(len(input_files)):
-        tensor = np.fromfile(out_path / f"output_{i}_0.raw", dtype=np.float32)
-        predictions.extend(torch.tensor(tensor).reshape(-1, 1000).argmax(-1))
+    targets = []
+    for idx, data in enumerate(calibration_dataset):
+        feature, target = data
+        targets.extend(target)
+        out = executorch_module.run_method("forward", (feature,))
+        predictions.extend(torch.stack(out).reshape(-1, 1000).argmax(-1))
 
+    # 1: Check accuracy
     return accuracy_score(predictions, targets)
 
 
@@ -261,7 +224,8 @@ def main(
             raise ValueError(msg)
 
         print("Start validation of the model:")
-        acc_top1 = validate_model(model_file_name, calibration_dataset)
+        #acc_top1 = validate_model(model_file_name, calibration_dataset)
+        acc_top1 = validate_model(exec_prog, calibration_dataset)
         print(f"acc@1: {acc_top1}")
 
 
