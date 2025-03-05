@@ -43,7 +43,7 @@ endif()
 list(TRANSFORM _optimized_cpublas__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(cpublas STATIC ${_optimized_cpublas__srcs})
 target_link_libraries(
-  cpublas PRIVATE executorch_core eigen_blas extension_parallel extension_threadpool
+  cpublas PUBLIC executorch_core eigen_blas extension_parallel extension_threadpool
 )
 target_compile_options(cpublas PUBLIC ${_common_compile_options})
 
@@ -63,7 +63,7 @@ list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
 target_include_directories(optimized_kernels PRIVATE ${TORCH_INCLUDE_DIRS} "${EXECUTORCH_ROOT}/third-party/pocketfft")
 target_link_libraries(
-  optimized_kernels PRIVATE executorch_core cpublas extension_threadpool
+  optimized_kernels PUBLIC executorch_core cpublas extension_threadpool
 )
 target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _optimized_kernels_srcs
