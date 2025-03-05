@@ -24,8 +24,8 @@ install_neuropilot() {
 }
 
 install_android() {
-  copy ../docker/common/install_android.sh install_android.sh
-  ./install_android.sh
+  cp ${EXECUTORCH_ROOT}/.ci/docker/common/install_android.sh install_android.sh
+  ANDROID_NDK_VERSION=r27b ./install_android.sh
   rm install_android.sh
 }
 
