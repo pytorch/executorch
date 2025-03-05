@@ -279,6 +279,7 @@ jobs:
         echo "::endgroup::"
 
   prepare-test-specs:
+    if: always()
     runs-on: linux.2xlarge
     needs:
       - set-parameters
