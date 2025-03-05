@@ -449,6 +449,7 @@ deps = [
   "executorch_core",
   "extension_data_loader",
   "extension_module",
+  "extension_parallel",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
