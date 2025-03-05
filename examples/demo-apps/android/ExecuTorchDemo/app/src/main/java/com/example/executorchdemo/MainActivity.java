@@ -97,13 +97,7 @@ public class MainActivity extends Activity implements Runnable {
       finish();
     }
 
-    try {
-      mModule = Module.load("/data/local/tmp/dl3_xnnpack_fp32.pte");
-
-    } catch (IOException e) {
-      Log.e("ImageSegmentation", "Error reading assets", e);
-      finish();
-    }
+    mModule = Module.load("/data/local/tmp/dl3_xnnpack_fp32.pte");
 
     mImageView = findViewById(R.id.imageView);
     mImageView.setImageBitmap(mBitmap);
@@ -129,14 +123,8 @@ public class MainActivity extends Activity implements Runnable {
     mButtonXnnpack.setOnClickListener(
         new View.OnClickListener() {
           public void onClick(View v) {
-            try {
-              mModule.destroy();
-              mModule = Module.load("/data/local/tmp/dl3_xnnpack_fp32.pte");
-            } catch (IOException e) {
-              Log.e("ImageSegmentation", "Error reading assets", e);
-              finish();
-            }
-
+            mModule.destroy();
+            mModule = Module.load("/data/local/tmp/dl3_xnnpack_fp32.pte");
             mButtonXnnpack.setEnabled(false);
             mProgressBar.setVisibility(ProgressBar.VISIBLE);
             mButtonXnnpack.setText(getString(R.string.run_model));
@@ -149,13 +137,8 @@ public class MainActivity extends Activity implements Runnable {
     mButtonHtp.setOnClickListener(
         new View.OnClickListener() {
           public void onClick(View v) {
-            try {
-              mModule.destroy();
-              mModule = Module.load("/data/local/tmp/dlv3_qnn.pte");
-            } catch (IOException e) {
-              Log.e("ImageSegmentation", "Error reading assets", e);
-              finish();
-            }
+            mModule.destroy();
+            mModule = Module.load("/data/local/tmp/dlv3_qnn.pte");
             mButtonHtp.setEnabled(false);
             mProgressBar.setVisibility(ProgressBar.VISIBLE);
             mButtonHtp.setText(getString(R.string.run_model));
