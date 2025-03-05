@@ -134,8 +134,10 @@ class RMSNorm(torch.nn.Module):
         # We have yet to do large scale evaluations on the numeric stability of this solution, but note that
         # it appears better than what exists currently (removing FP32 casts and using FP16)
         rms_norm_eps0 = (
-            x * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
-        ) / torch.linalg.vector_norm(x, dim=-1, keepdim=True)
+            x
+            * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
+            * torch.reciprocal(torch.linalg.vector_norm(x, dim=-1, keepdim=True))
+        )
         return rms_norm_eps0
 
     def forward(self, x):

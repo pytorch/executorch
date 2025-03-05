@@ -23,6 +23,7 @@ template <typename T>
 struct Offset;
 } // namespace flatbuffers
 
+// @lint-ignore CLANGTIDY facebook-modularize-issue-check
 #if EXECUTORCH_INTERNAL_FLATBUFFERS == 1
 // TODO(T216992074): update internal flatbuffers (v1.12) to match OSS (v24.3.5).
 namespace flatbuffers {
