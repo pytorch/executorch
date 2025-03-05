@@ -46,7 +46,7 @@ Tensor& masked_fill_scalar_out(
       in_type, ctx, "masked_fill.Scalar_out", CTYPE, [&]() {
         ET_SWITCH_REAL_TYPES_AND(
             Bool, val_type, ctx, "masked_fill.Scalar_out", CTYPE_VAL, [&]() {
-              CTYPE_VAL value_v;
+              CTYPE_VAL value_v{};
               utils::extract_scalar(value, &value_v);
               CTYPE val = static_cast<CTYPE>(value_v);
 
