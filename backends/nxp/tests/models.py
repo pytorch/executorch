@@ -280,3 +280,27 @@ class AddTensorOneInputModule(torch.nn.Module):
     @staticmethod
     def forward(x):
         return x + x
+
+
+class MeanDimLinearModule(torch.nn.Module):
+    def __init__(self, dim, keepdim):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+        self.linear = torch.nn.Linear(32, 16)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
+
+
+class MeanDimConvModule(torch.nn.Module):
+    def __init__(self, dim, keepdim):
+        super().__init__()
+        self.conv = Conv2dModule(stride=1, padding=1)
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
