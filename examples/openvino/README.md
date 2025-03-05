@@ -142,64 +142,49 @@ python aot_openvino_compiler.py --suite timm --model vgg16 --input_shape [1, 3, 
 
 
 ## Build OpenVINO Examples
-Build the backend and the examples by executing the script:
+Build the backend libraries and executor runner by executing the script below in `<executorch_root>/backends/openvino/scripts` folder:
 ```bash
-./openvino_build_example.sh
+./openvino_build.sh
 ```
-The executable is saved in `<executorch_root>/cmake-openvino-out/examples/openvino/`
+The executable is saved in `<executorch_root>/cmake-out/backends/openvino/`
 
-### Run the example
+### Run the Example with Executor Runner
 
-Now, run the example using the executable generated in the above step. The executable requires a model file (`.pte` file generated in the aot step), number of inference iterations, and optional input/output paths.
+Now, run the example using the executable generated in the above step. The executable requires a model file (`.pte` file generated in the aot step), and optional number of inference executions.
 
 #### Command Syntax:
 
 ```
-cd ../../cmake-openvino-out/examples/openvino
+cd ../../cmake-out/backends/openvino
 
 ./openvino_executor_runner \
     --model_path=<path_to_model> \
-    --num_iter=<iterations> \
-    [--input_list_path=<path_to_input_list>] \
-    [--output_folder_path=<path_to_output_folder>]
+    --num_executions=<iterations>
 ```
 #### Command-Line Arguments
 
 - `--model_path`: (Required) Path to the model serialized in `.pte` format.
-- `--num_iter`: (Optional) Number of times to run inference (default: 1).
-- `--input_list_path`: (Optional) Path to a file containing the list of raw input tensor files.
-- `--output_folder_path`: (Optional) Path to a folder where output tensor files will be saved.
+- `--num_executions`: (Optional) Number of times to run inference (default: 1).
 
 #### Example Usage
 
-Run inference with a given model for 10 iterations and save outputs:
+Run inference with a given model for 10 iterations:
 
 ```
 ./openvino_executor_runner \
     --model_path=model.pte \
-    --num_iter=10 \
-    --output_folder_path=outputs/
+    --num_executions=10
 ```
 
-Run inference with an input tensor file:
+## Running Python Example with Pybinding:
 
-```
-./openvino_executor_runner \
-    --model_path=model.pte \
-    --num_iter=5 \
-    --input_list_path=input_list.txt \
-    --output_folder_path=outputs/
-```
-
-## Running Pybinding Example:
-
-You can use the `openvino_pybinding_example.py` script to run models with the OpenVINO backend through the Python bindings.
+You can use the `export_and_infer_openvino.py` script to run models with the OpenVINO backend through the Python bindings.
 
 ### **Usage**
 
 #### **Command Structure**
 ```bash
-python openvino_pybinding_example.py <ARGUMENTS>
+python export_and_infer_openvino.py <ARGUMENTS>
 ```
 
 #### **Arguments**
@@ -252,10 +237,10 @@ python openvino_pybinding_example.py <ARGUMENTS>
 
 #### Execute Torchvision ResNet50 model for the GPU with Random Inputs
 ```bash
-python openvino_pybinding_example.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
+python export_and_infer_openvino.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
 ```
 
 #### Run a Precompiled Model for the CPU Using an Existing Input Tensor File and Save the Output.
 ```bash
-python openvino_pybinding_example.py --model_path /path/to/model/folder/resnet50_fp32.pte --input_tensor_file /path/to/input/folder/input.pt --output_tensor_file /path/to/output/folder/output.pt --device CPU
+python export_and_infer_openvino.py --model_path /path/to/model/folder/resnet50_fp32.pte --input_tensor_file /path/to/input/folder/input.pt --output_tensor_file /path/to/output/folder/output.pt --device CPU
 ```
