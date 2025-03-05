@@ -324,6 +324,7 @@ def define_common_targets():
     _common_op_test("op_tril_test", ["aten", "portable"])
     _common_op_test("op_trunc_test", ["aten", "portable"])
     _common_op_test("op_unbind_copy_test", ["aten", "portable"])
+    _common_op_test("op_unfold_copy_test", ["aten", "portable"])
     _common_op_test("op_unsqueeze_copy_test", ["aten", "portable"])
     _common_op_test("op_upsample_bilinear2d_test", ["aten", "portable"])
     _common_op_test("op_upsample_nearest2d_test", ["aten", "portable"])
