@@ -47,3 +47,4 @@ def define_common_targets():
         )
 
         define_data_sink_target("buffer_data_sink", aten_suffix)
+        define_data_sink_target("file_data_sink", aten_suffix)
