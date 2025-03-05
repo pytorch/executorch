@@ -72,10 +72,10 @@ def define_common_targets():
         srcs = [
             "mmap_data_loader.cpp"
         ] + ["mman_windows.cpp"] if host_info().os.is_windows else [],
-        headers = [
-            "mman.h"
+        exported_headers = [
+            "mman.h",
+            "mmap_data_loader.h",
         ] + ["mman_windows.h"] if host_info().os.is_windows else [],
-        exported_headers = ["mmap_data_loader.h"],
         visibility = [
             "//executorch/test/...",
             "//executorch/extension/pybindings/...",
