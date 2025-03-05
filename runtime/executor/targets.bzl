@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _program_preprocessor_flags():
     """Returns the preprocessor_flags to use when building Program.cpp"""
@@ -42,7 +42,27 @@ def define_common_targets():
         ],
     )
 
-    for aten_mode in (True, False):
+    runtime.cxx_library(
+        name = "pte_data_map",
+        srcs = [
+            "pte_data_map.cpp",
+        ],
+        exported_headers = [
+            "pte_data_map.h",
+        ],
+        visibility = [
+            "//executorch/runtime/executor/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:named_data_map",
+            "//executorch/schema:program",
+        ],
+        exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL_FLATBUFFERS=1"],
+    )
+
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
             name = "program" + aten_suffix,
@@ -74,9 +94,14 @@ def define_common_targets():
                 "program.h",
                 "tensor_parser.h",
             ],
+            compiler_flags = select({
+                "ovr_config//os:windows": [],
+                "DEFAULT" :["-Wno-error=deprecated-declarations"]
+            }),
             preprocessor_flags = _program_preprocessor_flags(),
             exported_deps = [
                 ":memory_manager",
+                ":pte_data_map",
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:named_data_map",

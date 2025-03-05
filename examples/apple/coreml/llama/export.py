@@ -1,9 +1,10 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-
-# pyre-strict
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 import argparse
-import json
 
 import sys
 
@@ -20,59 +21,12 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from executorch.exir.program._program import to_edge_with_preserved_ops
+from executorch.extension.export_util.utils import save_pte_program
 
 sys.path.insert(0, ".")
-from llama_transformer import InputManager, ModelArgs, Transformer
-
-
-class SplitLinearModule(torch.nn.Module):
-    def __init__(self, in_features, out_features, target_split_size, max_splits):
-        super(SplitLinearModule, self).__init__()
-        num_splits = max(out_features // target_split_size, 1)
-        if num_splits > max_splits:
-            num_splits = max_splits
-
-        self.split_size = out_features // num_splits
-        self.split_remainder = out_features % num_splits
-        self.splits = torch.nn.ModuleList(
-            [torch.nn.Linear(in_features, self.split_size) for _ in range(num_splits)]
-        )
-        print(
-            f"Splitting out_features={out_features} into {num_splits} of size {self.split_size}"
-        )
-        if self.split_remainder > 0:
-            print(
-                f"Warning: remainder {self.split_remainder} after splitting out_features={out_features} into {num_splits} of size {self.split_size}"
-            )
-            self.splits.append(torch.nn.Linear(in_features, self.split_remainder))
-
-    def split_sizes(self):
-        return [split.out_features for split in self.splits]
-
-    def forward(self, x):
-        return torch.cat([split(x) for split in self.splits], dim=-1)
-
-
-def replace_linear_with_split_linear(model, target_split_size, max_splits):
-    for name, module in model.named_children():
-        if isinstance(module, torch.nn.Linear):
-            new_module = SplitLinearModule(
-                module.in_features, module.out_features, target_split_size, max_splits
-            )
-            split_sizes = new_module.split_sizes()
-            if module.bias is not None:
-                split_bias = module.bias.split(split_sizes)
-            split_weights = module.weight.split(split_sizes, dim=0)
-            for i, split in enumerate(new_module.splits):
-                split.weight = torch.nn.Parameter(split_weights[i])
-                if module.bias is not None:
-                    split.bias = torch.nn.Parameter(split_bias[i])
-                else:
-                    split.bias = None
-            setattr(model, name, new_module)
-        else:
-            replace_linear_with_split_linear(module, target_split_size, max_splits)
+from llama_transformer import InputManager, load_model
+from utils import replace_linear_with_split_linear
 
 
 def main() -> None:
@@ -141,42 +95,23 @@ def main() -> None:
         default=8,
         help="Maximum number of splits to divide linear layers",
     )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="fp16",
+    )
 
     export_args = parser.parse_args()
-    params_path = export_args.params
-    checkpoint_path = export_args.checkpoint
-
-    # Load model args
-    with open(params_path, "r") as f:
-        params = json.loads(f.read())
-
-    args = ModelArgs(
-        max_seq_len=export_args.max_seq_length,
-        generate_full_logits=False,
+    model = load_model(
+        export_args.checkpoint,
+        export_args.params,
+        max_seq_length=export_args.max_seq_length,
         use_cache_list=export_args.use_cache_list,
-        **params,
     )
 
-    with torch.device("meta"):
-        model = Transformer(args)
-
-    checkpoint = torch.load(
-        checkpoint_path, map_location="cpu", mmap=True, weights_only=True
-    )
-    if "model" in checkpoint:
-        checkpoint = checkpoint["model"]
-
-    missing, unexpected = model.load_state_dict(
-        checkpoint,
-        strict=False,
-        assign=True,
-    )
-    print("Missing keys: ", missing)
-    print("Unexpected keys: ", unexpected)
-
-    float_dtype = torch.float16  # dtype for model/inputs
-    model.eval()
-    model.to(float_dtype)
+    float_dtype = {"fp16": torch.float16, "fp32": torch.float32}[
+        export_args.dtype
+    ]  # dtype for model/inputs
 
     if export_args.embedding_quantize:
         bitwidth, group_size = export_args.embedding_quantize.split(",")
@@ -194,10 +129,17 @@ def main() -> None:
 
     if export_args.target_split_size is not None:
         replace_linear_with_split_linear(
-            model, export_args.target_split_size, export_args.max_splits
+            model,
+            out_target_split_size=export_args.target_split_size,
+            out_max_splits=export_args.max_splits,
+            # I have not found splitting on in_features to be beneficial,
+            # and it often leads to OOM so I set in_max_splits to 1
+            in_target_split_size=1,
+            in_max_splits=1,
         )
 
-    model = model.to(float_dtype)
+    model.eval()
+    model.to(float_dtype)
 
     op_linear_quantizer_config = None
     if export_args.coreml_quantize == "b4w":
@@ -217,7 +159,10 @@ def main() -> None:
 
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=ct.target.iOS18,
-        compute_precision=ct.precision(ct.precision.FLOAT16.value),
+        compute_precision={
+            torch.float16: ct.precision.FLOAT16,
+            torch.float32: ct.precision.FLOAT32,
+        }[float_dtype],
         compute_unit=ct.ComputeUnit.CPU_AND_NE,
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
         op_linear_quantizer_config=op_linear_quantizer_config,
@@ -232,11 +177,11 @@ def main() -> None:
     )
 
     input_manager = InputManager(
-        n_layers=args.n_layers,
-        max_batch_size=args.max_batch_size,
-        n_kv_heads=args.n_kv_heads,
-        max_seq_length=args.max_seq_len,
-        head_dim=args.head_dim,
+        n_layers=model.params.n_layers,
+        max_batch_size=model.params.max_batch_size,
+        n_kv_heads=model.params.n_kv_heads,
+        max_seq_length=model.params.max_seq_len,
+        head_dim=model.params.head_dim,
         use_cache_list=export_args.use_cache_list,
         seq_length=export_args.seq_length,
         dtype=float_dtype,
@@ -245,10 +190,22 @@ def main() -> None:
     )
     example_inputs = input_manager.get_inputs(tokens=[0])
 
-    edge_manager = export_to_edge(
+    ep = torch.export.export(
         model,
         example_inputs,
-        edge_compile_config=EdgeCompileConfig(
+    )
+    print("Exported program")
+    print(ep)
+
+    edge_manager = to_edge_with_preserved_ops(
+        ep,
+        preserve_ops=[
+            torch.ops.aten.scaled_dot_product_attention.default,
+            # preserve norm op for numerical stability
+            torch.ops.aten.linalg_vector_norm.default,
+            torch.ops.aten.reciprocal.default,
+        ],
+        compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_type_promotion=(float_dtype == torch.float16),
             _skip_dim_order=True,

@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat.
@@ -7,7 +7,7 @@ def define_common_targets(is_fbcode = False):
     TARGETS and BUCK files that call this function.
     """
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
 
         runtime.cxx_library(
@@ -89,6 +89,18 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//executorch/runtime/core:memory_allocator",
             "//executorch/runtime/executor:memory_manager",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "pte_data_map_test",
+        srcs = [
+            "pte_data_map_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/data_loader:file_data_loader",
+            "//executorch/extension/testing_util:temp_file",
+            "//executorch/runtime/executor:pte_data_map",
         ],
     )
 

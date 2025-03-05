@@ -21,6 +21,7 @@ from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
+from executorch.backends.arm._passes.convert_minmax_pass import ConvertMinMaxPass
 from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
@@ -106,6 +107,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
+        self.add_pass(ConvertMinMaxPass())
 
         self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
@@ -147,6 +149,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSoftmaxesPass())
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
+        self.add_pass(ConvertMinMaxPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
@@ -190,4 +193,5 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxesPass())
+        self.add_pass(ConvertMinMaxPass())
         return self._transform(graph_module)

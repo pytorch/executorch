@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
@@ -26,7 +27,7 @@ size_t as_strided_copy_compute_storage_nbytes(
   // size of the underlying storage is 1 bigger than the offset
   // of the last element according to stride
   size_t size = 1;
-  for (size_t i = 0; i < sizes.size(); ++i) {
+  for (const auto i : c10::irange(sizes.size())) {
     if (sizes[i] == 0) {
       return 0;
     }
@@ -80,7 +81,7 @@ bool check_cat_args(
 
   // Find the first non-empty tensor in the list to use as a reference
   size_t ref_i = 0;
-  for (size_t i = 0; i < tensors.size(); ++i) {
+  for (const auto i : c10::irange(tensors.size())) {
     if (tensors[i].numel() > 0) {
       ref_i = i;
       break;
@@ -90,7 +91,7 @@ bool check_cat_args(
   // "All tensors must either have the same shape (except in the concatenating
   // dimension) or be empty."
   // https://pytorch.org/docs/stable/generated/torch.cat.html
-  for (size_t i = 0; i < tensors.size(); ++i) {
+  for (const auto i : c10::irange(tensors.size())) {
     // All input dtypes must be castable to the output dtype.
     ET_LOG_AND_RETURN_IF_FALSE(
         canCast(tensors[i].scalar_type(), out.scalar_type()));
@@ -106,7 +107,7 @@ bool check_cat_args(
     ET_LOG_AND_RETURN_IF_FALSE(
         tensor_is_rank(tensors[ref_i], tensors[i].dim()));
 
-    for (size_t d = 0; d < tensors[i].dim(); ++d) {
+    for (const auto d : c10::irange(tensors[i].dim())) {
       if (d != dim) {
         ET_LOG_AND_RETURN_IF_FALSE(
             tensors_have_same_size_at_dims(tensors[i], d, tensors[ref_i], d));
@@ -132,7 +133,7 @@ void get_cat_out_target_size(
   // calculate out dim
   size_t ref_i = 0;
   size_t cat_dim_size = 0;
-  for (size_t i = 0; i < tensors.size(); ++i) {
+  for (const auto i : c10::irange(tensors.size())) {
     if (tensors[i].numel() > 0) {
       cat_dim_size += tensors[i].size(dim);
     }
@@ -143,15 +144,14 @@ void get_cat_out_target_size(
 
   *out_ndim = tensors[ref_i].dim();
 
-  for (size_t d = 0; d < *out_ndim; ++d) {
-    if (d != dim) {
+  for (const auto d : c10::irange(*out_ndim)) {
+    if (static_cast<int64_t>(d) != dim) {
       out_sizes[d] = tensors[ref_i].size(d);
     } else {
       out_sizes[d] = cat_dim_size;
     }
   }
 }
-
 bool check_expand_copy_args(
     const Tensor& input,
     ArrayRef<int64_t> expand_sizes,
@@ -231,7 +231,7 @@ bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
   bool dim_exist[kTensorDimensionLimit];
   memset(dim_exist, false, sizeof(dim_exist));
 
-  for (int i = 0; i < dims.size(); i++) {
+  for (const auto i : c10::irange(dims.size())) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dims[i]));
     // Convert dimension to a non-negative number in the range
     // [0 .. in.dim() - 1].
@@ -258,7 +258,7 @@ bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out) {
 
   const ssize_t dim_size = in.size(dim);
   ET_CHECK_OR_RETURN_FALSE(
-      dim_size == out.size(),
+      dim_size == static_cast<ssize_t>(out.size()),
       "out tensorlist's length %zd must equal unbind dim %" PRId64
       " size = %zd.",
       out.size(),
@@ -266,7 +266,7 @@ bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out) {
       dim_size);
 
   // Validate each output.
-  for (size_t i = 0; i < out.size(); ++i) {
+  for (const auto i : c10::irange(out.size())) {
     // All output dtypes must be the same.
     ET_CHECK_OR_RETURN_FALSE(
         out[i].scalar_type() == out[0].scalar_type(),
@@ -284,7 +284,8 @@ bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out) {
         in.dim() - 1);
 
     // Check the shape of the output.
-    for (ssize_t d = 0, out_d = 0; d < in.dim(); ++d) {
+    ssize_t out_d = 0;
+    for (const auto d : c10::irange(in.dim())) {
       if (d != dim) {
         ET_CHECK_OR_RETURN_FALSE(
             out[i].size(out_d) == in.size(d),
@@ -309,7 +310,7 @@ void get_permute_copy_out_target_size(
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
-  for (size_t i = 0; i < in.dim(); ++i) {
+  for (const auto i : c10::irange(in.dim())) {
     out_sizes[i] = in.size(dims[i] >= 0 ? dims[i] : dims[i] + in.dim());
   }
 }
@@ -348,7 +349,7 @@ void get_pixel_shuffle_out_target_size(
   *out_ndim = in.dim();
   const executorch::aten::SizesType casted_upscale_factor = upscale_factor;
 
-  size_t i = 0;
+  ssize_t i = 0;
   for (; i < in.dim() - 3; ++i) {
     // Copy all leading dimensions in.
     out_sizes[i] = in.size(i);
@@ -370,7 +371,7 @@ void get_pixel_unshuffle_out_target_size(
   *out_ndim = in.dim();
   const executorch::aten::SizesType casted_factor = downscale_factor;
 
-  size_t i = 0;
+  ssize_t i = 0;
   for (; i < in.dim() - 3; ++i) {
     // Copy all leading dimensions in.
     out_sizes[i] = in.size(i);
@@ -404,7 +405,7 @@ void get_select_copy_out_target_size(
     size_t* out_ndim) {
   *out_ndim = in.dim() - 1;
 
-  for (size_t d = 0; d < in.dim() - 1; ++d) {
+  for (const auto d : c10::irange(in.dim() - 1)) {
     if (d < dim) {
       out_sizes[d] = in.size(d);
     } else {
@@ -426,7 +427,7 @@ bool check_split_with_sizes_copy_args(
       "Number of split sizes must match the number of output tensors");
 
   int64_t sum = 0;
-  for (int i = 0; i < split_sizes.size(); i++) {
+  for (const auto i : c10::irange(split_sizes.size())) {
     ET_CHECK_OR_RETURN_FALSE(
         split_sizes[i] >= 0, "All split sizes must be non negative.");
     sum += split_sizes[i];
@@ -448,7 +449,7 @@ void get_split_with_sizes_copy_out_target_size(
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
-  for (size_t d = 0; d < in.dim(); ++d) {
+  for (const auto d : c10::irange(in.dim())) {
     out_sizes[d] = in.size(d);
   }
   out_sizes[dim] = split_size;
@@ -483,7 +484,7 @@ void get_squeeze_copy_dim_out_target_size(
   }
 
   size_t out_d = 0;
-  for (size_t in_d = 0; in_d < in.dim(); ++in_d) {
+  for (const auto in_d : c10::irange(in.dim())) {
     if (in_d != dim || in.size(in_d) != 1) {
       out_sizes[out_d] = in.size(in_d);
       ++out_d;
@@ -497,12 +498,12 @@ bool check_squeeze_copy_dims_args(
     const Tensor out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
 
-  for (size_t i = 0; i < dims.size(); ++i) {
+  for (const auto i : c10::irange(dims.size())) {
     const int64_t dim = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
     ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
 
     // Check that a dim does not appear twice in dims
-    for (size_t j = 0; j < dims.size(); ++j) {
+    for (const auto j : c10::irange(dims.size())) {
       if (i != j) {
         const int64_t dim_temp =
             dims[j] < 0 ? dims[j] + nonzero_dim(in) : dims[j];
@@ -530,7 +531,7 @@ void get_squeeze_copy_dims_out_target_size(
 
   // A dim is only removed if the size at the given dim is 1.
   executorch::aten::SizesType dims_to_remove = 0;
-  for (size_t i = 0; i < dims.size(); ++i) {
+  for (const auto i : c10::irange(dims.size())) {
     int64_t dim = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
     if (in.size(dim) == 1) {
       ++dims_to_remove;
@@ -539,9 +540,9 @@ void get_squeeze_copy_dims_out_target_size(
   *out_ndim = in.dim() - dims_to_remove;
 
   size_t out_d = 0;
-  for (size_t in_d = 0; in_d < in.dim(); ++in_d) {
+  for (const auto in_d : c10::irange(in.dim())) {
     bool in_d_in_dims = false;
-    for (size_t i = 0; i < dims.size(); ++i) {
+    for (const auto i : c10::irange(dims.size())) {
       int64_t dim = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
       if (in_d == dim) {
         in_d_in_dims = true;
@@ -564,13 +565,13 @@ bool check_stack_args(
 
   // All input tensors need to be of the same size
   // https://pytorch.org/docs/stable/generated/torch.stack.html
-  for (size_t i = 0; i < tensors.size(); i++) {
+  for (const auto i : c10::irange(tensors.size())) {
     // All input dtypes must be castable to the output dtype.
     ET_LOG_AND_RETURN_IF_FALSE(
         canCast(tensors[i].scalar_type(), out.scalar_type()));
 
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(tensors[i], tensors[0].dim()));
-    for (size_t d = 0; d < tensors[i].dim(); d++) {
+    for (const auto d : c10::irange(tensors[i].dim())) {
       ET_LOG_AND_RETURN_IF_FALSE(
           tensors_have_same_size_at_dims(tensors[i], d, tensors[0], d));
     }
@@ -590,13 +591,14 @@ void get_stack_out_target_size(
     size_t* out_ndim) {
   *out_ndim = tensors[0].dim() + 1;
 
-  for (size_t d = 0; d < *out_ndim; ++d) {
-    if (d < dim) {
-      out_sizes[d] = tensors[0].size(d);
-    } else if (d == dim) {
-      out_sizes[d] = tensors.size();
+  for (const auto d : c10::irange(*out_ndim)) {
+    int64_t d_ = static_cast<int64_t>(d);
+    if (d_ < dim) {
+      out_sizes[d_] = tensors[0].size(d_);
+    } else if (d_ == dim) {
+      out_sizes[d_] = tensors.size();
     } else {
-      out_sizes[d] = tensors[0].size(d - 1);
+      out_sizes[d_] = tensors[0].size(d_ - 1);
     }
   }
 }
@@ -658,7 +660,7 @@ bool check_split_copy_args(
   } else {
     int64_t expected_out_len = (dim_size + split_size - 1) / split_size;
     ET_CHECK_OR_RETURN_FALSE(
-        out.size() == expected_out_len,
+        static_cast<int64_t>(out.size()) == expected_out_len,
         "Unexpected out.size() %zu: ceil(input.size(%" PRId64
         ")=%zd"
         " / split_size=%" PRId64 ") is %" PRId64,
@@ -674,7 +676,7 @@ bool check_split_copy_args(
   }
 
   // Validate each output.
-  for (size_t i = 0; i < out.size(); ++i) {
+  for (const auto i : c10::irange(out.size())) {
     // All output dtypes must be the same.
     ET_CHECK_OR_RETURN_FALSE(
         out[i].scalar_type() == out[0].scalar_type(),
@@ -692,7 +694,7 @@ bool check_split_copy_args(
         input.dim());
 
     // Check the shape of the output.
-    for (ssize_t d = 0; d < out[i].dim(); ++d) {
+    for (const auto d : c10::irange(out[i].dim())) {
       if (d == dim) {
         // This is the split dimension, which may be different.
         if (i < out.size() - 1) {
@@ -759,7 +761,8 @@ bool check__to_dim_order_copy_args(
     executorch::aten::ArrayRef<int64_t> dim_order_ref = dim_order.value();
 
     // dim order size shall equal to input dim
-    ET_LOG_AND_RETURN_IF_FALSE(dim_order_ref.size() == input.dim());
+    ET_LOG_AND_RETURN_IF_FALSE(
+        static_cast<ssize_t>(dim_order_ref.size()) == input.dim());
 
     ET_LOG_AND_RETURN_IF_FALSE(
         is_channels_last_dim_order(
@@ -770,7 +773,7 @@ bool check__to_dim_order_copy_args(
     // Out tensor shall have same dim order as dim_order
     auto out_dim_order = out.dim_order();
     ET_LOG_AND_RETURN_IF_FALSE(out_dim_order.size() == dim_order_ref.size());
-    for (size_t i = 0; i < dim_order_ref.size(); i++) {
+    for (const auto i : c10::irange(dim_order_ref.size())) {
       ET_LOG_AND_RETURN_IF_FALSE(out_dim_order[i] == dim_order_ref[i]);
     }
   } else { // dim_order is not set, preserve the dim order of input
@@ -779,7 +782,7 @@ bool check__to_dim_order_copy_args(
     auto out_dim_order = out.dim_order();
     auto input_dim_order = input.dim_order();
     ET_LOG_AND_RETURN_IF_FALSE(out_dim_order.size() == input_dim_order.size());
-    for (size_t i = 0; i < input_dim_order.size(); i++) {
+    for (const auto i : c10::irange(input_dim_order.size())) {
       ET_LOG_AND_RETURN_IF_FALSE(out_dim_order[i] == input_dim_order[i]);
     }
   }
@@ -804,7 +807,7 @@ bool check_unsqueeze_copy_args(
   // 4. out.size(dim) == 1
   ET_LOG_AND_RETURN_IF_FALSE(input.dim() == out.dim() - 1);
 
-  for (size_t d = 0; d < out.dim(); d++) {
+  for (auto const d : c10::irange(out.dim())) {
     auto dim_normalized = dim;
     if (dim_normalized < 0) {
       dim_normalized += out.dim();
@@ -857,7 +860,7 @@ bool check_view_copy_args(
 
   // The size of out should equal target size.
   bool size_inferred = false;
-  for (int i = 0; i < size_int64_t.size(); i++) {
+  for (auto const i : c10::irange(size_int64_t.size())) {
     // If this value is -1 it implies that this dimension is inferred.
     if (size_int64_t[i] == -1) {
       ET_CHECK_OR_RETURN_FALSE(
@@ -880,9 +883,9 @@ bool get_view_copy_target_size(
   size_t out_numels_without_minus_1 = 1;
   int32_t minus_1_dim = -1;
 
-  ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == dim);
+  ET_LOG_AND_RETURN_IF_FALSE(static_cast<int64_t>(size_int64_t.size()) == dim);
 
-  for (size_t i = 0; i < dim; ++i) {
+  for (const auto i : c10::irange(dim)) {
     if (size_int64_t[i] != -1) {
       out_sizes[i] = static_cast<executorch::aten::SizesType>(size_int64_t[i]);
       out_numels_without_minus_1 = out_numels_without_minus_1 * size_int64_t[i];
@@ -951,7 +954,7 @@ void get_diagonal_copy_out_target_size(
   }
 
   size_t shift = 0;
-  for (size_t d = 0; d < in.dim(); ++d) {
+  for (const auto d : c10::irange(in.dim())) {
     if (d == dim1 || d == dim2) {
       shift++;
     } else {
@@ -959,6 +962,47 @@ void get_diagonal_copy_out_target_size(
     }
   }
   out_sizes[in.dim() - 2] = diagonal_size;
+}
+
+bool check_unfold_copy_args(
+    const Tensor& self,
+    int64_t dim,
+    int64_t size,
+    int64_t step) {
+  if (dim < 0) {
+    dim += nonzero_dim(self);
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(self, dim));
+  ET_CHECK_OR_RETURN_FALSE(
+      size >= 0, "size is %" PRId64 " but must be >= 0", size);
+  ET_CHECK_OR_RETURN_FALSE(
+      size <= self.size(dim),
+      "maximum size for tensor at dimension %" PRId64
+      " is %zd but size is %" PRId64,
+      dim,
+      self.size(dim),
+      size);
+  ET_CHECK_OR_RETURN_FALSE(
+      step > 0, "step is %" PRId64 " but must be > 0", step);
+  return true;
+}
+
+void get_unfold_copy_out_target_size(
+    const Tensor& self,
+    int64_t dim,
+    int64_t size,
+    int64_t step,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  for (auto i : c10::irange(self.dim())) {
+    out_sizes[i] = self.size(i);
+  }
+  // At `dim` dimension, we split the tensor into `size` chunks with `step`
+  // stride.
+  out_sizes[dim] = (self.size(dim) - size + step) / step;
+
+  out_sizes[self.dim()] = size;
+  *out_ndim = self.dim() + 1;
 }
 
 } // namespace executor

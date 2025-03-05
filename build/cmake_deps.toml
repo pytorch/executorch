@@ -73,6 +73,7 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_parallel",
   "extension_threadpool",
   "portable_kernels",
 ]
@@ -115,11 +116,12 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_parallel",
 ]
 
-[targets.optimized_native_cpu_ops_oss]
+[targets.optimized_native_cpu_ops]
 buck_targets = [
-  "//configurations:optimized_native_cpu_ops_oss",
+  "//configurations:optimized_native_cpu_ops",
 ]
 filters = [
   ".cpp$",
@@ -129,6 +131,8 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_parallel",
+  "extension_threadpool",
   "portable_kernels",
 ]
 # ---------------------------------- core end ----------------------------------
@@ -206,6 +210,19 @@ deps = [
   "executorch_core",
   "extension_module",
   "extension_runner_util",
+]
+
+[targets.extension_parallel]
+buck_targets = [
+  "//extension/parallel:thread_parallel",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+  "extension_threadpool",
 ]
 
 [targets.extension_tensor]
@@ -386,10 +403,7 @@ buck_targets = [
   "//extension/llm/custom_ops:custom_ops",
 ]
 filters = [
-  # Second clause is to pick up fht_neon.c/fht_avx.c from FFHT. TODO:
-  # remove filters and patch extract_sources.py's Buck query to fetch
-  # srcs; presumably filters is here to remove .h files.
-  "(.cpp$)|(fht.*\\.c$)",
+  ".cpp$",
 ]
 excludes = [
   "^codegen",
@@ -398,6 +412,7 @@ deps = [
   "executorch",
   "executorch_core",
   "optimized_kernels",
+  "extension_parallel",
   "extension_threadpool",
   "xnnpack_backend",
 ]
@@ -434,9 +449,10 @@ deps = [
   "executorch_core",
   "extension_data_loader",
   "extension_module",
+  "extension_parallel",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
-  "optimized_native_cpu_ops_oss",
+  "optimized_native_cpu_ops",
 ]
 # ---------------------------------- LLama end ----------------------------------

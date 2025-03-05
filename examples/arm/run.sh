@@ -18,11 +18,14 @@ et_root_dir=$(realpath ${et_root_dir})
 
 
 model_name=""
+model_input_set=false
+model_input=""
 aot_arm_compiler_flags="--delegate --quantize"
 portable_kernels="aten::_softmax.out"
 target="ethos-u55-128"
 output_folder_set=false
 output_folder="."
+bundleio=false
 build_with_etdump=false
 build_type="Release"
 extra_build_flags=""
@@ -35,11 +38,13 @@ ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
 function help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
-    echo "  --model_name=<MODEL>                   Model to run, can be a builtin, examples/models or a filename Default to all builtin models"
+    echo "  --model_name=<MODEL>                   Model file .py/.pth/.pt, builtin model or a model from examples/models. Passed to aot_arm_compiler"
+    echo "  --model_input=<INPUT>                  Provide model input .pt file to override the input in the model file.  Passed to aot_arm_compiler"
     echo "  --aot_arm_compiler_flags=<FLAGS>       Only used if --model_name is used Default: ${aot_arm_compiler_flags}"
     echo "  --portable_kernels=<OPS>               Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
+    echo "  --bundleio                             Create Bundled pte using Devtools BundelIO with Input/RefOutput included"
     echo "  --etdump                               Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --build_type=<TYPE>                    Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --extra_build_flags=<FLAGS>            Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
@@ -56,10 +61,12 @@ for arg in "$@"; do
     case $arg in
       -h|--help) help ;;
       --model_name=*) model_name="${arg#*=}";;
+      --model_input=*) model_input="${arg#*=}" ; model_input_set=true  ;;
       --aot_arm_compiler_flags=*) aot_arm_compiler_flags="${arg#*=}";;
       --portable_kernels=*) portable_kernels="${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
+      --bundleio) bundleio=true ;;
       --etdump) build_with_etdump=true ;;
       --build_type=*) build_type="${arg#*=}";;
       --extra_build_flags=*) extra_build_flags="${arg#*=}";;
@@ -121,13 +128,21 @@ hash arm-none-eabi-gcc \
 
 # Build executorch libraries
 cd $et_root_dir
+devtools_flag=""
+bundleio_flag=""
+et_dump_flag=""
 if [ "$build_with_etdump" = true ] ; then
+    devtools_flag="--devtools --etdump"
     et_dump_flag="--etdump"
-else
-    et_dump_flag=""
 fi
 
-backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $et_dump_flag
+if [ "$bundleio" = true ] ; then
+    devtools_flag="--devtools --etdump"
+    bundleio_flag="--bundleio"
+    et_dump_flag="--etdump"
+fi
+
+backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag
 backends/arm/scripts/build_portable_kernels.sh --et_build_root="${et_build_root}" --build_type=$build_type --portable_kernels=$portable_kernels
 
 # Build a lib quantized_ops_aot_lib
@@ -157,12 +172,21 @@ for i in "${!test_model[@]}"; do
     echo "--------------------------------------------------------------------------------"
 
     cd $et_root_dir
-    model_short_name=$(basename -- "${model}" ".py")
-    model_filename=${model_short_name}_arm_${target}.pte
+    # Remove path and file exetension to get model_short_name
+    ext=${model##*.}
+    model_short_name=$(basename -- "${model}" .$ext)
+    model_filename=${model_short_name}_arm_${target}
 
     if [[ "${model_compiler_flags}" == *"--delegate"* ]]; then
         # Name aligned with default aot_arm_compiler output
-        model_filename=${model_short_name}_arm_delegate_${target}.pte
+        model_filename=${model_short_name}_arm_delegate_${target}
+    fi
+    elf_folder=${model_filename}
+
+    if [ "$bundleio" = true ] ; then
+        model_filename=${model_filename}.bpte
+    else
+        model_filename=${model_filename}.pte
     fi
 
     if [ "$output_folder_set" = false ] ; then
@@ -170,14 +194,18 @@ for i in "${!test_model[@]}"; do
     fi
 
     output_folder=$(realpath ${output_folder})
+    pte_file="${output_folder}/${model_filename}"
+
     mkdir -p ${output_folder}
-    pte_file=$(realpath -m ${output_folder}/${model_filename})
 
-    rm -f "${pte_file}"
-
-    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${output_folder} --so_library=$SO_LIB --system_config=${system_config} --memory_mode=${memory_mode}"
+    # Remove old pte files
+    rm -f "${output_folder}/${model_filename}"
+    
+    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --so_library=$SO_LIB --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
+
+    pte_file=$(realpath ${pte_file})
 
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "pte_data_size: $(wc -c ${pte_file})"
@@ -188,10 +216,11 @@ for i in "${!test_model[@]}"; do
     else
         set -x
         # Rebuild the application as the pte is imported as a header/c array
-        backends/arm/scripts/build_executorch_runner.sh "--pte=${pte_file}" --build_type=$build_type --target=$target --system_config=$system_config  $et_dump_flag --extra_build_flags="$extra_build_flags" --ethosu_tools_dir="$ethos_u_scratch_dir" --output="${output_folder}"
+        backends/arm/scripts/build_executorch_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
-            backends/arm/scripts/run_fvp.sh --elf=${output_folder}/cmake-out/arm_executor_runner --target=$target
+            elf_file="${output_folder}/${elf_folder}/cmake-out/arm_executor_runner"
+            backends/arm/scripts/run_fvp.sh --elf=${elf_file} --target=$target
         fi
         set +x
     fi

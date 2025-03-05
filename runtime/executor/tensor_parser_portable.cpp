@@ -43,11 +43,7 @@ Result<Tensor> parseTensor(
 
   ScalarType scalar_type = static_cast<ScalarType>(s_tensor->scalar_type());
   ET_CHECK_OR_RETURN_ERROR(
-      isValid(scalar_type) &&
-          // Types that do not yet have deserialization support.
-          scalar_type != executorch::aten::ScalarType::ComplexHalf &&
-          scalar_type != executorch::aten::ScalarType::ComplexFloat &&
-          scalar_type != executorch::aten::ScalarType::ComplexDouble,
+      isValid(scalar_type),
       InvalidProgram,
       "Invalid or unsupported ScalarType %" PRId8,
       static_cast<int8_t>(scalar_type));
@@ -111,12 +107,12 @@ Result<Tensor> parseTensor(
   // detect bad positive values, but we can reject negative values, which would
   // otherwise panic in the TensorImpl ctor. dim_order_to_stride() will validate
   // dim_order.
-  for (int i = 0; i < dim; i++) {
+  for (flatbuffers::uoffset_t i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
         sizes[i] >= 0,
         InvalidProgram,
-        "Negative size[%d] %" PRId32,
-        i,
+        "Negative size[%zu] %" PRId32,
+        static_cast<size_t>(i),
         sizes[i]);
   }
 
