@@ -69,7 +69,7 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "mmap_data_loader",
-        src = [
+        srcs = [
             "mmap_data_loader.cpp"
         ] + ["mman_windows.cpp"] if host_info().os.is_windows else [],
         headers = [
