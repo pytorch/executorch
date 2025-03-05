@@ -3,7 +3,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Aten ops with portable kernel
 MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
-    "//executorch/kernels/portable:generated_lib",
+    "//executorch/configurations:optimized_native_cpu_ops",
     "//executorch/kernels/quantized:generated_lib",
 ]
 
@@ -41,6 +41,7 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
 
 def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = [], compiler_flags = []):
     runtime.cxx_python_extension(
+        # @autodeps-skip
         name = python_module_name,
         srcs = [
             "//executorch/extension/pybindings:pybindings.cpp",
