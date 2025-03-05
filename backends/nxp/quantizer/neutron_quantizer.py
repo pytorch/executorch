@@ -16,10 +16,12 @@ from executorch.backends.nxp.quantizer.patterns import (
     AvgPoolPattern,
     Conv1dPattern,
     Conv2dPattern,
+    FlattenPattern,
     HardTanhInPlacePattern,
     HardTanhPattern,
     LinearPattern,
     MaxPoolPattern,
+    MeanDimPattern,
     PadPattern,
     PermutePattern,
     QuantizationPattern,
@@ -208,6 +210,9 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
+                NeutronAtenQuantizer(ViewPattern(), static_qconfig),
+                NeutronAtenQuantizer(MeanDimPattern(), static_qconfig),
+                NeutronAtenQuantizer(FlattenPattern(), static_qconfig),
             ]
         )
         # Mapping ops defined in quantizer partition types to its quantizer

@@ -246,6 +246,15 @@ class Conv2dPattern(QuantizationPattern):
         )
 
 
+class FlattenPattern(SharedSpecPattern):
+    """
+    Quantizer for Flatten operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.flatten.using_ints]
+
+
 class HardTanhPattern(SharedSpecPattern):
     """
     Quantizer for HardTanh operator. Shared quantization spec is selected, as activation functions usually follows
@@ -309,6 +318,15 @@ class MaxPoolPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.max_pool2d.default]
+
+
+class MeanDimPattern(SharedSpecPattern):
+    """
+    Quantizer for Mean Dim operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.mean.dim]
 
 
 class PadPattern(SharedSpecPattern):

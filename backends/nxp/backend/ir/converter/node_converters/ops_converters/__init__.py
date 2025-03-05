@@ -19,6 +19,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool_2d_converter import (
     MaxPool2dConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import (
+    MeanDimConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mm_converter import (
     MMConverter,
 )
@@ -52,6 +55,7 @@ __all__ = [
     "QDQQuantizeConverter",
     "ConstantPadNDConverter",
     "ReLUConverter",
+    "MeanDimConverter",
     "MaxPool2dConverter",
     "AvgPool2dConverter",
     "AddTensorConverter",

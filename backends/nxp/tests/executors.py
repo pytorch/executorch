@@ -196,17 +196,39 @@ class TFLiteIOPreprocess:
 
 
 class ToChannelFirstPreprocess(TFLiteIOPreprocess):
-    def preprocess(self, data: np.ndarray | dict[int, np.ndarray]):
-        def get_channel_first_permutation(tensor):
-            return create_channels_last_to_channels_first_permutation(len(tensor.shape))
+    def __init__(self, dim_0_reduced: bool | dict[int, bool] = False):
+        self.dim_0_reduced = dim_0_reduced
 
-        transpose_fn = lambda x: np.transpose(  # noqa E731
-            x, get_channel_first_permutation(x)
+    def preprocess(self, data: np.ndarray | dict[int, np.ndarray]):
+        def get_channel_first_permutation(tensor, dim_0_reduced):
+            tensor_rank = len(tensor.shape)
+            perm = create_channels_last_to_channels_first_permutation(tensor_rank)
+            if dim_0_reduced and tensor_rank > 1:
+                perm[0], perm[1] = perm[1], perm[0]
+            return perm
+
+        transpose_fn = lambda x, rank: np.transpose(  # noqa E731
+            x, get_channel_first_permutation(x, rank)
         )
-        if isinstance(data, np.ndarray):
-            preprocessed_data = transpose_fn(data)
+        if isinstance(data, np.ndarray) and isinstance(self.dim_0_reduced, bool):
+            preprocessed_data = transpose_fn(data, self.dim_0_reduced)
+
+        elif isinstance(data, dict) and isinstance(self.dim_0_reduced, bool):
+            preprocessed_data = {
+                k: transpose_fn(v, self.dim_0_reduced) for k, v in data.items()
+            }
+
+        elif isinstance(data, dict) and isinstance(self.dim_0_reduced, dict):
+            preprocessed_data = {
+                k: transpose_fn(v, self.dim_0_reduced[k]) for k, v in data.items()
+            }
+
         else:
-            preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
+            raise ValueError(
+                "Invalid combination of inputs. Data can be either np.ndarray or dict. If original number "
+                "of dimension is used, it can be only int for np.ndarray data or dict of ints for dict "
+                "data with same keys."
+            )
         return preprocessed_data
 
 
