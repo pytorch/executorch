@@ -71,8 +71,6 @@ We build the required ExecuTorch runtime library (AAR) to run the model.
 
 #### XNNPACK
 
-1. Build the AAR target for the library with XNNPACK backend:
-
 ```bash
 # go to ExecuTorch repo root
 export ANDROID_NDK=<path-to-android-ndk>
@@ -81,20 +79,17 @@ export ANDROID_ABIS=arm64-v8a
 # Run the following lines from the `executorch/` folder
 ./install_executorch.sh --clean
 
+# Create a new directory `app/libs` for the AAR to live
+pushd examples/demo-apps/android/ExecuTorchDemo
+mkdir -p app/libs
+popd
+
 # Build the AAR. It will include XNNPACK backend by default.
+export BUILD_AAR_DIR=$(realpath examples/demo-apps/android/ExecuTorchDemo/app/libs)
 sh build/build_android_library.sh
 ```
 
-2. In ExecuTorchDemo root, create a new directory `app/libs` and copy the AAR there.
-```bash
-# go to ExecuTorchDemo root
-mkdir -p app/libs
-cp "$BUILD_AAR_DIR/executorch.aar" app/libs
-````
-
 #### Qualcomm Hexagon NPU
-
-1. Build the AAR target for the library with XNNPACK and QNN backend:
 
 ```bash
 # go to ExecuTorch repo root
@@ -105,19 +100,18 @@ export QNN_SDK_ROOT=<path-to-qnn-sdk-root>
 # Run the following lines from the `executorch/` folder
 ./install_executorch.sh --clean
 
-# Build the AAR. It will include XNNPACK and QNN backend now.
+# Create a new directory `app/libs` for the AAR to live
+pushd examples/demo-apps/android/ExecuTorchDemo
+mkdir -p app/libs
+popd
+
+# Build the AAR. It will include XNNPACK backend by default.
+export BUILD_AAR_DIR=$(realpath examples/demo-apps/android/ExecuTorchDemo/app/libs)
 sh build/build_android_library.sh
 ```
 
 This is very similar to XNNPACK setup, but users now needs to define `QNN_SDK_ROOT` so that
 QNN backend is built into the AAR.
-
-2. In ExecuTorchDemo root, create a new directory `app/libs` and copy the AAR there.
-```bash
-# go to ExecuTorchDemo root
-mkdir -p app/libs
-cp "$BUILD_AAR_DIR/executorch.aar" app/libs
-````
 
 ## Running the App
 
