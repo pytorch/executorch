@@ -220,7 +220,7 @@ add_subdirectory(
   ${QNN_EXECUTORCH_ROOT_DIR}/aot/ir
   ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/ir
 )
-install(TARGETS qnn_executorch_backend DESTINATION lib)
+install(TARGETS qnn_executorch_backend EXPORT ExecuTorchTargets DESTINATION lib)
 
 # QNN pybind
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")

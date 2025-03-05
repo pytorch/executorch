@@ -43,6 +43,7 @@ target_compile_options(train_xor PUBLIC ${_common_compile_options})
 # Install libraries
 install(
   TARGETS extension_training
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

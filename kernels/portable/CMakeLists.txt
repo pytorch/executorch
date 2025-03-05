@@ -65,6 +65,7 @@ gen_operators_lib(
 
 install(
   TARGETS portable_kernels portable_ops_lib
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   PUBLIC_HEADER DESTINATION include/executorch/kernels/portable/
 )
