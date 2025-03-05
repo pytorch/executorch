@@ -132,7 +132,7 @@ class SDPA(nn.Module):
 
     def forward(
         self,
-        input_pos: torch.Tensor,
+        input_pos: Optional[torch.Tensor],
         q: torch.Tensor,  # Already have rotary embeddings. (bs, n_local_heads, seqlen, head_dim)
         k: torch.Tensor,  # Already have rotary embeddings. (bs, n_local_kv_heads, seqlen, head_dim)
         v: torch.Tensor,  # (bs, n_local_kv_heads, seqlen, head_dim)
@@ -140,15 +140,18 @@ class SDPA(nn.Module):
         seqlen,
         mask: torch.Tensor,
     ) -> torch.Tensor:
-        if self.enable_dynamic_shape:
-            start_pos = input_pos[-1].item()
-            torch._check_is_size(start_pos)
-            torch._check(start_pos < self.max_context_len)
-            seq_length = q.size(2)
-            # pyre-ignore: Incompatible parameter type [6]
-            attn_mask = mask.narrow(0, start_pos, seq_length)
+        if input_pos is None: # No kv cache
+            attn_mask = mask[:seqlen, :seqlen]
         else:
-            attn_mask = mask[None, None, input_pos]
+            if self.enable_dynamic_shape:
+                start_pos = input_pos[-1].item()
+                torch._check_is_size(start_pos)
+                torch._check(start_pos < self.max_context_len)
+                seq_length = q.size(2)
+                # pyre-ignore: Incompatible parameter type [6]
+                attn_mask = mask.narrow(0, start_pos, seq_length)
+            else:
+                attn_mask = mask[None, None, input_pos]
 
         # TODO(kimishpatel): This should not be necessary because scaled_dot_product_attention
         # can natively support GQA now. But needs enable_gqa=True
@@ -209,13 +212,13 @@ class AttentionMHA(Attention):
                 self.head_dim,
                 args.enable_dynamic_shape,
             )
-            self.SDPA = SDPA(
-                dim=self.n_local_heads * self.head_dim,
-                head_dim=self.head_dim,
-                n_rep=self.n_rep,
-                max_context_len=self.max_context_len,
-                enable_dynamic_shape=args.enable_dynamic_shape,
-            )
+        self.SDPA = SDPA(
+            dim=self.n_local_heads * self.head_dim,
+            head_dim=self.head_dim,
+            n_rep=self.n_rep,
+            max_context_len=self.max_context_len,
+            enable_dynamic_shape=args.enable_dynamic_shape,
+        )
 
     def forward(
         self,
@@ -244,21 +247,5 @@ class AttentionMHA(Attention):
         if self.use_kv_cache:
             assert input_pos is not None
             k, v = self.kv_cache.update(input_pos, k, v)
-            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
-            return self.wo(output), None
-
-        # grouped multiquery attention: expand out keys and values
-        k = k.repeat_interleave(self.n_rep, dim=1)
-        v = v.repeat_interleave(self.n_rep, dim=1)
-
-        assert hasattr(self, "mask")
-
-        mask = self.mask[:seqlen, :seqlen]
-
-        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
-
-        output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
-
-        output = self.wo(output)
-
-        return output, None
+        output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
+        return self.wo(output), None
