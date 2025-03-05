@@ -6,7 +6,7 @@
 
 from collections import defaultdict
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable, Any
 
 import nncf
 import nncf.common.quantization as quantization
@@ -351,32 +351,43 @@ class OpenVINOQuantizer(Quantizer):
 
 def quantize_model(
     captured_model: torch.fx.GraphModule,
+    quantizer: Quantizer,
     calibration_dataset: torch.utils.data.DataLoader,
+    subset_size: int,
+    fast_bias_correction: Optional[bool] = True,
+    smooth_quant: bool = False,
+    transform_fn: Optional[Callable[[Any], Any]]= None,
+    **kwargs,
 ) -> torch.fx.GraphModule:
     """
-    Quantizes a model using either NNCF-based or PTQ-based quantization.
+    Quantizes a model using NNCF quantize_pt2e API.
 
     :param captured_model: The model to be quantized, represented as a torch.fx.GraphModule.
+    :param quantizer: Torch ao quantizer to annotate nodes in the graph with quantization setups
     :param calibration_dataset: A DataLoader containing calibration data for quantization.
+    :param subset_size: Size of a subset to calculate activations
+        statistics used for quantization.
+    :param fast_bias_correction: Setting this option to `False` enables a different
+        bias correction method which is more accurate, in general, and takes
+        more time but requires less memory. None disables the bias correction algorithm.
+    :param smooth_quant: Setting this option to `True` enables the SmoothQuant algorithm.
+    :param kwargs: The keyword arguments for the nncf quantize_pt2e function.
     :return: The quantized model as a torch.fx.GraphModule.
     """
     quantizer = OpenVINOQuantizer()
 
     print("PTQ: Quantize the model")
-    default_subset_size = 300
-    batch_size = calibration_dataset.batch_size
-    subset_size = (default_subset_size // batch_size) + int(
-        default_subset_size % batch_size > 0
-    )
 
-    def transform(x):
-        return x[0]
+    if "fold_quantize" not in kwargs:
+        kwargs["fold_quantize"] = False
 
     quantized_model = nncf_fx.quantize_pt2e(
         captured_model,
         quantizer,
         subset_size=subset_size,
-        calibration_dataset=nncf.Dataset(calibration_dataset, transform_func=transform),
-        fold_quantize=False,
+        calibration_dataset=nncf.Dataset(calibration_dataset, transform_fn),
+        fast_bias_correction=fast_bias_correction,
+        smooth_quant=smooth_quant,
+        **kwargs
     )
     return quantized_model
