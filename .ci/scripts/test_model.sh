@@ -100,7 +100,7 @@ test_model() {
       rm "./${MODEL_NAME}.pte"
       return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
   fi
-  if [[ "${MODEL_NAME}" == "phi4_mini" ]]; then
+  if [[ "${MODEL_NAME}" == "phi-4-mini" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
       # Test export_llama script: python3 -m examples.models.llama.export_llama.
