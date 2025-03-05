@@ -24,7 +24,7 @@ install_neuropilot() {
 }
 
 install_android() {
-  copy ../docker/common/install_android.sh install_android.sh
+  cp ../docker/common/install_android.sh install_android.sh
   ./install_android.sh
   rm install_android.sh
 }
