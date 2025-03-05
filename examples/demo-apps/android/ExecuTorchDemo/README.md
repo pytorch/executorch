@@ -39,9 +39,14 @@ We generate the model file for the ExecuTorch runtime in Android Demo App.
 For delegating DeepLab v3 to XNNPACK backend, please do the following to export the model:
 
 ```bash
+cd executorch # go to executorch root
 python3 -m examples.xnnpack.aot_compiler --model_name="dl3" --delegate
-mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-cp dl3_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+```
+
+Then push the pte file to Android device:
+
+```bash
+adb push dl3_xnnpack_fp32.pte /data/local/tmp/dl3_xnnpack_fp32.pte
 ```
 
 For more detailed tutorial of lowering to XNNPACK, please see [XNNPACK backend](backends-xnnpack.md).
@@ -50,135 +55,63 @@ For more detailed tutorial of lowering to XNNPACK, please see [XNNPACK backend](
 
 For delegating to Qualcomm Hexagon NPU, please follow the tutorial [here](backends-qualcomm.md).
 
-After generating the model, copy the model to `assets` directory.
-
 ```bash
 python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8450 -s <adb_connected_device_serial>
-cp deeplab_v3/dlv3_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+```
+
+Then push the pte file to Android device:
+
+```bash
+adb push deeplab_v3/dlv3_qnn.pte /data/local/tmp/dlv3_qnn.pte
 ```
 
 ### Runtime
 
-We build the required ExecuTorch runtime library to run the model.
+We build the required ExecuTorch runtime library (AAR) to run the model.
 
 #### XNNPACK
 
-1. Build the CMake target for the library with XNNPACK backend:
-
 ```bash
+# go to ExecuTorch repo root
 export ANDROID_NDK=<path-to-android-ndk>
-export ANDROID_ABI=arm64-v8a
+export ANDROID_ABIS=arm64-v8a
 
 # Run the following lines from the `executorch/` folder
 ./install_executorch.sh --clean
-mkdir cmake-android-out
 
-# Build the core executorch library
-cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-  -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
-  -DANDROID_ABI="${ANDROID_ABI}" \
-  -DEXECUTORCH_BUILD_XNNPACK=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-  -Bcmake-android-out
+# Create a new directory `app/libs` for the AAR to live
+pushd examples/demo-apps/android/ExecuTorchDemo
+mkdir -p app/libs
+popd
 
-cmake --build cmake-android-out -j16 --target install
+# Build the AAR. It will include XNNPACK backend by default.
+export BUILD_AAR_DIR=$(realpath examples/demo-apps/android/ExecuTorchDemo/app/libs)
+sh build/build_android_library.sh
 ```
-
-When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnnpack_backend`](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt) which in turn is linked into libexecutorch_jni via [CMake](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt).
-
-2. Build the Android extension:
-
-```bash
-
-# Build the android extension
-cmake extension/android \
-  -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}"/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI="${ANDROID_ABI}" \
-  -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-  -Bcmake-android-out/extension/android
-
-cmake --build cmake-android-out/extension/android -j16
-```
-
-`libexecutorch_jni.so` wraps up the required XNNPACK Backend runtime library from `xnnpack_backend`, and adds an additional JNI layer using fbjni. This is later exposed to Java app.
 
 #### Qualcomm Hexagon NPU
 
-1. Build the CMake target for the library with Qualcomm Hexagon NPU (HTP) backend (XNNPACK also included):
-
 ```bash
+# go to ExecuTorch repo root
 export ANDROID_NDK=<path-to-android-ndk>
-export ANDROID_ABI=arm64-v8a
-export QNN_SDK_ROOT=<path-to-qnn-sdk>
+export ANDROID_ABIS=arm64-v8a
+export QNN_SDK_ROOT=<path-to-qnn-sdk-root>
 
+# Run the following lines from the `executorch/` folder
 ./install_executorch.sh --clean
-mkdir cmake-android-out
-cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-    -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
-    -DANDROID_ABI="${ANDROID_ABI}" \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_BUILD_QNN=ON \
-    -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
-    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -Bcmake-android-out
 
-cmake --build cmake-android-out -j16 --target install
-```
-Similar to the XNNPACK library, with this setup, we compile `libexecutorch_jni.so` but it adds an additional static library `qnn_executorch_backend` which wraps up Qualcomm HTP runtime library and registers the Qualcomm HTP backend. This is later exposed to Java app.
+# Create a new directory `app/libs` for the AAR to live
+pushd examples/demo-apps/android/ExecuTorchDemo
+mkdir -p app/libs
+popd
 
-`qnn_executorch_backend` is built when we turn on CMake option `EXECUTORCH_BUILD_QNN`. It will include the [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/CMakeLists.txt) from backends/qualcomm where we `add_library(qnn_executorch_backend STATIC)`.
-
-2. Build the Android extension:
-
-```bash
-cmake extension/android \
-  -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}"/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI="${ANDROID_ABI}" \
-  -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-  -Bcmake-android-out/extension/android
-
-cmake --build cmake-android-out/extension/android -j16
+# Build the AAR. It will include XNNPACK backend by default.
+export BUILD_AAR_DIR=$(realpath examples/demo-apps/android/ExecuTorchDemo/app/libs)
+sh build/build_android_library.sh
 ```
 
-## Deploying on Device via Demo App
-
-### Steps for Deploying Model via XNNPACK
-
-```bash
-mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
-cp cmake-android-out/extension/android/libexecutorch_jni.so \
-   examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a/libexecutorch.so
-```
-
-This allows the Android app to load ExecuTorch runtime with XNNPACK backend as a JNI library. Later, this shared library will be loaded by `NativePeer.java` in Java code.
-
-### Steps for Deploying Model via Qualcomm's AI Engine Direct
-
-```bash
-mkdir -p ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
-```
-
-We need to push some additional Qualcomm HTP backend libraries to the app. Please refer to [Qualcomm docs](backends-qualcomm.md) here.
-
-```bash
-cp ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so \
-   examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
-```
-
-Copy the core libraries:
-
-```bash
-cp cmake-android-out/extension/android/libexecutorch_jni.so \
-   examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a/libexecutorch.so
-cp cmake-android-out/lib/libqnn_executorch_backend.so \
-   examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a/libqnn_executorch_backend.so
-```
+This is very similar to XNNPACK setup, but users now needs to define `QNN_SDK_ROOT` so that
+QNN backend is built into the AAR.
 
 ## Running the App
 
