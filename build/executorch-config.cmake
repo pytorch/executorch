@@ -119,7 +119,9 @@ endforeach()
 
 # TODO: investigate use of install(EXPORT) to cleanly handle
 # target_compile_options/target_compile_definitions for everything.
-set_target_properties(
-  cpublas PROPERTIES INTERFACE_LINK_LIBRARIES extension_parallel
-)
+if (TARGET cpublas)
+  set_target_properties(
+    cpublas PROPERTIES INTERFACE_LINK_LIBRARIES extension_parallel
+  )
+endif()
 target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)
