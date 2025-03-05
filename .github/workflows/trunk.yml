@@ -229,6 +229,28 @@ jobs:
         # see if we can import the module successfully
         ${CONDA_RUN} python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
 
+  test-static-llama-ane:
+    name: test-static-llama-ane
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Install requirements
+        sh install_requirements.sh
+        sh backends/apple/coreml/scripts/install_requirements.sh
+        python install_executorch.py --pybind coreml
+        sh examples/models/llama/install_requirements.sh
+
+        # Test ANE llama
+        sh .ci/scripts/test_ane_static_llama.sh
+
   test-llama-runner-macos:
     name: test-llama-runner-mac
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
