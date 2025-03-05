@@ -403,6 +403,8 @@
 
 - op: unbind_copy.int_out
 
+- op: unfold_copy.out
+
 - op: unsafe_split.Tensor_out
 
 - op: unsqueeze_copy.dim_out
