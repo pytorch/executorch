@@ -30,6 +30,7 @@ main() {
               -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
               -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+              -DEXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER=ON \
               -B"${build_dir}"
 
 
