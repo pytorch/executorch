@@ -843,6 +843,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
     )
 
     runner_cmd = ""
+    performance_output_path = "outputs/inference_speed.txt"
     if args.enable_x86_64:
         # x86 emulator is intended for CI and not performance. Check only the first few tokens.
         seq_len = min(seq_len, 16)
@@ -862,6 +863,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
                 f"--output_path {args.artifact}/outputs/outputs.txt",
+                f"--performance_output_path {performance_output_path}",
                 f"--kv_updater ShiftPointer",
                 runner_args,
             ]
@@ -882,6 +884,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                 f"--model_path {pte_filename}.pte",
                 f"--seq_len {seq_len}",
                 "--output_path outputs/outputs.txt",
+                f"--performance_output_path {performance_output_path}",
                 f"--kv_updater {'SmartMask' if args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
                 runner_args,
             ]
@@ -905,7 +908,7 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
         adb.pull(output_path=args.artifact, callback=post_process)
     if args.ip and args.port != -1:
         inference_speed = 0
-        with open(f"{args.artifact}/outputs/inference_speed.txt", "r") as f:
+        with open(f"{args.artifact}/{performance_output_path}", "r") as f:
             inference_speed = float(f.read())
 
         pte_size = os.path.getsize(pte_path)
