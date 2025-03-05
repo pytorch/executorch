@@ -126,7 +126,6 @@ add_library(qnn_executorch_logging STATIC)
 add_library(qnn_factory STATIC)
 add_library(qnn_function_interface INTERFACE)
 add_library(qnn_graph STATIC)
-add_library(qnn_header INTERFACE)
 add_library(qnn_implementation STATIC)
 add_library(qnn_logger STATIC)
 add_library(qnn_manager STATIC)
@@ -143,16 +142,12 @@ add_library(utils STATIC)
 # declare dependency
 #
 target_link_libraries(qcir_utils PRIVATE qcir)
-target_link_libraries(wrappers PRIVATE qnn_header qnn_executorch_logging)
-target_link_libraries(qnn_function_interface INTERFACE qnn_header)
+target_link_libraries(wrappers PRIVATE qnn_executorch_logging)
 target_link_libraries(
-  qnn_implementation PRIVATE qnn_function_interface qnn_header
-                             qnn_executorch_logging ${CMAKE_DL_LIBS}
+  qnn_implementation PRIVATE qnn_function_interface qnn_executorch_logging ${CMAKE_DL_LIBS}
 )
-target_link_libraries(qnn_sys_function_interface INTERFACE qnn_header)
 target_link_libraries(
-  qnn_sys_implementation PRIVATE qnn_sys_function_interface qnn_header
-                                 qnn_executorch_logging ${CMAKE_DL_LIBS}
+  qnn_sys_implementation PRIVATE qnn_sys_function_interface qnn_executorch_logging ${CMAKE_DL_LIBS}
 )
 target_link_libraries(qnn_executorch_logging PRIVATE qnn_schema)
 target_link_libraries(qnn_profiler PRIVATE qnn_executorch_logging)
@@ -178,9 +173,7 @@ target_link_libraries(
 )
 
 target_link_libraries(
-  qnn_factory
-  PUBLIC qnn_header
-  PRIVATE qnn_schema qnn_backend qnn_device qnn_context qnn_graph
+  qnn_factory PRIVATE qnn_schema qnn_backend qnn_device qnn_context qnn_graph
           qnn_mem_manager qnn_custom_protocol
 )
 target_link_libraries(
