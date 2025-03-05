@@ -98,8 +98,7 @@ public class MainActivity extends Activity implements Runnable {
     }
 
     try {
-      mModule =
-          Module.load(MainActivity.assetFilePath(getApplicationContext(), "dl3_xnnpack_fp32.pte"));
+      mModule = Module.load("/data/local/tmp/dl3_xnnpack_fp32.pte");
 
     } catch (IOException e) {
       Log.e("ImageSegmentation", "Error reading assets", e);
@@ -132,9 +131,7 @@ public class MainActivity extends Activity implements Runnable {
           public void onClick(View v) {
             try {
               mModule.destroy();
-              mModule =
-                  Module.load(
-                      MainActivity.assetFilePath(getApplicationContext(), "dl3_xnnpack_fp32.pte"));
+              mModule = Module.load("/data/local/tmp/dl3_xnnpack_fp32.pte");
             } catch (IOException e) {
               Log.e("ImageSegmentation", "Error reading assets", e);
               finish();
@@ -154,8 +151,7 @@ public class MainActivity extends Activity implements Runnable {
           public void onClick(View v) {
             try {
               mModule.destroy();
-              mModule =
-                  Module.load(MainActivity.assetFilePath(getApplicationContext(), "dlv3_qnn.pte"));
+              mModule = Module.load("/data/local/tmp/dlv3_qnn.pte");
             } catch (IOException e) {
               Log.e("ImageSegmentation", "Error reading assets", e);
               finish();
