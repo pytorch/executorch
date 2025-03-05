@@ -50,7 +50,7 @@ def is_dynamic_qdq(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False
     node_name = format_target_name(node.target.__name__)  # pyre-ignore
-    is_dynamic_affine = is_per_token(node) and not is_per_channel_group(node)
+    is_dynamic_affine = is_per_token(node)
 
     return node_name in _DYNAMIC_OPS or is_dynamic_affine
 
@@ -129,6 +129,9 @@ def is_per_token(node: torch.fx.Node):
 
         flag &= block_size[-1] == input_val.shape[-1]
         flag &= scale_val.numel() == scale_numel_expected
+        scale_node = node.all_input_nodes[1]
+        # per token must have dynamically chosen scale
+        flag &= scale_node.target == operator.getitem
         return flag
 
     return False
@@ -149,6 +152,7 @@ def is_per_channel_group(node: torch.fx.Node):
         scale_numel = list(accumulate(scale_val.shape, operator.mul))[-1]
         input_numel = list(accumulate(input_val.shape, operator.mul))[-1]
         flag &= input_numel == group_size * scale_numel
+        flag &= not is_per_token(node)
         return flag
 
     return False
