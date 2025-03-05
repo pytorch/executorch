@@ -21,6 +21,8 @@
 #ifdef ET_USE_THREADPOOL
 #include <executorch/extension/parallel/thread_parallel.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#else
+#error "threadpool is required"
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
