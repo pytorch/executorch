@@ -190,3 +190,72 @@ Run inference with an input tensor file:
     --input_list_path=input_list.txt \
     --output_folder_path=outputs/
 ```
+
+## Running Pybinding Example:
+
+You can use the `openvino_pybinding_example.py` script to run models with the OpenVINO backend through the Python bindings.
+
+### **Usage**
+
+#### **Command Structure**
+```bash
+python openvino_pybinding_example.py <ARGUMENTS>
+```
+
+#### **Arguments**
+- **`--suite`** (required if `--model_path` argument is not used):
+  Specifies the model suite to use. Needs to be used with `--model` argument.
+  Supported values:
+  - `timm` (e.g., VGG16, ResNet50)
+  - `torchvision` (e.g., resnet18, mobilenet_v2)
+  - `huggingface` (e.g., bert-base-uncased). NB: Quantization and validation is not supported yet.
+
+- **`--model`** (required if `--model_path` argument is not used):
+  Name of the model to export. Needs to be used with `--suite` argument.
+  Examples:
+  - For `timm`: `vgg16`, `resnet50`
+  - For `torchvision`: `resnet18`, `mobilenet_v2`
+  - For `huggingface`: `bert-base-uncased`, `distilbert-base-uncased`
+
+- **`--model_path`** (required if `--suite` and `--model` arguments are not used):
+  Path to the saved model file. This argument allows you to load the compiled model from a file, instead of downloading it from the model suites using the `--suite` and `--model` arguments.   
+  Example: `<path to model foler>/resnet50_fp32.pte`
+
+- **`--input_shape`**(required for random inputs):
+  Input shape for the model. Provide this as a **list** or **tuple**.  
+  Examples:
+  - `[1, 3, 224, 224]` (Zsh users: wrap in quotes)
+  - `(1, 3, 224, 224)`
+
+ - **`--input_tensor_path`**(optional):
+   Path to the raw input tensor file. If this argument is not provided, a random input tensor will be generated with the input shape provided with `--input_shape` argument.  
+  Example: `<path to the input tensor foler>/input_tensor.pt`
+
+ - **`--output_tensor_path`**(optional):
+   Path to the file where the output raw tensor will be saved.  
+  Example: `<path to the output tensor foler>/output_tensor.pt`
+
+- **`--device`** (optional)
+  Target device for the compiled model. Default is `CPU`.  
+  Examples: `CPU`, `GPU`
+
+- **`--num_iter`** (optional)
+  Number of iterations to execute inference for evaluation. The default value is `1`.  
+  Examples: `100`, `1000`
+
+- **`--warmup_iter`** (optional)
+  Number of warmup iterations to execute inference before evaluation. The default value is `0`.  
+  Examples: `5`, `10`
+
+
+### **Examples**
+
+#### Execute Torchvision ResNet50 model for the GPU with Random Inputs
+```bash
+python openvino_pybinding_example.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
+```
+
+#### Run a Precompiled Model for the CPU Using an Existing Input Tensor File and Save the Output.
+```bash
+python openvino_pybinding_example.py --model_path /path/to/model/folder/resnet50_fp32.pte --input_tensor_file /path/to/input/folder/input.pt --output_tensor_file /path/to/output/folder/output.pt --device CPU
+```
