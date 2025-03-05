@@ -15,7 +15,7 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)  # 3.24 is required for WHOLE_ARCHIVE
 project(llama_runner)
 
 # Duplicating options as root CMakeLists.txt
@@ -111,7 +111,7 @@ target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  list(APPEND link_libraries custom_ops)
+  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)
