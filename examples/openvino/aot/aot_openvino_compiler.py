@@ -5,15 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import os
-import shutil
-import subprocess
-from pathlib import Path
 
 import executorch
 
 import nncf.torch
-import numpy as np
 import timm
 import torch
 import torchvision.models as torchvision_models
@@ -21,6 +16,9 @@ from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.quantizer.quantizer import quantize_model
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
+from executorch.extension.pybindings.portable_lib import (  # @manual
+    _load_for_executorch_from_buffer,
+)
 from sklearn.metrics import accuracy_score
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
@@ -28,9 +26,6 @@ from torch.export import export
 from torch.export.exported_program import ExportedProgram
 from torchvision import datasets
 from transformers import AutoModel
-from executorch.extension.pybindings.portable_lib import (  # @manual
-    _load_for_executorch_from_buffer,
-)
 
 
 # Function to load a model based on the selected suite
@@ -123,7 +118,7 @@ def validate_model(
     # 2: Iterate over the dataset and run the executor
     predictions = []
     targets = []
-    for idx, data in enumerate(calibration_dataset):
+    for _idx, data in enumerate(calibration_dataset):
         feature, target = data
         targets.extend(target)
         out = executorch_module.run_method("forward", (feature,))
@@ -224,7 +219,6 @@ def main(
             raise ValueError(msg)
 
         print("Start validation of the model:")
-        #acc_top1 = validate_model(model_file_name, calibration_dataset)
         acc_top1 = validate_model(exec_prog, calibration_dataset)
         print(f"acc@1: {acc_top1}")
 
