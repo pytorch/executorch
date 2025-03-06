@@ -48,6 +48,8 @@ public class BenchmarkActivity extends Activity {
     int numIter = intent.getIntExtra("num_iter", 50);
     int numWarmupIter = intent.getIntExtra("num_warm_up_iter", 10);
 
+    long pssIdle = Debug.getPss();
+
     // TODO: Format the string with a parsable format
     Stats stats = new Stats();
 
@@ -105,7 +107,7 @@ public class BenchmarkActivity extends Activity {
         // Load status
         results.add(new BenchmarkMetric(benchmarkModel, "load_status", stats.errorCode, 0));
         // RAM RSS usage
-        results.add(new BenchmarkMetric(benchmarkModel, "peak_inference_mem_usage(mb)", Debug.getRss(), 0));
+        results.add(new BenchmarkMetric(benchmarkModel, "peak_inference_mem_usage(mb)", (Debug.getPss() - pssIdle) / 1024, 0));
 
         try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
           Gson gson = new Gson();
