@@ -32,9 +32,9 @@ executorch
 │       └── requirements.txt
 └── examples
 │   └── openvino
-│       ├── aot_openvino_compiler.py
-│       ├── export_and_infer_openvino.py
-│       └── README.md
+        ├── aot_openvino_compiler.py
+        ├── export_and_infer_openvino.py
+        └── README.md
 ```
 
 ## Build Instructions
