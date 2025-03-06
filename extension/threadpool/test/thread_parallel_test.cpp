@@ -46,11 +46,16 @@ class ParallelTest : public ::testing::TestWithParam<bool> {
   }
 
   template <typename Func>
-  bool parallel_for(const int64_t begin, const int64_t end, const int64_t grain_size, const Func& func) {
+  bool parallel_for(
+      const int64_t begin,
+      const int64_t end,
+      const int64_t grain_size,
+      const Func& func) {
     if (GetParam()) {
       return executorch::extension::parallel_for(begin, end, grain_size, func);
     }
-    return executorch::extension::internal::parallel_for_no_threadpool(begin, end, grain_size, func);
+    return executorch::extension::internal::parallel_for_no_threadpool(
+        begin, end, grain_size, func);
   }
 
   std::array<int, 10> data_;
@@ -203,4 +208,7 @@ TEST_P(ParallelTest, TestChunkSizeTooLarge) {
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(ParallelTestWithOrWithoutThreadpool, ParallelTest, ::testing::Values(true, false));
+INSTANTIATE_TEST_SUITE_P(
+    ParallelTestWithOrWithoutThreadpool,
+    ParallelTest,
+    ::testing::Values(true, false));
