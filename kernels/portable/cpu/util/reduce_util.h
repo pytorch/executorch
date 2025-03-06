@@ -8,8 +8,10 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 #include <cstring>
 #include <tuple>
 
@@ -24,9 +26,12 @@ void apply_on_flat_ix_with_stride_and_base(
     const size_t base,
     const size_t start,
     const size_t end) {
-  for (size_t i = start; i <= end; i++) {
-    fn(base + i * stride);
-  }
+  executorch::extension::parallel_for(
+      start, end + 1, [&](auto start_, auto end_) {
+        for (const auto i : c10::irange(start_, end_)) {
+          fn(base + i * stride);
+        }
+      });
 }
 
 template <typename Fn>
@@ -36,9 +41,12 @@ void apply_on_flat_and_dim_ix_with_stride_and_base(
     const size_t base,
     const size_t start,
     const size_t end) {
-  for (size_t i = start; i <= end; i++) {
-    fn(base + i * stride, i);
-  }
+  executorch::extension::parallel_for(
+      start, end + 1, [&](auto start_, auto end_) {
+        for (const auto i : c10::irange(start_, end_)) {
+          fn(base + i * stride, i);
+        }
+      });
 }
 
 template <typename Fn>

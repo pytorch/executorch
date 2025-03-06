@@ -33,6 +33,10 @@ inline bool parallel_for_no_threadpool(
   return true;
 }
 
+// Match GRAIN_SIZE from PyTorch core.
+// https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/TensorIterator.h#L78
+constexpr int64_t GRAIN_SIZE = 32768;
+
 } // namespace internal
 
 #ifdef ET_USE_THREADPOOL
@@ -74,10 +78,18 @@ inline int64_t get_thread_num() {
   return 0;
 }
 
-void set_thread_num(int64_t thread_num) {
+inline void set_thread_num(int64_t thread_num) {
   ET_DCHECK_MSG(false, "cannot set_thread_num without threading support!");
 }
 #endif // ET_USE_THREADPOOL
+
+/**
+ * Convenience version of parallel_for that sets the grain size to internal::GRAIN_SIZE.
+ */
+template <typename Func>
+bool parallel_for(const int64_t begin, const int64_t end, const Func& func) {
+  return parallel_for(begin, end, internal::GRAIN_SIZE, func);
+}
 } // namespace extension
 } // namespace executorch
 
