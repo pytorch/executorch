@@ -37,8 +37,8 @@ main() {
         # Build the project
         cmake --build ${build_dir} --target install --config Release -j$(nproc)
 
-    # If the first arguments is --pybind, build python package with pybinding
-    elif [[ "$build_type" == "--pybind" ]]; then
+    # If the first arguments is --enable_python, build python package with python bindings
+    elif [[ "$build_type" == "--enable_python" ]]; then
         echo "Building Python Package with Pybinding"
 
         # Create and enter the build directory
