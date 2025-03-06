@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -176,6 +177,14 @@ class AttentionMHA(Attention):
         self.max_context_len = args.max_context_len
         self.dim = args.dim
         self.attention_qkv_bias = args.attention_qkv_bias
+        self.use_qk_norm = args.use_qk_norm
+
+        if self.use_qk_norm:
+            q_norm_dim = self.head_dim
+            k_norm_dim = self.head_dim
+            self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
+            self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
+
         self.wq = nn.Linear(
             self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
         )
@@ -240,6 +249,10 @@ class AttentionMHA(Attention):
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
+
+        if self.use_qk_norm:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
 
         if self.use_kv_cache:
             assert input_pos is not None
