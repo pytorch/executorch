@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _operator_registry_preprocessor_flags():
     max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
@@ -51,7 +51,7 @@ def define_common_targets():
         preprocessor_flags = ["-DMAX_KERNEL_NUM=1"],
     )
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
 
         runtime.cxx_library(

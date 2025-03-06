@@ -30,7 +30,9 @@ std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string_impl(
   }
   *p++ = '(';
   for (const auto elem : shape) {
-    if (elem < 0 || elem > internal::kMaximumPrintableTensorShapeElement) {
+    if (elem < 0 ||
+        static_cast<size_t>(elem) >
+            internal::kMaximumPrintableTensorShapeElement) {
       static_assert(
           internal::kMaximumPrintableTensorShapeElement > 99999,
           "must have room for error string!");

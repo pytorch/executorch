@@ -75,7 +75,7 @@ class FlatTensorDataMap final : public executorch::runtime::NamedDataMap {
    *
    * @returns an Error indicating if the load was successful.
    */
-  ET_NODISCARD executorch::runtime::Result<size_t>
+  ET_NODISCARD executorch::runtime::Error
   load_data_into(const char* key, void* buffer, size_t size) const override;
 
   /**
