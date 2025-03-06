@@ -57,6 +57,8 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
+        ],
+        deps = [
             "//executorch/schema:program",
         ],
         exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL_FLATBUFFERS=1"],
