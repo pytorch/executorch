@@ -63,7 +63,7 @@ def main(
     output_path: str,
 ):
     """
-    Main function to load, quantize, and validate a model.
+    Main function to load, quantize, and infer a model.
 
     :param suite: The model suite to use (e.g., "timm", "torchvision", "huggingface").
     :param model_name: The name of the model to load.
