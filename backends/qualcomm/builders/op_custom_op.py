@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import Dict, Iterable
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -41,6 +42,12 @@ class CustomOp(NodeVisitor):
 
         custom_input_tensors = []
         custom_attr_keys = [arg.name for arg in node.target._schema.arguments]
+        if len(custom_attr_keys) != len(node.args):
+            warnings.warn(
+                f"Number of inputs ({len(node.args)}) mismatch the number of args ({len(custom_attr_keys)}) in schema for the custom node ({self.target}).",
+                stacklevel=1,
+            )
+            return
         for arg, arg_name in zip(node.args, custom_attr_keys):
             if arg is None:
                 continue

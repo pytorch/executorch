@@ -43,6 +43,9 @@ void QnnBackend::BackendRegisterOpPackage(
 #elif defined(__ANDROID__)
   current_platform = QnnExecuTorchOpPackagePlatform::AARCH64_ANDROID;
 #endif
+  if (current_platform == QnnExecuTorchOpPackagePlatform::UNKNOWN)
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to detect the platform. Only support x86_64 or android.");
   for (const auto op_package_info : *op_packages_infos) {
     if (current_platform != op_package_info->platform() ||
         op_package_manager_.Has(op_package_info->op_package_path()->c_str()))
