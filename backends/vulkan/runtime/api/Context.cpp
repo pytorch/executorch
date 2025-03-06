@@ -274,13 +274,13 @@ VkPipeline Context::get_shader_pipeline(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  vkapi::SpecVarList spec_constants_full_list = {4u, 4u, 1u};
-  spec_constants_full_list.append(spec_constants);
+  const utils::WorkgroupSize local_workgroup_size(4u, 4u, 1u);
 
   VkPipeline pipeline = pipeline_cache().retrieve(
       {pipeline_layout,
        shader_cache().retrieve(shader),
-       spec_constants_full_list});
+       spec_constants,
+       local_workgroup_size});
 
   return pipeline;
 }
