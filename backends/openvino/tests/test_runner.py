@@ -18,8 +18,6 @@ class OpenvinoTestSuite(unittest.TestSuite):
         if isinstance(test, BaseOpenvinoOpTest):
             if "device" in self.test_params:
                 test.device = self.test_params["device"]
-            if "build_folder" in self.test_params:
-                test.build_folder = self.test_params["build_folder"]
         # Call the original addTest method to actually add the test to the suite
         super().addTest(test)
 
@@ -27,13 +25,6 @@ class OpenvinoTestSuite(unittest.TestSuite):
 def parse_arguments():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        "-b",
-        "--build_folder",
-        help="path to cmake binary directory",
-        type=str,
-        required=True,
-    )
     parser.add_argument(
         "-s",
         "--device",
@@ -60,7 +51,6 @@ def parse_arguments():
     args, ns_args = parser.parse_known_args(namespace=unittest)
     test_params = {}
     test_params["device"] = args.device
-    test_params["build_folder"] = args.build_folder
     test_params["pattern"] = args.pattern
     test_params["test_type"] = args.test_type
     return test_params

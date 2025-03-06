@@ -10,6 +10,8 @@ OpenVINO backend supports the following hardware:
 - Intel discrete GPUs
 - Intel NPUs
 
+For more information on the supported hardware, please refer to [OpenVINO System Requirements](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html) page.
+
 ## Directory Structure
 
 ```
@@ -18,27 +20,21 @@ executorch
 │   └── openvino
 │       ├── runtime
 │           ├── OpenvinoBackend.cpp
-│           └── OpenvinoBackend.hpp
+│           └── OpenvinoBackend.h
 │       ├── scripts
 │           └── openvino_build.sh
 │       ├── tests
 │       ├── CMakeLists.txt
 │       ├── README.md
 │       ├── __init__.py
-│       ├── openvino_functions.yaml
 │       ├── partitioner.py
 │       ├── preprocess.py
 │       └── requirements.txt
 └── examples
 │   └── openvino
-│       ├── aot
-│           ├── README.md
-│           └── aot_openvino_compiler.py
-│       └── executor_runner
-│           └── openvino_executor_runner.cpp
-│       ├── CMakeLists.txt
-│       ├── README.md
-└──     └── openvino_build_example.sh
+        ├── aot_openvino_compiler.py
+        ├── export_and_infer_openvino.py
+        └── README.md
 ```
 
 ## Build Instructions
@@ -55,7 +51,7 @@ cd openvino && git checkout 20ad7cb
 git submodule update --init --recursive
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
-make -j<N>
+make -j$(nproc)
 
 cd ..
 cmake --install build --prefix <your_preferred_install_location>
@@ -77,10 +73,15 @@ Follow the steps below to setup your build environment:
   Note: To achieve optimal performance with NNCF quantization, you should install the latest development version of NNCF (version 2.16.0.dev0+191b53d9 or higher).
 3. Navigate to `scripts/` directory.
 
-4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-openvino-out/backends/openvino/` as `libopenvino_backend.so`
+4. **Build OpenVINO Backend C++ Libraries and Executor Runner**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process. By default, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
 
    ```bash
    ./openvino_build.sh
+   ```
+   **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `export_and_infer_openvino.py` script inside `executorch/examples/openvino` folder.
+
+   ```bash
+   ./openvino_build.sh --enable_python
    ```
 
 ### Run

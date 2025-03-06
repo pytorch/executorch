@@ -31,37 +31,6 @@ OpenVINO backend supports the following hardware:
 - Intel discrete GPUs
 - Intel NPUs
 
-## Directory Structure
-
-```
-executorch
-├── backends
-│   └── openvino
-│       ├── runtime
-│           ├── OpenvinoBackend.cpp
-│           └── OpenvinoBackend.hpp
-│       ├── scripts
-│           └── openvino_build.sh
-│       ├── tests
-│       ├── CMakeLists.txt
-│       ├── README.md
-│       ├── __init__.py
-│       ├── openvino_functions.yaml
-│       ├── partitioner.py
-│       ├── preprocess.py
-│       └── requirements.txt
-└── examples
-│   └── openvino
-│       ├── aot
-│           ├── README.md
-│           └── aot_openvino_compiler.py
-│       └── executor_runner
-│           └── openvino_executor_runner.cpp
-│       ├── CMakeLists.txt
-│       ├── README.md
-└──     └── openvino_build_example.sh
-```
-
 ## Instructions for Building OpenVINO Backend
 
 ### Prerequisites
@@ -107,12 +76,12 @@ Follow the steps below to setup your build environment:
 ## Build Instructions for Examples
 
 ### AOT step:
-Refer to the [README.md](aot/README.md) in the `aot` folder for detailed instructions on exporting deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to openvino backend using Executorch. Users can dynamically specify the model, input shape, and target device. 
+Refer to the [README.md](../../examples/openvino/aot/README.md) in the `executorch/examples/openvino/aot` folder for detailed instructions on exporting deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to openvino backend using Executorch. Users can dynamically specify the model, input shape, and target device. 
 
 Below is an example to export a ResNet50 model from Torchvision model suite for CPU device with an input shape of `[1, 3, 256, 256]`
 
 ```bash
-cd aot
+cd executorch/examples/openvino/aot
 python aot_openvino_compiler.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device CPU
 ```
 The exported model will be saved as 'resnet50.pte' in the current directory.

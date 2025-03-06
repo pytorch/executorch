@@ -1,9 +1,8 @@
-/*
- * Copyright (c) Intel Corporation
+/*  Copyright (c) Intel Corporation
  *
- * Licensed under the BSD License (the "License"); you may not use this file
- * except in compliance with the License. See the license file in the root
- * directory of this source tree for more details.
+ *  Licensed under the BSD License (the "License"); you may not use this file
+ *  except in compliance with the License. See the license file found in the
+ *  LICENSE file in the root directory of this source tree.
  */
 
 #include <cstring>
@@ -18,35 +17,13 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
-#include "OpenvinoBackend.hpp"
-
-using namespace std;
-using executorch::aten::ScalarType;
-using executorch::runtime::ArrayRef;
-using executorch::runtime::Backend;
-using executorch::runtime::BackendExecutionContext;
-using executorch::runtime::BackendInitContext;
-using executorch::runtime::CompileSpec;
-using executorch::runtime::DelegateHandle;
-using executorch::runtime::Error;
-using executorch::runtime::EValue;
-using executorch::runtime::FreeableBuffer;
-using executorch::runtime::MemoryAllocator;
-using executorch::runtime::Result;
+#include "OpenvinoBackend.h"
 
 namespace executorch {
 namespace backends {
 namespace openvino {
 
-OpenvinoBackend::OpenvinoBackend() {
-  if (!is_available()) {
-    // ET_LOG(Error, "OpenVINO runtime is not available. Initialization
-    // failed.");
-    throw std::runtime_error("OpenVINO runtime not available");
-  }
-
-  // ET_LOG(Info, "OpenVINO runtime successfully verified and initialized.");
-}
+OpenvinoBackend::OpenvinoBackend() {}
 
 bool OpenvinoBackend::is_available() const {
   try {
@@ -70,10 +47,10 @@ bool OpenvinoBackend::is_available() const {
   return false; // OpenVINO is not available
 }
 
-Result<DelegateHandle*> OpenvinoBackend::init(
-    BackendInitContext& context,
-    FreeableBuffer* processed,
-    ArrayRef<CompileSpec> compile_specs) const {
+exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
+    exr::BackendInitContext& context,
+    exr::FreeableBuffer* processed,
+    exr::ArrayRef<exr::CompileSpec> compile_specs) const {
   ET_LOG(Info, "OpenvinoBackend::init %p", processed->data());
 
   ov::Core core;
@@ -96,24 +73,28 @@ Result<DelegateHandle*> OpenvinoBackend::init(
   // Import the model
   auto compiled_model = core.import_model(compiled_stream, device);
 
+  // The processed data can be freed since the model is compiled
+  processed->Free();
+
   // Allocate an infer request
   std::shared_ptr<ov::InferRequest> infer_request =
       std::make_shared<ov::InferRequest>(compiled_model.create_infer_request());
 
   // Allocate execution handle
-  MemoryAllocator* allocator = context.get_runtime_allocator();
+  exr::MemoryAllocator* allocator = context.get_runtime_allocator();
   ExecutionHandle* handle =
       ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
+  new (handle) ExecutionHandle;
   handle->compiled_model = std::make_shared<ov::CompiledModel>(compiled_model);
   handle->infer_request = infer_request;
 
   return handle;
 }
 
-Error OpenvinoBackend::execute(
-    BackendExecutionContext& context,
-    DelegateHandle* input_handle,
-    EValue** args) const {
+exr::Error OpenvinoBackend::execute(
+    exr::BackendExecutionContext& context,
+    exr::DelegateHandle* input_handle,
+    exr::EValue** args) const {
   ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
 
   auto infer_request = execution_handle->infer_request;
@@ -154,10 +135,10 @@ Error OpenvinoBackend::execute(
   // Execute the inference
   infer_request->infer();
 
-  return Error::Ok;
+  return exr::Error::Ok;
 }
 
-void OpenvinoBackend::destroy(DelegateHandle* handle) const {
+void OpenvinoBackend::destroy(exr::DelegateHandle* handle) const {
   if (!handle) {
     ET_LOG(Info, "Attempted to destroy a null handle.");
     return;
@@ -181,13 +162,13 @@ void OpenvinoBackend::destroy(DelegateHandle* handle) const {
 }
 
 ov::element::Type OpenvinoBackend::convert_to_openvino_type(
-    ScalarType scalar_type) const {
+    exa::ScalarType scalar_type) const {
   switch (scalar_type) {
-    case ScalarType::Float:
+    case exa::ScalarType::Float:
       return ov::element::f32;
-    case ScalarType::Int:
+    case exa::ScalarType::Int:
       return ov::element::i32;
-    case ScalarType::Char:
+    case exa::ScalarType::Char:
       return ov::element::i8;
     default:
       throw std::runtime_error("Unsupported scalar type");
