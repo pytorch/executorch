@@ -27,7 +27,6 @@ executorch
 │       ├── CMakeLists.txt
 │       ├── README.md
 │       ├── __init__.py
-│       ├── unsupported_openvino_functions.yaml
 │       ├── partitioner.py
 │       ├── preprocess.py
 │       └── requirements.txt
@@ -36,11 +35,8 @@ executorch
 │       ├── aot
 │           ├── README.md
 │           └── aot_openvino_compiler.py
-│       └── executor_runner
-│           └── openvino_executor_runner.cpp
-│       ├── CMakeLists.txt
+│       ├── export_and_infer_openvino.py
 │       ├── README.md
-└──     └── openvino_build_example.sh
 ```
 
 ## Build Instructions
