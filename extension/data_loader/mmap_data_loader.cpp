@@ -13,10 +13,11 @@
 #include <limits>
 
 #include <fcntl.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
-#include <executorch/extension/data_loader/mman.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -62,16 +63,14 @@ MmapDataLoader::~MmapDataLoader() {
   std::free(const_cast<char*>(file_name_));
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
-  if (fd_ != -1) {
-    ::close(fd_);
-  }
+  ::close(fd_);
 }
 
 Result<MmapDataLoader> MmapDataLoader::from(
     const char* file_name,
     MmapDataLoader::MlockConfig mlock_config) {
   // Cache the page size.
-  long page_size = get_os_page_size();
+  long page_size = sysconf(_SC_PAGESIZE);
   if (page_size < 0) {
     ET_LOG(Error, "Could not get page size: %s (%d)", ::strerror(errno), errno);
     return Error::AccessFailed;
@@ -183,22 +182,12 @@ Result<FreeableBuffer> MmapDataLoader::load(
   Range range =
       get_overlapping_pages(static_cast<uintptr_t>(offset), size, page_size_);
 
-  size_t map_size = range.size;
-  if (range.start + map_size > file_size_) {
-    // Clamp to the end of the file.
-    //
-    // The Windows implementation of mmap uses CreateFileMapping which returns
-    // error STATUS_SECTION_TOO_BIG (0xc0000040) if we try to map past the end
-    // of the last page of a file mapped in as read-only.
-    map_size = file_size_ - range.start;
-  }
-
   // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
   // the data is read-only, but use PRIVATE just to further avoid accidentally
   // modifying the file.
   void* pages = ::mmap(
       nullptr,
-      map_size,
+      range.size,
       PROT_READ,
       MAP_PRIVATE,
       fd_,
