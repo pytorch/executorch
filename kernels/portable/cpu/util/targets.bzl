@@ -302,8 +302,12 @@ def define_common_targets():
             srcs = ["reduce_util.cpp"],
             exported_headers = ["reduce_util.h"],
             deps = [
-                "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
                 "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
+                "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
+            ],
+            exported_deps = [
+                "//executorch/runtime/kernel:thread_parallel_interface",
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = [
