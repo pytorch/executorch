@@ -107,6 +107,7 @@ test_model() {
       "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/phi-4-mini/config.json
       run_portable_executor_runner
       rm "./${MODEL_NAME}.pte"
+      return
   fi
 
   # Export a basic .pte and run the model.
