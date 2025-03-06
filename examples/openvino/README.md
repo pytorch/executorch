@@ -8,7 +8,6 @@ Below is the layout of the `examples/openvino` directory, which includes the nec
 
 ```
 examples/openvino
-├── CMakeLists.txt                      # CMake build configuration to build examples
 ├── README.md                           # Documentation for examples (this file)
 ├── aot_openvino_compiler.py            # Example script for AoT export
 └── export_and_infer_openvino.py        # Example script to export and execute models with python bindings
