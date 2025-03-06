@@ -109,10 +109,7 @@ public class BenchmarkActivity extends Activity {
         // RAM PSS usage
         results.add(
             new BenchmarkMetric(
-                benchmarkModel,
-                "ram_pss_usage(mb)",
-                (Debug.getPss() - pssIdle) / 1024,
-                0));
+                benchmarkModel, "ram_pss_usage(mb)", (Debug.getPss() - pssIdle) / 1024, 0));
 
         try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
           Gson gson = new Gson();
