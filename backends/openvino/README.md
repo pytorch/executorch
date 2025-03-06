@@ -31,7 +31,7 @@ executorch
 │       ├── preprocess.py
 │       └── requirements.txt
 └── examples
-│   └── openvino
+    └── openvino
         ├── aot_openvino_compiler.py
         ├── export_and_infer_openvino.py
         └── README.md
