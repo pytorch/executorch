@@ -51,7 +51,7 @@ class QnnBackend(BackendDetails):
         core_api_version = qnn_manager.GetQnnAPIVersion()
         assert not obj_options.online_prepare or (
             core_api_version[0] >= 2 and core_api_version[1] >= 23
-        ), "Online prepare is disabled for Qnn API versions below 2.23.0."
+        ), "Online prepare is disabled for QNN API versions below 2.23.0."
 
         qnn_manager.Init()
 
