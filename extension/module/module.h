@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/runtime/executor/program.h>
 
 namespace executorch {
@@ -49,7 +49,7 @@ class Module {
   explicit Module(
       const std::string& file_path,
       const LoadMode load_mode = LoadMode::MmapUseMlock,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+      std::unique_ptr<etdump::ETDumpGen> event_tracer = nullptr);
 
   /**
    * Constructs an instance by loading a program from a file with specified
@@ -64,7 +64,7 @@ class Module {
       const std::string& file_path,
       const std::string& data_map_path,
       const LoadMode load_mode = LoadMode::MmapUseMlock,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+      std::unique_ptr<etdump::ETDumpGen> event_tracer = nullptr);
 
   /**
    * Constructs an instance with the provided data loader and memory allocator.
@@ -80,7 +80,7 @@ class Module {
       std::unique_ptr<runtime::DataLoader> data_loader,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<etdump::ETDumpGen> event_tracer = nullptr,
       std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr);
 
   /**
@@ -98,7 +98,7 @@ class Module {
       std::shared_ptr<runtime::Program> program,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<etdump::ETDumpGen> event_tracer = nullptr,
       std::unique_ptr<runtime::DataLoader> data_map_loader = nullptr);
 
   Module(const Module&) = delete;
@@ -438,8 +438,12 @@ class Module {
    * @returns A pointer to the EventTracer instance. Returns nullptr if no
    * EventTracer is set.
    */
-  inline runtime::EventTracer* event_tracer() const {
+  inline etdump::ETDumpGen* event_tracer() const {
     return event_tracer_.get();
+  }
+
+  bool has_etdump() {
+    return static_cast<bool>(event_tracer_);
   }
 
  private:
@@ -459,7 +463,7 @@ class Module {
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
   std::unique_ptr<runtime::MemoryAllocator> temp_allocator_;
-  std::unique_ptr<runtime::EventTracer> event_tracer_;
+  std::unique_ptr<etdump::ETDumpGen> event_tracer_;
   std::unique_ptr<runtime::DataLoader> data_map_loader_;
   std::unique_ptr<runtime::NamedDataMap> data_map_;
 

@@ -66,7 +66,7 @@ runtime::Result<std::unique_ptr<runtime::DataLoader>> load_file(
 Module::Module(
     const std::string& file_path,
     const LoadMode load_mode,
-    std::unique_ptr<runtime::EventTracer> event_tracer)
+    std::unique_ptr<etdump::ETDumpGen> event_tracer)
     : file_path_(file_path),
       load_mode_(load_mode),
       memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
@@ -81,7 +81,7 @@ Module::Module(
     const std::string& file_path,
     const std::string& data_map_path,
     const LoadMode load_mode,
-    std::unique_ptr<runtime::EventTracer> event_tracer)
+    std::unique_ptr<etdump::ETDumpGen> event_tracer)
     : file_path_(file_path),
       data_map_path_(data_map_path),
       load_mode_(load_mode),
@@ -97,7 +97,7 @@ Module::Module(
     std::unique_ptr<runtime::DataLoader> data_loader,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
-    std::unique_ptr<runtime::EventTracer> event_tracer,
+    std::unique_ptr<etdump::ETDumpGen> event_tracer,
     std::unique_ptr<runtime::DataLoader> data_map_loader)
     : data_loader_(std::move(data_loader)),
       memory_allocator_(
@@ -116,7 +116,7 @@ Module::Module(
     std::shared_ptr<runtime::Program> program,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
-    std::unique_ptr<runtime::EventTracer> event_tracer,
+    std::unique_ptr<etdump::ETDumpGen> event_tracer,
     std::unique_ptr<runtime::DataLoader> data_map_loader)
     : program_(std::move(program)),
       memory_allocator_(
@@ -291,6 +291,7 @@ runtime::Error Module::set_output(
   return method->set_output_data_ptr(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
+
 
 } // namespace extension
 } // namespace executorch
