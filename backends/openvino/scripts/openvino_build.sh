@@ -52,11 +52,11 @@ main() {
                            -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
                            -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
                            -DEXECUTORCH_ENABLE_LOGGING=ON \
-                           -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-                           -DEXECUTORCH_BUILD_PYBIND=ON"
+                           -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
         export CMAKE_BUILD_ARGS="--target openvino_backend"
 
         # Build the package
+        EXECUTORCH_BUILD_PYBIND=ON \
         pip install . --no-build-isolation
 
     else

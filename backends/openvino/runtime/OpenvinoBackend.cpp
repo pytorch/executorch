@@ -23,14 +23,7 @@ namespace executorch {
 namespace backends {
 namespace openvino {
 
-OpenvinoBackend::OpenvinoBackend() {
-  if (!is_available()) {
-    ET_LOG(Error, "OpenVINO runtime is not available. Initialization failed.");
-    throw std::runtime_error("OpenVINO runtime not available");
-  }
-
-  ET_LOG(Info, "OpenVINO runtime successfully verified and initialized.");
-}
+OpenvinoBackend::OpenvinoBackend() {}
 
 bool OpenvinoBackend::is_available() const {
   try {
