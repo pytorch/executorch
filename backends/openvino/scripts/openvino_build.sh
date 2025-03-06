@@ -8,9 +8,9 @@ EXECUTORCH_ROOT=$(realpath "$(dirname "$0")/../../..")
 echo EXECUTORCH_ROOT=${EXECUTORCH_ROOT}
 
 main() {
-    build_type=${1:-"cpp_runtime"}
+    build_type=${1:-"--cpp_runtime"}
 
-    # If the first arguments is cpp_runtime (default), build libraries for C++ runtime
+    # If the first arguments is --cpp_runtime (default), build libraries for C++ runtime
     if [[ -z "$build_type" || "$build_type" == "cpp_runtime" ]]; then
         echo "Building C++ Runtime Libraries"
 
@@ -37,8 +37,8 @@ main() {
         # Build the project
         cmake --build ${build_dir} --target install --config Release -j$(nproc)
 
-    # If the first arguments is pybinding, build python package with pybinding
-    elif [[ "$build_type" == "pybinding" ]]; then
+    # If the first arguments is --pybind, build python package with pybinding
+    elif [[ "$build_type" == "--pybind" ]]; then
         echo "Building Python Package with Pybinding"
 
         # Create and enter the build directory
