@@ -12,6 +12,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Debug;
 import android.system.ErrnoException;
 import android.system.Os;
 import com.google.gson.Gson;
@@ -59,6 +60,8 @@ public class BenchmarkActivity extends Activity {
         Module module = Module.load(model.getPath());
         stats.errorCode = module.loadMethod("forward");
         stats.loadEnd = System.nanoTime();
+        // RAM RSS usage
+        results.add(new BenchmarkMetric(benchmarkModel, "peak_load_mem_usage(mb)", Debug.getRss(), 0));
 
         for (int i = 0; i < numWarmupIter; i++) {
           module.forward();
@@ -103,6 +106,8 @@ public class BenchmarkActivity extends Activity {
                 0.0f));
         // Load status
         results.add(new BenchmarkMetric(benchmarkModel, "load_status", stats.errorCode, 0));
+        // RAM RSS usage
+        results.add(new BenchmarkMetric(benchmarkModel, "peak_inference_mem_usage(mb)", Debug.getRss(), 0));
 
         try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
           Gson gson = new Gson();
