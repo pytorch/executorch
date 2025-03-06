@@ -32,11 +32,9 @@ executorch
 │       └── requirements.txt
 └── examples
 │   └── openvino
-│       ├── aot
-│           ├── README.md
-│           └── aot_openvino_compiler.py
+│       ├── aot_openvino_compiler.py
 │       ├── export_and_infer_openvino.py
-│       ├── README.md
+│       └── README.md
 ```
 
 ## Build Instructions
@@ -75,15 +73,15 @@ Follow the steps below to setup your build environment:
   Note: To achieve optimal performance with NNCF quantization, you should install the latest development version of NNCF (version 2.16.0.dev0+191b53d9 or higher).
 3. Navigate to `scripts/` directory.
 
-4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process. By default, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
+4. **Build OpenVINO Backend C++ Libraries and Executor Runner**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process. By default, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
 
    ```bash
    ./openvino_build.sh
    ```
-   **Build OpenVINO Backend with Pybinding**: To build and install the OpenVINO backend with Python bindings, run the `openvino_build.sh` script with the `--pybind` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment.
+   **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This options will also enable pybindings which is required to execute OpenVINO backend tests and `export_and_infer_openvino.py` script inside `executorch/examples/openvino` folder.
 
    ```bash
-   ./openvino_build.sh --pybind
+   ./openvino_build.sh --enable_python
    ```
 
 ### Run
