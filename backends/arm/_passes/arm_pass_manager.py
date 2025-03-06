@@ -80,12 +80,11 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
+from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
+
 from executorch.backends.transforms.replace_scalar_tensor_with_full import (
     ReplaceScalarTensorWithFullPass,
 )
-
-from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
-
 
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
