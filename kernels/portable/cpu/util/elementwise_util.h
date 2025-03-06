@@ -9,6 +9,7 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
@@ -121,26 +122,24 @@ inline void apply_bitensor_elementwise_fn(
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
 
   auto out_numel = out.numel();
-  for (const auto i : c10::irange(out_numel)) {
-    size_t a_linear_index = i;
-    size_t b_linear_index = i;
-
-    if (any_is_broadcasted) {
-      size_t out_indexes[kTensorDimensionLimit];
-      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
-
-      if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
-      }
-      if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
-      }
+  if (any_is_broadcasted) {
+    for (const auto [out_index, a_index, b_index] :
+         BroadcastIndexesRange<2>(out, a, b)) {
+      auto result = compute_fun(
+          load_a_to_common(&data_a[a_index * a_element_size]),
+          load_b_to_common(&data_b[b_index * b_element_size]));
+      store_common_to_out(result, &data_out[out_index * out_element_size]);
     }
+  } else {
+    for (const auto i : c10::irange(out_numel)) {
+      size_t a_linear_index = i;
+      size_t b_linear_index = i;
 
-    auto result = compute_fun(
-        load_a_to_common(&data_a[a_linear_index * a_element_size]),
-        load_b_to_common(&data_b[b_linear_index * b_element_size]));
-    store_common_to_out(result, &data_out[i * out_element_size]);
+      auto result = compute_fun(
+          load_a_to_common(&data_a[a_linear_index * a_element_size]),
+          load_b_to_common(&data_b[b_linear_index * b_element_size]));
+      store_common_to_out(result, &data_out[i * out_element_size]);
+    }
   }
 }
 
@@ -211,31 +210,27 @@ inline void apply_tritensor_elementwise_fn(
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
 
   auto out_numel = out.numel();
-  for (const auto i : c10::irange(out_numel)) {
-    size_t a_linear_index = i;
-    size_t b_linear_index = i;
-    size_t c_linear_index = i;
-
-    if (any_is_broadcasted) {
-      size_t out_indexes[kTensorDimensionLimit];
-      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
-
-      if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
-      }
-      if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
-      }
-      if (c_is_broadcasted) {
-        c_linear_index = linearize_access_indexes(out_indexes, out.dim(), c);
-      }
+  if (any_is_broadcasted) {
+    for (const auto [out_index, a_index, b_index, c_index] :
+         BroadcastIndexesRange<3>(out, a, b, c)) {
+      auto result = compute_fun(
+          load_a_to_common(&data_a[a_index * a_element_size]),
+          load_b_to_common(&data_b[b_index * b_element_size]),
+          load_c_to_common(&data_c[c_index * c_element_size]));
+      store_common_to_out(result, &data_out[out_index * out_element_size]);
     }
+  } else {
+    for (const auto i : c10::irange(out_numel)) {
+      size_t a_linear_index = i;
+      size_t b_linear_index = i;
+      size_t c_linear_index = i;
 
-    auto result = compute_fun(
-        load_a_to_common(&data_a[a_linear_index * a_element_size]),
-        load_b_to_common(&data_b[b_linear_index * b_element_size]),
-        load_c_to_common(&data_c[c_linear_index * c_element_size]));
-    store_common_to_out(result, &data_out[i * out_element_size]);
+      auto result = compute_fun(
+          load_a_to_common(&data_a[a_linear_index * a_element_size]),
+          load_b_to_common(&data_b[b_linear_index * b_element_size]),
+          load_c_to_common(&data_c[c_linear_index * c_element_size]));
+      store_common_to_out(result, &data_out[i * out_element_size]);
+    }
   }
 }
 
