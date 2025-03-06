@@ -11,7 +11,7 @@ main() {
     build_type=${1:-"--cpp_runtime"}
 
     # If the first arguments is --cpp_runtime (default), build libraries for C++ runtime
-    if [[ -z "$build_type" || "$build_type" == "cpp_runtime" ]]; then
+    if [[ -z "$build_type" || "$build_type" == "--cpp_runtime" ]]; then
         echo "Building C++ Runtime Libraries"
 
         # Set build directory
