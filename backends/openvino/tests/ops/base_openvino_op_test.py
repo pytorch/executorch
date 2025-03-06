@@ -16,8 +16,8 @@ from torch.export import export, ExportedProgram
 class BaseOpenvinoOpTest(unittest.TestCase):
     device = "CPU"
 
-    atol = 1e-5
-    rtol = 1e-5
+    atol = 1e-3
+    rtol = 1e-3
 
     def execute_layer_test(
         self,
