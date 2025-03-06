@@ -1,4 +1,3 @@
-
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -16,20 +15,23 @@
 #
 # This will define the following variables:
 #
-#   EXECUTORCH_FOUND        -- True if the system has the ExecuTorch library
-#   EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
-#   EXECUTORCH_LIBRARIES    -- Libraries to link against
+# EXECUTORCH_FOUND        -- True if the system has the ExecuTorch library
+# EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
+# EXECUTORCH_LIBRARIES    -- Libraries to link against
 #
-# The actual values for these variables will be different from what executorch-config.cmake
-# in executorch pip package gives, but we wanted to keep the contract of exposing these
-# CMake variables.
+# The actual values for these variables will be different from what
+# executorch-config.cmake in executorch pip package gives, but we wanted to keep
+# the contract of exposing these CMake variables.
 
 cmake_minimum_required(VERSION 3.19)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
 set(EXECUTORCH_LIBRARIES)
-set(EXECUTORCH_INCLUDE_DIRS ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10 ${_root}/lib)
+set(EXECUTORCH_INCLUDE_DIRS
+    ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10
+    ${_root}/lib
+)
 foreach(lib ${required_lib_list})
   set(lib_var "LIB_${lib}")
   add_library(${lib} STATIC IMPORTED)
@@ -40,7 +42,12 @@ foreach(lib ${required_lib_list})
   )
   set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
   target_compile_definitions(${lib} INTERFACE C10_USING_CUSTOM_GENERATED_MACROS)
-  target_include_directories(${lib} INTERFACE ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10 ${_root}/lib)
+  target_include_directories(
+    ${lib}
+    INTERFACE ${_root}/include
+              ${_root}/include/executorch/runtime/core/portable_type/c10
+              ${_root}/lib
+  )
   list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
 
@@ -112,7 +119,12 @@ foreach(lib ${lib_list})
       add_library(${lib} STATIC IMPORTED)
     endif()
     set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
-    target_include_directories(${lib} INTERFACE ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10 ${_root}/lib)
+    target_include_directories(
+      ${lib}
+      INTERFACE ${_root}/include
+                ${_root}/include/executorch/runtime/core/portable_type/c10
+                ${_root}/lib
+    )
     list(APPEND EXECUTORCH_LIBRARIES ${lib})
   endif()
 endforeach()
@@ -129,4 +141,6 @@ if(TARGET cpublas)
     cpublas PROPERTIES INTERFACE_LINK_LIBRARIES extension_parallel
   )
 endif()
-target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)
+if(TARGET extension_threadpool)
+  target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)
+endif()
