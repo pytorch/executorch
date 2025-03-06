@@ -84,7 +84,8 @@ inline void set_thread_num(int64_t thread_num) {
 #endif // ET_USE_THREADPOOL
 
 /**
- * Convenience version of parallel_for that sets the grain size to internal::GRAIN_SIZE.
+ * Convenience version of parallel_for that sets the grain size to
+ * internal::GRAIN_SIZE.
  */
 template <typename Func>
 bool parallel_for(const int64_t begin, const int64_t end, const Func& func) {

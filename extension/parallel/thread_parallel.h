@@ -9,8 +9,6 @@
 #pragma once
 
 // This header is a stub left behind after the move to
-// executorch/runtime/kernel. Depend on this target and include this
-// header if you have a hard requirement for threading; if you want to
-// cleanly use parallelization if available, then depend on and use
-// the below header instead.
+// executorch/runtime/kernel. As such, it is deprecated; include and
+// use the below header directly instead.
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
