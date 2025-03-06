@@ -37,7 +37,7 @@ extract_sources(${EXECUTORCH_SRCS_FILE})
 include(${EXECUTORCH_SRCS_FILE})
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..,${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10> $<INSTALL_INTERFACE:include,include/executorch/runtime/core/portable_type/c10>)
 
 # Custom op libraries
 set(custom_ops_libs pthreadpool)
@@ -73,7 +73,7 @@ add_library(custom_ops ${_custom_ops__srcs})
 
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
-  custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+  custom_ops PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../../../include>
 )
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
@@ -81,7 +81,7 @@ target_compile_options(
   custom_ops PUBLIC ${_common_compile_options} -DET_USE_THREADPOOL
 )
 
-install(TARGETS custom_ops DESTINATION lib)
+install(TARGETS custom_ops EXPORT ExecuTorchTargets DESTINATION lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   # Add a AOT library
@@ -98,7 +98,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
     custom_ops_aot_lib PUBLIC "${_common_include_directories}"
   )
   target_include_directories(
-    custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+    custom_ops_aot_lib PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../../../include>
   )
   # TODO: This only works if we install portable_lib.so to
   # <site-packages>/executorch/extension/pybindings/.
@@ -134,6 +134,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   )
 
   install(TARGETS custom_ops_aot_lib
+          EXPORT ExecuTorchTargets
           LIBRARY DESTINATION executorch/extension/llm/custom_ops
   )
 endif()

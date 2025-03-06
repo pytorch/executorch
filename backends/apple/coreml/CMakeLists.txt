@@ -200,6 +200,7 @@ set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
 
 install(
   TARGETS coremldelegate
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
