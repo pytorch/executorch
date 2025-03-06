@@ -47,12 +47,23 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   message("Generated files ${gen_command_sources}")
 
   # optimized_native_cpu_ops_lib: Register optimized op kernels into the runtime
+  if(NOT DEFINED EXECUTORCH_HAVE_OPTIMIZED_PORTABLE_KERNELS)
+    message(FATAL_ERROR "EXECUTORCH_HAVE_OPTIMIZED_PORTABLE_KERNELS was not defined!")
+  endif()
+  if(${EXECUTORCH_HAVE_OPTIMIZED_PORTABLE_KERNELS})
+    if(NOT TARGET optimized_portable_kernels)
+      message(FATAL_ERROR "optimized_portable_kernels missing")
+    endif()
+    set(_optimized_native_cpu_ops_lib_portable_kernels_lib optimized_portable_kernels)
+  else()
+    set(_optimized_native_cpu_ops_lib_portable_kernels_lib portable_kernels)
+  endif()
   gen_operators_lib(
     LIB_NAME
     "optimized_native_cpu_ops_lib"
     KERNEL_LIBS
-    portable_kernels
     optimized_kernels
+    ${_optimized_native_cpu_ops_lib_portable_kernels_lib}
     DEPS
     executorch
   )
