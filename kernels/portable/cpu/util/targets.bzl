@@ -70,6 +70,9 @@ def define_common_targets():
         exported_headers = [
             "broadcast_util.h",
         ],
+        exported_deps = [
+            ":broadcast_indexes_range",
+        ],
         deps = [
             ":repeat_util",
             "//executorch/runtime/kernel:kernel_includes",

@@ -130,6 +130,7 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_threadpool",
 ]
 
 [targets.optimized_native_cpu_ops]
@@ -363,6 +364,7 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -449,6 +451,7 @@ deps = [
   "executorch_core",
   "extension_data_loader",
   "extension_module",
+  "extension_threadpool",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
