@@ -1,4 +1,3 @@
-
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -16,20 +15,23 @@
 #
 # This will define the following variables:
 #
-#   EXECUTORCH_FOUND        -- True if the system has the ExecuTorch library
-#   EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
-#   EXECUTORCH_LIBRARIES    -- Libraries to link against
+# EXECUTORCH_FOUND        -- True if the system has the ExecuTorch library
+# EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
+# EXECUTORCH_LIBRARIES    -- Libraries to link against
 #
-# The actual values for these variables will be different from what executorch-config.cmake
-# in executorch pip package gives, but we wanted to keep the contract of exposing these
-# CMake variables.
+# The actual values for these variables will be different from what
+# executorch-config.cmake in executorch pip package gives, but we wanted to keep
+# the contract of exposing these CMake variables.
 
 cmake_minimum_required(VERSION 3.19)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
 set(EXECUTORCH_LIBRARIES)
-set(EXECUTORCH_INCLUDE_DIRS ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10 ${_root}/lib)
+set(EXECUTORCH_INCLUDE_DIRS
+    ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10
+    ${_root}/lib
+)
 foreach(lib ${required_lib_list})
   set(lib_var "LIB_${lib}")
   add_library(${lib} STATIC IMPORTED)
@@ -40,7 +42,12 @@ foreach(lib ${required_lib_list})
   )
   set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
   target_compile_definitions(${lib} INTERFACE C10_USING_CUSTOM_GENERATED_MACROS)
-  target_include_directories(${lib} INTERFACE ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10 ${_root}/lib)
+  target_include_directories(
+    ${lib}
+    INTERFACE ${_root}/include
+              ${_root}/include/executorch/runtime/core/portable_type/c10
+              ${_root}/lib
+  )
   list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
 
@@ -82,6 +89,7 @@ set(lib_list
     pthreadpool
     vulkan_backend
     optimized_kernels
+    optimized_portable_kernels
     cpublas
     eigen_blas
     optimized_ops_lib
@@ -111,7 +119,12 @@ foreach(lib ${lib_list})
       add_library(${lib} STATIC IMPORTED)
     endif()
     set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
-    target_include_directories(${lib} INTERFACE ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10 ${_root}/lib)
+    target_include_directories(
+      ${lib}
+      INTERFACE ${_root}/include
+                ${_root}/include/executorch/runtime/core/portable_type/c10
+                ${_root}/lib
+    )
     list(APPEND EXECUTORCH_LIBRARIES ${lib})
   endif()
 endforeach()
@@ -120,7 +133,28 @@ endforeach()
 # target_compile_options/target_compile_definitions for everything.
 if(TARGET cpublas)
   set_target_properties(
-    cpublas PROPERTIES INTERFACE_LINK_LIBRARIES extension_threadpool
+    cpublas PROPERTIES INTERFACE_LINK_LIBRARIES
+                       "extension_threadpool;eigen_blas"
   )
 endif()
-target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)
+if(TARGET optimized_kernels)
+  set_target_properties(
+    optimized_kernels PROPERTIES INTERFACE_LINK_LIBRARIES
+                                 "executorch_core;cpublas;extension_threadpool"
+  )
+endif()
+if(TARGET optimized_native_cpu_ops_lib)
+  if(TARGET optimized_portable_kernels)
+    set(_maybe_optimized_portable_kernels_lib optimized_portable_kernels)
+  else()
+    set(_maybe_optimized_portable_kernels_lib portable_kernels)
+  endif()
+  set_target_properties(
+    optimized_native_cpu_ops_lib
+    PROPERTIES INTERFACE_LINK_LIBRARIES
+               "optimized_kernels;${_maybe_optimized_portable_kernels_lib}"
+  )
+endif()
+if(TARGET extension_threadpool)
+  target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)
+endif()
