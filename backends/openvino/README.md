@@ -80,10 +80,10 @@ Follow the steps below to setup your build environment:
    ```bash
    ./openvino_build.sh
    ```
-   **Build OpenVINO Backend with Pybinding**: To build and install the OpenVINO backend with Python bindings, run the `openvino_build.sh` script with the `pybinding` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment.
+   **Build OpenVINO Backend with Pybinding**: To build and install the OpenVINO backend with Python bindings, run the `openvino_build.sh` script with the `--pybind` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment.
 
    ```bash
-   ./openvino_build.sh pybinding
+   ./openvino_build.sh --pybind
    ```
 
 ### Run
