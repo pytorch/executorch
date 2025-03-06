@@ -8,14 +8,10 @@ Below is the layout of the `examples/openvino` directory, which includes the nec
 
 ```
 examples/openvino
-├── aot                                 # Directory with scripts and instructions for AoT export
-    ├── README.md                       # Instructions to export models to '.pte'
-    └── aot_openvino_compiler.py        # Example script for AoT export
-├── executor_runner                     # Directory with examples for C++ execution
-    └── openvino_executor_runner.cpp    # Example C++ file for execution
 ├── CMakeLists.txt                      # CMake build configuration to build examples
 ├── README.md                           # Documentation for examples (this file)
-└── openvino_build_example.sh           # Script to build examples for openvino backend
+├── aot_openvino_compiler.py            # Example script for AoT export
+└── export_and_infer_openvino.py        # Example script to export and execute models with python bindings
 ```
 
 # Build Instructions for Examples
@@ -25,11 +21,9 @@ Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites*
 
 ## AOT step:
 
-Within the `aot` folder, you'll find the model export script called `aot_openvino_compiler.py`. This script allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.
+The export script called `aot_openvino_compiler.py` allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.
 
 ### **Usage**
-
-First, navigate to the `aot` directory by running the command `cd aot`. Then, refer to the instructions provided below.
 
 #### **Command Structure**
 ```bash
