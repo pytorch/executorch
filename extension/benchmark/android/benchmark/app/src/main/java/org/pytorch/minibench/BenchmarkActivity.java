@@ -60,8 +60,6 @@ public class BenchmarkActivity extends Activity {
         Module module = Module.load(model.getPath());
         stats.errorCode = module.loadMethod("forward");
         stats.loadEnd = System.nanoTime();
-        // RAM RSS usage
-        results.add(new BenchmarkMetric(benchmarkModel, "peak_load_mem_usage(mb)", Debug.getRss(), 0));
 
         for (int i = 0; i < numWarmupIter; i++) {
           module.forward();
