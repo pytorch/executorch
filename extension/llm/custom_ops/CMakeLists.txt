@@ -44,6 +44,8 @@ set(custom_ops_libs pthreadpool)
 list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
 list(APPEND custom_ops_libs eigen_blas)
+list(APPEND custom_ops_libs extension_threadpool)
+list(APPEND custom_ops_libs extension_parallel)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
   list(APPEND _custom_ops__srcs
@@ -63,10 +65,8 @@ endif()
 
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
-if(NOT EXECUTORCH_BUILD_XNNPACK)
-  list(APPEND custom_ops_libs extension_threadpool)
-else()
-  list(APPEND custom_ops_libs extension_threadpool xnnpack_backend)
+if(EXECUTORCH_BUILD_XNNPACK)
+  list(APPEND custom_ops_libs extension_threadpool extension_parallel xnnpack_backend)
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
