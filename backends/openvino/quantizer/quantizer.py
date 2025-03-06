@@ -6,7 +6,7 @@
 
 from collections import defaultdict
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Callable, Any
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import nncf
 import nncf.common.quantization as quantization
@@ -351,30 +351,45 @@ class OpenVINOQuantizer(Quantizer):
 
 def quantize_model(
     captured_model: torch.fx.GraphModule,
-    quantizer: Quantizer,
     calibration_dataset: torch.utils.data.DataLoader,
-    subset_size: int,
+    *,
+    mode: QuantizationMode = QuantizationMode.INT8_SYM,
+    subset_size: int = 300,
     fast_bias_correction: Optional[bool] = True,
     smooth_quant: bool = False,
-    transform_fn: Optional[Callable[[Any], Any]]= None,
+    transform_fn: Optional[Callable[[Any], Any]] = None,
+    extra_quantizer_options: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> torch.fx.GraphModule:
     """
     Quantizes a model using NNCF quantize_pt2e API.
 
     :param captured_model: The model to be quantized, represented as a torch.fx.GraphModule.
-    :param quantizer: Torch ao quantizer to annotate nodes in the graph with quantization setups
     :param calibration_dataset: A DataLoader containing calibration data for quantization.
+    :param mode: Defines special quantization modes.
+        - INT8_SYM: INT8 symmetric quantization for both activations and weights.
+        - INT8_MIXED: INT8 asymmetric quantization for activations, symmetric for weights.
+        - INT8_TRANSFORMER: Optimized INT8 quantization for transformer-based models
+        Default value is INT8_SYM.
     :param subset_size: Size of a subset to calculate activations
         statistics used for quantization.
     :param fast_bias_correction: Setting this option to `False` enables a different
         bias correction method which is more accurate, in general, and takes
         more time but requires less memory. None disables the bias correction algorithm.
     :param smooth_quant: Setting this option to `True` enables the SmoothQuant algorithm.
+    :param extra_quantizer_options: A dictionary containing additional configuration options
+        for the OpenVINOQuantizer.
     :param kwargs: The keyword arguments for the nncf quantize_pt2e function.
     :return: The quantized model as a torch.fx.GraphModule.
     """
-    quantizer = OpenVINOQuantizer()
+    extra_quantizer_options = extra_quantizer_options or {}
+    if "mode" in extra_quantizer_options:
+        print(
+            f'Ignoring "mode" from the quantizer_config. Using parameter mode = {mode}'
+        )
+        del extra_quantizer_options["mode"]
+
+    quantizer = OpenVINOQuantizer(mode=mode, **extra_quantizer_options)
 
     print("PTQ: Quantize the model")
 
@@ -388,6 +403,6 @@ def quantize_model(
         calibration_dataset=nncf.Dataset(calibration_dataset, transform_fn),
         fast_bias_correction=fast_bias_correction,
         smooth_quant=smooth_quant,
-        **kwargs
+        **kwargs,
     )
     return quantized_model

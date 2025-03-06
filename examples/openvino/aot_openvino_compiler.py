@@ -13,10 +13,7 @@ import timm
 import torch
 import torchvision.models as torchvision_models
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
-from executorch.backends.openvino.quantizer.quantizer import (
-    OpenVINOQuantizer,
-    quantize_model,
-)
+from executorch.backends.openvino.quantizer import quantize_model
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.extension.pybindings.portable_lib import (  # @manual
@@ -190,13 +187,10 @@ def main(
         batch_size = calibration_dataset.batch_size
         subset_size = (subset_size // batch_size) + int(subset_size % batch_size > 0)
 
-        quantizer = OpenVINOQuantizer()
-
         transform_fn = lambda x: x[0]
         quantized_model = quantize_model(
             aten_dialect.module(),
-            quantizer=quantizer,
-            calibration_dataset=calibration_dataset,
+            calibration_dataset,
             subset_size=subset_size,
             transform_fn=transform_fn,
         )
