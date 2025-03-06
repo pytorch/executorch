@@ -106,8 +106,8 @@ public class BenchmarkActivity extends Activity {
                 0.0f));
         // Load status
         results.add(new BenchmarkMetric(benchmarkModel, "load_status", stats.errorCode, 0));
-        // RAM RSS usage
-        results.add(new BenchmarkMetric(benchmarkModel, "peak_inference_mem_usage(mb)", (Debug.getPss() - pssIdle) / 1024, 0));
+        // RAM PSS usage
+        results.add(new BenchmarkMetric(benchmarkModel, "ram_pss_usage(mb)", (Debug.getPss() - pssIdle) / 1024, 0));
 
         try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
           Gson gson = new Gson();
