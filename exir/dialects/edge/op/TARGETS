@@ -1,9 +1,9 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("ai_infra_mobile_platform")
 
-runtime.python_library(
+python_library(
     name = "lib",
     srcs = [
         "api.py",
