@@ -7,7 +7,6 @@
 
 set -ex
 
-apt-get install -y --no-install-recommends \
-        openjdk-17-jdk \
-        ca-certificates-java \
-        ant
+apt-get update
+
+apt-get install -y --no-install-recommends openjdk-17-jdk
