@@ -216,7 +216,7 @@ for i in "${!test_model[@]}"; do
     else
         set -x
         # Rebuild the application as the pte is imported as a header/c array
-        backends/arm/scripts/build_executorch_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}"
+        backends/arm/scripts/build_executorch_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
             elf_file="${output_folder}/${elf_folder}/cmake-out/arm_executor_runner"
