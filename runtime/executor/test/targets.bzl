@@ -101,6 +101,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/testing_util:temp_file",
             "//executorch/runtime/executor:pte_data_map",
+            "//executorch/schema:program",
         ],
     )
 
