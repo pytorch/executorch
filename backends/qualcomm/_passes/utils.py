@@ -8,6 +8,7 @@ import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.backends.qualcomm.utils.constants import QCOM_ENCODING
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses import FakeTensor
 
 
 q_ops = {
@@ -57,49 +58,56 @@ def get_passes_dependency_for_capture_program():
         dict: A dictionary mapping each pass to its corresponding list of dependencies.
     """
     from executorch.backends.qualcomm._passes import (
-        AnnotateAndQuantScalar,
         AnnotateDecomposed,
         AnnotateQuantAttrs,
+        ConstantI64toI32,
         ConvertBmmToMatmul,
         ConvertInterpolateWithUpsample2D,
-        ConvertPReLU,
         ConvertToLinear,
+        DecomposeAny,
+        DecomposeLinalgVectorNorm,
         ExpandBroadcastTensorShape,
         FoldQDQ,
-        I64toI32,
         LayoutTransform,
         RecomposePixelUnshuffle,
+        RecomposePReLU,
         RecomposeRmsNorm,
         RemoveRedundancy,
         ReplaceIndexPutInput,
+        TensorI64toI32,
     )
 
     return {
-        RecomposePixelUnshuffle: [RemoveRedundancy],
-        RecomposeRmsNorm: [RemoveRedundancy],
-        ConvertToLinear: [RecomposePixelUnshuffle],
-        ConvertPReLU: [RemoveRedundancy],
-        ConvertBmmToMatmul: [ConvertToLinear],
-        ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
-        I64toI32: [RemoveRedundancy],
+        AnnotateDecomposed: [RemoveRedundancy],
         AnnotateQuantAttrs: [
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ConvertToLinear,
-            ConvertPReLU,
+            RecomposePReLU,
             ConvertBmmToMatmul,
             ConvertInterpolateWithUpsample2D,
         ],
-        AnnotateAndQuantScalar: [
-            AnnotateQuantAttrs,
-        ],
-        AnnotateDecomposed: [RemoveRedundancy],
-        FoldQDQ: [AnnotateQuantAttrs, AnnotateAndQuantScalar, AnnotateDecomposed],
+        ConstantI64toI32: [ConvertInterpolateWithUpsample2D],
+        ConvertBmmToMatmul: [ConvertToLinear],
+        ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
+        ConvertToLinear: [RecomposePixelUnshuffle],
+        DecomposeAny: [RemoveRedundancy],
+        DecomposeLinalgVectorNorm: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [RemoveRedundancy],
+        FoldQDQ: [AnnotateQuantAttrs, AnnotateDecomposed],
         LayoutTransform: [
             AnnotateQuantAttrs,
-            AnnotateAndQuantScalar,
             ExpandBroadcastTensorShape,
         ],
+        RecomposePixelUnshuffle: [RemoveRedundancy],
+        RecomposePReLU: [RemoveRedundancy],
+        RecomposeRmsNorm: [RemoveRedundancy],
         ReplaceIndexPutInput: [LayoutTransform],
+        TensorI64toI32: [RemoveRedundancy],
     }
+
+
+def is_float_tensor(node: torch.fx.Node) -> bool:
+    if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
+        return False
+    return node.meta["val"].dtype == torch.float32

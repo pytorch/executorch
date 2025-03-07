@@ -21,6 +21,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_dynamic_qdq,
     is_per_channel,
     is_per_channel_group,
+    is_per_tensor,
     is_qparam,
     is_quant,
 )
@@ -66,8 +67,6 @@ class GEMMConfig(XNNPartitionerConfig):
             return False
 
         is_valid, _ = self.get_deps(node, ep)
-        if not is_valid:
-            why(node, "Failed to get valid dependent nodes.")
         return is_valid
 
     def get_node_and_deps(
@@ -97,9 +96,9 @@ class GEMMConfig(XNNPartitionerConfig):
     def _overwrite_precision(self, node: torch.fx.Node):
         precision = self._detect_precision(node)
         if precision not in self.enabled_precision_types:
-            # detected precision is not enabled, lets try to partition it as fp32
+            # detected precision is not enabled, try to partition it as fp32
             if self.enabled_precision_types == [ConfigPrecisionType.FP32]:
-                # if only fp32 is enabled, then we can still partition fp32 gemms
+                # when only fp32 is enabled, then we can still partition fp32 gemms
                 # even with in a quantized graph
                 if precision in [
                     ConfigPrecisionType.STATIC_QUANT,
@@ -108,6 +107,7 @@ class GEMMConfig(XNNPartitionerConfig):
                     precision = ConfigPrecisionType.FP32
                     logging.info(f"Overwriting precision, partitioning {node} as FP32")
                     return True, precision
+
         return False, precision
 
     def get_deps(
@@ -123,6 +123,7 @@ class GEMMConfig(XNNPartitionerConfig):
         precision = self._detect_precision(node)
         if precision not in self.supported_precision_types():
             # detected precision but it is either disabled or not supported
+            why(node, f"Unsupported precision type {precision}")
             return (False, [])
         _, precision = self._overwrite_precision(node)
         valid_bias, bias_deps = self._get_bias_deps(node, ep, precision)
@@ -143,7 +144,8 @@ class GEMMConfig(XNNPartitionerConfig):
             # First find the weight
             weight_node = get_input_node(node, self.weight_idx)
             if not is_param_node(ep, weight_node):
-                return (False, [])  # weight must be a static param
+                why(node, "Expected weight to be a static param")
+                return (False, [])
             gemm_deps.append(weight_node)
 
             return (True, gemm_deps)
@@ -151,19 +153,33 @@ class GEMMConfig(XNNPartitionerConfig):
             # Quantized Weight deps
             dequant_node = get_input_node(node, self.weight_idx)
             if not is_dequant(dequant_node):
+                why(node, "Expected  weight to have a dequantized node")
                 return False, []
             gemm_deps.append(dequant_node)
             weight = get_input_node(dequant_node, 0)
             if not is_param_node(ep, weight):
+                why(node, "Expected weight to be a static param")
                 return False, []
             gemm_deps.append(weight)
+
+            if (
+                is_per_tensor(dequant_node)
+                and precision == ConfigPrecisionType.DYNAMIC_QUANT
+            ):
+                why(
+                    node,
+                    "XNNPACK does not support per tensor quantized weights for dynamic quantization of activations",
+                )
+                return False, []
 
             if is_per_channel(dequant_node) or is_per_channel_group(dequant_node):
                 if len(dequant_node.all_input_nodes) < 2:
                     # Expected channel quantized to have scale/zp nodes
+                    why(node, "Expected channel quantized to have scale/zp nodes")
                     return False, []
 
                 gemm_deps.extend(dequant_node.all_input_nodes[1:3])
+
             return (True, gemm_deps)
 
     def _get_output_deps(
@@ -174,7 +190,7 @@ class GEMMConfig(XNNPartitionerConfig):
             # Look for fused activations and tail end quant node
             node_users = list(node.users.keys())
             if len(node_users) != 1:
-                # Expect quantized node to have a single output (fused act or dequant)
+                why(node, "Expected quantized node to have a single output")
                 return False, []
 
             # Check if the quantized pattern has a fused activation
@@ -190,6 +206,7 @@ class GEMMConfig(XNNPartitionerConfig):
 
             if not is_quant(n_output):
                 # Expected gemm_node --> fused_act (optional) --> dequant
+                why(node, "Expected output node to have a dequantized node")
                 return (False, [])
             gemm_deps.append(n_output)
         elif precision == ConfigPrecisionType.FP32:
@@ -210,11 +227,20 @@ class GEMMConfig(XNNPartitionerConfig):
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
         gemm_deps = []
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is enabled, then we
+            # do not partition the weight node
+            return (True, gemm_deps)
+
         if len(node.all_input_nodes) > 2 and self.bias_idx is not None:
             bias_node = get_input_node(node, self.bias_idx)
             if bias_node:
                 if not is_param_node(ep, bias_node):
-                    return (False, [])  # bias node must be a static param
+                    why(node, "Expected bias to be a static param")
+                    return (False, [])
                 gemm_deps.append(bias_node)
 
         return (True, gemm_deps)
@@ -228,7 +254,7 @@ class GEMMConfig(XNNPartitionerConfig):
         else:
             dq_input = get_input_node(node, self.act_idx)
             if not is_dequant(dq_input):
-                # Expected static quant input to be dequant node
+                why(node, "Expected act input to be dequant node")
                 return False, []
             gemm_deps.append(dq_input)
             if precision == ConfigPrecisionType.STATIC_QUANT:
@@ -238,6 +264,7 @@ class GEMMConfig(XNNPartitionerConfig):
             # q input node
             q_input = get_input_node(dq_input, 0)
             if not is_quant(q_input):
+                why(node, "Expected  dequant input to be quant node")
                 return (False, [])
 
             gemm_deps.append(q_input)
@@ -245,20 +272,20 @@ class GEMMConfig(XNNPartitionerConfig):
             if is_affine_qdq(q_input):
                 q_input_args = extract_qdq_affine_op_args_for_decomposed_ops(q_input)
             if not (is_node(q_input_args[1]) and is_node(q_input_args[2])):
-                # expected to find getitem node from choose qparam
+                why(node, "expected to find getitem node from choose qparam")
                 return (False, [])
 
             getitem1 = q_input_args[1]
             getitem2 = q_input_args[2]
 
             if not (is_getitem(getitem1) and is_getitem(getitem2)):
-                # expected getitem node from choose qparam
+                why(node, "expected getitem node from choose qparam")
                 return (False, [])
 
             gemm_deps.extend([getitem1, getitem2])
             choose_qparam = get_input_node(getitem1, 0)
             if not is_qparam(choose_qparam):
-                # expected to find choose_qparam node
+                why(node, "expected to find choose_qparam node")
                 return (False, [])
             gemm_deps.append(choose_qparam)
             return (True, gemm_deps)
@@ -282,8 +309,11 @@ class LinearConfig(GEMMConfig):
     def _get_weight_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
-        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
-            # if force fp32_dynamic_linear is enabled, then we
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is enabled, then we
             # do not partition the weight node
             return (True, [])
 
@@ -334,6 +364,18 @@ class ConvolutionConfig(GEMMConfig):
         is_transpose = node.args[6]
         groups = cast(int, node.args[8])
 
+        # XNNPack does not support non-zero output padding in transposed
+        # convolutions.
+        if is_transpose and any(
+            out_pad != 0 for out_pad in cast(List[int], node.args[7])
+        ):
+            why(
+                node,
+                "XNNPACK does not support transposed convolutions with"
+                "non-zero output padding",
+            )
+            return False
+
         if (
             is_transpose
             and weight_quant_params is not None
@@ -377,9 +419,11 @@ class AddmmConfig(GEMMConfig):
     def _get_weight_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
-        # TODO(maxren, T210537195):
-        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
-            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is on and we detected this as fp32, then we
             # do not partition the weight node
             return (True, [])
 
@@ -454,6 +498,7 @@ class AddmmConfig(GEMMConfig):
             # there can only be a single output node in partition
             or len(src_partition.output_nodes) != 1
         ):
+            why(node, "invalid source partition")
             return (False, [])
 
         # map addmm's args to the source partition linear's inputs and users
@@ -465,7 +510,15 @@ class AddmmConfig(GEMMConfig):
         node.args = old_args
         node.users = old_users
 
-        return valid_deps, list(set(deps) | set(src_partition.nodes))
+        # When using force_non_static_weights_for_f32_linear, we want to get_deps to overwrite the source partition nodes.
+        # Else we want to be greedy.
+        ret_deps = (
+            list(set(deps) & set(src_partition.nodes))
+            if self.force_non_static_weights_for_f32_linear
+            else list(set(deps) | set(src_partition.nodes))
+        )
+
+        return valid_deps, ret_deps
 
     def supported_precision_types(self):
         return [
@@ -487,8 +540,11 @@ class MMConfig(AddmmConfig):
     def _get_weight_deps(
         self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
     ) -> Tuple[bool, List[torch.fx.Node]]:
-        if precision == ConfigPrecisionType.FP32 and self.force_fp32_dynamic_linear:
-            # if force fp32_dynamic_linear is on and we detected this as fp32, then we
+        if (
+            precision == ConfigPrecisionType.FP32
+            and self.force_non_static_weights_for_f32_linear
+        ):
+            # if force_non_static_weights_for_f32_linear is on and we detected this as fp32, then we
             # do not partition the weight node
             return (True, [])
 

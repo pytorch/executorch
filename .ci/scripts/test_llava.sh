@@ -30,9 +30,10 @@ fi
 NPROC=8
 if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 
+python_lib=$($PYTHON_EXECUTABLE -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
 EXECUTORCH_COMMON_CMAKE_ARGS="                      \
         -DCMAKE_INSTALL_PREFIX=${BUILD_DIR}         \
-        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}            \
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}      \
         -DEXECUTORCH_ENABLE_LOGGING=ON              \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON      \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -92,7 +93,7 @@ cmake_build_llava_runner_for_android() {
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI=arm64-v8a                                                 \
         ${LLAVA_COMMON_CMAKE_ARGS}                                              \
-        -DCMAKE_PREFIX_PATH="$python_lib"                                       \
+        -DCMAKE_PREFIX_PATH="$python_lib"                  \
         -DLLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE=ON                                  \
         -B${BUILD_DIR}/${dir}                                                   \
         ${dir}

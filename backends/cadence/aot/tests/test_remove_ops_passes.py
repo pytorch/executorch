@@ -1,4 +1,10 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 
 
 import unittest
@@ -11,10 +17,11 @@ import torch.nn.functional as F
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.compiler import export_to_edge
 
-from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
 from executorch.backends.cadence.aot.remove_ops import (
     RemoveAliasCopyOpPass,
+    RemoveBranchedQuantDequant,
     RemoveCloneOpPass,
     RemoveContiguousOpPass,
     RemoveDetachCopyPass,
@@ -702,4 +709,35 @@ class TestRemoveOpsPasses(unittest.TestCase):
         # Ensure no permutes were removed, since the dimensions don't fit the expected pattern
         self.assertEqual(
             count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+
+    def test_remove_dequant_on_branch(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                x = torch.abs(x)
+                x0 = torch.ops.quantized_decomposed.quantize_per_tensor(
+                    x, 1.2, 3, 0, 127, torch.int8
+                )
+                x1 = torch.abs(x0)
+                y0 = torch.ops.quantized_decomposed.dequantize_per_tensor(
+                    x0, 1.2, 3, 0, 127, torch.int8
+                )
+                y1 = y0.view(-1)
+                return x1, y1
+
+        inputs = torch.rand(1, 8, 4, 6)
+        model = M()
+        graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
+
+        graph_module = RemoveBranchedQuantDequant()(graph_module).graph_module
+        self.assertTrue(
+            op_counts_match(
+                graph_module,
+                expected_op_counts={
+                    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
+                    # we expect the pass to remove the dequantize node
+                    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
+                    exir_ops.edge.aten.abs.default: 2,
+                },
+            )
         )

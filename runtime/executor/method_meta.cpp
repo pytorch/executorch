@@ -56,7 +56,7 @@ size_t calculate_nbytes(
     Span<const int32_t> sizes,
     executorch::aten::ScalarType scalar_type) {
   ssize_t n = 1;
-  for (ssize_t i = 0; i < sizes.size(); i++) {
+  for (size_t i = 0; i < sizes.size(); i++) {
     n *= sizes[i];
   }
   // Use the full namespace to disambiguate from c10::elementSize.
@@ -110,7 +110,7 @@ size_t MethodMeta::num_inputs() const {
 Result<Tag> MethodMeta::input_tag(size_t index) const {
   auto num_inputs = this->num_inputs();
   ET_CHECK_OR_RETURN_ERROR(
-      index >= 0 && index < num_inputs,
+      index < num_inputs,
       InvalidArgument,
       "index %zu out of range. num_inputs: %zu",
       index,
@@ -118,10 +118,10 @@ Result<Tag> MethodMeta::input_tag(size_t index) const {
   auto input_index = s_plan_->inputs()->Get(index);
   size_t num_values = s_plan_->values()->size();
   ET_CHECK_OR_RETURN_ERROR(
-      input_index >= 0 && input_index < num_values,
+      input_index >= 0 && static_cast<size_t>(input_index) < num_values,
       InvalidProgram,
-      "internal value index %d out of range [0,%zu) for input %zu",
-      input_index,
+      "internal value index %zd out of range [0,%zu) for input %zu",
+      static_cast<ssize_t>(input_index),
       num_values,
       index);
   auto serialization_value = s_plan_->values()->Get(input_index);
@@ -160,7 +160,7 @@ size_t MethodMeta::num_outputs() const {
 Result<Tag> MethodMeta::output_tag(size_t index) const {
   auto num_outputs = this->num_outputs();
   ET_CHECK_OR_RETURN_ERROR(
-      index >= 0 && index < num_outputs,
+      index < num_outputs,
       InvalidArgument,
       "index %zu out of range. num_outputs: %zu",
       index,
@@ -168,10 +168,10 @@ Result<Tag> MethodMeta::output_tag(size_t index) const {
   auto output_index = s_plan_->outputs()->Get(index);
   size_t num_values = s_plan_->values()->size();
   ET_CHECK_OR_RETURN_ERROR(
-      output_index >= 0 && output_index < num_values,
+      output_index >= 0 && static_cast<size_t>(output_index) < num_values,
       InvalidProgram,
-      "internal value index %d out of range [0,%zu) for output %zu",
-      output_index,
+      "internal value index %zd out of range [0,%zu) for output %zu",
+      static_cast<ssize_t>(output_index),
       num_values,
       index);
   auto serialization_value = s_plan_->values()->Get(output_index);
@@ -218,7 +218,7 @@ size_t MethodMeta::num_memory_planned_buffers() const {
 Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   auto num_buffers = this->num_memory_planned_buffers();
   ET_CHECK_OR_RETURN_ERROR(
-      index >= 0 && index < num_buffers,
+      index < num_buffers,
       InvalidArgument,
       "index %zu out of range. num_buffers: %zu",
       index,
@@ -226,6 +226,17 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   // Index zero is reserved internally, and we hide it from users. Adjust the
   // provided index to point to one of the actual buffers.
   return s_plan_->non_const_buffer_sizes()->Get(index + 1);
+}
+
+bool MethodMeta::uses_backend(const char* backend_name) const {
+  const auto delegates = s_plan_->delegates();
+  for (size_t i = 0; i < delegates->size(); i++) {
+    auto delegate = delegates->Get(i);
+    if (strcmp(delegate->id()->c_str(), backend_name) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 size_t MethodMeta::num_instructions() const {

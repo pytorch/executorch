@@ -30,7 +30,7 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   # Merge optimized and portable definitions, taking optimized where available.
   merge_yaml(
-    FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/optimized/optimized-oss.yaml
+    FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/optimized/optimized.yaml
     FALLBACK_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml OUTPUT_DIR
     ${CMAKE_CURRENT_BINARY_DIR}
   )
@@ -42,7 +42,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
 
   generate_bindings_for_kernels(
     LIB_NAME "optimized_native_cpu_ops_lib" FUNCTIONS_YAML
-    ${CMAKE_CURRENT_BINARY_DIR}/merged.yaml
+    ${CMAKE_CURRENT_BINARY_DIR}/merged.yaml ADD_EXCEPTION_BOUNDARY
   )
   message("Generated files ${gen_command_sources}")
 

@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat.
@@ -7,7 +7,7 @@ def define_common_targets(is_fbcode = False):
     TARGETS and BUCK files that call this function.
     """
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
 
         runtime.cxx_library(
@@ -92,6 +92,19 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "pte_data_map_test",
+        srcs = [
+            "pte_data_map_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/data_loader:file_data_loader",
+            "//executorch/extension/testing_util:temp_file",
+            "//executorch/runtime/executor:pte_data_map",
+            "//executorch/schema:program",
+        ],
+    )
+
     # TODO(dbort): Find a way to make these run for ANDROID/APPLE in xplat. The
     # android and ios test determinators don't like the reference to the model
     # file in fbcode. See https://fburl.com/9esapdmd
@@ -109,6 +122,8 @@ def define_common_targets(is_fbcode = False):
             "ET_MODULE_LINEAR_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleLinear.pte])",
             "ET_MODULE_MULTI_ENTRY_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleMultipleEntry.pte])",
             "ET_MODULE_SIMPLE_TRAIN_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleSimpleTrain.pte])",
+            "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
+            "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
         }
 
         runtime.cxx_test(
@@ -135,6 +150,7 @@ def define_common_targets(is_fbcode = False):
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/extension/runner_util:inputs",
                 "//executorch/kernels/portable:generated_lib",
             ],

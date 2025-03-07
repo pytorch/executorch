@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+def get_test_inputs(dim, lengths, num_examples):
+    return (torch.rand(num_examples, int(lengths.max()), dim), lengths)
+
+
 class TestConformer(unittest.TestCase):
     """Tests Torchaudio Conformer"""
 
@@ -27,9 +31,7 @@ class TestConformer(unittest.TestCase):
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
         "executorch_exir_dialects_edge__ops_aten_arange_start_step": 1,
-        "executorch_exir_dialects_edge__ops_aten_full_like_default": 4,
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_mul_Scalar": 4,
         "executorch_exir_dialects_edge__ops_aten_eq_Scalar": 2,
         "executorch_exir_dialects_edge__ops_aten_where_self": 4,
         "executorch_exir_dialects_edge__ops_aten_logical_not_default": 4,
@@ -37,12 +39,13 @@ class TestConformer(unittest.TestCase):
         "torch.ops.aten._assert_scalar.default": 10,
         "torch.ops.aten._local_scalar_dense.default": 1,
         "torch.ops.aten.scalar_tensor.default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 5,
+        "torch.ops.higher_order.executorch_call_delegate": 4,
     }
 
     dim = 16
-    lengths = torch.randint(1, 100, (10,), dtype=torch.int32)
-    input_data = torch.rand(10, int(lengths.max()), dim)
+    num_examples = 10
+    lengths = torch.randint(1, 100, (num_examples,), dtype=torch.int32)
+    model_example_inputs = get_test_inputs(dim, lengths, num_examples)
     conformer = Conformer(
         input_dim=dim,
         num_heads=4,
@@ -56,7 +59,7 @@ class TestConformer(unittest.TestCase):
         (
             ArmTester(
                 self.conformer,
-                example_inputs=(self.input_data, self.lengths),
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-0.80+MI"),
             )
             .export()
@@ -66,7 +69,9 @@ class TestConformer(unittest.TestCase):
             .to_executorch()
             # TODO(MLETORCH-632): Fix numerical errors
             .run_method_and_compare_outputs(
-                inputs=(self.input_data, self.lengths), rtol=1, atol=5
+                rtol=1.0,
+                atol=5.0,
+                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
             )
         )
 
@@ -75,7 +80,7 @@ class TestConformer(unittest.TestCase):
         (
             ArmTester(
                 self.conformer,
-                example_inputs=(self.input_data, self.lengths),
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-0.80+BI"),
             )
             .quantize()
@@ -83,7 +88,10 @@ class TestConformer(unittest.TestCase):
             .to_edge_transform_and_lower()
             .to_executorch()
             .run_method_and_compare_outputs(
-                qtol=1, rtol=1, atol=5, inputs=(self.input_data, self.lengths)
+                qtol=1.0,
+                rtol=1.0,
+                atol=5.0,
+                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
             )
         )
 
@@ -92,7 +100,7 @@ class TestConformer(unittest.TestCase):
         tester = (
             ArmTester(
                 self.conformer,
-                example_inputs=(self.input_data, self.lengths),
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
@@ -103,7 +111,10 @@ class TestConformer(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=(self.input_data, self.lengths)
+                qtol=1.0,
+                rtol=1.0,
+                atol=5.0,
+                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
             )
 
     @unittest.expectedFailure  # TODO(MLETORCH-635)
@@ -111,7 +122,7 @@ class TestConformer(unittest.TestCase):
         tester = (
             ArmTester(
                 self.conformer,
-                example_inputs=(self.input_data, self.lengths),
+                example_inputs=self.model_example_inputs,
                 compile_spec=common.get_u85_compile_spec(),
             )
             .quantize()
@@ -122,5 +133,8 @@ class TestConformer(unittest.TestCase):
         )
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=(self.input_data, self.lengths)
+                qtol=1.0,
+                rtol=1.0,
+                atol=5.0,
+                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
             )

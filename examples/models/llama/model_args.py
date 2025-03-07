@@ -21,6 +21,7 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     attention_type: str = "mha"  # Attention type, registered in attention.py
+    attention_qkv_bias: bool = False
     use_kv_cache: bool = False  # Use key/value cache
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
@@ -34,7 +35,11 @@ class ModelArgs:
     input_prune_map: Optional[Dict[int, int]] = None
     # A dictionary mapping from pruned token-id to original token-id
     output_prune_map: Optional[Dict[int, int]] = None
+    apply_embedding: bool = True  # Use embedding inside the transformer
+    apply_output: bool = True  # Use output layer (unembedding) inside the transformer
+    use_qk_norm: bool = False  # apply normalization to q and k in the attention
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
+    partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )

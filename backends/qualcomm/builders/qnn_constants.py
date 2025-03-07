@@ -146,11 +146,26 @@ class OpElementWiseMultiply:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseNeg:
+    op_name: str = "ElementWiseNeg"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseNeuron:
     op_name: str = "ElementWiseNeuron"
     param_operation: str = "operation"
     param_alpha: str = "alpha"
     param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseNot:
+    op_name: str = "ElementWiseNot"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseNotEqual:
+    op_name: str = "ElementWiseNotEqual"
 
 
 @dataclass(init=False, frozen=True)
@@ -166,6 +181,11 @@ class OpElementWiseRsqrt:
 @dataclass(init=False, frozen=True)
 class OpElementWiseSin:
     op_name: str = "ElementWiseSin"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseSelect:
+    op_name = "ElementWiseSelect"
 
 
 @dataclass(init=False, frozen=True)
@@ -211,6 +231,15 @@ class OpGroupNorm:
 @dataclass(init=False, frozen=True)
 class OpHardSwish:
     op_name: str = "HardSwish"
+
+
+@dataclass(init=False, frozen=True)
+class OpInstanceNorm:
+    op_name: str = "InstanceNorm"
+    param_epsilon = "epsilon"
+    param_mode = "mode"
+    param_normalize_variance = "normalize_variance"
+    param_region = "region"
 
 
 @dataclass(init=False, frozen=True)
@@ -298,6 +327,13 @@ class OpQuantize:
 class OpReduceMean:
     op_name: str = "ReduceMean"
     param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
+class OpArgmin:
+    op_name: str = "Argmin"
+    param_axis: str = "axis"
     param_keep_dims: str = "keep_dims"
 
 

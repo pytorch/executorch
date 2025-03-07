@@ -7,65 +7,20 @@
 
 # Please refer to README.md in the same folder for more information.
 
-from typing import Optional
+from typing import Any, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 
-from executorch.examples.models.llama.attention import ATTENTION_REGISTRY
+from executorch.examples.models.llama.attention import (
+    ATTENTION_REGISTRY,
+    ForwardOptions,
+)
 
 from executorch.examples.models.llama.model_args import ModelArgs
-
+from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
-
 from torch import nn
-
-
-class RMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
-        """
-        Initialize the RMSNorm normalization layer.
-
-        Args:
-            dim (int): The dimension of the input tensor.
-            eps (float, optional): A small value added to the denominator for numerical stability. Default is 1e-6.
-
-        Attributes:
-            eps (float): A small value added to the denominator for numerical stability.
-            weight (nn.Parameter): Learnable scaling parameter.
-
-        """
-        super().__init__()
-        self.dim = dim
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def _norm(self, x):
-        """
-        Apply the RMSNorm normalization to the input tensor.
-
-        Args:
-            x (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The normalized tensor.
-
-        """
-        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
-
-    def forward(self, x):
-        """
-        Forward pass through the RMSNorm layer.
-
-        Args:
-            x (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The output tensor after applying RMSNorm.
-
-        """
-        output = self._norm(x.float()).type_as(x)
-        return output * self.weight
 
 
 class FeedForward(nn.Module):
@@ -148,9 +103,9 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
-        h = self.attention.forward(
-            self.attention_norm(x), freqs_cos, freqs_sin, input_pos=input_pos
+    def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
+        h, attn_options_update = self.attention.forward(
+            self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
 
         h = x + h
@@ -158,7 +113,7 @@ class TransformerBlock(nn.Module):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:
             out = h + self.feed_forward(self.ffn_norm(h))
-        return out
+        return out, attn_options_update
 
 
 class Transformer(nn.Module):
@@ -167,14 +122,24 @@ class Transformer(nn.Module):
         self.params = params
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
+        self.apply_embedding = params.apply_embedding
+        self.apply_output = params.apply_output
 
-        self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
+        self.tok_embeddings = (
+            nn.Embedding(params.vocab_size, params.dim)
+            if self.apply_embedding
+            else None
+        )
         self.rope = Rope(params)
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params, self.rope))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
-        self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
+        self.output = (
+            nn.Linear(params.dim, params.vocab_size, bias=False)
+            if self.apply_output
+            else None
+        )
         self.use_kv_cache = params.use_kv_cache
         self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
@@ -185,27 +150,30 @@ class Transformer(nn.Module):
     def forward(
         self,
         tokens: Optional[torch.LongTensor] = None,  # tokens
-        input_pos: Optional[
-            torch.LongTensor
-        ] = None,  # Scalar tensor indicating size of window of the caches
+        attn_options: Optional[ForwardOptions] = None,
         h: Optional[torch.FloatTensor] = None,  # embeddings
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Optional[Any]]]:
         if (tokens is None) ^ (h is not None):
             raise ValueError(
                 "You cannot specify both tokens and h at the same time, and must specify either one"
             )
-        if tokens is not None and h is None:
+        if self.apply_embedding and tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
-        seqlen = h.shape[1]
-        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
 
+        if attn_options is None:
+            attn_options = {}
+        seqlen = h.shape[1]
+        freqs_cos, freqs_sin = self.rope.get_freqs(
+            attn_options.get("input_pos"), seqlen
+        )
+
+        # Make a shallow copy so the updates don't get captured by export
+        attn_options_ = attn_options.copy() if attn_options is not None else {}
+        attn_options_update = None
         for layer in self.layers:
-            h = layer(
-                h,
-                freqs_cos,
-                freqs_sin,
-                input_pos,
-            )
+            h, attn_options_update = layer(h, freqs_cos, freqs_sin, attn_options_)
+            if attn_options_update is not None:
+                attn_options_.update(**attn_options_update)
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
@@ -213,28 +181,34 @@ class Transformer(nn.Module):
 
         h = self.norm(h)
 
-        logits = self.output(h)
+        if self.apply_output:
+            logits = self.output(h)
 
-        if self.output_prune_map is not None:
-            # expand to original size so that downstream applications can use the logits as-is.
-            if self.generate_full_logits:
-                # (1, seq_len, pruned_size) -> (1, seq_len, original_size)
-                expanded_logits = torch.full(
-                    [logits.shape[0], logits.shape[1], self.vocab_size],
-                    float("-inf"),
-                    device=logits.device,
-                    dtype=logits.dtype,
-                )
-                expanded_logits[:, :, list(self.output_prune_map.values())] = logits
-            else:
-                # (1, pruned_size) -> (1, original_size)
-                expanded_logits = torch.full(
-                    [logits.shape[0], self.vocab_size],
-                    float("-inf"),
-                    device=logits.device,
-                    dtype=logits.dtype,
-                )
-                expanded_logits[:, list(self.output_prune_map.values())] = logits
-            logits = expanded_logits
+            if self.output_prune_map is not None:
+                # expand to original size so that downstream applications can use the logits as-is.
+                if self.generate_full_logits:
+                    # (1, seq_len, pruned_size) -> (1, seq_len, original_size)
+                    expanded_logits = torch.full(
+                        [logits.shape[0], logits.shape[1], self.vocab_size],
+                        float("-inf"),
+                        device=logits.device,
+                        dtype=logits.dtype,
+                    )
+                    expanded_logits[:, :, list(self.output_prune_map.values())] = logits
+                else:
+                    # (1, pruned_size) -> (1, original_size)
+                    expanded_logits = torch.full(
+                        [logits.shape[0], self.vocab_size],
+                        float("-inf"),
+                        device=logits.device,
+                        dtype=logits.dtype,
+                    )
+                    expanded_logits[:, list(self.output_prune_map.values())] = logits
+                logits = expanded_logits
+        else:
+            logits = h
+
+        if attn_options_update is not None:
+            return logits, attn_options_update
 
         return logits

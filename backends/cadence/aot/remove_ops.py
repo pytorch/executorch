@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
@@ -29,7 +33,7 @@ from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
@@ -565,6 +569,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantize_per_tensor.default,
+        exir_ops.edge.cadence.dequantize_per_tensor.default,
     }
 
     # must be initialized in the constructor
@@ -739,6 +745,68 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return [shape[p] for p in permute_dims]
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class RemoveBranchedQuantDequant(ExportPass):
+    """
+    This pass looks for adjacent quant and dequant nodes with identical
+    parameters, where the quant node has other users in addition to the
+    dequant. The quant and dequant pair would be removed by the
+    FuseQuantDequantToRequantizePass if not for the multiple users. This pass
+    removes just the dequant node by connecting it to the quant's parent node
+    """
+
+    quantize_op_packets: set[EdgeOpOverloadPacket] = {
+        exir_ops.edge.cadence.quantize_per_tensor,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    }
+    dequantize_op_packets: set[EdgeOpOverloadPacket] = {
+        exir_ops.edge.cadence.dequantize_per_tensor,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+    }
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self.remove_branched(
+            graph_module, self.quantize_op_packets, self.dequantize_op_packets
+        )
+        self.remove_branched(
+            graph_module, self.dequantize_op_packets, self.quantize_op_packets
+        )
+
+        graph_module.graph.eliminate_dead_code()
+        result = super().call(graph_module)
+        return result
+
+    def remove_branched(
+        self,
+        graph_module: torch.fx.GraphModule,
+        producer_pkts: set[EdgeOpOverloadPacket],
+        consumer_pkts: set[EdgeOpOverloadPacket],
+    ) -> None:
+        for node in graph_module.graph.nodes:
+            if (
+                node.op != "call_function"
+                or not isinstance(node.target, EdgeOpOverload)
+                or get_edge_overload_packet(node.target) not in producer_pkts
+            ):
+                continue
+
+            if len(node.users) < 2:
+                continue
+
+            for user in node.users:
+                if (
+                    not isinstance(user.target, EdgeOpOverload)
+                    or get_edge_overload_packet(user.target) not in consumer_pkts
+                ):
+                    continue
+
+                # check qparams match
+                if node.args[1:] != user.args[1:]:
+                    continue
+
+                user.replace_all_uses_with(node.args[0])
+
+
 # The following class consolidates functions to remove ops that are redundant
 # in Jarvis. Currently, each function in this class iterates over each node of
 # the graph module once. In future, we could consolidate them into a monolithic
@@ -759,4 +827,5 @@ class CadenceRemoveNops:
         RemoveNopMulOpPass,
         RemoveNopAddOpPass,
         RemoveNopLinalgVectorNormOpPass,
+        RemoveBranchedQuantDequant,
     ]

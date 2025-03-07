@@ -9,6 +9,7 @@
 import collections
 import itertools
 import logging
+import math
 import typing
 from functools import partial
 from typing import Iterable, List, Optional, Tuple
@@ -39,8 +40,19 @@ def get_size(memory_config: MemoryConfig, exir_id: int) -> int:
     return memory_config.memory_sizes[exir_id - 1]
 
 
+def get_alignment(memory_config: MemoryConfig, exir_id: int) -> int:
+    # EXIR's spec.mem_id is indexed from 1..N.
+    assert memory_config.memory_alignments is not None
+    return memory_config.memory_alignments[exir_id - 1]
+
+
+def get_aligned_offset(pre_aligned_offset: int, alignment: int) -> int:
+    return int(math.ceil(pre_aligned_offset / alignment) * alignment)
+
+
 def collect_specs_from_graph_module(
     graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
 ) -> Iterable[TensorSpec]:
@@ -51,6 +63,7 @@ def collect_specs_from_graph_module(
     # Collect the specs from all the nodes in the graph module, and return it
     return collect_specs_from_nodes(
         graph_module.graph.nodes,
+        graph_signature,
         ignore_graph_input=not alloc_graph_input,
         ignore_graph_output=not alloc_graph_output,
     )
@@ -77,6 +90,10 @@ def position_based_greedy_with_hierarchy(
         ]
     ] = None,
 ) -> List[int]:
+    # We do not use the `alignment` parameter and instead use the per-memory alignment
+    # constraints from `memory_config`.
+    del alignment
+
     num_memories = get_num_memories(memory_config)
     bufsizes = [0] * num_memories
     allocated_buffers: List[List[TensorSpec]] = [[] for _ in range(num_memories)]
@@ -95,14 +112,15 @@ def position_based_greedy_with_hierarchy(
         return None
 
     def memory_available(spec: TensorSpec) -> bool:
-        return spec.mem_offset + spec.allocated_memory <= get_size(
-            memory_config, spec.mem_id
-        )
+        return get_aligned_offset(
+            spec.mem_offset + spec.allocated_memory,
+            get_alignment(memory_config, spec.mem_id),
+        ) <= get_size(memory_config, spec.mem_id)
 
     # Iterate over all the specs in sorted order
     for spec in sorted(
         collect_specs_from_graph_module(
-            graph_module, alloc_graph_input, alloc_graph_output
+            graph_module, graph_signature, alloc_graph_input, alloc_graph_output
         ),
         key=lambda spec: spec.allocated_memory,
         reverse=True,
@@ -116,7 +134,10 @@ def position_based_greedy_with_hierarchy(
                 continue
             spec.mem_offset = 0
             while memory_available(spec) and (overlapped := overlap(spec)):
-                spec.mem_offset = overlapped.mem_offset + overlapped.allocated_memory
+                spec.mem_offset = get_aligned_offset(
+                    overlapped.mem_offset + overlapped.allocated_memory,
+                    get_alignment(memory_config, spec.mem_id),
+                )
             if memory_available(spec):
                 allocated_buffers[spec.mem_id].append(spec)
                 bufsizes[spec.mem_id] = max(
@@ -163,6 +184,10 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
         ]
     ] = None,
 ) -> List[int]:
+    # We do not use the `alignment` parameter and instead use the per-memory alignment
+    # constraints from `memory_config`.
+    del alignment
+
     num_memories = get_num_memories(memory_config)
     bufsizes = [0] * num_memories
     allocated_buffers = [[] for _ in range(num_memories)]
@@ -175,7 +200,7 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
     # Iterate over all the specs in sorted order
     for spec in sorted(
         collect_specs_from_graph_module(
-            graph_module, alloc_graph_input, alloc_graph_output
+            graph_module, graph_signature, alloc_graph_input, alloc_graph_output
         ),
         key=lambda spec: spec.allocated_memory,
         reverse=True,
@@ -202,13 +227,17 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
                     # calculation of gap incorrect. Moving it out will make the algorithm degenerate
                     # to the naive one, reusing 0 tensor. The paper may have a typo here.
                     prev_offset = max(
-                        allocated_spec.mem_offset + allocated_spec.allocated_memory,
+                        get_aligned_offset(
+                            allocated_spec.mem_offset + allocated_spec.allocated_memory,
+                            get_alignment(memory_config, spec.mem_id),
+                        ),
                         prev_offset,
                     )
             if spec.mem_offset is None:
-                if prev_offset + spec.allocated_memory > get_size(
-                    memory_config, spec.mem_id
-                ):
+                if get_aligned_offset(
+                    prev_offset + spec.allocated_memory,
+                    get_alignment(memory_config, spec.mem_id),
+                ) > get_size(memory_config, spec.mem_id):
                     continue
                 else:
                     spec.mem_offset = prev_offset
@@ -240,6 +269,7 @@ def greedy_by_size_for_offset_calculation_with_hierarchy(
 
 def find_peak_memory_usages_per_memory(
     graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
@@ -255,7 +285,7 @@ def find_peak_memory_usages_per_memory(
 
     # go through all nodes in the graph, collect memory usage per spec.mem_id
     for spec in collect_specs_from_graph_module(
-        graph_module, alloc_graph_input, alloc_graph_output
+        graph_module, graph_signature, alloc_graph_input, alloc_graph_output
     ):
         if mem_constraints is not None and mem_constraints.skipped_spec(spec):
             continue
@@ -278,6 +308,7 @@ def find_peak_memory_usages_per_memory(
 
 def find_peak_memory_usage(
     graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
@@ -293,7 +324,7 @@ def find_peak_memory_usage(
 
     # Iterate over all the node specs
     for spec in collect_specs_from_graph_module(
-        graph_module, alloc_graph_input, alloc_graph_output
+        graph_module, graph_signature, alloc_graph_input, alloc_graph_output
     ):
         if spec.lifetime[0] is None or (
             mem_constraints is not None and mem_constraints.skipped_spec(spec)
@@ -348,6 +379,7 @@ def print_memory_planning_info(
     # Get the peak memory usages per memory space
     peak_memory_usages_per_memory = find_peak_memory_usages_per_memory(
         executorch_prog.exported_program().graph_module,
+        executorch_prog.exported_program().graph_signature,
         alloc_graph_input,
         alloc_graph_output,
         mem_constraints,
@@ -383,6 +415,7 @@ def print_memory_planning_info(
     # Get the total peak memory usage across all memory spaces
     total_peak_memory_usage = find_peak_memory_usage(
         executorch_prog.exported_program().graph_module,
+        executorch_prog.exported_program().graph_signature,
         alloc_graph_input,
         alloc_graph_output,
         mem_constraints,
@@ -439,7 +472,17 @@ class CadenceMemoryPlanning:
             greedy_by_size_for_offset_calculation_with_hierarchy,
         ]
 
-    def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def __call__(
+        self,
+        graph_module: torch.fx.GraphModule,
+    ) -> PassResult:
+        return self.run(graph_module)
+
+    def run(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature: Optional[ExportGraphSignature] = None,
+    ) -> PassResult:
         mem_constraints = MemConstraints(
             opt_level=self.opt_level,
             alloc_graph_input=self.alloc_graph_input,
@@ -460,6 +503,6 @@ class CadenceMemoryPlanning:
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
         )
-        mem_planning(graph_module)
+        mem_planning.run(graph_module, graph_signature)
 
         return PassResult(graph_module, True)

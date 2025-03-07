@@ -10,13 +10,7 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-BUILD_TOOL=$1
-if [[ -z "${BUILD_TOOL:-}" ]]; then
-  echo "Missing build tool (require buck2 or cmake), exiting..."
-  exit 1
-else
-  echo "Setup MacOS for ${BUILD_TOOL} ..."
-fi
+read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 
 install_buck() {
   if ! command -v zstd &> /dev/null; then
@@ -135,6 +129,13 @@ print_cmake_info
 install_pytorch_and_domains
 # We build PyTorch from source here instead of using nightly. This allows CI to test against
 # the pinned commit from PyTorch
-install_executorch "use-pt-pinned-commit"
-build_executorch_runner "${BUILD_TOOL}"
-do_not_use_nightly_on_ci
+if [[ "$EDITABLE" == "true" ]]; then
+  install_executorch --use-pt-pinned-commit --editable
+else
+  install_executorch --use-pt-pinned-commit
+fi
+build_executorch_runner "${BUILD_TOOL}" "${BUILD_MODE}"
+
+if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
+  do_not_use_nightly_on_ci
+fi

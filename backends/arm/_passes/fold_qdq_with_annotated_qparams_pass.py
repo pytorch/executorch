@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import copy
 
 from typing import cast, Dict, Set, Tuple
@@ -128,6 +130,9 @@ class FoldAndAnnotateQParamsPass(ExportPass):
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
             if n.op != "call_function":
+                continue
+            # Don't fold chains of quant-ops into each other.
+            if n.target in (q_op, dq_op):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node

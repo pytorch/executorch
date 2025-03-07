@@ -31,6 +31,22 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "squeeze_unsqueeze_inputs",
+    srcs = [
+        "squeeze_unsqueeze_inputs.py",
+    ],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:custom_ops_lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ]
+)
+
+runtime.python_library(
     name = "remove_asserts",
     srcs = ["remove_asserts.py"],
     visibility = [
@@ -99,6 +115,7 @@ runtime.python_library(
         ":remove_asserts",
         ":remove_local_scalar_dense",
         ":remove_redundant_ops",
-        ":tag_memory_meta_pass"
+        ":squeeze_unsqueeze_inputs",
+        ":tag_memory_meta_pass",
     ]
 )

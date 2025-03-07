@@ -138,7 +138,7 @@ to ExecuTorch.
 ### Export a Program
 ExecuTorch provides APIs to compile a PyTorch [`nn.Module`](https://pytorch.org/docs/stable/generated/torch.nn.Module.html) to a `.pte` binary consumed by the ExecuTorch runtime.
 1. [`torch.export`](https://pytorch.org/docs/stable/export.html)
-1. [`exir.to_edge`](https://pytorch.org/executorch/stable/export-to-executorch-api-reference.html#exir.to_edge)
+1. [`exir.to_edge`](export-to-executorch-api-reference.md#exir.to_edge)
 1. [`exir.to_executorch`](ir-exir.md)
 1. Save the result as a [`.pte` binary](pte-file-format.md) to be consumed by the ExecuTorch runtime.
 
@@ -210,6 +210,9 @@ The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it t
   # appear in the executorch/cmake-out directory we create here.
   ./install_executorch.sh --clean
   (mkdir cmake-out && cd cmake-out && cmake ..)
+
+  # Go to work directory.
+  cd ..
 
   # Build the executor_runner target
   cmake --build cmake-out --target executor_runner -j9

@@ -27,8 +27,7 @@ layout(set = 0, binding = 3) uniform PRECISION restrict SliceArg {
   int dim;
   int offset;
   int step;
-  // Used when dim=batch. Stride is the # of plances for each batch  value.
-  int stride;
+  int image_in_channel_size;
 }
 slice_arg;
 
@@ -45,11 +44,24 @@ void main() {
 
   ivec3 in_pos = pos;
 
-  int index = pos[slice_arg.dim] / slice_arg.stride;
-  int within_stride = pos[slice_arg.dim] % slice_arg.stride;
-
-  in_pos[slice_arg.dim] = slice_arg.offset * slice_arg.stride + index * slice_arg.step *
-    slice_arg.stride + within_stride;
+  // slice along batch axis
+  if (slice_arg.dim == 3) {
+    // index of the channel inside a batch
+    const int chanl_index = pos.z % slice_arg.image_in_channel_size;
+    // index of batch
+    const int batch_index = pos.z / slice_arg.image_in_channel_size;
+    in_pos.z = (slice_arg.offset + batch_index * slice_arg.step) * slice_arg.image_in_channel_size + chanl_index;
+  } else if (slice_arg.dim == C_DIM) {
+    // index of the channel inside a batch
+    const int chanl_index = pos.z % sizes.z;
+    // index of batch
+    const int batch_index = pos.z / sizes.z;
+    in_pos.z = slice_arg.offset + batch_index * slice_arg.image_in_channel_size + chanl_index * slice_arg.step;
+  } else if (slice_arg.dim == H_DIM) {
+    in_pos.y = slice_arg.offset + pos.y * slice_arg.step;
+  } else {
+    in_pos.x = slice_arg.offset + pos.x * slice_arg.step;
+  }
 
   imageStore(image_out, pos, texelFetch(image_in, in_pos, 0));
 

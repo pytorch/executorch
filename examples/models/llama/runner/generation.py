@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import time
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
@@ -48,7 +49,9 @@ def next_token(logits: torch.Tensor, temperature: float, top_p: float) -> int:
 class LlamaRunner(ABC):
     def __init__(
         self,
+        *,
         tokenizer_path: str,
+        tokenizer_config_path: Optional[str] = None,
         max_seq_len: int,
         max_batch_size: int,
         use_kv_cache: bool,
@@ -59,19 +62,23 @@ class LlamaRunner(ABC):
         Constructor.
 
         Args:
-        tokenizer_path: path to tokenizer.model file.
-        max_seq_len: max length of the output sequence, after which the output will be clipped.
-        max_batch_size: max batch size.
-        use_kv_cache: whether to use a KV cache.
-        vocab_size: number of items in the vocab.
-        device: device to run the runner on.
+            tokenizer_path: path to tokenizer.model file.
+            max_seq_len: max length of the output sequence, after which the output will be clipped.
+            max_batch_size: max batch size.
+            use_kv_cache: whether to use a KV cache.
+            vocab_size: number of items in the vocab.
+            device: device to run the runner on.
         """
         self.max_seq_len = max_seq_len
         self.max_batch_size = max_batch_size
         self.use_kv_cache = use_kv_cache
-        self.tokenizer = get_tokenizer(tokenizer_path)
+        self.tokenizer = get_tokenizer(tokenizer_path, tokenizer_config_path)
         self.device = device
-        assert vocab_size == self.tokenizer.n_words
+        # For some models like qwen, mismatch is acceptable: https://github.com/QwenLM/Qwen2.5/issues/466#issuecomment-2146759706
+        if vocab_size != self.tokenizer.n_words:
+            print(
+                "Warning - given vocab_size in params is unequal to tokenizer vocab size."
+            )
 
     @abstractmethod
     def forward(
@@ -91,6 +98,7 @@ class LlamaRunner(ABC):
         pos_base: int = 0,
     ) -> List[int]:
         # Prefill
+        prefill_start = time.time()
         logits = self.forward(
             tokens=torch.tensor([prompt_tokens], dtype=torch.long, device=self.device),
             input_pos=(
@@ -99,11 +107,13 @@ class LlamaRunner(ABC):
                 else None
             ),
         )
+        prefill_time = time.time() - prefill_start
 
         current_token = next_token(logits, temperature, top_p)
         print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         tokens = prompt_tokens + [current_token]
 
+        generate_start = time.time()
         while len(tokens) < max_seq_len:
             if self.use_kv_cache:
                 logits = self.forward(
@@ -133,6 +143,10 @@ class LlamaRunner(ABC):
 
             print(f"{self.tokenizer.decode_token(current_token)}", end="", flush=True)
         print("\n")
+
+        generate_time = time.time() - generate_start
+        print(f"Prefill time: {prefill_time}")
+        print(f"Generation tok/s: {len(tokens) / generate_time}")
 
         return tokens if echo else tokens[len(prompt_tokens) :]
 

@@ -34,22 +34,31 @@ bool check_convolution_backward_args(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    ET_UNUSED executorch::aten::ArrayRef<bool> output_mask,
+    executorch::aten::ArrayRef<bool> output_mask,
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       transposed == false, "Transposed Convolution Backward not supported yet");
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       weight.dim() == 4, "Only 2D Convolution Backward supported for now");
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, input));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_output, input));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_input, input));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_weight, input));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_bias, input));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  if (output_mask[0]) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_input, input));
+  }
+
+  if (output_mask[1]) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_weight, input));
+  }
+
+  if (output_mask[2]) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(grad_bias, input));
+  }
+
+  ET_CHECK_OR_RETURN_FALSE(
       check_convolution_args(
           input,
           weight,
@@ -80,7 +89,7 @@ bool check_convolution_backward_args(
   ET_LOG_AND_RETURN_IF_FALSE(
       output_size_is_valid({output_sizes, output_ndim}, input.dim() - 2));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       grad_output.dim() == input.dim(),
       "grad_output should have same number of dimensions as input");
 
@@ -267,19 +276,23 @@ std::tuple<Tensor&, Tensor&, Tensor&> convolution_backward_out(
       InvalidArgument,
       ret_val);
 
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(grad_input, input.sizes()) == Error::Ok,
-      InvalidArgument,
-      ret_val);
+  if (output_mask[0]) {
+    ET_KERNEL_CHECK(
+        ctx,
+        resize_tensor(grad_input, input.sizes()) == Error::Ok,
+        InvalidArgument,
+        ret_val);
+  }
 
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(grad_weight, weight.sizes()) == Error::Ok,
-      InvalidArgument,
-      ret_val);
+  if (output_mask[1]) {
+    ET_KERNEL_CHECK(
+        ctx,
+        resize_tensor(grad_weight, weight.sizes()) == Error::Ok,
+        InvalidArgument,
+        ret_val);
+  }
 
-  if (bias_sizes_opt.has_value()) {
+  if (bias_sizes_opt.has_value() && output_mask[2]) {
     ET_KERNEL_CHECK(
         ctx,
         resize_tensor(grad_bias, bias_sizes_opt.value()) == Error::Ok,

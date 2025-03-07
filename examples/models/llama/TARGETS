@@ -16,6 +16,7 @@ runtime.python_library(
         "rope.py",
         "attention.py",
         "model_args.py",
+        "norm.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
@@ -24,6 +25,23 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "static_attention",
+    srcs = [
+        "static_attention.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":llama_transformer",
         "//caffe2:torch",
     ],
 )
@@ -78,11 +96,12 @@ runtime.command_alias(
 )
 
 runtime.python_library(
-    name = "export_library",
+    name = "source_transformation",
+    visibility = [
+        "//executorch/examples/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
     srcs = [
-        "export_llama.py",
-        "export_llama_lib.py",
-        "model.py",
         "source_transformation/apply_spin_quant_r1_r2.py",
         "source_transformation/attention.py",
         "source_transformation/lora.py",
@@ -97,6 +116,15 @@ runtime.python_library(
         "source_transformation/vulkan_rope.py",
         "source_transformation/attention_sink.py",
     ],
+)
+
+runtime.python_library(
+    name = "export_library",
+    srcs = [
+        "export_llama.py",
+        "export_llama_lib.py",
+        "model.py",
+    ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
     visibility = [
@@ -106,9 +134,11 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        ":source_transformation",
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
         "//executorch/backends/vulkan/_passes:vulkan_passes",
+        "//executorch/exir/passes:init_mutable_pass",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
         "//executorch/exir/passes:init_mutable_pass",

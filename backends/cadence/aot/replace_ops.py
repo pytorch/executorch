@@ -1,4 +1,9 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 
 # This file contains all the functions that replace one op with another in the
@@ -33,6 +38,9 @@ from executorch.backends.cadence.aot.pass_utils import (
 )
 from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
+from executorch.backends.transforms.replace_scalar_with_tensor import (
+    ReplaceScalarWithTensorArgPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, ProxyValue
@@ -154,11 +162,12 @@ class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op not in {exir_ops.edge.quantized_decomposed.quantize_per_tensor.default}:
+        ns = exir_ops.edge if isinstance(op, EdgeOpOverload) else torch.ops
+        if op != ns.quantized_decomposed.quantize_per_tensor.default:
             return super().call_operator(op, args, kwargs, meta)
 
         return super().call_operator(
-            exir_ops.edge.cadence.quantize_per_tensor.default,
+            ns.cadence.quantize_per_tensor.default,
             args,
             kwargs,
             meta,
@@ -180,11 +189,12 @@ class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op not in {exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default}:
+        ns = exir_ops.edge if isinstance(op, EdgeOpOverload) else torch.ops
+        if op != ns.quantized_decomposed.dequantize_per_tensor.default:
             return super().call_operator(op, args, kwargs, meta)
 
         return super().call_operator(
-            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            ns.cadence.dequantize_per_tensor.default,
             args,
             kwargs,
             meta,
@@ -1709,63 +1719,7 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
         )
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceScalarWithTensorArgPass(ExportPass):
-    """
-    For binary ops like add.Scalar, sub.Scalar mul.Scalar, and div.Scalar,
-    replace the scalar arg with Tensor arg.
-    """
-
-    scalar_to_tensor_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
-        exir_ops.edge.aten.add.Scalar: exir_ops.edge.aten.add.Tensor,
-        exir_ops.edge.aten.sub.Scalar: exir_ops.edge.aten.sub.Tensor,
-        exir_ops.edge.aten.mul.Scalar: exir_ops.edge.aten.mul.Tensor,
-        exir_ops.edge.aten.div.Scalar: exir_ops.edge.aten.div.Tensor,
-    }
-
-    def get_replacement(self, op, args, kwargs, meta):
-        return super().call_operator(
-            # Replace with .Tensor variant.
-            op=self.scalar_to_tensor_ops[op],
-            args=(
-                # Tensor arg.
-                args[0],
-                # Scalar arg - replace with aten.full tensor.
-                super().call_operator(
-                    exir_ops.edge.aten.full.default,
-                    args=(
-                        (1,),
-                        args[1],
-                    ),
-                    kwargs={"dtype": args[0].to_tensor().dtype},
-                    meta=meta,
-                ),
-                # Other args.
-                *args[2:],
-            ),
-            kwargs=kwargs,
-            meta=meta,
-        )
-
-    def call_operator(self, op, args, kwargs, meta):
-        if op not in self.scalar_to_tensor_ops:
-            return super().call_operator(op, args, kwargs, meta)
-
-        # There must be exactly 2 args (3 for add and sub containing alpha)
-        assert len(args) == 2 or len(args) == 3
-
-        # If there are two args, just replace the op.
-        if len(args) == 2:
-            return self.get_replacement(op, args, kwargs, meta)
-
-        # In case the op has three args, it must be scalar add/sub op.
-        if (
-            op not in {exir_ops.edge.aten.add.Scalar, exir_ops.edge.aten.sub.Scalar}
-            or "alpha" in kwargs
-        ):
-            return super().call_operator(op, args, kwargs, meta)
-
-        return self.get_replacement(op, args, kwargs, meta)
+register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -1885,6 +1839,10 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
     replaced_scalar_args: dict[
         EdgeOpOverloadPacket, tuple[EdgeOpOverload, Sequence[int]]
     ] = {
+        exir_ops.edge.cadence.quantized_add: (
+            exir_ops.edge.cadence.quantized_add.per_tensor,
+            [1, 2, 4, 5],
+        ),
         exir_ops.edge.cadence.quantized_conv: (
             exir_ops.edge.cadence.quantized_conv.per_tensor,
             [8, 9, 12, 13],
@@ -2071,10 +2029,32 @@ class ReplaceIm2RowWithViewPass(ExportPass):
         )
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplaceEmptyTensorsWithFullPass(ExportPass):
+    """Replaces nodes that produce empty tensors with full nodes."""
+
+    def call_operator(self, op, args, kwargs, meta):
+        val = meta.data.get("val", None)
+        if isinstance(val, torch.Tensor) and val.numel() == 0:
+            return super().call_operator(
+                exir_ops.edge.aten.full.default,
+                args=(val.shape, 0),
+                kwargs={"dtype": val.dtype},
+                meta=meta,
+            )
+        return super().call_operator(op, args, kwargs, meta)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        ret = super().call(graph_module)
+        modified = ret.graph_module.graph.eliminate_dead_code() or ret.modified
+        return PassResult(ret.graph_module, modified)
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
     passes = [
+        ReplaceEmptyTensorsWithFullPass,
         ReplaceFunctionallyEquivalentOpTargets,
         ReplaceTCopyWithTransposePass,
         ReplacePermuteWithTransposePass,

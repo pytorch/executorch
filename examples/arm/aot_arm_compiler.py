@@ -13,15 +13,23 @@ import logging
 import os
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder, CompileSpec
-from executorch.backends.arm.arm_partitioner import ArmPartitioner
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    ArmQuantizer,
-    get_symmetric_quantization_config,
+from examples.devtools.scripts.export_bundled_program import save_bundled_program
+from executorch.backends.arm.arm_backend import (
+    ArmCompileSpecBuilder,
+    get_tosa_spec,
+    is_ethosu,
+    is_tosa,
 )
+from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    EthosUQuantizer,
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
+)
+from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
 from executorch.backends.arm.util.arm_model_evaluator import (
@@ -29,11 +37,14 @@ from executorch.backends.arm.util.arm_model_evaluator import (
     MobileNetV2Evaluator,
 )
 from executorch.devtools.backend_debug import get_delegation_info
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
 
@@ -48,27 +59,50 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
 
 
-def get_model_and_inputs_from_name(model_name: str) -> Tuple[torch.nn.Module, Any]:
+def get_model_and_inputs_from_name(
+    model_name: str, model_input: str | None
+) -> Tuple[torch.nn.Module, Any]:
     """Given the name of an example pytorch model, return it and example inputs.
 
     Raises RuntimeError if there is no example model corresponding to the given name.
     """
+    example_inputs = None
+    if model_input is not None:
+        logging.info(f"Load model input from {model_input}")
+        if model_input.endswith(".pt"):
+            example_inputs = torch.load(model_input, weights_only=False)
+        else:
+            raise RuntimeError(
+                f"Model input data '{model_input}' is not a valid name. Use --model_input <FILE>.pt e.g. saved with torch.save()"
+            )
+
     # Case 1: Model is defined in this file
     if model_name in models.keys():
+        logging.info(f"Internal model {model_name}")
         model = models[model_name]()
-        example_inputs = models[model_name].example_input
+        if example_inputs is None:
+            example_inputs = models[model_name].example_input
     # Case 2: Model is defined in examples/models/
     elif model_name in MODEL_NAME_TO_MODEL.keys():
         logging.warning(
             "Using a model from examples/models not all of these are currently supported"
         )
-        model, example_inputs, _, _ = EagerModelFactory.create_model(
+        logging.info(
+            f"Load {model_name} -> {MODEL_NAME_TO_MODEL[model_name]} from examples/models"
+        )
+
+        model, tmp_example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
+        if example_inputs is None:
+            example_inputs = tmp_example_inputs
     # Case 3: Model is in an external python file loaded as a module.
     #         ModelUnderTest should be a torch.nn.module instance
     #         ModelInputs should be a tuple of inputs to the forward function
     elif model_name.endswith(".py"):
+        logging.info(
+            f"Load model file {model_name}   Variable ModelUnderTest=<Model> ModelInputs=<ModelInput>"
+        )
         import importlib.util
 
         # load model's module and add it
@@ -76,20 +110,29 @@ def get_model_and_inputs_from_name(model_name: str) -> Tuple[torch.nn.Module, An
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         model = module.ModelUnderTest
-        example_inputs = module.ModelInputs
-
+        if example_inputs is None:
+            example_inputs = module.ModelInputs
+    # Case 4: Model is in an saved model file torch.save(model)
+    elif model_name.endswith(".pth") or model_name.endswith(".pt"):
+        logging.info(f"Load model file {model_name}")
+        model = torch.load(model_name, weights_only=False)
+        if example_inputs is None:
+            raise RuntimeError(
+                f"Model '{model_name}' requires input data specify --model_input <FILE>.pt"
+            )
     else:
         raise RuntimeError(
             f"Model '{model_name}' is not a valid name. Use --help for a list of available models."
         )
-
+    logging.debug(f"Loaded model: {model}")
+    logging.debug(f"Loaded input: {example_inputs}")
     return model, example_inputs
 
 
 def quantize(
     model: torch.nn.Module,
     model_name: str,
-    tosa_spec: TosaSpecification,
+    compile_specs: list[CompileSpec],
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
@@ -97,7 +140,13 @@ def quantize(
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
-    quantizer = ArmQuantizer(tosa_spec)
+    quantizer = None
+    if is_ethosu(compile_specs):
+        quantizer = EthosUQuantizer(compile_specs)
+    elif is_tosa(compile_specs):
+        quantizer = TOSAQuantizer(get_tosa_spec(compile_specs))
+    else:
+        raise RuntimeError("Unsupported compilespecs for quantization!")
 
     # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
     operator_config = get_symmetric_quantization_config(is_per_channel=False)
@@ -171,7 +220,7 @@ class SoftmaxModule(torch.nn.Module):
         return z
 
     example_input = (torch.ones(2, 2),)
-    can_delegate = False
+    can_delegate = True
 
 
 class MultipleOutputsModule(torch.nn.Module):
@@ -263,8 +312,12 @@ def get_compile_spec(
     memory_mode: Optional[str] = None,
 ) -> list[CompileSpec]:
     spec_builder = None
-    if target == "TOSA":
-        spec_builder = ArmCompileSpecBuilder().tosa_compile_spec("TOSA-0.80+BI")
+    if target.startswith("TOSA"):
+        try:
+            tosa_spec = TosaSpecification.create_from_string(target)
+        except:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+        spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
     elif "ethos-u55" in target:
         spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
             target,
@@ -353,7 +406,13 @@ def get_args():
         "-m",
         "--model_name",
         required=True,
-        help=f"Provide model name. Valid ones: {set(list(models.keys())+list(MODEL_NAME_TO_MODEL.keys()))}",
+        help=f"Model file .py/.pth/.pt, builtin model or a model from examples/models. Valid names: {set(list(models.keys())+list(MODEL_NAME_TO_MODEL.keys()))}",
+    )
+    parser.add_argument(
+        "--model_input",
+        required=False,
+        default=None,
+        help="Provide model input .pt file, or python variable name",
     )
     parser.add_argument(
         "-d",
@@ -362,6 +421,13 @@ def get_args():
         required=False,
         default=False,
         help="Flag for producing ArmBackend delegated model",
+    )
+    parser.add_argument(
+        "--bundleio",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for producing BundleIO bpte file with input/output test/ref data.",
     )
     parser.add_argument(
         "-t",
@@ -418,7 +484,7 @@ def get_args():
         "--output",
         action="store",
         required=False,
-        help="Location for outputs, if not the default of cwd.",
+        help="Filename (if .pte or .bpte is used) or a folder for outputs, if not specified the default is to place files in cwd.",
     )
     parser.add_argument(
         "--system_config",
@@ -462,15 +528,15 @@ def get_args():
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
-    if args.system_config is None:
+    if "ethos-u" in args.target and args.system_config is None:
         if "u55" in args.target:
             args.system_config = "Ethos_U55_High_End_Embedded"
         elif "u85" in args.target:
-            args.system_confg = "Ethos_U85_SYS_DRAM_Mid"
+            args.system_config = "Ethos_U85_SYS_DRAM_Mid"
         else:
             raise RuntimeError(f"Invalid target name {args.target}")
 
-    if args.memory_mode is None:
+    if "ethos-u" in args.target and args.memory_mode is None:
         if "u55" in args.target:
             args.memory_mode = "Shared_Sram"
         elif "u85" in args.target:
@@ -481,12 +547,137 @@ def get_args():
     return args
 
 
-if __name__ == "__main__":
+def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: str):
+    # Construct MethodTestSuite for Each Method
+
+    # Generate Test Suites
+    method_names = [
+        method.name for method in exec_prog.executorch_program.execution_plan
+    ]
+
+    program_inputs = {m_name: [example_inputs] for m_name in method_names}
+
+    method_test_suites: List[MethodTestSuite] = []
+    for m_name in method_names:
+        method_inputs = program_inputs[m_name]
+
+        # To create a bundled program, we first create every test cases from input. We leverage eager model
+        # to generate expected output for each test input, and use MethodTestCase to hold the information of
+        # each test case. We gather all MethodTestCase for same method into one MethodTestSuite, and generate
+        # bundled program by all MethodTestSuites.
+        method_test_cases: List[MethodTestCase] = []
+
+        if args.intermediates:
+            # Save model.pth
+            intermediates_path = Path(args.intermediates)
+            model_path = os.path.join(intermediates_path, "model.pth")
+            try:
+                torch.save(original_model, model_path)
+            except:
+                logging.warning(f"Could not torch.save(model, {model_path})")
+        method_index = 0
+        for method_input in method_inputs:
+            output_ref = original_model(*method_input)
+
+            logging.debug(f"input_{method_index}: {method_input}")
+            logging.debug(f"output_ref_{method_index}: {output_ref}")
+
+            if args.intermediates:
+                # Save model input and referece output
+                input_path = os.path.join(
+                    intermediates_path, f"input_{method_index}.pt"
+                )
+                try:
+                    torch.save(method_input, input_path)
+                except:
+                    logging.warning(
+                        f"Could not torch.save(input_{method_index}, {input_path})"
+                    )
+                refoutput_path = os.path.join(
+                    intermediates_path, f"output_ref_{method_index}.pt"
+                )
+                try:
+                    torch.save(output_ref, refoutput_path)
+                except:
+                    logging.warning(
+                        f"Could not torch.save(output_ref_{method_index}, {refoutput_path})"
+                    )
+
+            method_test_cases.append(
+                MethodTestCase(
+                    inputs=method_input,
+                    expected_outputs=output_ref,
+                )
+            )
+
+            method_index = method_index + 1
+
+        method_test_suites.append(
+            MethodTestSuite(
+                method_name=m_name,
+                test_cases=method_test_cases,
+            )
+        )
+
+    # Generate BundledProgram
+    save_bundled_program(exec_prog, method_test_suites, output_name)
+
+
+def to_edge_TOSA_delegate(
+    exported_program,
+    args,
+    model: torch.nn.Module,
+):
+    model_int8 = None
+    # As we can target multiple output encodings, one must
+    # be specified.
+    compile_spec = get_compile_spec(
+        args.target,
+        args.intermediates,
+        args.system_config,
+        args.memory_mode,
+    )
+    if args.quantize:
+        model = quantize(
+            model,
+            args.model_name,
+            compile_spec,
+            example_inputs,
+            args.evaluate,
+            args.evaluate_config,
+        )
+        model_int8 = model
+        # Wrap quantized model back into an exported_program
+        exported_program = torch.export.export_for_training(model, example_inputs)
+
+        if args.intermediates:
+            os.makedirs(args.intermediates, exist_ok=True)
+
+    if is_ethosu(compile_spec):
+        partitioner = EthosUPartitioner(compile_spec)
+    elif is_tosa(compile_spec):
+        partitioner = TOSAPartitioner(compile_spec)
+    else:
+        raise RuntimeError(f"Unhandled compile spec: {compile_spec}")
+
+    edge = to_edge_transform_and_lower(
+        exported_program,
+        partitioner=[partitioner],
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+        ),
+    )
+    return model_int8, edge
+
+
+if __name__ == "__main__":  # noqa: C901
     args = get_args()
 
     # Pick model from one of the supported lists
-    model, example_inputs = get_model_and_inputs_from_name(args.model_name)
-    model = model.eval()
+    original_model, example_inputs = get_model_and_inputs_from_name(
+        args.model_name, args.model_input
+    )
+    model = original_model.eval()
 
     # export_for_training under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
@@ -497,57 +688,8 @@ if __name__ == "__main__":
     # Quantize if required
     model_int8 = None
     if args.delegate:
-        # As we can target multiple output encodings from ArmBackend, one must
-        # be specified.
-        compile_spec = get_compile_spec(
-            args.target,
-            args.intermediates,
-            args.system_config,
-            args.memory_mode,
-        )
-        if args.quantize:
-            tosa_spec = TosaSpecification.create_from_compilespecs(compile_spec)
-            model = quantize(
-                model,
-                args.model_name,
-                tosa_spec,
-                example_inputs,
-                args.evaluate,
-                args.evaluate_config,
-            )
-            model_int8 = model
-            # Wrap quantized model back into an exported_program
-            exported_program = torch.export.export_for_training(model, example_inputs)
-
-            if args.intermediates:
-                os.makedirs(args.intermediates, exist_ok=True)
-
-        edge = to_edge_transform_and_lower(
-            exported_program,
-            partitioner=[ArmPartitioner(compile_spec)],
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False,
-            ),
-        )
-
+        model_int8, edge = to_edge_TOSA_delegate(exported_program, args, model)
     else:
-        if args.quantize:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-0.80.0+BI")
-            model = quantize(
-                model,
-                args.model_name,
-                tosa_spec,
-                example_inputs,
-                args.evaluate,
-                args.evaluate_config,
-            )
-            model_int8 = model
-            # Wrap quantized model back into an exported_program
-            exported_program = torch.export.export_for_training(model, example_inputs)
-
-            if args.intermediates:
-                os.makedirs(args.intermediates, exist_ok=True)
-
         edge = to_edge_transform_and_lower(
             exported_program,
             compile_config=EdgeCompileConfig(
@@ -577,10 +719,33 @@ if __name__ == "__main__":
         else f"_arm_{args.target}"
     )
 
-    if args.output is not None:
-        output_name = os.path.join(args.output, output_name)
+    if args.bundleio:
+        output_name = f"{output_name}.bpte"
+    else:
+        output_name = f"{output_name}.pte"
 
-    save_pte_program(exec_prog, output_name)
+    if args.output is not None:
+        if args.output.endswith(".pte") or args.output.endswith(".bpte"):
+            # --output is a pte or bundle pte filename use it as output name
+            if args.bundleio and not args.output.endswith(".bpte"):
+                raise RuntimeError(
+                    f"--bundleio expects a .bpte file ending to --output and not .pte {args.output}"
+                )
+            if not args.bundleio and not args.output.endswith(".pte"):
+                raise RuntimeError(
+                    f"When not using --bundleio a .bpte file should not be use as --output {args.output}"
+                )
+            output_name = args.output
+        else:
+            # --output is a folder
+            output_name = os.path.join(args.output, output_name)
+
+    if args.bundleio:
+        save_bpte_program(exec_prog, original_model, output_name)
+        print(f"Bundle PTE file saved as {output_name}")
+    else:
+        save_pte_program(exec_prog, output_name)
+        print(f"PTE file saved as {output_name}")
 
     if args.evaluate:
         evaluate_model(

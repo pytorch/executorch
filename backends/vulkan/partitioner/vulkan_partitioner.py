@@ -61,7 +61,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
 
-    def op_node_is_compatible(
+    def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
     ) -> Tuple[bool, str]:
         """
@@ -98,8 +98,12 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 and utils.is_tensor_node(arg)
                 and i not in features.skip_limits_check
             ):
+                # Check for bool inputs
+                if utils.tensor_node_is_bool(arg):
+                    return False, "contains bool tensor"
+
                 # Check for high dimensional tensors
-                if utils.is_tensor_node(arg) and utils.tensor_node_is_high_dim(arg):
+                if utils.tensor_node_is_high_dim(arg):
                     return False, "contains high dim tensor"
 
                 arg_texture_layouts = utils.possible_node_memory_layouts(

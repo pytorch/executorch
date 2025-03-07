@@ -5,7 +5,13 @@ load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "CXX", "FBCODE"
 
 
 def get_vulkan_compiler_flags():
-    return ["-Wno-missing-prototypes", "-Wno-global-constructors"]
+    return select({
+        "DEFAULT": [
+            "-Wno-global-constructors",
+            "-Wno-missing-prototypes",
+        ],
+        "ovr_config//os:windows": [],
+    })
 
 def get_labels(no_volk):
     if no_volk:
@@ -328,6 +334,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:fuse_dequant_linear",
                 "//executorch/backends/transforms:fuse_view_copy",
                 "//executorch/backends/transforms:remove_clone_ops",
+                "//executorch/backends/transforms:view_copy_to_squeeze_unsqueeze",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
                 "//executorch/backends/vulkan/serialization:lib",
                 "//executorch/exir/backend:backend_details",

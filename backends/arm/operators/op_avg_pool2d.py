@@ -41,7 +41,7 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         output: TosaArg,
         input_zp: int,
         output_zp: int,
-        accumulator_type,
+        accumulator_type: ts.DType,
     ) -> None:
         input_tensor = inputs[0]
 

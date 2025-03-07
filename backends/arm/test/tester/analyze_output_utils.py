@@ -137,6 +137,8 @@ def print_error_diffs(
             N, C, H, W = (1, 1, shape[0], shape[1])
         case 1:
             N, C, H, W = (1, 1, 1, shape[0])
+        case 0:
+            N, C, H, W = (1, 1, 1, 1)
         case _:
             raise ValueError("Invalid tensor rank")
 

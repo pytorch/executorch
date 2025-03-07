@@ -58,6 +58,21 @@ deps = [
   "executorch_core",
 ]
 
+# HACK: prevent reduce_util from also showing up in custom_ops. The
+# actual medium-term fix is to stop using Buck to drive our CMake
+# builds.
+[targets.reduce_util]
+buck_targets = [
+  "//kernels/portable/cpu/util:reduce_util",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+]
+
 [targets.optimized_kernels]
 buck_targets = [
   "//kernels/optimized:generated_lib",
@@ -73,6 +88,7 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_parallel",
   "extension_threadpool",
   "portable_kernels",
 ]
@@ -115,11 +131,12 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_parallel",
 ]
 
-[targets.optimized_native_cpu_ops_oss]
+[targets.optimized_native_cpu_ops]
 buck_targets = [
-  "//configurations:optimized_native_cpu_ops_oss",
+  "//configurations:optimized_native_cpu_ops",
 ]
 filters = [
   ".cpp$",
@@ -129,6 +146,8 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_parallel",
+  "extension_threadpool",
   "portable_kernels",
 ]
 # ---------------------------------- core end ----------------------------------
@@ -144,6 +163,27 @@ filters = [
   ".cpp$",
 ]
 deps = [
+  "executorch_core",
+  "executorch",
+]
+
+[targets.extension_flat_tensor_schema]
+buck_targets = [
+  "//extension/flat_tensor/serialize:generated_headers",
+]
+filters = [
+  ".fbs$",
+]
+
+[targets.extension_flat_tensor]
+buck_targets = [
+  "//extension/flat_tensor:flat_tensor_data_map",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "extension_flat_tensor_schema",
   "executorch_core",
   "executorch",
 ]
@@ -185,6 +225,19 @@ deps = [
   "executorch_core",
   "extension_module",
   "extension_runner_util",
+]
+
+[targets.extension_parallel]
+buck_targets = [
+  "//extension/parallel:thread_parallel",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+  "extension_threadpool",
 ]
 
 [targets.extension_tensor]
@@ -365,10 +418,7 @@ buck_targets = [
   "//extension/llm/custom_ops:custom_ops",
 ]
 filters = [
-  # Second clause is to pick up fht_neon.c/fht_avx.c from FFHT. TODO:
-  # remove filters and patch extract_sources.py's Buck query to fetch
-  # srcs; presumably filters is here to remove .h files.
-  "(.cpp$)|(fht.*\\.c$)",
+  ".cpp$",
 ]
 excludes = [
   "^codegen",
@@ -377,8 +427,26 @@ deps = [
   "executorch",
   "executorch_core",
   "optimized_kernels",
+  "extension_parallel",
   "extension_threadpool",
+  "reduce_util",
   "xnnpack_backend",
+]
+
+[targets.extension_llm_tokenizer]
+buck_targets = [
+  "//extension/llm/tokenizer:bpe_tokenizer",
+  "//extension/llm/tokenizer:tiktoken",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "executorch_core",
 ]
 
 [targets.llama_runner]
@@ -397,9 +465,10 @@ deps = [
   "executorch_core",
   "extension_data_loader",
   "extension_module",
+  "extension_parallel",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
-  "optimized_native_cpu_ops_oss",
+  "optimized_native_cpu_ops",
 ]
 # ---------------------------------- LLama end ----------------------------------

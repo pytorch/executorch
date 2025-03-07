@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from typing import Callable, Dict
 
 import torch
@@ -37,6 +39,7 @@ class InsertTableOpsPass(ExportPass):
 
     table_ops: Dict[EdgeOpOverload, Callable[[torch.Tensor], torch.Tensor]] = {
         exir_ops.edge.aten.exp.default: torch.exp,
+        exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,

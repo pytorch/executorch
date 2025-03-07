@@ -74,7 +74,7 @@ void Context::cmd_reset_querypool() {
 void Context::report_shader_dispatch_start(
     const std::string& shader_name,
     const utils::uvec3& global_wg_size,
-    const utils::uvec3& local_wg_size,
+    const utils::WorkgroupSize& local_wg_size,
     const uint32_t dispatch_id) {
   if (querypool_) {
     querypool_.shader_profile_begin(
@@ -82,7 +82,7 @@ void Context::report_shader_dispatch_start(
         dispatch_id,
         shader_name,
         vkapi::create_extent3d(global_wg_size),
-        vkapi::create_extent3d(local_wg_size));
+        vkapi::create_extent3d((utils::uvec3)local_wg_size));
   }
 }
 
@@ -115,7 +115,7 @@ void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
 
 vkapi::DescriptorSet Context::get_descriptor_set(
     const vkapi::ShaderInfo& shader_descriptor,
-    const utils::uvec3& local_workgroup_size,
+    const utils::WorkgroupSize& local_workgroup_size,
     const vkapi::SpecVarList& additional_constants,
     const uint32_t push_constants_size) {
   VkDescriptorSetLayout shader_layout =
@@ -124,17 +124,11 @@ vkapi::DescriptorSet Context::get_descriptor_set(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  vkapi::SpecVarList spec_constants = {
-      SV(local_workgroup_size[0u]),
-      SV(local_workgroup_size[1u]),
-      SV(local_workgroup_size[2u])};
-
-  spec_constants.append(additional_constants);
-
   VkPipeline pipeline = pipeline_cache().retrieve(
       {pipeline_layout_cache().retrieve(shader_layout, push_constants_size),
        shader_cache().retrieve(shader_descriptor),
-       spec_constants});
+       additional_constants,
+       local_workgroup_size});
 
   cmd_.bind_pipeline(pipeline, pipeline_layout, local_workgroup_size);
 
@@ -280,13 +274,13 @@ VkPipeline Context::get_shader_pipeline(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  vkapi::SpecVarList spec_constants_full_list = {4u, 4u, 1u};
-  spec_constants_full_list.append(spec_constants);
+  const utils::WorkgroupSize local_workgroup_size(4u, 4u, 1u);
 
   VkPipeline pipeline = pipeline_cache().retrieve(
       {pipeline_layout,
        shader_cache().retrieve(shader),
-       spec_constants_full_list});
+       spec_constants,
+       local_workgroup_size});
 
   return pipeline;
 }

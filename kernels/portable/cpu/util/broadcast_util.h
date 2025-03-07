@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
@@ -289,23 +291,18 @@ inline void apply_binary_elementwise_fn(
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < out.numel(); ++i) {
-    size_t a_linear_index = i;
-    size_t b_linear_index = i;
-
-    if (any_is_broadcasted) {
-      size_t out_indexes[kTensorDimensionLimit];
-      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
-
-      if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
-      }
-      if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
-      }
+  if (any_is_broadcasted) {
+    for (const auto [out_index, a_index, b_index] :
+         BroadcastIndexesRange<2>(out, a, b)) {
+      data_out[out_index] = compute_fun(data_a[a_index], data_b[b_index]);
     }
+  } else {
+    for (const auto i : c10::irange(out.numel())) {
+      size_t a_linear_index = i;
+      size_t b_linear_index = i;
 
-    data_out[i] = compute_fun(data_a[a_linear_index], data_b[b_linear_index]);
+      data_out[i] = compute_fun(data_a[a_linear_index], data_b[b_linear_index]);
+    }
   }
 }
 
@@ -337,28 +334,16 @@ inline void apply_ternary_elementwise_fn(
   const CTYPE_C* const data_c = c.const_data_ptr<CTYPE_C>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  for (size_t i = 0; i < out.numel(); ++i) {
-    size_t a_linear_index = i;
-    size_t b_linear_index = i;
-    size_t c_linear_index = i;
-
-    if (any_is_broadcasted) {
-      size_t out_indexes[kTensorDimensionLimit];
-      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
-
-      if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
-      }
-      if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
-      }
-      if (c_is_broadcasted) {
-        c_linear_index = linearize_access_indexes(out_indexes, out.dim(), c);
-      }
+  if (any_is_broadcasted) {
+    for (const auto [out_index, a_index, b_index, c_index] :
+         BroadcastIndexesRange<3>(out, a, b, c)) {
+      data_out[out_index] =
+          compute_fun(data_a[a_index], data_b[b_index], data_c[c_index]);
     }
-
-    data_out[i] = compute_fun(
-        data_a[a_linear_index], data_b[b_linear_index], data_c[c_linear_index]);
+  } else {
+    for (const auto i : c10::irange(out.numel())) {
+      data_out[i] = compute_fun(data_a[i], data_b[i], data_c[i]);
+    }
   }
 }
 

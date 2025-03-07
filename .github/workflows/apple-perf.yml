@@ -20,7 +20,7 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: stories110M
+        default: llama
       devices:
         description: Target devices to run benchmark
         required: false
@@ -36,7 +36,7 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: stories110M
+        default: llama
       devices:
         description: Target devices to run benchmark
         required: false
@@ -181,7 +181,7 @@ jobs:
         BUILD_TOOL=cmake
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+          .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
         if [[ ${{ matrix.config }} == *"coreml"* ]]; then
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
@@ -233,6 +233,7 @@ jobs:
                 --preq_mode 8da4w_output_8da8w \
                 --preq_group_size 32 \
                 --max_seq_length 2048 \
+                --max_context_length 2048 \
                 --output_name "${OUT_ET_MODEL_NAME}.pte" \
                 -kv \
                 -d fp32 \
@@ -264,6 +265,7 @@ jobs:
                 --xnnpack-extended-ops \
                 -d fp32 \
                 --max_seq_length 2048 \
+                --max_context_length 2048 \
                 --output_name "${OUT_ET_MODEL_NAME}.pte" \
                 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
@@ -365,7 +367,7 @@ jobs:
         BUILD_TOOL=cmake
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Setup Apple certificate for iOS development
@@ -384,25 +386,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch iOS frameworks"
-        FRAMEWORKS=(
-          "executorch"
-          "backend_coreml"
-          "backend_mps"
-          "backend_xnnpack"
-          "kernels_custom"
-          "kernels_optimized"
-          "kernels_portable"
-          "kernels_quantized"
-        )
-
-        # Build Release iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
-
-        mkdir -p extension/benchmark/apple/Benchmark/Frameworks
-        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cp -r "cmake-out/${FRAMEWORK}.xcframework" extension/benchmark/apple/Benchmark/Frameworks/
-        ) done
+          build/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
         echo "::endgroup::"
 
         # NB: Although exported models can be copied to this directory and bundled together with the

@@ -243,7 +243,6 @@ class TestConv2d(unittest.TestCase):
                 self._test(
                     Conv2d(bias=has_bias, transpose=transpose),
                     quant_config=get_symmetric_quantization_config(),
-                    check_quantized=not transpose,  # XNNPackQuantizer does not quantize this pattern yet
                 )
 
     def test_qs8_conv2d_per_channel(self) -> None:
@@ -251,7 +250,7 @@ class TestConv2d(unittest.TestCase):
             self._test(
                 Conv2d(transpose=transpose),
                 quant_config=get_symmetric_quantization_config(is_per_channel=True),
-                check_quantized=not transpose,  # XNNPackQuantizer does not quantize this pattern yet
+                delegated=not transpose,  # XNNPACK does not support per input channel quantization for transpose convolutions with groups > 1
             )
 
     def test_fp32_conv2d_seq(self) -> None:
@@ -264,7 +263,6 @@ class TestConv2d(unittest.TestCase):
                 Conv2dSeq(transpose=transpose),
                 conv_count=2,
                 quant_config=get_symmetric_quantization_config(),
-                check_quantized=not transpose,  # XNNPackQuantizer does not quantize this pattern yet
             )
 
     def test_fp32_conv2d_single_int_params(self):
@@ -282,7 +280,6 @@ class TestConv2d(unittest.TestCase):
         # - Groups must equal In Channels
         # - Out Channels must be a positive multiple of In Channels
         for transpose in (True, False):
-
             self._test(
                 Conv2d(groups=2, in_channels=2, out_channels=6, transpose=transpose)
             )
@@ -292,7 +289,6 @@ class TestConv2d(unittest.TestCase):
             self._test(
                 Conv2d(groups=2, in_channels=2, out_channels=6, transpose=transpose),
                 quant_config=get_symmetric_quantization_config(),
-                check_quantized=not transpose,  # XNNPackQuantizer does not quantize this pattern yet
             )
 
     def test_fp32_conv2d_bn(self):
@@ -384,7 +380,6 @@ class TestConv2d(unittest.TestCase):
                 Conv2dBatchNorm(transpose=transpose),
                 quant_config=get_symmetric_quantization_config(),
                 conv_count=2,
-                check_quantized=not transpose,  # XNNPackQuantizer does not quantize this pattern yet
             )
 
     def test_qs8_conv2d_relu(self):
@@ -415,7 +410,7 @@ class TestConv2d(unittest.TestCase):
             self._test(
                 ConvReLU(transpose=transpose),
                 quant_config=get_symmetric_quantization_config(is_per_channel=True),
-                delegated=not transpose,
+                delegated=not transpose,  # XNNPACK does not support per input channel quantization for transpose convolutions with groups > 1
             )
 
     def test_qs8_conv2d_dw_relu(self):
@@ -467,9 +462,8 @@ class TestConv2d(unittest.TestCase):
                     quant_config=get_symmetric_quantization_config(
                         is_per_channel=per_channel_quant
                     ),
-                    # xnnpack only supports per output channel quantization for transposed convolutions
-                    # XNNPackQuantizer quantizes per input channel currently
-                    delegated=not transpose or not per_channel_quant,
+                    # XNNPACK does not support per input channel quantization for transpose convolutions with groups > 1
+                    delegated=not (transpose and per_channel_quant),
                 )
 
     def test_qs8_conv2d_relu_seq(self):
@@ -663,3 +657,42 @@ class TestConv2d(unittest.TestCase):
                     quant_config=None,
                     conv_count=1,
                 )
+
+    def test_padded_output_tconv(self):
+        class TConv2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.ConvTranspose2d(
+                    in_channels=2,
+                    out_channels=1,
+                    kernel_size=(3, 3),
+                    stride=(2, 2),
+                    padding=(1, 1),
+                    output_padding=(0, 1),
+                    dilation=(1, 1),
+                    groups=1,
+                    bias=True,
+                ).to(torch.float)
+
+            def forward(self, x):
+                return self.conv(x)
+
+        m = TConv2d()
+        inputs = (torch.randn(1, 2, 8, 8),)
+        tester = Tester(m.eval(), inputs)
+
+        conv_count: int = 1
+        op = "torch.ops.aten.conv_transpose2d"
+
+        (tester.export().check_count({op: conv_count}).to_edge_transform_and_lower())
+
+        # tconv should not be offloaded to XNNPack, since output padding is not
+        (
+            tester.check(
+                ["executorch_exir_dialects_edge__ops_aten_convolution_default"]
+            )
+            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(qtol=1)
+        )

@@ -132,16 +132,22 @@ class ExecuTorchLlamaJni
       jint model_type_category,
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
-      jfloat temperature) {
+      jfloat temperature,
+      facebook::jni::alias_ref<jstring> data_path) {
     return makeCxxInstance(
-        model_type_category, model_path, tokenizer_path, temperature);
+        model_type_category,
+        model_path,
+        tokenizer_path,
+        temperature,
+        data_path);
   }
 
   ExecuTorchLlamaJni(
       jint model_type_category,
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
-      jfloat temperature) {
+      jfloat temperature,
+      facebook::jni::alias_ref<jstring> data_path = nullptr) {
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
     uint32_t num_performant_cores =
@@ -160,10 +166,18 @@ class ExecuTorchLlamaJni
           tokenizer_path->toStdString().c_str(),
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      runner_ = std::make_unique<example::Runner>(
-          model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
-          temperature);
+      if (data_path != nullptr) {
+        runner_ = std::make_unique<example::Runner>(
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str(),
+            temperature,
+            data_path->toStdString().c_str());
+      } else {
+        runner_ = std::make_unique<example::Runner>(
+            model_path->toStdString().c_str(),
+            tokenizer_path->toStdString().c_str(),
+            temperature);
+      }
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(

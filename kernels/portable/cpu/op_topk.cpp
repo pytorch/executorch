@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 #include <tuple>
 
@@ -28,7 +29,7 @@ bool check_topk_args(
   if (dim < 0) {
     dim += nonzero_dim(in);
   }
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       k >= 0 && k <= nonempty_size(in, dim), "selected index k out of range");
   return true;
 }
@@ -40,8 +41,8 @@ bool get_topk_target_size(
     Tensor::SizesType* target_size,
     size_t* target_dim) {
   *target_dim = in.dim();
-  for (size_t i = 0; i < *target_dim; ++i) {
-    if (i == dim) {
+  for (const auto i : c10::irange(*target_dim)) {
+    if (static_cast<int64_t>(i) == dim) {
       target_size[i] = k;
     } else {
       target_size[i] = in.size(i);
@@ -90,19 +91,19 @@ void perform_topk(
   const size_t outer_stride_in = dim_size * dim_stride;
   const size_t outer_stride_out = k * dim_stride;
 
-  bool use_partial_sort = k * 64 <= dim_size;
+  bool use_partial_sort = k * 64 <= static_cast<int64_t>(dim_size);
 
   // Loop through all outer dimensions
-  for (size_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
+  for (const auto outer_idx : c10::irange(outer_size)) {
     size_t outer_in = outer_idx * outer_stride_in;
     size_t outer_out = outer_idx * outer_stride_out;
     // Loop through all inner dimensions
-    for (size_t inner_idx = 0; inner_idx < dim_stride; ++inner_idx) {
+    for (const auto inner_idx : c10::irange(dim_stride)) {
       size_t base_in = outer_in + inner_idx;
       size_t base_out = outer_out + inner_idx;
 
       // Populate the queue with the values from the input tensor
-      for (size_t i = 0; i < dim_size; ++i) {
+      for (const auto i : c10::irange(dim_size)) {
         size_t in_ix = base_in + i * dim_stride;
         queue[i].first = in_data[in_ix];
         queue[i].second = i;
@@ -126,7 +127,7 @@ void perform_topk(
       }
 
       // Write the topk values and indices to the output tensors
-      for (size_t i = 0; i < k; ++i) {
+      for (const auto i : c10::irange(k)) {
         size_t out_ix = base_out + i * dim_stride;
 
         values_data[out_ix] = queue[i].first;

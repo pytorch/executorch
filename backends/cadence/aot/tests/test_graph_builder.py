@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
@@ -26,7 +30,6 @@ class TestGraphBuilder(TestCase):
         channels_last = False
         im2row = builder.call_operator(
             exir_ops.edge.cadence.im2row.default,
-            # pyre-ignore
             (
                 x,
                 (2, 2),
@@ -80,7 +83,7 @@ class TestHigherOrderOps(TestCase):
         x = builder.placeholder("x", torch.randn(*x_shape))
         add = builder.call_operator(
             exir_ops.edge.aten.add.Tensor,
-            (x, x),  # pyre-ignore
+            (x, x),
         )
         builder.output([x, add])
         gm = builder.get_graph_module()
