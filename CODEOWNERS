@@ -15,7 +15,7 @@
 /backends/vulkan @SS-JIA
 /backends/xnnpack @digantdesai @mcr229
 
-/build @GregoryComer @dbort @kirklandsign
+/build @GregoryComer @kirklandsign
 
 /codegen @larryliu0820 @lucylq
 
@@ -47,21 +47,21 @@
 /extension/apple @shoumikhin
 /extension/aten_util @JacobSzwejbka
 /extension/benchmark @tarun292
-/extension/data_loader @JacobSzwejbka @lucylq @dbort
-/extension/evalue_util @GregoryComer @dbort
+/extension/data_loader @JacobSzwejbka @lucylq
+/extension/evalue_util @GregoryComer
 /extension/export_util @kimishpatel
 /extension/flat_tensor @lucylq
 /extension/gguf_util @larryliu0820
 /extension/kernel_util @kimishpatel @manuelcandales
 /extension/llm @jackzhxng @iseeyuan @larryliu0820
-/extension/memory_allocator @JacobSzwejbka @dbort
+/extension/memory_allocator @JacobSzwejbka
 /extension/module @shoumikhin
 /extension/parallel @kimishpatel
 /extension/pybindings @JacobSzwejbka @larryliu0820
 /extension/pytree @JacobSzwejbka
-/extension/runner_util @dbort
+# /extension/runner_util @dbort
 /extension/tensor @shoumikhin
-/extension/testing_util @dbort
+# /extension/testing_util @dbort
 /extension/threadpool @kimishpatel
 /extension/training @JacobSzwejbka
 
@@ -69,10 +69,10 @@
 
 /profiler @tarun292 @Gasoonjia
 
-/runtime @dbort @JacobSzwejbka @lucylq
+/runtime @JacobSzwejbka @lucylq
 /runtime/backend @cccclai
 
-/schema @dbort @JacobSzwejbka @lucylq
+/schema @JacobSzwejbka @lucylq
 
 /scripts @GregoryComer
 
