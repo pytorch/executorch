@@ -57,12 +57,6 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
 - **`--quantize`** (optional):
   Enable model quantization. --dataset argument is requred for the quantization. `huggingface` suite  does not supported yet.
 
-- **`--quantization_flow`** (optional):
-  Specifies the way to quantize torch.fx.GraphModule.
-  Supported values:
-  - `nncf`: `nncf quantize_pt2e` API (default)
-  - `pt2e`: torch ao quantization pipeline.
-
 - **`--validate`** (optional):
   Enable model validation. --dataset argument is requred for the validation. `huggingface` suite does not supported yet.
 
