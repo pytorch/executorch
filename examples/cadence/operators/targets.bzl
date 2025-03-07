@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 TESTS_LIST = [
     "add_op",

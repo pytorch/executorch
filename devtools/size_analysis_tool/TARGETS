@@ -1,18 +1,15 @@
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-runtime.python_library(
+python_library(
     name = "size_analysis_tool_lib",
     srcs = [
         "size_analysis_tool.py",
     ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
         "//executorch/devtools:lib",
