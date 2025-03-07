@@ -101,9 +101,13 @@ def define_common_targets():
             "elementwise_util.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
-        deps = [
+        exported_deps = [
+            ":broadcast_indexes_range",
             ":broadcast_util",
             ":dtype_util",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+        ],
+        deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
         ],
