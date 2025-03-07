@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import time
 
 import executorch
 
@@ -102,6 +103,54 @@ def load_calibration_dataset(
     return calibration_dataset
 
 
+def infer_model(
+    exec_prog: EdgeProgramManager,
+    input_shape,
+    num_iter: int,
+    warmup_iter: int,
+    input_path: str,
+    output_path: str,
+) -> float:
+    """
+    Executes inference and reports the average timing.
+
+    :param exec_prog: EdgeProgramManager of the lowered model
+    :param input_shape: The input shape for the model.
+    :param num_iter: The number of iterations to execute inference for timing.
+    :param warmup_iter: The number of iterations to execute inference for warmup before timing.
+    :param input_path: Path to the input tensor file to read the input for inference.
+    :param output_path: Path to the output tensor file to save the output of inference..
+    :return: The average inference timing.
+    """
+    # 1: Load model from buffer
+    executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
+
+    # 2: Initialize inputs
+    if input_path:
+        inputs = (torch.load(input_path, weights_only=False),)
+    else:
+        inputs = (torch.randn(input_shape),)
+
+    # 3: Execute warmup
+    for _i in range(warmup_iter):
+        out = executorch_module.run_method("forward", inputs)
+
+    # 4: Execute inference and measure timing
+    time_total = 0.0
+    for _i in range(num_iter):
+        time_start = time.time()
+        out = executorch_module.run_method("forward", inputs)
+        time_end = time.time()
+        time_total += time_end - time_start
+
+    # 5: Save output tensor as raw tensor file
+    if output_path:
+        torch.save(out, output_path)
+
+    # 6: Return average inference timing
+    return time_total / float(num_iter)
+
+
 def validate_model(
     exec_prog: EdgeProgramManager, calibration_dataset: torch.utils.data.DataLoader
 ) -> float:
@@ -137,6 +186,11 @@ def main(
     dataset_path: str,
     device: str,
     batch_size: int,
+    infer: bool,
+    num_iter: int,
+    warmup_iter: int,
+    input_path: str,
+    output_path: str,
 ):
     """
     Main function to load, quantize, and validate a model.
@@ -149,6 +203,12 @@ def main(
     :param dataset_path: Path to the dataset for calibration/validation.
     :param device: The device to run the model on (e.g., "cpu", "gpu").
     :param batch_size: Batch size for dataset loading.
+    :param infer: Whether to execute inference and report timing.
+    :param num_iter: The number of iterations to execute inference for timing.
+    :param warmup_iter: The number of iterations to execute inference for warmup before timing.
+    :param input_path: Path to the input tensor file to read the input for inference.
+    :param output_path: Path to the output tensor file to save the output of inference..
+
     """
 
     # Load the selected model
@@ -222,6 +282,13 @@ def main(
         acc_top1 = validate_model(exec_prog, calibration_dataset)
         print(f"acc@1: {acc_top1}")
 
+    if infer:
+        print("Start inference of the model:")
+        avg_time = infer_model(
+            exec_prog, input_shape, num_iter, warmup_iter, input_path, output_path
+        )
+        print(f"Average inference time: {avg_time}")
+
 
 if __name__ == "__main__":
     # Argument parser for dynamic inputs
@@ -256,6 +323,33 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable model validation. --dataset argument is required for the validation.",
     )
+    parser.add_argument(
+        "--infer",
+        action="store_true",
+        help="Run inference and report timing.",
+    )
+    parser.add_argument(
+        "--num_iter",
+        type=int,
+        default=1,
+        help="The number of iterations to execute inference for timing.",
+    )
+    parser.add_argument(
+        "--warmup_iter",
+        type=int,
+        default=0,
+        help="The number of iterations to execute inference for warmup before timing.",
+    )
+    parser.add_argument(
+        "--input_tensor_path",
+        type=str,
+        help="Path to the input tensor file to read the input for inference.",
+    )
+    parser.add_argument(
+        "--output_tensor_path",
+        type=str,
+        help="Path to the output tensor file to save the output of inference.",
+    )
     parser.add_argument("--dataset", type=str, help="Path to the validation dataset.")
     parser.add_argument(
         "--device",
@@ -278,4 +372,9 @@ if __name__ == "__main__":
             args.dataset,
             args.device,
             args.batch_size,
+            args.infer,
+            args.num_iter,
+            args.warmup_iter,
+            args.input_tensor_path,
+            args.output_tensor_path,
         )
