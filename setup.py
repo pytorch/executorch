@@ -464,10 +464,8 @@ class InstallerBuildExt(build_ext):
 
         # Ensure that the destination directory exists.
         if not dst_file.parent.exists():
-            print(f"DEBUG 1: dest parent directory {dst_file.parent}, exists? {dst_file.parent.exists()}")
             self.mkpath(os.fspath(dst_file.parent))
-            print(f"DEBUG 2: dest parent directory {dst_file.parent}, exists? {dst_file.parent.exists()}")
-            
+
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
