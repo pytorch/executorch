@@ -87,6 +87,7 @@ add_library(
   "quantized_relu_out.cpp"
   "quantized_layer_norm.cpp"
   "quantize_per_tensor.cpp"
+  "quantized_fully_connected_out.cpp"
   "dequantize_per_tensor.cpp"
   "quantized_matmul_out.cpp"
   "im2row_out.cpp"
