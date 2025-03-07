@@ -769,7 +769,12 @@ class SPVGenerator:
                     + self.glslc_flags.split()
                 )
 
-                subprocess.check_call(cmd)
+                try:
+                    subprocess.check_call(cmd)
+                except subprocess.CalledProcessError as e:
+                    raise RuntimeError(
+                        f"Failed to compile {os.getcwd()}/{glsl_out_path}"
+                    ) from e
 
                 return (spv_out_path, glsl_out_path)
 
