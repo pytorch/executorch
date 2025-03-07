@@ -503,7 +503,7 @@ void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
   Result<BufferDataSink> bds_ret = BufferDataSink::create(buffer);
   ET_CHECK_MSG(
       bds_ret.ok(),
-      "Failed to write tensor with error 0x%" PRIx32,
+      "Failed to create data sink from debug buffer with error 0x%" PRIx32,
       static_cast<uint32_t>(bds_ret.error()));
 
   buffer_data_sink_ = std::move(bds_ret.get());

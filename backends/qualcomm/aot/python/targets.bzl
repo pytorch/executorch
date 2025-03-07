@@ -33,10 +33,10 @@ def define_common_targets():
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
+            "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
         ],
         external_deps = [
-            "pybind11",
             "libtorch_python",
         ],
         use_static_deps = True,
@@ -66,10 +66,10 @@ def define_common_targets():
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
+            "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
         ],
         external_deps = [
-            "pybind11",
             "libtorch_python",
         ],
         use_static_deps = True,
@@ -93,9 +93,7 @@ def define_common_targets():
             "//executorch/backends/qualcomm:schema",
             "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
+            "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
-        ],
-        external_deps = [
-            "pybind11",
         ],
     )
