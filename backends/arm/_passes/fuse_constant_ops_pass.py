@@ -18,6 +18,7 @@ from executorch.backends.transforms.utils import (
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch.export.graph_signature import InputKind
 
 logger = logging.getLogger(__name__)
 
@@ -48,16 +49,8 @@ class FuseConstantOpsPass(ExportPass):
         the operations already carried out on the data.
         """
 
-        if node.target == exir_ops.edge.aten.full.default:
-            # Create data from args
-            size, fill_value = node.args
-            dtype = node.kwargs["dtype"]
-            data = torch.full(size, float(fill_value), dtype=dtype)
-
-            insert_pos = list(node.graph.nodes)[0]
-        else:
+        if not node.target == exir_ops.edge.aten.full.default:
             # Extract tensors and args from the node
-
             if len(node.all_input_nodes) == 0:
                 raise RuntimeError("No inputs found")
 
@@ -104,9 +97,22 @@ class FuseConstantOpsPass(ExportPass):
 
             insert_pos = list(node.all_input_nodes)[0]
 
-        # Make new node the same kind as the first constant input
-        input_kind = get_constant_placeholder_kind(self.exported_program, insert_pos)
-        persistent_buffer = is_persistent_buffer(self.exported_program, insert_pos)
+            # Make new node the same kind as the first constant input
+            input_kind = get_constant_placeholder_kind(
+                self.exported_program, insert_pos
+            )
+            persistent_buffer = is_persistent_buffer(self.exported_program, insert_pos)
+
+        else:
+            # Create data from args
+            size, fill_value = node.args
+            dtype = node.kwargs.get("dtype", torch.float32)
+            data = torch.full(size, float(fill_value), dtype=dtype)
+
+            insert_pos = list(node.graph.nodes)[0]
+
+            input_kind = InputKind.BUFFER
+            persistent_buffer = True
 
         # Create new node
         with node.graph.inserting_before(insert_pos):
@@ -159,6 +165,7 @@ class FuseConstantOpsPass(ExportPass):
                     logger.warning(
                         f"\nFailed to fuse constant op {node.name} due to exception:\n{str(e)}"
                     )
+                    raise e
 
         if modified:
             graph_module.graph.eliminate_dead_code()

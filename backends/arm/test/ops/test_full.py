@@ -175,8 +175,6 @@ class TestFull(unittest.TestCase):
             test_tensor,
         )
 
-    # This fails since full outputs int64 by default if 'fill_value' is integer, which our backend doesn't support.
-    @unittest.expectedFailure
     def test_integer_value(self):
         _input = torch.ones((2, 2))
         integer_fill_value = 1

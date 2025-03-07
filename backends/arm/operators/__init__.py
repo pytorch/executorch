@@ -20,7 +20,6 @@ from . import (  # noqa
     op_conv2d,
     op_eq,
     op_exp,
-    op_full,
     op_ge,
     op_get_item,
     op_gt,
