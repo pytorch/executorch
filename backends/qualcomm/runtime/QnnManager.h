@@ -26,7 +26,8 @@ class QnnManager {
   // Construct QnnManager
   explicit QnnManager(
       const QnnExecuTorchOptions* options,
-      const QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+      const QnnExecuTorchContextBinary& qnn_executorch_context_binary,
+      const bool on_device_prepare);
 
   ~QnnManager();
   executorch::runtime::Error Init();
@@ -71,7 +72,7 @@ class QnnManager {
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
   executorch::runtime::Error CompileQcir();
-
+  executorch::runtime::Error CompileGraphsFromDlc();
   executorch::runtime::Error Compile(
       const std::string& graph_name,
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
@@ -85,7 +86,8 @@ class QnnManager {
 
   uint64_t GetSpillFillBufferSize() {
     auto* htp_backend_cache_ptr = static_cast<HtpBackendCache*>(
-        backend_params_ptr_->qnn_backend_cache_ptr_.get());
+        backend_configurator_ptr_->backend_params_ptr_->qnn_backend_cache_ptr_
+            .get());
     return htp_backend_cache_ptr->GetSpillFillBufferSize();
   }
 
@@ -104,23 +106,47 @@ class QnnManager {
   }
 
   std::vector<std::string> GetGraphNames() {
-    return backend_params_ptr_->qnn_context_ptr_->GetGraphNames();
+    return backend_configurator_ptr_->backend_params_ptr_->qnn_context_ptr_
+        ->GetGraphNames();
   }
 
   std::string GetBinarySignature();
 
  private:
-  executorch::runtime::Error LoadQnnLibrary();
+  std::unique_ptr<const QnnSaver_Config_t*[]> GetImplementationConfig() {
+    if (options_->saver()) {
+      auto outputDirCfg = std::make_unique<QnnSaver_Config_t>();
+      outputDirCfg->option = QNN_SAVER_CONFIG_OPTION_OUTPUT_DIRECTORY;
+      outputDirCfg->outputDirectory = options_->saver_output_dir()->c_str();
+
+      auto saverCfg = std::make_unique<const QnnSaver_Config_t*[]>(2);
+      saverCfg[0] = outputDirCfg.release();
+      saverCfg[1] = nullptr;
+
+      return saverCfg;
+    } else {
+      return nullptr;
+    }
+  }
+
+  executorch::runtime::Error LoadQnnLibrary(
+      QnnImplementation* qnn_loaded_backend_ptr);
 
   static constexpr const char* htp_library_name_ = "libQnnHtp.so";
   static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
   static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
+  static constexpr const char* saver_library_name_ = "libQnnSaver.so";
+  static constexpr const char* ir_library_name_ = "libQnnIr.so";
+
+  qnn_wrapper_api::GraphInfoPtr_t* p_graph_info_;
+  uint32_t graph_info_num_ = 0;
 
   QnnExecuTorchContextBinary qnn_context_blob_;
-  std::unique_ptr<BackendConfigParameters> backend_params_ptr_;
-  QnnImplementation qnn_loaded_backend_;
+  std::unique_ptr<BackendConfigurator> backend_configurator_ptr_;
+  QnnBackends qnn_backends_;
   std::unique_ptr<QnnLogger> logger_;
   const QnnExecuTorchOptions* options_;
+  bool on_device_prepare_ = false;
   std::unordered_map<std::string, std::vector<std::shared_ptr<TensorWrapper>>>
       input_tensors_;
   std::unordered_map<std::string, std::vector<std::shared_ptr<TensorWrapper>>>

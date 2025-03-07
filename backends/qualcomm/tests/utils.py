@@ -13,7 +13,6 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
-
 from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend

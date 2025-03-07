@@ -1240,6 +1240,8 @@ def generate_qnn_executorch_compiler_spec(
 
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
+        qnn_executorch_options.saver = True
+        qnn_executorch_options.saver_output_dir = "saver_output"
 
     if optrace:
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace
