@@ -68,6 +68,7 @@ def define_common_targets():
             "log.h",
             "profiler.h",
             "runtime.h",
+            "compat_unistd.h",
         ],
         srcs = [
             "abort.cpp",

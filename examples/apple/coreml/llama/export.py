@@ -6,12 +6,18 @@
 
 import argparse
 
-import sys
-
 import coremltools as ct
 import torch
 from executorch.backends.apple.coreml.compiler import CoreMLBackend  # pyre-ignore
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner  # pyre-ignore
+
+from executorch.examples.apple.coreml.llama.llama_transformer import (
+    InputManager,
+    load_model,
+)
+from executorch.examples.apple.coreml.llama.utils import (
+    replace_linear_with_split_linear,
+)
 from executorch.examples.models.llama.source_transformation.quantize import (
     EmbeddingQuantHandler,
 )
@@ -23,10 +29,6 @@ from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.program._program import to_edge_with_preserved_ops
 from executorch.extension.export_util.utils import save_pte_program
-
-sys.path.insert(0, ".")
-from llama_transformer import InputManager, load_model
-from utils import replace_linear_with_split_linear
 
 
 def main() -> None:
@@ -203,6 +205,7 @@ def main() -> None:
             torch.ops.aten.scaled_dot_product_attention.default,
             # preserve norm op for numerical stability
             torch.ops.aten.linalg_vector_norm.default,
+            torch.ops.aten.reciprocal.default,
         ],
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,

@@ -37,7 +37,9 @@ class ModelArgs:
     output_prune_map: Optional[Dict[int, int]] = None
     apply_embedding: bool = True  # Use embedding inside the transformer
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
+    use_qk_norm: bool = False  # apply normalization to q and k in the attention
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
+    partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )

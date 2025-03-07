@@ -156,12 +156,6 @@ collect_artifacts_to_be_uploaded() {
   # Collect the app and its test suite
   cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${DEMO_APP_DIR}"
   cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${DEMO_APP_DIR}"
-  # Collect all ABI specific libraries
-  for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
-    mkdir -p "${DEMO_APP_DIR}/${ANDROID_ABI}"
-    cp cmake-out-android-${ANDROID_ABI}/lib/*.a "${DEMO_APP_DIR}/${ANDROID_ABI}/"
-    cp cmake-out-android-${ANDROID_ABI}/extension/android/*.so "${DEMO_APP_DIR}/${ANDROID_ABI}/"
-  done
   # Collect JAR and AAR
   cp extension/android/build/libs/executorch.jar "${DEMO_APP_DIR}"
   find "${BUILD_AAR_DIR}/" -name 'executorch*.aar' -exec cp {} "${DEMO_APP_DIR}" \;
@@ -169,7 +163,6 @@ collect_artifacts_to_be_uploaded() {
   MINIBENCH_APP_DIR="${ARTIFACTS_DIR_NAME}/minibench"
   mkdir -p "${MINIBENCH_APP_DIR}"
   cp extension/benchmark/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
-  cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
   # Collect Java library test
   JAVA_LIBRARY_TEST_DIR="${ARTIFACTS_DIR_NAME}/library_test_dir"
   mkdir -p "${JAVA_LIBRARY_TEST_DIR}"
@@ -178,7 +171,9 @@ collect_artifacts_to_be_uploaded() {
 }
 
 main() {
-  BUILD_AAR_DIR="$(mktemp -d)"
+  if [[ -z "${BUILD_AAR_DIR:-}" ]]; then
+    BUILD_AAR_DIR="$(mktemp -d)"
+  fi
   export BUILD_AAR_DIR
   if [ -z "$ANDROID_ABIS" ]; then
     ANDROID_ABIS=("arm64-v8a" "x86_64")
