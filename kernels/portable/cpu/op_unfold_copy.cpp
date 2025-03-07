@@ -11,7 +11,7 @@ using Tensor = executorch::aten::Tensor;
 
 // unfold_copy(Tensor self, int dimension, int size, int step, *, Tensor(a!)
 // out) -> Tensor(a!)
-Tensor unfold_copy_out(
+Tensor& unfold_copy_out(
     KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
