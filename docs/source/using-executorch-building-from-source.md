@@ -54,10 +54,6 @@ portability details.
    git clone --branch viable/strict https://github.com/pytorch/executorch.git
    cd executorch
 
-   # Update and pull submodules
-   git submodule sync
-   git submodule update --init
-
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
