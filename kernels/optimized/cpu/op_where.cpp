@@ -59,7 +59,10 @@ Tensor& opt_where_out(
       CTYPE_COMPUTE* const data_out = out.data_ptr<CTYPE_COMPUTE>();
       if (any_is_broadcasted) {
         executorch::extension::parallel_for(
-            0, out_numel, [&](const auto begin, const auto end) {
+            0,
+            out_numel,
+            ::executorch::extension::internal::GRAIN_SIZE,
+            [&](const auto begin, const auto end) {
               auto range = BroadcastIndexesRange<3>(out, a, b, cond);
               auto begin_it = range.begin();
               begin_it += begin;
@@ -72,7 +75,10 @@ Tensor& opt_where_out(
             });
       } else {
         executorch::extension::parallel_for(
-            0, out_numel, [&](const auto begin, const auto end) {
+            0,
+            out_numel,
+            ::executorch::extension::internal::GRAIN_SIZE,
+            [&](const auto begin, const auto end) {
               for (const auto i : c10::irange(begin, end)) {
                 data_out[i] = data_cond[i] ? data_a[i] : data_b[i];
               }

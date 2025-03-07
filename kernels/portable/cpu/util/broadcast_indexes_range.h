@@ -79,7 +79,9 @@ class BroadcastIndexesIterator {
       // You might wonder what happens if output_shape_[ii] == 0. In
       // that case, output.numel() would be 0, and thus we would have
       // begin() == end() and no iteration.
-      if ET_UNLIKELY (delinearized_output_index_[ii] == output_shape_[ii] - 1) {
+      if ET_UNLIKELY (
+          static_cast<exec_aten::SizesType>(delinearized_output_index_[ii]) ==
+          output_shape_[ii] - 1) {
         const auto old_delinearized_output_index_item =
             delinearized_output_index_[ii];
         delinearized_output_index_[ii] = 0;
