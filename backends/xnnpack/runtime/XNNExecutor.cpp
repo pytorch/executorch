@@ -88,11 +88,18 @@ ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
     Tensor* tensor = &args[ext_id]->toTensor();
     externals_[i].data = tensor->mutable_data_ptr<float>();
 
+    executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
+
     // Reshape runtime inputs
     if (i < input_ids_.size()) {
       size_t num_dims = tensor->dim();
+      Error err = runtime::get_dim_order(*tensor, dim_order, num_dims);
       ET_CHECK_OR_RETURN_ERROR(
-          is_contiguous_dim_order(tensor->dim_order().data(), tensor->dim()),
+        err == Error::Ok,
+        Internal,
+        "Failed to retrieve dim order from tensor!");
+      ET_CHECK_OR_RETURN_ERROR(
+          is_contiguous_dim_order(dim_order, tensor->dim()),
           Internal,
           "Expecting default dim_order but got a non default dim_order tensor for external input %u",
           i);
@@ -213,7 +220,7 @@ ET_NODISCARD Error XNNExecutor::resize_outputs(EValue** args) const {
         expected_output_size, static_cast<size_t>(num_dim)};
 
     ET_LOG(Debug, "Resizing output tensor to a new shape");
-    Error err = resize_tensor(*out_tensor, output_size);
+    Error err = runtime::resize_tensor(*out_tensor, output_size);
     if (err != Error::Ok) {
       ET_LOG(Error, "Failed to resize output tensor for XNNExecutor");
       return err;
