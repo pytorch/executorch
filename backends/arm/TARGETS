@@ -1,6 +1,6 @@
 # @noautodeps
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-runtime.python_library(
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+python_library(
     name = "arm_partitioner",
     srcs = [
         "ethosu_backend.py",
@@ -15,7 +15,7 @@ runtime.python_library(
         "//executorch/exir:lib",
     ],
 )
-runtime.python_library(
+python_library(
     name = "arm_backend",
     srcs = [
         "arm_backend.py",
@@ -32,7 +32,7 @@ runtime.python_library(
         "//executorch/backends/arm/_passes:passes",
     ],
 )
-runtime.python_library(
+python_library(
     name = "process_node",
     srcs = ["process_node.py"],
     deps = [
@@ -44,7 +44,7 @@ runtime.python_library(
         "//executorch/exir:lib",
     ],
 )
-runtime.python_library(
+python_library(
     name = "arm_vela",
     srcs = [
         "arm_vela.py",
@@ -53,7 +53,7 @@ runtime.python_library(
         "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
     ],
 )
-runtime.python_library(
+python_library(
     name = "tosa_mapping",
     srcs = [
         "tosa_mapping.py",
@@ -63,7 +63,7 @@ runtime.python_library(
         "//caffe2:torch",
     ],
 )
-runtime.python_library(
+python_library(
     name = "tosa_quant_utils",
     srcs = [
         "tosa_quant_utils.py",
@@ -76,7 +76,7 @@ runtime.python_library(
         "//executorch/exir/dialects:lib",
     ],
 )
-runtime.python_library(
+python_library(
     name = "tosa_specification",
     srcs = [
         "tosa_specification.py",
@@ -86,7 +86,7 @@ runtime.python_library(
         "//executorch/exir/backend:compile_spec_schema",
     ],
 )
-runtime.python_library(
+python_library(
     name = "tosa_utils",
     srcs = [
         "tosa_utils.py",
@@ -97,7 +97,7 @@ runtime.python_library(
         "//executorch/backends/arm/operators:node_visitor",
     ],
 )
-runtime.python_library(
+python_library(
     name = "arm_model_evaluator",
     srcs = [
         "util/arm_model_evaluator.py",

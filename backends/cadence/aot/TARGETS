@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "CXX",
@@ -15,7 +15,7 @@ load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("odai_jarvis")
 
-runtime.python_library(
+python_library(
     name = "utils",
     srcs = [
         "utils.py",
@@ -30,7 +30,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "compiler",
     srcs = [
         "compiler.py",
@@ -51,7 +51,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "export_example",
     srcs = [
         "export_example.py",
@@ -73,7 +73,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "pass_utils",
     srcs = [
         "pass_utils.py",
@@ -88,7 +88,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "passes",
     srcs = [
         "passes.py",
@@ -108,7 +108,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "ops_registrations",
     srcs = [
         "ops_registrations.py",
@@ -148,7 +148,7 @@ python_unittest(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "compiler_utils",
     srcs = [
         "compiler_utils.py",
@@ -160,7 +160,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "graph_builder",
     srcs = [
         "graph_builder.py",
@@ -172,7 +172,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "fuse_ops",
     srcs = [
         "fuse_ops.py",
@@ -192,7 +192,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "simplify_ops",
     srcs = [
         "simplify_ops.py",
@@ -206,7 +206,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "remove_ops",
     srcs = [
         "remove_ops.py",
@@ -224,7 +224,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "reorder_ops",
     srcs = [
         "reorder_ops.py",
@@ -242,7 +242,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "replace_ops",
     srcs = [
         "replace_ops.py",
@@ -380,7 +380,7 @@ python_unittest(
 )
 
 
-runtime.python_library(
+python_library(
     name = "memory_planning",
     srcs = [
         "memory_planning.py",
@@ -398,7 +398,7 @@ runtime.python_library(
 )
 
 
-runtime.python_library(
+python_library(
     name = "memory_constraints",
     srcs = [
         "memory_constraints.py",

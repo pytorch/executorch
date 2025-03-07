@@ -1,8 +1,8 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
 
-runtime.python_library(
+python_library(
     name = "lib",
     srcs = [
         "__init__.py",
@@ -46,7 +46,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "pass_registry",
     srcs = [
         "pass_registry.py",
@@ -57,7 +57,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "external_constants_pass",
     srcs = [
         "external_constants_pass.py",
@@ -67,7 +67,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "insert_write_back_for_buffers_pass",
     srcs = [
         "insert_write_back_for_buffers_pass.py",
@@ -77,7 +77,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "weights_to_outputs_pass",
     srcs = [
         "weights_to_outputs_pass.py",
@@ -87,7 +87,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "const_prop_pass",
     srcs = [
         "const_prop_pass.py",
@@ -99,7 +99,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "scalar_to_tensor_pass",
     srcs = [
         "scalar_to_tensor_pass.py",
@@ -110,7 +110,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "constant_prop_pass",
     srcs = [
         "constant_prop_pass.py",
@@ -122,7 +122,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "remove_graph_asserts_pass",
     srcs = [
         "remove_graph_asserts_pass.py",
@@ -132,7 +132,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "sym_to_tensor_pass",
     srcs = [
         "sym_to_tensor_pass.py",
@@ -143,7 +143,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "quant_fusion_pass",
     srcs = [
         "_quant_patterns_and_replacements.py",
@@ -157,7 +157,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "quantize_io_pass",
     srcs = [
         "quantize_io_pass.py",
@@ -170,7 +170,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "memory_planning_pass",
     srcs = [
         "memory_planning_pass.py",
@@ -186,7 +186,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "remove_noop_pass",
     srcs = [
         "remove_noop_pass.py",
@@ -198,7 +198,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "prune_empty_tensor_pass",
     srcs = [
         "prune_empty_tensors_pass.py",
@@ -210,7 +210,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "remove_mixed_type_operators",
     srcs = [
         "remove_mixed_type_operators.py",
@@ -221,7 +221,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "spec_prop_pass",
     srcs = [
         "spec_prop_pass.py",
@@ -234,7 +234,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "init_mutable_pass",
     srcs = [
         "init_mutable_pass.py",
@@ -244,7 +244,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "sym_shape_eval_pass",
     srcs = [
         "sym_shape_eval_pass.py",
@@ -259,7 +259,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "replace_broken_ops_with_function_ops_pass",
     srcs = [
         "replace_broken_ops_with_function_ops_pass.py",
@@ -270,7 +270,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "replace_sym_size_op_pass",
     srcs = [
         "replace_sym_size_op_pass.py",
@@ -281,7 +281,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "replace_edge_with_backend_pass",
     srcs = [
         "replace_edge_with_backend_pass.py",
@@ -293,7 +293,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "normalize_transpose_pass",
     srcs = [
         "normalize_transpose_pass.py",
@@ -304,7 +304,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "replace_aten_with_edge_pass",
     srcs = [
         "replace_aten_with_edge_pass.py",
@@ -318,7 +318,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "debug_handle_generator_pass",
     srcs = [
         "debug_handle_generator_pass.py",
@@ -330,7 +330,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "prim_ops_py_registry",
     srcs = ["executorch_prim_ops_registry.py"],
     deps = [
@@ -339,7 +339,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "dim_order_ops_registry",
     srcs = ["dim_order_ops_registry.py"],
     deps = [
@@ -349,7 +349,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "memory_format_ops_pass",
     srcs = [
         "memory_format_ops_pass.py",
@@ -363,7 +363,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "normalize_view_copy_base_pass",
     srcs = [
         "normalize_view_copy_base_pass.py",
@@ -374,7 +374,7 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+python_library(
     name = "replace_view_copy_with_view_pass",
     srcs = [
         "replace_view_copy_with_view_pass.py",
