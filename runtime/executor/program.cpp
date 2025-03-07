@@ -150,6 +150,22 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
 
+  // Instantiate PteDataMap if named_data is present.
+  const auto named_data = flatbuffer_program->named_data();
+  std::optional<internal::PteDataMap> pte_data_map = std::nullopt;
+  if (named_data != nullptr) {
+    Result<internal::PteDataMap> pte_data_map_result =
+        internal::PteDataMap::create(
+            loader,
+            segment_base_offset,
+            named_data,
+            flatbuffer_program->segments());
+    if (!pte_data_map_result.ok()) {
+      return pte_data_map_result.error();
+    }
+    pte_data_map.emplace(std::move(pte_data_map_result.get()));
+  }
+
   // Constant data may live inside the flatbuffer data (constant_buffer) or in a
   // separate segment (constant_segment). It should not be in both.
   // Check constant_segment->offsets()->size() > 1, as the offsets list will
@@ -163,10 +179,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     ET_CHECK_OR_RETURN_ERROR(
         constant_buffer == nullptr || constant_buffer->size() == 0,
         InvalidProgram,
-        "constant_buffer contains %u items, "
-        "constant_segment.offsets contains %u items. Only one should be used.",
-        constant_buffer->size(),
-        constant_segment->offsets()->size());
+        "constant_buffer contains %zu items, "
+        "constant_segment.offsets contains %zu items. Only one should be used.",
+        static_cast<size_t>(constant_buffer->size()),
+        static_cast<size_t>(constant_segment->offsets()->size()));
     const auto* segments = flatbuffer_program->segments();
     ET_CHECK_OR_RETURN_ERROR(
         segments != nullptr, InvalidProgram, "No segments in program");
@@ -176,9 +192,9 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     ET_CHECK_OR_RETURN_ERROR(
         constant_segment->segment_index() < segments->size(),
         InvalidProgram,
-        "Constant segment index %d invalid for program segments range %d",
-        constant_segment->segment_index(),
-        segments->size());
+        "Constant segment index %zu invalid for program segments range %zu",
+        static_cast<size_t>(constant_segment->segment_index()),
+        static_cast<size_t>(segments->size()));
 
     const executorch_flatbuffer::DataSegment* data_segment =
         segments->Get(constant_segment->segment_index());
@@ -199,7 +215,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         segment_base_offset,
         std::move(program_data.get()),
         flatbuffer_program,
-        std::move(constant_segment_data.get()));
+        std::move(constant_segment_data.get()),
+        std::move(pte_data_map));
   } else {
     // The constant data is stored inside the flatbuffer, so this program does
     // not contain a separate segment for it.
@@ -208,7 +225,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         segment_base_offset,
         std::move(program_data.get()),
         flatbuffer_program,
-        /*constant_segment_data=*/FreeableBuffer{});
+        /*constant_segment_data=*/FreeableBuffer{},
+        std::move(pte_data_map));
   }
 }
 
@@ -347,8 +365,8 @@ Result<const void*> Program::get_constant_buffer_data(
     ET_CHECK_OR_RETURN_ERROR(
         storage_size <= nbytes,
         InvalidArgument,
-        "Constant buffer size %u larger than allocated nbytes %zu",
-        storage_size,
+        "Constant buffer size %zu larger than allocated nbytes %zu",
+        static_cast<size_t>(constant_buffer[buffer_index]->storage()->size()),
         nbytes);
 
     return storage->data();
@@ -479,8 +497,8 @@ Error Program::load_mutable_subsegment_into(
   if (segment_offsets->segment_index() >= num_segments) {
     ET_LOG(
         Error,
-        "Segment index %u out of range (>= %zu)",
-        segment_offsets->segment_index(),
+        "Segment index %zu out of range (>= %zu)",
+        static_cast<size_t>(segment_offsets->segment_index()),
         num_segments);
     return Error::NotFound;
   }
