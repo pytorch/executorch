@@ -39,12 +39,12 @@ static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 Runner::Runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
-    const float temperature)
+    const float temperature,
+    std::optional<const std::string> data_path)
     // NOTE: we observed ~2x loading performance increase on iPhone 15
     // and a ~5% improvement on Galaxy S22 by switching to
     // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
     : temperature_(temperature),
-      module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
       tokenizer_path_(tokenizer_path),
       metadata_({
           {kEnableDynamicShape, false},
@@ -52,6 +52,12 @@ Runner::Runner(
           {kUseKVCache, true},
           {kUseSDPAWithKVCache, false},
       }) {
+  if (data_path.has_value()) {
+    module_ = std::make_unique<Module>(
+        model_path, data_path.value(), Module::LoadMode::File);
+  } else {
+    module_ = std::make_unique<Module>(model_path, Module::LoadMode::File);
+  }
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",

@@ -9,5 +9,6 @@ python_library(
         "//executorch/backends/transforms:replace_scalar_with_tensor",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/exir:lib",
+        "//executorch/backends/transforms:utils",
     ],
 )
