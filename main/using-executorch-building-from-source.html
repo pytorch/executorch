@@ -558,8 +558,8 @@ conda<span class="w"> </span>activate<span class="w"> </span>executorch
 </pre></div>
 </div>
 </div>
-<div class="section" id="clone-and-install-executorch-requirements">
-<h3>Clone and install ExecuTorch requirements<a class="headerlink" href="#clone-and-install-executorch-requirements" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="clone-executorch">
+<h3>Clone ExecuTorch<a class="headerlink" href="#clone-executorch" title="Permalink to this heading">¶</a></h3>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clone the ExecuTorch repo from GitHub</span>
 <span class="c1"># &#39;main&#39; branch is the primary development branch where you see the latest changes.</span>
 <span class="c1"># &#39;viable/strict&#39; contains all of the commits on main that pass all of the necessary CI checks.</span>
@@ -569,8 +569,13 @@ git<span class="w"> </span>clone<span class="w"> </span>--branch<span class="w">
 <span class="c1"># Update and pull submodules</span>
 git<span class="w"> </span>submodule<span class="w"> </span>sync
 git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
-
-<span class="c1"># Install ExecuTorch pip package and its dependencies, as well as</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="install-executorch-pip-package-from-source">
+<h2>Install ExecuTorch pip package from Source<a class="headerlink" href="#install-executorch-pip-package-from-source" title="Permalink to this heading">¶</a></h2>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Install ExecuTorch pip package and its dependencies, as well as</span>
 <span class="c1"># development tools like CMake.</span>
 <span class="c1"># If developing on a Mac, make sure to install the Xcode Command Line Tools first.</span>
 ./install_executorch.sh
@@ -590,7 +595,7 @@ git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--pybind<span class="w"> </span>off
 </pre></div>
 </div>
-<p>For development, install the package in <code class="docutils literal notranslate"><span class="pre">--editable</span></code> mode, which allows to modify Python source code and see changes reflected immediately.</p>
+<p>For development mode, run the command with <code class="docutils literal notranslate"><span class="pre">--editable</span></code>, which allows us to modify Python source code and see changes reflected immediately.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--editable<span class="w"> </span><span class="o">[</span>--pybind<span class="w"> </span>xnnpack<span class="o">]</span>
 
 <span class="c1"># Or you can directly do the following if dependencies are already installed</span>
@@ -612,9 +617,8 @@ git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w
 </div>
 </div></blockquote>
 </div>
-</div>
-<div class="section" id="targets-built-by-the-cmake-build-system">
-<h2>Targets Built by the CMake Build System<a class="headerlink" href="#targets-built-by-the-cmake-build-system" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="build-executorch-c-runtime-from-source">
+<h2>Build ExecuTorch C++ runtime from source<a class="headerlink" href="#build-executorch-c-runtime-from-source" title="Permalink to this heading">¶</a></h2>
 <p>ExecuTorch’s CMake build system covers the pieces of the runtime that are
 likely to be useful to embedded systems users.</p>
 <ul class="simple">
@@ -636,25 +640,8 @@ functions by default because there are no direct calls to them.</p></li>
 <code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code>, so the program may use any of the operators it
 implements.</p></li>
 </ul>
-</div>
-<div class="section" id="one-time-setup-to-prepare-for-cmake-build">
-<h2>One-time setup to prepare for CMake Build<a class="headerlink" href="#one-time-setup-to-prepare-for-cmake-build" title="Permalink to this heading">¶</a></h2>
-<p>Follow the steps below to have the tools ready before using CMake to build on your machine.</p>
-<ol class="arabic simple">
-<li><p>If your system’s version of python3 is older than 3.11:</p>
-<ul class="simple">
-<li><p>Run <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">tomli</span></code></p></li>
-</ul>
-</li>
-<li><p>Install CMake version 3.19 or later:</p>
-<ul class="simple">
-<li><p>Run <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">cmake</span></code> or <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">cmake</span></code>.</p></li>
-</ul>
-</li>
-</ol>
-</div>
 <div class="section" id="configure-the-cmake-build">
-<h2>Configure the CMake Build<a class="headerlink" href="#configure-the-cmake-build" title="Permalink to this heading">¶</a></h2>
+<h3>Configure the CMake build<a class="headerlink" href="#configure-the-cmake-build" title="Permalink to this heading">¶</a></h3>
 <p>Follow these steps after cloning or pulling the upstream repo, since the build
 dependencies may have changed.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
@@ -667,8 +654,9 @@ dependencies may have changed.</p>
 </pre></div>
 </div>
 <p>Once this is done, you don’t need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.</p>
+</div>
 <div class="section" id="cmake-build-options">
-<h3>CMake Build Options<a class="headerlink" href="#cmake-build-options" title="Permalink to this heading">¶</a></h3>
+<h3>CMake build options<a class="headerlink" href="#cmake-build-options" title="Permalink to this heading">¶</a></h3>
 <p>The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release
 </pre></div>
@@ -680,9 +668,8 @@ dependencies may have changed.</p>
 </div>
 <p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CMakeLists.txt">CMakeLists.txt</a></p>
 </div>
-</div>
 <div class="section" id="build-the-runtime-components">
-<h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this heading">¶</a></h2>
+<h3>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this heading">¶</a></h3>
 <p>Build all targets with</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
 <span class="nb">cd</span><span class="w"> </span>executorch
@@ -697,8 +684,9 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class
 </pre></div>
 </div>
 </div>
-<div class="section" id="use-an-example-app-executor-runner-to-execute-a-pte-file">
-<h2>Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file<a class="headerlink" href="#use-an-example-app-executor-runner-to-execute-a-pte-file" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="use-an-example-binary-executor-runner-to-execute-a-pte-file">
+<h2>Use an example binary <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file<a class="headerlink" href="#use-an-example-binary-executor-runner-to-execute-a-pte-file" title="Permalink to this heading">¶</a></h2>
 <p>First, generate an <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> or other ExecuTorch program file using the
 instructions as described in
 <a class="reference internal" href="getting-started.html#preparing-the-model"><span class="std std-doc">Preparing a Model</span></a>.</p>
@@ -706,7 +694,7 @@ instructions as described in
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="w"> </span>path/to/model.pte
 </pre></div>
 </div>
-<p>If it worked, you should see the message “Model executed successfully” followed
+<p>You should see the message “Model executed successfully” followed
 by the output values.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000526</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">82</span><span class="p">]</span> <span class="n">Model</span> <span class="n">file</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span> <span class="ow">is</span> <span class="n">loaded</span><span class="o">.</span>
 <span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.000595</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">91</span><span class="p">]</span> <span class="n">Using</span> <span class="n">method</span> <span class="n">forward</span>
@@ -844,17 +832,17 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 </li>
 <li><a class="reference internal" href="#environment-setup">Environment Setup</a><ul>
 <li><a class="reference internal" href="#create-a-virtual-environment">Create a Virtual Environment</a></li>
-<li><a class="reference internal" href="#clone-and-install-executorch-requirements">Clone and install ExecuTorch requirements</a></li>
+<li><a class="reference internal" href="#clone-executorch">Clone ExecuTorch</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#targets-built-by-the-cmake-build-system">Targets Built by the CMake Build System</a></li>
-<li><a class="reference internal" href="#one-time-setup-to-prepare-for-cmake-build">One-time setup to prepare for CMake Build</a></li>
-<li><a class="reference internal" href="#configure-the-cmake-build">Configure the CMake Build</a><ul>
-<li><a class="reference internal" href="#cmake-build-options">CMake Build Options</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#install-executorch-pip-package-from-source">Install ExecuTorch pip package from Source</a></li>
+<li><a class="reference internal" href="#build-executorch-c-runtime-from-source">Build ExecuTorch C++ runtime from source</a><ul>
+<li><a class="reference internal" href="#configure-the-cmake-build">Configure the CMake build</a></li>
+<li><a class="reference internal" href="#cmake-build-options">CMake build options</a></li>
 <li><a class="reference internal" href="#build-the-runtime-components">Build the runtime components</a></li>
-<li><a class="reference internal" href="#use-an-example-app-executor-runner-to-execute-a-pte-file">Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#use-an-example-binary-executor-runner-to-execute-a-pte-file">Use an example binary <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a></li>
 <li><a class="reference internal" href="#cross-compilation">Cross compilation</a><ul>
 <li><a class="reference internal" href="#android">Android</a></li>
 <li><a class="reference internal" href="#ios">iOS</a></li>
