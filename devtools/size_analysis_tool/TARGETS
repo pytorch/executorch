@@ -9,7 +9,10 @@ runtime.python_library(
     srcs = [
         "size_analysis_tool.py",
     ],
-    visibility = ["PUBLIC"],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
     deps = [
         "//caffe2:torch",
         "//executorch/devtools:lib",
