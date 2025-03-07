@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -32,7 +33,8 @@ class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
   explicit Runner(
       const std::string& model_path,
       const std::string& tokenizer_path,
-      const float temperature = 0.8f);
+      const float temperature = 0.8f,
+      std::optional<const std::string> data_path = std::nullopt);
 
   bool is_loaded() const;
   ::executorch::runtime::Error load();
