@@ -7,7 +7,7 @@
  */
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <iostream>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 namespace torch {
 namespace executor {
@@ -58,15 +58,25 @@ Tensor& opt_where_out(
       const bool* const data_cond = cond.const_data_ptr<bool>();
       CTYPE_COMPUTE* const data_out = out.data_ptr<CTYPE_COMPUTE>();
       if (any_is_broadcasted) {
-        for (const auto [out_index, a_index, b_index, cond_index] :
-             BroadcastIndexesRange<3>(out, a, b, cond)) {
-          data_out[out_index] =
-              data_cond[cond_index] ? data_a[a_index] : data_b[b_index];
-        }
+        executorch::extension::parallel_for(
+            0, out_numel, [&](const auto begin, const auto end) {
+              auto range = BroadcastIndexesRange<3>(out, a, b, cond);
+              auto begin_it = range.begin();
+              begin_it += begin;
+              for (; (*begin_it)[0] < end; ++begin_it) {
+                const auto [out_index, a_index, b_index, cond_index] =
+                    *begin_it;
+                data_out[out_index] =
+                    data_cond[cond_index] ? data_a[a_index] : data_b[b_index];
+              }
+            });
       } else {
-        for (const auto i : c10::irange(out_numel)) {
-          data_out[i] = data_cond[i] ? data_a[i] : data_b[i];
-        }
+        executorch::extension::parallel_for(
+            0, out_numel, [&](const auto begin, const auto end) {
+              for (const auto i : c10::irange(begin, end)) {
+                data_out[i] = data_cond[i] ? data_a[i] : data_b[i];
+              }
+            });
       }
     });
   } else {
