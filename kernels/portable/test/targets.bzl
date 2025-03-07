@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib")
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "define_supported_features_lib", "op_test")
@@ -8,12 +9,39 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    define_supported_features_lib()
+    if not runtime.is_oss:
+        define_supported_features_lib()
 
-    op_test(name = "op_allclose_test")
-    op_test(name = "op_div_test")
-    op_test(name = "op_gelu_test")
-    op_test(name = "op_mul_test")
+        python_unittest(
+            name = "op_upsample_bilinear2d_test",
+            srcs = [
+                "op_upsample_bilinear2d_test.py",
+            ],
+            preload_deps = [
+                ":aot_ops_test_lib",
+            ],
+            deps = [
+                "//caffe2:torch",
+            ],
+        )
+
+        python_unittest(
+            name = "op_upsample_nearest2d_test",
+            srcs = [
+                "op_upsample_nearest2d_test.py",
+            ],
+            preload_deps = [
+                ":aot_ops_test_lib",
+            ],
+            deps = [
+                "//caffe2:torch",
+            ],
+        )
+
+        op_test(name = "op_allclose_test")
+        op_test(name = "op_div_test")
+        op_test(name = "op_gelu_test")
+        op_test(name = "op_mul_test")
 
     if is_xplat():
         et_operator_library(
