@@ -269,28 +269,6 @@ ET_NODISCARD Error get_broadcast_target_size(
       a.sizes(), b.sizes(), out_sizes, out_sizes_len, out_dim);
 }
 
-void delinearize_index(
-    size_t linear_index,
-    executorch::aten::ArrayRef<Tensor::SizesType> shape,
-    size_t* out_indexes,
-    const size_t out_indexes_len) {
-  ET_CHECK(shape.size() <= out_indexes_len);
-  for (size_t i = 0; i < shape.size(); ++i) {
-    auto dim = shape.size() - 1 - i;
-    auto dim_size = shape[dim];
-    out_indexes[dim] = linear_index % dim_size;
-    linear_index /= dim_size;
-  }
-}
-
-void delinearize_index(
-    size_t linear_index,
-    const Tensor& t,
-    size_t* out_indexes,
-    const size_t out_indexes_len) {
-  delinearize_index(linear_index, t.sizes(), out_indexes, out_indexes_len);
-}
-
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
     ssize_t broadcast_to_ndim,
