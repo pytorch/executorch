@@ -112,7 +112,15 @@ after installing and setting up the SDK, set `QNN_SDK_ROOT` to the corresponding
 
 ## Android Backends
 
-TODO Describe commonly used backends, including XNN, Vulkan, and NPUs.
+The following backends are available for Android:
+
+| Backend | Type | Doc |
+| ------- | -------- | --- |
+| [XNNPACK](https://github.com/google/XNNPACK) | CPU | [Doc](./backends-xnnpack.md) |
+| [MediaTek NeuroPilot](https://neuropilot.mediatek.com/) | NPU | [Doc](./backends-mediatek.md) |
+| [Qualcomm AI Engine](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) | NPU | [Doc](./backends-qualcomm.md) |
+| [Vulkan](https://www.vulkan.org/) | GPU | [Doc](./backends-vulkan.md) |
+
 
 ## Runtime Integration
 
