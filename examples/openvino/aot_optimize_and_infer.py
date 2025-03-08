@@ -181,6 +181,8 @@ def main(
     suite: str,
     model_name: str,
     input_shape,
+    save_model: bool,
+    model_file_name: str,
     quantize: bool,
     validate: bool,
     dataset_path: str,
@@ -198,6 +200,8 @@ def main(
     :param suite: The model suite to use (e.g., "timm", "torchvision", "huggingface").
     :param model_name: The name of the model to load.
     :param input_shape: The input shape for the model.
+    :param save_model: Whether to save the compiled model as a .pte file.
+    :param model_file_name: Custom file name to save the exported model.
     :param quantize: Whether to quantize the model.
     :param validate: Whether to validate the model.
     :param dataset_path: Path to the dataset for calibration/validation.
@@ -264,10 +268,12 @@ def main(
     )
 
     # Serialize and save it to a file
-    model_file_name = f"{model_name}_{'int8' if quantize else 'fp32'}.pte"
-    with open(model_file_name, "wb") as file:
-        exec_prog.write_to_file(file)
-    print(f"Model exported and saved as {model_file_name} on {device}.")
+    if save_model:
+        if not model_file_name:
+            model_file_name = f"{model_name}_{'int8' if quantize else 'fp32'}.pte"
+        with open(model_file_name, "wb") as file:
+            exec_prog.write_to_file(file)
+        print(f"Model exported and saved as {model_file_name} on {device}.")
 
     if validate:
         if suite == "huggingface":
@@ -314,6 +320,14 @@ if __name__ == "__main__":
         default=1,
         help="Batch size for the validation. Default batch_size == 1."
         " The dataset length must be evenly divisible by the batch size.",
+    )
+    parser.add_argument(
+        "--export", action="store_true", help="Export the compiled model as .pte file."
+    )
+    parser.add_argument(
+        "--model_file_name",
+        type=str,
+        help="Custom file name to save the exported model.",
     )
     parser.add_argument(
         "--quantize", action="store_true", help="Enable model quantization."
@@ -367,6 +381,8 @@ if __name__ == "__main__":
             args.suite,
             args.model,
             args.input_shape,
+            args.export,
+            args.model_file_name,
             args.quantize,
             args.validate,
             args.dataset,
