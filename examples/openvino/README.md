@@ -90,33 +90,33 @@ The export script called `aot_optimize_and_infer.py` allows users to export deep
   Examples: `CPU`, `GPU`
 
 
-### **Examples**
+#### **Examples**
 
-#### Export a TIMM VGG16 model for the CPU
+##### Export a TIMM VGG16 model for the CPU
 ```bash
 python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU
 ```
 
-#### Export a Torchvision ResNet50 model for the GPU
+##### Export a Torchvision ResNet50 model for the GPU
 ```bash
 python aot_optimize_and_infer.py --export --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
 ```
 
-#### Export a Hugging Face BERT model for the CPU
+##### Export a Hugging Face BERT model for the CPU
 ```bash
 python aot_optimize_and_infer.py --export --suite huggingface --model bert-base-uncased --input_shape "(1, 512)" --device CPU
 ```
-#### Export and validate TIMM Resnet50d model for the CPU
+##### Export and validate TIMM Resnet50d model for the CPU
 ```bash
 python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset
 ```
 
-#### Export, quantize and validate TIMM Resnet50d model for the CPU
+##### Export, quantize and validate TIMM Resnet50d model for the CPU
 ```bash
 python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset --quantize
 ```
 
-#### Execute Inference with Torchvision Inception V3 model for the CPU
+##### Execute Inference with Torchvision Inception V3 model for the CPU
 ```bash
 python aot_optimize_and_infer.py --suite torchvision --model inception_v3 --infer --warmup_iter 10 --num_iter 100 --input_shape "(1, 3, 256, 256)" --device CPU
 ```
