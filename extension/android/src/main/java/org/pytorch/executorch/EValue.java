@@ -177,8 +177,8 @@ public class EValue {
   }
 
   /**
-   * Serializes an {@code EValue} into a byte array.
-   * Note: This method is experimental and subject to change without notice.
+   * Serializes an {@code EValue} into a byte array. Note: This method is experimental and subject
+   * to change without notice.
    *
    * @return The serialized byte array.
    */
@@ -212,8 +212,8 @@ public class EValue {
   }
 
   /**
-   * Deserializes an {@code EValue} from a byte[].
-   * Note: This method is experimental and subject to change without notice.
+   * Deserializes an {@code EValue} from a byte[]. Note: This method is experimental and subject to
+   * change without notice.
    *
    * @param bytes The byte array to deserialize from.
    * @return The deserialized {@code EValue}.
