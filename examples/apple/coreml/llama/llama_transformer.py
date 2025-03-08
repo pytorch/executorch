@@ -443,7 +443,7 @@ class Transformer(nn.Module):
         if not self.use_cache_list:
             k_out = torch.stack(k_out, dim=0)
             v_out = torch.stack(v_out, dim=0)
-        return logits, k_out, v_out
+        return logits, k_out, v_out  # pyre-ignore[7]
 
 
 def load_model(checkpoint_path, params_path, max_seq_length, use_cache_list):
@@ -614,7 +614,7 @@ class InputManager:
                     torch.tensor(tokens, dtype=torch.int64),
                     torch.zeros(self.seq_length - input_length, dtype=torch.int64),
                 ],
-                axis=-1,
+                dim=-1,
             ).reshape(1, -1),
             # input_pos
             torch.tensor([self.input_pos], dtype=torch.long),

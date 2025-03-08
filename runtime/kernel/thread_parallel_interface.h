@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -29,14 +30,23 @@ inline bool parallel_for_no_threadpool(
       begin,
       end);
   ET_CHECK_OR_RETURN_FALSE(grain_size > 0, "grain_size = %" PRId64, grain_size);
+#ifndef NDEBUG
+  // Go backwards through the range elementwise to catch code that
+  // assumes parallel_for is in order like a regular for loop.
+  for (const auto i : c10::irange(begin, end)) {
+    const auto offset = i - begin;
+    const auto idx = end - offset - 1;
+    f(idx, idx + 1);
+  }
+#else // NDEBUG
   f(begin, end);
+#endif
   return true;
 }
 
 // Match GRAIN_SIZE from PyTorch core.
 // https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/TensorIterator.h#L78
 constexpr int64_t GRAIN_SIZE = 32768;
-
 } // namespace internal
 
 #ifdef ET_USE_THREADPOOL
@@ -78,19 +88,10 @@ inline int64_t get_thread_num() {
   return 0;
 }
 
-inline void set_thread_num(int64_t thread_num) {
+void set_thread_num(int64_t thread_num) {
   ET_DCHECK_MSG(false, "cannot set_thread_num without threading support!");
 }
 #endif // ET_USE_THREADPOOL
-
-/**
- * Convenience version of parallel_for that sets the grain size to
- * internal::GRAIN_SIZE.
- */
-template <typename Func>
-bool parallel_for(const int64_t begin, const int64_t end, const Func& func) {
-  return parallel_for(begin, end, internal::GRAIN_SIZE, func);
-}
 } // namespace extension
 } // namespace executorch
 
