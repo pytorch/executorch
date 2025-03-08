@@ -12,31 +12,32 @@ def define_common_targets():
     if not runtime.is_oss:
         define_supported_features_lib()
 
-        python_unittest(
-            name = "op_upsample_bilinear2d_test",
-            srcs = [
-                "op_upsample_bilinear2d_test.py",
-            ],
-            preload_deps = [
-                ":aot_ops_test_lib",
-            ],
-            deps = [
-                "//caffe2:torch",
-            ],
-        )
+        if not is_xplat():
+            python_unittest(
+                name = "op_upsample_bilinear2d_test",
+                srcs = [
+                    "op_upsample_bilinear2d_test.py",
+                ],
+                preload_deps = [
+                    ":aot_ops_test_lib",
+                ],
+                deps = [
+                    "//caffe2:torch",
+                ],
+            )
 
-        python_unittest(
-            name = "op_upsample_nearest2d_test",
-            srcs = [
-                "op_upsample_nearest2d_test.py",
-            ],
-            preload_deps = [
-                ":aot_ops_test_lib",
-            ],
-            deps = [
-                "//caffe2:torch",
-            ],
-        )
+            python_unittest(
+                name = "op_upsample_nearest2d_test",
+                srcs = [
+                    "op_upsample_nearest2d_test.py",
+                ],
+                preload_deps = [
+                    ":aot_ops_test_lib",
+                ],
+                deps = [
+                    "//caffe2:torch",
+                ],
+            )
 
         op_test(name = "op_allclose_test")
         op_test(name = "op_div_test")
