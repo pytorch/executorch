@@ -20,5 +20,5 @@ buck2 query "//backends/apple/... + //backends/example/... + \
 # TODO: expand the covered scope of Buck targets.
 # //runtime/kernel/... is failing because //third-party:torchgen_files's shell script can't find python on PATH.
 # //runtime/test/... requires Python torch, which we don't have in our OSS buck setup.
-buck2 test //kernels/portable/cpu/... //runtime/backend/... //runtime/core/... \
+buck2 test //kernels/portable/... //runtime/backend/... //runtime/core/... \
       //runtime/executor: //runtime/kernel/... //runtime/platform/...
