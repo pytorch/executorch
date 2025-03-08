@@ -34,6 +34,9 @@ class SumSupported(SupportedTOSAOperatorCheck):
 
         for dim in dim_list:
             if not 1 <= input_shape[dim] <= 65536:
+                self.reporter.report_reject(
+                    node, f"sum needs dims < 65536, got shape {input_shape}"
+                )
                 return False
 
             # We can't be certain of which dim is the last in memory yet,
@@ -45,7 +48,9 @@ class SumSupported(SupportedTOSAOperatorCheck):
             for length in input_shape[dim + 1 :]:
                 post_R_product *= length
             if not 1 <= pre_R_product <= 65536:
+                self.reporter.report_reject(node, "Failed dim check")
                 return False
             if not 1 <= post_R_product <= 65536:
+                self.reporter.report_reject(node, "Failed dim check")
                 return False
         return True
