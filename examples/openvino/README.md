@@ -23,10 +23,6 @@ The export script called `aot_optimize_and_infer.py` allows users to export deep
 
 ### **Usage**
 
-#### **Command Structure**
-```bash
-python aot_optimize_and_infer.py --suite <MODEL_SUITE> --model <MODEL_NAME> --input_shape <INPUT_SHAPE> --device <DEVICE>
-```
 
 #### **Arguments**
 - **`--suite`** (required):
