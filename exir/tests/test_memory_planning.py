@@ -708,10 +708,10 @@ class TestMisc(unittest.TestCase):
         et_program = et.executorch_program
         inputs = et_program.execution_plan[0].inputs
         self.assertNotEqual(
-            et_program.execution_plan[0]  # pyre-ignore
+            et_program.execution_plan[0]
             .values[inputs[0]]
             .val.allocation_info.memory_offset_low,
-            et_program.execution_plan[0]  # pyre-ignore
+            et_program.execution_plan[0]
             .values[inputs[1]]
             .val.allocation_info.memory_offset_low,
         )

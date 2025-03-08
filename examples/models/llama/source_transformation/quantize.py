@@ -17,6 +17,8 @@ import torch.nn.functional as F
 from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
+from torchao.quantization.GPTQ import Int8DynActInt4WeightLinear
+
 
 try:
     from fairseq2.nn.embedding import (
@@ -69,7 +71,9 @@ def quantize(  # noqa C901
 
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
-        return WeightOnlyInt8QuantHandler(model).quantized_model()
+        return WeightOnlyInt8QuantHandler(
+            model, precision=torch_dtype
+        ).quantized_model()
     elif qmode.startswith("torchao:fpa"):
         pattern = r"torchao:fpa(\d+)w"
         matches = re.findall(pattern, qmode)
@@ -82,7 +86,7 @@ def quantize(  # noqa C901
             model = (
                 UIntxWeightOnlyLinearQuantizer(
                     device="mps",
-                    precision=torch.float32,
+                    precision=torch_dtype,
                     groupsize=group_size,
                     bitwidth=bitwidth,
                 )
@@ -104,7 +108,7 @@ def quantize(  # noqa C901
         with torch.no_grad():
             model = Int8DynActIntxWeightLinearQuantizer(
                 device="cpu",
-                precision=torch.float32,
+                precision=torch_dtype,
                 groupsize=group_size,
                 bitwidth=bitwidth,
                 has_weight_zeros=False,
@@ -345,6 +349,7 @@ class WeightOnlyInt8QuantHandler(QuantHandler):
         node_type: str = "*",
         bitwidth: Optional[int] = None,
         group_size: Optional[int] = None,
+        precision: torch.dtype = torch.float32,
     ):
         self.mod = mod
         self.group_size = group_size
@@ -353,6 +358,7 @@ class WeightOnlyInt8QuantHandler(QuantHandler):
             self.bitwidth = 8
         else:
             self.bitwidth = bitwidth
+        self.precision = precision
 
     @torch.no_grad()
     def create_quantized_state_dict(self) -> Dict:
@@ -388,7 +394,7 @@ class WeightOnlyInt8QuantHandler(QuantHandler):
 
                     # print(f"expanded weight shape {input_weight.shape}")
                     weight, scales, _ = dynamically_quantize_per_channel(
-                        input_weight,
+                        input_weight.to(dtype=self.precision),
                         range_min,
                         range_max,
                         torch.int8,
@@ -573,6 +579,7 @@ class EmbeddingQuantHandler(QuantHandler):
         bitwidth: int = 8,
         group_size: Optional[int] = None,
         packed=False,
+        precision: Optional[torch.dtype] = None,
     ):
         if isinstance(packed, str):
             packed = packed == "True"
@@ -581,6 +588,8 @@ class EmbeddingQuantHandler(QuantHandler):
         self.group_size = group_size
         self.bitwidth = bitwidth
         self.packed = packed
+        # Dtype of the weights right before quantization.
+        self.precision = precision
         if (bitwidth not in [2, 4]) and packed:
             raise RuntimeError("pack only works with bitsize 2, 4")
 
@@ -611,7 +620,11 @@ class EmbeddingQuantHandler(QuantHandler):
                     f"quantize {fqn, mod} with group_size {self.group_size}, bitwidth {self.bitwidth}"
                 )
                 weight, scales, _ = dynamically_quantize_per_channel(
-                    mod.weight.float(),
+                    (
+                        mod.weight.to(dtype=self.precision)
+                        if self.precision
+                        else mod.weight
+                    ),
                     range_min,
                     range_max,
                     torch.int8,
@@ -747,7 +760,7 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 ############################ Source Transform Start #######################
 
 
-def get_quant_embedding_transform(args):
+def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
     if args.embedding_quantize.startswith("torchao:"):
         bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
         group_size = int(group_size)
@@ -773,11 +786,13 @@ def get_quant_embedding_transform(args):
     else:
         group_size = int(group_size)
     bitwidth = int(bitwidth)
+    torch_dtype = dtype_override.to_torch_dtype() if dtype_override else None
     return lambda model: EmbeddingQuantHandler(
         model,
         bitwidth=bitwidth,
         group_size=group_size,
         packed=(bitwidth in [2, 4]),
+        precision=torch_dtype,
     ).quantized_model()
 
 
@@ -825,6 +840,38 @@ def _load_torchao_aten_lib(libname):
     ), f"Expected 1 library but got {len(libs)}.  If you installed the torchao ops in a non-standard location, please set CMAKE_INSTALL_PREFIX correctly."
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
+
+
+# We want to do compute the actual ops in the dtype of the dtype_override,
+# since the precision of the quantized linear will initially be the dtype of the
+# checkpoint, not the dtype_override.
+def set_quantized_computation_dtype(
+    module: nn.Module, dtype: torch.dtype
+) -> nn.Module:
+    def _set_quantized_computation_dtype_rec(
+        module: nn.Module, dtype: torch.dtype
+    ) -> None:
+        """
+        Recursively iterate through the module and set the dtype/precision attributes
+        of all Int8DynActInt4WeightLinear and QuantizedGroupEmbedding submodules to 'fp32'.
+        """
+        for name, child in module.named_children():
+            if isinstance(child, Int8DynActInt4WeightLinear):
+                # Change the precision attribute to 'fp32'
+                child.precision = dtype
+                logging.info(f"Changed precision of {name} to {dtype}")
+            elif isinstance(child, QuantizedGroupEmbedding):
+                child.dtype = dtype
+                logging.info(f"Changed precision of {name} to {dtype}")
+            elif isinstance(child, WeightOnlyInt8Linear):
+                # WeightOnlyInt8Linear "dequantizes" the weight to the dtype of the input.
+                continue
+            else:
+                # Recursively apply to child modules
+                _set_quantized_computation_dtype_rec(child, dtype)
+
+    _set_quantized_computation_dtype_rec(module, dtype)
+    return module
 
 
 ############################ Source Transform End #######################
