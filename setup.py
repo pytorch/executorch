@@ -463,7 +463,8 @@ class InstallerBuildExt(build_ext):
         dst_file: Path = ext.dst_path(self)
 
         # Ensure that the destination directory exists.
-        self.mkpath(os.fspath(dst_file.parent))
+        if not dst_file.parent.exists():
+            self.mkpath(os.fspath(dst_file.parent))
 
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
