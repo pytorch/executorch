@@ -84,10 +84,6 @@ if(TARGET optimized_native_cpu_ops_lib)
     APPEND
     link_libraries
     optimized_native_cpu_ops_lib
-    optimized_kernels
-    portable_kernels
-    cpublas
-    eigen_blas
   )
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
