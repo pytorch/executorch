@@ -9,8 +9,7 @@ Below is the layout of the `examples/openvino` directory, which includes the nec
 ```
 examples/openvino
 ├── README.md                           # Documentation for examples (this file)
-├── aot_openvino_compiler.py            # Example script for AoT export
-└── export_and_infer_openvino.py        # Example script to export and execute models with python bindings
+└── aot_optimize_and_infer.py           # Example script to export and execute models
 ```
 
 # Build Instructions for Examples
@@ -20,13 +19,13 @@ Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites*
 
 ## AOT step:
 
-The export script called `aot_openvino_compiler.py` allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.
+The export script called `aot_optimize_and_infer.py` allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.
 
 ### **Usage**
 
 #### **Command Structure**
 ```bash
-python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --input_shape <INPUT_SHAPE> --device <DEVICE>
+python aot_optimize_and_infer.py --suite <MODEL_SUITE> --model <MODEL_NAME> --input_shape <INPUT_SHAPE> --device <DEVICE>
 ```
 
 #### **Arguments**
@@ -49,6 +48,12 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
   Examples:
   - `[1, 3, 224, 224]` (Zsh users: wrap in quotes)
   - `(1, 3, 224, 224)`
+
+- **`--export`** (optional):
+  Save the exported model as a `.pte` file.
+
+- **`--model_file_name`** (optional):
+  Specify a custom file name to save the exported model.
 
 - **`--batch_size`** :
   Batch size for the validation. Default batch_size == 1.
@@ -93,31 +98,31 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
 
 #### Export a TIMM VGG16 model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU
+python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU
 ```
 
 #### Export a Torchvision ResNet50 model for the GPU
 ```bash
-python aot_openvino_compiler.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
+python aot_optimize_and_infer.py --export --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
 ```
 
 #### Export a Hugging Face BERT model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite huggingface --model bert-base-uncased --input_shape "(1, 512)" --device CPU
+python aot_optimize_and_infer.py --export --suite huggingface --model bert-base-uncased --input_shape "(1, 512)" --device CPU
 ```
 #### Export and validate TIMM Resnet50d model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset
+python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset
 ```
 
 #### Export, quantize and validate TIMM Resnet50d model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset --quantize
+python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset --quantize
 ```
 
-#### Export a Torchvision Inception V3 model for the CPU and Execute Inference
+#### Execute Inference with Torchvision Inception V3 model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite torchvision --model inception_v3 --infer --warmup_iter 10 --num_iter 100 --input_shape "(1, 3, 256, 256)" --device CPU
+python aot_optimize_and_infer.py --suite torchvision --model inception_v3 --infer --warmup_iter 10 --num_iter 100 --input_shape "(1, 3, 256, 256)" --device CPU
 ```
 
 ### **Notes**
