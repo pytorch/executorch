@@ -1,0 +1,47 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.cxx_library(
+    name = "abseil",
+    public_include_directories = ["abseil-cpp"],
+    srcs = glob(
+        ["abseil-cpp/absl/**/*.cc"],
+        exclude = [
+            "abseil-cpp/absl/**/*test*.cc",
+            "abseil-cpp/absl/**/*mock*.cc",
+            "abseil-cpp/absl/**/*matchers*.cc",
+            "abseil-cpp/absl/**/*benchmark*.cc",
+        ],
+    ),
+    exported_linker_flags = select(
+        {
+            "DEFAULT": [],
+            "ovr_config//os:macos": ["-Wl,-framework,CoreFoundation"],
+        },
+    ),
+    visibility = ["PUBLIC"],
+    _is_external_target = True,
+)
+
+runtime.cxx_library(
+    name = "re2",
+    public_include_directories = ["re2"],
+    srcs = glob(
+        [
+            "re2/re2/**/*.cc",
+            "re2/util/**/*.cc",
+        ],
+        exclude = [
+            "re2/re2/**/*test*.cc",
+            "re2/re2/testing/*.cc",
+            "re2/re2/fuzzing/*.cc",
+            "re2/re2/**/*benchmark*.cc",
+        ],
+    ),
+    exported_deps = [
+        ":abseil",
+    ],
+    visibility = ["PUBLIC"],
+    _is_external_target = True,
+)
