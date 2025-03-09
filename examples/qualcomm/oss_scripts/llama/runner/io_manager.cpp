@@ -167,7 +167,101 @@ void ShiftPointerIoMgr::init_io() {
       break;
   }
 }
+void ShiftPointerIoMgr::reset_io(
+    const std::vector<Result<MethodMeta>>& prefill_methods_meta,
+    const std::vector<Result<MethodMeta>>& kv_methods_meta) {
+  IO* ptr = static_cast<IO*>(data_ptr_.get());
+  std::memset(ptr, 0, sizeof(IO));
+  int32_t k_in_size = (head_dim_ + 1) * kv_cache_len_;
+  int32_t max_ar_len = std::max(kv_ar_len_, prefill_ar_len_);
 
+  int32_t v_cache_size = (num_heads_ + 1) * context_len_ * head_dim_;
+  int32_t k_cache_out_size = num_heads_ * max_ar_len * head_dim_;
+
+  ptr->k_cache_out.clear();
+  ptr->v_cache.clear();
+  // Optionally, reserve space again if you plan to refill them
+  ptr->k_cache_out.reserve(num_layers_);
+  ptr->v_cache.reserve(num_layers_);
+  // Refill the vectors if needed
+  for (int layer = 0; layer < num_layers_; layer++) {
+    ptr->k_cache_out.emplace_back(std::vector<uint8_t>(k_cache_out_size));
+    ptr->v_cache.emplace_back(std::vector<uint8_t>(v_cache_size));
+  }
+
+  auto reset_kv = [&]() {
+    ptr->kv_logits.clear();
+    ptr->kv_logits.resize(kv_ar_len_ * vocab_size_);
+
+    ptr->kv_attention_mask.clear();
+    ptr->kv_attention_mask.resize((kv_ar_len_ * context_len_), 0);
+
+    ptr->k_cache.clear();
+    ptr->k_cache.reserve(num_layers_);
+    for (int layer = 0; layer < num_layers_; layer++) {
+      ptr->k_cache.emplace_back();
+      ptr->k_cache[layer].reserve(num_heads_);
+      for (int head = 0; head < num_heads_; head++) {
+        ptr->k_cache[layer].emplace_back(std::vector<uint8_t>(k_in_size));
+      }
+    }
+  };
+
+  auto reset_prefill = [&]() {
+    ptr->prefill_input_toks.clear();
+    ptr->prefill_input_toks.resize(prefill_ar_len_, 0);
+
+    ptr->prefill_input_pos.clear();
+    ptr->prefill_input_pos.resize(prefill_ar_len_, 0);
+
+    ptr->prefill_attention_mask.clear();
+    ptr->prefill_attention_mask.resize((prefill_ar_len_ * context_len_), 0);
+
+    ptr->prefill_logits.clear();
+    ptr->prefill_logits.resize(prefill_ar_len_ * vocab_size_);
+  };
+  switch (eval_mode_) {
+    case EvalMode::kKVCached:
+      reset_kv();
+      break;
+    case EvalMode::kHybrid:
+      reset_prefill();
+      reset_kv();
+      break;
+    default:
+      break;
+  }
+
+  input_tensors_[kv_forward_name_].clear();
+  input_tensors_[kv_forward_name_].resize(modules_.size());
+  output_tensors_[kv_forward_name_].clear();
+  output_tensors_[kv_forward_name_].resize(modules_.size());
+  k_cache_in_[kv_forward_name_].clear();
+  v_cache_in_[kv_forward_name_].clear();
+  k_cache_out_[kv_forward_name_].clear();
+  v_cache_out_[kv_forward_name_].clear();
+  input_tensors_[prefill_forward_name_].clear();
+  input_tensors_[prefill_forward_name_].resize(modules_.size());
+  output_tensors_[prefill_forward_name_].clear();
+  output_tensors_[prefill_forward_name_].resize(modules_.size());
+  k_cache_in_[prefill_forward_name_].clear();
+  v_cache_in_[prefill_forward_name_].clear();
+  k_cache_out_[prefill_forward_name_].clear();
+  v_cache_out_[prefill_forward_name_].clear();
+
+  switch (eval_mode_) {
+    case EvalMode::kKVCached:
+      prepare_kv_io(kv_methods_meta);
+      break;
+    case EvalMode::kHybrid:
+      prepare_prefill_io(prefill_methods_meta);
+      prepare_kv_io(kv_methods_meta);
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported mode");
+      break;
+  }
+}
 void ShiftPointerIoMgr::prepare_kv_io(
     const std::vector<Result<MethodMeta>>& methods_meta) {
   for (int i = 0; i < modules_.size(); ++i) {
@@ -179,7 +273,6 @@ void ShiftPointerIoMgr::prepare_kv_io(
 
   ET_CHECK_MSG(!(kv_forward_name_.empty()), "kv forward name is empty");
   IO* ptr = static_cast<IO*>(data_ptr_.get());
-
   // [I]: input_tokens
   Result<TensorInfo> kv_input_toks = methods_meta[0]->input_tensor_meta(0);
   kv_input_toks_ = std::make_unique<TensorImpl>(
@@ -406,7 +499,6 @@ void ShiftPointerIoMgr::prepare_prefill_io(
       const_cast<TensorImpl::DimOrderType*>(logits->dim_order().data()));
   output_tensors_[prefill_forward_name_][modules_.size() - 1].push_back(
       prefill_logits_.get());
-
   // [O] kv_cache
   int index = 1;
   // In hybrid mode, we use kv mode cache len for v stride since we want to
@@ -883,6 +975,44 @@ void SmartMaskIoMgr::init_io() {
   ptr->num_layers_ = num_layers_;
   ptr->head_dim_ = head_dim_;
   ptr->init_io_ptrs(shared_ptr, io_bytes_map);
+}
+
+void SmartMaskIoMgr::reset_io(
+    const std::vector<Result<MethodMeta>>& prefill_methods_meta,
+    const std::vector<Result<MethodMeta>>& kv_methods_meta) {
+  init_io();
+  input_tensors_[kv_forward_name_].clear();
+  input_tensors_[kv_forward_name_].resize(modules_.size());
+  output_tensors_[kv_forward_name_].clear();
+  output_tensors_[kv_forward_name_].resize(modules_.size());
+
+  k_cache_in_[kv_forward_name_].clear();
+  v_cache_in_[kv_forward_name_].clear();
+  k_cache_out_[kv_forward_name_].clear();
+  v_cache_out_[kv_forward_name_].clear();
+
+  input_tensors_[prefill_forward_name_].clear();
+  input_tensors_[prefill_forward_name_].resize(modules_.size());
+  output_tensors_[prefill_forward_name_].clear();
+  output_tensors_[prefill_forward_name_].resize(modules_.size());
+
+  k_cache_in_[prefill_forward_name_].clear();
+  v_cache_in_[prefill_forward_name_].clear();
+  k_cache_out_[prefill_forward_name_].clear();
+  v_cache_out_[prefill_forward_name_].clear();
+
+  switch (eval_mode_) {
+    case EvalMode::kKVCached:
+      prepare_kv_io(prefill_methods_meta);
+      break;
+    case EvalMode::kHybrid:
+      prepare_prefill_io(prefill_methods_meta);
+      prepare_kv_io(kv_methods_meta);
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported mode");
+      break;
+  }
 }
 
 void SmartMaskIoMgr::prepare_kv_io(
