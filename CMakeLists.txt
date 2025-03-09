@@ -505,6 +505,12 @@ if(EXECUTORCH_BUILD_FLATC)
   )
   add_subdirectory(third-party/flatbuffers)
 
+  if(CMAKE_CROSSCOMPILING)
+    message(
+      WARNING "🌸 CROSS COMPILING"
+    )
+  endif()
+
   # exir lets users set the alignment of tensor data embedded in the flatbuffer,
   # and some users need an alignment larger than the default, which is typically
   # 32.
