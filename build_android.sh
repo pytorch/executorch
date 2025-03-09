@@ -9,6 +9,7 @@ cmake_jobs=$(( $(sysctl -n hw.ncpu) - 1 ))
 
 for abi in "${android_abis[@]}"; do
     echo "abi: ${abi}"
+
     out_dir="cmake-out-android-${abi}"
     mkdir -p "${out_dir}"
     echo "out_dir: ${abi}"
