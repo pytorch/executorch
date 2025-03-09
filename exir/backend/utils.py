@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,7 +9,7 @@
 
 import logging
 import operator
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from functools import lru_cache
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
@@ -22,9 +23,11 @@ from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
+from tabulate import tabulate
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
 from torch.fx.node import Node
+from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.fx.passes.utils.source_matcher_utils import SourcePartition
 
 T_QuantPerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
@@ -569,3 +572,81 @@ class WhyNoPartition:
 
     def __str__(self) -> str:
         return f"WhyNoPartition: Node {self.node} was not partitioned because {self.reason}."
+
+
+class WhyNoPartitionReporter:
+    """
+    Helper class for partitioners to gather why nodes were not lowered in a single report.
+    If a node is reported multiple times, only the first report is included.
+
+    Example usage:
+
+        # In your backend partitioner file(s)
+        reporter = WhyNoPartitionReporter()
+
+        # hypothetical function that checks if a node can be lowered
+        if not can_be_lowered(node):
+            reporter.report_reject(node, "This node was not lowered because ...")
+
+        # Back in partitioner
+        logger.info(reporter.get_table_report())
+    """
+
+    def __init__(self):
+        self._rejected_nodes: OrderedDict[torch.fx.Node, str] = (
+            OrderedDict()
+        )  # {Rejected node: reason}
+
+    def report_reject(self, node: torch.fx.Node, reason: str):
+        if node not in self._rejected_nodes:
+            self._rejected_nodes[node] = reason
+
+    def get_table_report(self) -> str:
+        reject_report = []
+        for node in self._rejected_nodes:
+            if node.op == "placeholder" or node.op == "output":
+                continue
+            if not (target := getattr(node.target, "_op", None)):
+                target = node.target
+            torch_fn = node.meta.get("torch_fn", "-")
+            reject_report.append(
+                [node.name, target, torch_fn, self._rejected_nodes[node]]
+            )
+        if len(reject_report) > 0:
+            return (
+                tabulate(
+                    reject_report,
+                    ["Name", "Target", "Torch func", "Reason"],
+                    tablefmt="fancy_grid",
+                    maxcolwidths=35,
+                )
+                + "\n(Placeholders and outputs are not included in this list)"
+            )
+        else:
+            return "Partitioned all operators."
+
+    def wrap_check(
+        self, operator_support: OperatorSupportBase, message: str
+    ) -> OperatorSupportBase:
+        """Wrap the operator_support, reporting rejects with the specified message."""
+        return ReportRejected(operator_support, self, message)
+
+
+class ReportRejected(OperatorSupportBase):
+    """Class for wrapping a OperatorSupportBase, reporting rejects with the specified message to `reporter`."""
+
+    def __init__(
+        self,
+        operator_support: OperatorSupportBase,
+        reporter: WhyNoPartitionReporter,
+        message,
+    ):
+        self.operator_support = operator_support
+        self.reporter = reporter
+        self.message = message
+
+    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+        is_supported = self.operator_support.is_node_supported(submodules, node)
+        if not is_supported:
+            self.reporter.report_reject(node, self.message)
+        return is_supported
