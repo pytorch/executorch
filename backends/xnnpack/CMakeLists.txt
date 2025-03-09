@@ -124,6 +124,10 @@ else()
   list(APPEND xnn_executor_runner_libs portable_ops_lib)
 endif()
 
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  list(APPEND xnn_executor_runner_libs custom_ops)
+endif()
+
 list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)
 
 # ios can only build library but not binary
