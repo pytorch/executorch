@@ -232,7 +232,7 @@ bool MethodMeta::uses_backend(const char* backend_name) const {
   const auto delegates = s_plan_->delegates();
   for (size_t i = 0; i < delegates->size(); i++) {
     auto delegate = delegates->Get(i);
-    if (strcmp(delegate->id()->c_str(), backend_name) == 0) {
+    if (strncmp(delegate->id()->c_str(), backend_name, delegate->id()->size()) == 0) {
       return true;
     }
   }
