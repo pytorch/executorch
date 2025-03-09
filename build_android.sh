@@ -12,7 +12,7 @@ for abi in "${android_abis[@]}"; do
 
     out_dir="cmake-out-android-${abi}"
     mkdir -p "${out_dir}"
-    echo "out_dir: ${abi}"
+    echo "out_dir: ${out_dir}"
 
   cmake . -DCMAKE_INSTALL_PREFIX="${out_dir}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
