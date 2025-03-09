@@ -1,8 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//tools/build_defs/android:fb_android_library.bzl", "fb_android_library")
 
 oncall("executorch")
 
-fb_android_library(
+non_fbcode_target(_kind = fb_android_library,
     name = "executorch",
     srcs = [
         "src/main/java/org/pytorch/executorch/DType.java",
@@ -20,7 +21,7 @@ fb_android_library(
     ],
 )
 
-fb_android_library(
+non_fbcode_target(_kind = fb_android_library,
     name = "executorch_llama",
     srcs = [
         "src/main/java/org/pytorch/executorch/LlamaCallback.java",
