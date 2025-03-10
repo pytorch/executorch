@@ -607,6 +607,28 @@ std::tuple<CTYPE, long> reduce_over_dim(
 }
 
 /**
+ * Execution plan for repeated reduce_over_dim_list with the same
+ * function, input tensor, and dim_list but varying out_ix.
+ */
+class ReduceOverDimListPlan {
+ public:
+  ReduceOverDimListPlan(
+      const executorch::aten::Tensor& in,
+      const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+          dim_list)
+      : plan_(in, dim_list) {}
+
+  template <typename CTYPE, typename ReduceOp>
+  CTYPE execute(const ReduceOp& reduce_fun, const size_t out_ix) {
+    return plan_.execute<CTYPE, CTYPE>(
+        [](CTYPE v) { return v; }, reduce_fun, out_ix);
+  }
+
+ private:
+  MapReduceOverDimListPlan plan_;
+};
+
+/**
  * Useful to reduce a tensor `in` over a given list of dimensions `dim_list`
  * for the output element at index `out_ix` using the reduce function
  * `reduce_fun`, which should have the following signature:
@@ -632,8 +654,8 @@ CTYPE reduce_over_dim_list(
     const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
         dim_list,
     const size_t out_ix) {
-  return map_reduce_over_dim_list<CTYPE, CTYPE>(
-      [](CTYPE v) { return v; }, reduce_fun, in, dim_list, out_ix);
+  ReduceOverDimListPlan plan(in, dim_list);
+  return plan.execute<CTYPE>(reduce_fun, out_ix);
 }
 
 //
