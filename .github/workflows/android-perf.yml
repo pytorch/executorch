@@ -70,7 +70,7 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'llama,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8' || 'llama' }}
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'llama,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,qwen2_5,phi-4-mini' || 'llama' }}
           CRON_DEFAULT_DEVICES: samsung_galaxy_s22
         run: |
           set -eux
@@ -326,6 +326,62 @@ jobs:
               -dtype "${DTYPE}" \
               -mode "${DELEGATE_CONFIG}" \
               -upload "${ARTIFACTS_DIR_NAME}"
+        elif [[ ${{ matrix.model }} == "qwen2_5" ]]; then
+            HF_MODEL_REPO="Qwen/Qwen2.5-1.5B"
+            OUT_ET_MODEL_NAME="$(echo "$HF_MODEL_REPO" | awk -F'/' '{print $2}' | sed 's/_/-/g' | tr '[:upper:]' '[:lower:]')_${{ matrix.config }}"
+            # Download model from HuggingFace.
+            DOWNLOADED_PATH=$(
+              bash .ci/scripts/download_hf_hub.sh \
+                --model_id "${HF_MODEL_REPO}" \
+                --files "tokenizer.json" "config.json" "model.safetensors"
+            )
+            # Convert weights to Meta format.
+            python examples/models/qwen2_5/convert_weights.py "${DOWNLOADED_PATH}" "qwen2_5-1_5.pth"
+            # Export using ExecuTorch's model definition.
+            python -m examples.models.llama.export_llama \
+              --model "qwen2_5" \
+              --checkpoint "qwen2_5-1_5.pth" \
+              --params "${DOWNLOADED_PATH}/config.json" \
+              --use_sdpa_with_kv_cache \
+              -X \
+              --xnnpack-extended-ops \
+              -qmode 8da4w \
+              --group_size 32 \
+              --max_seq_length 2048 \
+              --max_context_length 2048 \
+              --output_name "${OUT_ET_MODEL_NAME}.pte" \
+              -kv \
+              -d fp32 \
+              --metadata '{"get_bos_id":151643, "get_eos_ids":[151643]}'
+            ls -lh "${OUT_ET_MODEL_NAME}.pte"
+        elif [[ ${{ matrix.model }} == "phi-4-mini" ]]; then
+            HF_MODEL_REPO="microsoft/Phi-4-mini-instruct"
+            OUT_ET_MODEL_NAME="$(echo "$HF_MODEL_REPO" | awk -F'/' '{print $2}' | sed 's/_/-/g' | tr '[:upper:]' '[:lower:]')_${{ matrix.config }}"
+            # Download model from HuggingFace.
+            DOWNLOADED_PATH=$(
+              bash .ci/scripts/download_hf_hub.sh \
+                --model_id "${HF_MODEL_REPO}" \
+                --files "tokenizer.model" "config.json" "model-00001-of-00002.safetensors" "model-00002-of-00002.safetensors"
+            )
+            # Convert weights to Meta format.
+            python examples/models/phi-4-mini/convert_weights.py "${DOWNLOADED_PATH}" "phi-4-mini.pth"
+            # Export using ExecuTorch's model definition.
+            python -m examples.models.llama.export_llama \
+              --model "phi-4-mini" \
+              --checkpoint "phi-4-mini.pth" \
+              --params "${DOWNLOADED_PATH}/config.json" \
+              --use_sdpa_with_kv_cache \
+              -X \
+              --xnnpack-extended-ops \
+              -qmode 8da4w \
+              --group_size 32 \
+              --max_seq_length 2048 \
+              --max_context_length 2048 \
+              --output_name "${OUT_ET_MODEL_NAME}.pte" \
+              -kv \
+              -d fp32 \
+              --metadata '{"get_bos_id":199999, "get_eos_ids":[200020,199999]}'
+            ls -lh "${OUT_ET_MODEL_NAME}.pte"
         else
             PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh \
               "${{ matrix.model }}" \
