@@ -38,6 +38,9 @@ from executorch.backends.cadence.aot.pass_utils import (
 )
 from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
+from executorch.backends.transforms.replace_scalar_tensor_with_full import (
+    ReplaceScalarTensorWithFullPass,
+)
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -1722,35 +1725,9 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
 register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceScalarTensorWithFullPass(ExportPass):
-    """
-    aten.scalar_tensor can be replaced by aten.full with a shape of [1].
-    scalar_tensor is not supported, so this is an opt_level=0 pass.
-    """
-
-    def call_operator(
-        self,
-        op,
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        if op not in {
-            exir_ops.edge.aten.scalar_tensor.default,
-            torch.ops.aten.scalar_tensor.default,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
-
-        return super().call_operator(
-            exir_ops.edge.aten.full.default,
-            (
-                [1],
-                args[0],
-            ),
-            {"dtype": torch.float32},
-            meta,
-        )
+register_cadence_pass(CadencePassAttribute(opt_level=0))(
+    ReplaceScalarTensorWithFullPass
+)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
