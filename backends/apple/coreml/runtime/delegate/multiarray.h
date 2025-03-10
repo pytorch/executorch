@@ -131,9 +131,7 @@ public:
         *ptr = value;
     }
 
-    void resize(const std::vector<size_t>& shape) {
-        layout_.resize(shape);
-    }
+    void resize(const std::vector<size_t>& shape) { layout_.resize(shape); }
 
 private:
     void* data(const std::vector<size_t>& indices) const noexcept;
