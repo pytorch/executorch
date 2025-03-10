@@ -526,7 +526,9 @@ class TestQNN(unittest.TestCase):
         dynamic_shapes: Dict = None,
         bypass_check: bool = False,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes).module()
+        m = torch.export.export(
+            module, inputs, dynamic_shapes=dynamic_shapes, strict=True
+        ).module()
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)

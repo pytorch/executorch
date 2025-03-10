@@ -32,6 +32,7 @@ target_include_directories(
   PUBLIC ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
          ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
 )
+target_compile_definitions(extension_threadpool PUBLIC ET_USE_THREADPOOL)
 target_compile_options(extension_threadpool PUBLIC ${_common_compile_options})
 
 # Install libraries
