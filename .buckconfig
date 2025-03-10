@@ -39,3 +39,6 @@
 
 [buck2]
 restarter=true
+
+[oss]
+folly_cxx_tests = False
