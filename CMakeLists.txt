@@ -482,34 +482,29 @@ if(EXECUTORCH_BUILD_FLATC)
       FATAL_ERROR "May not set both EXECUTORCH_BUILD_FLATC and FLATC_EXECUTABLE"
     )
   endif()
-  set(FLATC_EXECUTABLE flatc)
-  set(FLATBUFFERS_BUILD_FLATC
-      ON
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_FLATHASH
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_FLATLIB
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_TESTS
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_INSTALL
-      OFF
-      CACHE BOOL ""
-  )
-  add_subdirectory(third-party/flatbuffers)
 
-  # exir lets users set the alignment of tensor data embedded in the flatbuffer,
-  # and some users need an alignment larger than the default, which is typically
-  # 32.
-  target_compile_definitions(flatc PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024)
+  include(ExternalProject)
+
+  ExternalProject_Add(
+    host_flatc
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/third-party/flatbuffers
+    CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
+               -DFLATBUFFERS_BUILD_FLATHASH=OFF
+               -DFLATBUFFERS_BUILD_FLATLIB=OFF
+               -DFLATBUFFERS_BUILD_TESTS=OFF
+               -DFLATBUFFERS_INSTALL=OFF
+               # exir lets users set the alignment of tensor data embedded in
+               # the flatbuffer, and some users need an alignment larger than
+               # the default, which is typically 32.
+               -DCMAKE_CXX_FLAGS=-DFLATBUFFERS_MAX_ALIGNMENT=1024
+    INSTALL_COMMAND ""
+  )
+  ExternalProject_Get_Property(host_flatc BINARY_DIR)
+  set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
+
 endif()
+
 if(NOT FLATC_EXECUTABLE)
   message(
     FATAL_ERROR
