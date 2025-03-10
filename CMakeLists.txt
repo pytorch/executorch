@@ -46,6 +46,7 @@ cmake_minimum_required(VERSION 3.19)
 project(executorch)
 include(build/Utils.cmake)
 include(CMakeDependentOption)
+include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -482,33 +483,47 @@ if(EXECUTORCH_BUILD_FLATC)
       FATAL_ERROR "May not set both EXECUTORCH_BUILD_FLATC and FLATC_EXECUTABLE"
     )
   endif()
-  set(FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
-  set(FLATBUFFERS_BUILD_FLATC
-      ON
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_FLATHASH
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_FLATLIB
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_TESTS
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_INSTALL
-      OFF
-      CACHE BOOL ""
-  )
-  add_subdirectory(third-party/flatbuffers)
+  # set(FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
+  # set(FLATBUFFERS_BUILD_FLATC
+  #     ON
+  #     CACHE BOOL ""
+  # )
+  # set(FLATBUFFERS_BUILD_FLATHASH
+  #     OFF
+  #     CACHE BOOL ""
+  # )
+  # set(FLATBUFFERS_BUILD_FLATLIB
+  #     OFF
+  #     CACHE BOOL ""
+  # )
+  # set(FLATBUFFERS_BUILD_TESTS
+  #     OFF
+  #     CACHE BOOL ""
+  # )
+  # set(FLATBUFFERS_INSTALL
+  #     OFF
+  #     CACHE BOOL ""
+  # )
+  # add_subdirectory(third-party/flatbuffers)
 
   # exir lets users set the alignment of tensor data embedded in the flatbuffer,
   # and some users need an alignment larger than the default, which is typically
   # 32.
-  target_compile_definitions(flatc PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024)
+  #target_compile_definitions(flatc PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024)
+
+  ExternalProject_Add(
+    flatbuffers
+    PREFIX "${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers"
+    SOURCE_DIR "${CMAKE_SOURCE_DIR}/third-party/flatbuffers"
+    CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
+               -DFLATBUFFERS_BUILD_FLATHASH=OFF
+               -DFLATBUFFERS_BUILD_FLATLIB=OFF
+               -DFLATBUFFERS_BUILD_TESTS=OFF
+               -DFLATBUFFERS_INSTALL=OFF
+  )
+  ExternalProject_Get_Property(flatbuffers binary_dir)
+  set(FLATC_EXECUTABLE "${binary_dir}/flatc")
+
 endif()
 if(NOT FLATC_EXECUTABLE)
   message(
