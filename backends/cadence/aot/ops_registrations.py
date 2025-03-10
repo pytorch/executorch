@@ -11,7 +11,7 @@ from typing import Optional, Tuple
 
 import torch
 from executorch.exir.scalar_type import ScalarType
-from torch.library import Library, register_fake
+from torch.library import impl, Library, register_fake
 
 from .utils import get_conv1d_output_size, get_conv2d_output_size
 
@@ -94,7 +94,6 @@ lib.define(
     "int[] dilation, SymInt[] output_padding, int groups, bool channel_last=False) -> (Tensor Y)"
 )
 lib.define("dequantize(Tensor X, Tensor X_scale, Tensor X_zero_point) -> (Tensor Y)")
-# cadence::quantized_relu is defined in OSS
 lib.define(
     "quantized_add(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
@@ -119,8 +118,6 @@ lib.define(
     "quantized_embedding_byte(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
     "Tensor indices, bool pruned_weights=False) -> (Tensor X)"
 )
-# cadence::quantized_layer_norm is defined in OSS
-# cadence::quantized_conv is defined is OSS
 lib.define(
     "quantized_transposed_conv(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
     "int[] dilation, SymInt[] output_padding, int groups, int input_zero_point, Tensor weight_zero_point, "
@@ -156,7 +153,7 @@ lib.define(
 )
 
 # ------------------------------------ #
-#   Migrated from custom_ops.ymal      #
+#   Migrated from custom_ops.yaml      #
 # ------------------------------------ #
 # Migrated from the custom_ops.yaml files containing different operator variants (e.g., .out, .tensor_out)
 lib.define(
@@ -167,7 +164,6 @@ lib.define(
     "transposed_convolution.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
     "int[] dilation, SymInt[] output_padding, int groups, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
-# cadence::quantized_relu.out is defined in OSS
 lib.define(
     "quantized_relu.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
 )
@@ -265,13 +261,11 @@ aten_lib.define(
     "_cat_nop.out(Tensor[] tensors, int dim=0, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-# Custom ops with jarvis_nn_ops namespace
+# Custom ops with cadence_nn_ops namespace
 jarvis_nn_lib = Library("jarvis_nn_ops", "DEF")
 jarvis_nn_lib.define(
     "attention_mask.out(Tensor input, Tensor start, Tensor stop, *, Tensor(a!) out) -> Tensor(a!)"
 )
-
-m = Library("cadence", "IMPL", "Meta")
 
 
 @register_fake("cadence::quantize_per_tensor")
@@ -596,22 +590,6 @@ def linalg_vector_norm_meta(
     return X.new_empty([], dtype=X.dtype)
 
 
-@register_fake("cadence::requantize")
-def requantize_meta(
-    input: torch.Tensor,
-    in_scale: torch.Tensor,
-    in_zero_point: torch.Tensor,
-    out_scale: torch.Tensor,
-    out_zero_point: torch.Tensor,
-    dtype: ScalarType,
-) -> torch.Tensor:
-    return input.new_empty(
-        input.size(),
-        # pyre-ignore[6]: Incompatible type
-        dtype=dtype,
-    )
-
-
 @register_fake("cadence::quantized_relu.per_tensor")
 def quantized_relu_per_tensor_meta(
     input: torch.Tensor,
@@ -904,3 +882,55 @@ def transposed_im2row_meta(
     output_size = torch.Size((batch_size, output_length, n_output_plane))
 
     return input.new_empty(output_size, dtype=input.dtype)
+
+
+m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
+
+qdtype_map: dict[ScalarType, torch.dtype] = {
+    ScalarType.QINT8: torch.qint8,
+    ScalarType.QUINT8: torch.quint8,
+    ScalarType.QINT32: torch.qint32,
+}
+
+
+@impl(m, "requantize")
+def requantize(
+    input: torch.Tensor,
+    in_scale: torch.Tensor,
+    in_zero_point: torch.Tensor,
+    out_scale: torch.Tensor,
+    out_zero_point: torch.Tensor,
+    dtype: ScalarType,
+) -> torch.Tensor:
+    if dtype in qdtype_map:
+        # Old quantization mechanism
+        return torch.quantize_per_tensor(
+            torch.dequantize(input), out_scale, out_zero_point, qdtype_map[dtype]
+        )
+
+    # For in_scale or out_scale other than scalar, it requires quant/dequant
+    # per channel, but the channel dimension value is missing
+    if in_scale.numel() > 1 or out_scale.numel() > 1:
+        raise NotImplementedError("Only scalar scales are supported")
+
+    quant_min = torch.iinfo(input.dtype).min
+    quant_max = torch.iinfo(input.dtype).max
+    # pyre-fixme[6]: This dtype is actually the right one.
+    out_quant_min = torch.iinfo(dtype).min
+    # pyre-fixme[6]: This dtype is actually the right one.
+    out_quant_max = torch.iinfo(dtype).max
+    return torch.ops.quantized_decomposed.quantize_per_tensor(
+        torch.ops.quantized_decomposed.dequantize_per_tensor(
+            input,
+            in_scale.flatten()[0],
+            in_zero_point.flatten()[0],
+            quant_min,
+            quant_max,
+            input.dtype,
+        ),
+        out_scale.flatten()[0],
+        out_zero_point.flatten()[0],
+        out_quant_min,
+        out_quant_max,
+        dtype,
+    )
