@@ -978,6 +978,18 @@ def _remove_invalid_ops_for_not_decompose(
 ) -> List[torch._ops.OpOverload]:
     # To address https://github.com/pytorch/executorch/issues/8781
     def keep(op):
+        # Explicit allow list
+        allow_list = []
+        try:
+            # Ops in torch.ops.quant are not always loaded, so we use try/except
+            # Aliases output, but we need to allow it for XNNPACK
+            allow_list.append(torch.ops.quant.choose_qparams_affine.default)
+        except:
+            pass
+
+        if op in allow_list:
+            return True
+
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
         if native_schema.is_mutable:
@@ -1004,6 +1016,9 @@ def _remove_invalid_ops_for_not_decompose(
             torch.ops.aten.add.Tensor,
             torch.ops.aten.sub.Tensor,
             torch.ops.aten.div.Tensor,
+            torch.ops.aten.item.default,
+            torch.ops.aten._local_scalar_dense.default,
+            torch.ops.aten.unbind.int,
         ]:
             logging.warn(
                 f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."

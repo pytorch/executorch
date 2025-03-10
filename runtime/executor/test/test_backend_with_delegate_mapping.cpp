@@ -70,8 +70,11 @@ class BackendWithDelegateMapping final : public BackendInterface {
       }
 
       if (op_name != nullptr && delegate_debug_identifier != nullptr) {
-        char* op_name_mem = (char*)ET_ALLOCATE_OR_RETURN_ERROR(
-            runtime_allocator, strlen(op_name) + 1);
+        char* op_name_mem =
+            (char*)runtime_allocator->allocate(strlen(op_name) + 1);
+        if (op_name_mem == nullptr) {
+          return Error::MemoryAllocationFailed;
+        }
         memcpy(op_name_mem, op_name, strlen(op_name) + 1);
         op_list->ops[num_ops].name = op_name_mem;
         op_list->ops[num_ops].debug_handle = atoi(delegate_debug_identifier);
@@ -106,10 +109,16 @@ class BackendWithDelegateMapping final : public BackendInterface {
         "Instruction count must be non-negative: %ld",
         instruction_number);
 
-    auto op_list =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, DemoOpList);
-    op_list->ops = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, DemoOp, instruction_number);
+    auto op_list = runtime_allocator->allocateInstance<DemoOpList>();
+    if (op_list == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
+    op_list->ops = runtime_allocator->allocateList<DemoOp>(instruction_number);
+    if (op_list->ops == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     op_list->numops = static_cast<size_t>(instruction_number);
 
     Error error =

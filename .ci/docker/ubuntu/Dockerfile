@@ -30,6 +30,10 @@ ARG BUCK2_VERSION
 COPY ./common/install_buck.sh install_buck.sh
 RUN bash ./install_buck.sh && rm install_buck.sh
 
+# Install java
+COPY ./common/install_java.sh install_java.sh
+RUN bash ./install_java.sh && rm install_java.sh
+
 # Setup user
 COPY ./common/install_user.sh install_user.sh
 RUN bash ./install_user.sh && rm install_user.sh

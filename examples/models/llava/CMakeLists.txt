@@ -93,14 +93,6 @@ if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
   target_link_options_shared_lib(executorch)
 endif()
 
-# custom ops library
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/extension/llm/custom_ops
-    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
-  )
-endif()
-
 # llava_runner library
 add_subdirectory(runner)
 
@@ -132,14 +124,12 @@ target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
-  list(APPEND _common_compile_options -DET_USE_THREADPOOL)
   list(APPEND link_libraries extension_threadpool pthreadpool)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/pthreadpool/include

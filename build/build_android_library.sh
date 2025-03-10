@@ -40,6 +40,8 @@ build_android_native_library() {
     EXECUTORCH_BUILD_NEURON=OFF
   fi
 
+  EXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN:-OFF}"
+
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -60,6 +62,7 @@ build_android_native_library() {
     -DNEURON_BUFFER_ALLOCATOR_LIB="${NEURON_BUFFER_ALLOCATOR_LIB}" \
     -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
+    -DEXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN}" \
     -DCMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE}" \
     -B"${CMAKE_OUT}"
 
@@ -70,6 +73,11 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
+  # Update tokenizers submodule
+  pushd extension/llm/tokenizers
+  echo "Update tokenizers submodule"
+  git submodule update --init
+  popd
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -156,12 +164,6 @@ collect_artifacts_to_be_uploaded() {
   # Collect the app and its test suite
   cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${DEMO_APP_DIR}"
   cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${DEMO_APP_DIR}"
-  # Collect all ABI specific libraries
-  for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
-    mkdir -p "${DEMO_APP_DIR}/${ANDROID_ABI}"
-    cp cmake-out-android-${ANDROID_ABI}/lib/*.a "${DEMO_APP_DIR}/${ANDROID_ABI}/"
-    cp cmake-out-android-${ANDROID_ABI}/extension/android/*.so "${DEMO_APP_DIR}/${ANDROID_ABI}/"
-  done
   # Collect JAR and AAR
   cp extension/android/build/libs/executorch.jar "${DEMO_APP_DIR}"
   find "${BUILD_AAR_DIR}/" -name 'executorch*.aar' -exec cp {} "${DEMO_APP_DIR}" \;
@@ -178,7 +180,9 @@ collect_artifacts_to_be_uploaded() {
 }
 
 main() {
-  BUILD_AAR_DIR="$(mktemp -d)"
+  if [[ -z "${BUILD_AAR_DIR:-}" ]]; then
+    BUILD_AAR_DIR="$(mktemp -d)"
+  fi
   export BUILD_AAR_DIR
   if [ -z "$ANDROID_ABIS" ]; then
     ANDROID_ABIS=("arm64-v8a" "x86_64")
