@@ -200,6 +200,7 @@ supported_ops = {
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
+    exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,  # noqa F405
 }
 
 

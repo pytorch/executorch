@@ -209,6 +209,41 @@ class AvgPool2dConvModule(torch.nn.Module):
         return self.avg_pool(x)
 
 
+class AdaptiveAvgPool2dModule(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=output_size)
+
+    def forward(self, x):
+        return self.adaptive_avg_pool(x)
+
+
+class AdaptiveAvgPool2dConvModule(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+
+        self.conv = Conv2dModule(padding=1)
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=output_size)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.adaptive_avg_pool(x)
+
+
+class AdaptiveAvgPool2dConvMeanDimModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = Conv2dModule()
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=(1, 1))
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.adaptive_avg_pool(x)
+        return x
+
+
 class ReLUModule(torch.nn.Module):
     def __init__(self):
         super().__init__()

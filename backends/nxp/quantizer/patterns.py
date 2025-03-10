@@ -105,6 +105,15 @@ class SharedSpecPattern(QuantizationPattern):
         )
 
 
+class AdaptiveAvgPoolPattern(SharedSpecPattern):
+    """
+    Quantizer for AdaptiveAvgPool2D operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.adaptive_avg_pool2d.default]
+
+
 class AddmmPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.addmm.default]
