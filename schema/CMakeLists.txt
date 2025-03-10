@@ -37,7 +37,7 @@ function(generate_program_schema _schema_srcs _schema_name)
       ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
       "${_program_schema__output_dir}" ${_schema_srcs}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS host_flatc ${_schema_srcs}
+    DEPENDS flatc ${_schema_srcs}
     COMMENT "Generating ${_schema_name} headers"
     VERBATIM
   )
