@@ -808,7 +808,9 @@ class RemoveBranchedQuantDequant(ExportPass):
 
 
 class RemoveCatFromSliceCopyPass(ExportPass):
-    def _remove_unused_cat(self, graph_module: torch.fx.GraphModule) -> None:
+    def _remove_unused_cat(  # noqa: C901
+        self, graph_module: torch.fx.GraphModule
+    ) -> None:
         slice_copy_nodes = [
             node
             for node in graph_module.graph.nodes
