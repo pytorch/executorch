@@ -520,6 +520,7 @@ if(EXECUTORCH_BUILD_FLATC)
                -DFLATBUFFERS_BUILD_FLATLIB=OFF
                -DFLATBUFFERS_BUILD_TESTS=OFF
                -DFLATBUFFERS_INSTALL=OFF
+               -DCMAKE_CXX_FLAGS=-DFLATBUFFERS_MAX_ALIGNMENT=1024
   )
   ExternalProject_Get_Property(flatbuffers binary_dir)
   set(FLATC_EXECUTABLE "${binary_dir}/flatc")
