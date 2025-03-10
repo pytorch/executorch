@@ -10,6 +10,8 @@
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <optional>
+
 namespace torch {
 namespace executor {
 namespace native {

@@ -11,6 +11,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <optional>
+
 namespace torch {
 namespace executor {
 namespace native {
