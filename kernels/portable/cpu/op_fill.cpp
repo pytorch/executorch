@@ -45,7 +45,7 @@ Tensor& fill_scalar_out(
   ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
     CTYPE_A b_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "fill.Scalar_out", CTYPE_B, [&] {
-      CTYPE_B b_val;
+      CTYPE_B b_val{};
       utils::extract_scalar(b, &b_val);
       b_casted = static_cast<CTYPE_A>(b_val);
     });

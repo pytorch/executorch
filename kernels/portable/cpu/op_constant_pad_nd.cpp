@@ -189,7 +189,7 @@ Tensor& constant_pad_nd_out(
     CTYPE value_v;
     ET_SWITCH_SCALAR_OBJ_TYPES(
         value_type, ctx, "constant_pad_nd.out", CTYPE_VALUE, [&]() {
-          CTYPE_VALUE val;
+          CTYPE_VALUE val{};
           utils::extract_scalar(value, &val);
           value_v = static_cast<CTYPE>(val);
         });
