@@ -9,6 +9,7 @@ import torch
 from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_KEY
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
+    get_16a4w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
     get_ptq_per_channel_quant_config,
     QuantizationConfig,
@@ -50,6 +51,34 @@ def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
                 if full_qualified_name == "output.conv":
                     annotate_conv2d(
                         node, quantization_config=quantization_config_16a8w_per_channel
+                    )
+
+
+def annotate_linear_16a4w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
+    def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_spec = quantization_config.input_activation
+        input_qspec_map[input_act] = input_spec
+
+        weight = node.args[1]
+        input_qspec_map[weight] = quantization_config.weight
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    quantization_config_16a4w = get_16a4w_qnn_ptq_config(act_observer=MinMaxObserver)
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and node.target == torch.ops.aten.conv2d.default:
+            if "nn_module_stack" in node.meta:
+                module_values_list = list(node.meta["nn_module_stack"].values())
+                full_qualified_name = module_values_list[-1][0]
+                if full_qualified_name == "output.conv":
+                    annotate_conv2d(
+                        node, quantization_config=quantization_config_16a4w
                     )
 
 

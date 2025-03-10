@@ -9,9 +9,14 @@ from typing import Any, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
-from executorch.backends.qualcomm.builders import node_visitor
+from executorch.backends.qualcomm.builders import node_visitor_manager
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
+
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 
 from executorch.exir.backend.backend_details import CompileSpec
@@ -44,7 +49,11 @@ class QnnOperatorSupport(OperatorSupportBase):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
     ):
-        self.node_visitors = node_visitor.get_node_visitors(edge_program)
+        python_options = flatbuffer_to_option(compiler_specs[0].value)
+        self.node_visitors = node_visitor_manager.get_node_visitors(
+            edge_program,
+            op_package_infos=python_options.op_package_options.op_package_infos,
+        )
 
         self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
@@ -102,7 +111,13 @@ class QnnOperatorSupport(OperatorSupportBase):
         return supported
 
     def __del__(self):
-        self.qnn_manager.Destroy()
+        # HTP op package contains some static data structures
+        # which will trigger preparation failure in qnn_preprocess
+        # if libQnnHtp.so is not fully unloaded
+        # ---
+        # currently we'll just keep manager alive for simplicity
+        #self.qnn_manager.Destroy()
+        pass
 
 
 class QnnPartitioner(Partitioner):
@@ -170,7 +185,12 @@ class QnnPartitioner(Partitioner):
                 # pop certain keys in meta for not affecting the passes in compilation
                 # TODO: need to put property name in common definitions
                 node.meta.pop(QCOM_AXIS_ORDER, "")
-        del self.op_support_checker
+        # HTP op package contains some static data structures
+        # which will trigger preparation failure in qnn_preprocess
+        # if libQnnHtp.so is not fully unloaded
+        # ---
+        # currently we'll just keep manager alive for simplicity
+        #del self.op_support_checker
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )

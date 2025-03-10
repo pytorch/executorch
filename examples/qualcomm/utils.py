@@ -21,7 +21,10 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchOpPackageOptions,
+)
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_htp_compiler_spec,
@@ -301,6 +304,7 @@ def build_executorch_binary(
     dump_intermediate_outputs=False,
     passes_job=None,
     qat_training_data=None,
+    op_package_options: QnnExecuTorchOpPackageOptions = None,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -352,6 +356,7 @@ def build_executorch_binary(
             backend_options=backend_options,
             shared_buffer=shared_buffer,
             dump_intermediate_outputs=dump_intermediate_outputs,
+            op_package_options=op_package_options,
         ),
         skip_node_id_set,
         skip_node_op_set,
