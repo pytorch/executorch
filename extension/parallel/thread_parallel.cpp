@@ -8,6 +8,7 @@
 
 #include <cinttypes>
 #include <tuple>
+#include <algorithm>
 
 #include <executorch/extension/parallel/thread_parallel.h>
 #include <executorch/extension/threadpool/threadpool.h>
