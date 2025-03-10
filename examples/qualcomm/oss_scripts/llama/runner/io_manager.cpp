@@ -168,8 +168,35 @@ void ShiftPointerIoMgr::init_io() {
   }
 }
 
+void ShiftPointerIoMgr::reset_io(
+    const std::vector<Result<MethodMeta>>& prefill_methods_meta,
+    const std::vector<Result<MethodMeta>>& kv_methods_meta) {
+  IO* ptr = static_cast<IO*>(data_ptr_.get());
+  ptr->prefill_input_pos.clear();
+  ptr->prefill_input_pos.resize(prefill_ar_len_, 0);
+  ptr->prefill_attention_mask.clear();
+  ptr->prefill_attention_mask.resize((prefill_ar_len_ * context_len_), 0);
+  ptr->kv_attention_mask.clear();
+  ptr->kv_attention_mask.resize((kv_ar_len_ * context_len_), 0);
+  ptr->kv_input_pos = static_cast<int32_t>(0);
+
+  ptr->kv_input_pos = 0;
+  switch (eval_mode_) {
+    case EvalMode::kKVCached:
+      prepare_kv_io(kv_methods_meta, true);
+      break;
+    case EvalMode::kHybrid:
+      prepare_prefill_io(prefill_methods_meta, true);
+      prepare_kv_io(kv_methods_meta, true);
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported mode");
+      break;
+  }
+}
 void ShiftPointerIoMgr::prepare_kv_io(
-    const std::vector<Result<MethodMeta>>& methods_meta) {
+    const std::vector<Result<MethodMeta>>& methods_meta,
+    bool reset_io) {
   for (int i = 0; i < modules_.size(); ++i) {
     ET_CHECK_MSG(
         methods_meta[i].ok(),
@@ -179,18 +206,18 @@ void ShiftPointerIoMgr::prepare_kv_io(
 
   ET_CHECK_MSG(!(kv_forward_name_.empty()), "kv forward name is empty");
   IO* ptr = static_cast<IO*>(data_ptr_.get());
-
   // [I]: input_tokens
-  Result<TensorInfo> kv_input_toks = methods_meta[0]->input_tensor_meta(0);
-  kv_input_toks_ = std::make_unique<TensorImpl>(
-      kv_input_toks->scalar_type(),
-      kv_input_toks->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(kv_input_toks->sizes().data()),
-      &ptr->kv_input_toks,
-      const_cast<TensorImpl::DimOrderType*>(kv_input_toks->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(kv_input_toks_.get());
-
-  // [I]: atten_mask
+  if (!reset_io) {
+    Result<TensorInfo> kv_input_toks = methods_meta[0]->input_tensor_meta(0);
+    kv_input_toks_ = std::make_unique<TensorImpl>(
+        kv_input_toks->scalar_type(),
+        kv_input_toks->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(kv_input_toks->sizes().data()),
+        &ptr->kv_input_toks,
+        const_cast<TensorImpl::DimOrderType*>(
+            kv_input_toks->dim_order().data()));
+    input_tensors_[kv_forward_name_][0].push_back(kv_input_toks_.get());
+  }
   Result<TensorInfo> kv_attention_mask = methods_meta[0]->input_tensor_meta(1);
   kv_attention_mask_ = std::make_unique<TensorImpl>(
       kv_attention_mask->scalar_type(),
@@ -199,7 +226,11 @@ void ShiftPointerIoMgr::prepare_kv_io(
       ptr->kv_attention_mask.data(),
       const_cast<TensorImpl::DimOrderType*>(
           kv_attention_mask->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(kv_attention_mask_.get());
+  if (reset_io)
+    input_tensors_[kv_forward_name_][0][1] = kv_attention_mask_.get();
+
+  else
+    input_tensors_[kv_forward_name_][0].push_back(kv_attention_mask_.get());
 
   // [I]: input_pos
   Result<TensorInfo> kv_input_pos = methods_meta[0]->input_tensor_meta(2);
@@ -209,7 +240,12 @@ void ShiftPointerIoMgr::prepare_kv_io(
       const_cast<TensorImpl::SizesType*>(kv_input_pos->sizes().data()),
       &ptr->kv_input_pos,
       const_cast<TensorImpl::DimOrderType*>(kv_input_pos->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(kv_input_pos_.get());
+  if (reset_io) {
+    input_tensors_[kv_forward_name_][0][2] = kv_input_pos_.get();
+    return;
+  } else {
+    input_tensors_[kv_forward_name_][0].push_back(kv_input_pos_.get());
+  }
 
   // [I] kv_cache
   int index = 3; // bypass input_tokens, atten_mask, input_pos
@@ -296,7 +332,8 @@ void ShiftPointerIoMgr::prepare_kv_io(
 }
 
 void ShiftPointerIoMgr::prepare_prefill_io(
-    const std::vector<Result<MethodMeta>>& methods_meta) {
+    const std::vector<Result<MethodMeta>>& methods_meta,
+    bool reset_io) {
   for (int i = 0; i < modules_.size(); ++i) {
     ET_CHECK_MSG(
         methods_meta[i].ok(),
@@ -310,15 +347,19 @@ void ShiftPointerIoMgr::prepare_prefill_io(
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
   // [I]: prefill_input_tokens
-  Result<TensorInfo> prefill_input_toks = methods_meta[0]->input_tensor_meta(0);
-  prefill_input_toks_ = std::make_unique<TensorImpl>(
-      prefill_input_toks->scalar_type(),
-      prefill_input_toks->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(prefill_input_toks->sizes().data()),
-      ptr->prefill_input_toks.data(),
-      const_cast<TensorImpl::DimOrderType*>(
-          prefill_input_toks->dim_order().data()));
-  input_tensors_[prefill_forward_name_][0].push_back(prefill_input_toks_.get());
+  if (!reset_io) {
+    Result<TensorInfo> prefill_input_toks =
+        methods_meta[0]->input_tensor_meta(0);
+    prefill_input_toks_ = std::make_unique<TensorImpl>(
+        prefill_input_toks->scalar_type(),
+        prefill_input_toks->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(prefill_input_toks->sizes().data()),
+        ptr->prefill_input_toks.data(),
+        const_cast<TensorImpl::DimOrderType*>(
+            prefill_input_toks->dim_order().data()));
+    input_tensors_[prefill_forward_name_][0].push_back(
+        prefill_input_toks_.get());
+  }
   // [I]: prefill_attention_mask
   for (int i = 0; i < prefill_ar_len_; ++i) {
     for (int j = 0,
@@ -340,8 +381,12 @@ void ShiftPointerIoMgr::prepare_prefill_io(
       ptr->prefill_attention_mask.data(),
       const_cast<TensorImpl::DimOrderType*>(
           prefill_attention_mask->dim_order().data()));
-  input_tensors_[prefill_forward_name_][0].push_back(
-      prefill_attention_mask_.get());
+  if (reset_io) {
+    input_tensors_[prefill_forward_name_][0][1] = prefill_attention_mask_.get();
+  } else {
+    input_tensors_[prefill_forward_name_][0].push_back(
+        prefill_attention_mask_.get());
+  }
 
   if (!is_bert_) {
     // [I]: prefill_input_pos
@@ -354,8 +399,14 @@ void ShiftPointerIoMgr::prepare_prefill_io(
         ptr->prefill_input_pos.data(),
         const_cast<TensorImpl::DimOrderType*>(
             prefill_input_pos->dim_order().data()));
-    input_tensors_[prefill_forward_name_][0].push_back(
-        prefill_input_pos_.get());
+
+    if (reset_io) {
+      input_tensors_[prefill_forward_name_][0][2] = prefill_input_pos_.get();
+      return;
+    } else {
+      input_tensors_[prefill_forward_name_][0].push_back(
+          prefill_input_pos_.get());
+    }
 
     // [I] kv_cache
     int index = 3; // bypass input_tokens, atten_mask, input_pos
@@ -406,7 +457,6 @@ void ShiftPointerIoMgr::prepare_prefill_io(
       const_cast<TensorImpl::DimOrderType*>(logits->dim_order().data()));
   output_tensors_[prefill_forward_name_][modules_.size() - 1].push_back(
       prefill_logits_.get());
-
   // [O] kv_cache
   int index = 1;
   // In hybrid mode, we use kv mode cache len for v stride since we want to
@@ -885,8 +935,26 @@ void SmartMaskIoMgr::init_io() {
   ptr->init_io_ptrs(shared_ptr, io_bytes_map);
 }
 
+void SmartMaskIoMgr::reset_io(
+    const std::vector<Result<MethodMeta>>& prefill_methods_meta,
+    const std::vector<Result<MethodMeta>>& kv_methods_meta) {
+  switch (eval_mode_) {
+    case EvalMode::kKVCached:
+      prepare_kv_io(prefill_methods_meta, true);
+      break;
+    case EvalMode::kHybrid:
+      prepare_prefill_io(prefill_methods_meta, true);
+      prepare_kv_io(kv_methods_meta, true);
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported mode");
+      break;
+  }
+}
+
 void SmartMaskIoMgr::prepare_kv_io(
-    const std::vector<Result<MethodMeta>>& methods_meta) {
+    const std::vector<Result<MethodMeta>>& methods_meta,
+    bool reset_io) {
   for (int i = 0; i < modules_.size(); ++i) {
     ET_CHECK_MSG(
         methods_meta[i].ok(),
@@ -899,19 +967,22 @@ void SmartMaskIoMgr::prepare_kv_io(
   std::unordered_map<std::string, size_t> io_bytes_map = get_io_bytes();
 
   // [I]: input_tokens
-  Result<TensorInfo> kv_input_toks = methods_meta[0]->input_tensor_meta(0);
-  kv_input_toks_ = std::make_unique<TensorImpl>(
-      kv_input_toks->scalar_type(),
-      kv_input_toks->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(kv_input_toks->sizes().data()),
-      ptr->kv_input_toks,
-      const_cast<TensorImpl::DimOrderType*>(kv_input_toks->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(kv_input_toks_.get());
-  ptr->add_custom_mem_info(
-      ptr->kv_input_toks,
-      io_bytes_map["kv_input_toks_bytes"],
-      kv_input_toks->scalar_type(),
-      kv_input_toks.get());
+  if (!reset_io) {
+    Result<TensorInfo> kv_input_toks = methods_meta[0]->input_tensor_meta(0);
+    kv_input_toks_ = std::make_unique<TensorImpl>(
+        kv_input_toks->scalar_type(),
+        kv_input_toks->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(kv_input_toks->sizes().data()),
+        ptr->kv_input_toks,
+        const_cast<TensorImpl::DimOrderType*>(
+            kv_input_toks->dim_order().data()));
+    input_tensors_[kv_forward_name_][0].push_back(kv_input_toks_.get());
+    ptr->add_custom_mem_info(
+        ptr->kv_input_toks,
+        io_bytes_map["kv_input_toks_bytes"],
+        kv_input_toks->scalar_type(),
+        kv_input_toks.get());
+  }
 
   // [I]: atten_mask
   std::fill_n(ptr->kv_attention_mask, kv_ar_len_ * context_len_, 0);
@@ -923,12 +994,19 @@ void SmartMaskIoMgr::prepare_kv_io(
       ptr->kv_attention_mask,
       const_cast<TensorImpl::DimOrderType*>(
           kv_attention_mask->dim_order().data()));
-  input_tensors_[kv_forward_name_][0].push_back(kv_attention_mask_.get());
+
   ptr->add_custom_mem_info(
       ptr->kv_attention_mask,
       io_bytes_map["kv_attention_mask_bytes"],
       kv_attention_mask->scalar_type(),
       kv_attention_mask.get());
+
+  if (reset_io) {
+    input_tensors_[kv_forward_name_][0][1] = kv_attention_mask_.get();
+    return;
+  } else {
+    input_tensors_[kv_forward_name_][0].push_back(kv_attention_mask_.get());
+  }
 
   // [I]: input_pos
   Result<TensorInfo> kv_input_pos = methods_meta[0]->input_tensor_meta(2);
@@ -944,7 +1022,6 @@ void SmartMaskIoMgr::prepare_kv_io(
       io_bytes_map["kv_input_pos_bytes"],
       kv_input_pos->scalar_type(),
       kv_input_pos.get());
-
   // [I] kv_cache
   size_t layered_head_count = num_layers_ * num_heads_;
   int index = 3; // bypass input_tokens, atten_mask, input_pos
@@ -1071,7 +1148,8 @@ void SmartMaskIoMgr::update_kv_io(
 }
 
 void SmartMaskIoMgr::prepare_prefill_io(
-    const std::vector<Result<MethodMeta>>& methods_meta) {
+    const std::vector<Result<MethodMeta>>& methods_meta,
+    bool reset_io) {
   for (int i = 0; i < modules_.size(); ++i) {
     ET_CHECK_MSG(
         methods_meta[i].ok(),
@@ -1086,21 +1164,24 @@ void SmartMaskIoMgr::prepare_prefill_io(
   std::unordered_map<std::string, size_t> io_bytes_map = get_io_bytes();
 
   // [I]: pre_input_tokens
-  Result<TensorInfo> prefill_input_toks = methods_meta[0]->input_tensor_meta(0);
-  prefill_input_toks_ = std::make_unique<TensorImpl>(
-      prefill_input_toks->scalar_type(),
-      prefill_input_toks->sizes().size(),
-      const_cast<TensorImpl::SizesType*>(prefill_input_toks->sizes().data()),
-      ptr->prefill_input_toks,
-      const_cast<TensorImpl::DimOrderType*>(
-          prefill_input_toks->dim_order().data()));
-  input_tensors_[prefill_forward_name_][0].push_back(prefill_input_toks_.get());
-  ptr->add_custom_mem_info(
-      ptr->prefill_input_toks,
-      io_bytes_map["prefill_input_toks_bytes"],
-      executorch::aten::ScalarType::Int,
-      prefill_input_toks.get());
-
+  if (!reset_io) {
+    Result<TensorInfo> prefill_input_toks =
+        methods_meta[0]->input_tensor_meta(0);
+    prefill_input_toks_ = std::make_unique<TensorImpl>(
+        prefill_input_toks->scalar_type(),
+        prefill_input_toks->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(prefill_input_toks->sizes().data()),
+        ptr->prefill_input_toks,
+        const_cast<TensorImpl::DimOrderType*>(
+            prefill_input_toks->dim_order().data()));
+    input_tensors_[prefill_forward_name_][0].push_back(
+        prefill_input_toks_.get());
+    ptr->add_custom_mem_info(
+        ptr->prefill_input_toks,
+        io_bytes_map["prefill_input_toks_bytes"],
+        executorch::aten::ScalarType::Int,
+        prefill_input_toks.get());
+  }
   // [I]: prefill_attention_mask
   for (int i = 0; i < prefill_ar_len_; ++i) {
     for (int j = 0,
@@ -1124,14 +1205,18 @@ void SmartMaskIoMgr::prepare_prefill_io(
       ptr->prefill_attention_mask,
       const_cast<TensorImpl::DimOrderType*>(
           prefill_attention_mask->dim_order().data()));
-  input_tensors_[prefill_forward_name_][0].push_back(
-      prefill_attention_mask_.get());
   ptr->add_custom_mem_info(
       ptr->prefill_attention_mask,
       io_bytes_map["prefill_attention_mask_bytes"],
       executorch::aten::ScalarType::Bits16,
       prefill_attention_mask.get());
-
+  if (!reset_io)
+    input_tensors_[prefill_forward_name_][0].push_back(
+        prefill_attention_mask_.get());
+  else {
+    input_tensors_[prefill_forward_name_][0][1] = prefill_attention_mask_.get();
+    return;
+  }
   if (!is_bert_) {
     // [I]: prefill_input_pos
     Result<TensorInfo> prefill_input_pos =
