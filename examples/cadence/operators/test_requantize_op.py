@@ -14,6 +14,8 @@ import unittest
 import torch
 
 from executorch.backends.cadence.aot.ops_registrations import *  # noqa
+from executorch.backends.cadence.aot.ref_implementations import *  # noqa
+
 import itertools
 
 from executorch.backends.cadence.aot.export_example import export_model
