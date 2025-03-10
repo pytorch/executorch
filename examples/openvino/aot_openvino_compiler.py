@@ -189,6 +189,7 @@ def main(
 
         def transform_fn(x):
             return x[0]
+
         quantized_model = quantize_model(
             aten_dialect.module(),
             calibration_dataset,
