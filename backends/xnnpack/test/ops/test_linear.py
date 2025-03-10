@@ -645,31 +645,32 @@ class TestLinear(unittest.TestCase):
         bl_sizes = [32, 32, 32, 64]
         N_sizes = [2, 17, 92, 128]
 
-        for use_bias in [True, False]:
-            for M, K, bl, N in zip(M_sizes, K_sizes, bl_sizes, N_sizes):
-                lin_mod = BaseLinear(
-                    in_size=M,
-                    input_channels=K,
-                    output_channels=N,
-                    dtype=dtype,
-                    use_bias=use_bias,
-                )
+        for input_rank in range(2, 4):
+            for use_bias in [True, False]:
+                for M, K, bl, N in zip(M_sizes, K_sizes, bl_sizes, N_sizes):
+                    lin_mod = BaseLinear(
+                        in_size=M,
+                        input_channels=K,
+                        output_channels=N,
+                        dtype=dtype,
+                        use_bias=use_bias,
+                    )
 
-                inputs = lin_mod.get_inputs()
-                # Half requires slightly higher atol, but if you look at error it is not that bad:
-                # Difference: max: 0.00140380859375, abs: 0.00140380859375, mean abs error: 0.00042724609375.
-                # -- Model vs. Reference --
-                # Numel: 4, 4
-                # Median: -0.05023193359375, -0.0516357421875
-                # Mean: 0.2373046875, 0.237060546875
-                # Max: 1.0078125, 1.0078125
-                # Min: -0.08465576171875, -0.08441162109375
-                atol = (
-                    1e-2 if dtype == torch.half else 5e-3
-                )  # TODO(T212995726): Investigate right atol for rand[n] inputs
-                self._test_groupwise_dq_linear(
-                    lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=atol
-                )
+                    inputs = lin_mod.get_inputs(rank=input_rank)
+                    # Half requires slightly higher atol, but if you look at error it is not that bad:
+                    # Difference: max: 0.00140380859375, abs: 0.00140380859375, mean abs error: 0.00042724609375.
+                    # -- Model vs. Reference --
+                    # Numel: 4, 4
+                    # Median: -0.05023193359375, -0.0516357421875
+                    # Mean: 0.2373046875, 0.237060546875
+                    # Max: 1.0078125, 1.0078125
+                    # Min: -0.08465576171875, -0.08441162109375
+                    atol = (
+                        1e-2 if dtype == torch.half else 5e-3
+                    )  # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    self._test_groupwise_dq_linear(
+                        lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=atol
+                    )
 
     def test_fp16_linear(self):
         for use_bias in (True, False):
