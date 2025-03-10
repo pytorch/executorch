@@ -28,15 +28,9 @@
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
-[submodule "extension/llm/third-party/abseil-cpp"]
-	path = extension/llm/third-party/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp.git
-[submodule "extension/llm/third-party/re2"]
-	path = extension/llm/third-party/re2
-	url = https://github.com/google/re2.git
-[submodule "extension/llm/third-party/sentencepiece"]
-	path = extension/llm/third-party/sentencepiece
-	url = https://github.com/google/sentencepiece.git
+[submodule "extension/llm/tokenizers"]
+	path = extension/llm/tokenizers
+	url = https://github.com/pytorch-labs/tokenizers.git
 [submodule "kernels/optimized/third-party/eigen"]
 	path = kernels/optimized/third-party/eigen
 	url = https://gitlab.com/libeigen/eigen.git
