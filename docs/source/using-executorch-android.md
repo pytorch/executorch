@@ -156,6 +156,6 @@ Please use [ExecuTorchDemo](https://github.com/pytorch/executorch/tree/main/exam
 and [LlamaDemo](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo) for the code examples
 using ExecuTorch AAR package.
 
-## Next Steps
+## Java API reference
 
-TODO Link to Java API reference and other relevant material
+Please see [Java API reference](./javadoc)
