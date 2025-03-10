@@ -19,7 +19,7 @@ Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites*
 
 ## AOT step:
 
-The export script called `aot_optimize_and_infer.py` allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.
+The python script called `aot_optimize_and_infer.py` allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.
 
 ### **Usage**
 
