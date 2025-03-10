@@ -327,6 +327,10 @@ class ApplyOverDimListPlan {
       return;
     }
     dim_list_ = dim_list.value();
+    if (dim_list_.value().size() == 1) {
+      mode_ = ExecutionMode::OnlyOneDim;
+      return;
+    }
     is_in_dim_list_.fill(0);
     for (const auto& d : dim_list.value()) {
       const size_t non_neg_d = d < 0 ? d + in.dim() : d;
@@ -346,6 +350,16 @@ class ApplyOverDimListPlan {
       case ExecutionMode::NoDimMaskOrZeroDimension:
         apply_on_flat_ix_with_stride_and_base(
             fn, /*stride=*/1, /*base=*/0, ustart_, uend_);
+        return;
+      case ExecutionMode::OnlyOneDim:
+        apply_on_flat_and_dim_ix_with_stride_and_base(
+            [&](const auto in_ix, const auto dim_ix) {
+              fn(in_ix);
+            },
+            in_.strides()[ET_NORMALIZE_IX(dim_list_.value()[0], in_.dim())],
+            get_init_index(in_, dim_list_.value(), out_ix),
+            ustart_,
+            uend_);
         return;
       case ExecutionMode::NormalDimMask:
         apply_on_flat_ix_with_dim_mask_and_base(
@@ -379,6 +393,8 @@ class ApplyOverDimListPlan {
     // Iterate over the entire tensor with
     // apply_on_flat_ix_with_stride_and_base.
     NoDimMaskOrZeroDimension,
+    // dim_list has size 1, iterate with apply_on_flat_and_dim_ix_with_stride_and_base
+    OnlyOneDim,
     // General mode, iterate with
     // apply_on_flat_ix_with_dim_mask_and_base.
     NormalDimMask
