@@ -37,20 +37,22 @@ bool CompareExportedInput(
 }
 
 QnnManager::~QnnManager() {
-  backend_params_ptr_.reset(new BackendConfigParameters());
+  backend_configurator_ptr_.reset(new BackendConfigurator());
   logger_.reset();
-  qnn_loaded_backend_.TerminateAllBackends();
+  qnn_backends_.TerminateAllBackends();
 }
 
 QnnManager::QnnManager(
     const QnnExecuTorchOptions* options,
-    const QnnExecuTorchContextBinary& qnn_executorch_context_binary)
+    const QnnExecuTorchContextBinary& qnn_executorch_context_binary,
+    const bool on_device_prepare)
     : qnn_context_blob_(qnn_executorch_context_binary),
-      qnn_loaded_backend_(""),
+      qnn_backends_(),
       // options' life cycle is decided by compiler specs which is
       // kept by executorch runtime framework
       // please pay attention to any potential seg fault
-      options_(options) {
+      options_(options),
+      on_device_prepare_(on_device_prepare) {
   QnnExecuTorchBackendType backend_type =
       options->backend_options()->backend_type();
   std::string library_path = options->library_path()->str();
@@ -94,12 +96,18 @@ QnnManager::QnnManager(
         break;
     }
   }
-  qnn_loaded_backend_ = QnnImplementation(library_path);
-  backend_params_ptr_ = std::make_unique<BackendConfigParameters>();
+
+  if (!on_device_prepare_) {
+    qnn_backends_.qnn_loaded_comm_backend_ptr_ =
+        new QnnImplementation(ir_library_name_);
+  }
+  qnn_backends_.qnn_loaded_backend_ptr_ = new QnnImplementation(library_path);
+  backend_configurator_ptr_ = std::make_unique<BackendConfigurator>();
 }
 
-Error QnnManager::LoadQnnLibrary() {
-  Error ret = qnn_loaded_backend_.Load(nullptr);
+Error QnnManager::LoadQnnLibrary(QnnImplementation* qnn_loaded_backend_ptr) {
+  auto config = GetImplementationConfig();
+  Error ret = qnn_loaded_backend_ptr->Load(config.get());
   return ret;
 }
 
@@ -137,12 +145,13 @@ Error QnnManager::PreRegisterMem() {
     }
 
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_mem_manager_ptr_->PreRegisterCustomMemHandle(
-            mem_fd,
-            unaligned_custom_mem_base,
-            total_custom_mem_size,
-            tensor_offset,
-            info) == Error::Ok,
+        backend_configurator_ptr_->backend_params_ptr_->qnn_mem_manager_ptr_
+                ->PreRegisterCustomMemHandle(
+                    mem_fd,
+                    unaligned_custom_mem_base,
+                    total_custom_mem_size,
+                    tensor_offset,
+                    info) == Error::Ok,
         Internal,
         "Fail to register to shared memory.");
   }
@@ -158,7 +167,8 @@ Error QnnManager::RegisterMem(
     return Error::Internal;
   }
 
-  if (backend_params_ptr_->qnn_mem_manager_ptr_ == nullptr) {
+  if (backend_configurator_ptr_->backend_params_ptr_->qnn_mem_manager_ptr_ ==
+      nullptr) {
     QNN_EXECUTORCH_LOG_WARN(
         "Backend %s doesn't supported shared buffer.",
         EnumNameQnnExecuTorchBackendType(
@@ -183,8 +193,9 @@ Error QnnManager::RegisterIonMem(
     // 2. Actually, user doesn't allocate shared buffer with
     // QnnExecuTorchAllocCustomMem API
     return Error::Internal;
-  } else if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
-                 tensor_wrapper->GetMemHandle(), data_ptr)) {
+  } else if (backend_configurator_ptr_->backend_params_ptr_
+                 ->qnn_mem_manager_ptr_->IsRegistered(
+                     tensor_wrapper->GetMemHandle(), data_ptr)) {
     if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
@@ -200,8 +211,8 @@ Error QnnManager::RegisterIonMem(
     return Error::Internal;
   }
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_mem_manager_ptr_->RegisterIonMem(
-          tensor_wrapper, mem_fd, data_ptr) == Error::Ok,
+      backend_configurator_ptr_->backend_params_ptr_->qnn_mem_manager_ptr_
+              ->RegisterIonMem(tensor_wrapper, mem_fd, data_ptr) == Error::Ok,
       Internal,
       "Fail to register to shared memory.");
 
@@ -212,8 +223,8 @@ Error QnnManager::RegisterCustomMem(
     void* data_ptr,
     void* custom_mem_base,
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
-  if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
-          tensor_wrapper->GetMemHandle(), data_ptr)) {
+  if (backend_configurator_ptr_->backend_params_ptr_->qnn_mem_manager_ptr_
+          ->IsRegistered(tensor_wrapper->GetMemHandle(), data_ptr)) {
     if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
@@ -232,15 +243,16 @@ Error QnnManager::RegisterCustomMem(
       qnn_dtype_to_scalar_type_[tensor_wrapper->GetDataType()]};
 
   Qnn_MemHandle_t pre_registered_handle =
-      backend_params_ptr_->qnn_mem_manager_ptr_->GetPreRegisteredHandle(info);
+      backend_configurator_ptr_->backend_params_ptr_->qnn_mem_manager_ptr_
+          ->GetPreRegisteredHandle(info);
   if (pre_registered_handle != nullptr) {
     if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s found a pre-registered memHandle.",
           tensor_wrapper->GetName().c_str());
     }
-    return backend_params_ptr_->qnn_mem_manager_ptr_->SetMemHandle(
-        tensor_wrapper, data_ptr, pre_registered_handle);
+    return backend_configurator_ptr_->backend_params_ptr_->qnn_mem_manager_ptr_
+        ->SetMemHandle(tensor_wrapper, data_ptr, pre_registered_handle);
   }
 
   SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
@@ -261,13 +273,14 @@ Error QnnManager::RegisterCustomMem(
   }
 
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_mem_manager_ptr_->RegisterCustomMem(
-          tensor_wrapper,
-          mem_fd,
-          data_ptr,
-          unaligned_custom_mem_base,
-          total_custom_mem_size,
-          tensor_offset) == Error::Ok,
+      backend_configurator_ptr_->backend_params_ptr_->qnn_mem_manager_ptr_
+              ->RegisterCustomMem(
+                  tensor_wrapper,
+                  mem_fd,
+                  data_ptr,
+                  unaligned_custom_mem_base,
+                  total_custom_mem_size,
+                  tensor_offset) == Error::Ok,
       Internal,
       "Fail to register to shared memory.");
 
@@ -276,47 +289,56 @@ Error QnnManager::RegisterCustomMem(
 
 Error QnnManager::Init() {
   ET_CHECK_OR_RETURN_ERROR(
-      LoadQnnLibrary() == Error::Ok, Internal, "Fail to load Qnn library");
+      LoadQnnLibrary(qnn_backends_.qnn_loaded_backend_ptr_) == Error::Ok,
+      Internal,
+      "Fail to load Qnn library");
+  if (!on_device_prepare_) {
+    ET_CHECK_OR_RETURN_ERROR(
+        LoadQnnLibrary(qnn_backends_.qnn_loaded_comm_backend_ptr_) == Error::Ok,
+        Internal,
+        "Fail to load QnnIr library");
+  }
   logger_ = std::make_unique<QnnLogger>(
-      qnn_loaded_backend_, LoggingCallback, options_->log_level());
-  if (backend_params_ptr_->backend_init_state_ ==
-      BackendInitializeState::UNINITIALIZED) {
+      *(qnn_backends_.qnn_loaded_backend_ptr_),
+      LoggingCallback,
+      options_->log_level());
+
+  if (backend_configurator_ptr_->IsBackendInitState()) {
     QNN_EXECUTORCH_LOG_INFO(
         "Initialize Qnn backend "
         "parameters for Qnn executorch backend type %d",
         options_->backend_options()->backend_type());
-    backend_params_ptr_ = QnnBackendFactory().Create(
-        qnn_loaded_backend_, logger_.get(), qnn_context_blob_, options_);
+
+    backend_configurator_ptr_ = QnnBackendFactory().Create(
+        qnn_backends_, logger_.get(), qnn_context_blob_, options_);
+
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_ != nullptr,
+        backend_configurator_ptr_ != nullptr,
         Internal,
         "Failed to load Qnn backend.");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
+        backend_configurator_ptr_->configure_qnn_backend_cache() == Error::Ok,
         Internal,
         "Fail to configure Qnn backend cache");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+        backend_configurator_ptr_->configure_qnn_backend() == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_device_ptr_->Configure() == Error::Ok,
+        backend_configurator_ptr_->configure_qnn_device() == Error::Ok,
         Internal,
         "Fail to configure Qnn device");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_context_ptr_->Configure() == Error::Ok,
+        backend_configurator_ptr_->configure_qnn_context() == Error::Ok,
         Internal,
         "Fail to configure Qnn context");
-    for (const std::string& graph_name :
-         backend_params_ptr_->qnn_context_ptr_->GetGraphNames()) {
-      ET_CHECK_OR_RETURN_ERROR(
-          backend_params_ptr_->qnn_graph_ptr_->Configure(graph_name) ==
-              Error::Ok,
-          Internal,
-          "Fail to configure Qnn graph");
-    }
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_configurator_ptr_->configure_qnn_graph(
+            IsOnlinePrepare() && on_device_prepare_) == Error::Ok,
+        Internal,
+        "Fail to configure Qnn graph");
 
-    backend_params_ptr_->backend_init_state_ =
+    backend_configurator_ptr_->backend_params_ptr_->backend_init_state_ =
         BackendInitializeState::INITIALIZED;
   }
 
@@ -331,9 +353,11 @@ Error QnnManager::Init() {
 
 Error QnnManager::AllocateTensor(const std::string& graph_name) {
   std::vector<Qnn_Tensor_t> input_tensors =
-      backend_params_ptr_->qnn_context_ptr_->GetGraphInputs(graph_name);
+      backend_configurator_ptr_->backend_params_ptr_->qnn_context_ptr_
+          ->GetGraphInputs(graph_name);
   std::vector<Qnn_Tensor_t> output_tensors =
-      backend_params_ptr_->qnn_context_ptr_->GetGraphOutputs(graph_name);
+      backend_configurator_ptr_->backend_params_ptr_->qnn_context_ptr_
+          ->GetGraphOutputs(graph_name);
 
   for (auto& tensor : input_tensors) {
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
@@ -389,8 +413,9 @@ Error QnnManager::Execute(
     executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
-  error = backend_params_ptr_->qnn_graph_ptr_->GraphExecute(
-      graph_name, input_tensor_structs, output_tensor_structs);
+  error = backend_configurator_ptr_->backend_params_ptr_->qnn_graph_ptr_
+              ->GraphExecute(
+                  graph_name, input_tensor_structs, output_tensor_structs);
 
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG_ERROR(
@@ -432,8 +457,8 @@ Error QnnManager::ProfileExecuteData(
     executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (options_->profile_level() != QnnExecuTorchProfileLevel::kProfileOff) {
-    error = backend_params_ptr_->qnn_graph_ptr_->ProfileExecuteData(
-        graph_name, event_tracer);
+    error = backend_configurator_ptr_->backend_params_ptr_->qnn_graph_ptr_
+                ->ProfileExecuteData(graph_name, event_tracer);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           " Failed to profile. Error %d", QNN_GET_ERROR_CODE(error));
@@ -445,10 +470,9 @@ Error QnnManager::ProfileExecuteData(
 
 void QnnManager::Destroy() {
   QNN_EXECUTORCH_LOG_INFO("Destroy Qnn backend parameters");
-  backend_params_ptr_.reset(new BackendConfigParameters());
+  backend_configurator_ptr_.reset(new BackendConfigurator());
   logger_.reset();
-
-  qnn_loaded_backend_.TerminateAllBackends();
+  qnn_backends_.TerminateAllBackends();
 }
 
 bool QnnManager::IsNodeSupportedByBackend(
@@ -468,8 +492,8 @@ bool QnnManager::IsNodeSupportedByBackend(
       }
     }
 
-    error = backend_params_ptr_->qnn_backend_ptr_->BackendValidateOpConfig(
-        op_wrapper->GetOpConfig());
+    error = backend_configurator_ptr_->backend_params_ptr_->qnn_backend_ptr_
+                ->BackendValidateOpConfig(op_wrapper->GetOpConfig());
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_WARN(
           "Qnn Backend op validation failed with error: %d",
@@ -483,11 +507,65 @@ bool QnnManager::IsNodeSupportedByBackend(
 
 Error QnnManager::GetContextBinary(
     QnnExecuTorchContextBinary& qnn_executorch_context_binary) {
-  ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_context_ptr_->GetContextBinary(
-          qnn_executorch_context_binary) == Error::Ok,
-      Internal,
-      "Fail to get context binary.");
+  if (IsOnlinePrepare() && !on_device_prepare_) {
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_configurator_ptr_->backend_params_ptr_->qnn_comm_context_ptr_
+                ->GetContextBinaryFromDLC(qnn_executorch_context_binary) ==
+            Error::Ok,
+        Internal,
+        "Fail to get context binary.");
+  }
+
+  else {
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_configurator_ptr_->backend_params_ptr_->qnn_context_ptr_
+                ->GetContextBinary(qnn_executorch_context_binary) == Error::Ok,
+        Internal,
+        "Fail to get context binary.");
+  }
+  return Error::Ok;
+}
+
+Error QnnManager::CompileGraphsFromDlc() {
+  Qnn_ErrorHandle_t error;
+  p_graph_info_ = backend_configurator_ptr_->backend_params_ptr_
+                      ->qnn_context_ptr_->p_graph_info_;
+  graph_info_num_ = backend_configurator_ptr_->backend_params_ptr_
+                        ->qnn_context_ptr_->graph_info_num_;
+  for (uint32_t i = 0; i < graph_info_num_; ++i) {
+    auto& graphInfo = (*p_graph_info_)[i];
+    backend_configurator_ptr_->backend_params_ptr_->qnn_graph_ptr_
+        ->SetGraphHandle(graphInfo.graphName, graphInfo.graph);
+    error = backend_configurator_ptr_->backend_params_ptr_->qnn_graph_ptr_
+                ->GraphFinalize(graphInfo.graphName);
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Failed to finalize Qnn Graph with error: %d",
+          QNN_GET_ERROR_CODE(error));
+      return Error::Internal;
+    }
+
+    std::vector<std::shared_ptr<TensorWrapper>> graph_inputs, graph_outputs,
+        tensors;
+
+    for (int i = 0; i < (*p_graph_info_)->numInputTensors; ++i) {
+      auto tw = CreateTensorWrapper((*p_graph_info_)->inputTensors[i]);
+      tw->UpdateQnnTensorMeta((*p_graph_info_)->inputTensors[i]);
+      graph_inputs.push_back(tw);
+    }
+    for (int i = 0; i < (*p_graph_info_)->numOutputTensors; ++i) {
+      auto tw = CreateTensorWrapper((*p_graph_info_)->outputTensors[i]);
+      tw->UpdateQnnTensorMeta((*p_graph_info_)->outputTensors[i]);
+      graph_outputs.push_back(tw);
+    }
+
+    ET_CHECK_OR_RETURN_ERROR(
+        AllocateTensor(graphInfo.graphName, graph_inputs, graph_outputs) ==
+            Error::Ok,
+        Internal,
+        "Fail to allocate tensor for qcir with graph_name: %s",
+        graphInfo.graphName);
+  }
 
   return Error::Ok;
 }
@@ -616,31 +694,35 @@ Error QnnManager::Compile(
     const std::string& graph_name,
     std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
+  QnnGraph* qnn_graph_ptr =
+      backend_configurator_ptr_->backend_params_ptr_->qnn_graph_ptr_.get();
 
+  if (IsOnlinePrepare() && !on_device_prepare_) {
+    qnn_graph_ptr = backend_configurator_ptr_->backend_params_ptr_
+                        ->qnn_comm_graph_ptr_.get();
+  }
   for (std::shared_ptr<OpWrapper>& op_wrapper : op_wrappers) {
     for (const auto& tensor_wrapper : op_wrapper->GetInputTensors()) {
       ET_CHECK_OR_RETURN_ERROR(
-          backend_params_ptr_->qnn_graph_ptr_->EnsureTensorInQnnGraph(
-              graph_name, tensor_wrapper) == Error::Ok,
+          qnn_graph_ptr->EnsureTensorInQnnGraph(graph_name, tensor_wrapper) ==
+              Error::Ok,
           Internal,
           "Tensor name %s isn't added to Qnn Graph",
           tensor_wrapper->GetName().c_str());
     }
-
     for (const auto& tensor_wrapper : op_wrapper->GetOutputTensors()) {
       ET_CHECK_OR_RETURN_ERROR(
-          backend_params_ptr_->qnn_graph_ptr_->EnsureTensorInQnnGraph(
-              graph_name, tensor_wrapper) == Error::Ok,
+          qnn_graph_ptr->EnsureTensorInQnnGraph(graph_name, tensor_wrapper) ==
+              Error::Ok,
           Internal,
           "Tensor name %s isn't added to Qnn Graph",
           tensor_wrapper->GetName().c_str());
     }
-
     for (const auto& param : op_wrapper->GetParams()) {
       auto* p_tensor_param = dynamic_cast<TensorParamWrapper*>(param.get());
       if (p_tensor_param != nullptr) {
         ET_CHECK_OR_RETURN_ERROR(
-            backend_params_ptr_->qnn_graph_ptr_->EnsureTensorInQnnGraph(
+            qnn_graph_ptr->EnsureTensorInQnnGraph(
                 graph_name, p_tensor_param->GetTensorWrapper()) == Error::Ok,
             Internal,
             "Param tensor name %s isn't added to Qnn Graph",
@@ -652,8 +734,7 @@ Error QnnManager::Compile(
           "Fail to configure Qnn backend");
     }
 
-    error = backend_params_ptr_->qnn_graph_ptr_->GraphAddNode(
-        graph_name, op_wrapper->GetOpConfig());
+    error = qnn_graph_ptr->GraphAddNode(graph_name, op_wrapper->GetOpConfig());
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Failed to add node to Qnn Graph with error: %d",
@@ -661,14 +742,13 @@ Error QnnManager::Compile(
       return Error::Internal;
     }
   }
-  error = backend_params_ptr_->qnn_graph_ptr_->GraphFinalize(graph_name);
+  error = qnn_graph_ptr->GraphFinalize(graph_name);
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Failed to finalize Qnn Graph with error: %d",
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
-
   return Error::Ok;
 }
 
