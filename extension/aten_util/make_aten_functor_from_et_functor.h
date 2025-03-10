@@ -166,24 +166,6 @@ struct type_convert<std::optional<F>, torch::executor::optional<T>> final {
   }
 };
 
-// Optionals: ETen to ATen.
-template <class F, class T>
-struct type_convert<torch::executor::optional<F>, std::optional<T>> final {
- public:
-  torch::executor::optional<F> val;
-  std::unique_ptr<struct type_convert<F, T>> convert_struct;
-  explicit type_convert(torch::executor::optional<F> value) : val(value) {}
-  std::optional<T> call() {
-    if (val.has_value()) {
-      convert_struct = std::make_unique<struct type_convert<F, T>>(
-          type_convert<F, T>(val.value()));
-      return std::optional<T>(convert_struct->call());
-    } else {
-      return std::optional<T>();
-    }
-  }
-};
-
 // ArrayRefs: ATen to ETen.
 template <class F, class T>
 struct type_convert<c10::ArrayRef<F>, torch::executor::ArrayRef<T>> final {
