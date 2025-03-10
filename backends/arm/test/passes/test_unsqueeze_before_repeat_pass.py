@@ -6,9 +6,7 @@
 from typing import Dict, Tuple
 
 import torch
-from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
-    UnsqueezeBeforeRepeatPass,
-)
+from executorch.backends.arm._passes import UnsqueezeBeforeRepeatPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 

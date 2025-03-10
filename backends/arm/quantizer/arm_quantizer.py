@@ -17,7 +17,7 @@ import functools
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
-from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm._passes import ArmPassManager
 
 from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (  # type: ignore[attr-defined]
