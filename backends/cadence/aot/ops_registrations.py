@@ -10,6 +10,7 @@ from math import prod
 from typing import Optional, Tuple
 
 import torch
+from executorch.exir.scalar_type import ScalarType
 from torch.library import Library, register_fake
 
 from .utils import get_conv1d_output_size, get_conv2d_output_size
@@ -587,6 +588,22 @@ def linalg_vector_norm_meta(
 ) -> torch.Tensor:
     # Output of norm is a scalar, so we return a [] tensor
     return X.new_empty([], dtype=X.dtype)
+
+
+@register_fake("cadence::requantize")
+def requantize_meta(
+    input: torch.Tensor,
+    in_scale: torch.Tensor,
+    in_zero_point: torch.Tensor,
+    out_scale: torch.Tensor,
+    out_zero_point: torch.Tensor,
+    dtype: ScalarType,
+) -> torch.Tensor:
+    return input.new_empty(
+        input.size(),
+        # pyre-ignore[6]: Incompatible type
+        dtype=dtype,
+    )
 
 
 @register_fake("cadence::quantized_relu.per_tensor")
