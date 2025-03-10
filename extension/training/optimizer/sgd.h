@@ -179,7 +179,7 @@ class ET_EXPERIMENTAL SGDParamGroup {
  */
 class ET_EXPERIMENTAL SGD {
  public:
-  explicit SGD(
+  SGD(
       const std::vector<SGDParamGroup>& param_groups,
       SGDOptions defaults)
       : defaults_(std::make_unique<SGDOptions>(defaults)) {
@@ -188,7 +188,7 @@ class ET_EXPERIMENTAL SGD {
     }
   }
 
-  explicit SGD(
+  SGD(
       const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
           named_parameters,
       SGDOptions defaults)
