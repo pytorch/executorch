@@ -1,33 +1,44 @@
 # From https://github.com/pytorch/test-infra/wiki/Using-Nova-Reusable-Build-Workflows
-name: Build Linux Wheels
+name: Build Wheels
 
 on:
   pull_request:
     paths:
       - build/packaging/**
+      # TODO REVERT ME: update me
       - .github/workflows/build-wheels-linux.yml
   push:
     branches:
       - nightly
-      - release/*
+      # TODO REVERT ME: Disabled while testing
+      # - release/*
     tags:
       # NOTE: Binary build pipelines should only get triggered on release candidate builds
       # Release candidate tags look like: v1.11.0-rc1
-      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
+
+      # TODO REVERT ME: Disabled while testing
+      # - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
       - ciflow/binaries/*
   workflow_dispatch:
 
 jobs:
   generate-matrix:
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            workflow-base: pytorch/test-infra/.github/workflows/build_wheels_linux.yml
+          - os: macos-arm64
+            workflow-base: pytorch/test-infra/.github/workflows/build_wheels_macos.yml
     uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
     with:
       package-type: wheel
-      os: linux
+      os: ${{ matrix.os }}
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
       with-cuda: disabled
       with-rocm: disabled
-      python-versions: '["3.10", "3.11", "3.12"]'
+      python-versions: ["3.10", "3.11", "3.12"]
 
   build:
     needs: generate-matrix
@@ -44,7 +55,7 @@ jobs:
             smoke-test-script: build/packaging/smoke_test.py
             package-name: executorch
     name: ${{ matrix.repository }}
-    uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@main
+    uses: ${{ matrix.workflow-base }}@main
     with:
       repository: ${{ matrix.repository }}
       ref: ""
@@ -55,9 +66,11 @@ jobs:
       # "recursive" default to do less work, and to give the buck daemon fewer
       # files to look at.
       submodules: true
-      env-var-script: build/packaging/env_var_script_linux.sh
+      delocate-wheel: false
+      env-var-script: build/packaging/env_var_script_m1.sh
       pre-script: ${{ matrix.pre-script }}
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
+      runner-type: macos-m1-stable
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
