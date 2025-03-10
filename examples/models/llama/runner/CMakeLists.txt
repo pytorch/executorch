@@ -47,6 +47,10 @@ list(
 )
 list(APPEND _llama_runner__srcs
      ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/llama_tiktoken.cpp
+   )
+list(
+  APPEND _llama_runner__srcs
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/hf_tokenizer.cpp
 )
 
 if(CMAKE_TOOLCHAIN_IOS
