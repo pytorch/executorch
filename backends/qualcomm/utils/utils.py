@@ -452,7 +452,7 @@ def capture_program(
     dynamic_shapes: Dict = None,
 ) -> exir.ExirExportedProgram:
     module = _preprocess_module(module, inputs)
-    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
+    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(TensorI64toI32(edge_program=core_ep))
