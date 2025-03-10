@@ -66,9 +66,13 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "broadcast_util",
-        srcs = ["broadcast_util.cpp"],
+        srcs = [
+            "broadcast_util.cpp",
+            "delinearize_index.cpp",
+        ],
         exported_headers = [
             "broadcast_util.h",
+            "delinearize_index.h",
         ],
         exported_deps = [
             ":broadcast_indexes_range",
