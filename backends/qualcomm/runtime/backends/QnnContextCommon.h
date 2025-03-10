@@ -14,9 +14,15 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 
 #include <memory>
+
+#include "QnnWrapperUtils.hpp"
+
 namespace executorch {
 namespace backends {
 namespace qnn {
+
+using QnnModel_composeGraphsFromDlc = qnn_wrapper_api::ModelError_t (*)(...);
+
 class QnnContext {
  public:
   explicit QnnContext(
@@ -31,6 +37,11 @@ class QnnContext {
         cache_(cache) {}
 
   virtual ~QnnContext();
+  static constexpr const char* dlc_lib_ = "libQnnModelDlc.so";
+  qnn_wrapper_api::GraphInfoPtr_t* p_graph_info_;
+  uint32_t graph_info_num_ = 0;
+  executorch::runtime::Error RegisterGraphsFromDLC();
+
   executorch::runtime::Error Configure();
 
   Qnn_ContextHandle_t GetHandle() const {
@@ -53,7 +64,9 @@ class QnnContext {
     return cache_->GetCacheState();
   };
 
-  executorch::runtime::Error GetContextBinary(
+  virtual executorch::runtime::Error GetContextBinary(
+      QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+  executorch::runtime::Error GetContextBinaryFromDLC(
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
  protected:

@@ -4359,12 +4359,7 @@ def setup_environment():
         help="Input the model to export",
         type=str,
     )
-    parser.add_argument(
-        "-o",
-        "--online_prepare",
-        help="Conduct on-device graph compilation",
-        action="store_true",
-    )
+
     parser.add_argument(
         "-P",
         "--enable_profile",
