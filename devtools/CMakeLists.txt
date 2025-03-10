@@ -205,7 +205,7 @@ add_custom_command(
     "${_bundled_schema__include_dir}/executorch/devtools/bundled_program/schema"
     ${_bundled_program_schema__srcs}
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/devtools
-  DEPENDS ${FLATC_EXECUTABLE} ${_bundled_program_schema__srcs}
+  DEPENDS host_flatc ${_bundled_program_schema__srcs}
   COMMENT "Generating bundled_program headers"
   VERBATIM
 )

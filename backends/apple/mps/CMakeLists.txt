@@ -50,6 +50,7 @@ add_custom_command(
     "${_mps_schema__include_dir}/executorch/backends/apple/mps"
     ${_mps_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  DEPENDS host_flatc
   COMMENT "Generating mps_schema headers"
   VERBATIM
 )
