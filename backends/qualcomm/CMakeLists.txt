@@ -39,10 +39,6 @@ if(${ANDROID})
   find_library(android_log log)
 endif()
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 set(qcir_schema_include_dir ${CMAKE_CURRENT_LIST_DIR}/aot/ir)
 set(qcir_schema_output ${qcir_schema_include_dir}/qcir_generated.h)
 add_custom_command(
@@ -101,6 +97,7 @@ add_custom_command(
     "${_qnn_schema__include_dir}/executorch/backends/qualcomm"
     ${_qnn_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
+  DEPENDS flatc
   COMMENT "Generating qnn_schema headers"
   VERBATIM
 )

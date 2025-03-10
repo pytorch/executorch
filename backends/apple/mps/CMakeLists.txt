@@ -22,10 +22,6 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 set(_common_compile_options -Wno-deprecated-declarations)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
