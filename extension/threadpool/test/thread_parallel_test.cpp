@@ -17,9 +17,6 @@
 using namespace ::testing;
 using ::executorch::extension::parallel_for;
 
-#ifndef ET_USE_THREADPOOL
-#endif
-
 class ParallelTest : public ::testing::TestWithParam<bool> {
  protected:
   void SetUp() override {

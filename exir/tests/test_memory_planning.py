@@ -749,7 +749,7 @@ class TestMisc(unittest.TestCase):
         net = TrainingNet(Net())
         inputs = (torch.randn(1, 6, 5, 5), torch.ones(1, dtype=torch.int64))
 
-        ep = export(net, inputs)
+        ep = export(net, inputs, strict=True)
         ep = _export_forward_backward(ep)
         ep = to_edge(ep)
         ep = ep.to_executorch()

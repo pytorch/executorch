@@ -73,8 +73,11 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        context.get_runtime_allocator(), xnnpack::delegate::XNNExecutor);
+    auto executor = context.get_runtime_allocator()
+                        ->allocateInstance<xnnpack::delegate::XNNExecutor>();
+    if (executor == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
     // This is needed to serialize access to xnn_create_runtime which is not
