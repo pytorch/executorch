@@ -187,7 +187,8 @@ def main(
         batch_size = calibration_dataset.batch_size
         subset_size = (subset_size // batch_size) + int(subset_size % batch_size > 0)
 
-        transform_fn = lambda x: x[0]
+        def transform_fn(x):
+            return x[0]
         quantized_model = quantize_model(
             aten_dialect.module(),
             calibration_dataset,
