@@ -120,8 +120,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     MemoryAllocator* allocator = context.get_runtime_allocator();
-    ExecutionHandle* handle =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
+    ExecutionHandle* handle = allocator->allocateInstance<ExecutionHandle>();
+    if (handle == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     handle->processed = processed;
 
     // Return the same buffer we were passed - this data will be
