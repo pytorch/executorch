@@ -192,10 +192,7 @@ def main() -> None:
     )
     example_inputs = input_manager.get_inputs(tokens=[0])
 
-    ep = torch.export.export(
-        model,
-        example_inputs,
-    )
+    ep = torch.export.export(model, example_inputs, strict=True)
     print("Exported program")
     print(ep)
 
