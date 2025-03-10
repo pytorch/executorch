@@ -56,6 +56,7 @@ def define_common_targets():
         exported_headers = ["thread_parallel_interface.h"],
         exported_deps = [
             "//executorch/runtime/core:core",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
             "//executorch/runtime/platform:platform",
         ],
         visibility = [
