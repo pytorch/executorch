@@ -46,7 +46,6 @@ cmake_minimum_required(VERSION 3.19)
 project(executorch)
 include(build/Utils.cmake)
 include(CMakeDependentOption)
-include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -484,8 +483,10 @@ if(EXECUTORCH_BUILD_FLATC)
     )
   endif()
 
+  include(ExternalProject)
+
   ExternalProject_Add(
-    flatbuffers
+    host_flatc
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
     SOURCE_DIR ${CMAKE_SOURCE_DIR}/third-party/flatbuffers
     CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
@@ -497,10 +498,11 @@ if(EXECUTORCH_BUILD_FLATC)
                # the flatbuffer, and some users need an alignment larger than
                # the default, which is typically 32.
                -DCMAKE_CXX_FLAGS=-DFLATBUFFERS_MAX_ALIGNMENT=1024
+    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers/src/flatbuffers-build/flatc
     INSTALL_COMMAND ""
   )
-  ExternalProject_Get_Property(flatbuffers binary_dir)
-  set(FLATC_EXECUTABLE ${binary_dir}/flatc)
+  ExternalProject_Get_Property(host_flatc BINARY_DIR)
+  set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
 endif()
 
 if(NOT FLATC_EXECUTABLE)
