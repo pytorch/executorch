@@ -498,7 +498,6 @@ if(EXECUTORCH_BUILD_FLATC)
                # the flatbuffer, and some users need an alignment larger than
                # the default, which is typically 32.
                -DCMAKE_CXX_FLAGS=-DFLATBUFFERS_MAX_ALIGNMENT=1024
-    BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers/src/flatbuffers-build/flatc
     INSTALL_COMMAND ""
   )
   ExternalProject_Get_Property(host_flatc BINARY_DIR)
