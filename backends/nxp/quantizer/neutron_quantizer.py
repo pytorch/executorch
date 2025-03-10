@@ -11,6 +11,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
 from executorch.backends.nxp.quantizer.patterns import (
+    AdaptiveAvgPoolPattern,
     AddmmPattern,
     AddTensorPattern,
     AvgPoolPattern,
@@ -194,6 +195,7 @@ class NeutronQuantizer(ComposableQuantizer):
         static_fc_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_fc_qspec, None)
         super().__init__(
             [
+                NeutronAtenQuantizer(AdaptiveAvgPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(AddmmPattern(), static_fc_qconfig),
                 NeutronAtenQuantizer(Conv1dPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv2dPattern(), static_qconfig),
