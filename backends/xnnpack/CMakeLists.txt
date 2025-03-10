@@ -82,6 +82,7 @@ add_custom_command(
     ${_xnnpack_schema__srcs}
   COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  DEPENDS host_flatc
   COMMENT "Generating xnnpack_schema headers"
   VERBATIM
 )
