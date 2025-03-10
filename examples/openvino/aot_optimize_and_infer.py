@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import time
 
 import executorch
 
@@ -102,6 +103,54 @@ def load_calibration_dataset(
     return calibration_dataset
 
 
+def infer_model(
+    exec_prog: EdgeProgramManager,
+    input_shape,
+    num_iter: int,
+    warmup_iter: int,
+    input_path: str,
+    output_path: str,
+) -> float:
+    """
+    Executes inference and reports the average timing.
+
+    :param exec_prog: EdgeProgramManager of the lowered model
+    :param input_shape: The input shape for the model.
+    :param num_iter: The number of iterations to execute inference for timing.
+    :param warmup_iter: The number of iterations to execute inference for warmup before timing.
+    :param input_path: Path to the input tensor file to read the input for inference.
+    :param output_path: Path to the output tensor file to save the output of inference..
+    :return: The average inference timing.
+    """
+    # 1: Load model from buffer
+    executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
+
+    # 2: Initialize inputs
+    if input_path:
+        inputs = (torch.load(input_path, weights_only=False),)
+    else:
+        inputs = (torch.randn(input_shape),)
+
+    # 3: Execute warmup
+    for _i in range(warmup_iter):
+        out = executorch_module.run_method("forward", inputs)
+
+    # 4: Execute inference and measure timing
+    time_total = 0.0
+    for _i in range(num_iter):
+        time_start = time.time()
+        out = executorch_module.run_method("forward", inputs)
+        time_end = time.time()
+        time_total += time_end - time_start
+
+    # 5: Save output tensor as raw tensor file
+    if output_path:
+        torch.save(out, output_path)
+
+    # 6: Return average inference timing
+    return time_total / float(num_iter)
+
+
 def validate_model(
     exec_prog: EdgeProgramManager, calibration_dataset: torch.utils.data.DataLoader
 ) -> float:
@@ -128,15 +177,22 @@ def validate_model(
     return accuracy_score(predictions, targets)
 
 
-def main(
+def main(  # noqa: C901
     suite: str,
     model_name: str,
     input_shape,
+    save_model: bool,
+    model_file_name: str,
     quantize: bool,
     validate: bool,
     dataset_path: str,
     device: str,
     batch_size: int,
+    infer: bool,
+    num_iter: int,
+    warmup_iter: int,
+    input_path: str,
+    output_path: str,
 ):
     """
     Main function to load, quantize, and validate a model.
@@ -144,11 +200,19 @@ def main(
     :param suite: The model suite to use (e.g., "timm", "torchvision", "huggingface").
     :param model_name: The name of the model to load.
     :param input_shape: The input shape for the model.
+    :param save_model: Whether to save the compiled model as a .pte file.
+    :param model_file_name: Custom file name to save the exported model.
     :param quantize: Whether to quantize the model.
     :param validate: Whether to validate the model.
     :param dataset_path: Path to the dataset for calibration/validation.
     :param device: The device to run the model on (e.g., "cpu", "gpu").
     :param batch_size: Batch size for dataset loading.
+    :param infer: Whether to execute inference and report timing.
+    :param num_iter: The number of iterations to execute inference for timing.
+    :param warmup_iter: The number of iterations to execute inference for warmup before timing.
+    :param input_path: Path to the input tensor file to read the input for inference.
+    :param output_path: Path to the output tensor file to save the output of inference..
+
     """
 
     # Load the selected model
@@ -214,10 +278,12 @@ def main(
     )
 
     # Serialize and save it to a file
-    model_file_name = f"{model_name}_{'int8' if quantize else 'fp32'}.pte"
-    with open(model_file_name, "wb") as file:
-        exec_prog.write_to_file(file)
-    print(f"Model exported and saved as {model_file_name} on {device}.")
+    if save_model:
+        if not model_file_name:
+            model_file_name = f"{model_name}_{'int8' if quantize else 'fp32'}.pte"
+        with open(model_file_name, "wb") as file:
+            exec_prog.write_to_file(file)
+        print(f"Model exported and saved as {model_file_name} on {device}.")
 
     if validate:
         if suite == "huggingface":
@@ -231,6 +297,13 @@ def main(
         print("Start validation of the model:")
         acc_top1 = validate_model(exec_prog, calibration_dataset)
         print(f"acc@1: {acc_top1}")
+
+    if infer:
+        print("Start inference of the model:")
+        avg_time = infer_model(
+            exec_prog, input_shape, num_iter, warmup_iter, input_path, output_path
+        )
+        print(f"Average inference time: {avg_time}")
 
 
 if __name__ == "__main__":
@@ -259,12 +332,47 @@ if __name__ == "__main__":
         " The dataset length must be evenly divisible by the batch size.",
     )
     parser.add_argument(
+        "--export", action="store_true", help="Export the compiled model as .pte file."
+    )
+    parser.add_argument(
+        "--model_file_name",
+        type=str,
+        help="Custom file name to save the exported model.",
+    )
+    parser.add_argument(
         "--quantize", action="store_true", help="Enable model quantization."
     )
     parser.add_argument(
         "--validate",
         action="store_true",
         help="Enable model validation. --dataset argument is required for the validation.",
+    )
+    parser.add_argument(
+        "--infer",
+        action="store_true",
+        help="Run inference and report timing.",
+    )
+    parser.add_argument(
+        "--num_iter",
+        type=int,
+        default=1,
+        help="The number of iterations to execute inference for timing.",
+    )
+    parser.add_argument(
+        "--warmup_iter",
+        type=int,
+        default=0,
+        help="The number of iterations to execute inference for warmup before timing.",
+    )
+    parser.add_argument(
+        "--input_tensor_path",
+        type=str,
+        help="Path to the input tensor file to read the input for inference.",
+    )
+    parser.add_argument(
+        "--output_tensor_path",
+        type=str,
+        help="Path to the output tensor file to save the output of inference.",
     )
     parser.add_argument("--dataset", type=str, help="Path to the validation dataset.")
     parser.add_argument(
@@ -283,9 +391,16 @@ if __name__ == "__main__":
             args.suite,
             args.model,
             args.input_shape,
+            args.export,
+            args.model_file_name,
             args.quantize,
             args.validate,
             args.dataset,
             args.device,
             args.batch_size,
+            args.infer,
+            args.num_iter,
+            args.warmup_iter,
+            args.input_tensor_path,
+            args.output_tensor_path,
         )

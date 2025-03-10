@@ -9,8 +9,7 @@ Below is the layout of the `examples/openvino` directory, which includes the nec
 ```
 examples/openvino
 ├── README.md                           # Documentation for examples (this file)
-├── aot_openvino_compiler.py            # Example script for AoT export
-└── export_and_infer_openvino.py        # Example script to export and execute models with python bindings
+└── aot_optimize_and_infer.py           # Example script to export and execute models
 ```
 
 # Build Instructions for Examples
@@ -20,14 +19,10 @@ Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites*
 
 ## AOT step:
 
-The export script called `aot_openvino_compiler.py` allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.
+The python script called `aot_optimize_and_infer.py` allows users to export deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to a openvino backend using **Executorch**. Users can dynamically specify the model, input shape, and target device.
 
 ### **Usage**
 
-#### **Command Structure**
-```bash
-python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --input_shape <INPUT_SHAPE> --device <DEVICE>
-```
 
 #### **Arguments**
 - **`--suite`** (required):
@@ -50,6 +45,12 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
   - `[1, 3, 224, 224]` (Zsh users: wrap in quotes)
   - `(1, 3, 224, 224)`
 
+- **`--export`** (optional):
+  Save the exported model as a `.pte` file.
+
+- **`--model_file_name`** (optional):
+  Specify a custom file name to save the exported model.
+
 - **`--batch_size`** :
   Batch size for the validation. Default batch_size == 1.
   The dataset length must be evenly divisible by the batch size.
@@ -63,35 +64,55 @@ python aot_openvino_compiler.py --suite <MODEL_SUITE> --model <MODEL_NAME> --inp
 - **`--dataset`** (optional):
   Path to the imagenet-like calibration dataset.
 
+- **`--infer`** (optional):
+  Execute inference with the compiled model and report average inference timing.
+
+- **`--num_iter`** (optional):
+  Number of iterations to execute inference. Default value for the number of iterations is `1`.
+
+- **`--warmup_iter`** (optional):
+  Number of warmup iterations to execute inference before timing begins. Default value for the warmup iterations is `0`.
+
+- **`--input_tensor_path`** (optional):
+  Path to the raw tensor file to be used as input for inference. If this argument is not provided, a random input tensor will be generated.
+
+- **`--output_tensor_path`** (optional):
+  Path to the raw tensor file which the output of the inference to be saved.
+
 - **`--device`** (optional)
   Target device for the compiled model. Default is `CPU`.
   Examples: `CPU`, `GPU`
 
 
-### **Examples**
+#### **Examples**
 
-#### Export a TIMM VGG16 model for the CPU
+##### Export a TIMM VGG16 model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU
+python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU
 ```
 
-#### Export a Torchvision ResNet50 model for the GPU
+##### Export a Torchvision ResNet50 model for the GPU
 ```bash
-python aot_openvino_compiler.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
+python aot_optimize_and_infer.py --export --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
 ```
 
-#### Export a Hugging Face BERT model for the CPU
+##### Export a Hugging Face BERT model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite huggingface --model bert-base-uncased --input_shape "(1, 512)" --device CPU
+python aot_optimize_and_infer.py --export --suite huggingface --model bert-base-uncased --input_shape "(1, 512)" --device CPU
 ```
-#### Export and validate TIMM Resnet50d model for the CPU
+##### Export and validate TIMM Resnet50d model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset
+python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset
 ```
 
-#### Export, quantize and validate TIMM Resnet50d model for the CPU
+##### Export, quantize and validate TIMM Resnet50d model for the CPU
 ```bash
-python aot_openvino_compiler.py --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset --quantize
+python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU --validate --dataset /path/to/dataset --quantize
+```
+
+##### Execute Inference with Torchvision Inception V3 model for the CPU
+```bash
+python aot_optimize_and_infer.py --suite torchvision --model inception_v3 --infer --warmup_iter 10 --num_iter 100 --input_shape "(1, 3, 256, 256)" --device CPU
 ```
 
 ### **Notes**
@@ -161,73 +182,4 @@ Run inference with a given model for 10 iterations:
 ./openvino_executor_runner \
     --model_path=model.pte \
     --num_executions=10
-```
-
-## Running Python Example with Pybinding:
-
-You can use the `export_and_infer_openvino.py` script to run models with the OpenVINO backend through the Python bindings.
-
-### **Usage**
-
-#### **Command Structure**
-```bash
-python export_and_infer_openvino.py <ARGUMENTS>
-```
-
-#### **Arguments**
-- **`--suite`** (required if `--model_path` argument is not used):
-  Specifies the model suite to use. Needs to be used with `--model` argument.
-  Supported values:
-  - `timm` (e.g., VGG16, ResNet50)
-  - `torchvision` (e.g., resnet18, mobilenet_v2)
-  - `huggingface` (e.g., bert-base-uncased). NB: Quantization and validation is not supported yet.
-
-- **`--model`** (required if `--model_path` argument is not used):
-  Name of the model to export. Needs to be used with `--suite` argument.
-  Examples:
-  - For `timm`: `vgg16`, `resnet50`
-  - For `torchvision`: `resnet18`, `mobilenet_v2`
-  - For `huggingface`: `bert-base-uncased`, `distilbert-base-uncased`
-
-- **`--model_path`** (required if `--suite` and `--model` arguments are not used):
-  Path to the saved model file. This argument allows you to load the compiled model from a file, instead of downloading it from the model suites using the `--suite` and `--model` arguments.   
-  Example: `<path to model foler>/resnet50_fp32.pte`
-
-- **`--input_shape`**(required for random inputs):
-  Input shape for the model. Provide this as a **list** or **tuple**.  
-  Examples:
-  - `[1, 3, 224, 224]` (Zsh users: wrap in quotes)
-  - `(1, 3, 224, 224)`
-
- - **`--input_tensor_path`**(optional):
-   Path to the raw input tensor file. If this argument is not provided, a random input tensor will be generated with the input shape provided with `--input_shape` argument.  
-  Example: `<path to the input tensor foler>/input_tensor.pt`
-
- - **`--output_tensor_path`**(optional):
-   Path to the file where the output raw tensor will be saved.  
-  Example: `<path to the output tensor foler>/output_tensor.pt`
-
-- **`--device`** (optional)
-  Target device for the compiled model. Default is `CPU`.  
-  Examples: `CPU`, `GPU`
-
-- **`--num_iter`** (optional)
-  Number of iterations to execute inference for evaluation. The default value is `1`.  
-  Examples: `100`, `1000`
-
-- **`--warmup_iter`** (optional)
-  Number of warmup iterations to execute inference before evaluation. The default value is `0`.  
-  Examples: `5`, `10`
-
-
-### **Examples**
-
-#### Execute Torchvision ResNet50 model for the GPU with Random Inputs
-```bash
-python export_and_infer_openvino.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device GPU
-```
-
-#### Run a Precompiled Model for the CPU Using an Existing Input Tensor File and Save the Output.
-```bash
-python export_and_infer_openvino.py --model_path /path/to/model/folder/resnet50_fp32.pte --input_tensor_file /path/to/input/folder/input.pt --output_tensor_file /path/to/output/folder/output.pt --device CPU
 ```
