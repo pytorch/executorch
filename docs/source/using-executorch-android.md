@@ -158,4 +158,4 @@ using ExecuTorch AAR package.
 
 ## Java API reference
 
-Please see [Java API reference](./javadoc)
+Please see [Java API reference](https://pytorch.org/executorch/main/javadoc/)
