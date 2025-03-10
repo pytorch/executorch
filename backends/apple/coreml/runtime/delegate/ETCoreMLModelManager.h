@@ -71,7 +71,7 @@ __attribute__((objc_subclassing_restricted))
 /// @param error   On failure, error is filled with the failure information.
 /// @retval `YES` if the execution succeeded otherwise `NO`.
 - (BOOL)executeModelWithHandle:(ModelHandle*)handle
-                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
+                       argsVec:(std::vector<executorchcoreml::MultiArray>&)argsVec
                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                          error:(NSError* __autoreleasing*)error;

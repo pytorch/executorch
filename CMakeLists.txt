@@ -903,6 +903,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     endif()
   endif()
 
+  if(EXECUTORCH_BUILD_COREML)
+    list(APPEND _executor_runner_libs coremldelegate)
+  endif()
+
   add_executable(executor_runner ${_executor_runner__srcs})
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(APPLE)

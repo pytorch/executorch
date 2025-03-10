@@ -512,6 +512,24 @@ ssize_t get_data_offset(size_t index, const std::vector<size_t>& shape, const st
 
 namespace executorchcoreml {
 
+void MultiArray::MemoryLayout::resize(const std::vector<size_t>& shape) {
+    assert(shape.size() == shape_.size());
+    for (int i = 0; i < shape.size(); ++i) {
+        assert (shape[i] >= 1);
+        assert(shape[i] <= shape_[i]);
+    }
+    int stride = 1;
+    for (int i = shape.size() - 1; i >= 0; --i) {
+        shape_[i] = shape[i];
+        strides_[i] = stride;
+        if (shape[i] > 1) {
+            stride *= shape[i];
+        }
+    }
+}
+
+
+
 size_t MultiArray::MemoryLayout::num_elements() const noexcept {
     if (shape_.size() == 0) {
         return 0;
