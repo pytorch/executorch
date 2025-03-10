@@ -17,6 +17,7 @@ for abi in "${android_abis[@]}"; do
   cmake . -DCMAKE_INSTALL_PREFIX="${out_dir}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${abi}" \
+    -DANDROID_PLATFORM=android-26 \
     -DEXECUTORCH_BUILD_FLATC=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \

@@ -486,8 +486,8 @@ if(EXECUTORCH_BUILD_FLATC)
 
   ExternalProject_Add(
     flatbuffers
-    PREFIX "${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers"
-    SOURCE_DIR "${CMAKE_SOURCE_DIR}/third-party/flatbuffers"
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/third-party/flatbuffers
     CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
                -DFLATBUFFERS_BUILD_FLATHASH=OFF
                -DFLATBUFFERS_BUILD_FLATLIB=OFF
@@ -500,7 +500,7 @@ if(EXECUTORCH_BUILD_FLATC)
     INSTALL_COMMAND ""
   )
   ExternalProject_Get_Property(flatbuffers binary_dir)
-  set(FLATC_EXECUTABLE "${binary_dir}/flatc")
+  set(FLATC_EXECUTABLE ${binary_dir}/flatc)
 endif()
 
 if(NOT FLATC_EXECUTABLE)
