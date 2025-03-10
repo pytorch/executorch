@@ -46,4 +46,4 @@ target_sources(
 )
 target_link_options_shared_lib(neuron_backend)
 
-install(TARGETS neuron_backend DESTINATION lib)
+install(TARGETS neuron_backend EXPORT ExecuTorchTargets DESTINATION lib)

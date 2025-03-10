@@ -28,7 +28,7 @@ else()
   add_library(extension_module SHARED ${_extension_module__srcs})
 endif()
 target_link_libraries(extension_module PRIVATE executorch extension_data_loader extension_flat_tensor)
-target_include_directories(extension_module PUBLIC ${EXECUTORCH_ROOT}/..)
+target_include_directories(extension_module PUBLIC ${_common_include_directories})
 target_compile_options(
   extension_module PUBLIC -Wno-deprecated-declarations -fPIC
 )
@@ -39,7 +39,7 @@ add_library(extension_module_static STATIC ${_extension_module__srcs})
 target_link_libraries(
   extension_module_static PRIVATE executorch extension_data_loader extension_flat_tensor
 )
-target_include_directories(extension_module_static PUBLIC ${EXECUTORCH_ROOT}/..)
+target_include_directories(extension_module_static PUBLIC ${_common_include_directories})
 target_compile_options(
   extension_module_static PUBLIC -Wno-deprecated-declarations -fPIC
 )
@@ -47,6 +47,7 @@ target_compile_options(
 # Install libraries
 install(
   TARGETS extension_module extension_module_static
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

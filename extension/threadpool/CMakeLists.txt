@@ -26,18 +26,20 @@ add_library(
 target_link_libraries(
   extension_threadpool PUBLIC executorch_core cpuinfo pthreadpool
 )
-target_include_directories(extension_threadpool PUBLIC ${EXECUTORCH_ROOT}/..)
+target_include_directories(extension_threadpool PUBLIC ${_common_include_directories})
 target_include_directories(
   extension_threadpool
-  PUBLIC ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
-         ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include>
 )
 target_compile_definitions(extension_threadpool PUBLIC ET_USE_THREADPOOL)
 target_compile_options(extension_threadpool PUBLIC ${_common_compile_options})
 
 # Install libraries
 install(
-  TARGETS extension_threadpool
+  # pthreadpool doesn't export itself, so we have to do our own install to export it.
+  TARGETS pthreadpool pthreadpool_interface extension_threadpool
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

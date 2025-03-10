@@ -384,7 +384,7 @@ if(NOT "${_repo_dir_name}" STREQUAL "executorch")
       "fix for this restriction."
   )
 endif()
-set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10)
+set(_common_include_directories $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..,${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10> $<INSTALL_INTERFACE:include,include/executorch/runtime/core/portable_type/c10>)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -653,6 +653,7 @@ install(DIRECTORY extension/tensor/  DESTINATION include/executorch/extension/te
 install(DIRECTORY extension/threadpool/  DESTINATION include/executorch/extension/threadpool FILES_MATCHING PATTERN "*.h")
 install(
   TARGETS executorch executorch_core
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
@@ -835,6 +836,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
   install(TARGETS portable_lib
+          EXPORT ExecuTorchTargets
           LIBRARY DESTINATION executorch/extension/pybindings
   )
 
@@ -863,6 +865,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
 
     install(TARGETS _training_lib
+            EXPORT ExecuTorchTargets
             LIBRARY DESTINATION executorch/extension/training/pybindings
     )
   endif()
@@ -921,5 +924,8 @@ endif()
 
 include(Test.cmake)
 
+install(EXPORT ExecuTorchTargets
+  FILE ExecuTorchTargets.cmake
+  DESTINATION lib/cmake/ExecuTorch)
 # Print all summary
 executorch_print_configuration_summary()

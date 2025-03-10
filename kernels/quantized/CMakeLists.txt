@@ -153,6 +153,7 @@ gen_operators_lib(
 
 install(
   TARGETS quantized_kernels quantized_ops_lib
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   PUBLIC_HEADER DESTINATION include/executorch/kernels/quantized/
 )

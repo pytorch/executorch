@@ -45,6 +45,7 @@ target_compile_options(
 # Install libraries
 install(
   TARGETS extension_llm_tokenizer
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

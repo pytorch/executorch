@@ -48,7 +48,6 @@ if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
   add_definitions(-DENABLE_XNNPACK_KLEIDI)
 endif()
 
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
@@ -89,10 +88,9 @@ add_custom_command(
 add_library(xnnpack_schema INTERFACE ${_xnnpack_schema__outputs})
 set_target_properties(xnnpack_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
-  xnnpack_schema INTERFACE ${_xnnpack_schema__include_dir}
-                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+  xnnpack_schema INTERFACE $<BUILD_INTERFACE:${_xnnpack_schema__include_dir}>
 )
-
+target_link_libraries(xnnpack_schema INTERFACE flatbuffers)
 set(xnnpack_third_party pthreadpool cpuinfo)
 
 include(cmake/Dependencies.cmake)
@@ -106,14 +104,14 @@ target_link_libraries(
 target_include_directories(
   xnnpack_backend PUBLIC ${_common_include_directories}
 )
-target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
+target_include_directories(xnnpack_backend PRIVATE ${XNNPACK_INCLUDE_DIR})
 target_include_directories(
   xnnpack_backend
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third-party/pthreadpool/include
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/pthreadpool/include
 )
 target_include_directories(
   xnnpack_backend
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third-party/cpuinfo/include
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/cpuinfo/include
 )
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(xnnpack_backend)
@@ -155,7 +153,10 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
 endif()
 
 install(
-  TARGETS xnnpack_backend
+  # XNNPACK doesn't export the XNNPACK and following targets,
+  # so we need to export them ourselves.
+  TARGETS xnnpack_backend xnnpack_schema XNNPACK fxdiv
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

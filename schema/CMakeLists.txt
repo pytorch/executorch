@@ -55,8 +55,10 @@ function(generate_program_schema _schema_srcs _schema_name)
   target_include_directories(
     ${_schema_name}
     INTERFACE ${_program_schema__include_dir}
-              ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+              $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
   )
+  target_link_libraries(${_schema_name} INTERFACE flatbuffers)
+
 endfunction()
 
 # Generate common schema
@@ -67,3 +69,10 @@ generate_program_schema("${common_schema_srcs}" "common_schema")
 set(program_schema_srcs program.fbs)
 generate_program_schema("${program_schema_srcs}" "program_schema")
 add_dependencies(program_schema common_schema)
+
+install(
+  TARGETS common_schema program_schema
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories})
