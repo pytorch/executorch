@@ -31,6 +31,7 @@ def _define_test_target(test_name):
             "fbsource//third-party/pypi/parameterized:parameterized",
             "fbcode//caffe2:torch",
             "fbcode//executorch/backends/cadence/aot:ops_registrations",
+            "fbcode//executorch/backends/cadence/aot:ref_implementations",
             "fbcode//executorch/backends/cadence/aot:export_example",
             "fbcode//executorch/backends/cadence/aot:compiler",
             "fbcode//executorch/backends/cadence/utils:facto_util",
