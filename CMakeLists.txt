@@ -497,6 +497,7 @@ if(EXECUTORCH_BUILD_FLATC)
                # the flatbuffer, and some users need an alignment larger than
                # the default, which is typically 32.
                -DCMAKE_CXX_FLAGS=-DFLATBUFFERS_MAX_ALIGNMENT=1024
+    INSTALL_COMMAND ""
   )
   ExternalProject_Get_Property(flatbuffers binary_dir)
   set(FLATC_EXECUTABLE "${binary_dir}/flatc")
