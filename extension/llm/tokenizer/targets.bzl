@@ -96,3 +96,20 @@ def define_common_targets():
             "re2",
         ],
     )
+
+    runtime.cxx_library(
+        name = "hf_tokenizer",
+        srcs = [
+            "hf_tokenizer.cpp",
+        ],
+        exported_headers = [
+            "hf_tokenizer.h",
+        ],
+        exported_deps = [
+            ":tokenizer_header",
+            "//executorch/runtime/core:core",
+        ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
