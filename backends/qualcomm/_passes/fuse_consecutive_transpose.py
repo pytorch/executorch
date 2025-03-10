@@ -81,8 +81,8 @@ class FuseConsecutiveTranspose(ExportPass):
                 axis_order = torch.arange(len(input_shape)).tolist()
                 for node in self.nodes:
                     axis_order = [axis_order[i] for i in node.args[1]]
-                
-                # Reserve [0,1,2,3] permute node to ensure the next node get the right axis order. 
+
+                # Reserve [0,1,2,3] permute node to ensure the next node get the right axis order.
                 with graph.inserting_after(input_node):
                     permute_op = exir_ops.edge.aten.permute_copy.default
                     permute_node = graph.create_node(
