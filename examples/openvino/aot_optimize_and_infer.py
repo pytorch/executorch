@@ -177,7 +177,7 @@ def validate_model(
     return accuracy_score(predictions, targets)
 
 
-def main(
+def main(  # noqa: C901
     suite: str,
     model_name: str,
     input_shape,
