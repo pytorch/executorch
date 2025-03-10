@@ -10,7 +10,7 @@
 # cmake-format -i CMakeLists.txt
 # ~~~
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -125,7 +125,7 @@ else()
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  list(APPEND xnn_executor_runner_libs custom_ops)
+  list(APPEND xnn_executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
 list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)
