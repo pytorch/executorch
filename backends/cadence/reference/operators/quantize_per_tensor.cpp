@@ -7,8 +7,6 @@
  */
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 namespace impl {
 namespace reference {

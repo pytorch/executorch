@@ -17,7 +17,6 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 
-
 // Requantize the int8_t/uint8_t input tensor to a uint8_t/int8_t out tensor.
 // The scale and zero_point for requantization are in the args.
 Tensor& requantize_out(
@@ -157,7 +156,6 @@ Tensor& requantize_out(
 #undef typed_requantize
   return out;
 }
-
 
 }; // namespace native
 }; // namespace reference

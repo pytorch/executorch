@@ -8,16 +8,16 @@
 
 # Example script for exporting simple models to flatbuffer
 
-import unittest
-
 import logging
+import unittest
 
 import torch
 
 from executorch.backends.cadence.aot.ops_registrations import *  # noqa
-from parameterized import parameterized
 import itertools
+
 from executorch.backends.cadence.aot.export_example import export_model
+from parameterized import parameterized
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -33,6 +33,7 @@ def create_tensor_with_dtype(
     """
     new_tensor: torch.Tensor = torch.rand(shape) * _max
     return new_tensor.to(dtype=dtype)
+
 
 class CadenceRequantizeOpCases(unittest.TestCase):
     @parameterized.expand(
@@ -96,6 +97,7 @@ class CadenceRequantizeOpCases(unittest.TestCase):
         # the MSE loss is around 0.5, but the relative error is < 2%. So we set
         # the epsilon to a higher value.
         export_model(model, inputs, eps_error=1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
