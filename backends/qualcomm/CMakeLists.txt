@@ -49,6 +49,7 @@ add_custom_command(
   OUTPUT qcir_schema_output
   COMMAND ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
           ${qcir_schema_include_dir} ${qcir_schema_include_dir}/qcir.fbs
+  DEPENDS host_flatc
   COMMENT "Generating qualcomm ir schema headers"
   VERBATIM
 )
