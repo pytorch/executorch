@@ -474,6 +474,17 @@ cmake_dependent_option(
   "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF
 )
 
+
+set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "")
+set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "")
+set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "")
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "")
+set(FLATBUFFERS_INSTALL OFF CACHE BOOL "")
+# exir lets users set the alignment of tensor data embedded in the flatbuffer,
+# and some users need an alignment larger than the default, which is typically
+# 32.
+set(FLATBUFFERS_MAX_ALIGNMENT 1024)
+
 if(EXECUTORCH_BUILD_FLATC)
   if(FLATC_EXECUTABLE)
     # We could ignore this, but it could lead to confusion about which `flatc`
@@ -483,35 +494,39 @@ if(EXECUTORCH_BUILD_FLATC)
     )
   endif()
 
+  # Build flatc for the *host* to generate files as part of the build step.
   include(ExternalProject)
-
   ExternalProject_Add(
     flatc
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/third-party/flatbuffers
+    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third-party/flatbuffers
     CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
-               -DFLATBUFFERS_BUILD_FLATHASH=OFF
-               -DFLATBUFFERS_BUILD_FLATLIB=OFF
-               -DFLATBUFFERS_BUILD_TESTS=OFF
-               -DFLATBUFFERS_INSTALL=OFF
-               # exir lets users set the alignment of tensor data embedded in
-               # the flatbuffer, and some users need an alignment larger than
-               # the default, which is typically 32.
-               -DCMAKE_CXX_FLAGS=-DFLATBUFFERS_MAX_ALIGNMENT=1024
+               -DFLATBUFFERS_BUILD_FLATHASH=${FLATBUFFERS_BUILD_FLATHASH}
+               -DFLATBUFFERS_BUILD_FLATLIB=${FLATBUFFERS_BUILD_FLATLIB}
+               -DFLATBUFFERS_BUILD_TESTS=${FLATBUFFERS_BUILD_TESTS}
+               -DFLATBUFFERS_INSTALL=${FLATBUFFERS_INSTALL}
+               -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}"
     INSTALL_COMMAND ""
   )
   ExternalProject_Get_Property(flatc BINARY_DIR)
   set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
-
 endif()
 
 if(NOT FLATC_EXECUTABLE)
   message(
-    FATAL_ERROR
-      "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled. "
-      "Note that EXECUTORCH_BUILD_FLATC may be disabled implicitly when "
-      "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled."
+    WARNING "FLATC_EXECUTABLE not specified, looking for flatc"
   )
+  find_program(FLATC_EXECUTABLE flatc)
+
+  if(NOT FLATC_EXECUTABLE)
+    message(
+      FATAL_ERROR
+        "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled. "
+        "Note that EXECUTORCH_BUILD_FLATC may be disabled implicitly when "
+        "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled."
+    )
+  endif()
 endif()
 
 #

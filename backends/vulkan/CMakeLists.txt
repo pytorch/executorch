@@ -28,10 +28,6 @@ if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 # Include this file to access target_link_options_shared_lib This is required to
 # provide access to target_link_options_shared_lib which allows libraries to be
 # linked with the --whole-archive flag. This is required for libraries that

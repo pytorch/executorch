@@ -9,10 +9,6 @@
 # cmake-format -i CMakeLists.txt
 # ~~~
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 # The include directory that will contain the generated schema headers.
 set(_flat_tensor_schema__include_dir "${CMAKE_BINARY_DIR}/extension/flat_tensor/include")
 set(_flat_tensor_schema__output_dir "${_flat_tensor_schema__include_dir}/executorch/extension/flat_tensor/serialize")
@@ -49,7 +45,7 @@ function(generate_flat_tensor_schema _schema_srcs _schema_name)
   # and some users need an alignment larger than the default, which is typically
   # 32.
   target_compile_definitions(
-    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=1024
+    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}
   )
 
   target_include_directories(

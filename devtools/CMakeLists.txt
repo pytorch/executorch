@@ -38,10 +38,6 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 # Paths to headers generated from the .fbs files. set(_etdump_schemas
 # etdump_schema_flatcc.fbs scalar_type.fbs)
 
