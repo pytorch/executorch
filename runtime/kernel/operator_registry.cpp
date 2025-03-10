@@ -79,7 +79,7 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
 
   for (const auto& kernel : kernels) {
     // Linear search. This is fine if the number of kernels is small.
-    for (int32_t i = 0; i < num_registered_kernels; i++) {
+    for (size_t i = 0; i < num_registered_kernels; i++) {
       Kernel k = registered_kernels[i];
       if (strcmp(kernel.name_, k.name_) == 0 &&
           kernel.kernel_key_ == k.kernel_key_) {
@@ -188,7 +188,7 @@ Error make_kernel_key_string(
     buf_size -= 1;
 
     // Add dim order.
-    for (int j = 0; j < meta.dim_order_.size(); j++) {
+    for (size_t j = 0; j < meta.dim_order_.size(); j++) {
       n = copy_char_as_number_to_buf((int)meta.dim_order_[j], buf, buf_size);
       if (n < 0) {
         return Error::InvalidArgument;

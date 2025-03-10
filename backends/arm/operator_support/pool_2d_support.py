@@ -26,8 +26,8 @@ def stride_check(strides: tuple[int, int]) -> bool:
 
 
 def dim_check(shape=torch.Size) -> bool:
-    check = shape[0] == 1
-    for dim in shape:
+    check = True
+    for dim in shape[1:]:
         check &= 1 <= dim <= 65536
     return check
 
@@ -59,7 +59,7 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
             if not kernel_check(kernel):
                 return False
 
-        return dim_check(shape) and stride_check(stride)
+        return dim_check(shape) and shape[0] == 1 and stride_check(stride)
 
 
 @register_tosa_support_check

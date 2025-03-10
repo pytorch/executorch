@@ -139,6 +139,12 @@ class BackendRegistry:
         """
         return self._legacy_module._get_registered_backend_names()
 
+    def is_available(self, backend_name: str) -> bool:
+        """
+        Returns the names of all registered backends as a list of strings.
+        """
+        return self._legacy_module._is_available(backend_name)
+
 
 class OperatorRegistry:
     """The registry of operators that are available to the runtime."""

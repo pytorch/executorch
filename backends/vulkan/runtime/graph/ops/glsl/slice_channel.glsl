@@ -49,10 +49,10 @@ void main() {
   for (int i=0;i<4;i++) {
       ivec4 user_coor = nchwi_to_tidx(buf_indices[i], out_sizes);
 
-      int in_channel = user_coor.z;
+      int in_dim = user_coor[packed_dim];
 
       ivec4 in_user_coor = user_coor;
-      in_user_coor.z = slice_arg.offset + in_channel * slice_arg.step;
+      in_user_coor[packed_dim] = slice_arg.offset + in_dim * slice_arg.step;
 
       ivec4 in_pow_elem = to_texture_elem_pos(
         in_user_coor,

@@ -1,11 +1,8 @@
-from .annotate_and_quant_scalar import AnnotateAndQuantScalar
 from .annotate_decomposed import AnnotateDecomposed
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .constant_i64_to_i32 import ConstantI64toI32
-from .convert_binary_op_with_scalar import ConvertBinaryOpsWithScalar
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_interpolate_with_upsample2d import ConvertInterpolateWithUpsample2D
-from .convert_prelu import ConvertPReLU
 from .convert_to_linear import ConvertToLinear
 from .decompose_any import DecomposeAny
 from .decompose_einsum import DecomposeEinsum
@@ -17,7 +14,9 @@ from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .insert_io_qdq import InsertIOQDQ
 from .insert_requantize import InsertRequantize
 from .layout_transform import LayoutTransform
+from .lift_constant_scalar_operands import LiftConstantScalarOperands
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
+from .recompose_prelu import RecomposePReLU
 from .recompose_rms_norm import RecomposeRmsNorm
 from .reduce_dynamic_range import ReduceDynamicRange
 from .remove_redundancy import RemoveRedundancy
@@ -27,14 +26,12 @@ from .tensor_i64_to_i32 import TensorI64toI32
 
 
 __all__ = [
-    AnnotateAndQuantScalar,
     AnnotateDecomposed,
     AnnotateQuantAttrs,
     ConstantI64toI32,
     ConvertBmmToMatmul,
-    ConvertBinaryOpsWithScalar,
     ConvertInterpolateWithUpsample2D,
-    ConvertPReLU,
+    RecomposePReLU,
     ConvertToLinear,
     DecomposeAny,
     DecomposeEinsum,
@@ -46,6 +43,7 @@ __all__ = [
     InsertIOQDQ,
     InsertRequantize,
     LayoutTransform,
+    LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
     ReduceDynamicRange,

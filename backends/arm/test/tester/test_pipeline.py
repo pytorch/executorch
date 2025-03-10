@@ -614,6 +614,10 @@ class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
             compile_spec,
             [],
         )
+
+        if "BI" in tosa_version:
+            self.add_stage(self.tester.quantize, pos=0)
+
         self.change_args("check_not.exir", [])
         self.change_args(
             "check_count.exir",

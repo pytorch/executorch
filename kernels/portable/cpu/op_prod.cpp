@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -38,7 +39,7 @@ Tensor& prod_out(
       const auto data_in = in.const_data_ptr<CTYPE_IN>();
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = static_cast<CTYPE_OUT>(1);
-      for (auto i = 0; i < in.numel(); ++i) {
+      for (const auto i : c10::irange(in.numel())) {
         data_out[0] *= static_cast<CTYPE_OUT>(data_in[i]);
       }
     });
@@ -76,7 +77,7 @@ Tensor& prod_int_out(
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-      for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+      for (const auto out_ix : c10::irange(out.numel())) {
         CTYPE_OUT prod = 1;
         if (in.numel() > 0) {
           std::tuple<CTYPE_OUT, long> acc =

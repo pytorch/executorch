@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -41,12 +42,12 @@ void pixel_unshuffle_impl(
   // input tensor shape of [n, c, h, s1, w, s2]
   // output tensor shape of [n, c, s1, s2, h, w]
   size_t i = 0;
-  for (size_t n = 0; n < leading_dims; n++) {
-    for (size_t c = 0; c < sub_channels; c++) {
-      for (size_t h = 0; h < height; h++) {
-        for (size_t s1 = 0; s1 < S; s1++) {
-          for (size_t w = 0; w < width; w++) {
-            for (size_t s2 = 0; s2 < S; s2++) {
+  for (const auto n : c10::irange(leading_dims)) {
+    for (const auto c : c10::irange(sub_channels)) {
+      for (const auto h : c10::irange(height)) {
+        for (const auto s1 : c10::irange(S)) {
+          for (const auto w : c10::irange(width)) {
+            for (const auto s2 : c10::irange(S)) {
               size_t output_offset = n * stride_n + c * stride_c +
                   s1 * stride_s1 + s2 * stride_s2 + h * stride_h + w;
               std::memcpy(

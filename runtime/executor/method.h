@@ -7,9 +7,12 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -402,4 +405,6 @@ using ::executorch::runtime::Method;
 } // namespace executor
 } // namespace torch
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif

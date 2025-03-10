@@ -131,8 +131,7 @@ class TestW2L(unittest.TestCase):
 
     @pytest.mark.slow
     @pytest.mark.corstone_fvp
-    @unittest.skip("Blocked by MLBEDSW-10420")
-    @conftest.expectedFailureOnFVP  # TODO: MLBEDSW-10093
+    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-761
     def test_w2l_u85_BI(self):
         tester = self._test_w2l_ethos_BI_pipeline(
             self.w2l,

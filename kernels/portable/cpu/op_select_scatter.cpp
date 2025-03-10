@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
@@ -79,8 +80,8 @@ Tensor& select_scatter_out(
           CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
           const CTYPE_SRC* const src_data = src.const_data_ptr<CTYPE_SRC>();
 
-          for (size_t i = 0; i < leading_dims; ++i) {
-            for (size_t j = 0; j < trailing_stride; ++j) {
+          for (const auto i : c10::irange(leading_dims)) {
+            for (const auto j : c10::irange(trailing_stride)) {
               out_data[start_offset + i * out_step + j] =
                   convert<CTYPE, CTYPE_SRC>(src_data[i * trailing_stride + j]);
             }

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -274,7 +275,7 @@ void delinearize_index(
     size_t* out_indexes,
     const size_t out_indexes_len) {
   ET_CHECK(shape.size() <= out_indexes_len);
-  for (auto i = 0; i < shape.size(); ++i) {
+  for (size_t i = 0; i < shape.size(); ++i) {
     auto dim = shape.size() - 1 - i;
     auto dim_size = shape[dim];
     out_indexes[dim] = linear_index % dim_size;
@@ -304,7 +305,8 @@ size_t linearize_access_indexes(
   size_t linear_index = 0;
   for (size_t i = 0; i < indexes_broadcast_from.size(); ++i) {
     // If this dimension is broadcasted, add zero to the linear address.
-    if (indexes_broadcast_from[i] >= broadcast_from_shape[i]) {
+    if (indexes_broadcast_from[i] >=
+        static_cast<size_t>(broadcast_from_shape[i])) {
       ET_CHECK_MSG(
           broadcast_from_shape[i] == 1,
           "Expected dim size == 1 if broadcasted, but actual dim size is %zu",

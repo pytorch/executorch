@@ -47,6 +47,7 @@ OPERATORS = [
     "pow",
     "quantized_fully_connected_out",
     "quantize_per_tensor",
+    "quantized_conv_out",
     "quantized_layer_norm",
     "quantized_linear_out",
     "quantized_relu_out",

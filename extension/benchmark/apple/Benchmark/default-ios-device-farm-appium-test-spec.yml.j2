@@ -34,6 +34,11 @@ phases:
   # The test phase includes commands that run your test suite execution.
   test:
     commands:
+      # Fail the test if the model doesn't exist, doing it here so that AWS can report the status back
+      - echo "Verify model"
+      - curl -I --fail '{{ model_path }}' || false
+
+      # Run the benchmark
       - xcodebuild test-without-building -destination id=$DEVICEFARM_DEVICE_UDID -xctestrun $DEVICEFARM_TEST_PACKAGE_PATH/*.xctestrun -derivedDataPath $DEVICEFARM_LOG_DIR
 
   # The post test phase includes are commands that are run after your tests are executed.

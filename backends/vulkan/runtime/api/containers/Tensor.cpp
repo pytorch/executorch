@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 

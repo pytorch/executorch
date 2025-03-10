@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -48,7 +49,7 @@ inline void vec_addf(
     const float* __restrict__ x,
     const float* __restrict__ y,
     size_t size) {
-  for (size_t i = 0; i < size; ++i) {
+  for (const auto i : c10::irange(size)) {
     z[i] = x[i] + y[i];
   }
 }
@@ -60,7 +61,7 @@ inline void vec_scalef(
     const float* __restrict__ x,
     float scale,
     size_t size) {
-  for (size_t i = 0; i < size; ++i) {
+  for (const auto i : c10::irange(size)) {
     y[i] = x[i] * scale;
   }
 }
@@ -75,10 +76,10 @@ inline void vec_matmul(
     int64_t m,
     int64_t n,
     int64_t p) {
-  for (size_t i = 0; i < m; ++i) {
-    for (size_t j = 0; j < p; ++j) {
+  for (const auto i : c10::irange(m)) {
+    for (const auto j : c10::irange(p)) {
       T sum = 0;
-      for (size_t k = 0; k < n; ++k) {
+      for (const auto k : c10::irange(n)) {
         sum += x[i * n + k] * y[k * p + j];
       }
       z[i * p + j] = sum;
@@ -95,10 +96,10 @@ inline void vec_quantized_matmul_int8(
     int64_t m,
     int64_t n,
     int64_t p) {
-  for (size_t i = 0; i < m; ++i) {
-    for (size_t j = 0; j < p; ++j) {
+  for (const auto i : c10::irange(m)) {
+    for (const auto j : c10::irange(p)) {
       T sum = 0;
-      for (size_t k = 0; k < n; ++k) {
+      for (const auto k : c10::irange(n)) {
         sum += x[i * n + k] * static_cast<U>(y[k * p + j]) * s[k];
       }
       z[i * p + j] = sum;
@@ -124,13 +125,13 @@ inline void vec_quantized_matmul_transb_int8(
     int64_t g) {
   int64_t n_over_g = (n + g - 1) / g;
 
-  for (size_t i = 0; i < m; ++i) {
-    for (size_t j = 0; j < p; ++j) {
+  for (const auto i : c10::irange(m)) {
+    for (const auto j : c10::irange(p)) {
       T sum = 0;
-      for (size_t k = 0; k < n; k += g) {
+      for (int64_t k = 0; k < n; k += g) {
         T psum = 0;
         // the last group may have fewer than g elements
-        for (size_t k2 = k; k2 < bounds_min(k + g, n); k2++) {
+        for (const auto k2 : c10::irange(k, bounds_min(k + g, n))) {
           psum += x[i * n + k2] * static_cast<U>(y[j * n + k2]);
         }
         sum += psum * s[j * n_over_g + k / g];
@@ -154,10 +155,10 @@ inline void vec_addmm(
     int64_t p,
     U beta,
     U alpha) {
-  for (size_t i = 0; i < m; ++i) {
-    for (size_t j = 0; j < p; ++j) {
+  for (const auto i : c10::irange(m)) {
+    for (const auto j : c10::irange(p)) {
       T sum = 0;
-      for (size_t k = 0; k < n; ++k) {
+      for (const auto k : c10::irange(n)) {
         sum += mat1_data[i * n + k] * mat2_data[k * p + j];
       }
       out_data[i * p + j] = sum * alpha + self_data[i * p + j] * beta;
@@ -176,7 +177,7 @@ inline float reduce_add(const T* x, size_t size) {
 template <typename T>
 inline float vec_powerf(const T* x, size_t size) {
   float sum = 0;
-  for (size_t i = 0; i < size; ++i) {
+  for (const auto i : c10::irange(size)) {
     sum += x[i] * x[i];
   }
   return sum;
@@ -198,12 +199,12 @@ inline void vec_softmax(T* __restrict__ y, const U* __restrict__ x, int n) {
   U max_x = *std::max_element(x, x + n);
   T sum = 0;
 
-  for (int i = 0; i < n; ++i) {
+  for (const auto i : c10::irange(n)) {
     y[i] = expf(x[i] - max_x);
     sum += y[i];
   }
 
-  for (int i = 0; i < n; ++i) {
+  for (const auto i : c10::irange(n)) {
     y[i] /= sum;
   }
 }
@@ -227,7 +228,7 @@ inline void quantize_i8_f32(
     float scale,
     int32_t zero_point,
     size_t size) {
-  for (size_t i = 0; i < size; ++i) {
+  for (const auto i : c10::irange(size)) {
     float tmp = roundf(x[i] * scale + zero_point);
     y[i] = internal::clamp(tmp, -128.f, 127.f);
   }
@@ -241,7 +242,7 @@ inline void dequantize_i8_f32(
     float scale,
     int32_t zero_point,
     size_t size) {
-  for (size_t i = 0; i < size; ++i) {
+  for (const auto i : c10::irange(size)) {
     y[i] = scale * (x[i] - zero_point);
   }
 }

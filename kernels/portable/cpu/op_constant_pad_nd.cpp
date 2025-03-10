@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 #include <cstring>
 
@@ -56,7 +57,7 @@ void apply_padding_to_dim(
   size_t out_step_len = out_strides[dim];
   size_t in_step_len = self_strides[dim];
 
-  for (size_t i = 0; i < pad_before; ++i) {
+  for ([[maybe_unused]] const auto i : c10::irange(pad_before)) {
     set_all_to_value(out_data, out_step_len, value);
     out_data += out_step_len;
   }
@@ -75,7 +76,7 @@ void apply_padding_to_dim(
   }
   // Otherwise, call this function recursively
   else {
-    for (size_t i = 0; i < self_sizes[dim]; ++i) {
+    for ([[maybe_unused]] const auto i : c10::irange(self_sizes[dim])) {
       apply_padding_to_dim(
           ndim,
           self_data,
@@ -94,7 +95,7 @@ void apply_padding_to_dim(
     }
   }
 
-  for (int i = 0; i < pad_after; ++i) {
+  for ([[maybe_unused]] const auto i : c10::irange(pad_after)) {
     set_all_to_value(out_data, out_step_len, value);
     out_data += out_step_len;
   }
@@ -124,7 +125,7 @@ void constant_pad_nd_out_impl(
   // Collect sizes and strides of input and output tensors and determine the
   // last padded dimension
   size_t last_padded_dim = 0;
-  for (size_t i = 0; i < ndim; ++i) {
+  for (const auto i : c10::irange(ndim)) {
     self_sizes[i] = self.size(i);
     self_strides[i] = getTrailingDims(self, static_cast<int64_t>(i));
     out_sizes[i] = out.size(i);

@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
@@ -49,7 +50,7 @@ Tensor& mean_dim_out(
         out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {
           CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
           const size_t num = get_reduced_dim_product(in, dim_list);
-          for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+          for (const auto out_ix : c10::irange(out.numel())) {
             CTYPE_OUT sum = 0;
             if (in.numel() > 0) {
               sum = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(

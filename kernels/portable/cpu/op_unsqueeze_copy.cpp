@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstring>
 
@@ -38,7 +39,7 @@ Tensor& unsqueeze_copy_out(
   ET_KERNEL_CHECK(ctx, self.dim() + 1 == out.dim(), InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, dim <= self.dim(), InvalidArgument, out);
 
-  for (size_t i = 0; i < out.dim(); ++i) {
+  for (const auto i : c10::irange(out.dim())) {
     if (i < dim) {
       expected_output_size[i] = self.size(i);
     } else if (i > dim) {

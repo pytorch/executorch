@@ -15,7 +15,7 @@ from executorch.examples.llm_pte_finetuning.training_lib import (
     update_function,
 )
 
-from executorch.extension.pybindings.aten_lib import (  # @manual
+from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from omegaconf import OmegaConf
@@ -30,6 +30,18 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument("--cfg", type=str, help="Path to the config file.")
 parser.add_argument("--model_file", type=str, help="Path to the ET model file.")
+parser.add_argument(
+    "--num_training_steps",
+    type=int,
+    help="Number of training steps, assuming 1 epoch.",
+    default=100,
+)
+parser.add_argument(
+    "--num_eval_steps",
+    type=int,
+    help="Number of eval steps, assuming 1 epoch.",
+    default=5,
+)
 
 
 def main() -> None:
@@ -47,10 +59,11 @@ def main() -> None:
     train_set, val_set = torch.utils.data.random_split(ds, [0.8, 0.2])
     train_dataloader = get_dataloader(cfg, train_set, tokenizer, loss_fn)
     val_dataloader = get_dataloader(cfg, val_set, tokenizer, loss_fn)
+    num_training_steps = args.num_training_steps
+    num_eval_steps = args.num_eval_steps
 
     max_seq_len = cfg.tokenizer.max_seq_len
     # Num of steps to run training. Assume 1 epoch
-    num_steps = 100
     with open(file, "rb") as f:
         model_bytes = f.read()
         et_mod = _load_for_executorch_from_buffer(model_bytes)
@@ -62,7 +75,7 @@ def main() -> None:
             dataloader=val_dataloader,
             loss_fn=loss_fn,
             max_seq_len=max_seq_len,
-            num_eval_steps=10,
+            num_eval_steps=num_eval_steps,
         )
         print("Eval loss: ", eval_loss)
 
@@ -74,9 +87,9 @@ def main() -> None:
         learning_rate = 5e-3
         f.seek(0)
         losses = []
-        for i, batch in tqdm(enumerate(train_dataloader), total=num_steps):
+        for i, batch in tqdm(enumerate(train_dataloader), total=num_training_steps):
             # Run for a limited number of steps.
-            if i >= num_steps:
+            if i >= num_training_steps:
                 break
             tokens, labels = batch["tokens"], batch["labels"]
             token_size = tokens.shape[1]
@@ -113,7 +126,7 @@ def main() -> None:
             dataloader=val_dataloader,
             loss_fn=loss_fn,
             max_seq_len=max_seq_len,
-            num_eval_steps=10,
+            num_eval_steps=num_eval_steps,
         )
     print("Eval loss: ", eval_loss)
 

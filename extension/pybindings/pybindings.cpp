@@ -88,10 +88,12 @@ using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::runtime::ArrayRef;
+using ::executorch::runtime::BackendInterface;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
+using ::executorch::runtime::get_backend_class;
 using ::executorch::runtime::get_backend_name;
 using ::executorch::runtime::get_num_registered_backends;
 using ::executorch::runtime::get_registered_kernels;
@@ -990,6 +992,14 @@ py::list get_registered_backend_names() {
   return res;
 }
 
+py::bool_ is_available(const std::string& backend_name) {
+  BackendInterface* backend = get_backend_class(backend_name.c_str());
+  if (backend == nullptr) {
+    return false;
+  }
+  return backend->is_available();
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
@@ -1048,6 +1058,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       &get_registered_backend_names,
       call_guard);
   m.def("_get_operator_names", &get_operator_names);
+  m.def("_is_available", &is_available, py::arg("backend_name"), call_guard);
   m.def("_create_profile_block", &create_profile_block, call_guard);
   m.def(
       "_reset_profile_results",

@@ -107,7 +107,7 @@ python_unittest(
         "test_backends.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/configurations:optimized_native_cpu_ops",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],

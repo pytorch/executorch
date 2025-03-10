@@ -19,6 +19,8 @@ inline int get_element_size(ScalarType dtype) {
     return sizeof(short);
   } else if ((dtype == ScalarType::Char) || (dtype == ScalarType::Byte)) {
     return sizeof(char);
+  } else if (dtype == ScalarType::Float) {
+    return sizeof(float);
   }
   return 0;
 }

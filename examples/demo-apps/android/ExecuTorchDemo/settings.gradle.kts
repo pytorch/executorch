@@ -25,5 +25,3 @@ dependencyResolutionManagement {
 rootProject.name = "ExecuTorch Demo"
 
 include(":app")
-
-includeBuild("../../../../extension/android")

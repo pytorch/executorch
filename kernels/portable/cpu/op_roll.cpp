@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cstddef>
 
@@ -36,7 +37,7 @@ size_t unshift_flat_ix(size_t ix, const Tensor& in, IntArrayRef dim_shifts) {
   indexToCoordinate(in, ix, ix_coord);
 
   size_t shifted_coord[kTensorDimensionLimit];
-  for (size_t d = 0; d < in.dim(); d++) {
+  for (const auto d : c10::irange(in.dim())) {
     shifted_coord[d] =
         (ix_coord[d] + in.size(d) - dim_shifts[d] % in.size(d)) % in.size(d);
   }
@@ -68,10 +69,10 @@ Tensor& roll_out(
   }
 
   int64_t dim_shift_array[kTensorDimensionLimit];
-  for (size_t i = 0; i < in.dim(); i++) {
+  for (const auto i : c10::irange(in.dim())) {
     dim_shift_array[i] = 0;
   }
-  for (size_t i = 0; i < dims.size(); i++) {
+  for (const auto i : c10::irange(dims.size())) {
     const auto d = dims[i] < 0 ? dims[i] + in.dim() : dims[i];
     dim_shift_array[d] += shifts[i];
   }
@@ -85,7 +86,7 @@ Tensor& roll_out(
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
-    for (size_t ix = 0; ix < out.numel(); ++ix) {
+    for (const auto ix : c10::irange(out.numel())) {
       out_data[ix] = in_data[unshift_flat_ix(ix, in, dim_shifts)];
     }
   });

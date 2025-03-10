@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -75,16 +74,14 @@ class TestRshift(unittest.TestCase):
     def test_rshift_tosa_BI(self, test_data):
         self._test_rshift_tosa_BI(test_data)
 
-    # TODO: MLETORCH-644 - Add support for INT16 input/output
-    @parameterized.expand(Rshift.test_data[:-1])
+    @parameterized.expand(Rshift.test_data)
     def test_rshift_u55_BI(self, test_data):
         compile_spec = common.get_u55_compile_spec()
         tester = self._test_rshift_ethosu_BI(test_data, compile_spec)
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(atol=1, inputs=test_data)
 
-    # TODO: MLETORCH-644 - Add support for INT16 input/output
-    @parameterized.expand(Rshift.test_data[:-1])
+    @parameterized.expand(Rshift.test_data)
     def test_rshift_u85_BI(self, test_data):
         compile_spec = common.get_u85_compile_spec()
         tester = self._test_rshift_ethosu_BI(test_data, compile_spec)

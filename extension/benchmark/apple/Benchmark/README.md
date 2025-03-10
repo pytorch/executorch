@@ -30,47 +30,11 @@ cd executorch
 
 This command performs a shallow clone to speed up the process.
 
-### Set Up the Frameworks
+### Build the Frameworks
 
-The Benchmark App relies on prebuilt ExecuTorch frameworks.
-You have two options:
+The Benchmark App is configured to use a Swift PM package that provides the prebuilt ExecuTorch frameworks.
 
-<details>
-<summary>Option 1: Download Prebuilt Frameworks</summary>
-<br/>
-
-Run the provided script to download the prebuilt frameworks:
-
-```bash
-./extension/benchmark/apple/Benchmark/Frameworks/download_frameworks.sh
-```
-</details>
-
-<details>
-<summary>Option 2: Build Frameworks Locally</summary>
-<br/>
-
-Alternatively, you can build the frameworks yourself by following the [guide](https://pytorch.org/executorch/main/apple-runtime.html#local-build).
-</details>
-
-Once the frameworks are downloaded or built, verify that the `Frameworks` directory contains the necessary `.xcframework` files:
-
-```bash
-ls extension/benchmark/apple/Benchmark/Frameworks
-```
-
-You should see:
-
-```
-backend_coreml.xcframework
-backend_mps.xcframework
-backend_xnnpack.xcframework
-executorch.xcframework
-kernels_custom.xcframework
-kernels_optimized.xcframework
-kernels_portable.xcframework
-kernels_quantized.xcframework
-```
+By default, the app relies on the package referencing locally built binaries. To ensure it functions correctly, you must first build the frameworks by following the [guide](https://pytorch.org/executorch/main/using-executorch-ios.html#building-from-source).
 
 ## Adding Models and Resources
 

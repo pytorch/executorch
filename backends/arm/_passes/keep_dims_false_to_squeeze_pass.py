@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -36,18 +35,18 @@ class KeepDimsFalseToSqueezePass(ExportPass):
     """
 
     # CURRENTLY NOT HANDLED OPS
-    # exir_ops.edge.aten.amax,
-    # exir_ops.edge.aten.amin,
     # exir_ops.edge.aten.any.dim,
     # exir_ops.edge.aten.any.dims,
     # exir_ops.edge.aten.argmax,
     # exir_ops.edge.aten.argmin,
-    # exir_ops.edge.aten.max.dim,
-    # exir_ops.edge.aten.min.dim,
     # exir_ops.edge.aten.prod.dim_int,
 
     # HANDLED OPS
     # exir_ops.edge.aten.sum.dim_IntList
+    # exir_ops.edge.aten.max.dim (decomposed in convert_minmax_pass)
+    # exir_ops.edge.aten.min.dim (decomposed in convert_minmax_pass)
+    # exir_ops.edge.aten.amin (decomposed in convert_minmax_pass)
+    # exir_ops.edge.aten.amax (decomposed in convert_minmax_pass)
     # exir_ops.edge.aten.var.correction (decomposed in decompose_var_pass)
     # exir_ops.edge.aten.var.dim (decomposed in decompose_var_pass)
     # exir_ops.edge.aten.mean.dim (decomposed in decompose_meandim_pass)

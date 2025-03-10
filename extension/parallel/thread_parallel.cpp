@@ -6,11 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cinttypes>
 #include <tuple>
 
 #include <executorch/extension/parallel/thread_parallel.h>
 #include <executorch/extension/threadpool/threadpool.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
@@ -53,9 +54,12 @@ bool parallel_for(
     const int64_t end,
     const int64_t grain_size,
     const std::function<void(int64_t, int64_t)>& f) {
-  ET_LOG_AND_RETURN_IF_FALSE(begin >= 0 && end >= 0);
-  ET_LOG_AND_RETURN_IF_FALSE(end >= begin);
-  ET_LOG_AND_RETURN_IF_FALSE(grain_size > 0);
+  ET_CHECK_OR_RETURN_FALSE(
+      begin >= 0 && end >= 0 && end >= begin,
+      "begin = %" PRId64 ", end = %" PRId64,
+      begin,
+      end);
+  ET_CHECK_OR_RETURN_FALSE(grain_size > 0, "grain_size = %" PRId64, grain_size);
   int64_t num_tasks = 0, chunk_size = 0;
   std::tie(num_tasks, chunk_size) =
       calc_num_tasks_and_chunk_size(begin, end, grain_size);

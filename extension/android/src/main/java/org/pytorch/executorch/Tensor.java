@@ -682,11 +682,10 @@ public abstract class Tensor {
   }
 
   /**
-   * Serializes a {@code Tensor} into a byte array.
+   * Serializes a {@code Tensor} into a byte array. Note: This method is experimental and subject to
+   * change without notice. This does NOT supoprt list type.
    *
    * @return The serialized byte array.
-   * @apiNote This method is experimental and subject to change without notice. This does NOT
-   *     supoprt list type.
    */
   public byte[] toByteArray() {
     int dtypeSize = 0;
@@ -738,12 +737,11 @@ public abstract class Tensor {
   }
 
   /**
-   * Deserializes a {@code Tensor} from a byte[].
+   * Deserializes a {@code Tensor} from a byte[]. Note: This method is experimental and subject to
+   * change without notice. This does NOT supoprt list type.
    *
-   * @param buffer The byte array to deserialize from.
+   * @param bytes The byte array to deserialize from.
    * @return The deserialized {@code Tensor}.
-   * @apiNote This method is experimental and subject to change without notice. This does NOT
-   *     supoprt list type.
    */
   public static Tensor fromByteArray(byte[] bytes) {
     if (bytes == null) {

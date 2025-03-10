@@ -510,8 +510,11 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ComputeGraph* compute_graph = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        context.get_runtime_allocator(), ComputeGraph);
+    ComputeGraph* compute_graph =
+        context.get_runtime_allocator()->allocateInstance<ComputeGraph>();
+    if (compute_graph == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
     new (compute_graph) ComputeGraph(get_graph_config(compile_specs));
 

@@ -1,140 +1,136 @@
 # Copyright 2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
+from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
 
-test_data_suite = [
-    # (test_name, input, other,) See torch.lt() for info
-    (
-        "op_lt_rank1_ones",
-        torch.ones(5),
-        torch.ones(5),
-    ),
-    (
-        "op_lt_rank2_rand",
-        torch.rand(4, 5),
-        torch.rand(1, 5),
-    ),
-    (
-        "op_lt_rank3_randn",
-        torch.randn(10, 5, 2),
-        torch.randn(10, 5, 2),
-    ),
-    (
-        "op_lt_rank4_randn",
-        torch.randn(3, 2, 2, 2),
-        torch.randn(3, 2, 2, 2),
-    ),
-]
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU85PipelineBI,
+    OpNotSupportedPipeline,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
+
+aten_op = "torch.ops.aten.lt.Tensor"
+exir_op = "executorch_exir_dialects_edge__ops_aten_lt_Tensor"
+
+input_t = Tuple[torch.Tensor]
 
 
-class TestLessThan(unittest.TestCase):
-    class LessThan(torch.nn.Module):
-        def forward(
-            self,
-            input_: torch.Tensor,
-            other_: torch.Tensor,
-        ):
-            return torch.lt(input_, other_)
+class LessThan(torch.nn.Module):
+    def __init__(self, input, other):
+        super().__init__()
+        self.input_ = input
+        self.other_ = other
 
-    def _test_lt_tosa_pipeline(
-        self, module: torch.nn.Module, test_data: tuple[torch.Tensor, torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check_count({"torch.ops.aten.lt.Tensor": 1})
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
-
-    def _test_lt_tosa_BI_pipeline(
+    def forward(
         self,
-        compile_spec: list[CompileSpec],
-        module: torch.nn.Module,
-        test_data: tuple[torch.Tensor, torch.Tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.lt.Tensor": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
-
-    @parameterized.expand(test_data_suite)
-    def test_lt_tosa_MI(
-        self,
-        test_name: str,
         input_: torch.Tensor,
         other_: torch.Tensor,
     ):
-        test_data = (input_, other_)
-        self._test_lt_tosa_pipeline(self.LessThan(), test_data)
+        return input_ < other_
 
-    @parameterized.expand(test_data_suite)
-    def test_lt_tosa_BI(
-        self,
-        test_name: str,
-        input_: torch.Tensor,
-        other_: torch.Tensor,
-    ):
-        test_data = (input_, other_)
-        self._test_lt_tosa_BI_pipeline(
-            common.get_tosa_compile_spec("TOSA-0.80+BI"), self.LessThan(), test_data
-        )
+    def get_inputs(self):
+        return (self.input_, self.other_)
 
-    @parameterized.expand(test_data_suite)
-    @unittest.skip
-    def test_lt_u55_BI(
-        self,
-        test_name: str,
-        input_: torch.Tensor,
-        other_: torch.Tensor,
-    ):
-        test_data = (input_, other_)
-        self._test_lt_tosa_BI_pipeline(
-            common.get_u55_compile_spec(permute_memory_to_nhwc=True),
-            self.LessThan(),
-            test_data,
-        )
 
-    @parameterized.expand(test_data_suite)
-    @unittest.skip
-    def test_lt_u85_BI(
-        self,
-        test_name: str,
-        input_: torch.Tensor,
-        other_: torch.Tensor,
-    ):
-        test_data = (input_, other_)
-        self._test_lt_tosa_BI_pipeline(
-            common.get_u85_compile_spec(permute_memory_to_nhwc=True),
-            self.LessThan(),
-            test_data,
-        )
+op_lt_rank1_ones = LessThan(
+    torch.ones(5),
+    torch.ones(5),
+)
+op_lt_rank2_rand = LessThan(
+    torch.rand(4, 5),
+    torch.rand(1, 5),
+)
+op_lt_rank3_randn = LessThan(
+    torch.randn(10, 5, 2),
+    torch.randn(10, 5, 2),
+)
+op_lt_rank4_randn = LessThan(
+    torch.randn(3, 2, 2, 2),
+    torch.randn(3, 2, 2, 2),
+)
+
+test_data_common = {
+    "lt_rank1_ones": op_lt_rank1_ones,
+    "lt_rank2_rand": op_lt_rank2_rand,
+    "lt_rank3_randn": op_lt_rank3_randn,
+    "lt_rank4_randn": op_lt_rank4_randn,
+}
+
+
+@common.parametrize("test_module", test_data_common)
+def test_lt_tosa_MI(test_module):
+    pipeline = TosaPipelineMI[input_t](
+        test_module, test_module.get_inputs(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_common)
+def test_lt_tosa_BI(test_module):
+    pipeline = TosaPipelineBI[input_t](
+        test_module, test_module.get_inputs(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_common)
+def test_lt_u55_BI(test_module):
+    # GREATER is not supported on U55. LT uses the GREATER Tosa operator.
+    pipeline = OpNotSupportedPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        "TOSA-0.80+BI+u55",
+        {exir_op: 1},
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_common)
+def test_lt_u85_BI(test_module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module,
+        test_module.get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_common)
+@pytest.mark.skip(reason="The same as test_lt_u55_BI")
+def test_lt_u55_BI_on_fvp(test_module):
+    # GREATER is not supported on U55. LT uses the GREATER Tosa operator.
+    pipeline = OpNotSupportedPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        "TOSA-0.80+BI+u55",
+        {exir_op: 1},
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_module",
+    test_data_common,
+    xfails={"lt_rank4_randn": "4D fails because boolean Tensors can't be subtracted"},
+)
+@common.SkipIfNoCorstone320
+def test_lt_u85_BI_on_fvp(test_module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module,
+        test_module.get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()

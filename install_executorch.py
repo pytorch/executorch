@@ -65,6 +65,7 @@ REQUIRED_SUBMODULES = {
     "prelude": "BUCK",
     "pthreadpool": "CMakeLists.txt",
     "pybind11": "CMakeLists.txt",
+    "shim": "BUCK",
     "XNNPACK": "CMakeLists.txt",
 }
 
@@ -137,6 +138,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use-pt-pinned-commit",
         action="store_true",
         help="build from the pinned PyTorch commit instead of nightly",
+    )
+    parser.add_argument(
+        "--editable",
+        "-e",
+        action="store_true",
+        help="build an editable pip wheel, changes to python code will be "
+        "picked up without rebuilding the wheel. Extension libraries will be "
+        "installed inside the source tree.",
     )
     return parser
 
@@ -226,6 +235,9 @@ def main(args):
             "-m",
             "pip",
             "install",
+        ]
+        + (["--editable"] if args.editable else [])
+        + [
             ".",
             "--no-build-isolation",
             "-v",

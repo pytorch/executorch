@@ -18,7 +18,7 @@ endif()
 
 add_library(extension_apple)
 
-set(EXPORTED_SOURCES ExecuTorch/Exported/ExecuTorchLog.mm)
+file(GLOB EXPORTED_SOURCES ExecuTorch/Exported/*.m ExecuTorch/Exported/*.mm)
 
 target_sources(extension_apple PRIVATE ${EXPORTED_SOURCES})
 

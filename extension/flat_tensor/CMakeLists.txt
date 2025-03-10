@@ -36,6 +36,9 @@ install(
   DESTINATION ${_common_include_directories}
 )
 
+add_subdirectory(serialize)
+add_dependencies(extension_flat_tensor flat_tensor_schema)
+
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

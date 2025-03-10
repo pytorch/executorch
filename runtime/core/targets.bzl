@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def event_tracer_enabled():
     return native.read_config("executorch", "event_tracer_enabled", "false") == "true"
@@ -82,7 +82,7 @@ def define_common_targets():
         ],
     )
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(
             name = "evalue" + aten_suffix,

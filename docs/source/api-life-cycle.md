@@ -1,4 +1,4 @@
-# ExecuTorch API Life Cycle and Deprecation Policy
+# API Life Cycle and Deprecation Policy
 
 ## API Life Cycle
 

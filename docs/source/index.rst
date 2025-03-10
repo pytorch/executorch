@@ -56,7 +56,7 @@ Topics in this section will help you get started with ExecuTorch.
      .. grid-item-card:: :octicon:`file-code;1em`
         Getting started with ExecuTorch
         :img-top: _static/img/card-background.svg
-        :link: getting-started-setup.html
+        :link: getting-started.html
         :link-type: url
 
         A step-by-step tutorial on how to get started with
@@ -84,13 +84,43 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Getting Started
+   :caption: Usage
    :hidden:
 
-   getting-started-setup
-   export-overview
-   runtime-build-and-cross-compilation
-   getting-started-faqs
+   getting-started
+   using-executorch-export
+   using-executorch-android
+   using-executorch-ios
+   using-executorch-cpp
+   using-executorch-runtime-integration
+   using-executorch-troubleshooting
+   using-executorch-building-from-source
+   using-executorch-faqs
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Examples
+   :hidden:
+
+   demo-apps-android.md
+   demo-apps-ios.md
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Backends
+   :hidden:
+
+   backends-overview
+   backends-xnnpack
+   backends-coreml
+   backends-mps
+   backends-vulkan
+   backends-arm-ethos-u
+   backends-qualcomm
+   backends-mediatek
+   backends-cadence
 
 .. toctree::
    :glob:
@@ -98,38 +128,37 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Tutorials
    :hidden:
 
-   tutorials/export-to-executorch-tutorial
-   running-a-model-cpp-tutorial
-   extension-module
-   extension-tensor
-   tutorials/devtools-integration-tutorial
-   apple-runtime
-   demo-apps-ios
-   demo-apps-android
-   examples-end-to-end-to-lower-model-to-delegate
-   tutorial-xnnpack-delegate-lowering
-   build-run-vulkan
-   ..
-      Alphabetical by backend name. Be sure to keep the same order in the
-      customcarditem entries below.
-   executorch-arm-delegate-tutorial
-   build-run-coreml
-   build-run-mediatek-backend
-   build-run-mps
-   build-run-qualcomm-ai-engine-direct-backend
-   build-run-xtensa
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Developer Tools
+   :hidden:
+
+   devtools-overview
+   bundled-io
+   etrecord
+   etdump
+   runtime-profiling
+   model-debugging
+   model-inspector
+   memory-planning-inspection
+   delegate-debugging
+   devtools-tutorial
 
 .. toctree::
    :glob:
-   :maxdepth: 2
-   :caption: Working with LLMs
+   :maxdepth: 1
+   :caption: Runtime
    :hidden:
 
-   Llama <llm/llama>
-   Llama on Android <llm/llama-demo-android>
-   Llama on iOS <llm/llama-demo-ios>
-   Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
-   Intro to LLMs in Executorch <llm/getting-started>
+   runtime-overview
+   extension-module
+   extension-tensor
+   running-a-model-cpp-tutorial
+   runtime-backend-delegate-implementation-and-linking
+   runtime-platform-abstraction-layer
+   portable-cpp-programming
+   pte-file-format
 
 .. toctree::
    :glob:
@@ -141,38 +170,6 @@ Topics in this section will help you get started with ExecuTorch.
    executorch-runtime-api-reference
    runtime-python-api-reference
    api-life-cycle
-
-.. toctree::
-   :glob:
-   :maxdepth: 1
-   :caption: IR Specification
-   :hidden:
-
-   ir-exir
-   ir-ops-set-definition
-
-.. toctree::
-   :glob:
-   :maxdepth: 1
-   :caption: Compiler Entry Points
-   :hidden:
-
-   compiler-delegate-and-partitioner
-   compiler-backend-dialect
-   compiler-custom-compiler-passes
-   compiler-memory-planning
-
-.. toctree::
-   :glob:
-   :maxdepth: 1
-   :caption: Runtime
-   :hidden:
-
-   runtime-overview
-   runtime-backend-delegate-implementation-and-linking
-   runtime-platform-abstraction-layer
-   portable-cpp-programming
-   pte-file-format
 
 .. toctree::
    :glob:
@@ -194,32 +191,46 @@ Topics in this section will help you get started with ExecuTorch.
 
 .. toctree::
    :glob:
-   :maxdepth: 1
-   :caption: Backend Delegates
+   :maxdepth: 2
+   :caption: Working with LLMs
    :hidden:
 
-   native-delegates-executorch-xnnpack-delegate
-   native-delegates-executorch-vulkan-delegate
+   Llama <llm/llama>
+   Llama on Android <llm/llama-demo-android>
+   Llama on iOS <llm/llama-demo-ios>
+   Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+   Intro to LLMs in Executorch <llm/getting-started>
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Backend Development
+   :hidden:
+
    backend-delegates-integration
+   backend-delegates-xnnpack-reference
    backend-delegates-dependencies
+   compiler-delegate-and-partitioner
    debug-backend-delegate
 
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Developer Tools
+   :caption: IR Specification
    :hidden:
 
-   devtools-overview
-   bundled-io
-   etrecord
-   etdump
-   runtime-profiling
-   model-debugging
-   model-inspector
-   memory-planning-inspection
-   delegate-debugging
-   devtools-tutorial
+   ir-exir
+   ir-ops-set-definition
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Compiler Entry Points
+   :hidden:
+
+   compiler-backend-dialect
+   compiler-custom-compiler-passes
+   compiler-memory-planning
 
 .. toctree::
    :glob:
@@ -314,7 +325,7 @@ ExecuTorch tutorials.
    :header: Building and Running ExecuTorch with Vulkan Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with Vulkan Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-vulkan.html
+   :link: backends-vulkan.html
    :tags: Export,Backend,Delegation,Vulkan
 
 ..
@@ -332,35 +343,35 @@ ExecuTorch tutorials.
    :header: Building and Running ExecuTorch with CoreML Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with CoreML Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-coreml.html
+   :link: backends-coreml.html
    :tags: Export,Backend,Delegation,CoreML
 
 .. customcarditem::
    :header: Building and Running ExecuTorch with MediaTek Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with MediaTek Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-mediatek-backend.html
+   :link: backends-mediatek-backend.html
    :tags: Export,Backend,Delegation,MediaTek
 
 .. customcarditem::
    :header: Building and Running ExecuTorch with MPS Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-mps.html
+   :link: backends-mps.html
    :tags: Export,Backend,Delegation,MPS,MPSGraph
 
 .. customcarditem::
    :header: Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-qualcomm-ai-engine-direct-backend.html
+   :link: backends-qualcomm.html
    :tags: Export,Backend,Delegation,QNN
 
 .. customcarditem::
    :header: Building and Running ExecuTorch on Xtensa HiFi4 DSP
    :card_description: A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-xtensa.html
+   :link: backends-cadence.html
    :tags: Export,Custom-Operators,DSP,Xtensa
 
 .. customcardend::

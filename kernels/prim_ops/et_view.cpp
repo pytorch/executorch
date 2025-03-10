@@ -32,7 +32,8 @@ bool get_view_target_size(
     executorch::aten::ArrayRef<int64_t> size,
     int64_t dim,
     executorch::aten::SizesType* out_size) {
-  ET_LOG_AND_RETURN_IF_FALSE(size.size() == dim);
+  ET_LOG_AND_RETURN_IF_FALSE(
+      dim >= 0 && size.size() == static_cast<size_t>(dim));
   int minus1_dim = -1;
   int n_zero = 0;
   int64_t numel_without_minus_1 = 1;

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
@@ -27,11 +28,11 @@ void compute_variance(
     const double denominator) {
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
   if (num == 0 || denominator <= 0) {
-    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+    for (const auto out_ix : c10::irange(out.numel())) {
       out_data[out_ix] = NAN;
     }
   } else {
-    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+    for (const auto out_ix : c10::irange(out.numel())) {
       CTYPE_OUT sum = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
           [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
           [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },

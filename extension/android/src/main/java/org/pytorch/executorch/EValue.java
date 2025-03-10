@@ -177,10 +177,10 @@ public class EValue {
   }
 
   /**
-   * Serializes an {@code EValue} into a byte array.
+   * Serializes an {@code EValue} into a byte array. Note: This method is experimental and subject
+   * to change without notice.
    *
    * @return The serialized byte array.
-   * @apiNote This method is experimental and subject to change without notice.
    */
   public byte[] toByteArray() {
     if (isNone()) {
@@ -212,11 +212,11 @@ public class EValue {
   }
 
   /**
-   * Deserializes an {@code EValue} from a byte[].
+   * Deserializes an {@code EValue} from a byte[]. Note: This method is experimental and subject to
+   * change without notice.
    *
    * @param bytes The byte array to deserialize from.
    * @return The deserialized {@code EValue}.
-   * @apiNote This method is experimental and subject to change without notice.
    */
   public static EValue fromByteArray(byte[] bytes) {
     ByteBuffer buffer = ByteBuffer.wrap(bytes);

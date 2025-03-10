@@ -24,11 +24,7 @@ install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
-  if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
-    ./install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
-  else
-    ./install_executorch.sh --pybind xnnpack
-  fi
+  ./install_executorch.sh --pybind xnnpack "$@"
   # Just print out the list of packages for debugging
   pip list
 }
@@ -165,4 +161,53 @@ do_not_use_nightly_on_ci() {
     echo "Unexpected torch version. Expected binary built from source, got ${TORCH_VERSION}"
     exit 1
   fi
+}
+
+
+parse_args() {
+  local args=("$@")
+  local i
+  local BUILD_TOOL=""
+  local BUILD_MODE=""
+  local EDITABLE=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    case "${args[$i]}" in
+      --build-tool)
+        BUILD_TOOL="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      --build-mode)
+        BUILD_MODE="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      --editable)
+        EDITABLE="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      *)
+        echo "Invalid argument: ${args[$i]}"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [ -z "$BUILD_TOOL" ]; then
+    echo "Missing build tool (require buck2 or cmake), exiting..."
+    exit 1
+  elif ! [[ $BUILD_TOOL =~ ^(cmake|buck2)$ ]]; then
+    echo "Require buck2 or cmake for --build-tool, got ${BUILD_TOOL}, exiting..."
+    exit 1
+  fi
+  BUILD_MODE="${BUILD_MODE:-Release}"
+  if ! [[ "$BUILD_MODE" =~ ^(Debug|Release)$ ]]; then
+    echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
+    exit 1
+  fi
+  EDITABLE="${EDITABLE:-false}"
+  if ! [[ $EDITABLE =~ ^(true|false)$ ]]; then
+    echo "Require true or false for --editable, got ${EDITABLE}, exiting..."
+    exit 1
+  fi
+
+  echo "$BUILD_TOOL $BUILD_MODE $EDITABLE"
 }

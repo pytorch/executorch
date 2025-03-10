@@ -72,8 +72,11 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
     // `processed` contains an executorch program. Wrap it in a DataLoader that
     // will return the data directly without copying it.
     MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
-    auto loader = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, BufferDataLoader);
+    auto loader = runtime_allocator->allocateInstance<BufferDataLoader>();
+    if (loader == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     new (loader) BufferDataLoader(processed->data(), processed->size());
     // Can't free `processed` because the program will point into that memory.
 
@@ -84,8 +87,11 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     // Move the Program off the stack.
-    auto client_program =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, Program);
+    auto client_program = runtime_allocator->allocateInstance<Program>();
+    if (client_program == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     new (client_program) Program(std::move(program_result.get()));
 
     Result<MethodMeta> method_meta = client_program->method_meta("forward");
@@ -97,35 +103,56 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
     // Building all different allocators for the client executor
     auto num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
 
-    Span<uint8_t>* memory_planned_buffers = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, Span<uint8_t>, num_memory_planned_buffers);
+    Span<uint8_t>* memory_planned_buffers =
+        runtime_allocator->allocateList<Span<uint8_t>>(
+            num_memory_planned_buffers);
+    if (memory_planned_buffers == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
     for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
       size_t buffer_size = static_cast<size_t>(
           method_meta->memory_planned_buffer_size(id).get());
-      uint8_t* buffer_i = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          runtime_allocator, uint8_t, buffer_size);
+      uint8_t* buffer_i = runtime_allocator->allocateList<uint8_t>(buffer_size);
+      if (buffer_i == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
+
       memory_planned_buffers[id] = {buffer_i, buffer_size};
     }
 
-    auto client_planned_memory = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, HierarchicalAllocator);
+    auto client_planned_memory =
+        runtime_allocator->allocateInstance<HierarchicalAllocator>();
+    if (client_planned_memory == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     new (client_planned_memory) HierarchicalAllocator(
         {memory_planned_buffers, num_memory_planned_buffers});
 
     // Allocate some memory from runtime allocator for the client executor, in
     // real case, like if it's an executor in dsp, it should allocate memory
     // dedicated to this specific hardware
-    auto client_method_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, MemoryAllocator);
+    auto client_method_allocator =
+        runtime_allocator->allocateInstance<MemoryAllocator>();
+    if (client_method_allocator == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     const size_t kClientRuntimeMemorySize = 4 * 1024U;
-    auto runtime_pool = ET_ALLOCATE_OR_RETURN_ERROR(
-        runtime_allocator, kClientRuntimeMemorySize);
+    auto runtime_pool = runtime_allocator->allocate(kClientRuntimeMemorySize);
+    if (runtime_pool == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
     new (client_method_allocator) MemoryAllocator(
         kClientRuntimeMemorySize, static_cast<uint8_t*>(runtime_pool));
 
     auto client_memory_manager =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, MemoryManager);
+        runtime_allocator->allocateInstance<MemoryManager>();
+    if (client_memory_manager == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     new (client_memory_manager)
         MemoryManager(client_method_allocator, client_planned_memory);
 
@@ -140,8 +167,11 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
       return method_res.error();
     }
 
-    auto client_method =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, Method);
+    auto client_method = runtime_allocator->allocateInstance<Method>();
+    if (client_method == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     new (client_method) Method(std::move(method_res.get()));
 
     // Return the client method so it will be passed to `execute()` as

@@ -82,6 +82,27 @@ Changelog = "https://github.com/pytorch/executorch/releases"
 [project.scripts]
 flatc = "executorch.data.bin:flatc"
 
+# TODO(dbort): Could use py_modules to restrict the set of modules we
+# package, and package_data to restrict the set up non-python files we
+# include. See also setuptools/discovery.py for custom finders.
+[tool.setuptools.package-dir]
+"executorch.backends" = "backends"
+"executorch.codegen" = "codegen"
+"executorch.data.bin" = "data/bin"
+# TODO(mnachin T180504136): Do not put examples/models
+# into core pip packages. Refactor out the necessary utils
+# or core models files into a separate package.
+"executorch.examples.apple.coreml.llama" = "examples/apple/coreml/llama"
+"executorch.examples.models" = "examples/models"
+"executorch.exir" = "exir"
+"executorch.extension" = "extension"
+"executorch.kernels.quantized" = "kernels/quantized"
+"executorch.schema" = "schema"
+"executorch.devtools" = "devtools"
+"executorch.devtools.bundled_program" = "devtools/bundled_program"
+"executorch.runtime" = "runtime"
+"executorch.util" = "util"
+
 [tool.setuptools.package-data]
 # TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we
 # don't need.

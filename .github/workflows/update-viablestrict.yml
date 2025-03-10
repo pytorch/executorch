@@ -12,7 +12,7 @@ concurrency:
 jobs:
   do_update_viablestrict:
     if: ${{ github.repository_owner == 'pytorch' }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || '' }}
     steps:
       - name: Update viable/strict

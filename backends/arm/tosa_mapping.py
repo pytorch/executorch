@@ -11,7 +11,7 @@
 # the standardised TOSA representation.
 #
 
-from typing import Sequence
+from typing import Any, Sequence
 
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
@@ -44,7 +44,7 @@ DTYPE_MAP = {
 }
 
 
-def map_dtype(data_type):
+def map_dtype(data_type: torch.dtype) -> ts.DType:
     if data_type in UNSUPPORTED_DTYPES:
         raise ValueError(f"Unsupported type: {data_type}")
     if data_type not in DTYPE_MAP:
@@ -88,7 +88,7 @@ class TosaArg:
     def __process_number(self, argument: float | int):
         self.number = argument
 
-    def __init__(self, argument) -> None:
+    def __init__(self, argument: Any) -> None:
         self.name = None  # type: ignore[assignment]
         self.dtype = None
         self.shape = None
@@ -107,7 +107,10 @@ class TosaArg:
         if isinstance(argument, (int, float)):
             self.__process_number(argument)
             return
+        if isinstance(argument, torch.dtype):
+            # Dtype is parsed from fake tensor
+            return
 
-        RuntimeError(
+        raise RuntimeError(
             f"Unhandled node input argument: {argument}, of type {type(argument)}"
         )

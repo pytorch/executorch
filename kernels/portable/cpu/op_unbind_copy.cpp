@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstdint>
 #include <cstring>
 
@@ -36,7 +37,7 @@ void unbind_copy_int_out(
   ET_KERNEL_CHECK(
       ctx, check_unbind_copy_args(input, dim, out), InvalidArgument, );
 
-  for (int i = 0; i < out.size(); ++i) {
+  for (const auto i : c10::irange(out.size())) {
     ET_KERNEL_CHECK(
         ctx, tensors_have_same_dim_order(input, out[i]), InvalidArgument, );
   }
@@ -64,8 +65,9 @@ void unbind_copy_int_out(
                 size_t input_offset = i * trailing_dims;
                 CTYPE_OUT* const dest = out[i].mutable_data_ptr<CTYPE_OUT>();
                 size_t dest_offset = 0;
-                for (size_t j = 0; j < leading_dims; ++j) {
-                  for (size_t k = 0; k < trailing_dims; ++k) {
+                for ([[maybe_unused]] const auto j :
+                     c10::irange(leading_dims)) {
+                  for (const auto k : c10::irange(trailing_dims)) {
                     dest[dest_offset + k] = convert<CTYPE_OUT, CTYPE_IN>(
                         input_data[input_offset + k]);
                   }

@@ -5,7 +5,13 @@ load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "CXX", "FBCODE"
 
 
 def get_vulkan_compiler_flags():
-    return ["-Wno-missing-prototypes", "-Wno-global-constructors"]
+    return select({
+        "DEFAULT": [
+            "-Wno-global-constructors",
+            "-Wno-missing-prototypes",
+        ],
+        "ovr_config//os:windows": [],
+    })
 
 def get_labels(no_volk):
     if no_volk:

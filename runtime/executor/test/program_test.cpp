@@ -371,6 +371,18 @@ TEST_F(ProgramTest, getMethods) {
   EXPECT_EQ(strcmp(res2.get(), "forward2"), 0);
 }
 
+TEST_F(ProgramTest, GetNamedDataMap_Fail) {
+  Result<Program> program =
+      Program::load(add_loader_.get(), kDefaultVerification);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Get the named data map. Expect to fail, as add.pte does not have any
+  // named data segments.
+  Result<const executorch::runtime::NamedDataMap*> named_data_map =
+      program->get_named_data_map();
+  EXPECT_EQ(named_data_map.error(), Error::NotFound);
+}
+
 // Test that the deprecated Load method (capital 'L') still works.
 TEST_F(ProgramTest, DEPRECATEDLoad) {
   // Parse the Program from the data.

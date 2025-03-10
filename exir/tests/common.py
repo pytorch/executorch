@@ -79,6 +79,7 @@ def get_test_program() -> Program:
         backend_delegate_data=[],
         segments=[],
         constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
+        named_data=[],
     )
 
 

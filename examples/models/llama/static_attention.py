@@ -125,18 +125,19 @@ class StaticVCache(StaticKVCache):
 
 
 class StaticAttentionMask:
-    def __init__(self, input_len, cache_len, style):
+    def __init__(self, input_len, cache_len, style, mask_val=float("-inf")):
         self.input_len = input_len
         self.cache_len = cache_len
         assert style in ("shift_pointer", "smart_mask")
         self.style = style
+        self.mask_val = mask_val
         self.unmasked_len = 0
         self.tensor = torch.zeros(1, input_len, input_len + cache_len)
         self.reset()
 
     def reset(self):
         self.unmasked_len = 0
-        self.tensor[:, :, : self.cache_len] = float("-inf")
+        self.tensor[:, :, : self.cache_len] = self.mask_val
 
     def unmask(self, new_unmasked_len):
         if new_unmasked_len <= 0:
@@ -207,22 +208,25 @@ class StaticAttention(Attention):
         self.dim = config.dim
         self.head_dim = config.head_dim
         self.inv_scale = 1.0 / (float(self.head_dim) ** 0.5)
+        self.attention_qkv_bias = config.attention_qkv_bias
+        self.use_qk_norm = config.use_qk_norm
 
+        assert not self.use_qk_norm, "QK norm not supported in static attention yet"
         self.wqs = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_heads)
             ]
         )
         self.wks = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_kv_heads)
             ]
         )
         self.wvs = nn.ModuleList(
             [
-                nn.Linear(self.dim, self.head_dim, bias=False)
+                nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
                 for _ in range(self.n_kv_heads)
             ]
         )
@@ -256,7 +260,6 @@ class StaticAttention(Attention):
         new_vs = [self.wvs[i](x) for i in range(self.n_kv_heads)]
         new_qs = [self.rope(q, freqs_cos, freqs_sin) for q in new_qs]
         new_ks = [self.rope(k, freqs_cos, freqs_sin) for k in new_ks]
-
         all_ks = []
         all_vs = []
         for i in range(self.n_kv_heads):

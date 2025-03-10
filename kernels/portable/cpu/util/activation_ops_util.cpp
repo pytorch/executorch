@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
@@ -30,7 +31,7 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(in));
 
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
-  const size_t dim_size = in.size(non_negative_dim);
+  const ssize_t dim_size = in.size(non_negative_dim);
 
   ET_CHECK_OR_RETURN_FALSE(
       dim_size % 2 == 0,
@@ -44,8 +45,8 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
       out.size(non_negative_dim) == dim_size / 2,
       "output tensor must have half the size of the input tensor along the specified dimension.");
 
-  for (size_t i = 0; i < in.dim(); ++i) {
-    if (i != non_negative_dim) {
+  for (const auto i : c10::irange(in.dim())) {
+    if (static_cast<size_t>(i) != non_negative_dim) {
       if (out.size(i) != in.size(i)) {
 #if ET_LOG_ENABLED
         auto out_shape_str = executorch::runtime::tensor_shape_to_c_string(
@@ -94,9 +95,10 @@ Error resize_glu_out(const Tensor& in, int64_t dim, Tensor& out) {
   executorch::aten::SizesType expected_output_size[kTensorDimensionLimit];
 
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
-  for (size_t i = 0; i < in.dim(); i++) {
-    expected_output_size[i] =
-        (i == non_negative_dim) ? (in.size(i) / 2) : in.size(i);
+  for (const auto i : c10::irange(in.dim())) {
+    expected_output_size[i] = (static_cast<size_t>(i) == non_negative_dim)
+        ? (in.size(i) / 2)
+        : in.size(i);
   }
 
   ArrayRef<executorch::aten::SizesType> output_size{
