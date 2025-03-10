@@ -92,7 +92,7 @@ add_custom_command(
     ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
     "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/" ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
-  DEPENDS host_flatc
+  DEPENDS flatc
   COMMENT "Generating vulkan_schema headers"
   VERBATIM
 )
