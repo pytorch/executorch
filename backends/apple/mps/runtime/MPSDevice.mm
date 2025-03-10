@@ -22,11 +22,11 @@ static inline MTLLanguageVersion getMetalLanguageVersion(const id<MTLDevice>& de
   // MPS Advanced Indexing needs at least Metal 2.0 (support for Argument Buffers and function constants)
   // host_name attribute needs at least Metal 2.2 and ulong needs Metal 2.3 (supported on MacOS 11+)
   MTLLanguageVersion languageVersion = MTLLanguageVersion2_3;
-#if defined(__MAC_13_0)
-  if (macOS13Plus) {
-    languageVersion = MTLLanguageVersion3_0;
+  if (@available(iOS 16, macOS 13, *)) {
+    if (macOS13Plus) {
+      languageVersion = MTLLanguageVersion3_0;
+    }
   }
-#endif
 
   ET_CHECK_MSG([device supportsFamily:MTLGPUFamilyMac2], "Missing Metal support for MTLGPUFamilyMac2");
   return languageVersion;
