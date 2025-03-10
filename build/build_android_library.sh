@@ -70,6 +70,11 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
+  # Update tokenizers submodule
+  pushd extension/llm/tokenizers
+  echo "Update tokenizers submodule"
+  git submodule update --init
+  popd
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
