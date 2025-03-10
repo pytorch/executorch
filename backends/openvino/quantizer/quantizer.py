@@ -341,13 +341,6 @@ class OpenVINOQuantizer(Quantizer):
     def validate(self, model: torch.fx.GraphModule) -> None:
         pass
 
-    def transform_for_annotation(
-        self, model: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
-        # Fold constant branches to avoid their quantization
-        nncf_fx.transformations.fold_constant_except_qdq(model)
-        return model
-
 
 def quantize_model(
     captured_model: torch.fx.GraphModule,
