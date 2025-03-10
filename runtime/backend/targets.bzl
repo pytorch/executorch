@@ -29,5 +29,6 @@ def define_common_targets():
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core:memory_allocator",
+                "//executorch/runtime/core:named_data_map",
             ],
         )
