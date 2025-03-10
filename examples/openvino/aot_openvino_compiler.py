@@ -13,7 +13,7 @@ import timm
 import torch
 import torchvision.models as torchvision_models
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
-from executorch.backends.openvino.quantizer.quantizer import quantize_model
+from executorch.backends.openvino.quantizer import quantize_model
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.extension.pybindings.portable_lib import (  # @manual
@@ -182,9 +182,19 @@ def main(
         if not dataset_path:
             msg = "Quantization requires a calibration dataset."
             raise ValueError(msg)
+
+        subset_size = 300
+        batch_size = calibration_dataset.batch_size
+        subset_size = (subset_size // batch_size) + int(subset_size % batch_size > 0)
+
+        def transform_fn(x):
+            return x[0]
+
         quantized_model = quantize_model(
             aten_dialect.module(),
             calibration_dataset,
+            subset_size=subset_size,
+            transform_fn=transform_fn,
         )
 
         aten_dialect: ExportedProgram = export(quantized_model, example_args)
