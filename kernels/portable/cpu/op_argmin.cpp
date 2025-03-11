@@ -58,7 +58,7 @@ Tensor& argmin_out(
     const auto grain_size = std::max(
         static_cast<int64_t>(1),
         executorch::extension::internal::GRAIN_SIZE / reduction_size);
-    executorch::extension::parallel_for(
+    const bool success = executorch::extension::parallel_for(
         0, out.numel(), grain_size, [&](const auto begin, const auto end) {
           for (const auto out_ix : c10::irange(begin, end)) {
             std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
@@ -85,6 +85,7 @@ Tensor& argmin_out(
             out_data[out_ix] = std::get<1>(acc);
           }
         });
+    ET_KERNEL_CHECK_MSG(ctx, success, Internal, out, "parallel_for failed");
   });
 
   return out;
