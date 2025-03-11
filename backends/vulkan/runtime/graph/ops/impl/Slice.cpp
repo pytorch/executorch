@@ -83,7 +83,7 @@ void add_slice_tensor_copy_node(
   // if slice dim is the same as the packed dim, we can use the channel slice
   if (dim_index == packed_dim_idx) {
     // slice by channel
-    std::string kernel_name = "slice_channel";
+    std::string kernel_name = "slice_packed_dim";
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
@@ -119,7 +119,7 @@ void add_slice_tensor_copy_node(
       in_channel_stride = utils::div_up_4(in_channel_stride);
     }
 
-    std::string kernel_name = "slice_batch_height_width";
+    std::string kernel_name = "slice_unpacked_dim";
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
