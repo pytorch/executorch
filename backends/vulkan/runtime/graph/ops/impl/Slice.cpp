@@ -108,27 +108,15 @@ void add_slice_tensor_copy_node(
         spec_vars));
 
   } else {
-    // GPU's coordinate is in x, y, z
-    int64_t gpu_dim = -1;
-    int64_t in_channel_stride = 1;
-    if (dim_index == kWidth4D) {
-      gpu_dim = 0; // width: x dimension in gpu
-      VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
-    } else if (dim_index == kHeight4D) {
-      gpu_dim = 1; // height: y dimension
-      VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
-    } else if (dim_index == kChannel4D) {
-      gpu_dim = 2; // channel: z dimension
-      VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
-      in_channel_stride = dim_at(in_sizes, kChannel4D);
-    } else {
-      gpu_dim = 3; // batch: w dimension
+    // GPU's coordinate is in x = 0, y = 1, z = 2, w = 3
+    const int64_t gpu_dim = -(dim_index + 1);
+    // stride of input tensor's channel dimension
+    int64_t in_channel_stride = dim_at(in_sizes, kChannel4D);
+    VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
 
-      in_channel_stride = dim_at(in_sizes, kChannel4D);
-      if (packed_dim_idx == kChannel4D) {
-        // Due to channel packing, each batch value is span over stride planes
-        in_channel_stride = utils::div_up_4(in_channel_stride);
-      }
+    // Due to channel packing, each batch value is span over stride planes
+    if (dim_index == kBatch4D && packed_dim_idx == kChannel4D) {
+      in_channel_stride = utils::div_up_4(in_channel_stride);
     }
 
     std::string kernel_name = "slice_batch_height_width";
