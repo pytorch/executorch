@@ -41,6 +41,19 @@ option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE
 # Keeping this OFF by default due to regressions in decode and model load with
 # kleidi kernels
 option(EXECUTORCH_XNNPACK_ENABLE_KLEIDI "Enable Arm Kleidi kernels" OFF)
+
+# Turning this on cache weights between partitions and methods. If weights
+# are shared across methods/partitions then this can reduce load time and
+# memory usage
+
+# Keeping this off maintains existing behavior. Turning this on serializes
+# execution and initialization of delegates, to be revisited
+option(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE
+        "Enable weights cache to cache and manage all packed weights" OFF)
+
+if (EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE)
+  add_definitions(-DENABLE_XNNPACK_WEIGHTS_CACHE)
+endif()
 if(EXECUTORCH_XNNPACK_SHARED_WORKSPACE)
   add_definitions(-DENABLE_XNNPACK_SHARED_WORKSPACE)
 endif()

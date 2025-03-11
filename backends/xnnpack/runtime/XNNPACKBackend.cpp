@@ -83,12 +83,6 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
-    weights_cache_->initialize_for_runtime(
-      context.get_runtime_allocator(),
-      named_data_map
-    );
-
-    // This is needed to serialize access to xnn_create_runtime which is not
     // thread safe. This can heppen when multiple threads call init() on
     // the same backend instance.
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
@@ -98,7 +92,9 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
 #ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
     const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
 #endif
-
+    weights_cache_->initialize_for_runtime(
+      context.get_runtime_allocator(),
+      named_data_map);
 
     // Executor has been allocated but not constructed, ensure that runtime_ is
     // nullptr by constructing it in place here. NOTE: Since we use placement
