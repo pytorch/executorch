@@ -39,6 +39,21 @@ class TensorEntry:
 
 
 @dataclass
+class DataEntry:
+    """Represents a single blob in `DataPayload`, specifying its location
+    and metadata.
+
+    Attributes:
+       buffer_index: The index inside `DataPayload.buffers` that this
+            DataEntryEntry refers to.
+       alignment: The alignment of the data.
+    """
+
+    buffer_index: int
+    alignment: int
+
+
+@dataclass
 class DataPayload:
     """Contains the data and metadata required for serialization.
 
@@ -49,10 +64,12 @@ class DataPayload:
     Attributes:
         buffers: a sequence of tensor buffers.
         fqn_to_tensor: a map from fully qualified names to serializable tensors.
+        key_to_data: a map from unique keys to serializable opaque data.
     """
 
     buffers: Sequence[bytes]
     fqn_to_tensor: Dict[str, TensorEntry]
+    key_to_data: Dict[str, DataEntry]
 
 
 class DataSerializer(ABC):
