@@ -83,6 +83,7 @@ def define_common_targets():
         exported_headers = [
             "tiktoken.h",
             "base64.h",
+            "string_integer_map.h",
         ],
         exported_deps = [
             ":tokenizer_header",
