@@ -83,6 +83,7 @@ jobs:
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
         mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
+        cp -rf "${RUNNER_DOCS_DIR}"/javadoc "${RUNNER_ARTIFACT_DIR}"/html
 
         ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
 
