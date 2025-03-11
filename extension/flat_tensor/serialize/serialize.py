@@ -282,6 +282,7 @@ class FlatTensorSerializer(DataSerializer):
             tensor_alignment=self.config.tensor_alignment,
             tensors=flat_tensor_metadata,
             segments=[DataSegment(offset=0, size=len(flat_tensor_data))],
+            named_data=[],
         )
 
         flatbuffer_payload = _serialize_to_flatbuffer(flat_tensor)
