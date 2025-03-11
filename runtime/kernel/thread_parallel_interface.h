@@ -74,7 +74,7 @@ inline int64_t get_thread_num() {
   return 0;
 }
 
-void set_thread_num(int64_t thread_num) {
+inline void set_thread_num(int64_t thread_num) {
   ET_DCHECK_MSG(false, "cannot set_thread_num without threading support!");
 }
 #endif // ET_USE_THREADPOOL
