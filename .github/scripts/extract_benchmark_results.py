@@ -371,6 +371,7 @@ def transform(
     workflow_run_attempt: int,
     job_name: str,
     job_id: int,
+    job_conclusion: str,
     schema_version: str,
 ) -> List:
     """
@@ -475,6 +476,8 @@ def main() -> None:
                 continue
 
             job_name = artifact["job_name"]
+            job_conclusion = artifact["job_conclusion"]
+
             artifact_type = artifact["type"]
             artifact_s3_url = artifact["s3_url"]
 
@@ -506,6 +509,7 @@ def main() -> None:
                         args.workflow_run_attempt,
                         job_name,
                         extract_job_id(args.artifacts),
+                        job_conclusion,
                         schema,
                     )
                     all_benchmark_results[schema].extend(results)
