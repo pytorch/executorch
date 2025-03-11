@@ -178,11 +178,12 @@ const uint8_t* getConstantDataPtr(
       ConstantDataOffsetPtr constant_data_offset = flatbuffer_graph->constant_data()->Get(buffer_idx);
       uint64_t offset = constant_data_offset->offset();
 
-      const std::string &data_name = constant_data_offset->named_key()->str();
+      bool has_named_key = flatbuffers::IsFieldPresent(constant_data_offset, fb_xnnpack::ConstantDataOffset::VT_NAMED_KEY);
       // If there is no tensor name
-      if (data_name.length() == 0) {
+      if (!has_named_key) {
         return constant_data_ptr + offset;
       } else {
+        const std::string &data_name = constant_data_offset->named_key()->str();
         Result<const uint8_t*> data_ptr = weights_cache->load_unpacked_data(data_name);
         if (!data_ptr.ok()){
           ET_LOG(Error, "Failed to load weights from cache");
