@@ -163,6 +163,14 @@ size_t get_reduced_dim_product(
     const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
         dim_list);
 
+// Resolve ambiguity between the above two overloads -- ArrayRef and
+// optional are both implicitly constructible from int64_t.
+inline size_t get_reduced_dim_product(
+    const executorch::aten::Tensor& in,
+    int64_t dim) {
+  return get_reduced_dim_product(in, executorch::aten::optional<int64_t>(dim));
+}
+
 size_t get_out_numel(
     const executorch::aten::Tensor& in,
     const executorch::aten::optional<int64_t>& dim);
@@ -171,6 +179,12 @@ size_t get_out_numel(
     const executorch::aten::Tensor& in,
     const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
         dim_list);
+
+// Resolve ambiguity between the above two overloads -- ArrayRef and
+// optional are both implicitly constructible from int64_t.
+inline size_t get_out_numel(const executorch::aten::Tensor& in, int64_t dim) {
+  return get_out_numel(in, executorch::aten::optional<int64_t>(dim));
+}
 
 size_t get_init_index(
     const executorch::aten::Tensor& in,
@@ -183,6 +197,12 @@ size_t get_init_index(
         dim_list,
     const size_t out_ix);
 
+inline size_t get_init_index(
+    const executorch::aten::Tensor& in,
+    int64_t dim,
+    const size_t out_ix) {
+  return get_init_index(in, executorch::aten::optional<int64_t>(dim), out_ix);
+}
 //
 // Iteration Functions
 //
@@ -353,9 +373,7 @@ class ApplyOverDimListPlan {
         return;
       case ExecutionMode::OnlyOneDim:
         apply_on_flat_and_dim_ix_with_stride_and_base(
-            [&](const auto in_ix, const auto dim_ix) {
-              fn(in_ix);
-            },
+            [&](const auto in_ix, const auto dim_ix) { fn(in_ix); },
             in_.strides()[ET_NORMALIZE_IX(dim_list_.value()[0], in_.dim())],
             get_init_index(in_, dim_list_.value(), out_ix),
             ustart_,
@@ -393,7 +411,8 @@ class ApplyOverDimListPlan {
     // Iterate over the entire tensor with
     // apply_on_flat_ix_with_stride_and_base.
     NoDimMaskOrZeroDimension,
-    // dim_list has size 1, iterate with apply_on_flat_and_dim_ix_with_stride_and_base
+    // dim_list has size 1, iterate with
+    // apply_on_flat_and_dim_ix_with_stride_and_base
     OnlyOneDim,
     // General mode, iterate with
     // apply_on_flat_ix_with_dim_mask_and_base.
@@ -731,6 +750,17 @@ Error resize_reduction_out(
         dim_list,
     bool keepdim,
     executorch::aten::Tensor& out);
+
+// Resolve ambiguity between the above two overloads -- ArrayRef and
+// optional are both implicitly constructible from int64_t.
+inline Error resize_reduction_out(
+    const executorch::aten::Tensor& in,
+    int64_t dim,
+    bool keepdim,
+    executorch::aten::Tensor& out) {
+  return resize_reduction_out(
+      in, executorch::aten::optional<int64_t>(dim), keepdim, out);
+}
 
 #ifndef USE_ATEN_LIB
 bool check_reduction_args(
