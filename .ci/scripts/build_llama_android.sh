@@ -42,6 +42,10 @@ install_executorch_and_backend_lib() {
 
 build_llama_runner() {
     echo "Building llama runner for Android..."
+    pushd extension/llm/tokenizers
+    echo "Updating tokenizers submodule"
+    git submodule update --init
+    popd
     ANDROID_ABI=arm64-v8a
     cmake -DBUCK2="${BUCK2}" \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK"/build/cmake/android.toolchain.cmake  \
