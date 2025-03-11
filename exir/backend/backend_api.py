@@ -9,11 +9,15 @@ import copy
 import logging
 from contextlib import contextmanager, nullcontext
 from functools import singledispatch
-from typing import Generator, List
+from typing import Generator, List, Optional
 
 import torch
 
-from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.backend_details import (
+    BackendDetails, 
+    PreprocessResult,
+)
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
@@ -120,6 +124,7 @@ def _(
                 backend_id=backend_id,
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_specs,
+                named_data_store_output=preprocess_result.data_store_output
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
