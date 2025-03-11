@@ -15,7 +15,6 @@ from torch.export.graph_signature import InputKind
 
 
 class EmptyNetwork(torch.nn.Module):
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x
 
@@ -30,7 +29,7 @@ def _test_create_delete(kind: InputKind, persistent_buffer: bool = None):
     # Toy network with two nodes, input and output
     # The result should be 0 = 0
     module = EmptyNetwork()
-    exported_program = export(module, args=module.test_data)
+    exported_program = export(module, args=module.test_data, strict=True)
     exported_program = to_edge(exported_program).exported_program()
     graph = exported_program.graph_module.graph
     assert len(graph.nodes) == 2
