@@ -122,17 +122,17 @@ if(${ANDROID})
   )
   # Build ABSL and RE2
   set(EXTENSIONS_LLM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm)
-  set(THIRD_PARTY_ABSL_DIR ${EXTENSIONS_LLM_DIR}/third-party/abseil-cpp)
-  set(THIRD_PARTY_RE2_DIR ${EXTENSIONS_LLM_DIR}/third-party/re2)
+  set(THIRD_PARTY_ABSL_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/abseil-cpp)
+  set(THIRD_PARTY_RE2_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/re2)
   set(ABSL_ENABLE_INSTALL ON)
   set(ABSL_PROPAGATE_CXX_STD ON)
   set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   add_subdirectory(
-    ${THIRD_PARTY_ABSL_DIR} ${CMAKE_CURRENT_BINARY_DIR}/third-party/abseil
+    ${THIRD_PARTY_ABSL_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/abseil
   )
   add_subdirectory(
-    ${THIRD_PARTY_RE2_DIR} ${CMAKE_CURRENT_BINARY_DIR}/third-party/re2
+    ${THIRD_PARTY_RE2_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/re2
   )
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
