@@ -10,7 +10,7 @@ plugins { id("com.android.application") }
 
 android {
   namespace = "org.pytorch.minibench"
-  compileSdk = 34
+  compileSdk = 35
 
   defaultConfig {
     applicationId = "org.pytorch.minibench"
