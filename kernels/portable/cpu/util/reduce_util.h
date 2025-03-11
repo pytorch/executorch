@@ -329,7 +329,7 @@ class ApplyOverDimListPlan {
           dim_list,
       const int64_t start = 0,
       const int64_t end = -1)
-      : in_(in) {
+      : dim_list_(dim_list), in_(in) {
     ET_CHECK(check_dim_list_is_valid(in, dim_list));
     out_numel_ = get_out_numel(in_, dim_list);
     if (in.numel() == 0) {
@@ -372,11 +372,20 @@ class ApplyOverDimListPlan {
             fn,
             in_,
             is_in_dim_list_.data(),
-            get_init_index(in_, dim_list_, out_ix),
+            get_init_index(in_, dim_list_.value(), out_ix),
             ustart_,
             uend_);
         return;
     }
+  }
+
+  const executorch::aten::Tensor& get_input_tensor() const {
+    return in_;
+  }
+
+  const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+  get_dim_list() const {
+    return dim_list_;
   }
 
  private:
@@ -396,7 +405,7 @@ class ApplyOverDimListPlan {
   };
   ExecutionMode mode_;
   size_t out_numel_;
-  executorch::aten::ArrayRef<int64_t> dim_list_;
+  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>> dim_list_;
   std::array<bool, kTensorDimensionLimit> is_in_dim_list_;
   const executorch::aten::Tensor& in_;
 };
@@ -503,6 +512,52 @@ std::tuple<CTYPE_OUT, long> map_reduce_over_dim(
 }
 
 /**
+ * Execution plan for repeated map_reduce_over_dim_list with the same
+ * function, input tensor, and dim_list but varying out_ix.
+ */
+class MapReduceOverDimListPlan {
+ public:
+  MapReduceOverDimListPlan(
+      const executorch::aten::Tensor& in,
+      const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
+          dim_list)
+      : plan_(in, dim_list, 1, -1) {
+    ET_CHECK_MSG(in.numel() > 0, "Input tensor must be nonempty");
+  }
+
+  template <
+      typename CTYPE_IN,
+      typename CTYPE_OUT,
+      typename MapOp,
+      typename ReduceOp>
+  CTYPE_OUT execute(
+      const MapOp& map_fun,
+      const ReduceOp& reduce_fun,
+      const size_t out_ix) const {
+    const size_t init_index =
+        get_init_index(plan_.get_input_tensor(), plan_.get_dim_list(), out_ix);
+
+    const CTYPE_IN* const in_data =
+        plan_.get_input_tensor().const_data_ptr<CTYPE_IN>();
+    CTYPE_OUT acc_val = map_fun(in_data[init_index]);
+
+    if (plan_.get_input_tensor().numel() == 1) {
+      return acc_val;
+    }
+
+    plan_.execute(
+        [&acc_val, reduce_fun, map_fun, in_data](const size_t in_ix) {
+          acc_val = reduce_fun(map_fun(in_data[in_ix]), acc_val);
+        },
+        out_ix);
+    return acc_val;
+  }
+
+ private:
+  ApplyOverDimListPlan plan_;
+};
+
+/**
  * Useful to reduce a tensor `in` over a given list of dimensions `dim_list`
  * for the output element at index `out_ix`, first applying the map `map_fun`
  * to each element of `in`, which should have the signature:
@@ -537,35 +592,8 @@ CTYPE_OUT map_reduce_over_dim_list(
     const executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>&
         dim_list,
     const size_t out_ix) {
-  ET_CHECK(check_dim_list_is_valid(in, dim_list));
-
-  ET_CHECK_MSG(
-      out_ix < get_out_numel(in, dim_list),
-      "Out index %zd is out of bounds",
-      out_ix);
-
-  ET_CHECK_MSG(in.numel() > 0, "Input tensor must be nonempty");
-
-  const size_t init_index = get_init_index(in, dim_list, out_ix);
-
-  const CTYPE_IN* const in_data = in.const_data_ptr<CTYPE_IN>();
-  CTYPE_OUT acc_val = map_fun(in_data[init_index]);
-
-  if (in.numel() == 1) {
-    return acc_val;
-  }
-
-  apply_over_dim_list(
-      [&acc_val, reduce_fun, map_fun, in_data](const size_t in_ix) {
-        acc_val = reduce_fun(map_fun(in_data[in_ix]), acc_val);
-      },
-      in,
-      dim_list,
-      out_ix,
-      1,
-      -1);
-
-  return acc_val;
+  MapReduceOverDimListPlan plan(in, dim_list);
+  return plan.execute<CTYPE_IN, CTYPE_OUT>(map_fun, reduce_fun, out_ix);
 }
 
 /**
