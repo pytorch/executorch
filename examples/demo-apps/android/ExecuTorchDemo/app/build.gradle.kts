@@ -13,7 +13,7 @@ plugins {
 
 android {
   namespace = "com.example.executorchdemo"
-  compileSdk = 34
+  compileSdk = 35
 
   defaultConfig {
     applicationId = "com.example.executorchdemo"
