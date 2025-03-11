@@ -53,10 +53,10 @@ def define_common_targets():
             # "-DENABLE_XNNPACK_KLEIDI"
         ] + _get_preprocessor_flags(),
         exported_deps = [
-            third_party_dep("XNNPACK"),
             "//executorch/runtime/backend:interface",
         ],
         deps = [
+            third_party_dep("XNNPACK"),
             "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
             "//executorch/extension/threadpool:threadpool",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
