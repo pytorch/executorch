@@ -662,6 +662,8 @@ bool check_prod_out_args(
     optional<ScalarType> dtype,
     Tensor& out);
 
+#endif
+
 /**
  * parallel_for wrapper for reductions that call reduce_over_dim or
  * map_reduce_over_dim for each output element. Automatically
@@ -673,14 +675,12 @@ template <typename Func>
     optional<int64_t> dim,
     const Tensor& out,
     const Func& func) {
-  const auto reduction_size =
-      dim.has_value() ? in.sizes().at(dim.value()) : in.numel();
+  const int64_t reduction_size = get_reduced_dim_product(in, dim);
   const auto grain_size = std::max(
       static_cast<int64_t>(1),
       executorch::extension::internal::GRAIN_SIZE / reduction_size);
   return executorch::extension::parallel_for(0, out.numel(), grain_size, func);
 }
-#endif
 
 } // namespace executor
 } // namespace torch
