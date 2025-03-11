@@ -66,6 +66,7 @@ REQUIRED_SUBMODULES = {
     "pthreadpool": "CMakeLists.txt",
     "pybind11": "CMakeLists.txt",
     "shim": "BUCK",
+    "tokenizers": "CMakeLists.txt",
     "XNNPACK": "CMakeLists.txt",
 }
 
