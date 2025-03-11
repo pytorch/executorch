@@ -186,7 +186,10 @@ def define_libs(is_fbcode=False):
         ],
     )
 
-    LIBBLAS_DEPS = [third_party_dep("cpuinfo")]
+    LIBBLAS_DEPS = [
+        third_party_dep("cpuinfo"),
+        "//executorch/extension/threadpool:threadpool",
+    ]
 
     for libblas_name, mkl_dep in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp"), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl")]:
         runtime.cxx_library(
@@ -229,7 +232,6 @@ def define_libs(is_fbcode=False):
                 "DEFAULT": [],
             }) + LIBBLAS_DEPS,
             exported_deps = [
-                "//executorch/extension/parallel:thread_parallel",
                 "//executorch/kernels/optimized:libutils",
                 "//executorch/runtime/core/exec_aten:lib",
             ],
