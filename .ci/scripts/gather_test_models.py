@@ -30,6 +30,7 @@ CUSTOM_RUNNERS = {
         "dl3": "linux.4xlarge.memory",
         "emformer_join": "linux.4xlarge.memory",
         "emformer_predict": "linux.4xlarge.memory",
+        "phi-4-mini": "linux.4xlarge.memory",
     }
 }
 

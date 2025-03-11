@@ -43,9 +43,10 @@ _EXTERNAL_DEPS = {
     "nlohmann_json": [], # Intentionally not supporting OSS buck build HF tokenizer.
     "prettytable": "//third-party:prettytable",
     "pybind11": "//third-party:pybind11",
-    "re2": "//extension/llm/third-party:re2",
+    "re2": "//extension/llm/tokenizers/third-party:re2",
     "sentencepiece": [], # Intentionally not supporting OSS buck build of sentencepiece.
     "sentencepiece-py": [],
+    "tiktoken": "//extension/llm/tokenizers:tiktoken",
     # Core C++ PyTorch functionality like Tensor and ScalarType.
     "torch-core-cpp": "//third-party:libtorch",
     "torchgen": "//third-party:torchgen",
