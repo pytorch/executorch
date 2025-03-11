@@ -75,7 +75,7 @@ Tensor& argmin_out(
             out_data[out_ix] = std::get<1>(acc);
           }
         });
-    ET_KERNEL_CHECK_MSG(ctx, success, Internal, out, "parallel_for failed");
+    ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
   });
 
   return out;
