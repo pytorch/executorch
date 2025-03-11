@@ -32,7 +32,10 @@ def pytest_configure(config):
     pytest._test_options = {}  # type: ignore[attr-defined]
     pytest._test_options["corstone_fvp"] = False  # type: ignore[attr-defined]
 
-    if config.option.arm_run_corstoneFVP:
+    if (
+        getattr(config.option, "arm_run_corstoneFVP", False)
+        and config.option.arm_run_corstoneFVP
+    ):
         corstone300_exists = shutil.which("FVP_Corstone_SSE-300_Ethos-U55")
         corstone320_exists = shutil.which("FVP_Corstone_SSE-320")
         if not (corstone300_exists and corstone320_exists):
