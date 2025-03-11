@@ -6,11 +6,13 @@
 
 # pyre-strict
 
+import math
 import unittest
 
 from typing import List
 
 from executorch.exir._serialize.data_serializer import (
+    DataEntry,
     DataPayload,
     DataSerializer,
     TensorEntry,
@@ -30,7 +32,7 @@ from executorch.extension.flat_tensor.serialize.serialize import (
 )
 
 # Test artifacts.
-TEST_TENSOR_BUFFER: List[bytes] = [b"\x11" * 4, b"\x22" * 32]
+TEST_BUFFER: List[bytes] = [b"\x11" * 4, b"\x22" * 32, b"\x33" * 17]
 TEST_TENSOR_MAP = {
     "fqn1": TensorEntry(
         buffer_index=0,
@@ -57,9 +59,18 @@ TEST_TENSOR_MAP = {
         ),
     ),
 }
+
+TEST_DATA_ENTRY = {
+    "key0": DataEntry(
+        buffer_index=2,
+        alignment=64,
+    )
+}
+
 TEST_DATA_PAYLOAD = DataPayload(
-    buffers=TEST_TENSOR_BUFFER,
+    buffers=TEST_BUFFER,
     fqn_to_tensor=TEST_TENSOR_MAP,
+    key_to_data=TEST_DATA_ENTRY,
 )
 
 
@@ -99,10 +110,15 @@ class TestSerialize(unittest.TestCase):
         )
         self.assertTrue(header.segment_base_offset, expected_segment_base_offset)
 
-        # TEST_TENSOR_BUFFER is aligned to config.segment_alignment.
-        expected_segment_data_size = aligned_size(
-            sum(len(buffer) for buffer in TEST_TENSOR_BUFFER), config.segment_alignment
+        # TEST_BUFFER is aligned to config.segment_alignment.
+        tensor1_size = aligned_size(len(TEST_BUFFER[0]), config.tensor_alignment)
+        tensor2_size = aligned_size(len(TEST_BUFFER[1]), config.tensor_alignment)
+        tensor_segment_size = aligned_size(
+            tensor1_size + tensor2_size,
+            math.lcm(config.segment_alignment, TEST_DATA_ENTRY["key0"].alignment),
         )
+        data_segment_size = len(TEST_BUFFER[2])
+        expected_segment_data_size = tensor_segment_size + data_segment_size
         self.assertEqual(header.segment_data_size, expected_segment_data_size)
 
         # Confirm the flatbuffer magic is present.
@@ -138,10 +154,23 @@ class TestSerialize(unittest.TestCase):
         self.assertEqual(tensors[2].segment_index, 0)
         self.assertEqual(tensors[2].offset, config.tensor_alignment)
 
+        named_data = flat_tensor.named_data
+        self.assertEqual(len(named_data), 1)
+        self.assertEqual(named_data[0].key, "key0")
+        self.assertEqual(named_data[0].segment_index, 1)
+
         segments = flat_tensor.segments
-        self.assertEqual(len(segments), 1)
+        self.assertEqual(len(segments), 2)
         self.assertEqual(segments[0].offset, 0)
         self.assertEqual(segments[0].size, config.tensor_alignment * 3)
+        self.assertEqual(
+            segments[1].offset,
+            aligned_size(
+                config.tensor_alignment * 3,
+                math.lcm(config.segment_alignment, TEST_DATA_ENTRY["key0"].alignment),
+            ),
+        )
+        self.assertEqual(segments[1].size, len(TEST_BUFFER[2]))
 
         # Length of serialized_data matches segment_base_offset + segment_data_size.
         self.assertEqual(
@@ -149,35 +178,39 @@ class TestSerialize(unittest.TestCase):
         )
         self.assertTrue(segments[0].size <= header.segment_data_size)
 
-        # Check the contents of the segment. Expecting two tensors from
-        # TEST_TENSOR_BUFFER = [b"\x11" * 4, b"\x22" * 32]
+        # Check the contents of the segment. Expecting two tensors and one blob
+        # from TEST_BUFFER = [b"\x11" * 4, b"\x22" * 32, b"\x33" * 17]
         segment_data = serialized_data[
-            header.segment_base_offset : header.segment_base_offset + segments[0].size
+            header.segment_base_offset : header.segment_base_offset
+            + header.segment_data_size
         ]
 
         # Tensor: b"\x11" * 4
         t0_start = 0
-        t0_len = len(TEST_TENSOR_BUFFER[0])
+        t0_len = len(TEST_BUFFER[0])
         t0_end = t0_start + aligned_size(t0_len, config.tensor_alignment)
-        self.assertEqual(
-            segment_data[t0_start : t0_start + t0_len], TEST_TENSOR_BUFFER[0]
-        )
+        self.assertEqual(segment_data[t0_start : t0_start + t0_len], TEST_BUFFER[0])
         padding = b"\x00" * (t0_end - t0_len)
         self.assertEqual(segment_data[t0_start + t0_len : t0_end], padding)
 
         # Tensor: b"\x22" * 32
         t1_start = t0_end
-        t1_len = len(TEST_TENSOR_BUFFER[1])
+        t1_len = len(TEST_BUFFER[1])
         t1_end = t1_start + aligned_size(t1_len, config.tensor_alignment)
         self.assertEqual(
             segment_data[t1_start : t1_start + t1_len],
-            TEST_TENSOR_BUFFER[1],
+            TEST_BUFFER[1],
         )
         padding = b"\x00" * (t1_end - (t1_len + t1_start))
-        self.assertEqual(segment_data[t1_start + t1_len : t1_start + t1_end], padding)
+        self.assertEqual(segment_data[t1_start + t1_len : t1_end], padding)
 
         # Check length of the segment is expected.
         self.assertEqual(
             segments[0].size, aligned_size(t1_end, config.segment_alignment)
         )
-        self.assertEqual(segments[0].size, header.segment_data_size)
+
+        # Named data: b"\x33" * 17
+        self.assertEqual(
+            segment_data[segments[1].offset : segments[1].offset + len(TEST_BUFFER[2])],
+            TEST_BUFFER[2],
+        )

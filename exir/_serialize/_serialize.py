@@ -6,13 +6,14 @@
 
 # pyre-strict
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 from executorch.exir._serialize import _serialize_pte_binary
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize.data_serializer import (
+    DataEntry,
     DataPayload,
     DataSerializer,
     TensorEntry,
@@ -74,39 +75,54 @@ def serialize_for_executorch(
                         tensor.extra_tensor_info.fully_qualified_name
                     ] = TensorLayout(tensor.scalar_type, tensor.sizes, tensor.dim_order)
 
+    if len(fqn_to_tensor_layout) == 0 and (
+        named_data is None or len(named_data.external_data) == 0
+    ):
+        return pte, ptd_files
+
+    all_external_files: Set[str] = set()
+    if named_data is not None and len(named_data.external_data) > 0:
+        assert (
+            len(named_data.buffers) > 0
+        ), "External data exists, but there are no buffers provided."
+        all_external_files = set(named_data.external_data.keys())
+
     if len(fqn_to_tensor_layout) > 0:
         # emitter_output.external_constant_map contains the mapping from
         # {file: {fqn: index into external_constant_buffer}}
         # Contains the locations of the tensor buffers, and must be non-empty
         # if there are external tensors to serialize.
-        assert emitter_output.external_constant_map is not None
-        for (
-            filename,
-            fqn_to_index,
-        ) in (
-            # pyre-ignore Undefined attribute [16]: Optional type has no attribute `items`.
-            emitter_output.external_constant_map.items()
-        ):
-            # Create a TensorEntry for each external tensor.
-            fqn_to_tensor_entry: Dict[str, TensorEntry] = {}
-            for fqn, index in fqn_to_index.items():
-                assert fqn in fqn_to_tensor_layout
-                fqn_to_tensor_entry[fqn] = TensorEntry(
-                    buffer_index=index,
-                    layout=fqn_to_tensor_layout[fqn],
-                )
+        assert (
+            emitter_output.external_constant_map is not None
+        ), "External exists, but there are no buffers provided."
+        all_external_files = all_external_files | set(
+            emitter_output.external_constant_map.keys()
+        )
 
-            ptd_files[filename] = data_serializer.serialize(
-                DataPayload(
-                    buffers=emitter_output.external_constant_buffer,
-                    fqn_to_tensor=fqn_to_tensor_entry,
-                )
+    for filename in all_external_files:
+        fqn_to_tensor_entry: Dict[str, TensorEntry] = {}
+        fqn_to_index = emitter_output.external_constant_map.get(filename, {})
+        # Create a TensorEntry for each external tensor.
+        for fqn, index in fqn_to_index.items():
+            assert fqn in fqn_to_tensor_layout
+            fqn_to_tensor_entry[fqn] = TensorEntry(
+                buffer_index=index,
+                layout=fqn_to_tensor_layout[fqn],
             )
 
-    if named_data is None or len(named_data.external_data) == 0:
-        return pte, ptd_files
+        # Extract external data.
+        key_to_data: Dict[str, DataEntry] = {}
+        key_to_buffer_index = named_data.external_data.get(filename, {})
+        for key, index in key_to_buffer_index.items():
+            key_to_data[key] = DataEntry(index, named_data.buffers[index].alignment)
 
-    if len(named_data.buffers) == 0:
-        raise RuntimeError("External data exists, but there are no buffers provided.")
+        # Serialize into PTD file.
+        ptd_files[filename] = data_serializer.serialize(
+            DataPayload(
+                buffers=emitter_output.external_constant_buffer,
+                fqn_to_tensor=fqn_to_tensor_entry,
+                key_to_data=key_to_data,
+            )
+        )
 
     return pte, ptd_files
