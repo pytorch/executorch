@@ -30,6 +30,7 @@ class XNNCompiler {
       size_t num_bytes,
       XNNExecutor* executor,
       executorch::runtime::MemoryAllocator* runtime_allocator,
+      const executorch::runtime::NamedDataMap* named_data_map,
       xnn_workspace_t workspace);
 };
 

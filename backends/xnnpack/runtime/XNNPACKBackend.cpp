@@ -10,7 +10,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-#include <executorch/runtime/platform/profiler.h>
+#include <executorch/runtime/executor/pte_data_map.h>
 
 #include <memory>
 #include <mutex>
@@ -30,6 +30,7 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
+using executorch::runtime::NamedDataMap;
 
 class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -79,13 +80,14 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
       return Error::MemoryAllocationFailed;
     }
 
+    const NamedDataMap* named_data_map = context.get_named_data_map();
+
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
     // This is needed to serialize access to xnn_create_runtime which is not
     // thread safe. This can heppen when multiple threads call init() on
     // the same backend instance.
     const std::lock_guard<std::mutex> lock(workspace_mutex_);
 #endif
-
     // Executor has been allocated but not constructed, ensure that runtime_ is
     // nullptr by constructing it in place here. NOTE: Since we use placement
     // new and since this type is not trivially destructible, we must call the
@@ -96,6 +98,7 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
         processed->size(),
         executor,
         context.get_runtime_allocator(),
+        named_data_map,
         workspace_.get());
     // This backend does not need its processed data after compiling the model.
     processed->Free();
