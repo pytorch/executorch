@@ -497,7 +497,7 @@ if(EXECUTORCH_BUILD_FLATC)
   # Build flatc for the *host* to generate files as part of the build step.
   include(ExternalProject)
   ExternalProject_Add(
-    flatc
+    flatbuffers
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third-party/flatbuffers
@@ -510,8 +510,9 @@ if(EXECUTORCH_BUILD_FLATC)
                -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}"
     INSTALL_COMMAND ""
   )
-  ExternalProject_Get_Property(flatc BINARY_DIR)
+  ExternalProject_Get_Property(flatbuffers BINARY_DIR)
   set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
+  set(FLATC_EXECUTABLE_BUILT_FROM_SOURCE YES)
 endif()
 
 if(NOT FLATC_EXECUTABLE)
@@ -528,6 +529,13 @@ if(NOT FLATC_EXECUTABLE)
         "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled."
     )
   endif()
+endif()
+
+add_executable(flatc IMPORTED GLOBAL)
+set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${FLATC_EXECUTABLE})
+
+if(FLATC_EXECUTABLE_BUILT_FROM_SOURCE)
+  add_dependencies(flatc flatbuffers)
 endif()
 
 #
