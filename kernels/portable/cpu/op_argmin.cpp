@@ -48,18 +48,8 @@ Tensor& argmin_out(
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "argmin.out", CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();
 
-    // REVIEW: this is the parallelization strategy ATen uses
-    // specifically when the reduction is along the last dimension and
-    // that dimension is contiguous. Is there any particular reason we
-    // shouldn't just always use this strategy since we aren't
-    // otherwise capable of parallelizing reductions?
-    const auto reduction_size =
-        dim.has_value() ? in.sizes().at(dim.value()) : in.numel();
-    const auto grain_size = std::max(
-        static_cast<int64_t>(1),
-        executorch::extension::internal::GRAIN_SIZE / reduction_size);
-    const bool success = executorch::extension::parallel_for(
-        0, out.numel(), grain_size, [&](const auto begin, const auto end) {
+    const bool success = parallel_for_each_reduce_over_dim_output_index(
+        in, dim, out, [&](const auto begin, const auto end) {
           for (const auto out_ix : c10::irange(begin, end)) {
             std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
                 [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
