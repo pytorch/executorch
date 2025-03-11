@@ -85,10 +85,7 @@ size_t get_reduced_dim_product(
   }
   size_t dim_product = 1;
   if (!dim.has_value()) {
-    for (size_t i = 0; i < static_cast<size_t>(in.dim()); ++i) {
-      dim_product *= in.size(i);
-    }
-    return dim_product;
+    return in.numel();
   }
   const size_t d = _normalize_non_neg_d(dim.value(), in.dim());
   return in.size(d);
@@ -107,10 +104,7 @@ size_t get_reduced_dim_product(
   size_t dim_product = 1;
   const size_t in_dim = in.dim();
   if (!dim_list.has_value() || dim_list.value().size() == 0) {
-    for (size_t i = 0; i < static_cast<size_t>(in.dim()); ++i) {
-      dim_product *= in.size(i);
-    }
-    return dim_product;
+    return in.numel();
   }
   for (const auto& d : dim_list.value()) {
     const size_t non_neg_d = _normalize_non_neg_d(d, in_dim);
