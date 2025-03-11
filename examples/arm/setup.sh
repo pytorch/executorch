@@ -61,7 +61,7 @@ tosa_reference_model_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
 
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="425541302c7e4b6fbeca7c0061286b131ee507c3"
+vela_rev="859cc066178a87ff28230c1ce9bd370f1e98aa5a"
 
 ########
 ### Optional user args
