@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
 
 #include <memory>
 #include <mutex>
@@ -31,6 +32,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::NamedDataMap;
+using executorch::backends::xnnpack::delegate::XNNWeightsCache;
 
 class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -81,13 +83,23 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
+    weights_cache_->initialize_for_runtime(
+      context.get_runtime_allocator(),
+      named_data_map
+    );
 
-#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
     // This is needed to serialize access to xnn_create_runtime which is not
     // thread safe. This can heppen when multiple threads call init() on
     // the same backend instance.
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
     const std::lock_guard<std::mutex> lock(workspace_mutex_);
 #endif
+
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
+    const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
+#endif
+
+
     // Executor has been allocated but not constructed, ensure that runtime_ is
     // nullptr by constructing it in place here. NOTE: Since we use placement
     // new and since this type is not trivially destructible, we must call the
@@ -97,8 +109,7 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
         processed->data(),
         processed->size(),
         executor,
-        context.get_runtime_allocator(),
-        named_data_map,
+        weights_cache_.get(),
         workspace_.get());
     // This backend does not need its processed data after compiling the model.
     processed->Free();
@@ -125,6 +136,10 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
     const std::lock_guard<std::mutex> lock(workspace_mutex_);
 #endif
 
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
+    const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
+#endif
+
     // Prepare Inputs/Outputs and Propagate Input Shapes
     Error err = executor->prepare_args(args);
     if (err != Error::Ok) {
@@ -145,15 +160,23 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
 
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
-#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
       // This is needed to serialize access to xnn_delete_runtime which is not
       // thread safe. This can heppen when multiple threads call destroy() on
       // the same backend instance.
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
       const std::lock_guard<std::mutex> lock(workspace_mutex_);
 #endif
+
+
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
+
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
+#endif
+
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
+      const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
+      weights_cache_->delete_packed_data(executor->get_packed_data_names());
 #endif
       // XNNExecutor is not trivially destructible. Since this was constructed
       // manually in init(), we must destroy it manually here.
@@ -167,6 +190,16 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
   std::unique_ptr<xnn_workspace, decltype(&xnn_release_workspace)> workspace_{
       nullptr,
       &xnn_release_workspace};
+  
+  // Weights cache is global to all delegate instances.
+  mutable std::mutex weights_cache_mutex_;
+  std::unique_ptr<XNNWeightsCache> weights_cache_ = 
+      std::make_unique<XNNWeightsCache>();
+
+
+  // Lock Hiearchy for Mutexes:
+  // workspace_mutex_
+  // weights_cache_mutex_
 };
 
 namespace {

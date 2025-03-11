@@ -34,6 +34,7 @@ class XNNExecutor {
   std::vector<uint32_t> input_ids_;
   std::vector<uint32_t> output_ids_;
   std::vector<xnn_external_value> externals_;
+  std::vector<std::string> packed_data_names_;
 
  public:
   XNNExecutor() = default;
@@ -46,6 +47,10 @@ class XNNExecutor {
     return output_ids_.size();
   }
 
+  inline std::vector<std::string> get_packed_data_names(){
+    return packed_data_names_;
+  }
+
   /**
    * Initialize the XNNExecutor with a given runtime and input/output ids.
    * The input/output ids are expected to be sorted in order of their
@@ -54,7 +59,8 @@ class XNNExecutor {
   ET_NODISCARD executorch::runtime::Error initialize(
       xnn_runtime_t runtime,
       std::vector<uint32_t>&& input_ids,
-      std::vector<uint32_t>&& output_ids);
+      std::vector<uint32_t>&& output_ids,
+      std::vector<std::string>&& packed_data_names);
 
   /**
    * Prepares the arguments for runtime graph execution.

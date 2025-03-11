@@ -166,8 +166,7 @@ const uint8_t* getConstantDataPtr(
     const fb_xnnpack::XNNTensorValue* tensor_value,
     GraphPtr flatbuffer_graph,
     const uint8_t* constant_data_ptr,
-    const NamedDataMap* named_data_map,
-    std::vector<FreeableBuffer>& loaded_buffers_from_map) {
+    XNNWeightsCache* weights_cache) {
   auto buffer_idx = tensor_value->constant_buffer_idx();
   if (buffer_idx) {
     if (!constant_data_ptr) {
@@ -184,14 +183,12 @@ const uint8_t* getConstantDataPtr(
       if (data_name.length() == 0) {
         return constant_data_ptr + offset;
       } else {
-        Result<FreeableBuffer> buffer = named_data_map->get_data(data_name.c_str());
-        if (!buffer.ok()) {
-          ET_LOG(Error, "Failed to get constant data for key %s", data_name.c_str());
+        Result<const uint8_t*> data_ptr = weights_cache->load_unpacked_data(data_name);
+        if (!data_ptr.ok()){
+          ET_LOG(Error, "Failed to load weights from cache");
           return nullptr;
         }
-        const uint8_t* data_ptr = static_cast<const uint8_t*>(buffer.get().data());
-        loaded_buffers_from_map.push_back(std::move(buffer.get()));
-        return data_ptr;
+        return data_ptr.get();
       }
     }
   }
@@ -213,8 +210,7 @@ Error defineTensor(
     std::vector<uint32_t>& input_ids,
     std::vector<uint32_t>& output_ids,
     CompileAllocator& allocator,
-    const NamedDataMap* named_data_map,
-    std::vector<FreeableBuffer>& loaded_buffers_from_map) {
+    XNNWeightsCache* weights_cache) {
   const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
   const fb_xnnpack::XNNQuantizedTensorValue* qtensor_value = nullptr;
 
@@ -255,8 +251,7 @@ Error defineTensor(
     tensor_value, 
     flatbuffer_graph, 
     constant_data_ptr,
-    named_data_map,
-    loaded_buffers_from_map
+    weights_cache
   );
 
   xnn_status status;
@@ -1992,8 +1987,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
     const void* buffer_pointer,
     size_t num_bytes,
     XNNExecutor* executor,
-    MemoryAllocator* runtime_allocator,
-    const NamedDataMap* named_data_map,
+    XNNWeightsCache* weights_cache,
     xnn_workspace_t workspace) {
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
@@ -2073,8 +2067,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         input_ids,
         output_ids,
         compile_allocator,
-        named_data_map,
-        loaded_buffers_from_map);
+        weights_cache);
 
     if (err != Error::Ok) {
       return err;
@@ -2096,12 +2089,22 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
   xnn_runtime_t runtime_ptr = nullptr;
 
+  // XNNWeightsCache if weights cache is not enabled, then XNNWeightsCache
+  // just manages the unpacked weights until the runtime is created.
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE 
+  xnn_weights_cache_t weights_cache_ptr = 
+      weights_cache->get_num_unpacked_data() > 0 ? weights_cache->get() : nullptr;
+#else
+  xnn_weights_cache_t weights_cache_ptr = nullptr;
+#endif
+
+
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
   ET_CHECK_OR_RETURN_ERROR(
       workspace != nullptr, Internal, "Failed to initialize XNNPACK workspace");
   status = xnn_create_runtime_v4(
       subgraph.get(),
-      /*weight_cache=*/nullptr, // TODO - support weight cache
+      weights_cache_ptr,
       workspace,
       ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
@@ -2109,7 +2112,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 #else
   status = xnn_create_runtime_v3(
       subgraph.get(),
-      /*weight_cache=*/nullptr, // TODO - support weight cache
+      weights_cache_ptr,
       ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);
@@ -2121,10 +2124,19 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       "XNN Runtime creation failed with code: %s",
       xnn_status_to_string(status));
 
+  auto packed_weights_names = weights_cache->finalize_for_runtime();
+  ET_CHECK_OR_RETURN_ERROR(
+      packed_weights_names.ok(),
+      Internal,
+      "Failed to finalize weights cache after creating the xnn runtime"
+  )
+
+
   err = executor->initialize( // NOLINT: runtime_ptr is non-null
       runtime_ptr,
       std::move(input_ids),
-      std::move(output_ids));
+      std::move(output_ids),
+      std::move(packed_weights_names.get()));
 
   return err;
 };
