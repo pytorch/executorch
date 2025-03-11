@@ -15,6 +15,7 @@ from pathlib import Path
 import torch
 from executorch.backends.qualcomm.tests.utils import (
     generate_context_binary,
+    ModuleQConfig,
     QnnPartitioner,
     QuantDtype,
     TestQNN,
@@ -1317,8 +1318,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
 
     def test_qnn_backend_element_wise_and(self):
@@ -1358,8 +1359,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
 
     def test_qnn_backend_element_wise_mul(self):
@@ -1386,8 +1387,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
 
     def test_qnn_backend_element_wise_or(self):
@@ -1446,8 +1447,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
 
     def test_qnn_backend_elu(self):
@@ -2107,6 +2108,23 @@ class TestQNNQuantizedModel(TestQNN):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_submodules(self):
+        module = SimpleSubModules()  # noqa: F405
+        sample_input = (
+            torch.rand(1, 3, 8, 8),
+            torch.rand(1, 3, 8, 8),
+            torch.rand(1, 3, 8, 8),
+            torch.rand(1, 3, 8, 8),
+        )
+
+        submodule_quant_config = {
+            Add: ModuleQConfig(QuantDtype.use_16a16w)  # noqa: F405
+        }
+        module = self.get_qdq_module(
+            module, sample_input, submodule_quant_config=submodule_quant_config
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_topk_and_index(self):
