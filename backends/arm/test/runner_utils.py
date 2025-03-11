@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 try:
     import tosa_reference_model
 except ImportError:
-    logger.warning("tosa_reference_model not found, can't run reference model tests")
     tosa_reference_model = None
 from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
 
@@ -525,7 +524,7 @@ def corstone320_installed() -> bool:
 
 def get_elf_path(target_board):
     elf_path = os.path.join(
-        "cmake-out",
+        "arm_test",
         f"arm_semihosting_executor_runner_{target_board}",
         "arm_executor_runner",
     )

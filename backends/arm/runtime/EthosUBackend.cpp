@@ -120,8 +120,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     MemoryAllocator* allocator = context.get_runtime_allocator();
-    ExecutionHandle* handle =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
+    ExecutionHandle* handle = allocator->allocateInstance<ExecutionHandle>();
+    if (handle == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     handle->processed = processed;
 
     // Return the same buffer we were passed - this data will be
@@ -193,6 +196,10 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       supported |=
           (tensor_in.scalar_type() == ScalarType::Char and
            handles.inputs->io[i].elem_size == 1);
+      // 16 bit int (IOQDQ pass prepared networks)
+      supported |=
+          (tensor_in.scalar_type() == ScalarType::Short and
+           handles.inputs->io[i].elem_size == 2);
       if (!supported) {
         ET_LOG(
             Error,
@@ -220,6 +227,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
           handles.inputs->io[i].elem_size == 1;
       bool both_int = tensor_in.scalar_type() == ScalarType::Int and
           handles.inputs->io[i].elem_size == 4;
+      bool both_short = tensor_in.scalar_type() == ScalarType::Short and
+          handles.inputs->io[i].elem_size == 2;
 
       // Select a compatible copy routine
       if (both_char and permuted_input_shape) {
@@ -233,7 +242,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             tensor_in.size(1),
             tensor_in.size(2),
             tensor_in.size(3));
-      } else if (both_char or both_int) {
+      } else if (both_char or both_int or both_short) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
         // Sizes match and elt size matches so memcpy

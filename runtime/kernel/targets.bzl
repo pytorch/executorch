@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _operator_registry_preprocessor_flags():
     max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
@@ -8,6 +8,7 @@ def _operator_registry_preprocessor_flags():
         return select({
             "DEFAULT": [],
             "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-256": ["-DMAX_KERNEL_NUM=256"],
+            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-128": ["-DMAX_KERNEL_NUM=128"],
             "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-64": ["-DMAX_KERNEL_NUM=64"],
         })
     else:
@@ -50,7 +51,21 @@ def define_common_targets():
         preprocessor_flags = ["-DMAX_KERNEL_NUM=1"],
     )
 
-    for aten_mode in (True, False):
+    runtime.cxx_library(
+        name = "thread_parallel_interface",
+        exported_headers = ["thread_parallel_interface.h"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
+            "//executorch/runtime/platform:platform",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
 
         runtime.cxx_library(

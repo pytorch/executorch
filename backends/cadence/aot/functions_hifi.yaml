@@ -20,7 +20,7 @@
 - op: _softmax.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::softmax_out
+      kernel_name: cadence::impl::HiFi::_softmax_out
 
 - op: atan2.out
   kernels:
@@ -100,7 +100,7 @@
 - op: mean.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::mean_dim_out
+      kernel_name: cadence::impl::HiFi::mean_out   
 
 - op: minimum.out
   kernels:
@@ -175,7 +175,7 @@
 - op: where.self_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::where_out
+      kernel_name: cadence::impl::HiFi::where_self_out
 
 # custom ops
 - func: cadence::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
@@ -189,6 +189,11 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::HiFi::dequantize_per_tensor_out
+      
+- func: cadence::quantized_conv.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::quantized_conv_out      
 
 - func: cadence::quantized_layer_norm.out(Tensor input, Tensor in_scale, Tensor in_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
@@ -209,6 +214,11 @@
     - arg_meta: null
       kernel_name: cadence::impl::HiFi::quantized_linear_per_tensor_out
 
+- func: cadence::quantized_relu_per_tensor.out(Tensor X, Tensor X_zero_point, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::HiFi::quantized_relu_per_tensor_out
+
 - func: cadence::quantized_relu.out(Tensor X, Tensor X_zero_point, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
@@ -218,11 +228,6 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::HiFi::quantized_relu_per_tensor_out
-
-- func: cadence::quantized_linear.per_tensor_out(Tensor src, Tensor weight, Tensor bias, SymInt src_zero_point, SymInt weight_zero_point, SymInt out_multiplier, SymInt out_shift, SymInt out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
-  kernels:
-    - arg_meta: null
-      kernel_name: cadence::impl::HiFi::quantized_linear_per_tensor_out
 
 - func: cadence::quantized_fully_connected.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
   kernels:

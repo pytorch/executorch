@@ -35,7 +35,14 @@ function(et_cxx_test target_name)
   set(multi_arg_names SOURCES EXTRA_LIBS)
   cmake_parse_arguments(ET_CXX_TEST "" "" "${multi_arg_names}" ${ARGN})
 
-  add_executable(${target_name} ${ET_CXX_TEST_SOURCES} ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp)
+  add_executable(
+    ${target_name}
+    ${ET_CXX_TEST_SOURCES}
+    ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp
+  )
+  if(NOT TARGET GTest::gtest)
+    find_package(GTest)
+  endif()
   # Includes gtest, gmock, executorch by default
   target_link_libraries(
     ${target_name} GTest::gtest GTest::gtest_main GTest::gmock executorch

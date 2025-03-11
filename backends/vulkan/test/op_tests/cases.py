@@ -56,6 +56,7 @@ def get_binary_elementwise_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     return test_suite
 
 
@@ -585,7 +586,11 @@ def get_slice_out_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
-    test_suite.layouts = ["utils::kChannelsPacked"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
 

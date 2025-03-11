@@ -125,7 +125,9 @@ def _match_pattern(
 
 
 _one_to_one = [
+    torch.ops.aten.abs.default,
     torch.ops.aten.exp.default,
+    torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
     torch.ops.aten.rsqrt.default,
@@ -173,6 +175,8 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.contiguous.default,
     torch.ops.aten.upsample_nearest2d.vec,
     torch.ops.aten.pad.default,
+    torch.ops.aten.amax.default,
+    torch.ops.aten.amin.default,
 ]
 
 # Operators that can inherit the quantization specs from its parent node
@@ -181,6 +185,7 @@ _parent_shared_qspec = [
     torch.ops.aten.hardtanh.default,
     torch.ops.aten.hardtanh_.default,
     torch.ops.aten.relu.default,
+    torch.ops.aten.relu_.default,
     torch.ops.aten.mean.default,
     torch.ops.aten.mean.dim,
     torch.ops.aten.permute.default,

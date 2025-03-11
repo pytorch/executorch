@@ -1,0 +1,85 @@
+# IMPORTANT:
+# This file is ONLY used to subscribe for notifications for PRs
+# related to a specific file path. Approvals from people in this
+# file are not required for merges.
+
+/backends/apple @shoumikhin @cccclai
+/backends/apple/mps @cccclai @DenisVieriu97
+/backends/arm @digantdesai
+/backends/cadence @tarun292
+/backends/example @iseeyuan @JacobSzwejbka @larryliu0820
+/backends/mediatek @cccclai @neuropilot-captain
+/backends/qualcomm @cccclai @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic
+/backends/test @cccclai
+/backends/transforms @kimishpatel
+/backends/vulkan @SS-JIA
+/backends/xnnpack @digantdesai @mcr229
+
+/build @GregoryComer @kirklandsign
+
+/codegen @larryliu0820 @lucylq
+
+/devtools @tarun292 @Gasoonjia
+
+/docs @mergennachin
+
+/examples/apple @shoumikhin
+/examples/apple/coreml @cccclai @metascroy @cymbalrush @YifanShenSZ
+/examples/arm @digantdesai
+/examples/cadence @tarun292
+/examples/demo-apps @shoumikhin @kirklandsign
+/examples/devtools @tarun292
+/examples/llm_manual @larryliu0820
+/examples/llm_pte_finetuning @JacobSzwejbka
+/examples/mediatek @cccclai
+/examples/models @lucylq @jackzhxng
+/examples/portable @larryliu0820 @manuelcandales
+/examples/qualcomm @cccclai
+/examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
+/examples/xnnpack @digantdesai @mcr229
+
+/exir/backend @cccclai @kimishpatel @JacobSzwejbka @tarun292
+/exir @JacobSzwejbka @tarun292 @larryliu0820
+
+
+/extension/android @kirklandsign
+/extension/android_test @kirklandsign
+/extension/apple @shoumikhin
+/extension/aten_util @JacobSzwejbka
+/extension/benchmark @tarun292
+/extension/data_loader @JacobSzwejbka @lucylq
+/extension/evalue_util @GregoryComer
+/extension/export_util @kimishpatel
+/extension/flat_tensor @lucylq
+/extension/gguf_util @larryliu0820
+/extension/kernel_util @kimishpatel @manuelcandales @swolchok
+/extension/llm @jackzhxng @iseeyuan @larryliu0820 @swolchok
+/extension/memory_allocator @JacobSzwejbka @swolchok
+/extension/module @shoumikhin
+/extension/parallel @kimishpatel @swolchok
+/extension/pybindings @JacobSzwejbka @larryliu0820
+/extension/pytree @JacobSzwejbka @swolchok
+/extension/runner_util @swolchok
+/extension/tensor @shoumikhin
+/extension/testing_util @swolchok
+/extension/threadpool @kimishpatel @swolchok
+/extension/training @JacobSzwejbka
+
+/kernels @manuelcandales @swolchok
+
+/profiler @tarun292 @Gasoonjia
+
+/runtime @JacobSzwejbka @lucylq @swolchok
+/runtime/backend @cccclai
+
+/schema @JacobSzwejbka @lucylq
+
+/scripts @GregoryComer @swolchok
+
+/shim @larryliu0820 @GregoryComer @swolchok
+
+/third-party @GregoryComer
+
+/test @larryliu0820 @kirklandsign
+
+/util @tarun292

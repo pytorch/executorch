@@ -58,6 +58,21 @@ deps = [
   "executorch_core",
 ]
 
+# HACK: prevent reduce_util from also showing up in custom_ops. The
+# actual medium-term fix is to stop using Buck to drive our CMake
+# builds.
+[targets.reduce_util]
+buck_targets = [
+  "//kernels/portable/cpu/util:reduce_util",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+]
+
 [targets.optimized_kernels]
 buck_targets = [
   "//kernels/optimized:generated_lib",
@@ -115,11 +130,12 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_threadpool",
 ]
 
-[targets.optimized_native_cpu_ops_oss]
+[targets.optimized_native_cpu_ops]
 buck_targets = [
-  "//configurations:optimized_native_cpu_ops_oss",
+  "//configurations:optimized_native_cpu_ops",
 ]
 filters = [
   ".cpp$",
@@ -129,6 +145,7 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_threadpool",
   "portable_kernels",
 ]
 # ---------------------------------- core end ----------------------------------
@@ -347,6 +364,7 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -361,6 +379,7 @@ filters = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
 ]
 
 [targets.xnnpack_schema]
@@ -386,10 +405,7 @@ buck_targets = [
   "//extension/llm/custom_ops:custom_ops",
 ]
 filters = [
-  # Second clause is to pick up fht_neon.c/fht_avx.c from FFHT. TODO:
-  # remove filters and patch extract_sources.py's Buck query to fetch
-  # srcs; presumably filters is here to remove .h files.
-  "(.cpp$)|(fht.*\\.c$)",
+  ".cpp$",
 ]
 excludes = [
   "^codegen",
@@ -399,6 +415,7 @@ deps = [
   "executorch_core",
   "optimized_kernels",
   "extension_threadpool",
+  "reduce_util",
   "xnnpack_backend",
 ]
 
@@ -434,9 +451,10 @@ deps = [
   "executorch_core",
   "extension_data_loader",
   "extension_module",
+  "extension_threadpool",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
-  "optimized_native_cpu_ops_oss",
+  "optimized_native_cpu_ops",
 ]
 # ---------------------------------- LLama end ----------------------------------

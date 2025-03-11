@@ -114,6 +114,7 @@ def apply_rotary_emb_to_k(
     return xk_out.type_as(xk)
 
 
+# Wrap apply_rotary_emb in a module to enable it to be module swapped out.
 class RotaryEmbedding(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -133,11 +134,21 @@ class RotaryEmbedding(torch.nn.Module):
 
 
 # Based on https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py#L77
-def hf_precompute_freqs_cis(dim: int, end: int, theta: float):
+# and https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_rope_utils.py#L242.
+# Current only support non-long rope.
+def hf_precompute_freqs_cis(
+    dim: int, end: int, theta: float, partial_rotary_factor: float = 1.0
+):
+    # Partial rotary embeddings.
+    dim = int(dim * partial_rotary_factor)
+
+    # Short factor scaling.
     freqs = 1.0 / (
         theta
         ** (torch.arange(0, dim, 2, device="cpu", dtype=torch.int64).float() / dim)
     )
+    # TODO: support long factor scaling.
+
     # pyre-ignore Undefined attribute [16]: `float` has no attribute `device`.
     t = torch.arange(end, device=freqs.device, dtype=torch.int64).type_as(
         freqs  # pyre-ignore
@@ -179,8 +190,13 @@ def hf_apply_rotary_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
+
+    rotary_dim = cos.shape[-1]
+    q_rot, q_pass = q[..., :rotary_dim], q[..., rotary_dim:]
+    k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
+
+    q_embed = torch.cat([(q_rot * cos) + (rotate_half(q_rot) * sin), q_pass], dim=-1)
+    k_embed = torch.cat([(k_rot * cos) + (rotate_half(k_rot) * sin), k_pass], dim=-1)
     return q_embed, k_embed
 
 
@@ -213,14 +229,23 @@ class Rope(torch.nn.Module):
     def __init__(self, params: ModelArgs):
         super().__init__()
         self.params = params
+
+        # Choose the appropriate RoPE implementation
         if self.params.use_hf_rope:
-            self.precompute_freqs_cis = hf_precompute_freqs_cis
+            self.precompute_freqs_cis = partial(
+                hf_precompute_freqs_cis,
+                partial_rotary_factor=self.params.partial_rotary_factor,
+            )
+            self.apply_rotary_emb = hf_apply_rotary_emb
         else:
             self.precompute_freqs_cis = partial(
                 precompute_freqs_cis,
                 use_scaled=self.params.use_scaled_rope,
                 scale_factor=self.params.rope_scale_factor,
             )
+            self.apply_rotary_emb = RotaryEmbedding()
+
+        # Precompute frequencies
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
             self.params.head_dim,
             (
@@ -232,10 +257,6 @@ class Rope(torch.nn.Module):
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
-        if self.params.use_hf_rope:
-            self.apply_rotary_emb = hf_apply_rotary_emb
-        else:
-            self.apply_rotary_emb = RotaryEmbedding()
 
     def forward(
         self,

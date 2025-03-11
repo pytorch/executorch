@@ -6,12 +6,15 @@
 
 # pyre-strict
 
+from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
+    AddPattern,
     BmmPattern,
+    CatPattern,
     Conv1dPattern,
     Conv2dPattern,
     LayerNormPattern,
@@ -108,7 +111,7 @@ class CadenceAtenQuantizer(Quantizer):
                 continue
 
             anchors = self.pattern.get_anchors(model, fused_partition)
-            if not anchors:
+            if not anchors or anchors.empty:
                 continue
             if is_annotated(
                 [
@@ -142,17 +145,38 @@ class CadenceAtenQuantizer(Quantizer):
                         "quantization_annotation",
                         QuantizationAnnotation(_annotated=True),
                     )
-                    # pyre-ignore[16]: no attribute
-                    annotation.input_qspec_map[node.args[idx]] = (
+                    arg = (
+                        # pyre-ignore[16]: no attribute
+                        node.args[idx]
+                        if isinstance(idx, int)
+                        # pyre-ignore[16]: no attribute
+                        else node.args[idx[0]][idx[1]]
+                    )
+                    annotation.input_qspec_map[arg] = (
                         custom_spec[0] if custom_spec else spec
                     )
                     # pyre-ignore[16]: no attribute
                     node.meta["quantization_annotation"] = annotation
 
-            annotate_inputs(anchors.inputs, input_act_qspec)
-            annotate_inputs(anchors.weights, weight_qspec)
+            def annotate_weights_or_biases(
+                weights_or_biases: List[Tuple[fx.Node, int]],
+                spec: Optional[QuantizationSpec],
+            ) -> None:
+                for node, idx, *custom_spec in weights_or_biases:
+                    annotation = node.meta.get(
+                        "quantization_annotation",
+                        QuantizationAnnotation(_annotated=True),
+                    )
+                    annotation.input_qspec_map[node.args[idx]] = (
+                        custom_spec[0] if custom_spec else spec
+                    )
+                    node.meta["quantization_annotation"] = annotation
+
             # pyre-ignore[6]: incompatible parameter type
-            annotate_inputs(anchors.biases, bias_qspec)
+            annotate_inputs(anchors.inputs, input_act_qspec)
+            annotate_weights_or_biases(anchors.weights, weight_qspec)
+            # pyre-ignore[6]: incompatible parameter type
+            annotate_weights_or_biases(anchors.biases, bias_qspec)
         return model
 
     def validate(self, model: fx.GraphModule) -> None:
@@ -177,6 +201,8 @@ def get_cadence_default_quantizers() -> List[Quantizer]:
     ]
 
 
+# Note: need dataclass to be used in CI configs through OmegaConf and Hydra
+@dataclass
 class CadenceQuantizer(ComposableQuantizer):
     """
     Generic CadenceQuantizer. Although it can be used directly, it is typically a base
@@ -208,3 +234,16 @@ class CadenceNopQuantizer(CadenceQuantizer):
         self,
     ) -> None:
         super().__init__([])
+
+
+class CadenceWakeWordQuantizer(CadenceQuantizer):
+    """
+    Quantizer for WakeWord, including add
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8uW8u))
+        quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8uW8u))
+        super().__init__(quantizers)

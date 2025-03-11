@@ -188,6 +188,9 @@ class TestQNN(unittest.TestCase):
     shared_buffer: bool = False
     enable_x86_64: bool = False
     compile_only: bool = False
+    pre_gen_pte: str = ""
+    llama_artifacts: str = ""
+    dump_intermediate_outputs: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -523,7 +526,9 @@ class TestQNN(unittest.TestCase):
         dynamic_shapes: Dict = None,
         bypass_check: bool = False,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes).module()
+        m = torch.export.export(
+            module, inputs, dynamic_shapes=dynamic_shapes, strict=True
+        ).module()
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)

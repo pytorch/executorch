@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 #include <tuple>
 
@@ -46,10 +47,13 @@ Tensor& argmax_out(
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "argmax.out", CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();
 
-    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+    for (const auto out_ix : c10::irange(out.numel())) {
       std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
           [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-            if (!std::isnan(acc_val) && (std::isnan(v) || v > acc_val)) {
+            // the below condition as written is equivalent to
+            // !isnan(accval) && (isnan(v) || v > acc_val). See
+            // argument in op_argmin.cpp.
+            if (!std::isnan(acc_val) && !(v <= acc_val)) {
               acc_val = v;
               acc_ix = ix;
             }

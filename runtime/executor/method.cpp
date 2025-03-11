@@ -8,6 +8,7 @@
 
 #include <executorch/runtime/executor/method.h>
 
+#include <c10/util/irange.h>
 #include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
@@ -33,6 +34,7 @@
 namespace executorch {
 namespace runtime {
 
+using deserialization::NamedData;
 using internal::PlatformMemoryAllocator;
 
 /**
@@ -238,10 +240,10 @@ Result<InstructionArgs> gen_instruction_arguments(
   for (size_t i = 0; i < num_args; ++i) {
     int32_t arg_idx = arg_idxs[i];
     ET_CHECK_OR_RETURN_ERROR(
-        arg_idx < num_values,
+        static_cast<size_t>(arg_idx) < num_values,
         InvalidProgram,
-        "Arg index %d >= %" ET_PRIsize_t,
-        arg_idx,
+        "Arg index %zd >= %" ET_PRIsize_t,
+        static_cast<ssize_t>(arg_idx),
         num_values);
     arg_list[i] = &values[arg_idx];
   }
@@ -269,7 +271,7 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
         static_cast<int8_t>(cond_val.scalar_type()));
 
     const bool* cond_data = cond_val.const_data_ptr<bool>();
-    for (size_t i = 0; i < cond_val.numel(); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(cond_val.numel()); i++) {
       if (!cond_data[i]) {
         return false;
       }
@@ -289,6 +291,113 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
 
 } // namespace
 
+Result<size_t> Method::get_num_external_constants() {
+  auto flatbuffer_values = serialization_plan_->values();
+  size_t n_value = flatbuffer_values->size();
+
+  size_t n_external_constants = 0;
+  for (size_t i = 0; i < n_value; ++i) {
+    auto serialization_value = flatbuffer_values->Get(i);
+    // Ensure values are non-null.
+    // Note that as a side-effect of this check, we're guaranteed that all
+    // values are non-null, so later loops can skip that check.
+    ET_CHECK_OR_RETURN_ERROR(
+        serialization_value != nullptr &&
+            (serialization_value->val_type() ==
+                 executorch_flatbuffer::KernelTypes::Null ||
+             serialization_value->val() != nullptr),
+        InvalidProgram,
+        "Null value at index %" ET_PRIsize_t,
+        i);
+    // Ignore non-tensor types.
+    if (serialization_value->val_type() !=
+        executorch_flatbuffer::KernelTypes::Tensor) {
+      continue;
+    }
+    const auto s_tensor = static_cast<const executorch_flatbuffer::Tensor*>(
+        serialization_value->val());
+
+    // An external constant is tagged with EXTERNAL and has no
+    // allocation_info.
+    if (s_tensor->extra_tensor_info() != nullptr &&
+        s_tensor->extra_tensor_info()->location() ==
+            executorch_flatbuffer::TensorDataLocation::EXTERNAL &&
+        s_tensor->allocation_info() == nullptr) {
+      n_external_constants++;
+    }
+  }
+  return n_external_constants;
+}
+
+Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
+  auto flatbuffer_values = serialization_plan_->values();
+  size_t n_value = flatbuffer_values->size();
+
+  // n_external_constants_ counts the number of successfully-initialized
+  // external constants for ~Method() to clean up, and is incremented at the
+  // bottom of the loop. This makes it safe for errors to return without
+  // updating any state.
+  n_external_constants_ = 0;
+  for (size_t i = 0; i < n_value; ++i) {
+    auto serialization_value = flatbuffer_values->Get(i);
+    // Ignore non-tensor types.
+    if (serialization_value->val_type() !=
+        executorch_flatbuffer::KernelTypes::Tensor) {
+      continue;
+    }
+    const auto s_tensor = static_cast<const executorch_flatbuffer::Tensor*>(
+        serialization_value->val());
+    // Constant tensors are resolved here; tensors with allocation_info are
+    // mutable and are resolved in parse_values.
+    if (s_tensor->extra_tensor_info() == nullptr ||
+        s_tensor->extra_tensor_info()->location() !=
+            executorch_flatbuffer::TensorDataLocation::EXTERNAL ||
+        s_tensor->allocation_info() != nullptr) {
+      continue;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        s_tensor->extra_tensor_info()->fully_qualified_name() != nullptr,
+        InvalidExternalData,
+        "Fully qualified name of external tensor is null at index %zu",
+        i);
+
+    const char* key =
+        s_tensor->extra_tensor_info()->fully_qualified_name()->c_str();
+
+    // Check if this tensor has already been resolved.
+    if (get_data_by_key(
+            key, Span<NamedData>(external_constants_, n_external_constants_)) !=
+        nullptr) {
+      continue;
+    }
+    Result<const TensorLayout> tensor_layout =
+        named_data_map->get_metadata(key);
+    if (!tensor_layout.ok()) {
+      return tensor_layout.error();
+    }
+    // Check external tensor compatibility.
+    Error err =
+        deserialization::validateTensorLayout(s_tensor, tensor_layout.get());
+    if (err != Error::Ok) {
+      return err;
+    }
+    // Save the key.
+    external_constants_[n_external_constants_].key = key;
+
+    // Save the buffer.
+    Result<FreeableBuffer> buffer = named_data_map->get_data(key);
+    ET_CHECK_OR_RETURN_ERROR(
+        buffer.ok(),
+        InvalidExternalData,
+        "Buffer retrieved from get_data is not valid");
+    new (&external_constants_[n_external_constants_].buffer)
+        FreeableBuffer(std::move(buffer.get()));
+
+    n_external_constants_ += 1;
+  }
+  return Error::Ok;
+}
+
 Error Method::parse_values(const NamedDataMap* named_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   ET_CHECK_OR_RETURN_ERROR(
@@ -299,6 +408,30 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
     return Error::MemoryAllocationFailed;
   }
 
+  // Count the number of tensors marked as EXTERNAL for this method. The actual
+  // number of external constants may be smaller, eg. if multiple tensors point
+  // to the same underlying data buffer.
+  // This function also ensures that all flatbuffer_values entries
+  // are non-null, so `val_as_X()` calls below are guaranteed to return
+  // non-null pointers.
+  Result<size_t> max_external_constants = get_num_external_constants();
+  if (!max_external_constants.ok()) {
+    return max_external_constants.error();
+  }
+  if (max_external_constants.get() > 0) {
+    // Allocate space for external tensors.
+    external_constants_ =
+        memory_manager_->method_allocator()->allocateList<NamedData>(
+            max_external_constants.get());
+    if (external_constants_ == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+    Error err = parse_external_constants(named_data_map);
+    if (err != Error::Ok) {
+      return err;
+    }
+  }
+
   // n_value_ counts the number of successfully-initialized values for ~Method()
   // to clean up, and is incremented at the bottom of the loop. This makes it
   // safe for errors to return without updating any state.
@@ -306,16 +439,6 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
 
   for (size_t i = 0; i < n_value; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
-    // Ensure that the `val_as_X()` calls will return non-null pointers.
-    ET_CHECK_OR_RETURN_ERROR(
-        serialization_value != nullptr &&
-            (serialization_value->val_type() ==
-                 executorch_flatbuffer::KernelTypes::Null ||
-             serialization_value->val() != nullptr),
-        InvalidProgram,
-        "Null value at index %" ET_PRIsize_t,
-        i);
-
     const auto val = serialization_value->val();
 
     switch (serialization_value->val_type()) {
@@ -359,7 +482,7 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
         for (size_t j = 0; j < items->size(); j++) {
           auto value_index = items->Get(j);
           ET_CHECK_OR_RETURN_ERROR(
-              value_index >= 0 && value_index < n_value,
+              value_index >= 0 && static_cast<size_t>(value_index) < n_value,
               InvalidProgram,
               "Invalid value index %" PRId64 " for IntList %" ET_PRIsize_t
               " index %" ET_PRIsize_t,
@@ -416,7 +539,8 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
             program_,
             memory_manager_,
             static_cast<const executorch_flatbuffer::Tensor*>(val),
-            named_data_map);
+            named_data_map,
+            Span<NamedData>(external_constants_, n_external_constants_));
         if (!t.ok()) {
           ET_LOG(
               Error,
@@ -521,7 +645,7 @@ Error populate_operator_name(
       has_overload ? op->overload()->c_str() : "");
   ET_CHECK_OR_RETURN_ERROR(cx >= 0, Internal, "snprintf failed: %d", cx);
   ET_CHECK_OR_RETURN_ERROR(
-      cx < operator_name_size,
+      static_cast<size_t>(cx) < operator_name_size,
       Internal,
       "Operator name %s%s%s with length %d "
       "truncated to %" ET_PRIsize_t " due to internal buffer limit.",
@@ -549,7 +673,8 @@ Error Method::resolve_operator(
   char operator_name[kTempBufferSizeForName];
   const auto ops = serialization_plan_->operators();
   ET_CHECK_OR_RETURN_ERROR(
-      ops != nullptr && op_index < ops->size(),
+      ops != nullptr &&
+          static_cast<flatbuffers::uoffset_t>(op_index) < ops->size(),
       InvalidProgram,
       "Op index %" PRIu32 " out of range",
       op_index);
@@ -598,7 +723,11 @@ Error Method::resolve_operator(
   Result<OpFunction> op_function =
       get_op_function_from_registry(operator_name, {meta, count});
   if (!op_function.ok()) {
-    ET_LOG(Error, "Missing operator: [%d] %s", op_index, operator_name);
+    ET_LOG(
+        Error,
+        "Missing operator: [%zd] %s",
+        static_cast<ssize_t>(op_index),
+        operator_name);
     return op_function.error();
   }
   kernels[kernel_index] = op_function.get();
@@ -669,6 +798,14 @@ Error Method::init(
       return Error::MemoryAllocationFailed;
     }
 
+    // Get NamedDataMap, if it exists.
+    const NamedDataMap* pte_data_map = nullptr;
+    Result<const NamedDataMap*> pte_data_map_res =
+        program_->get_named_data_map();
+    if (pte_data_map_res.ok()) {
+      pte_data_map = pte_data_map_res.get();
+    }
+
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
     // makes it safe for errors to return without updating any state.
@@ -679,7 +816,8 @@ Error Method::init(
       BackendInitContext backend_init_context(
           method_allocator,
           /*event_tracer=*/event_tracer_,
-          /*method_name=*/serialization_plan_->name()->c_str());
+          /*method_name=*/serialization_plan_->name()->c_str(),
+          /*named_data_map=*/pte_data_map);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -800,10 +938,10 @@ Error Method::init(
                     instr_args)
                     ->cond_value_index();
             ET_CHECK_OR_RETURN_ERROR(
-                index >= 0 && index < n_value_,
+                index >= 0 && static_cast<size_t>(index) < n_value_,
                 InvalidProgram,
-                "Index %d negative or >= %" ET_PRIsize_t,
-                index,
+                "Index %zd negative or >= %" ET_PRIsize_t,
+                static_cast<ssize_t>(index),
                 n_value_);
             chain_instruction_arg_lists[instr_idx] = InstructionArgs();
           } break;
@@ -821,9 +959,9 @@ Error Method::init(
     ET_CHECK_OR_RETURN_ERROR(
         num_instructions_missing_op == 0,
         OperatorMissing,
-        "There are %d instructions don't have corresponding operator registered. "
+        "There are %zu instructions don't have corresponding operator registered. "
         "See logs for details",
-        num_instructions_missing_op);
+        static_cast<size_t>(num_instructions_missing_op));
     if (delayed_error != Error::Ok) {
       return delayed_error;
     }
@@ -1192,7 +1330,7 @@ Error Method::execute_instruction() {
       auto delegate_idx =
           instruction->instr_args_as_DelegateCall()->delegate_index();
       ET_CHECK_OR_RETURN_ERROR(
-          delegate_idx < n_delegate_,
+          static_cast<size_t>(delegate_idx) < n_delegate_,
           Internal,
           "DELEGATE_CALL index %" PRIu32 " >= num delegates %" ET_PRIsize_t
           " at instruction %" ET_PRIsize_t,
@@ -1486,15 +1624,19 @@ Method::~Method() {
   // Destroy the values. It's necessary in ATen mode, where the refcount of
   // Tensors needs to be decremented properly.
   if (values_ != nullptr) {
-    for (int i = 0; i < n_value_; ++i) {
+    for (size_t i = 0; i < n_value_; ++i) {
       values_[i].~EValue();
     }
   }
   // Free any resources associated with delegate backends.
   if (delegates_ != nullptr) {
-    for (int i = 0; i < n_delegate_; i++) {
+    for (size_t i = 0; i < n_delegate_; i++) {
       delegates_[i].~BackendDelegate();
     }
+  }
+  // Free resources associated with external constants.
+  for (const auto i : c10::irange(n_external_constants_)) {
+    external_constants_[i].buffer.~FreeableBuffer();
   }
   // All other fields are trivially destructible.
 }

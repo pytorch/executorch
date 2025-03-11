@@ -39,16 +39,24 @@ public class LlamaModule {
 
   @DoNotStrip
   private static native HybridData initHybrid(
-      int modelType, String modulePath, String tokenizerPath, float temperature);
+      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath);
 
-  /** Constructs a LLAMA Module for a model with given path, tokenizer, and temperature. */
+  /** Constructs a LLAMA Module for a model with given model path, tokenizer, temperature. */
   public LlamaModule(String modulePath, String tokenizerPath, float temperature) {
-    mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature);
+    mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, null);
+  }
+
+  /**
+   * Constructs a LLAMA Module for a model with given model path, tokenizer, temperature and data
+   * path.
+   */
+  public LlamaModule(String modulePath, String tokenizerPath, float temperature, String dataPath) {
+    mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, dataPath);
   }
 
   /** Constructs a LLM Module for a model with given path, tokenizer, and temperature. */
   public LlamaModule(int modelType, String modulePath, String tokenizerPath, float temperature) {
-    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature);
+    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, null);
   }
 
   public void resetNative() {

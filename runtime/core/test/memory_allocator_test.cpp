@@ -9,6 +9,7 @@
 #include <array>
 #include <vector>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/alignment.h>
@@ -62,12 +63,12 @@ TEST_F(MemoryAllocatorTest, MemoryAllocatorAlignment) {
       128,
       2};
 
-  for (int i = 0; i < arr_size; i++) {
+  for (const auto i : c10::irange(arr_size)) {
     auto align_size = alignment[i];
     constexpr size_t mem_size = 1000;
     uint8_t mem_pool[mem_size];
     MemoryAllocator allocator = MemoryAllocator(mem_size, mem_pool);
-    for (int j = 0; j < arr_size; j++) {
+    for (const auto j : c10::irange(arr_size)) {
       auto size = allocation[j];
       void* start = allocator.allocate(size, align_size);
       EXPECT_ALIGNED(start, align_size);
@@ -81,7 +82,7 @@ TEST_F(MemoryAllocatorTest, MemoryAllocatorNonPowerOfTwoAlignment) {
   MemoryAllocator allocator(mem_size, mem_pool);
 
   size_t alignment[5] = {0, 5, 6, 12, 34};
-  for (int i = 0; i < 5; i++) {
+  for (const auto i : c10::irange(5)) {
     ASSERT_EQ(nullptr, allocator.allocate(8, alignment[i]));
   }
 }
@@ -195,7 +196,6 @@ TEST_F(MemoryAllocatorTest, AllocateListFailure) {
   EXPECT_EQ(p, nullptr);
 }
 
-#if ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 class HelperMacrosTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -212,25 +212,12 @@ class HelperMacrosTest : public ::testing::Test {
  */
 static const Error kTestFailureValue = static_cast<Error>(12345);
 
-void* try_allocate_helper(
-    MemoryAllocator* allocator,
-    size_t nbytes,
-    Error* out_error) {
-  return ET_TRY_ALLOCATE_OR(allocator, nbytes, {
-    // An example that doesn't simply return.
-    *out_error = kTestFailureValue;
-    return nullptr;
-  });
-}
-
 TEST_F(HelperMacrosTest, TryAllocateSuccess) {
   std::array<uint8_t, 16> buffer;
   MemoryAllocator allocator(buffer.size(), buffer.data());
 
   // Allocate less memory than the allocator provides, which should succeed.
-  Error err = Error::Ok;
-  void* p = try_allocate_helper(&allocator, allocator.size() / 2, &err);
-  EXPECT_EQ(err, Error::Ok);
+  void* p = allocator.allocate(allocator.size() / 2);
   EXPECT_NE(p, nullptr);
 }
 
@@ -239,50 +226,8 @@ TEST_F(HelperMacrosTest, TryAllocateFailure) {
   MemoryAllocator allocator(buffer.size(), buffer.data());
 
   // Allocate more memory than the allocator provides, which should fail.
-  Error err = Error::Ok;
-  void* p = try_allocate_helper(&allocator, allocator.size() * 2, &err);
-  EXPECT_EQ(err, kTestFailureValue);
+  void* p = allocator.allocate(allocator.size() * 2);
   EXPECT_EQ(p, nullptr);
-}
-
-Error allocate_or_return_error_helper(
-    MemoryAllocator* allocator,
-    size_t nbytes,
-    void** out_pointer) {
-  *out_pointer = ET_ALLOCATE_OR_RETURN_ERROR(allocator, nbytes);
-  return Error::Ok;
-}
-
-TEST_F(HelperMacrosTest, AllocateOrReturnSuccess) {
-  std::array<uint8_t, 16> buffer;
-  MemoryAllocator allocator(buffer.size(), buffer.data());
-
-  // Allocate less memory than the allocator provides, which should succeed.
-  void* p;
-  Error err =
-      allocate_or_return_error_helper(&allocator, allocator.size() / 2, &p);
-  EXPECT_EQ(err, Error::Ok);
-  EXPECT_NE(p, nullptr);
-}
-
-TEST_F(HelperMacrosTest, AllocateOrReturnFailure) {
-  std::array<uint8_t, 16> buffer;
-  MemoryAllocator allocator(buffer.size(), buffer.data());
-
-  // Allocate more memory than the allocator provides, which should fail.
-  void* p;
-  Error err =
-      allocate_or_return_error_helper(&allocator, allocator.size() * 2, &p);
-  EXPECT_EQ(err, Error::MemoryAllocationFailed);
-}
-
-template <typename T>
-T* try_allocate_instance_helper(MemoryAllocator* allocator, Error* out_error) {
-  return ET_TRY_ALLOCATE_INSTANCE_OR(allocator, T, {
-    // An example that doesn't simply return.
-    *out_error = kTestFailureValue;
-    return nullptr;
-  });
 }
 
 TEST_F(HelperMacrosTest, TryAllocateInstanceSuccess) {
@@ -290,9 +235,7 @@ TEST_F(HelperMacrosTest, TryAllocateInstanceSuccess) {
   MemoryAllocator allocator(buffer.size(), buffer.data());
 
   // Allocate less memory than the allocator provides, which should succeed.
-  Error err = Error::Ok;
-  TestType8* p = try_allocate_instance_helper<TestType8>(&allocator, &err);
-  EXPECT_EQ(err, Error::Ok);
+  TestType8* p = allocator.allocateInstance<TestType8>();
   EXPECT_NE(p, nullptr);
 }
 
@@ -301,53 +244,8 @@ TEST_F(HelperMacrosTest, TryAllocateInstanceFailure) {
   MemoryAllocator allocator(buffer.size(), buffer.data());
 
   // Allocate more memory than the allocator provides, which should fail.
-  Error err = Error::Ok;
-  TestType1024* p =
-      try_allocate_instance_helper<TestType1024>(&allocator, &err);
-  EXPECT_EQ(err, kTestFailureValue);
-}
-
-template <typename T>
-Error allocate_instance_or_return_error_helper(
-    MemoryAllocator* allocator,
-    void** out_pointer) {
-  *out_pointer = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, T);
-  return Error::Ok;
-}
-
-TEST_F(HelperMacrosTest, AllocateInstanceOrReturnSuccess) {
-  std::array<uint8_t, 16> buffer;
-  MemoryAllocator allocator(buffer.size(), buffer.data());
-
-  // Allocate less memory than the allocator provides, which should succeed.
-  void* p;
-  Error err =
-      allocate_instance_or_return_error_helper<TestType8>(&allocator, &p);
-  EXPECT_EQ(err, Error::Ok);
-  EXPECT_NE(p, nullptr);
-}
-
-TEST_F(HelperMacrosTest, AllocateInstanceOrReturnFailure) {
-  std::array<uint8_t, 16> buffer;
-  MemoryAllocator allocator(buffer.size(), buffer.data());
-
-  // Allocate more memory than the allocator provides, which should fail.
-  void* p;
-  Error err =
-      allocate_instance_or_return_error_helper<TestType1024>(&allocator, &p);
-  EXPECT_EQ(err, Error::MemoryAllocationFailed);
-}
-
-void* try_allocate_list_helper(
-    MemoryAllocator* allocator,
-    size_t nbytes,
-    Error* out_error) {
-  // Use a 1-sized type so that nbytes == nelem.
-  return ET_TRY_ALLOCATE_LIST_OR(allocator, uint8_t, nbytes, {
-    // An example that doesn't simply return.
-    *out_error = kTestFailureValue;
-    return nullptr;
-  });
+  TestType1024* p = allocator.allocateInstance<TestType1024>();
+  EXPECT_EQ(p, nullptr);
 }
 
 TEST_F(HelperMacrosTest, TryAllocateListSuccess) {
@@ -355,9 +253,7 @@ TEST_F(HelperMacrosTest, TryAllocateListSuccess) {
   MemoryAllocator allocator(buffer.size(), buffer.data());
 
   // Allocate less memory than the allocator provides, which should succeed.
-  Error err = Error::Ok;
-  void* p = try_allocate_list_helper(&allocator, allocator.size() / 2, &err);
-  EXPECT_EQ(err, Error::Ok);
+  void* p = allocator.allocateList<uint8_t>(allocator.size() / 2);
   EXPECT_NE(p, nullptr);
 }
 
@@ -366,41 +262,6 @@ TEST_F(HelperMacrosTest, TryAllocateListFailure) {
   MemoryAllocator allocator(buffer.size(), buffer.data());
 
   // Allocate more memory than the allocator provides, which should fail.
-  Error err = Error::Ok;
-  void* p = try_allocate_list_helper(&allocator, allocator.size() * 2, &err);
-  EXPECT_EQ(err, kTestFailureValue);
+  void* p = allocator.allocateList<uint8_t>(allocator.size() * 2);
   EXPECT_EQ(p, nullptr);
 }
-
-Error allocate_list_or_return_error_helper(
-    MemoryAllocator* allocator,
-    size_t nbytes,
-    void** out_pointer) {
-  // Use a 1-sized type so that nbytes == nelem.
-  *out_pointer = ET_ALLOCATE_LIST_OR_RETURN_ERROR(allocator, uint8_t, nbytes);
-  return Error::Ok;
-}
-
-TEST_F(HelperMacrosTest, AllocateListOrReturnSuccess) {
-  std::array<uint8_t, 16> buffer;
-  MemoryAllocator allocator(buffer.size(), buffer.data());
-
-  // Allocate less memory than the allocator provides, which should succeed.
-  void* p;
-  Error err = allocate_list_or_return_error_helper(
-      &allocator, allocator.size() / 2, &p);
-  EXPECT_EQ(err, Error::Ok);
-  EXPECT_NE(p, nullptr);
-}
-
-TEST_F(HelperMacrosTest, AllocateListOrReturnFailure) {
-  std::array<uint8_t, 16> buffer;
-  MemoryAllocator allocator(buffer.size(), buffer.data());
-
-  // Allocate more memory than the allocator provides, which should fail.
-  void* p;
-  Error err = allocate_list_or_return_error_helper(
-      &allocator, allocator.size() * 2, &p);
-  EXPECT_EQ(err, Error::MemoryAllocationFailed);
-}
-#endif // ET_HAVE_GNU_STATEMENT_EXPRESSIONS

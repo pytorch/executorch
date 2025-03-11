@@ -7,9 +7,12 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/freeable_buffer.h>
@@ -53,10 +56,9 @@ class ET_EXPERIMENTAL NamedDataMap {
    * size of the data for a given key.
    * @param buffer The buffer to load the data into. Must point to at least
    * `size` bytes of memory.
-   * @return Result containing the number of bytes written on success. This will
-   * fail if the buffer is too small.
+   * @returns an Error indicating if the load was successful.
    */
-  ET_NODISCARD virtual Result<size_t>
+  ET_NODISCARD virtual Error
   load_data_into(const char* key, void* buffer, size_t size) const = 0;
 
   /**
@@ -79,4 +81,6 @@ class ET_EXPERIMENTAL NamedDataMap {
 } // namespace runtime
 } // namespace executorch
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
