@@ -14,13 +14,17 @@ import sys
 import tempfile
 from pathlib import Path
 
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import (
+    ModuleQConfig,
+    QnnQuantizer,
+    QuantDtype,
+)
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
@@ -276,12 +280,20 @@ def make_quantizer(
     per_channel_linear=False,
     act_observer=MovingAverageMinMaxObserver,
     is_qat=False,
+    submodule_quant_config: Optional[Dict[str, ModuleQConfig]] = None,
 ):
     quantizer = QnnQuantizer()
     quantizer.add_custom_quant_annotations(custom_annotations)
-    quantizer.set_per_channel_conv_quant(per_channel_conv)
-    quantizer.set_per_channel_linear_quant(per_channel_linear)
-    quantizer.set_quant_config(quant_dtype, is_qat, act_observer)
+    quantizer.set_default_quant_config(
+        quant_dtype,
+        is_qat=is_qat,
+        is_conv_per_channel=per_channel_conv,
+        is_linear_per_channel=per_channel_linear,
+        act_observer=act_observer,
+    )
+    submodule_quant_config = submodule_quant_config or {}
+    for submodule, module_qconfig in submodule_quant_config.items():
+        quantizer.set_submodule_quant_config(submodule, module_qconfig)
     return quantizer
 
 
