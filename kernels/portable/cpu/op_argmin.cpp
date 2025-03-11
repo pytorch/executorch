@@ -53,8 +53,7 @@ Tensor& argmin_out(
     // that dimension is contiguous. Is there any particular reason we
     // shouldn't just always use this strategy since we aren't
     // otherwise capable of parallelizing reductions?
-    const auto reduction_size =
-        dim.has_value() ? in.sizes().at(dim.value()) : in.numel();
+    const int64_t reduction_size = get_reduced_dim_product(in, dim);
     const auto grain_size = std::max(
         static_cast<int64_t>(1),
         executorch::extension::internal::GRAIN_SIZE / reduction_size);
