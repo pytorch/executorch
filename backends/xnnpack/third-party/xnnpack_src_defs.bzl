@@ -7,7 +7,7 @@ load(
     _XNNPACK_SRCS = "XNNPACK_SRCS",
 )
 load("//backends/xnnpack/third-party/XNNPACK/gen:microkernels.bzl", "prod_srcs_for_arch")
-load("//third-party:glob_defs.bzl", "subdir_glob")
+load("//xplat/executorch/third-party:glob_defs.bzl", "subdir_glob")
 
 def define_xnnpack_build_src(xnnpack_build_src):
     return ["XNNPACK/{}".format(src) for src in xnnpack_build_src]
