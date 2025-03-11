@@ -38,6 +38,8 @@ def export_model(
     example_inputs: Tuple[Any, ...],
     file_name: str = "CadenceDemoModel",
     run_and_compare: bool = True,
+    eps_error: float = 1e-1,
+    eps_warn: float = 1e-5,
 ):
     # create work directory for outputs and model binary
     working_dir = tempfile.mkdtemp(dir="/tmp")
@@ -89,4 +91,6 @@ def export_model(
             inputs=example_inputs,
             ref_outputs=ref_outputs,
             working_dir=working_dir,
+            eps_error=eps_error,
+            eps_warn=eps_warn,
         )
