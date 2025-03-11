@@ -675,11 +675,15 @@ template <typename Func>
     optional<int64_t> dim,
     const Tensor& out,
     const Func& func) {
+#ifdef ET_USE_THREADPOOL
   const ssize_t reduction_size = get_reduced_dim_product(in, dim);
   const auto grain_size = std::max(
       static_cast<ssize_t>(1),
       static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
           reduction_size);
+#else // ET_USE_THREADPOOL
+  const auto grain_size = 1;
+#endif // ET_USE_THREADPOOL
   return executorch::extension::parallel_for(0, out.numel(), grain_size, func);
 }
 
@@ -694,11 +698,15 @@ template <typename Func>
     optional<ArrayRef<int64_t>> dim_list,
     const Tensor& out,
     const Func& func) {
+#ifdef ET_UE_THREADPOOL
   const ssize_t reduction_size = get_reduced_dim_product(in, dim_list);
   const auto grain_size = std::max(
       static_cast<ssize_t>(1),
       static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
           reduction_size);
+#else // ET_USE_THREADPOOL
+  const auto grain_size = 1;
+#endif // ET_USE_THREADPOOL
   return executorch::extension::parallel_for(0, out.numel(), grain_size, func);
 }
 
