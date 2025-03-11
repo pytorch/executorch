@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 load("@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl", "ATEN_OPS", "CUSTOM_OPS", "define_op_target")
 
 def define_common_targets():
@@ -29,12 +29,13 @@ def define_common_targets():
         exported_deps = all_op_targets,
     )
 
-    runtime.cxx_library(
-        name = "cpu_aten",
-        srcs = [],
-        visibility = ["//executorch/kernels/portable/..."],
-        exported_deps = [t + "_aten" for t in custom_op_targets],
-    )
+    if True in get_aten_mode_options():
+        runtime.cxx_library(
+            name = "cpu_aten",
+            srcs = [],
+            visibility = ["//executorch/kernels/portable/..."],
+            exported_deps = [t + "_aten" for t in custom_op_targets],
+        )
 
     # Only for use by op targets under //executorch. This API needs to be
     # reevaluated before becoming a public API.
