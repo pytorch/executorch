@@ -346,7 +346,7 @@ jobs:
 
   build-benchmark-app:
     name: build-benchmark-app
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@addSpec
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs:
       - set-parameters
     secrets: inherit
@@ -435,7 +435,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@addSpec
     strategy:
       matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
