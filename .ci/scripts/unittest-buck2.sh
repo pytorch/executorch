@@ -8,10 +8,14 @@ set -eux
 
 # TODO: expand this to //...
 # TODO: can't query cadence & vulkan backends
+# TODO: can't query //kernels/prim_ops because of a cpp_unittest and
+# broken code in shim to read oss.folly_cxx_tests. Sending fix but it
+# needs to propagate and we need a submodule update.
 buck2 query "//backends/apple/... + //backends/example/... + \
 //backends/mediatek/... + //backends/test/... + //backends/transforms/... + \
-//backends/xnnpack/... + //configurations/... + //kernels/portable/cpu/... + \
-//runtime/... + //schema/... + //test/... + //util/..."
+//backends/xnnpack/... + //configurations/... + //kernels/aten/... + \
+//kernels/optimized/... + //kernels/portable/... + //kernels/quantized/... + \
+//kernels/test/... + //runtime/... + //schema/... + //test/... + //util/..."
 
 # TODO: expand the covered scope of Buck targets.
 # //runtime/kernel/... is failing because //third-party:torchgen_files's shell script can't find python on PATH.
