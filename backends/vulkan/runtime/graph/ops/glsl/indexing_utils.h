@@ -104,16 +104,19 @@ ivec4 tidx_to_4bufi(
 }
 
 ivec4 nchwi_to_tidx(const int nchwi, const ivec4 sizes) {
+  const int nchwi_div_x = nchwi / sizes.x;
+  const int nchwi_div_y = nchwi_div_x / sizes.y;
   return ivec4(
       nchwi % sizes.x,
-      (nchwi / (sizes.x)) % sizes.y,
-      (nchwi / (sizes.x * sizes.y)) % sizes.z,
-      (nchwi / (sizes.x * sizes.y * sizes.z)));
+      nchwi_div_x % sizes.y,
+      nchwi_div_y % sizes.z,
+      nchwi_div_y / sizes.z);
 }
 
 int tidx_to_nchwi(const ivec4 tidx, const ivec4 sizes) {
-  return tidx.w * sizes.x * sizes.y * sizes.z + tidx.z * sizes.x * sizes.y +
-      tidx.y * sizes.x + tidx.x;
+  const int sizes_xy = sizes.x * sizes.y;
+  return tidx.w * sizes_xy * sizes.z + tidx.z * sizes_xy + tidx.y * sizes.x +
+      tidx.x;
 }
 
 // TODO(ssjia): make this function use dim order so that it can work with any
@@ -360,8 +363,8 @@ ivec4 to_texture_elem_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
   //  pos[4] is set to a placeholder value
   ivec4 pos = idx.xyzx;
   pos[BATCH_AXIS] += idx.w * sizes[BATCH_AXIS];
-  pos[packed_dim] /= 4;
-  pos.w = idx[packed_dim] % 4;
+  pos[packed_dim] >>= 2;
+  pos.w = idx[packed_dim] & 0x3;
   return pos;
 }
 

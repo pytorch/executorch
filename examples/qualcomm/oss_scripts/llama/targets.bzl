@@ -19,6 +19,7 @@ def define_common_targets():
         deps = [
             "//executorch/extension/llm/runner:stats",
             "//executorch/extension/tensor:tensor",
+             "//executorch/kernels/quantized:generated_lib",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
         ],
         exported_deps = [
