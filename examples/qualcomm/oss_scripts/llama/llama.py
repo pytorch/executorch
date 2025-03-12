@@ -25,13 +25,21 @@ from executorch.backends.qualcomm._passes.constant_i64_to_i32 import ConstantI64
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
+    annotate_linear_16a4w_in_affine_layer,
     annotate_linear_16a8w_in_affine_layer,
     annotate_matmul_16a8w,
     annotate_prefill_kv_output,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    HtpArch,
+    QcomChipset,
+    QnnExecuTorchOpPackageInfo,
+    QnnExecuTorchOpPackageOptions,
+    QnnExecuTorchOpPackagePlatform,
+    QnnExecuTorchOpPackageTarget,
+)
 
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
@@ -49,6 +57,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_multi_graph_program,
     generate_qnn_executorch_compiler_spec,
     get_capture_program_passes,
+    get_soc_to_arch_map,
     get_soc_to_chipset_map,
     update_spill_fill_size,
 )
@@ -61,6 +70,10 @@ from executorch.examples.models.llama.tokenizer.tiktoken import Tokenizer as Tik
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
+)
+from executorch.examples.qualcomm.oss_scripts.llama.custom_ops.embedding.op import (
+    CustomEmbedding,
+    custom_embedding_annotation,
 )
 from executorch.examples.qualcomm.utils import (
     make_output_dir,
@@ -414,6 +427,7 @@ class SingleLlama:
         passes_job=OrderedDict(),
         shared_buffer=False,
         verbose=False,
+        op_package_options=None,
     ):
         executorch_config = ExecutorchBackendConfig(
             # For shared buffer, user must pass the memory address
@@ -435,6 +449,7 @@ class SingleLlama:
                 soc_model=soc_model,
                 backend_options=backend_options,
                 shared_buffer=shared_buffer,
+                op_package_options=op_package_options,
             )
             skip_node_op_set = {"llama.fallback.default"}
             partitioner = QnnPartitioner(
@@ -478,6 +493,74 @@ class SingleLlama:
 
     def get_quant_attrs(self):
         return self.quant_attrs
+
+
+def prepare_op_package(
+    workspace: str, op_package_dir: str, arch: HtpArch, build_op_package: bool
+):
+    if build_op_package:
+        cur_env = os.environ.copy()
+        cur_env["PACKAGE_NAME"] = "Embedding"
+        def _run(cmd, cwd=None):
+            subprocess.run(cmd, stdout=sys.stdout, cwd=cwd, check=True, env=cur_env)
+
+        _run(["rm", "-rf", "build"], cwd=op_package_dir)
+        _run(["make", "htp_x86", "htp_aarch64", f"htp_v{arch}"], cwd=op_package_dir)
+        _run(
+            [
+                "cp",
+                f"{op_package_dir}/build/hexagon-v{arch}/libQnnEmbedding.so",
+                f"{op_package_dir}/build/hexagon-v{arch}/libQnnEmbedding_HTP.so",
+            ]
+        )
+
+    op_package_paths = [
+        f"{op_package_dir}/build/hexagon-v{arch}/libQnnEmbedding_HTP.so",
+        f"{op_package_dir}/build/aarch64-android/libQnnEmbedding.so",
+    ]
+
+    op_package_infos_HTP = QnnExecuTorchOpPackageInfo()
+    op_package_infos_HTP.interface_provider = "EmbeddingOpPackageInterfaceProvider"
+    op_package_infos_HTP.op_package_name = "Embedding"
+    op_package_infos_HTP.op_package_path = f"{workspace}/libQnnEmbedding_HTP.so"
+    op_package_infos_HTP.target = QnnExecuTorchOpPackageTarget.HTP
+    op_package_infos_HTP.custom_op_name = "qaisw.embedding.default"
+    op_package_infos_HTP.qnn_op_type_name = "Embedding"
+    op_package_infos_HTP.platform = QnnExecuTorchOpPackagePlatform.AARCH64_ANDROID
+
+    op_package_infos_aarch64_CPU = QnnExecuTorchOpPackageInfo()
+    op_package_infos_aarch64_CPU.interface_provider = (
+        "ExampleOpPackageInterfaceProvider"
+    )
+    op_package_infos_aarch64_CPU.op_package_name = "Embedding"
+    op_package_infos_aarch64_CPU.op_package_path = (
+        f"{workspace}/libQnnEmbedding.so"
+    )
+    op_package_infos_aarch64_CPU.target = QnnExecuTorchOpPackageTarget.CPU
+    op_package_infos_aarch64_CPU.custom_op_name = "qaisw.embedding.default"
+    op_package_infos_aarch64_CPU.qnn_op_type_name = "Embedding"
+    op_package_infos_aarch64_CPU.platform = (
+        QnnExecuTorchOpPackagePlatform.AARCH64_ANDROID
+    )
+
+    op_package_infos_x86_CPU = QnnExecuTorchOpPackageInfo()
+    op_package_infos_x86_CPU.interface_provider = "EmbeddingOpPackageInterfaceProvider"
+    op_package_infos_x86_CPU.op_package_name = "Embedding"
+    op_package_infos_x86_CPU.op_package_path = (
+        f"{op_package_dir}/build/x86_64-linux-clang/libQnnEmbedding.so"
+    )
+    op_package_infos_x86_CPU.target = QnnExecuTorchOpPackageTarget.CPU
+    op_package_infos_x86_CPU.custom_op_name = "qaisw.embedding.default"
+    op_package_infos_x86_CPU.qnn_op_type_name = "Embedding"
+    op_package_infos_x86_CPU.platform = QnnExecuTorchOpPackagePlatform.X86_64
+    op_package_options = QnnExecuTorchOpPackageOptions()
+    op_package_options.op_package_infos = [
+        op_package_infos_x86_CPU,
+        op_package_infos_aarch64_CPU,
+        op_package_infos_HTP,
+    ]
+
+    return op_package_options, op_package_paths
 
 
 def compile(args, pte_filename, tokenizer):
@@ -555,6 +638,15 @@ def compile(args, pte_filename, tokenizer):
             if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
                 layer.feed_forward.prepare_feedfoward_conv()
 
+    op_package_options, op_package_paths = None, None
+    if args.use_custom_embedding:
+        op_package_options, op_package_paths = prepare_op_package(
+            f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama",
+            f"{os.path.dirname(os.path.abspath(__file__))}/custom_ops/embedding",
+            get_soc_to_arch_map()[args.model],
+            True,
+        )
+
     use_fp16 = True
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
     if args.ptq:
@@ -589,6 +681,11 @@ def compile(args, pte_filename, tokenizer):
             passes_job[ConstantI64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "skip_node"
             ] = {"tokens"}
+        elif args.use_custom_embedding:
+            llama_instance_list[i].tok_embeddings = CustomEmbedding(
+                llama_instance_list[i].tok_embeddings.weight
+            )
+
         llama_instance_list[i] = convert_linear_to_conv2d(llama_instance_list[i])
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), pte_filename
@@ -597,7 +694,12 @@ def compile(args, pte_filename, tokenizer):
     if args.ptq:
         start_quantize_ts = time.time()
         custom_annotations = (annotate_matmul_16a8w,)
-        if args.llama_model == "stories110m":
+        if args.use_custom_embedding:
+            custom_annotations = custom_annotations + (
+                custom_embedding_annotation,
+                annotate_linear_16a4w_in_affine_layer,
+            )
+        elif args.llama_model == "stories110m":
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
@@ -640,6 +742,7 @@ def compile(args, pte_filename, tokenizer):
             num_sharding=args.num_sharding,
             passes_job=passes_job,
             shared_buffer=args.shared_buffer,
+            op_package_options=op_package_options,
         )
         quant_attrs = llama_instance_list[0].get_quant_attrs()
     elif args.model_mode == "hybrid":
@@ -682,14 +785,16 @@ def compile(args, pte_filename, tokenizer):
                 multiple_graphs=True,
                 weight_sharing=not args.enable_x86_64,  # x86 emulator does not support weight sharing
                 graph_name=graph_name,
+                op_package_options=op_package_options,
             )
             for graph_name in graph_names
         ]
         skip_node_op_set = {"llama.fallback.default"}
+        partitioner = QnnPartitioner(compiler_specs[i], skip_node_op_set=skip_node_op_set)
         exported_programs = [
             to_backend(
                 edge_prog.exported_program,
-                QnnPartitioner(compiler_specs[i], skip_node_op_set=skip_node_op_set),
+                partitioner,
             )
             for i, edge_prog in enumerate(edge_progs)
         ]
@@ -802,10 +907,16 @@ def compile(args, pte_filename, tokenizer):
 
     end_lowering_ts = time.time()
     logging.info(f"Time for compiling: {end_lowering_ts - start_lowering_ts}")
-    return quant_attrs
+    return quant_attrs, op_package_paths
 
 
-def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
+def inference(
+    args,
+    quant_attrs,
+    pte_filename,
+    runtime_tokenizer_path,
+    pre_gen_pte="",
+    op_package_paths=None):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
 
     if args.model_mode == "kv":
@@ -902,7 +1013,10 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], input_list="", files=[runtime_tokenizer_path])
+        files = [runtime_tokenizer_path]
+        if op_package_paths is not None:
+            files.extend(op_package_paths)
+        adb.push(inputs=[], input_list="", files=files)
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(output_path=args.artifact, callback=post_process)
@@ -1060,6 +1174,12 @@ def _build_parser():
         help="Fallback to cpu embedding operator and type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '4,32'.",
     )
 
+    parser.add_argument(
+        "--use_custom_embedding",
+        action="store_true",
+        help="flag to use custom 4-bit per-tensor embedding layer",
+    )
+
     parser.add_argument("-v", "--verbose", action="store_true")
 
     return parser
@@ -1115,7 +1235,7 @@ def export_llama(args) -> None:
         exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
 
     if args.compile_only:
-        quant_attrs = compile(args, pte_filename, tokenizer)
+        quant_attrs, _ = compile(args, pte_filename, tokenizer)
         if quant_attrs:
             json.dump(
                 {
@@ -1141,7 +1261,7 @@ def export_llama(args) -> None:
         exit(f"Finish compile_only and save to {args.artifact}")
 
     try:
-        quant_attrs = compile(args, pte_filename, tokenizer)
+        quant_attrs, op_package_paths = compile(args, pte_filename, tokenizer)
         if quant_attrs:
             logging.info(
                 f"Logit scale: {quant_attrs['scale']}; Logit offset: {quant_attrs['zero_point']}"
@@ -1155,7 +1275,9 @@ def export_llama(args) -> None:
             )
         else:
             logging.warning("Quant attributes of the logit is None.")
-        inference(args, quant_attrs, pte_filename, runtime_tokenizer_path)
+        inference(
+            args, quant_attrs, pte_filename, runtime_tokenizer_path, op_package_paths=op_package_paths
+        )
     except Exception as e:
         if args.ip and args.port != -1:
             with Client((args.ip, args.port)) as conn:

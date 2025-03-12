@@ -2,14 +2,18 @@
 Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch. Reading and following these guidelines will help you quickly get the essentials of implementing operator builder to unblock yourself and land pull requests more efficiently.
 
 ## Sections
-* [References](#references)
-* [Getting Started](#getting-started)
-    * [Identify Unsupported Operator](#identify-unsupported-operator)
-    * [Check Operator Spec](#check-operator-spec)
-    * [Implementation](#implementation)
-    * [Quantizer Annotation](#quantizer-annotation)
-* [Issues](#issues)
-* [Pull Requests](#pull-requests)
+- [Contribution for More Operators](#contribution-for-more-operators)
+  - [Sections](#sections)
+  - [References](#references)
+    - [Qualcomm AI Engine Direct](#qualcomm-ai-engine-direct)
+    - [PyTorch](#pytorch)
+  - [Getting Started](#getting-started)
+    - [Identify Unsupported Operator](#identify-unsupported-operator)
+    - [Check Operator Spec](#check-operator-spec)
+    - [Implementation](#implementation)
+    - [Quantizer Annotation](#quantizer-annotation)
+  - [Issues](#issues)
+  - [Pull Requests](#pull-requests)
 
 ## References
 ### Qualcomm AI Engine Direct
@@ -175,7 +179,8 @@ import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 # op builder will inherit NodeVisitor and have its own implementation
 # register_node_visitor for book-keeping the dictionary of target name v.s. callback
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 # the definitions required to build operator in QNN
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 # utility to get parameter value when creating tensor in QNN
