@@ -26,6 +26,7 @@ from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
@@ -41,7 +42,6 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
-from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
     external_mutable_weights_pass,
@@ -1438,7 +1438,7 @@ class EdgeProgramManager:
         else:  # apply partitioner to every method
             for name, program in self._edge_programs.items():
                 new_edge_programs[name] = to_backend(program, partitioner)
-        
+
         # collected all the named data into the named data store for deduplication
         def collect_named_data_store_outputs(
             graph_module: torch.fx.GraphModule,
@@ -1446,20 +1446,23 @@ class EdgeProgramManager:
             for node in graph_module.graph.nodes:
                 if node.target == executorch_call_delegate:
                     lbm = getattr(graph_module, node.args[0].name)
-                    assert(is_lowered_module(lbm))
+                    assert is_lowered_module(lbm)
                     data_store_output = lbm.named_data_store_output
                     if data_store_output is not None:
                         self._named_data_store.merge_named_data_store(data_store_output)
-            
+
             for _, submod, _ in get_control_flow_submodules(graph_module):
                 collect_named_data_store_outputs(submod)
-        
-        for name, program in new_edge_programs.items():
+
+        for _, program in new_edge_programs.items():
             collect_named_data_store_outputs(program.graph_module)
 
         config = EdgeCompileConfig(_check_ir_validity=False)
         return EdgeProgramManager(
-            new_edge_programs, copy.deepcopy(self._config_methods), config, named_data_store=self._named_data_store
+            new_edge_programs,
+            copy.deepcopy(self._config_methods),
+            config,
+            named_data_store=self._named_data_store,
         )
 
     @et_logger("to_executorch")
