@@ -10,6 +10,7 @@
 
 #include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
+#include <executorch/kernels/portable/cpu/util/delinearize_index.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
@@ -206,36 +207,6 @@ ET_NODISCARD inline Error resize_to_broadcast_target_size(
  */
 ET_DEPRECATED void free_broadcast_tensor(
     const executorch::aten::Tensor& broadcast_tensor);
-
-/**
- * Delinearize a flattened index to per-dimension indexes.
- *
- * @param[in] linear_index The flattened index
- * @param[in] shape The tensor shape
- * @param[out] out_indexes The per-dimension indexes
- * @param[in] out_indexes_len The maximum size of the out_indexes array
- * @returns void
- */
-void delinearize_index(
-    size_t linear_index,
-    executorch::aten::ArrayRef<Tensor::SizesType> shape,
-    size_t* out_indexes,
-    const size_t out_indexes_len);
-
-/**
- * Delinearize a flattened index to per-dimension indexes.
- *
- * @param[in] linear_index The flattened index
- * @param[in] t The tensor object
- * @param[out] out_indexes The per-dimension indexes
- * @param[in] out_indexes_len The maximum size of the out_indexes array
- * @returns void
- */
-void delinearize_index(
-    size_t linear_index,
-    const Tensor& t,
-    size_t* out_indexes,
-    const size_t out_indexes_len);
 
 /**
  * Return the linear index for broatcast_from tensor, given the indexes and
