@@ -9,9 +9,10 @@ from dataclasses import dataclass
 
 from typing import Dict, List, Optional, Tuple, Union
 
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
-from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 
 
 def enforcedmethod(func):
@@ -25,7 +26,7 @@ class PreprocessResult:
     debug_handle_map: Optional[Union[Dict[int, Tuple[int]], Dict[str, Tuple[int]]]] = (
         None
     )
-    # Data Store output created from NamedDataStore. 
+    # Data Store output created from NamedDataStore.
 
     # Named Data store contains all the named data that is stored in the PTE file,
     # but retrieveable by delegates via the NamedDataMap at runtime.

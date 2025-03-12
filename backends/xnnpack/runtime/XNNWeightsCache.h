@@ -10,24 +10,24 @@
 
 #include <xnnpack.h>
 
-#include <executorch/runtime/executor/pte_data_map.h>
-#include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/executor/pte_data_map.h>
 #include <string>
-#include <array>
 #include <unordered_map>
+#include <vector>
 
 namespace executorch {
 namespace backends {
 namespace xnnpack {
 namespace delegate {
 
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::NamedDataMap;
-using executorch::runtime::Error;
 using executorch::runtime::Result;
-using executorch::runtime::FreeableBuffer;
 
 struct PackedDataMeta {
   size_t offset;
@@ -46,12 +46,12 @@ class XNNWeightsCache {
    * Initializes the XNNWeightsCache for the next xnn_create_runtime
    */
   Error initialize_for_runtime(
-    MemoryAllocator* runtime_allocator, 
-    const NamedDataMap* named_data_map);
+      MemoryAllocator* runtime_allocator,
+      const NamedDataMap* named_data_map);
 
   /**
    * Finalizes the weights cache after the weights have been packed
-   * in xnn_create_runtime. 
+   * in xnn_create_runtime.
    *
    * This should only be called after creating the runtime. Returns
    * the name of all the packed weights used by this runtime
@@ -71,14 +71,14 @@ class XNNWeightsCache {
   /**
    * Returns the number of unpacked data
    */
-  inline size_t get_num_unpacked_data(){
+  inline size_t get_num_unpacked_data() {
     return unpacked_data_.size();
   };
 
   /**
-   * Returns the names of all unpacked data 
+   * Returns the names of all unpacked data
    */
-  inline std::vector<std::string> get_unpacked_data_names(){
+  inline std::vector<std::string> get_unpacked_data_names() {
     std::vector<std::string> names;
     for (const auto& pair : unpacked_data_to_name_) {
       names.push_back(pair.second);
@@ -89,7 +89,7 @@ class XNNWeightsCache {
   /**
    * Returns the packed data names
    */
-  inline std::vector<std::string> get_packed_data_names(){
+  inline std::vector<std::string> get_packed_data_names() {
     std::vector<std::string> names;
     for (const auto& pair : name_to_packed_data_metadata_) {
       names.push_back(pair.first);
@@ -97,24 +97,23 @@ class XNNWeightsCache {
     return names;
   };
 
-
   /**
    * Loads unpacked named data from the NamedDataMap into this XNNWeightsCache
    * and returns a pointer to the unpacked data. This unpacked data is given
-   * to XNNPACK's define_tensor APIs, and used as the cache key for look_up_or_insert.
+   * to XNNPACK's define_tensor APIs, and used as the cache key for
+   * look_up_or_insert.
    * @param[in] name The name of the data to load
    * @param[out] out the pointer to the unpacked data that was loaded
    */
   Result<const uint8_t*> load_unpacked_data(const std::string& name);
 
   /**
-   * Deletes the packed data associated with the names given. 
+   * Deletes the packed data associated with the names given.
    * Decrements the ref_count if the packed data is used by other
    * models
-   * 
+   *
    */
-   Error delete_packed_data(const std::vector<std::string>& packed_names);
-
+  Error delete_packed_data(const std::vector<std::string>& packed_names);
 
  private:
   // Runtime Allocator used to reserve memory for packed weights
@@ -157,10 +156,9 @@ class XNNWeightsCache {
   static void* offset_to_addr(XNNWeightsCache* context, size_t offset);
 
   static enum xnn_status delete_cache(XNNWeightsCache* context);
-
 };
 
 } // namespace delegate
 } // namespace xnnpack
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch
