@@ -15,6 +15,8 @@ et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
 toolchain_cmake=${script_dir}/../../../examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 toolchain_cmake=$(realpath ${toolchain_cmake})
+setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+_setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 
 et_build_root="${et_root_dir}/arm_test"
@@ -40,6 +42,13 @@ for arg in "$@"; do
       ;;
     esac
 done
+
+# Source the tools
+# This should be prepared by the setup.sh
+[[ -f ${setup_path_script} ]] \
+    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
+
+source ${setup_path_script}
 
 et_build_dir=${et_build_root}/cmake-out
 
