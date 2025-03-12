@@ -136,7 +136,10 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int8_t, Char)              \
   _(int16_t, Short)            \
   _(int32_t, Int)              \
-  _(int64_t, Long)
+  _(int64_t, Long)             \
+  _(uint16_t, UInt16)          \
+  _(uint32_t, UInt32)          \
+  _(uint64_t, UInt64)
 
 // Here `ANOTHER_INPUT` should be another variable to be forwarded to a given
 // function.
@@ -145,14 +148,20 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT, int8_t, Char)                   \
   _(ANOTHER_INPUT, int16_t, Short)                 \
   _(ANOTHER_INPUT, int32_t, Int)                   \
-  _(ANOTHER_INPUT, int64_t, Long)
+  _(ANOTHER_INPUT, int64_t, Long)                  \
+  _(ANOTHER_INPUT, uint16_t, UInt16)               \
+  _(ANOTHER_INPUT, uint32_t, UInt32)               \
+  _(ANOTHER_INPUT, uint64_t, UInt64)
 
 #define ET_FORALL_INT_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint8_t, Byte)                   \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, int8_t, Char)                    \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, int16_t, Short)                  \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, int32_t, Int)                    \
-  _(ANOTHER_INPUT1, ANOTHER_INPUT2, int64_t, Long)
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, int64_t, Long)                   \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint16_t, UInt16)                \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint32_t, UInt32)                \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint64_t, UInt64)
 
 #define ET_FORALL_INT_TYPES_AND(SCALARTYPE, _)             \
   _(uint8_t, Byte)                                         \
@@ -160,6 +169,9 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int16_t, Short)                                        \
   _(int32_t, Int)                                          \
   _(int64_t, Long)                                         \
+  _(uint16_t, UInt16)                                      \
+  _(uint32_t, UInt32)                                      \
+  _(uint64_t, Long)                                        \
   _(::executorch::runtime::ScalarTypeToCppType<            \
         ::executorch::aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
@@ -218,7 +230,10 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int32_t, Int)               \
   _(int64_t, Long)              \
   _(float, Float)               \
-  _(double, Double)
+  _(double, Double)             \
+  _(uint16_t, UInt16)           \
+  _(uint32_t, UInt32)           \
+  _(uint64_t, UInt64)
 
 // Here `ANOTHER_INPUT` should be another variable to be forwarded to a given
 // function. Not to be confused with another scalar type as in
@@ -230,7 +245,10 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT, int32_t, Int)                    \
   _(ANOTHER_INPUT, int64_t, Long)                   \
   _(ANOTHER_INPUT, float, Float)                    \
-  _(ANOTHER_INPUT, double, Double)
+  _(ANOTHER_INPUT, double, Double)                  \
+  _(ANOTHER_INPUT, uint16_t, UInt16)                \
+  _(ANOTHER_INPUT, uint32_t, UInt32)                \
+  _(ANOTHER_INPUT, uint64_t, UInt64)
 
 #define ET_FORALL_REAL_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint8_t, Byte)                    \
@@ -239,7 +257,10 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, int32_t, Int)                     \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, int64_t, Long)                    \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, float, Float)                     \
-  _(ANOTHER_INPUT1, ANOTHER_INPUT2, double, Double)
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, double, Double)                   \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint16_t, UInt16)                 \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint32_t, UInt32)                 \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint64_t, UInt64)
 
 #define ET_FORALL_REALHBF16_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint8_t, Byte)                         \
@@ -250,7 +271,10 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, float, Float)                          \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, double, Double)                        \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::executorch::aten::Half, Half)        \
-  _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::executorch::aten::BFloat16, BFloat16)
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::executorch::aten::BFloat16, BFloat16)\
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint16_t, UInt16)                      \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint32_t, UInt32)                      \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint64_t, UInt64)
 
 #define ET_FORALL_REALHBBF16_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
   ET_FORALL_REALHBF16_TYPES_WITH2(ANOTHER_INPUT2, ANOTHER_INPUT2, _)        \
@@ -266,6 +290,9 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int64_t, Long)                                         \
   _(float, Float)                                          \
   _(double, Double)                                        \
+  _(uint16_t, UInt16)                                      \
+  _(uint32_t, UInt32)                                      \
+  _(uint64_t, UInt64)                                      \
   _(::executorch::runtime::ScalarTypeToCppType<            \
         ::executorch::aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
@@ -278,6 +305,9 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int64_t, Long)                                             \
   _(float, Float)                                              \
   _(double, Double)                                            \
+  _(uint16_t, UInt16)                                          \
+  _(uint32_t, UInt32)                                          \
+  _(uint64_t, UInt64)                                          \
   _(::executorch::runtime::ScalarTypeToCppType<                \
         ::executorch::aten::ScalarType::SCALARTYPE1>::type,    \
     SCALARTYPE1)                                               \
@@ -301,6 +331,9 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT, int64_t, Long)                                   \
   _(ANOTHER_INPUT, float, Float)                                    \
   _(ANOTHER_INPUT, double, Double)                                  \
+  _(ANOTHER_INPUT, uint16_t, UInt16)                                \
+  _(ANOTHER_INPUT, uint32_t, UInt32)                                \
+  _(ANOTHER_INPUT, uint64_t, UInt64)                                \
   _(ANOTHER_INPUT,                                                  \
     ::executorch::runtime::ScalarTypeToCppType<                     \
         ::executorch::aten::ScalarType::SCALARTYPE>::type,          \
@@ -314,6 +347,9 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int64_t, Long)                                             \
   _(float, Float)                                              \
   _(double, Double)                                            \
+  _(uint16_t, UInt16)                                          \
+  _(uint32_t, UInt32)                                          \
+  _(uint64_t, UInt64)                                          \
   _(::executorch::runtime::ScalarTypeToCppType<                \
         ::executorch::aten::ScalarType::SCALARTYPE1>::type,    \
     SCALARTYPE1)                                               \
@@ -329,6 +365,9 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int64_t, Long)                                                          \
   _(float, Float)                                                           \
   _(double, Double)                                                         \
+  _(uint16_t, UInt16)                                                       \
+  _(uint32_t, UInt32)                                                       \
+  _(uint64_t, UInt64)                                                       \
   _(::executorch::runtime::ScalarTypeToCppType<                             \
         ::executorch::aten::ScalarType::SCALARTYPE1>::type,                 \
     SCALARTYPE1)                                                            \
@@ -967,7 +1006,13 @@ struct promote_types {
   ET_INTERNAL_SWITCH_CASE(                                                     \
       ::executorch::aten::ScalarType::Bits8, CTYPE_ALIAS, __VA_ARGS__)         \
   ET_INTERNAL_SWITCH_CASE(                                                     \
-      ::executorch::aten::ScalarType::Bits16, CTYPE_ALIAS, __VA_ARGS__)
+      ::executorch::aten::ScalarType::Bits16, CTYPE_ALIAS, __VA_ARGS__)        \
+  ET_INTERNAL_SWITCH_CASE(                                                     \
+      ::executorch::aten::ScalarType::UInt16, CTYPE_ALIAS, __VA_ARGS__)        \
+  ET_INTERNAL_SWITCH_CASE(                                                     \
+      ::executorch::aten::ScalarType::UInt32, CTYPE_ALIAS, __VA_ARGS__)        \
+  ET_INTERNAL_SWITCH_CASE(                                                     \
+      ::executorch::aten::ScalarType::UInt64, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_INTERNAL_SWITCH_CASE_REAL_TYPES(CTYPE_ALIAS, ...)           \
   ET_INTERNAL_SWITCH_CASE(                                             \
@@ -983,7 +1028,13 @@ struct promote_types {
   ET_INTERNAL_SWITCH_CASE(                                             \
       ::executorch::aten::ScalarType::Float, CTYPE_ALIAS, __VA_ARGS__) \
   ET_INTERNAL_SWITCH_CASE(                                             \
-      ::executorch::aten::ScalarType::Double, CTYPE_ALIAS, __VA_ARGS__)
+      ::executorch::aten::ScalarType::Double, CTYPE_ALIAS, __VA_ARGS__)\
+  ET_INTERNAL_SWITCH_CASE(                                             \
+      ::executorch::aten::ScalarType::UInt16, CTYPE_ALIAS, __VA_ARGS__)\
+  ET_INTERNAL_SWITCH_CASE(                                             \
+      ::executorch::aten::ScalarType::UInt32, CTYPE_ALIAS, __VA_ARGS__)\
+  ET_INTERNAL_SWITCH_CASE(                                             \
+      ::executorch::aten::ScalarType::UInt64, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND(ADDITIONAL, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH_CASE_REAL_TYPES(CTYPE_ALIAS, __VA_ARGS__)               \
@@ -1015,7 +1066,13 @@ struct promote_types {
   ET_INTERNAL_SWITCH_CASE(                                             \
       ::executorch::aten::ScalarType::Int, CTYPE_ALIAS, __VA_ARGS__)   \
   ET_INTERNAL_SWITCH_CASE(                                             \
-      ::executorch::aten::ScalarType::Long, CTYPE_ALIAS, __VA_ARGS__)
+      ::executorch::aten::ScalarType::Long, CTYPE_ALIAS, __VA_ARGS__)  \
+  ET_INTERNAL_SWITCH_CASE(                                             \
+      ::executorch::aten::ScalarType::UInt16, CTYPE_ALIAS, __VA_ARGS__)\
+  ET_INTERNAL_SWITCH_CASE(                                             \
+      ::executorch::aten::ScalarType::UInt32, CTYPE_ALIAS, __VA_ARGS__)\
+  ET_INTERNAL_SWITCH_CASE(                                             \
+      ::executorch::aten::ScalarType::UInt64, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_INTERNAL_SWITCH_CASE_INT_TYPES_AND(ADDITIONAL, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH_CASE_INT_TYPES(CTYPE_ALIAS, __VA_ARGS__)               \
