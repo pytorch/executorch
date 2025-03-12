@@ -7,7 +7,7 @@
  */
 
 #include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
-	
+
 #include <executorch/runtime/executor/pte_data_map.h>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
@@ -20,12 +20,12 @@
 #include <xnnpack.h>
 
 using executorch::backends::xnnpack::delegate::XNNWeightsCache;
-using executorch::runtime::MemoryAllocator;
 using executorch::extension::FileDataLoader;
 using executorch::extension::testing::TempFile;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 using executorch::runtime::internal::PteDataMap;
 
@@ -88,28 +88,29 @@ class XNNWeightsCacheTest : public ::testing::Test {
     ASSERT_EQ(loader.error(), Error::Ok);
     data_map_loader_ =
         std::make_unique<FileDataLoader>(std::move(loader.get()));
-    
+
     Result<PteDataMap> data_map = PteDataMap::create(
-      data_map_loader_.get(), 0, program_->named_data(), program_->segments());
+        data_map_loader_.get(),
+        0,
+        program_->named_data(),
+        program_->segments());
     ASSERT_EQ(data_map.error(), Error::Ok);
     data_map_ = std::make_unique<PteDataMap>(std::move(data_map.get()));
 
     memory_allocator_ = std::make_unique<MemoryAllocator>(
         memory_allocator_data_.size(), memory_allocator_data_.data());
-    	
 
     xnn_status status = xnn_initialize(nullptr);
     ASSERT_EQ(status, xnn_status_success);
   }
 
   void BuildAndRunGraphWithWeightsCache(
-    XNNWeightsCache& weight_cache,
-    const std::vector<size_t>& batches,
-    size_t input_channels,
-    size_t output_channels,
-    float* input_data,
-    float* output_data
-  ){
+      XNNWeightsCache& weight_cache,
+      const std::vector<size_t>& batches,
+      size_t input_channels,
+      size_t output_channels,
+      float* input_data,
+      float* output_data) {
     // Defining subgraph
     xnn_subgraph_t subgraph_ptr = nullptr;
     xnn_status status = xnn_create_subgraph(
@@ -137,9 +138,8 @@ class XNNWeightsCacheTest : public ::testing::Test {
 
     // Define weight
     uint32_t weight_id;
-    Result<const uint8_t*> weight_pointer = weight_cache.load_unpacked_data(
-      "weight"
-    );
+    Result<const uint8_t*> weight_pointer =
+        weight_cache.load_unpacked_data("weight");
     ASSERT_TRUE(weight_pointer.ok());
     ASSERT_TRUE(weight_pointer.get() != nullptr);
     std::vector<size_t> weight_dims{output_channels, input_channels};
@@ -156,9 +156,8 @@ class XNNWeightsCacheTest : public ::testing::Test {
 
     // Define bias
     uint32_t bias_id;
-    Result<const uint8_t*> bias_pointer = weight_cache.load_unpacked_data(
-      "bias"
-    );
+    Result<const uint8_t*> bias_pointer =
+        weight_cache.load_unpacked_data("bias");
     ASSERT_TRUE(bias_pointer.ok());
     std::vector<size_t> bias_dims{output_channels};
     status = xnn_define_tensor_value(
@@ -170,7 +169,6 @@ class XNNWeightsCacheTest : public ::testing::Test {
         XNN_INVALID_VALUE_ID,
         0,
         &bias_id);
-
 
     // Define output tensor
     uint32_t output_id;
@@ -200,7 +198,8 @@ class XNNWeightsCacheTest : public ::testing::Test {
     xnn_runtime_t runtime_ptr = nullptr;
     status = xnn_create_runtime_v3(
         subgraph_ptr, weight_cache.get(), nullptr, 0, &runtime_ptr);
-    Result<std::vector<std::string>> packed_weights_added = weight_cache.finalize_for_runtime();
+    Result<std::vector<std::string>> packed_weights_added =
+        weight_cache.finalize_for_runtime();
     ASSERT_TRUE(packed_weights_added.ok());
     ASSERT_EQ(packed_weights_added.get().size(), 1);
     ASSERT_EQ(packed_weights_added.get()[0], "weightbias");
@@ -243,44 +242,42 @@ class XNNWeightsCacheTest : public ::testing::Test {
   std::unique_ptr<MemoryAllocator> memory_allocator_;
 };
 
-
 TEST_F(XNNWeightsCacheTest, ReusePackedWeights) {
-    XNNWeightsCache weight_cache;
-    size_t padding = 32;
-    
-    std::vector<size_t> batches{1, 2, 3};
-    size_t num_batches = 1;
-    for (size_t batch_dim : batches) {
-      num_batches *= batch_dim;
-    }
-    size_t input_channels = 3;
-    size_t output_channels = 4;	
-    std::vector<float> input_tensor(num_batches * input_channels + padding, 1.0f);
-    std::vector<float> output_tensor(num_batches * output_channels, 0.0f);
-    float* input_data = input_tensor.data();
-    float* output_data = output_tensor.data();
-    weight_cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
-    BuildAndRunGraphWithWeightsCache(
-      weight_cache,
-      batches,
-      input_channels,
-      output_channels,
-      input_data,
-      output_data
-    );
+  XNNWeightsCache weight_cache;
+  size_t padding = 32;
 
-    weight_cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
-    BuildAndRunGraphWithWeightsCache(
+  std::vector<size_t> batches{1, 2, 3};
+  size_t num_batches = 1;
+  for (size_t batch_dim : batches) {
+    num_batches *= batch_dim;
+  }
+  size_t input_channels = 3;
+  size_t output_channels = 4;
+  std::vector<float> input_tensor(num_batches * input_channels + padding, 1.0f);
+  std::vector<float> output_tensor(num_batches * output_channels, 0.0f);
+  float* input_data = input_tensor.data();
+  float* output_data = output_tensor.data();
+  weight_cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  BuildAndRunGraphWithWeightsCache(
       weight_cache,
       batches,
       input_channels,
       output_channels,
       input_data,
-      output_data
-    );
-    ASSERT_EQ(weight_cache.get_num_unpacked_data(), 0);
-    weight_cache.delete_packed_data(weight_cache.get_packed_data_names());
-    std::vector<std::string> packed_data_names = weight_cache.get_packed_data_names();
-    // check packed data names have been deleted
-    ASSERT_EQ(packed_data_names.size(), 0);
+      output_data);
+
+  weight_cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  BuildAndRunGraphWithWeightsCache(
+      weight_cache,
+      batches,
+      input_channels,
+      output_channels,
+      input_data,
+      output_data);
+  ASSERT_EQ(weight_cache.get_num_unpacked_data(), 0);
+  weight_cache.delete_packed_data(weight_cache.get_packed_data_names());
+  std::vector<std::string> packed_data_names =
+      weight_cache.get_packed_data_names();
+  // check packed data names have been deleted
+  ASSERT_EQ(packed_data_names.size(), 0);
 }
