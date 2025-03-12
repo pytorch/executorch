@@ -85,11 +85,11 @@ public class BenchmarkActivity extends Activity {
         // The list of metrics we have atm includes:
         // Avg inference latency after N iterations
         // Currently the result has large variance from outliers, so only use
-        // 80% samples in the middle (trimmean 0.2)
+        // 100% samples in the middle (trimmean 0)
         Collections.sort(stats.latency);
         int resultSize = stats.latency.size();
         List<Double> usedLatencyResults =
-            stats.latency.subList(resultSize / 10, resultSize * 9 / 10);
+            stats.latency.subList(0, resultSize);
 
         results.add(
             new BenchmarkMetric(
