@@ -88,6 +88,7 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_parallel",
   "extension_threadpool",
   "portable_kernels",
 ]
@@ -130,7 +131,7 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
-  "extension_threadpool",
+  "extension_parallel",
 ]
 
 [targets.optimized_native_cpu_ops]
@@ -145,6 +146,7 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_parallel",
   "extension_threadpool",
   "portable_kernels",
 ]
@@ -223,6 +225,19 @@ deps = [
   "executorch_core",
   "extension_module",
   "extension_runner_util",
+]
+
+[targets.extension_parallel]
+buck_targets = [
+  "//extension/parallel:thread_parallel",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+  "extension_threadpool",
 ]
 
 [targets.extension_tensor]
@@ -364,7 +379,6 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
-  "extension_threadpool",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -379,7 +393,6 @@ filters = [
 deps = [
   "executorch",
   "executorch_core",
-  "extension_threadpool",
 ]
 
 [targets.xnnpack_schema]
@@ -414,6 +427,7 @@ deps = [
   "executorch",
   "executorch_core",
   "optimized_kernels",
+  "extension_parallel",
   "extension_threadpool",
   "reduce_util",
   "xnnpack_backend",
@@ -451,7 +465,7 @@ deps = [
   "executorch_core",
   "extension_data_loader",
   "extension_module",
-  "extension_threadpool",
+  "extension_parallel",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",

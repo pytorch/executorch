@@ -21,8 +21,7 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 add_library(
-  extension_threadpool threadpool.cpp threadpool_guard.cpp thread_parallel.cpp
-                       cpuinfo_utils.cpp
+  extension_threadpool threadpool.cpp threadpool_guard.cpp cpuinfo_utils.cpp
 )
 target_link_libraries(
   extension_threadpool PUBLIC executorch_core cpuinfo pthreadpool
@@ -43,7 +42,3 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-
-if(BUILD_TESTING)
-  add_subdirectory(test)
-endif()

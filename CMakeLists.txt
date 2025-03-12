@@ -751,6 +751,7 @@ if(EXECUTORCH_BUILD_PTHREADPOOL
    AND EXECUTORCH_BUILD_CPUINFO
 )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/parallel)
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
