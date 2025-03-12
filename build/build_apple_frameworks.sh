@@ -53,7 +53,6 @@ libmicrokernels-prod.a,\
 
 FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
 libcustom_ops.a,\
-libextension_parallel.a,\
 :"
 
 FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
@@ -189,6 +188,7 @@ cmake_build() {
         ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
         --log-level=VERBOSE
     cmake --build . \
+        -j 6 \
         --config "$mode" \
         --verbose
     cd ..
