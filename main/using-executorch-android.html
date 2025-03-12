@@ -574,7 +574,7 @@
 <li><p>Download the AAR.</p></li>
 <li><p>Add it to your gradle build rule as a file path.</p></li>
 </ol>
-<p>The Java package requires <code class="docutils literal notranslate"><span class="pre">fbjni</span></code> and <code class="docutils literal notranslate"><span class="pre">soloader</span></code>, and currently requires users to explicitly declare the dependency. Therefore, two more <code class="docutils literal notranslate"><span class="pre">dependencies</span></code> in gradle rule is required:</p>
+<p>An AAR file itself does not contain dependency info. The Java package requires <code class="docutils literal notranslate"><span class="pre">fbjni</span></code> and <code class="docutils literal notranslate"><span class="pre">soloader</span></code>, and currently requires users to explicitly declare the dependency. Therefore, two more <code class="docutils literal notranslate"><span class="pre">dependencies</span></code> in gradle rule is required:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
 <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.5.1&quot;</span><span class="p">)</span>
 </pre></div>
@@ -634,7 +634,12 @@ after installing and setting up the SDK, set <code class="docutils literal notra
 <div class="section" id="using-qualcomm-ai-engine-backend">
 <h4>Using Qualcomm AI Engine Backend<a class="headerlink" href="#using-qualcomm-ai-engine-backend" title="Permalink to this heading">¶</a></h4>
 <p>To use <a class="reference external" href="https://pytorch.org/executorch/main/backends-qualcomm.html#qualcomm-ai-engine-backend">Qualcomm AI Engine Backend</a>,
-after installing and setting up the SDK, set <code class="docutils literal notranslate"><span class="pre">QNN_SDK_ROOT</span></code> to the corresponding path</p>
+after installing and setting up the SDK, set <code class="docutils literal notranslate"><span class="pre">QNN_SDK_ROOT</span></code> to the corresponding path.</p>
+</div>
+<div class="section" id="using-vulkan-backend">
+<h4>Using Vulkan Backend<a class="headerlink" href="#using-vulkan-backend" title="Permalink to this heading">¶</a></h4>
+<p>To use <a class="reference external" href="https://pytorch.org/executorch/main/backends-vulkan.html#vulkan-backend">Vulkan Backend</a>,
+set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_VULKAN</span></code> to <code class="docutils literal notranslate"><span class="pre">ON</span></code>.</p>
 </div>
 </div>
 </div>
@@ -702,7 +707,7 @@ using ExecuTorch AAR package.</p>
 </div>
 <div class="section" id="java-api-reference">
 <h2>Java API reference<a class="headerlink" href="#java-api-reference" title="Permalink to this heading">¶</a></h2>
-<p>Please see <a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Java API reference</a></p>
+<p>Please see <a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Java API reference</a>.</p>
 </div>
 </div>
 
@@ -771,6 +776,7 @@ using ExecuTorch AAR package.</p>
 <li><a class="reference internal" href="#executorch-cmake-build-type">EXECUTORCH_CMAKE_BUILD_TYPE</a></li>
 <li><a class="reference internal" href="#using-mediatek-backend">Using MediaTek backend</a></li>
 <li><a class="reference internal" href="#using-qualcomm-ai-engine-backend">Using Qualcomm AI Engine Backend</a></li>
+<li><a class="reference internal" href="#using-vulkan-backend">Using Vulkan Backend</a></li>
 </ul>
 </li>
 </ul>
