@@ -83,6 +83,7 @@ def test_softmax_u85_BI(test_data):
         "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
     },
 )
+@common.SkipIfNoCorstone300
 def test_softmax_u55_BI_on_fvp(test_data):
     data, dim = test_data
     pipeline = EthosU55PipelineBI[input_t1](Softmax(dim), data, [], run_on_fvp=True)
