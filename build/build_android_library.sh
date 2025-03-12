@@ -40,6 +40,8 @@ build_android_native_library() {
     EXECUTORCH_BUILD_NEURON=OFF
   fi
 
+  EXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN:-OFF}"
+
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -60,6 +62,7 @@ build_android_native_library() {
     -DNEURON_BUFFER_ALLOCATOR_LIB="${NEURON_BUFFER_ALLOCATOR_LIB}" \
     -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
+    -DEXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN}" \
     -DCMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE}" \
     -B"${CMAKE_OUT}"
 
@@ -168,6 +171,7 @@ collect_artifacts_to_be_uploaded() {
   MINIBENCH_APP_DIR="${ARTIFACTS_DIR_NAME}/minibench"
   mkdir -p "${MINIBENCH_APP_DIR}"
   cp extension/benchmark/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
+  cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
   # Collect Java library test
   JAVA_LIBRARY_TEST_DIR="${ARTIFACTS_DIR_NAME}/library_test_dir"
   mkdir -p "${JAVA_LIBRARY_TEST_DIR}"

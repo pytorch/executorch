@@ -48,7 +48,8 @@ Runner::Runner(
     const int32_t logits_offset,
     const float temperature,
     const int eval_mode,
-    const std::string& kv_updater)
+    const std::string& kv_updater,
+    const int num_iters)
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
@@ -57,7 +58,8 @@ Runner::Runner(
       logits_offset_(logits_offset),
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
-      kv_updater_(kv_updater) {
+      kv_updater_(kv_updater),
+      num_iters_(num_iters) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
         models_path[i], Module::LoadMode::MmapUseMlockIgnoreErrors));
@@ -280,7 +282,7 @@ Error Runner::generate(
   std::unordered_map<std::string, std::vector<std::vector<Tensor>>>
       input_tensors, output_tensors;
   std::unordered_map<std::string, std::vector<std::vector<EValue>>> inputs;
-  if (!is_loaded()) {
+  if (!is_loaded() || (num_iters_ > 1)) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     for (auto method_name : method_names_) {
@@ -445,7 +447,8 @@ Error Runner::generate(
   if (stats_callback) {
     stats_callback(stats_);
   }
-
+  io_mgr_->reset_io();
+  prompt_.clear();
   return Error::Ok;
 }
 
