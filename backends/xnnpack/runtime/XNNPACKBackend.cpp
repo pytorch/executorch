@@ -29,8 +29,8 @@ using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::Result;
 using executorch::runtime::NamedDataMap;
+using executorch::runtime::Result;
 
 class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
  public:

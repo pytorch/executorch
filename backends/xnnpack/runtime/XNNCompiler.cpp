@@ -22,10 +22,10 @@ namespace xnnpack {
 namespace delegate {
 
 using executorch::runtime::Error;
-using executorch::runtime::MemoryAllocator;
-using executorch::runtime::Result;
 using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
 using executorch::runtime::NamedDataMap;
+using executorch::runtime::Result;
 
 /*
  * Provide compile-time allocation.
@@ -176,21 +176,28 @@ const uint8_t* getConstantDataPtr(
       const auto& constant_buffer = *flatbuffer_graph->constant_buffer();
       return constant_buffer[buffer_idx]->storage()->data();
     } else {
-      ConstantDataOffsetPtr constant_data_offset = flatbuffer_graph->constant_data()->Get(buffer_idx);
+      ConstantDataOffsetPtr constant_data_offset =
+          flatbuffer_graph->constant_data()->Get(buffer_idx);
       uint64_t offset = constant_data_offset->offset();
 
-      bool has_named_key = flatbuffers::IsFieldPresent(constant_data_offset, fb_xnnpack::ConstantDataOffset::VT_NAMED_KEY);
+      bool has_named_key = flatbuffers::IsFieldPresent(
+          constant_data_offset, fb_xnnpack::ConstantDataOffset::VT_NAMED_KEY);
       // If there is no tensor name
       if (!has_named_key) {
         return constant_data_ptr + offset;
       } else {
-        const std::string &data_name = constant_data_offset->named_key()->str();
-        Result<FreeableBuffer> buffer = named_data_map->get_data(data_name.c_str());
+        const std::string& data_name = constant_data_offset->named_key()->str();
+        Result<FreeableBuffer> buffer =
+            named_data_map->get_data(data_name.c_str());
         if (!buffer.ok()) {
-          ET_LOG(Error, "Failed to get constant data for key %s", data_name.c_str());
+          ET_LOG(
+              Error,
+              "Failed to get constant data for key %s",
+              data_name.c_str());
           return nullptr;
         }
-        const uint8_t* data_ptr = static_cast<const uint8_t*>(buffer.get().data());
+        const uint8_t* data_ptr =
+            static_cast<const uint8_t*>(buffer.get().data());
         loaded_buffers_from_map.push_back(std::move(buffer.get()));
         return data_ptr;
       }
@@ -253,12 +260,11 @@ Error defineTensor(
   // Get Pointer to constant data from flatbuffer, if its non-constant
   // it is a nullptr
   const uint8_t* buffer_ptr = getConstantDataPtr(
-    tensor_value, 
-    flatbuffer_graph, 
-    constant_data_ptr,
-    named_data_map,
-    loaded_buffers_from_map
-  );
+      tensor_value,
+      flatbuffer_graph,
+      constant_data_ptr,
+      named_data_map,
+      loaded_buffers_from_map);
 
   xnn_status status;
   // The type we might have to convert to
