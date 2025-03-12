@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import torch
 import torch.utils._pytree as pytree
 from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
@@ -23,7 +24,6 @@ from executorch.exir.graph_module import _get_submodule
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
-from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 
 from executorch.exir.tracer import Value
 from torch._library.fake_class_registry import FakeScriptObject
@@ -63,7 +63,9 @@ class LoweredBackendModule(torch.nn.Module):
         CompileSpec
     ]  # A list of backend-specific objects with static metadata to configure the "compilation" process.
     _original_exported_program: ExportedProgram  # The original EXIR module
-    _named_data_store_output: Optional[NamedDataStoreOutput] # Named Data serialized by the backend
+    _named_data_store_output: Optional[
+        NamedDataStoreOutput
+    ]  # Named Data serialized by the backend
 
     def __init__(
         self,
@@ -137,7 +139,7 @@ class LoweredBackendModule(torch.nn.Module):
         Returns the original EXIR module
         """
         return self._original_exported_program
-    
+
     @property
     def named_data_store_output(self) -> Optional[NamedDataStoreOutput]:
         """

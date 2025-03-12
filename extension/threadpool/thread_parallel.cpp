@@ -10,9 +10,9 @@
 #include <cinttypes>
 #include <tuple>
 
-#include <executorch/extension/parallel/thread_parallel.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
