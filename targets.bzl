@@ -1,5 +1,5 @@
-load("@fbsource//tools/build_defs:glob_defs.bzl", "subdir_glob")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/third-party:glob_defs.bzl", "subdir_glob")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
