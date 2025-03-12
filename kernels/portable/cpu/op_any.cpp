@@ -10,6 +10,8 @@
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <optional>
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -79,6 +81,11 @@ Tensor& any_dims_out(
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "any.dims_out";
 
+  const bool in_not_empty = in.numel() > 0;
+  std::optional<MapReduceOverDimListPlan> plan;
+  if ((!dim_list.has_value() || !dim_list.value().empty()) && in_not_empty) {
+    plan.emplace(in, dim_list);
+  }
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
@@ -91,12 +98,10 @@ Tensor& any_dims_out(
       } else {
         for (const auto out_ix : c10::irange(out.numel())) {
           bool any = false;
-          if (in.numel() > 0) {
-            any = map_reduce_over_dim_list<CTYPE_IN, bool>(
+          if (in_not_empty) {
+            any = plan->execute<CTYPE_IN, bool>(
                 [](CTYPE_IN v) { return static_cast<bool>(v); },
                 [](bool outv, bool acc) { return acc || outv; },
-                in,
-                dim_list,
                 out_ix);
           }
           out_data[out_ix] = static_cast<CTYPE_OUT>(any);

@@ -40,6 +40,14 @@ class Or(torch.nn.Module):
         return tensor1.logical_or(tensor2)
 
 
+class Not(torch.nn.Module):
+    aten_op = "torch.ops.aten.logical_not.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_logical_not_default"
+
+    def forward(self, tensor: torch.Tensor):
+        return torch.logical_not(tensor)
+
+
 input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
@@ -64,6 +72,10 @@ test_input: dict[input_t2] = {
 
 
 test_data = {
+    "not_rank1": (Not(), test_input["rank1"][:-1]),
+    "not_rand_rank2": (Not(), test_input["rand_rank2"][:-1]),
+    "not_rand_rank3": (Not(), test_input["rand_rank3"][:-1]),
+    "not_rand_rank4": (Not(), test_input["rand_rank4"][:-1]),
     "and_rank1": (And(), test_input["rank1"]),
     "and_rand_rank2": (And(), test_input["rand_rank2"]),
     "and_rand_rank3": (And(), test_input["rand_rank3"]),
@@ -80,6 +92,10 @@ test_data = {
 
 
 fvp_xfails = {
+    "not_rank1": "MLETORCH-706 Support ScalarType::Bool in EthosUBackend.",
+    "not_rand_rank2": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
+    "not_rand_rank3": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
+    "not_rand_rank4": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
     "and_rank1": "MLETORCH-706 Support ScalarType::Bool in EthosUBackend.",
     "and_rand_rank2": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
     "and_rand_rank3": "MLETORCH-706: Support ScalarType::Bool in EthosUBackend.",
