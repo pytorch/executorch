@@ -34,7 +34,6 @@ class TestConformer(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
         "executorch_exir_dialects_edge__ops_aten_eq_Scalar": 2,
         "executorch_exir_dialects_edge__ops_aten_where_self": 4,
-        "executorch_exir_dialects_edge__ops_aten_logical_not_default": 4,
         "executorch_exir_dialects_edge__ops_aten_any_dim": 2,
         "torch.ops.aten._assert_scalar.default": 10,
         "torch.ops.aten._local_scalar_dense.default": 1,
