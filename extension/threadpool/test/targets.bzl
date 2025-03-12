@@ -18,3 +18,15 @@ def define_common_targets():
             "//executorch/extension/threadpool:threadpool",
         ],
     )
+
+    runtime.cxx_test(
+        name = "thread_parallel_test",
+        srcs = [
+            "thread_parallel_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/runtime/kernel:thread_parallel_interface",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
