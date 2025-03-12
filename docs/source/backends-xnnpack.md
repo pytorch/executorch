@@ -1,6 +1,6 @@
 # XNNPACK Backend
 
-The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. XNNPACK is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs. 
+The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. XNNPACK is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs.
 
 ## Features
 
@@ -51,7 +51,7 @@ The XNNPACK partitioner API allows for configuration of the model delegation to 
 
 ### Quantization
 
-The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. 
+The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library.
 
 ### Configuring the XNNPACKQuantizer
 
@@ -95,7 +95,7 @@ for cal_sample in cal_samples: # Replace with representative model inputs
 
 quantized_model = convert_pt2e(prepared_model)
 ```
-For static, post-training quantization (PTQ), the post-prepare\_pt2e model should beS run with a representative set of samples, which are used to determine the quantization parameters.
+For static, post-training quantization (PTQ), the post-prepare\_pt2e model should be run with a representative set of samples, which are used to determine the quantization parameters.
 
 After `convert_pt2e`, the model can be exported and lowered using the normal ExecuTorch XNNPACK flow. For more information on PyTorch 2 quantization [here](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html).
 
