@@ -43,15 +43,14 @@ Tensor& amax_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
+  ReduceOverDimListPlan plan(in, dim_list);
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "amax.out", CTYPE, [&]() {
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     for (const auto out_ix : c10::irange(out.numel())) {
-      out_data[out_ix] = reduce_over_dim_list<CTYPE>(
+      out_data[out_ix] = plan.execute<CTYPE>(
           [](CTYPE v, CTYPE max_v) {
             return std::isnan(v) || v > max_v ? v : max_v;
           },
-          in,
-          dim_list,
           out_ix);
     }
   });
