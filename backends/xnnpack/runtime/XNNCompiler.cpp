@@ -11,7 +11,9 @@
 #include <executorch/backends/xnnpack/serialization/schema_generated.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wglobal-constructors"
@@ -22,10 +24,10 @@ namespace xnnpack {
 namespace delegate {
 
 using executorch::runtime::Error;
-using executorch::runtime::MemoryAllocator;
-using executorch::runtime::Result;
 using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
 using executorch::runtime::NamedDataMap;
+using executorch::runtime::Result;
 
 /*
  * Provide compile-time allocation.
@@ -166,6 +168,8 @@ const uint8_t* getConstantDataPtr(
     const fb_xnnpack::XNNTensorValue* tensor_value,
     GraphPtr flatbuffer_graph,
     const uint8_t* constant_data_ptr,
+    const NamedDataMap* named_data_map,
+    std::vector<FreeableBuffer>& freeable_buffers,
     XNNWeightsCache* weights_cache) {
   auto buffer_idx = tensor_value->constant_buffer_idx();
   if (buffer_idx) {
@@ -175,21 +179,40 @@ const uint8_t* getConstantDataPtr(
       const auto& constant_buffer = *flatbuffer_graph->constant_buffer();
       return constant_buffer[buffer_idx]->storage()->data();
     } else {
-      ConstantDataOffsetPtr constant_data_offset = flatbuffer_graph->constant_data()->Get(buffer_idx);
+      ConstantDataOffsetPtr constant_data_offset =
+          flatbuffer_graph->constant_data()->Get(buffer_idx);
       uint64_t offset = constant_data_offset->offset();
 
-      bool has_named_key = flatbuffers::IsFieldPresent(constant_data_offset, fb_xnnpack::ConstantDataOffset::VT_NAMED_KEY);
+      bool has_named_key = flatbuffers::IsFieldPresent(
+          constant_data_offset, fb_xnnpack::ConstantDataOffset::VT_NAMED_KEY);
       // If there is no tensor name
       if (!has_named_key) {
         return constant_data_ptr + offset;
       } else {
-        const std::string &data_name = constant_data_offset->named_key()->str();
-        Result<const uint8_t*> data_ptr = weights_cache->load_unpacked_data(data_name);
-        if (!data_ptr.ok()){
+        const std::string& data_name = constant_data_offset->named_key()->str();
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
+        Result<const uint8_t*> data_ptr =
+            weights_cache->load_unpacked_data(data_name);
+        if (!data_ptr.ok()) {
           ET_LOG(Error, "Failed to load weights from cache");
           return nullptr;
         }
         return data_ptr.get();
+#else
+        Result<FreeableBuffer> buffer =
+            named_data_map->get_data(data_name.c_str());
+        if (!buffer.ok()) {
+          ET_LOG(
+              Error,
+              "Failed to get constant data for key %s",
+              data_name.c_str());
+          return nullptr;
+        }
+        const uint8_t* data_ptr =
+            static_cast<const uint8_t*>(buffer.get().data());
+        freeable_buffers.push_back(std::move(buffer.get()));
+        return data_ptr;
+#endif
       }
     }
   }
@@ -211,6 +234,8 @@ Error defineTensor(
     std::vector<uint32_t>& input_ids,
     std::vector<uint32_t>& output_ids,
     CompileAllocator& allocator,
+    const NamedDataMap* named_data_map,
+    std::vector<FreeableBuffer>& freeable_buffers,
     XNNWeightsCache* weights_cache) {
   const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
   const fb_xnnpack::XNNQuantizedTensorValue* qtensor_value = nullptr;
@@ -249,11 +274,12 @@ Error defineTensor(
   // Get Pointer to constant data from flatbuffer, if its non-constant
   // it is a nullptr
   const uint8_t* buffer_ptr = getConstantDataPtr(
-    tensor_value, 
-    flatbuffer_graph, 
-    constant_data_ptr,
-    weights_cache
-  );
+      tensor_value,
+      flatbuffer_graph,
+      constant_data_ptr,
+      named_data_map,
+      freeable_buffers,
+      weights_cache);
 
   xnn_status status;
   // The type we might have to convert to
@@ -1989,7 +2015,8 @@ ET_NODISCARD Error XNNCompiler::compileModel(
     size_t num_bytes,
     XNNExecutor* executor,
     XNNWeightsCache* weights_cache,
-    xnn_workspace_t workspace) {
+    xnn_workspace_t workspace,
+    const NamedDataMap* named_data_map) {
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
   const uint8_t* constant_data = nullptr;
@@ -2053,11 +2080,14 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   // Invalid ids do not need to be remapped
   remapped_ids.emplace(XNN_INVALID_VALUE_ID, XNN_INVALID_VALUE_ID);
 
+  // If weight cache is not on we hold onto all the unpacked buffers
+  // and we free them at the end
+  std::vector<FreeableBuffer> unpacked_buffers;
+
   // External Ids for inputs and outputs
   std::vector<uint32_t> input_ids;
   std::vector<uint32_t> output_ids;
   Error err = Error::Ok;
-  std::vector<FreeableBuffer> loaded_buffers_from_map;
   for (auto value : *flatbuffer_graph->xvalues()) {
     err = defineTensor(
         subgraph.get(),
@@ -2068,6 +2098,8 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         input_ids,
         output_ids,
         compile_allocator,
+        named_data_map,
+        unpacked_buffers,
         weights_cache);
 
     if (err != Error::Ok) {
@@ -2092,13 +2124,17 @@ ET_NODISCARD Error XNNCompiler::compileModel(
 
   // XNNWeightsCache if weights cache is not enabled, then XNNWeightsCache
   // just manages the unpacked weights until the runtime is created.
-#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE 
-  xnn_weights_cache_t weights_cache_ptr = 
-      weights_cache->get_num_unpacked_data() > 0 ? weights_cache->get() : nullptr;
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
+  ET_CHECK_OR_RETURN_ERROR(
+      unpacked_buffers.size() == 0,
+      Internal,
+      "Weight Cache is enabled, which means unpacked buffers should be owned by the cache");
+  xnn_weights_cache_t weights_cache_ptr =
+      weights_cache->get_num_unpacked_data() > 0 ? weights_cache->get()
+                                                 : nullptr;
 #else
   xnn_weights_cache_t weights_cache_ptr = nullptr;
 #endif
-
 
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
   ET_CHECK_OR_RETURN_ERROR(
@@ -2125,13 +2161,19 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       "XNN Runtime creation failed with code: %s",
       xnn_status_to_string(status));
 
+#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
   auto packed_weights_names = weights_cache->finalize_for_runtime();
   ET_CHECK_OR_RETURN_ERROR(
       packed_weights_names.ok(),
       Internal,
-      "Failed to finalize weights cache after creating the xnn runtime"
-  )
-
+      "Failed to finalize weights cache after creating the xnn runtime")
+#else
+  for (auto& buffer : unpacked_buffers) {
+    buffer.Free();
+  }
+  Result<std::vector<std::string>> packed_weights_names =
+      std::vector<std::string>();
+#endif
 
   err = executor->initialize( // NOLINT: runtime_ptr is non-null
       runtime_ptr,

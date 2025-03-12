@@ -16,7 +16,6 @@ from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass impor
 )
 
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
-from executorch.exir._serialize._named_data_store import NamedDataStore
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     ConstantDataOffset,
@@ -31,19 +30,20 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNTensorValue,
     XValue,
 )
-from executorch.backends.xnnpack.utils.xnnpack_constants import (
-    UINT64_MAX
-)
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_input_node,
     get_param_tensor,
-    is_param_node,
     get_tensor_name,
+    is_param_node,
     PERM_NCHW_TO_NHWC,
 )
 
-from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
+from executorch.backends.xnnpack.utils.xnnpack_constants import (
+    UINT64_MAX,
+    XNN_INVALID_VALUE_ID,
+)
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from torch.export import ExportedProgram
 
 XNN_TYPE_MAP = {
@@ -51,8 +51,6 @@ XNN_TYPE_MAP = {
 }
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
-    _aligned_size,
-    _pad_to,
     CONSTANT_TENSOR_ALIGNMENT,
 )
 
@@ -589,8 +587,12 @@ class NodeVisitor:
             raise ValueError(f"Tensor from node: {get_attr_node} has no name")
 
         size = const_val.untyped_storage().nbytes()
-        xnn_graph.constant_data.append(ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key))
-        self._named_data_store.add_named_data(named_key, bytes(array), alignment=CONSTANT_TENSOR_ALIGNMENT)
+        xnn_graph.constant_data.append(
+            ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
+        )
+        self._named_data_store.add_named_data(
+            named_key, bytes(array), alignment=CONSTANT_TENSOR_ALIGNMENT
+        )
 
         return buffer_idx
 

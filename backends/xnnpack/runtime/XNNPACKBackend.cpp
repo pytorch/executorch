@@ -7,11 +7,11 @@
  */
 
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
+#include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/executor/pte_data_map.h>
-#include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
 
 #include <memory>
 #include <mutex>
@@ -21,6 +21,7 @@
 namespace executorch {
 namespace backends {
 
+using executorch::backends::xnnpack::delegate::XNNWeightsCache;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::Backend;
 using executorch::runtime::BackendExecutionContext;
@@ -30,9 +31,8 @@ using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::Result;
 using executorch::runtime::NamedDataMap;
-using executorch::backends::xnnpack::delegate::XNNWeightsCache;
+using executorch::runtime::Result;
 
 class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -90,11 +90,10 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
 #endif
 
 #ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
-    const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
-#endif
+    const std::lock_guard<std::mutex> lock_weight_cache(weights_cache_mutex_);
     weights_cache_->initialize_for_runtime(
-      context.get_runtime_allocator(),
-      named_data_map);
+        context.get_runtime_allocator(), named_data_map);
+#endif
 
     // Executor has been allocated but not constructed, ensure that runtime_ is
     // nullptr by constructing it in place here. NOTE: Since we use placement
@@ -106,7 +105,8 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
         processed->size(),
         executor,
         weights_cache_.get(),
-        workspace_.get());
+        workspace_.get(),
+        named_data_map);
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 
@@ -133,7 +133,7 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
 #endif
 
 #ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
-    const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
+    const std::lock_guard<std::mutex> lock_weights_cache(weights_cache_mutex_);
 #endif
 
     // Prepare Inputs/Outputs and Propagate Input Shapes
@@ -163,7 +163,6 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
       const std::lock_guard<std::mutex> lock(workspace_mutex_);
 #endif
 
-
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
 #ifdef ENABLE_XNNPACK_PROFILING
@@ -171,7 +170,8 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
 #endif
 
 #ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
-      const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
+      const std::lock_guard<std::mutex> lock_weights_cache(
+          weights_cache_mutex_);
       weights_cache_->delete_packed_data(executor->get_packed_data_names());
 #endif
       // XNNExecutor is not trivially destructible. Since this was constructed
@@ -186,12 +186,11 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
   std::unique_ptr<xnn_workspace, decltype(&xnn_release_workspace)> workspace_{
       nullptr,
       &xnn_release_workspace};
-  
+
   // Weights cache is global to all delegate instances.
   mutable std::mutex weights_cache_mutex_;
-  std::unique_ptr<XNNWeightsCache> weights_cache_ = 
+  std::unique_ptr<XNNWeightsCache> weights_cache_ =
       std::make_unique<XNNWeightsCache>();
-
 
   // Lock Hiearchy for Mutexes:
   // workspace_mutex_

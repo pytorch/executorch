@@ -11,10 +11,7 @@
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
 #include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
 #include <executorch/runtime/platform/compiler.h>
-
 #include <xnnpack.h>
-#include <memory>
-#include <vector>
 
 namespace executorch {
 namespace backends {
@@ -31,7 +28,8 @@ class XNNCompiler {
       size_t num_bytes,
       XNNExecutor* executor,
       XNNWeightsCache* weights_cache,
-      xnn_workspace_t workspace);
+      xnn_workspace_t workspace,
+      const NamedDataMap* named_data_map);
 };
 
 } // namespace delegate

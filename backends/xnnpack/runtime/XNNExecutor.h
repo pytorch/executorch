@@ -47,7 +47,7 @@ class XNNExecutor {
     return output_ids_.size();
   }
 
-  inline std::vector<std::string> get_packed_data_names(){
+  inline std::vector<std::string> get_packed_data_names() {
     return packed_data_names_;
   }
 
