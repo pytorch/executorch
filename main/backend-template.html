@@ -504,26 +504,48 @@
               
   <div class="section" id="backend-template">
 <h1>Backend Template<a class="headerlink" href="#backend-template" title="Permalink to this heading">¶</a></h1>
+<p>Provide a brief overview/description of the backend. At a high-level, what does it do? Consider linking to top-level vendor documentation for the target hardware family and/or framework (Core ML, XNNPACK, etc.).</p>
 <div class="section" id="features">
 <h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
+<p>List high-level features of backend, such as general operator and hardware support.</p>
 </div>
 <div class="section" id="target-requirements">
 <h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Permalink to this heading">¶</a></h2>
+<p>What hardware and software is required to run the backend on a specific device? For example, does it require specific iOS or Android OS versions? If it’s an NPU, what hardware models are supported?</p>
 </div>
 <div class="section" id="development-requirements">
 <h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Permalink to this heading">¶</a></h2>
+<p>What software and hardware is needed to create a .PTE file targeting this backend? Are there any additional dependencies that need to be installed that are not included with the ExecuTorch pip package? How does the user install them?</p>
 </div>
-<div class="section" id="lowering-a-model-to-backend-name">
-<h2>Lowering a Model to <em>Backend Name</em><a class="headerlink" href="#lowering-a-model-to-backend-name" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="using-backend-name">
+<h2>Using <em>Backend Name</em><a class="headerlink" href="#using-backend-name" title="Permalink to this heading">¶</a></h2>
+<p>This section describes the steps users need to take in order to generate a .PTE targeting this backend. Include a full code sample for exporting and lowering a model to this backend. Make sure relevant imports for the backend partitioner are included.</p>
 <div class="section" id="partitioner-api">
 <h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
+<p>What options, if any, does the partitioner take? Are there any other export-time configurations that can be applied? Document each option.</p>
 </div>
 <div class="section" id="quantization">
 <h3>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h3>
+<p>What quantization schemes does this backend support? Consider including the following, as appropriate.</p>
+<ul class="simple">
+<li><p>What operators are supported?</p></li>
+<li><p>Number of bits?</p></li>
+<li><p>Static vs dynamic activations?</p></li>
+<li><p>Weight only vs activations + weights?</p></li>
+<li><p>Symmetric vs asymmetric weights?</p></li>
+<li><p>Per-tensor, per-chanel, group/blockwise?</p></li>
+</ul>
+<p>Include a code snippet demonstrating how to perform quantization for this backend. Document, or link to, a description of the parameters that the user can specify.</p>
 </div>
 </div>
 <div class="section" id="runtime-integration">
 <h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
+<p>This section is intended to tell the user all of the steps they’ll need to take to be able to run a .PTE file on-device that is targeting the given backend.</p>
+<ul class="simple">
+<li><p>What CMake targets should they link to?</p></li>
+<li><p>How is this backend compiled from source?</p></li>
+<li><p>Is the backend bundled by default in iOS and/or Android pre-built libraries?</p></li>
+</ul>
 </div>
 </div>
 
@@ -567,7 +589,7 @@
 <li><a class="reference internal" href="#features">Features</a></li>
 <li><a class="reference internal" href="#target-requirements">Target Requirements</a></li>
 <li><a class="reference internal" href="#development-requirements">Development Requirements</a></li>
-<li><a class="reference internal" href="#lowering-a-model-to-backend-name">Lowering a Model to <em>Backend Name</em></a><ul>
+<li><a class="reference internal" href="#using-backend-name">Using <em>Backend Name</em></a><ul>
 <li><a class="reference internal" href="#partitioner-api">Partitioner API</a></li>
 <li><a class="reference internal" href="#quantization">Quantization</a></li>
 </ul>

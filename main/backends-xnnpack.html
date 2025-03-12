@@ -506,12 +506,14 @@
               
   <div class="section" id="xnnpack-backend">
 <h1>XNNPACK Backend<a class="headerlink" href="#xnnpack-backend" title="Permalink to this heading">¶</a></h1>
-<p>The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. XNNPACK is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs.</p>
+<p>The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. <a class="reference external" href="https://github.com/google/XNNPACK/tree/master">XNNPACK</a> is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs.</p>
 <div class="section" id="features">
 <h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>Wide operator support on Arm and x86 CPUs, available on any modern mobile phone.</p></li>
 <li><p>Support for a wide variety of quantization schemes and quantized operators.</p></li>
+<li><p>Supports fp32 and fp16 activations.</p></li>
+<li><p>Supports 8-bit quantization.</p></li>
 </ul>
 </div>
 <div class="section" id="target-requirements">
@@ -525,10 +527,12 @@
 </div>
 <div class="section" id="development-requirements">
 <h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Permalink to this heading">¶</a></h2>
-<p>The XNNPACK delegate does not introduce any development system requirements beyond those required by the core ExecuTorch runtime.</p>
+<p>The XNNPACK delegate does not introduce any development system requirements beyond those required by
+the core ExecuTorch runtime.</p>
 </div>
-<div class="section" id="lowering-a-model-to-xnnpack">
-<h2>Lowering a Model to XNNPACK<a class="headerlink" href="#lowering-a-model-to-xnnpack" title="Permalink to this heading">¶</a></h2>
+<hr class="docutils" />
+<div class="section" id="using-the-xnnpack-backend">
+<h2>Using the XNNPACK Backend<a class="headerlink" href="#using-the-xnnpack-backend" title="Permalink to this heading">¶</a></h2>
 <p>To target the XNNPACK backend during the export and lowering process, pass an instance of the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. The example below demonstrates this process using the MobileNet V2 model from torchvision.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
@@ -557,71 +561,67 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">verbose</span></code>: If true, print additional information during lowering.</p></li>
 </ul>
 </div>
-<div class="section" id="quantization">
-<h3>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h3>
-<p>The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library.</p>
-</div>
-<div class="section" id="configuring-the-xnnpackquantizer">
-<h3>Configuring the XNNPACKQuantizer<a class="headerlink" href="#configuring-the-xnnpackquantizer" title="Permalink to this heading">¶</a></h3>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-  <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
-  <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
-<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">get_symmetric_quantization_config</span><span class="p">())</span>
-</pre></div>
-</div>
-<p>Here, the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured for symmetric quantization, indicating that the quantized zero point is set to zero with <code class="docutils literal notranslate"><span class="pre">qmin</span> <span class="pre">=</span> <span class="pre">-127</span></code> and <code class="docutils literal notranslate"><span class="pre">qmax</span> <span class="pre">=</span> <span class="pre">127</span></code>. <code class="docutils literal notranslate"><span class="pre">get_symmetric_quantization_config()</span></code> can be configured with the following arguments:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">is_per_channel</span></code></p>
-<ul>
-<li><p>Weights are quantized across channels</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">is_qat</span></code></p>
-<ul>
-<li><p>Quantize aware training</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">is_dynamic</span></code></p>
-<ul>
-<li><p>Dynamic quantization</p></li>
-</ul>
-</li>
-</ul>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">quantization_config</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span> <span class="c1"># can configure by module type</span>
-    <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">functional</span><span class="o">.</span><span class="n">linear</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span> <span class="c1"># or torch functional op typea</span>
-    <span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="s2">&quot;foo.bar&quot;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span>  <span class="c1"># or by module fully qualified name</span>
-</pre></div>
-</div>
-<div class="section" id="quantizing-a-model-with-the-xnnpackquantizer">
-<h4>Quantizing a model with the XNNPACKQuantizer<a class="headerlink" href="#quantizing-a-model-with-the-xnnpackquantizer" title="Permalink to this heading">¶</a></h4>
-<p>After configuring the quantizer, the model can be quantized by via the <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> and <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> APIs.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-  <span class="n">prepare_pt2e</span><span class="p">,</span>
-  <span class="n">convert_pt2e</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_for_training</span>
-
-<span class="n">exported_model</span> <span class="o">=</span> <span class="n">export_for_training</span><span class="p">(</span><span class="n">model_to_quantize</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
-<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">exported_model</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
-
-<span class="k">for</span> <span class="n">cal_sample</span> <span class="ow">in</span> <span class="n">cal_samples</span><span class="p">:</span> <span class="c1"># Replace with representative model inputs</span>
-	<span class="n">prepared_model</span><span class="p">(</span><span class="n">cal_sample</span><span class="p">)</span> <span class="c1"># Calibrate</span>
-
-<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>For static, post-training quantization (PTQ), the post-prepare_pt2e model should be run with a representative set of samples, which are used to determine the quantization parameters.</p>
-<p>After <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code>, the model can be exported and lowered using the normal ExecuTorch XNNPACK flow. For more information on PyTorch 2 quantization <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">here</a>.</p>
-</div>
-</div>
 <div class="section" id="testing-the-model">
 <h3>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h3>
 <p>After generating the XNNPACK-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See <a class="reference internal" href="using-executorch-export.html#testing-the-model"><span class="std std-doc">Testing the Model</span></a> for more information.</p>
 </div>
 </div>
+<hr class="docutils" />
+<div class="section" id="quantization">
+<h2>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h2>
+<p>The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library.</p>
+<div class="section" id="supported-quantization-schemes">
+<h3>Supported Quantization Schemes<a class="headerlink" href="#supported-quantization-schemes" title="Permalink to this heading">¶</a></h3>
+<p>The XNNPACK delegate supports the following quantization schemes:</p>
+<ul class="simple">
+<li><p>8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).</p>
+<ul>
+<li><p>Supports both static and dynamic activations.</p></li>
+<li><p>Supports per-channel and per-tensor schemes.</p></li>
+<li><p>Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators.</p></li>
+</ul>
+</li>
+</ul>
+<p>Weight-only quantization is not currently supported on XNNPACK.</p>
+</div>
+<div class="section" id="bit-quantization-using-the-pt2e-flow">
+<h3>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Permalink to this heading">¶</a></h3>
+<p>To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model:</p>
+<ol class="arabic simple">
+<li><p>Create an instance of the <code class="docutils literal notranslate"><span class="pre">XnnpackQuantizer</span></code> class. Set quantization parameters.</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export_for_training</span></code> to prepare for quantization.</p></li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
+<li><p>For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
+<li><p>Export and lower the model using the standard flow.</p></li>
+</ol>
+<p>The output of <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">XNNPACKQuantizer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_symmetric_quantization_config</span>
+
+<span class="n">qparams</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="c1"># (1)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">qparams</span><span class="p">)</span>
+
+<span class="n">training_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span> <span class="c1"># (2)</span>
+<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_ep</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span> <span class="c1"># (3)</span>
+
+<span class="k">for</span> <span class="n">cal_sample</span> <span class="ow">in</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)]:</span> <span class="c1"># Replace with representative model inputs</span>
+	<span class="n">prepared_model</span><span class="p">(</span><span class="n">cal_sample</span><span class="p">)</span> <span class="c1"># (4) Calibrate</span>
+
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span> <span class="c1"># (5)</span>
+
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span> <span class="c1"># (6)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()],</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>See <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
+</div>
+</div>
+<hr class="docutils" />
 <div class="section" id="runtime-integration">
 <h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
 <p>To run the model on-device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="getting-started.html#running-on-device"><span class="std std-doc">Running on Device</span></a> for more information.</p>
@@ -692,14 +692,14 @@
 <li><a class="reference internal" href="#features">Features</a></li>
 <li><a class="reference internal" href="#target-requirements">Target Requirements</a></li>
 <li><a class="reference internal" href="#development-requirements">Development Requirements</a></li>
-<li><a class="reference internal" href="#lowering-a-model-to-xnnpack">Lowering a Model to XNNPACK</a><ul>
+<li><a class="reference internal" href="#using-the-xnnpack-backend">Using the XNNPACK Backend</a><ul>
 <li><a class="reference internal" href="#partitioner-api">Partitioner API</a></li>
-<li><a class="reference internal" href="#quantization">Quantization</a></li>
-<li><a class="reference internal" href="#configuring-the-xnnpackquantizer">Configuring the XNNPACKQuantizer</a><ul>
-<li><a class="reference internal" href="#quantizing-a-model-with-the-xnnpackquantizer">Quantizing a model with the XNNPACKQuantizer</a></li>
+<li><a class="reference internal" href="#testing-the-model">Testing the Model</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#testing-the-model">Testing the Model</a></li>
+<li><a class="reference internal" href="#quantization">Quantization</a><ul>
+<li><a class="reference internal" href="#supported-quantization-schemes">Supported Quantization Schemes</a></li>
+<li><a class="reference internal" href="#bit-quantization-using-the-pt2e-flow">8-bit Quantization using the PT2E Flow</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#runtime-integration">Runtime Integration</a></li>
