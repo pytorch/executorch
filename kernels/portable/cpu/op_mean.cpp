@@ -45,6 +45,7 @@ Tensor& mean_dim_out(
       InvalidArgument,
       out);
 
+  MapReduceOverDimListPlan plan(in, dim_list);
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "mean.out", CTYPE_IN, [&] {
     ET_SWITCH_FLOATHBF16_TYPES(
         out.scalar_type(), ctx, "mean.out", CTYPE_OUT, [&] {
@@ -53,11 +54,9 @@ Tensor& mean_dim_out(
           for (const auto out_ix : c10::irange(out.numel())) {
             CTYPE_OUT sum = 0;
             if (in.numel() > 0) {
-              sum = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
+              sum = plan.execute<CTYPE_IN, CTYPE_OUT>(
                   [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
                   [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
-                  in,
-                  dim_list,
                   out_ix);
             }
             out_data[out_ix] = sum / static_cast<float>(num);
