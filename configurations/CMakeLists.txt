@@ -25,7 +25,7 @@ endif()
 set(_common_compile_options -Wno-deprecated-declarations)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/util/build/Codegen.cmake)
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   # Merge optimized and portable definitions, taking optimized where available.
