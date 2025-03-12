@@ -1280,25 +1280,33 @@ def generate_qnn_executorch_compiler_spec(
 
 def get_soc_to_arch_map():
     return {
-        "SSG2115P": HtpArch.V73,
-        "SM8750": HtpArch.V79,
-        "SM8650": HtpArch.V75,
-        "SM8550": HtpArch.V73,
-        "SM8475": HtpArch.V69,
-        "SM8450": HtpArch.V69,
         "SA8295": HtpArch.V68,
+        "SM8450": HtpArch.V69,
+        "SM8475": HtpArch.V69,
+        "SM8550": HtpArch.V73,
+        "SM8650": HtpArch.V75,
+        "SM8750": HtpArch.V79,
+        "SSG2115P": HtpArch.V73,
+        "SSG2125P": HtpArch.V73,
+        "SXR1230P": HtpArch.V73,
+        "SXR2230P": HtpArch.V69,
+        "SXR2330P": HtpArch.V79,
     }
 
 
 def get_soc_to_chipset_map():
     return {
-        "SSG2115P": QcomChipset.SSG2115P,
-        "SM8750": QcomChipset.SM8750,
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
         "SA8295": QcomChipset.SA8295,
+        "SM8450": QcomChipset.SM8450,
+        "SM8475": QcomChipset.SM8475,
+        "SM8550": QcomChipset.SM8550,
+        "SM8650": QcomChipset.SM8650,
+        "SM8750": QcomChipset.SM8750,
+        "SSG2115P": QcomChipset.SSG2115P,
+        "SSG2125P": QcomChipset.SSG2125P,
+        "SXR1230P": QcomChipset.SXR1230P,
+        "SXR2230P": QcomChipset.SXR2230P,
+        "SXR2330P": QcomChipset.SXR2330P,
     }
 
 
