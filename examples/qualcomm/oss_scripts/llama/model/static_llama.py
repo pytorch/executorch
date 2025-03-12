@@ -19,9 +19,11 @@ from executorch.examples.models.llama.rope import precompute_freqs_cis
 def apply_rotary_emb_single(
     x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
 ) -> torch.Tensor:
-    # Change to RoPE of huggingface version
+    # The implementation of RoPE in HuggingFace processes query and key with two half instead of interleaved way.
+    # The main difference is stride in StrideSlice op. For interleaved way, stride is two which is not friendly for HTP backend.
+    # Ref: https://github.com/huggingface/transformers/issues/25199
     x_r, x_i = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
-    # brodcast for batch_prefill mode input x
+    # broadcast for batch_prefill mode input x
     if x.dim() == 4:
         freqs_cos = freqs_cos[None, None, :, :]
         freqs_sin = freqs_sin[None, None, :, :]
