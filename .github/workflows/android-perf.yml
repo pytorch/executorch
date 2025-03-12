@@ -371,7 +371,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@addSpec
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@addNewJsonOutput
     needs:
       - set-parameters
       - prepare-test-specs
