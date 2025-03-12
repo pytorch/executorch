@@ -20,22 +20,36 @@ import torch
 
 logger = logging.getLogger(__name__)
 try:
-    import tosa_reference_model
+    import tosa_reference_model  # type: ignore[import-untyped]
 except ImportError:
     tosa_reference_model = None
-from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
+from executorch.backends.arm.arm_backend import (  # type: ignore[import-not-found]
+    get_tosa_spec,
+    is_tosa,
+)
 
-from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.exir import ExecutorchProgramManager, ExportedProgram
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.backends.arm.test.conftest import (  # type: ignore[import-not-found]
+    is_option_enabled,
+)
+from executorch.backends.arm.tosa_specification import (  # type: ignore[import-not-found]
+    TosaSpecification,
+)
+from executorch.exir import (  # type: ignore[import-not-found]
+    ExecutorchProgramManager,
+    ExportedProgram,
+)
+from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
+    CompileSpec,
+)
+from executorch.exir.lowered_backend_module import (  # type: ignore[import-not-found]
+    LoweredBackendModule,
+)
 from packaging.version import Version
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
 from torch.testing._internal.common_utils import torch_to_numpy_dtype_dict
-from tosa import TosaGraph
+from tosa import TosaGraph  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
@@ -148,16 +162,16 @@ def get_output_quantization_params(
     for node in output_nodes:
         if node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
             quant_params[node] = QuantizationParams(
-                node_name=node.args[0].name,
-                scale=node.args[1],
-                zp=node.args[2],
-                qmin=node.args[3],
-                qmax=node.args[4],
-                dtype=node.args[5],
+                node_name=node.args[0].name,  # type: ignore
+                scale=node.args[1],  # type: ignore
+                zp=node.args[2],  # type: ignore
+                qmin=node.args[3],  # type: ignore
+                qmax=node.args[4],  # type: ignore
+                dtype=node.args[5],  # type: ignore
             )
         else:
-            quant_params[node] = None
-    return quant_params
+            quant_params[node] = None  # type: ignore[assignment]
+    return quant_params  # type: ignore[return-value]
 
 
 class TosaReferenceModelDispatch(TorchFunctionMode):
@@ -243,7 +257,7 @@ def run_corstone(
     input_names = get_input_names(exported_program)
     input_paths = []
     for input_name, input_ in zip(input_names, inputs):
-        input_path = save_bytes(intermediate_path, input_, input_name)
+        input_path = save_bytes(intermediate_path.as_posix(), input_, input_name)
         input_paths.append(input_path)
 
     out_path = os.path.join(intermediate_path, "out")
@@ -348,7 +362,7 @@ def prep_data_for_save(
     quant_param: Optional[QuantizationParams] = None,
 ):
     if isinstance(data, torch.Tensor):
-        data_np = np.array(data.detach(), order="C").astype(
+        data_np = np.array(data.detach(), order="C").astype(  # type: ignore[var-annotated]
             torch_to_numpy_dtype_dict[data.dtype]
         )
     else:

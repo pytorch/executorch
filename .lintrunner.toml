@@ -320,7 +320,6 @@ exclude_patterns = [
     '**/third-party/**',
     'scripts/check_binary_dependencies.py',
     'profiler/test/test_profiler_e2e.py',
-    'backends/arm/test/**',
 ]
 command = [
     'python',

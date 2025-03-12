@@ -83,7 +83,7 @@ def get_args():
     return args
 
 
-def run_external_cmd(cmd: []):
+def run_external_cmd(cmd: list[str]):
     print("CALL:", *cmd, sep=" ")
     try:
         subprocess.check_call(cmd)

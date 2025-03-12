@@ -13,14 +13,20 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
-from executorch.backends.arm.test.runner_utils import (
+from executorch.backends.arm.arm_backend import (  # type: ignore[import-not-found]
+    ArmCompileSpecBuilder,
+)
+from executorch.backends.arm.test.runner_utils import (  # type: ignore[import-not-found]
     arm_executor_runner_exists,
     corstone300_installed,
     corstone320_installed,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.backends.arm.tosa_specification import (  # type: ignore[import-not-found]
+    TosaSpecification,
+)
+from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
+    CompileSpec,
+)
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:
@@ -193,7 +199,7 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
 
 
 def parametrize(
-    arg_name: str, test_data: dict[str, Any], xfails: dict[str, str] = None
+    arg_name: str, test_data: dict[str, Any], xfails: dict[str, str] | None = None
 ):
     """
     Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
