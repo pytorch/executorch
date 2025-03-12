@@ -113,7 +113,7 @@ after installing and setting up the SDK, set `QNN_SDK_ROOT` to the corresponding
 #### Using Vulkan Backend
 
 To use [Vulkan Backend](https://pytorch.org/executorch/main/backends-vulkan.html#vulkan-backend),
-after installing and setting up the SDK, set `EXECUTORCH_BUILD_VULKAN` to `ON`.
+set `EXECUTORCH_BUILD_VULKAN` to `ON`.
 
 ## Android Backends
 
