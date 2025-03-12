@@ -37,7 +37,6 @@ def define_common_targets():
                 "//executorch/kernels/optimized:libblas{}".format(mkl_dep),
                 "//executorch/kernels/optimized:libvec",
                 "//executorch/extension/kernel_util:kernel_util",
-                "//executorch/extension/parallel:thread_parallel",
                 "//executorch/extension/threadpool:threadpool",
             ],
             deps = [
