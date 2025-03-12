@@ -38,6 +38,11 @@ class StaticKVCache {
     reset();
   }
 
+  StaticKVCache(const StaticKVCache& other) = delete;
+  StaticKVCache& operator=(const StaticKVCache& other) = delete;
+  StaticKVCache(StaticKVCache&& other) = delete;
+  StaticKVCache& operator=(StaticKVCache&& other) = delete;
+
   ~StaticKVCache() {
     allocator_.deallocate(data_, data_size_);
   }
@@ -200,6 +205,15 @@ class StaticAttentionMask {
     reset();
   }
 
+  StaticAttentionMask(const StaticAttentionMask& other) = delete;
+  StaticAttentionMask& operator=(const StaticAttentionMask& other) = delete;
+  StaticAttentionMask(StaticAttentionMask&& other) = delete;
+  StaticAttentionMask& operator=(StaticAttentionMask&& other) = delete;
+
+  ~StaticAttentionMask() {
+    allocator_.deallocate(data_, data_size_);
+  }
+
   /**
    * Reset the mask to the state where the cache contains no valid data.
    */
@@ -315,7 +329,7 @@ class StaticAttentionIOManager {
     input_pos_ += update_len;
     kCaches_.update(method, k_cache_output_indices, update_len);
     vCaches_.update(method, v_cache_output_indices, update_len);
-    for (auto it : attentionMasks_) {
+    for (auto& it : attentionMasks_) {
       it.second.updateCacheMask(update_len);
     }
   }
@@ -324,7 +338,7 @@ class StaticAttentionIOManager {
     input_pos_ = 0;
     kCaches_.reset();
     vCaches_.reset();
-    for (auto it : attentionMasks_) {
+    for (auto& it : attentionMasks_) {
       it.second.reset();
     }
   }
