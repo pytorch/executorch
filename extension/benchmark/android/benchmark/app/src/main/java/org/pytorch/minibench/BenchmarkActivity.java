@@ -103,7 +103,6 @@ public class BenchmarkActivity extends Activity {
                 "trimmean_inference_latency(ms)",
                 usedLatencyResults.stream().mapToDouble(l -> l).average().orElse(0.0f),
                 0.0f));
-
         // Model load time
         results.add(
             new BenchmarkMetric(
