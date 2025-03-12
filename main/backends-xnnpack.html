@@ -613,7 +613,7 @@
 <span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>For static, post-training quantization (PTQ), the post-prepare_pt2e model should beS run with a representative set of samples, which are used to determine the quantization parameters.</p>
+<p>For static, post-training quantization (PTQ), the post-prepare_pt2e model should be run with a representative set of samples, which are used to determine the quantization parameters.</p>
 <p>After <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code>, the model can be exported and lowered using the normal ExecuTorch XNNPACK flow. For more information on PyTorch 2 quantization <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">here</a>.</p>
 </div>
 </div>
