@@ -53,6 +53,7 @@ libmicrokernels-prod.a,\
 
 FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
 libcustom_ops.a,\
+libextension_threadpool.a,\
 :"
 
 FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
