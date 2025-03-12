@@ -11,8 +11,8 @@
 #include <executorch/kernels/optimized/utils/math_utils.h>
 #include <executorch/kernels/optimized/utils/unroll.h>
 
+#include <executorch/extension/parallel/thread_parallel.h>
 #include <executorch/runtime/core/portable_type/bfloat16.h>
-#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 #include <array>
 
