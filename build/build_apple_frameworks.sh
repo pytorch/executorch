@@ -188,7 +188,6 @@ cmake_build() {
         ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
         --log-level=VERBOSE
     cmake --build . \
-        -j 6 \
         --config "$mode" \
         --verbose
     cd ..
