@@ -9,15 +9,13 @@ import unittest
 import torch
 
 from executorch.exir import to_edge
+from executorch.exir.backend.backend_api import to_backend
 
 from executorch.exir.backend.test.backend_with_named_data_map import (
     BackendWithNamedDataMap,
-    BackendWithNDMPartitioner
+    BackendWithNDMPartitioner,
 )
-from executorch.exir.backend.backend_api import to_backend
 
-from torch.testing import FileCheck
-from torch.export.exported_program import ExportedProgram
 
 class TestBackendWithNamedDataMap(unittest.TestCase):
     def test_lowered_backend_module_has_output(self):
@@ -36,7 +34,7 @@ class TestBackendWithNamedDataMap(unittest.TestCase):
 
         self.assertTrue("aten.add.Tensor" in stored_data)
         self.assertTrue(buffer_entries[0].buffer == bytes(1))
-    
+
     def test_named_data_with_partitioner(self):
         class M(torch.nn.Module):
             def forward(self, x):
@@ -51,7 +49,7 @@ class TestBackendWithNamedDataMap(unittest.TestCase):
 
         ndm_output = ep._named_data_store.get_named_data_store_output()
         buffer_entries = ndm_output.buffers
-        stored_data =ndm_output.pte_data
+        stored_data = ndm_output.pte_data
         self.assertEqual(len(buffer_entries), 3)
         self.assertTrue("aten.add.Tensor" in stored_data)
         self.assertTrue("aten.sub.Tensor" in stored_data)
@@ -63,12 +61,12 @@ class TestBackendWithNamedDataMap(unittest.TestCase):
                 y = x * x
                 y = torch.cos(y)
                 return torch.sin(y)
-            
+
             def false_branch(self, x):
                 return torch.sin(x)
 
             def forward(self, x, y):
-                z = x/y
+                z = x / y
                 z = torch.cond(z > 1, self.true_branch, self.false_branch, [x])
                 return z - z
 
@@ -77,7 +75,7 @@ class TestBackendWithNamedDataMap(unittest.TestCase):
 
         ndm_output = ep._named_data_store.get_named_data_store_output()
         buffer_entries = ndm_output.buffers
-        stored_data =ndm_output.pte_data
+        stored_data = ndm_output.pte_data
         self.assertEqual(len(buffer_entries), 4)
         self.assertTrue("aten.sub.Tensor" in stored_data)
         self.assertTrue("aten.div.Tensor" in stored_data)

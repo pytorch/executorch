@@ -29,7 +29,9 @@
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
 #include <executorch/runtime/core/result.h>
 #include <fstream>
+#include <functional>
 #include <limits>
+#include <unordered_set>
 
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
@@ -97,6 +99,7 @@ static Result<Encoder> _load_encoder(const std::string& path) {
 
   Encoder encoder;
   std::string line;
+  std::unordered_set<std::uint64_t> ranks;
   while (std::getline(file, line)) {
     auto [token, rank] = ET_UNWRAP(_parse(line));
 
@@ -105,28 +108,20 @@ static Result<Encoder> _load_encoder(const std::string& path) {
         InvalidArgument,
         "duplicate item: %s",
         line.c_str());
+
+    ET_CHECK_OR_RETURN_ERROR(
+        ranks.insert(rank).second,
+        InvalidArgument,
+        "duplicate rank: %s",
+        line.c_str());
   }
 
   return encoder;
 }
 
-static Result<Decoder> _build_decoder(const Encoder& encoder) {
-  Decoder decoder;
-  for (const auto& [k, v] : encoder) {
-    decoder.emplace(v, k);
-  }
-
-  ET_CHECK_OR_RETURN_ERROR(
-      encoder.size() == decoder.size(),
-      InvalidArgument,
-      "duplicate items in encoder");
-
-  return decoder;
-}
-
 static std::vector<uint64_t> _byte_pair_merge(
     const std::string& piece,
-    const std::unordered_map<std::string, uint64_t>& ranks,
+    const StringIntegerMap<>& ranks,
     std::function<uint64_t(uint64_t, uint64_t)> func) {
   // This is a vector of (start, rank).
   // The rank is of the byte pair starting at position start.
@@ -145,10 +140,7 @@ static std::vector<uint64_t> _byte_pair_merge(
       auto s = parts[start_idx].first;
       auto e = parts[start_idx + skip + 2].first;
       auto key = piece.substr(s, e - s);
-      auto iter = ranks.find(key);
-      if (iter != ranks.end()) {
-        return iter->second;
-      }
+      return ranks.tryGetInteger(key);
     }
     return std::nullopt;
   };
@@ -230,11 +222,11 @@ static std::vector<uint64_t> _byte_pair_merge(
 
 static std::vector<uint64_t> _byte_pair_encode(
     const std::string& piece,
-    const Encoder& encoder) {
+    const StringIntegerMap<>& tokenizer) {
   if (piece.size() == 1) {
-    auto iter = encoder.find(piece);
-    if (iter != encoder.end()) {
-      return std::vector<uint64_t>({iter->second});
+    const auto result = tokenizer.tryGetInteger(piece);
+    if (result) {
+      return std::vector<uint64_t>(*result);
     } else {
       // TODO: is it possible?
       return {};
@@ -242,11 +234,11 @@ static std::vector<uint64_t> _byte_pair_encode(
   }
 
   return _byte_pair_merge(
-      piece, encoder, [&piece, &encoder](uint64_t start, uint64_t stop) {
+      piece, tokenizer, [&piece, &tokenizer](uint64_t start, uint64_t stop) {
         std::string key = piece.substr(start, stop - start);
-        auto iter = encoder.find(key);
-        if (iter != encoder.end()) {
-          return iter->second;
+        const auto result = tokenizer.tryGetInteger(key);
+        if (result) {
+          return *result;
         } else {
           // TODO: what if key does not exist? Should we return `unknown`?
           // assert(false); // ??
@@ -278,7 +270,7 @@ Tiktoken::_split_with_allowed_special_token(
       break;
     }
 
-    if (allowed_special.count(special) == 1) {
+    if (allowed_special.tryGetInteger(special).has_value()) {
       // Found an allowed special token, split the text with it.
 #if __cplusplus >= 202002L
       return std::make_pair(
@@ -302,13 +294,13 @@ void Tiktoken::_encode(
   std::string piece;
   assert(_regex);
   while (re2::RE2::FindAndConsume(&input, *_regex, &piece)) {
-    auto iter = _encoder.find(piece);
-    if (iter != _encoder.end()) {
+    const auto result = _token_map->tryGetInteger(piece);
+    if (result) {
       last_piece_token_len = 1;
-      ret.push_back(iter->second);
+      ret.push_back(*result);
       continue;
     }
-    auto tokens = _byte_pair_encode(piece, _encoder);
+    auto tokens = _byte_pair_encode(piece, *_token_map);
     last_piece_token_len = tokens.size();
     ret.insert(ret.end(), tokens.begin(), tokens.end());
   }
@@ -328,16 +320,14 @@ std::pair<std::vector<uint64_t>, uint64_t> Tiktoken::_encode_with_special_token(
     _encode(sub_input, tokens, last_piece_token_len);
 
     if (special) {
-      uint64_t token = 0;
-      try {
-        token = _special_token_encoder.at(*special);
-      } catch (const std::out_of_range&) {
+      const auto result = _special_token_map->tryGetInteger(*special);
+      if (!result) {
         // Should never go here, since special pattern includes all special
         // chars.
         ET_CHECK_MSG(false, "unknown special token: %s", special->c_str());
       }
 
-      tokens.push_back(token);
+      tokens.push_back(*result);
       last_piece_token_len = 0;
     } else {
       break;
@@ -380,11 +370,10 @@ Tiktoken::Tiktoken(
 }
 
 Error Tiktoken::load(const std::string& path) {
-  _encoder = ET_UNWRAP(_load_encoder(path));
-  _special_token_encoder = _build_special_token_encoder(_encoder.size());
-
-  _decoder = ET_UNWRAP(_build_decoder(_encoder));
-  _special_token_decoder = ET_UNWRAP(_build_decoder(_special_token_encoder));
+  auto encoder = ET_UNWRAP(_load_encoder(path));
+  _token_map.emplace(StringIntegerMap<>(encoder));
+  auto special_token_encoder = _build_special_token_encoder(encoder.size());
+  _special_token_map.emplace(StringIntegerMap<>(special_token_encoder));
 
   _regex = _create_regex(_pattern);
   // Warmup re2 as it is slow on the first run, void the return value as it's
@@ -392,14 +381,14 @@ Error Tiktoken::load(const std::string& path) {
   // https://github.com/google/re2/blob/6dcd83d60f7944926bfd308cc13979fc53dd69ca/re2/fuzzing/re2_fuzzer.cc#L136-L141
   (void)_regex->ReverseProgramSize();
 
-  _special_token_regex = _build_special_token_regex(_special_token_encoder);
+  _special_token_regex = _build_special_token_regex(special_token_encoder);
   // Same as above, warm up re2
   (void)_special_token_regex->ReverseProgramSize();
 
   // initialize vocab_size, bos_tok, eos_tok
-  vocab_size_ = _encoder.size() + _special_token_encoder.size();
-  bos_tok_ = _special_token_encoder.at(_special_tokens->at(_bos_token_index));
-  eos_tok_ = _special_token_encoder.at(_special_tokens->at(_eos_token_index));
+  vocab_size_ = encoder.size() + special_token_encoder.size();
+  bos_tok_ = special_token_encoder.at(_special_tokens->at(_bos_token_index));
+  eos_tok_ = special_token_encoder.at(_special_tokens->at(_eos_token_index));
 
   initialized_ = true;
   return Error::Ok;
@@ -410,7 +399,7 @@ Tiktoken::encode(const std::string& text, int8_t bos, int8_t eos) const {
   if (!initialized_) {
     return Error::NotSupported;
   }
-  auto res = _encode_with_special_token(text, _special_token_encoder).first;
+  auto res = _encode_with_special_token(text, *_special_token_map).first;
   for (auto i = 0; i < bos; ++i) {
     res.insert(res.begin(), bos_tok_);
   }
@@ -425,21 +414,19 @@ Result<std::string> Tiktoken::decode(uint64_t prev, uint64_t cur) const {
   ET_CHECK_OK_OR_RETURN_ERROR(Tokenizer::decode_verify(cur));
   std::string ret;
 
-  std::string token_bytes;
-  auto iter = _decoder.find(cur);
-  if (iter != _decoder.end()) {
-    token_bytes = iter->second;
-  } else {
-    iter = _special_token_decoder.find(cur);
-    if (iter != _special_token_decoder.end()) {
-      token_bytes = iter->second;
-    } else {
+  std::string_view token_bytes;
+  auto result = _token_map->tryGetString(cur);
+  if (!result) {
+    result = _special_token_map->tryGetString(cur);
+    if (!result) {
       ET_CHECK_MSG(false, "unknown token: %" PRIu64, cur);
+    } else {
+      token_bytes = *result;
     }
+  } else {
+    token_bytes = *result;
   }
-  ret += token_bytes;
-
-  return ret;
+  return std::string(token_bytes);
 }
 // -------------------------public method end-------------------------------
 

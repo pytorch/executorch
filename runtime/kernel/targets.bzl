@@ -51,6 +51,20 @@ def define_common_targets():
         preprocessor_flags = ["-DMAX_KERNEL_NUM=1"],
     )
 
+    runtime.cxx_library(
+        name = "thread_parallel_interface",
+        exported_headers = ["thread_parallel_interface.h"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
+            "//executorch/runtime/platform:platform",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
 

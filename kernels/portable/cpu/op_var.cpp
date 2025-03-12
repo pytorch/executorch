@@ -32,23 +32,20 @@ void compute_variance(
       out_data[out_ix] = NAN;
     }
   } else {
+    MapReduceOverDimListPlan plan(in, dim_list);
     for (const auto out_ix : c10::irange(out.numel())) {
-      CTYPE_OUT sum = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
+      CTYPE_OUT sum = plan.execute<CTYPE_IN, CTYPE_OUT>(
           [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
           [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
-          in,
-          dim_list,
           out_ix);
       CTYPE_OUT mean = sum / static_cast<CTYPE_OUT>(num);
-      CTYPE_OUT sum2 = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
+      CTYPE_OUT sum2 = plan.execute<CTYPE_IN, CTYPE_OUT>(
           [mean](CTYPE_IN v) {
             return (
                 (static_cast<CTYPE_OUT>(v) - mean) *
                 (static_cast<CTYPE_OUT>(v) - mean));
           },
           [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
-          in,
-          dim_list,
           out_ix);
       out_data[out_ix] = sum2 / denominator;
     }

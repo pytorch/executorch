@@ -31,6 +31,7 @@ from executorch.backends.xnnpack.utils.xnnpack_constants import (
     XNN_VALUE_FLAG_EXTERNAL_INPUT,
     XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
 )
+from executorch.exir._serialize._named_data_store import NamedDataStore
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -38,7 +39,6 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
-from executorch.exir._serialize._named_data_store import NamedDataStore
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535

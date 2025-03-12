@@ -56,6 +56,7 @@ def get_binary_elementwise_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     return test_suite
 
 
