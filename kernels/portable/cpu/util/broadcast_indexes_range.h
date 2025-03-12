@@ -14,6 +14,7 @@
 #include <iterator>
 #include <tuple>
 
+#include <executorch/kernels/portable/cpu/util/delinearize_index.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_dimension_limit.h>
 
@@ -78,7 +79,9 @@ class BroadcastIndexesIterator {
       // You might wonder what happens if output_shape_[ii] == 0. In
       // that case, output.numel() would be 0, and thus we would have
       // begin() == end() and no iteration.
-      if ET_UNLIKELY (delinearized_output_index_[ii] == output_shape_[ii] - 1) {
+      if ET_UNLIKELY (
+          static_cast<exec_aten::SizesType>(delinearized_output_index_[ii]) ==
+          output_shape_[ii] - 1) {
         const auto old_delinearized_output_index_item =
             delinearized_output_index_[ii];
         delinearized_output_index_[ii] = 0;
@@ -104,11 +107,42 @@ class BroadcastIndexesIterator {
     return it;
   }
 
+  BroadcastIndexesIterator& operator+=(difference_type n) {
+    if (n <= 3) {
+      std::advance(*this, n);
+      return *this;
+    }
+
+    output_index() += n;
+    delinearize_index(
+        output_index(),
+        output_shape_,
+        delinearized_output_index_.data(),
+        delinearized_output_index_.size());
+    for (const auto ii : c10::irange(1, kNumInputs + 1)) {
+      current_indexes_[ii] = 0;
+      for (const auto jj : c10::irange(output_dim_)) {
+        current_indexes_[ii] += delinearized_output_index_[jj] *
+            effective_input_broadcast_strides_[ii - 1][jj];
+      }
+    }
+    return *this;
+  }
+
+  BroadcastIndexesIterator operator+(difference_type n) {
+    auto it = *this;
+    it += n;
+    return it;
+  }
+
   difference_type operator-(const BroadcastIndexesIterator& rhs) const {
     return difference_type(output_index() - rhs.output_index());
   }
 
  private:
+  using ShapeType =
+      std::array<std::size_t, executorch::runtime::kTensorDimensionLimit>;
+
   ssize_t output_index() const {
     return current_indexes_[0];
   }
@@ -117,11 +151,10 @@ class BroadcastIndexesIterator {
     return current_indexes_[0];
   }
 
-  std::array<exec_aten::SizesType, executorch::runtime::kTensorDimensionLimit>
-  effective_input_broadcast_stride(const Tensor& output, const Tensor& t)
-      const {
-    std::array<exec_aten::SizesType, executorch::runtime::kTensorDimensionLimit>
-        result = {0};
+  ShapeType effective_input_broadcast_stride(
+      const Tensor& output,
+      const Tensor& t) const {
+    ShapeType result = {0};
     ET_CHECK_MSG(
         t.dim() <= output.dim(),
         "input to broadcasting op should have dim at most output dim, but %d > %d!",
@@ -146,8 +179,6 @@ class BroadcastIndexesIterator {
   // The 0th entry is the current linear index into the output,
   // followed by kNumInputs input indexes.
   std::array<ssize_t, kNumInputs + 1> current_indexes_ = {0};
-  using ShapeType = std::
-      array<exec_aten::SizesType, executorch::runtime::kTensorDimensionLimit>;
   ShapeType delinearized_output_index_ = {0};
   ssize_t output_dim_;
   ArrayRef<exec_aten::SizesType> output_shape_;
