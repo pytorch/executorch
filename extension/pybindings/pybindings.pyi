@@ -264,3 +264,12 @@ def _reset_profile_results() -> None:
         This API is experimental and subject to change without notice.
     """
     ...
+
+@experimental("This API is experimental and subject to change without notice.")
+def _unsafe_reset_threadpool(num_threads: int) -> None:
+    """
+    .. warning::
+
+        This API is experimental and subject to change without notice.
+    """
+    ...
