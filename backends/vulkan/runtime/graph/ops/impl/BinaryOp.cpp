@@ -132,18 +132,21 @@ void add_binary_op_buffer_node(
       // Shader params buffers
       {},
       // Specialization Constants
-      {graph.packed_dim_of(out), graph.packed_dim_of(in1), graph.packed_dim_of(in2)},
+      {graph.packed_dim_of(out),
+       graph.packed_dim_of(in1),
+       graph.packed_dim_of(in2)},
       // Resizing Logic
       resize_binary_op_node,
       {},
-      {{graph.sizes_pc_of(in1),
-        graph.sizes_pc_of(in2),
-        graph.strides_pc_of(out),
-        graph.strides_pc_of(in1),
-        graph.strides_pc_of(in2),
-        graph.numel_pc_of(out),
-        PushConstantDataInfo(&alpha_val, sizeof(float)),
-        }}));
+      {{
+          graph.sizes_pc_of(in1),
+          graph.sizes_pc_of(in2),
+          graph.strides_pc_of(out),
+          graph.strides_pc_of(in1),
+          graph.strides_pc_of(in2),
+          graph.numel_pc_of(out),
+          PushConstantDataInfo(&alpha_val, sizeof(float)),
+      }}));
 }
 
 void add_binary_op_node(
