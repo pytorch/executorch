@@ -38,7 +38,7 @@ jobs:
     runs-on: linux.24xl.spr-metal
     env:
       ANDROID_NDK_VERSION: r27b
-      API_LEVEL: 34
+      API_LEVEL: 35
     steps:
       - name: Setup SSH (Click me for login details)
         uses: pytorch/test-infra/.github/actions/setup-ssh@main
