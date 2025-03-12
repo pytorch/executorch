@@ -21,7 +21,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/script/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/util/build/Codegen.cmake)
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
