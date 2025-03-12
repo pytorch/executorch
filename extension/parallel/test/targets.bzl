@@ -7,14 +7,13 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    _THREADPOOL_TESTS = [
-        "threadpool_test.cpp",
-    ] + (["fb/threadpool_use_n_threads_test.cpp"] if not runtime.is_oss else [])
-
     runtime.cxx_test(
-        name = "threadpool_test",
-        srcs = _THREADPOOL_TESTS,
+        name = "thread_parallel_test",
+        srcs = [
+            "thread_parallel_test.cpp",
+        ],
         deps = [
-            "//executorch/extension/threadpool:threadpool",
+            "//executorch/extension/parallel:thread_parallel",
+            "//executorch/runtime/platform:platform",
         ],
     )
