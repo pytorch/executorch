@@ -11,13 +11,13 @@
 #include <array>
 #include <mutex>
 
-#include <executorch/runtime/kernel/thread_parallel_interface.h>
+#include <executorch/extension/parallel/thread_parallel.h>
 #include <executorch/runtime/platform/platform.h>
 
 using namespace ::testing;
 using ::executorch::extension::parallel_for;
 
-class ParallelTest : public ::testing::TestWithParam<bool> {
+class ParallelTest : public ::testing::Test {
  protected:
   void SetUp() override {
     data_.fill(0);
@@ -42,25 +42,12 @@ class ParallelTest : public ::testing::TestWithParam<bool> {
     }
   }
 
-  template <typename Func>
-  bool parallel_for(
-      const int64_t begin,
-      const int64_t end,
-      const int64_t grain_size,
-      const Func& func) {
-    if (GetParam()) {
-      return executorch::extension::parallel_for(begin, end, grain_size, func);
-    }
-    return executorch::extension::internal::parallel_for_no_threadpool(
-        begin, end, grain_size, func);
-  }
-
   std::array<int, 10> data_;
   std::mutex mutex_;
   int sum_of_all_elements_;
 };
 
-TEST_P(ParallelTest, TestAllInvoked) {
+TEST_F(ParallelTest, TestAllInvoked) {
   EXPECT_TRUE(parallel_for(0, 10, 1, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -70,7 +57,7 @@ TEST_P(ParallelTest, TestAllInvoked) {
   }
 }
 
-TEST_P(ParallelTest, TestAllInvokedWithMutex) {
+TEST_F(ParallelTest, TestAllInvokedWithMutex) {
   EXPECT_TRUE(parallel_for(0, 10, 1, [this](int64_t begin, int64_t end) {
     this->RunExclusiveTask(begin, end);
   }));
@@ -83,7 +70,7 @@ TEST_P(ParallelTest, TestAllInvokedWithMutex) {
   EXPECT_EQ(sum_of_all_elements_, expected_sum);
 }
 
-TEST_P(ParallelTest, TestInvalidRange) {
+TEST_F(ParallelTest, TestInvalidRange) {
   et_pal_init();
   EXPECT_FALSE(parallel_for(10, 0, 1, [this](int64_t begin, int64_t end) {
     this->RunExclusiveTask(begin, end);
@@ -95,7 +82,7 @@ TEST_P(ParallelTest, TestInvalidRange) {
   EXPECT_EQ(sum_of_all_elements_, 0);
 }
 
-TEST_P(ParallelTest, TestInvalidRange2) {
+TEST_F(ParallelTest, TestInvalidRange2) {
   et_pal_init();
   EXPECT_FALSE(parallel_for(6, 5, 1, [this](int64_t begin, int64_t end) {
     this->RunExclusiveTask(begin, end);
@@ -107,7 +94,7 @@ TEST_P(ParallelTest, TestInvalidRange2) {
   EXPECT_EQ(sum_of_all_elements_, 0);
 }
 
-TEST_P(ParallelTest, TestInvokePartialFromBeginning) {
+TEST_F(ParallelTest, TestInvokePartialFromBeginning) {
   EXPECT_TRUE(parallel_for(0, 5, 1, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -120,7 +107,7 @@ TEST_P(ParallelTest, TestInvokePartialFromBeginning) {
   }
 }
 
-TEST_P(ParallelTest, TestInvokePartialToEnd) {
+TEST_F(ParallelTest, TestInvokePartialToEnd) {
   EXPECT_TRUE(parallel_for(5, 10, 1, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -133,7 +120,7 @@ TEST_P(ParallelTest, TestInvokePartialToEnd) {
   }
 }
 
-TEST_P(ParallelTest, TestInvokePartialMiddle) {
+TEST_F(ParallelTest, TestInvokePartialMiddle) {
   EXPECT_TRUE(parallel_for(2, 8, 1, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -149,7 +136,7 @@ TEST_P(ParallelTest, TestInvokePartialMiddle) {
   }
 }
 
-TEST_P(ParallelTest, TestChunkSize2) {
+TEST_F(ParallelTest, TestChunkSize2) {
   EXPECT_TRUE(parallel_for(0, 10, 2, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -159,7 +146,7 @@ TEST_P(ParallelTest, TestChunkSize2) {
   }
 }
 
-TEST_P(ParallelTest, TestChunkSize2Middle) {
+TEST_F(ParallelTest, TestChunkSize2Middle) {
   EXPECT_TRUE(parallel_for(3, 8, 2, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -175,7 +162,7 @@ TEST_P(ParallelTest, TestChunkSize2Middle) {
   }
 }
 
-TEST_P(ParallelTest, TestChunkSize3) {
+TEST_F(ParallelTest, TestChunkSize3) {
   EXPECT_TRUE(parallel_for(0, 10, 3, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -185,7 +172,7 @@ TEST_P(ParallelTest, TestChunkSize3) {
   }
 }
 
-TEST_P(ParallelTest, TestChunkSize6) {
+TEST_F(ParallelTest, TestChunkSize6) {
   EXPECT_TRUE(parallel_for(0, 10, 6, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -195,7 +182,7 @@ TEST_P(ParallelTest, TestChunkSize6) {
   }
 }
 
-TEST_P(ParallelTest, TestChunkSizeTooLarge) {
+TEST_F(ParallelTest, TestChunkSizeTooLarge) {
   EXPECT_TRUE(parallel_for(0, 10, 11, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
   }));
@@ -204,8 +191,3 @@ TEST_P(ParallelTest, TestChunkSizeTooLarge) {
     EXPECT_EQ(data_[i], i);
   }
 }
-
-INSTANTIATE_TEST_SUITE_P(
-    ParallelTestWithOrWithoutThreadpool,
-    ParallelTest,
-    ::testing::Values(true, false));
