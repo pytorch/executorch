@@ -21,7 +21,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/util/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/script/build/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
