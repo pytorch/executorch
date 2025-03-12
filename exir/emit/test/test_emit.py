@@ -1543,11 +1543,11 @@ class TestEmit(unittest.TestCase):
                 return x
 
         model = LiftedConstants()
-
+        # Specify that we want to move non-lifted constants to external file
+        et_cfg = ExecutorchBackendConfig(external_constants=True)
         program = to_edge(
             export(model, (torch.ones(3, 2),), strict=True)
-        ).to_executorch()
-
+        ).to_executorch(et_cfg)
         program = program._emitter_output.program
         exec_plan = program.execution_plan[0]
         # There should only be 1 input to this model.
