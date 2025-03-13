@@ -240,7 +240,6 @@ Tensor& dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_TENSOR);
-          ASYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -332,7 +331,6 @@ Tensor& dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(ASYM_CALCULATE_INT_TYPE_CHANNEL);
-          ASYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -446,7 +444,6 @@ Tensor& dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_TENSOR);
-          SYM_CALCULATE_INT_TYPE_TENSOR(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
@@ -538,7 +535,6 @@ Tensor& dequantize_impl(
     break;
         switch (input.scalar_type()) {
           ET_FORALL_INT_TYPES(SYM_CALCULATE_INT_TYPE_CHANNEL);
-          SYM_CALCULATE_INT_TYPE_CHANNEL(uint16_t, UInt16);
           default:
             ET_CHECK_MSG(
                 false,
