@@ -453,10 +453,7 @@ def main() -> None:
 
             if benchmark_results:
                 results = transform(
-                    app_type,
-                    benchmark_results,
-                    benchmark_config,
-                    job_name
+                    app_type, benchmark_results, benchmark_config, job_name
                 )
                 all_benchmark_results.extend(results)
 
