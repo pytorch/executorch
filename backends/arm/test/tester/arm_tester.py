@@ -338,6 +338,60 @@ class ArmTester(Tester):
     def is_quantized(self) -> bool:
         return self.stages[self.stage_name(tester.Quantize)] is not None
 
+    def run_method_and_get_output(
+        self,
+        test_outputs: List,
+        inputs: Optional[Tuple[torch.Tensor]] = None,
+        stage: Optional[str] = None,
+        num_runs=1,
+    ):
+        """
+        Returns the run_artifact output of 'stage'. This output is returned as parameter of type List.
+        Returns self to allow the function to be run in a test chain.
+
+        Args:
+            stage: (Optional[str]): The name of the stage to compare.
+                The default is the latest run stage.
+            test_output: All output results.
+            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
+                The default is random data.
+        """
+        edge_stage = self.stages[self.stage_name(tester.ToEdge)]
+        if edge_stage is None:
+            edge_stage = self.stages[self.stage_name(tester.ToEdgeTransformAndLower)]
+        assert (
+            edge_stage is not None
+        ), "To get outputs, at least the ToEdge or ToEdgeTransformAndLower stage needs to be run."
+
+        stage = stage or self.cur
+        test_stage = self.stages[stage]
+
+        exported_program = self.stages[self.stage_name(tester.Export)].artifact
+        output_nodes = get_output_nodes(exported_program)
+        output_qparams = get_output_quantization_params(output_nodes)
+
+        quantization_scales = []
+        for node in output_qparams:
+            quantization_scales.append(getattr(output_qparams[node], "scale", None))
+
+        # Loop inputs and get outputs of the test stage.
+        for run_iteration in range(num_runs):
+            reference_input = inputs if inputs else next(self.generate_random_inputs())
+
+            input_shapes = [
+                generated_input.shape if hasattr(generated_input, "shape") else (1,)
+                for generated_input in reference_input
+            ]
+            input_shape_str = ", ".join([str(list(i)) for i in input_shapes])
+            logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
+
+            test_output, _ = pytree.tree_flatten(
+                test_stage.run_artifact(reference_input)
+            )
+            test_outputs.append(test_output)
+
+        return self
+
     def run_method_and_compare_outputs(
         self,
         inputs: Optional[Tuple[torch.Tensor]] = None,
