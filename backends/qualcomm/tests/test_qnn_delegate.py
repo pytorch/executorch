@@ -157,6 +157,14 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cdist(self):
+        module = CDist()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 125, 256),
+            torch.randn(1, 2048, 256),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_chunk_single(self):
         module = Chunk()  # noqa: F405
         sample_input = (torch.randn(1, 1, 4, 3),)
@@ -169,7 +177,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
-    def test_qnn_backend_conv1ds(self):
+    def test_qnn_backend_conv1d(self):
         modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
         for i, module in enumerate(modules):
@@ -265,7 +273,10 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_element_wise_and(self):
         module = And(torch.tensor(1.7), torch.tensor(0.2))  # noqa: F405
-        sample_input = (torch.tensor([1, 0, 1, 0], dtype=torch.bool), torch.tensor([1, 1, 0, 0], dtype=torch.bool),)
+        sample_input = (
+            torch.tensor([1, 0, 1, 0], dtype=torch.bool),
+            torch.tensor([1, 1, 0, 0], dtype=torch.bool),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_ceil(self):
@@ -747,7 +758,7 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_stack(self):
         module = Stack()  # noqa: F405
-        sample_input = (torch.randn([1, 2, 3, 4]), torch.randn([1, 2, 3, 4]))
+        sample_input = (torch.randn([1, 2, 3, 4]), torch.randn([1, 2, 3, 4]), torch.randn([1, 2, 3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_softmax(self):
@@ -1117,6 +1128,15 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cdist(self):
+        module = CDist()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 125, 256),
+            torch.randn(1, 2048, 256),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_chunk_single(self):
         module = Chunk()  # noqa: F405
         sample_input = (torch.randn(1, 1, 4, 3),)
@@ -1236,7 +1256,10 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_element_wise_and(self):
         module = And(torch.tensor(1.7), torch.tensor(0.2))  # noqa: F405
-        sample_input = (torch.tensor([1, 0, 1, 0], dtype=torch.bool), torch.tensor([1, 1, 0, 0], dtype=torch.bool),)
+        sample_input = (
+            torch.tensor([1, 0, 1, 0], dtype=torch.bool),
+            torch.tensor([1, 1, 0, 0], dtype=torch.bool),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1796,10 +1819,7 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_stack(self):
         module = Stack()  # noqa: F405
-        sample_input = (
-            torch.randn([1, 2, 3, 4]),
-            torch.randn([1, 2, 3, 4]),
-        )
+        sample_input = (torch.randn([1, 2, 3, 4]),torch.randn([1, 2, 3, 4]), torch.randn([1, 2, 3, 4]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 

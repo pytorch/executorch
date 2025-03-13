@@ -6,6 +6,7 @@
 
 import torch
 
+
 # module with related operator only
 class And(torch.nn.Module):
     def __init__(self, pos, neg):
@@ -176,6 +177,14 @@ class Cat4(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.cat((y, y, x, x), axis=2)
+
+
+class CDist(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.cdist(x, y, p=2)
 
 
 class Ceil(torch.nn.Module):
@@ -1376,8 +1385,8 @@ class Stack(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x, y):
-        return torch.stack((x, y))
+    def forward(self, x, y, z):
+        return torch.stack((x, y, z))
 
 
 class Sub(torch.nn.Module):

@@ -26,6 +26,7 @@ from executorch.backends.qualcomm._passes import (
     ConvertInterpolateWithUpsample2D,
     ConvertToLinear,
     DecomposeAny,
+    DecomposeCDist,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
     ExpandBroadcastTensorShape,
@@ -338,6 +339,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
         torch.ops.aten._safe_softmax.default,
+        # torch.ops.aten.stack.default, # We should be able to enable this, but QNN does not support int IO.
     ]
 
     remove_decompositions(source_decompositions, skip_decompositions)
@@ -448,6 +450,7 @@ def _preprocess_module(module: torch.nn.Module, inputs: Tuple[torch.Tensor]):
         return module
     module = torch.export.export(module, inputs, strict=False).module()
 
+    module = DecomposeCDist()(module).graph_module
     module = DecomposeScaledDotProductAttention()(module).graph_module
     module = DecomposeLinalgVectorNorm(True)(module).graph_module
     module = DecomposeExpM1()(module).graph_module
@@ -465,6 +468,7 @@ def capture_program(
     ep = torch.export.export(
         module, inputs, dynamic_shapes=dynamic_shapes, strict=False
     )
+    #TODO: Handle stack op. If we want to run annotate_decomposed pass for stack op, we need to make stack op decompose, which means we need to find a method to remove it from skip_decomp table
     decomposed_ep = ep.run_decompositions(get_decomp_table())
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(TensorI64toI32(edge_program=core_ep))

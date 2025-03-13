@@ -8,7 +8,7 @@ import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 from executorch.exir.pass_base import ExportPass, PassResult
 
-
+#TODO: Remove this and merge it with annotate_decomposed.
 class AnnotateStack(ExportPass):
     """
     During decomposition stage, some unsqueeze op will appear.
@@ -25,12 +25,10 @@ class AnnotateStack(ExportPass):
                 node.meta.get("torch_fn", ("", ""))[1]
                 == "builtin_function_or_method.stack"
             ):
-                if (
-                    QCOM_QUANT_ATTRS not in node.meta
-                    and QCOM_QUANT_ATTRS in node.args[0].meta
-                ):
-                    node.meta[QCOM_QUANT_ATTRS] = node.args[0].meta[QCOM_QUANT_ATTRS]
-
+                input1 = node.args[0] if isinstance(node.args[0], torch.fx.node.Node) else node.args[0][0]
+                if QCOM_QUANT_ATTRS not in node.meta and QCOM_QUANT_ATTRS in input1.meta and node.meta["val"].is_floating_point():
+                    node.meta[QCOM_QUANT_ATTRS] = input1.meta[QCOM_QUANT_ATTRS]
+                    
         graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)

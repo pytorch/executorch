@@ -32,7 +32,7 @@ class AnnotateDecomposed(ExportPass):
                         n.meta[QCOM_QUANT_ATTRS] = quant_attrs.copy()
 
     def _annotate_stack(self, graph_module: torch.fx.GraphModule):
-        partitions = get_source_partitions(graph_module.graph, [torch.stack])
+        partitions = get_source_partitions(graph_module.graph, [torch.stack]) # TODO: Add "stack" later
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
                 output = src_partition.output_nodes[0]

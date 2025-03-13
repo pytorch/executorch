@@ -3,26 +3,21 @@
 # LICENSE file in the root directory of this source tree.
 
 # import argparse
+import io
 import json
 import os
 import random
-import time
 from multiprocessing.connection import Client
-import requests
-import io
-import torchaudio
 
 import numpy as np
+import requests
 
 import sphn
 import torch
 
 import torch.nn as nn
+import torchaudio
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-
-# from executorch.examples.models.llama.llama_transformer import Transformer
-
-# from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
@@ -35,9 +30,6 @@ from executorch.examples.qualcomm.utils import (
 from huggingface_hub import hf_hub_download
 from moshi.models import loaders
 
-from torch.profiler import profile, ProfilerActivity
-
-
 def seed_all(seed):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -47,6 +39,7 @@ def seed_all(seed):
     np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
 
 def read_mp3_from_url(url):
     response = requests.get(url)
@@ -61,87 +54,29 @@ def read_mp3_from_url(url):
     return waveform.numpy(), sample_rate
 
 
-def mimi_encode():
-    None
-def mimi_decode():
-    None
-def mimi_test(mimi, args, max_duration_sec=10.0):
-    pcm_chunk_size = int(mimi.sample_rate / mimi.frame_rate)
-    sample_rate = mimi.sample_rate
-    url = "https://huggingface.co/lmz/moshi-swift/resolve/main/bria-24khz.mp3"
-    sample_pcm, sample_sr = read_mp3_from_url(url)
-    pcm_chunk_size = int(mimi.sample_rate / mimi.frame_rate)
-    sample_rate = mimi.sample_rate
-    sample_pcm = torch.tensor(sample_pcm, device='cpu')
-    max_duration_len = int(sample_rate * max_duration_sec)
-    if sample_pcm.shape[-1] > max_duration_len:
-        sample_pcm = sample_pcm[..., :max_duration_len]
-    sample_pcm = sample_pcm[None].to(device='cpu')
-    # sample_pcm = torch.ones(1, 1, 240000)
-
-    print("streaming encoding...")
-    start_time = time.time()
-    all_codes = []
-
-    def run_loop():
-        for start_idx in range(0, sample_pcm.shape[-1], pcm_chunk_size):
-            end_idx = min(sample_pcm.shape[-1], start_idx + pcm_chunk_size)
-            chunk = sample_pcm[..., start_idx:end_idx]
-            codes = mimi.encode(chunk)
-            if codes.shape[-1]:
-                print(start_idx, codes.shape, end="\r")
-                all_codes.append(codes)
-    if args.profile:
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
-            run_loop()
-        prof.export_chrome_trace("trace.json")
-    else:
-        run_loop()
-    all_codes_th = torch.cat(all_codes, dim=-1)
-    print(f"codes {all_codes_th.shape} generated in {time.time() - start_time:.2f}s")
-    print("streaming decoding...")
-    all_pcms = []
-    with mimi.streaming(1):
-        for i in range(all_codes_th.shape[-1]):
-            codes = all_codes_th[..., i : i + 1]
-            pcm = mimi.decode(codes)
-            print(i, pcm.shape, end="\r")
-            all_pcms.append(pcm)
-    all_pcms = torch.cat(all_pcms, dim=-1)
-    pcm_ref = mimi.decode(all_codes_th)  # same as mimi_decode(input[0])
-    print("pcm", all_pcms.shape, all_pcms.dtype)
-
-    assert torch.allclose(pcm_ref, all_pcms, atol=1e-5)
-
-    class MimiDecode(nn.Module):
+def mimi_encode(mimi, sample_pcm, skip_node_id_set, skip_node_op_set) -> torch.Tensor:
+    class MimiEncode(nn.Module):
         def __init__(self, mimi: nn.Module):
             super().__init__()
             self.mimi_model = mimi
 
         def forward(self, x):
-            return self.mimi_model.decode(x)
+            return self.mimi_model.encode(x)
 
-    mimi_decode = MimiDecode(mimi)
-
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
-    # ensure the working directory exist.
-    os.makedirs(args.artifact, exist_ok=True)
-    pte_filename = "mimi_qnn"
-    input = (all_codes_th.to(torch.int32),)
+    mimi_encode = MimiEncode(mimi)
+    encode_input = (sample_pcm,)
+    pte_filename = "mimi_encoder_qnn"
     build_executorch_binary(
-        mimi_decode.eval(),
-        input,
+        mimi_encode.eval(),
+        encode_input,
         args.model,
         f"{args.artifact}/{pte_filename}",
-        [input],
+        [encode_input],
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
         shared_buffer=args.shared_buffer,
     )
-
-    if args.compile_only:
-        return
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
@@ -153,7 +88,7 @@ def mimi_test(mimi, args, max_duration_sec=10.0):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=[input], input_list="input_0_0.raw")
+    adb.push(inputs=[encode_input], input_list="input_0_0.raw")
     adb.execute()
 
     # collect output data
@@ -162,40 +97,95 @@ def mimi_test(mimi, args, max_duration_sec=10.0):
 
     adb.pull(output_path=args.artifact)
 
-    # top-k analysis
+    predictions = []
+    predictions.append(
+        np.fromfile(os.path.join(output_data_folder, "output_0_0.raw"), dtype=np.int64)
+    )
+    htp_res = torch.from_numpy(predictions[0]).view(1, 8, 125)
+    return htp_res
+
+
+def mimi_decode(mimi, encode_res, skip_node_id_set, skip_node_op_set) -> torch.Tensor:
+    class MimiDecode(nn.Module):
+        def __init__(self, mimi: nn.Module):
+            super().__init__()
+            self.mimi_model = mimi
+
+        def forward(self, x):
+            return self.mimi_model.decode(x)
+
+    mimi_decode = MimiDecode(mimi)
+    decode_input = (encode_res,)
+    pte_filename = "mimi_decoder_qnn"
+    build_executorch_binary(
+        mimi_decode.eval(),
+        decode_input,
+        args.model,
+        f"{args.artifact}/{pte_filename}",
+        [decode_input],
+        skip_node_id_set=skip_node_id_set,
+        skip_node_op_set=skip_node_op_set,
+        quant_dtype=QuantDtype.use_8a8w,
+        shared_buffer=args.shared_buffer,
+    )
+
+    adb = SimpleADB(
+        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
+        build_path=f"{args.build_folder}",
+        pte_path=f"{args.artifact}/{pte_filename}.pte",
+        workspace=f"/data/local/tmp/executorch/{pte_filename}",
+        device_id=args.device,
+        host_id=args.host,
+        soc_model=args.model,
+        shared_buffer=args.shared_buffer,
+    )
+    adb.push(inputs=[decode_input], input_list="input_0_0.raw")
+    adb.execute()
+
+    # collect output data
+    output_data_folder = f"{args.artifact}/outputs"
+    make_output_dir(output_data_folder)
+
+    adb.pull(output_path=args.artifact)
+
     predictions = []
     predictions.append(
         np.fromfile(
             os.path.join(output_data_folder, "output_0_0.raw"), dtype=np.float32
         )
     )
-    htp_res = torch.from_numpy(predictions[0]).view(1, 1, 240000)
-    cosine_sim = torch.nn.functional.cosine_similarity(
-        pcm_ref.flatten(), htp_res.flatten(), dim=0
-    ).item()
-    print("Cos similarity: ", cosine_sim)
-    sphn.write_wav("streaming_out.wav", all_pcms[0, 0].cpu().numpy(), sample_rate)
-    sphn.write_wav("ref.wav", pcm_ref[0, 0].cpu().numpy(), sample_rate)
-    sphn.write_wav("htp.wav", htp_res[0,0].cpu().numpy(), sample_rate)
-    # With QNN 2.28.2
-    # 0.9650231003761292
-    # 8a8w    cos similarity: 0.9635128378868103, 1 inference: 73.5ms,    file size: ~59mb
-    # 16a16w  cos similarity: failed at runner: Error from rpc transport, file size: ~104mb
-    # 16a4w   cos similarity: failed at runner: Error from rpc transport, file size: ~53mb
-    # fp      cos similarity: failed at runner: Error from rpc transport, file size: ~101mb (QNN 2.31.0 for this)
+    htp_decode_res = torch.from_numpy(predictions[0]).view(1, 1, 240000)
+    return htp_decode_res
 
-    class MimiEncode(nn.Module):
-        def __init__(self, mimi: nn.Module):
-            super().__init__()
-            self.mimi_model = mimi
 
-        def forward(self, x):
-            return self.mimi_model.encode(x)
+def export_mimi(mimi, args, max_duration_sec=10.0):
+    sample_rate = mimi.sample_rate
+    url = "https://huggingface.co/lmz/moshi-swift/resolve/main/bria-24khz.mp3"
+    sample_pcm, sample_sr = read_mp3_from_url(url)
+    sample_rate = mimi.sample_rate
+    sample_pcm = torch.tensor(sample_pcm, device="cpu")
+    max_duration_len = int(sample_rate * max_duration_sec)
+    if sample_pcm.shape[-1] > max_duration_len:
+        sample_pcm = sample_pcm[..., :max_duration_len]
+    sample_pcm = sample_pcm[None].to(device="cpu")
 
-    mimi_encode = MimiEncode(mimi)
-    chunk = sample_pcm[..., 0:pcm_chunk_size]
-    out = mimi_encode(chunk)
-    exported_encode = torch.export.export(mimi_encode, (chunk,), strict=False).module()
+    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+    # ensure the working directory exist.
+    os.makedirs(args.artifact, exist_ok=True)
+
+    print("streaming encoding...")
+    cpu_encode_res = mimi.encode(sample_pcm)
+    htp_encode_res = mimi_encode(mimi, sample_pcm, skip_node_id_set, skip_node_op_set)
+    cpu_decode_res = mimi.decode(cpu_encode_res)
+    htp_decode_res = mimi_decode(
+        mimi, htp_encode_res.to(torch.int32), skip_node_id_set, skip_node_op_set
+    )
+    sphn.write_wav(
+        "cpu_decode_res.wav", cpu_decode_res[0, 0].cpu().numpy(), sample_rate
+    )
+    sphn.write_wav(
+        "htp_decode_res.wav", htp_decode_res[0, 0].cpu().numpy(), sample_rate
+    )
 
 
 def main(args):
@@ -209,7 +199,8 @@ def main(args):
     # emb = torch.load('emb.pt')
 
     with torch.no_grad():
-        mimi_test(mimi, args)
+        export_mimi(mimi, args)
+
 
 if __name__ == "__main__":
 
@@ -218,16 +209,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts by this example. Default ./ssd300_vgg16",
+        help="path for storing generated artifacts by this example. Default ./mimi",
         default="./mimi",
         type=str,
     )
 
     parser.add_argument("--mimi-weight", type=str)
     parser.add_argument("--hf-repo", type=str, default=loaders.DEFAULT_REPO)
-    # parser.add_argument(
-    #     "--device", type=str, default="cpu" if torch.cuda.device_count() else "cpu"
-    # )
+
     parser.add_argument("--profile", action="store_true")
 
     args = parser.parse_args()

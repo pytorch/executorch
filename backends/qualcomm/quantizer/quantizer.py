@@ -9,6 +9,7 @@ from typing import Callable, Optional, Sequence, Set
 
 import torch
 from executorch.backends.qualcomm._passes import (
+    DecomposeCDist,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
@@ -230,10 +231,8 @@ class QnnQuantizer(Quantizer):
         model = DecomposeEinsum()(model).graph_module
         model = DecomposeExpM1()(model).graph_module
         model = DecomposeLinalgVectorNorm(aten_dialect_capture=True)(model).graph_module
+        model = DecomposeCDist()(model).graph_module
         model = ReplaceInfValues()(model).graph_module
-        from executorch.backends.qualcomm.utils.utils import draw_graph
-
-        draw_graph("checking", ".", model)
         model = LiftConstantScalarOperands()(model).graph_module
         return model
 

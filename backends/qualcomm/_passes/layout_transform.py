@@ -48,6 +48,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.abs.default,
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.bmm.default,
+        exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.ceil.default,
         exir_ops.edge.aten.clamp.default,
@@ -88,11 +89,13 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.sqrt.default,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,
+        exir_ops.edge.aten.stack.default,
         exir_ops.edge.aten.topk.default,
         exir_ops.edge.aten._to_copy.default,
         exir_ops.edge.aten.where.self,
         *q_ops,
         *dq_ops,
+        torch.ops.aten.scalar_tensor.default,
         _operator.getitem,
     }
 

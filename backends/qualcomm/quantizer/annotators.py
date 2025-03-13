@@ -97,6 +97,7 @@ def annotate_in_out_obs_sharing_op(
         QUANT_ANNOTATION_KEY not in input_act.meta
         or not input_act.meta[QUANT_ANNOTATION_KEY]._annotated
         or input_act.meta[QUANT_ANNOTATION_KEY].output_qspec is None
+        or not _is_float_tensor(input_act)
     ):
         return
 
@@ -132,9 +133,10 @@ def annotate_single_in_single_out(
         return
 
     input_qspec_map = {}
-    input_act = node.args[0]
-    assert isinstance(input_act, Node)
-    input_qspec_map[input_act] = quantization_config.input_activation
+    if _is_float_tensor(node.args[0]):
+        input_act = node.args[0]
+        assert isinstance(input_act, Node)
+        input_qspec_map[input_act] = quantization_config.input_activation
 
     if _is_float_tensor(node):
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -176,6 +178,9 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
         _annotated=True,
     )
 
+@register_annotator([torch.ops.aten.__and__.Tensor])
+def annotate_and(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
 
 @register_annotator([torch.ops.aten.add, torch.ops.aten.add.Tensor])
 def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
@@ -478,6 +483,8 @@ def annotate_prelu(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default])
 def annotate_view(node: Node, quantization_config: QuantizationConfig) -> None:
+    # if node.args[0].target == torch.ops.aten.argmin.default:
+    #     import pdb; pdb.set_trace()
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
         annotate_single_in_single_out(node, quantization_config)
@@ -835,15 +842,24 @@ def annotate_stack(node: Node, quantization_config: QuantizationConfig) -> None:
     input_qspec_map = {}
     for input_act in node.args[0]:
         assert isinstance(input_act, Node)
-        input_qspec_map[input_act] = quantization_config.input_activation
+    first_input_node = node.args[0][0]
+    if _is_float_tensor(first_input_node):
+        input_qspec_map[first_input_node] = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+            (first_input_node, node)
+        )
 
-        node_tensor = node.meta.get("val")
-        if torch.is_tensor(node_tensor) and node_tensor.dtype == torch.int64:
-            continue
+    for input_node in node.args[0][1:]:
+        if input_node not in input_qspec_map:
+            assert isinstance(input_node, Node)
+            if _is_float_tensor(input_node):
+                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=quantization_config.output_activation,
+        output_qspec=(
+            share_qparams_with_input_act0_qspec if _is_float_tensor(node) else None
+        ),
         _annotated=True,
     )
 
@@ -907,6 +923,11 @@ def annotate_bmm(node: Node, quantization_config: QuantizationConfig) -> None:
 
     # We use get_source_partition in pass, but it is the same source for MultiheadAttention, so we need to change its source_fn_stack.
     node.meta["source_fn_stack"] = [(node, torch.bmm)]
+
+
+@register_annotator([torch.ops.aten.cdist.default])
+def annotate_cdist(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
 
 
 @register_annotator(
@@ -1082,19 +1103,23 @@ def annotate_cat(node: Node, quantization_config: QuantizationConfig) -> None:
     input_qspec_map = {}
     assert isinstance(first_input_node, Node)
     assert isinstance(node, Node)
-    input_qspec_map[first_input_node] = quantization_config.input_activation
-    share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
-        (first_input_node, node)
-    )
+    if _is_float_tensor(first_input_node):
+        input_qspec_map[first_input_node] = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+            (first_input_node, node)
+        )
 
     for input_node in input_nodes[1:]:
         if input_node not in input_qspec_map:
             assert isinstance(input_node, Node)
-            input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+            if _is_float_tensor(input_node):
+                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=share_qparams_with_input_act0_qspec,
+        output_qspec=(
+            share_qparams_with_input_act0_qspec if _is_float_tensor(node) else None
+        ),
         _annotated=True,
     )
 

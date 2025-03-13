@@ -7,6 +7,7 @@ from .convert_conv1d_to_conv2d import ConvertConv1dToConv2d
 from .convert_interpolate_with_upsample2d import ConvertInterpolateWithUpsample2D
 from .convert_to_linear import ConvertToLinear
 from .decompose_any import DecomposeAny
+from .decompose_cdist import DecomposeCDist
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
@@ -41,6 +42,7 @@ __all__ = [
     RecomposePReLU,
     ConvertToLinear,
     DecomposeAny,
+    DecomposeCDist,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
