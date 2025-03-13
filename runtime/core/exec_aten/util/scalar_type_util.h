@@ -1204,19 +1204,26 @@ struct promote_types {
   ET_SWITCH_REAL_TYPES_AND3(                                              \
       Half, Bool, BFloat16, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
-#define ET_SWITCH_REALHBBF16_AND_UINT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, \
-                                            ...)                              \
-  ET_INTERNAL_SWITCH(                                                         \
-      TYPE, CONTEXT, NAME,                                                    \
-      ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND3(Half, Bool, BFloat16,           \
-                                              CTYPE_ALIAS, __VA_ARGS__)       \
-      ET_INTERNAL_SWITCH_CASE(                                                \
-          ::executorch::aten::ScalarType::UInt16, CTYPE_ALIAS, __VA_ARGS__)   \
-      ET_INTERNAL_SWITCH_CASE(                                                \
-          ::executorch::aten::ScalarType::UInt32, CTYPE_ALIAS, __VA_ARGS__)   \
-      ET_INTERNAL_SWITCH_CASE(                                                \
-          ::executorch::aten::ScalarType::UInt64, CTYPE_ALIAS, __VA_ARGS__)   \
-  )
+#define ET_SWITCH_REALHBBF16_AND_UINT_TYPES(                  \
+    TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...)                    \
+  ET_INTERNAL_SWITCH(                                         \
+      TYPE,                                                   \
+      CONTEXT,                                                \
+      NAME,                                                   \
+      ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND3(                \
+          Half, Bool, BFloat16, CTYPE_ALIAS, __VA_ARGS__)     \
+          ET_INTERNAL_SWITCH_CASE(                            \
+              ::executorch::aten::ScalarType::UInt16,         \
+              CTYPE_ALIAS,                                    \
+              __VA_ARGS__)                                    \
+              ET_INTERNAL_SWITCH_CASE(                        \
+                  ::executorch::aten::ScalarType::UInt32,     \
+                  CTYPE_ALIAS,                                \
+                  __VA_ARGS__)                                \
+                  ET_INTERNAL_SWITCH_CASE(                    \
+                      ::executorch::aten::ScalarType::UInt64, \
+                      CTYPE_ALIAS,                            \
+                      __VA_ARGS__))
 
 #define ET_SWITCH_INT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                              \
