@@ -28,8 +28,7 @@ void check_args(
     const api::vTensor& in,
     const std::vector<int64_t>& permute_dims,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_same_packed_dim(in, out));
 
   // This implementation doesn't not requires the input tensor to have the same
   // dim size as the argument. The code will work as long as the input tensor's
@@ -72,10 +71,14 @@ void add_permute_node(
   int32_t out_channels = dim_at<kChannel4D>(t_out->sizes());
   int32_t in_channels = dim_at<kChannel4D>(t_in->sizes());
 
-  int32_t out_c_aligned = utils::align_up_4(out_channels);
-  int32_t in_c_aligned = utils::align_up_4(in_channels);
+  const auto packed_dim = graph.packed_dim_of(in);
+  ivec2 channel_info = {out_channels, in_channels};
+  if (packed_dim == WHCN::kChannelsDim) {
+    channel_info[0] = utils::align_up_4(channel_info[0]);
+    channel_info[1] = utils::align_up_4(channel_info[1]);
+  }
 
-  const ivec2 ch_info = {out_c_aligned, in_c_aligned};
+  const vkapi::SpecVarList spec_vars = {packed_dim};
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -86,14 +89,14 @@ void add_permute_node(
        {in, vkapi::MemoryAccessType::READ}},
       {},
       // Specialization Constants
-      {},
+      spec_vars,
       // Resizing Logic
       nullptr,
       {},
       {{graph.logical_limits_pc_of(out),
-        graph.sizes_pc_of(out),
+        graph.sizes_pc_of(in),
         PushConstantDataInfo(&out_dims, sizeof(out_dims)),
-        PushConstantDataInfo(&ch_info, sizeof(ch_info))}}));
+        PushConstantDataInfo(&channel_info, sizeof(channel_info))}}));
 }
 
 void add_permute_node(
