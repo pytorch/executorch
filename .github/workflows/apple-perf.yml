@@ -453,6 +453,7 @@ jobs:
       ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.ipa
       ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.xctestrun.zip
       test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/default-ios-device-farm-appium-test-spec.yml
+      new-output-format-flag: true
 
   upload-benchmark-results:
     needs:
@@ -510,6 +511,8 @@ jobs:
 
       - name: Extract the benchmark results JSON
         shell: bash
+        env:
+          DEVICE_TYPE: ios
         run: |
           set -eux
 
@@ -521,6 +524,7 @@ jobs:
             ${CONDA_RUN} python .github/scripts/extract_benchmark_results.py \
               --artifacts "${ARTIFACTS_BY_JOB}" \
               --output-dir benchmark-results \
+              --app "${DEVICE_TYPE}" \
               --benchmark-configs benchmark-configs
           done
 

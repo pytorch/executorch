@@ -392,6 +392,7 @@ jobs:
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
       test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/android-llm-device-farm-test-spec.yml
+      new-output-format-flag: true
 
   upload-benchmark-results:
     needs:
@@ -451,6 +452,8 @@ jobs:
 
       - name: Extract the benchmark results JSON
         shell: bash
+        env:
+          DEVICE_TYPE: android
         run: |
           set -eux
 
@@ -462,6 +465,7 @@ jobs:
             ${CONDA_RUN} python .github/scripts/extract_benchmark_results.py \
               --artifacts "${ARTIFACTS_BY_JOB}" \
               --output-dir benchmark-results \
+              --app "${DEVICE_TYPE}" \
               --benchmark-configs benchmark-configs
           done
 
