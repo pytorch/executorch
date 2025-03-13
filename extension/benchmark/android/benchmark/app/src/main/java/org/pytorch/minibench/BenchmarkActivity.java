@@ -95,6 +95,12 @@ public class BenchmarkActivity extends Activity {
             new BenchmarkMetric(
                 benchmarkModel,
                 "avg_inference_latency(ms)",
+                stats.latency.stream().mapToDouble(l -> l).average().orElse(0.0f),
+                0.0f));
+        results.add(
+            new BenchmarkMetric(
+                benchmarkModel,
+                "trimmean_inference_latency(ms)",
                 usedLatencyResults.stream().mapToDouble(l -> l).average().orElse(0.0f),
                 0.0f));
         // Model load time
