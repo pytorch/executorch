@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import itertools
+
 from collections import namedtuple
 from typing import Callable
 
@@ -457,26 +459,20 @@ def get_select_int_inputs():
 
 @register_test_suite(["aten.permute.default", "aten.permute_copy.default"])
 def get_permute_inputs():
-    test_suite = VkTestSuite(
-        [
-            ((9, 2, 9, 4), [0, 1, 2, 3]),
-            ((9, 2, 9, 4), [0, 1, 3, 2]),
-            ((9, 2, 9, 4), [0, 2, 1, 3]),
-            ((9, 2, 9, 4), [0, 2, 3, 1]),
-            ((9, 2, 9, 4), [0, 3, 1, 2]),
-            ((9, 2, 9, 4), [0, 3, 2, 1]),
-            ((9, 2, 9, 4), [3, 0, 1, 2]),
-            ((9, 2, 9, 4), [3, 2, 0, 1]),
-            ((9, 2, 9, 4), [2, 3, 0, 1]),
-            ((9, 2, 9, 4), [2, 0, 3, 1]),
-            ((9, 2, 9), [2, 0, 1]),
-            ((9, 2, 9), [1, 2, 0]),
-            ((9, 2), [0, 1]),
-            ((9, 2), [1, 0]),
-        ]
-    )
+    batch_tests = [
+        ((9, 2, 5, 7), out_axis) for out_axis in itertools.permutations([0, 1, 2, 3])
+    ]
+    channel_tests = [
+        ((9, 2, 5), out_axis) for out_axis in itertools.permutations([0, 1, 2])
+    ]
+    wh_tests = [((9, 2), out_axis) for out_axis in itertools.permutations([0, 1])]
+    test_suite = VkTestSuite(batch_tests + channel_tests + wh_tests)
 
-    test_suite.layouts = ["utils::kChannelsPacked"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     return test_suite
 
 
