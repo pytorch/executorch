@@ -18,10 +18,6 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
@@ -95,6 +91,7 @@ add_custom_command(
     ${_xnnpack_schema__srcs}
   COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  DEPENDS flatc
   COMMENT "Generating xnnpack_schema headers"
   VERBATIM
 )

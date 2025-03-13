@@ -27,6 +27,7 @@ def define_common_targets():
             third_party_dep("FP16"),
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/backends/xnnpack:xnnpack_backend",
         ],
     )
 

@@ -19,7 +19,7 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 elf_file=""
 target="ethos-u55-128"
-timeout="240"
+timeout="600"
 
 help() {
     echo "Usage: $(basename $0) [options]"
