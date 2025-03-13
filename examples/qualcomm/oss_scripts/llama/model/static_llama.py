@@ -106,6 +106,8 @@ class LlamaAttention(nn.Module):
         v_caches: Optional[List[torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         bsz, seq_len, _ = hidden_states.shape
+        # In the HTP backend, the input axis order for the convolution operation is
+        # more efficient with [1, 1, seq_len, dim] compared to [1, seq_len, 1, dim].
         hidden_states = torch.reshape(
             hidden_states, (bsz, seq_len, 1, self.dim)
         ).transpose(1, 3)
