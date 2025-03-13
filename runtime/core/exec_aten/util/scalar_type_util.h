@@ -485,7 +485,10 @@ inline bool isRealType(::executorch::aten::ScalarType t) {
       t == ::executorch::aten::ScalarType::Int ||
       t == ::executorch::aten::ScalarType::Long ||
       t == ::executorch::aten::ScalarType::Float ||
-      t == ::executorch::aten::ScalarType::Double);
+      t == ::executorch::aten::ScalarType::Double ||
+      t == ::executorch::aten::ScalarType::UInt16 ||
+      t == ::executorch::aten::ScalarType::UInt32 ||
+      t == ::executorch::aten::ScalarType::UInt64);
 }
 
 inline bool isRealHType(::executorch::aten::ScalarType t) {
@@ -497,7 +500,10 @@ inline bool isRealHType(::executorch::aten::ScalarType t) {
       t == ::executorch::aten::ScalarType::Long ||
       t == ::executorch::aten::ScalarType::Float ||
       t == ::executorch::aten::ScalarType::Double ||
-      t == ::executorch::aten::ScalarType::Half);
+      t == ::executorch::aten::ScalarType::Half ||
+      t == ::executorch::aten::ScalarType::UInt16 ||
+      t == ::executorch::aten::ScalarType::UInt32 ||
+      t == ::executorch::aten::ScalarType::UInt64);
 }
 
 inline bool isRealHBType(::executorch::aten::ScalarType t) {
