@@ -23,6 +23,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -1063,6 +1064,14 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   m.def(
       "_reset_profile_results",
       []() { EXECUTORCH_RESET_PROFILE_RESULTS(); },
+      call_guard);
+  m.def(
+      "_unsafe_reset_threadpool",
+      [](int num_threads) {
+        executorch::extension::threadpool::get_threadpool()
+            ->_unsafe_reset_threadpool(num_threads);
+      },
+      py::arg("num_threads"),
       call_guard);
 
   py::class_<PyModule>(m, "ExecuTorchModule")

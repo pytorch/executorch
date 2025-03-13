@@ -14,6 +14,9 @@
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 
+#include <array>
+#include <utility>
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -46,6 +49,83 @@ inline int64_t scalar_to<int64_t>(const Scalar& s) {
                              : s.to<int64_t>();
 }
 
+namespace internal {
+template <
+    typename CTYPE_COMMON,
+    const char* op_name,
+    typename Op,
+    typename... Args>
+inline void apply_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& out,
+    SupportedTensorDtypes out_dtypes,
+    Args... inputs) {
+  static_assert(
+      (std::is_same_v<Args, std::pair<const Tensor*, SupportedTensorDtypes>> &&
+       ...));
+  constexpr auto kNumInputs = sizeof...(inputs);
+  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
+  const auto check_input_dtype = [](auto input, auto compute_type) {
+    return internal::check_tensor_dtype(
+        *input.first, input.second, compute_type);
+  };
+  ET_KERNEL_CHECK(
+      ctx,
+      (check_input_dtype(inputs, compute_type) && ...) &&
+          internal::check_tensor_dtype(out, out_dtypes, compute_type),
+      InvalidArgument, );
+
+  bool any_is_broadcasted = false;
+  if constexpr (kNumInputs > 1) {
+    any_is_broadcasted = (!out.sizes().equals(inputs.first->sizes()) || ...);
+  }
+
+  struct InputInfo {
+    load_to_common_fn<CTYPE_COMMON> load_to_common;
+    const char* data_ptr;
+    ssize_t element_size;
+  };
+  std::array<InputInfo, kNumInputs> inputs_info = {(InputInfo{
+      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(
+          *inputs.first, inputs.second),
+      reinterpret_cast<const char*>(inputs.first->const_data_ptr()),
+      inputs.first->element_size(),
+  })...};
+
+  const auto store_common_to_out =
+      internal::get_store_common_to_tensor_fn<CTYPE_COMMON, op_name>(
+          out, out_dtypes);
+  char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
+  const auto out_element_size = out.element_size();
+
+  if (any_is_broadcasted) {
+    for (const auto& indexes :
+         BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...)) {
+      std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
+      for (const auto idx : c10::irange(kNumInputs)) {
+        const auto& input_info = inputs_info[idx];
+        loaded_inputs[idx] = input_info.load_to_common(
+            &input_info.data_ptr[indexes[idx + 1] * input_info.element_size]);
+      }
+      auto result = std::apply(compute_fun, loaded_inputs);
+      store_common_to_out(result, &data_out[indexes[0] * out_element_size]);
+    }
+  } else {
+    for (const auto i : c10::irange(out.numel())) {
+      std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
+      for (const auto idx : c10::irange(kNumInputs)) {
+        const auto& input_info = inputs_info[idx];
+        loaded_inputs[idx] = input_info.load_to_common(
+            &input_info.data_ptr[i * input_info.element_size]);
+      }
+      auto result = std::apply(compute_fun, loaded_inputs);
+      store_common_to_out(result, &data_out[i * out_element_size]);
+    }
+  }
+}
+} // namespace internal
+
 template <typename CTYPE_COMMON, const char* op_name, typename Op>
 inline void apply_unitensor_elementwise_fn(
     const Op& compute_fun,
@@ -54,29 +134,8 @@ inline void apply_unitensor_elementwise_fn(
     SupportedTensorDtypes a_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
-  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
-
-  ET_KERNEL_CHECK(
-      ctx,
-      (internal::check_tensor_dtype(a, a_dtypes, compute_type) &&
-       internal::check_tensor_dtype(out, out_dtypes, compute_type)),
-      InvalidArgument, );
-
-  const auto load_a_to_common =
-      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(a, a_dtypes);
-  const auto store_common_to_out =
-      internal::get_store_common_to_tensor_fn<CTYPE_COMMON, op_name>(
-          out, out_dtypes);
-  const char* const data_a = reinterpret_cast<const char*>(a.const_data_ptr());
-  const auto a_element_size = a.element_size();
-  const auto out_element_size = out.element_size();
-  char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
-
-  auto out_numel = out.numel();
-  for (const auto i : c10::irange(out_numel)) {
-    auto result = compute_fun(load_a_to_common(&data_a[i * a_element_size]));
-    store_common_to_out(result, &data_out[i * out_element_size]);
-  }
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
+      compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
 }
 
 /**
@@ -94,53 +153,13 @@ inline void apply_bitensor_elementwise_fn(
     SupportedTensorDtypes b_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
-  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
-
-  ET_KERNEL_CHECK(
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
+      compute_fun,
       ctx,
-      (internal::check_tensor_dtype(a, a_dtypes, compute_type) &&
-       internal::check_tensor_dtype(b, b_dtypes, compute_type) &&
-       internal::check_tensor_dtype(out, out_dtypes, compute_type)),
-      InvalidArgument, );
-
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool any_is_broadcasted = (a_is_broadcasted || b_is_broadcasted);
-
-  const auto load_a_to_common =
-      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(a, a_dtypes);
-  const auto load_b_to_common =
-      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(b, b_dtypes);
-  const auto store_common_to_out =
-      internal::get_store_common_to_tensor_fn<CTYPE_COMMON, op_name>(
-          out, out_dtypes);
-  const char* const data_a = reinterpret_cast<const char*>(a.const_data_ptr());
-  const char* const data_b = reinterpret_cast<const char*>(b.const_data_ptr());
-  const auto a_element_size = a.element_size();
-  const auto b_element_size = b.element_size();
-  const auto out_element_size = out.element_size();
-  char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
-
-  auto out_numel = out.numel();
-  if (any_is_broadcasted) {
-    for (const auto [out_index, a_index, b_index] :
-         BroadcastIndexesRange<2>(out, a, b)) {
-      auto result = compute_fun(
-          load_a_to_common(&data_a[a_index * a_element_size]),
-          load_b_to_common(&data_b[b_index * b_element_size]));
-      store_common_to_out(result, &data_out[out_index * out_element_size]);
-    }
-  } else {
-    for (const auto i : c10::irange(out_numel)) {
-      size_t a_linear_index = i;
-      size_t b_linear_index = i;
-
-      auto result = compute_fun(
-          load_a_to_common(&data_a[a_linear_index * a_element_size]),
-          load_b_to_common(&data_b[b_linear_index * b_element_size]));
-      store_common_to_out(result, &data_out[i * out_element_size]);
-    }
-  }
+      out,
+      out_dtypes,
+      std::make_pair(&a, a_dtypes),
+      std::make_pair(&b, b_dtypes));
 }
 
 /**
@@ -175,63 +194,14 @@ inline void apply_tritensor_elementwise_fn(
     SupportedTensorDtypes c_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
-  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
-
-  ET_KERNEL_CHECK(
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
+      compute_fun,
       ctx,
-      (internal::check_tensor_dtype(a, a_dtypes, compute_type) &&
-       internal::check_tensor_dtype(b, b_dtypes, compute_type) &&
-       internal::check_tensor_dtype(c, c_dtypes, compute_type) &&
-       internal::check_tensor_dtype(out, out_dtypes, compute_type)),
-      InvalidArgument, );
-
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool c_is_broadcasted = !out.sizes().equals(c.sizes());
-  const bool any_is_broadcasted =
-      (a_is_broadcasted || b_is_broadcasted || c_is_broadcasted);
-
-  const auto load_a_to_common =
-      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(a, a_dtypes);
-  const auto load_b_to_common =
-      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(b, b_dtypes);
-  const auto load_c_to_common =
-      internal::get_load_to_common_fn<CTYPE_COMMON, op_name>(c, c_dtypes);
-  const auto store_common_to_out =
-      internal::get_store_common_to_tensor_fn<CTYPE_COMMON, op_name>(
-          out, out_dtypes);
-  const char* const data_a = reinterpret_cast<const char*>(a.const_data_ptr());
-  const char* const data_b = reinterpret_cast<const char*>(b.const_data_ptr());
-  const char* const data_c = reinterpret_cast<const char*>(c.const_data_ptr());
-  const auto a_element_size = a.element_size();
-  const auto b_element_size = b.element_size();
-  const auto c_element_size = c.element_size();
-  const auto out_element_size = out.element_size();
-  char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
-
-  auto out_numel = out.numel();
-  if (any_is_broadcasted) {
-    for (const auto [out_index, a_index, b_index, c_index] :
-         BroadcastIndexesRange<3>(out, a, b, c)) {
-      auto result = compute_fun(
-          load_a_to_common(&data_a[a_index * a_element_size]),
-          load_b_to_common(&data_b[b_index * b_element_size]),
-          load_c_to_common(&data_c[c_index * c_element_size]));
-      store_common_to_out(result, &data_out[out_index * out_element_size]);
-    }
-  } else {
-    for (const auto i : c10::irange(out_numel)) {
-      size_t a_linear_index = i;
-      size_t b_linear_index = i;
-      size_t c_linear_index = i;
-
-      auto result = compute_fun(
-          load_a_to_common(&data_a[a_linear_index * a_element_size]),
-          load_b_to_common(&data_b[b_linear_index * b_element_size]),
-          load_c_to_common(&data_c[c_linear_index * c_element_size]));
-      store_common_to_out(result, &data_out[i * out_element_size]);
-    }
-  }
+      out,
+      out_dtypes,
+      std::make_pair(&a, a_dtypes),
+      std::make_pair(&b, b_dtypes),
+      std::make_pair(&c, c_dtypes));
 }
 
 inline ScalarType get_compute_type(ScalarType& common_type) {
