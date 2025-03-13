@@ -126,9 +126,6 @@ build_aar() {
   \<uses-sdk android:minSdkVersion=\"19\" /\> \
   \</manifest\> > "${BUILD_AAR_DIR}/AndroidManifest.xml"
   pushd "${BUILD_AAR_DIR}"
-  # Rename libexecutorch_jni.so to libexecutorch.so for soname consistency
-  # between Java and JNI
-  find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   if [ "$EXECUTORCH_CMAKE_BUILD_TYPE" == "Release" ]; then
     find jni -type f -name "*.so" -exec "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip {} \;
   fi

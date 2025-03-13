@@ -28,3 +28,10 @@ build_android_test() {
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd
 }
+
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  build_android_llama_demo
+  build_android_benchmark_app
+  build_android_test
+fi
