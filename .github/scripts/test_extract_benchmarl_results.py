@@ -165,7 +165,11 @@ class Test(unittest.TestCase):
 
         # execute
         result = process_benchmark_results(content, "ios", "benchmark_configs")
+
+        # assert
         self.assertGreaterEqual(len(result), 2)
+        self.assertNotEqual(result[0]["metric"]["name"], "FAILURE_REPORT")
+        self.assertNotEqual(result[1]["metric"]["name"], "FAILURE_REPORT")
 
     @mock.patch("extract_benchmark_results.extract_android_benchmark_results")
     @mock.patch("extract_benchmark_results.read_benchmark_config")
@@ -253,6 +257,7 @@ class Test(unittest.TestCase):
             },
         )
         self.assertEqual(result[0]["metric"]["name"], "FAILURE_REPORT")
+        self.assertNotEqual(result[1]["metric"]["name"], "FAILURE_REPORT")
 
 
 def get_mock_extract_result():
