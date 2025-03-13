@@ -23,8 +23,8 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
-        model: [add, add_mul, emformer_join, emformer_transcribe, ic3, ic4, linear, llama2, mobilebert, mv2, mv3, resnet18, resnet50, vit, w2l]
-        backend: [portable, xnnpack-quantization-delegation]
+        model: [emformer_join, ic4, llama2, mobilebert, mv3, resnet50, vit, w2l]
+        backend: [xnnpack-quantization-delegation]
         include:
           - model: efficient_sam
             backend: portable
@@ -32,15 +32,11 @@ jobs:
             backend: portable
           - model: llama3_2_vision_encoder
             backend: portable
-          - model: lstm
-            backend: portable
-          - model: mul
+          - model: mv3
             backend: portable
           - model: phi-4-mini
             backend: portable
           - model: qwen2_5
-            backend: portable
-          - model: softmax
             backend: portable
       fail-fast: false
     with:
@@ -53,13 +49,12 @@ jobs:
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=cmake
         BACKEND=${{ matrix.backend }}
-        DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
         bash .ci/scripts/setup-conda.sh
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         # Build and test executorch
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
@@ -71,10 +66,16 @@ jobs:
       matrix:
         model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
         backend: [portable, xnnpack-quantization-delegation]
-        runner: [linux.arm64.2xlarge]
+        include:
+          - model: lstm
+            backend: portable
+          - model: mul
+            backend: portable
+          - model: softmax
+            backend: portable
       fail-fast: false
     with:
-      runner: ${{ matrix.runner }}
+      runner: linux.arm64.2xlarge
       docker-image: executorch-ubuntu-22.04-gcc11-aarch64
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
