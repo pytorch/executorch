@@ -303,7 +303,6 @@ Tensor& dequantize_per_tensor_out(
   switch (input.scalar_type()) {
     ET_FORALL_INT_TYPES(CALCULATE_INT_TYPE);
     CALCULATE_INT_TYPE(uint16_t, Bits16);
-    CALCULATE_INT_TYPE(uint16_t, UInt16);
     default:
       ET_CHECK_MSG(
           false,
@@ -501,7 +500,6 @@ Tensor& dequantize_per_channel_out(
   switch (input.scalar_type()) {
     ET_FORALL_INT_TYPES(CALCULATE_FLOAT_TYPE);
     CALCULATE_INT_TYPE(uint16_t, Bits16);
-    CALCULATE_INT_TYPE(uint16_t, UInt16);
     default:
       ET_CHECK_MSG(
           false,
