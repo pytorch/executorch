@@ -87,36 +87,6 @@ def parse_args() -> Any:
         help="the directory to keep the benchmark results",
     )
     parser.add_argument(
-        "--repo",
-        type=str,
-        required=True,
-        help="which GitHub repo this workflow run belongs to",
-    )
-    parser.add_argument(
-        "--head-branch",
-        type=str,
-        required=True,
-        help="the head branch that runs",
-    )
-    parser.add_argument(
-        "--workflow-name",
-        type=str,
-        required=True,
-        help="the name of the benchmark workflow",
-    )
-    parser.add_argument(
-        "--workflow-run-id",
-        type=int,
-        required=True,
-        help="the id of the benchmark workflow",
-    )
-    parser.add_argument(
-        "--workflow-run-attempt",
-        type=int,
-        required=True,
-        help="which retry of the workflow this is",
-    )
-    parser.add_argument(
         "--benchmark-configs",
         type=str,
         required=True,

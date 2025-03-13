@@ -462,11 +462,6 @@ jobs:
             ${CONDA_RUN} python .github/scripts/extract_benchmark_results.py \
               --artifacts "${ARTIFACTS_BY_JOB}" \
               --output-dir benchmark-results \
-              --repo ${{ github.repository }} \
-              --head-branch ${{ github.head_ref || github.ref_name }} \
-              --workflow-name "${{ github.workflow }}" \
-              --workflow-run-id ${{ github.run_id }} \
-              --workflow-run-attempt ${{ github.run_attempt }} \
               --benchmark-configs benchmark-configs
           done
 
