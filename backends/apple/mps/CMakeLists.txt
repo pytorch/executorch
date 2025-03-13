@@ -22,10 +22,6 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 set(_common_compile_options -Wno-deprecated-declarations)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
@@ -50,6 +46,7 @@ add_custom_command(
     "${_mps_schema__include_dir}/executorch/backends/apple/mps"
     ${_mps_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  DEPENDS flatc
   COMMENT "Generating mps_schema headers"
   VERBATIM
 )

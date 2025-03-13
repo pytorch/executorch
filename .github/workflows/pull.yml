@@ -13,24 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gather-models:
-    runs-on: ubuntu-22.04
-    outputs:
-      models: ${{ steps.gather-models.outputs.models }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'false'
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Extract the list of models to test
-        id: gather-models
-        run: |
-          set -eux
-
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${GITHUB_EVENT_NAME}"
-
   test-setup-linux-gcc:
     name: test-setup-linux-gcc
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -56,22 +38,25 @@ jobs:
         # Build and test ExecuTorch with the add model on portable backend.
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
 
-  test-models-linux:
-    name: test-models-linux
+  test-models-linux-basic:
+    name: test-models-linux-basic
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
-    needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix:
+        model: [mv3, vit]
+        backend: [portable, xnnpack-quantization-delegation]
+        build-tool: [cmake, buck2]
+        runner: [linux.2xlarge]
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: ${{ matrix.timeout }}
+      timeout: 90
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -80,11 +65,63 @@ jobs:
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
         BACKEND=${{ matrix.backend }}
-        DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+
+  test-models-linux:
+    name: test-models-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        model: [linear, add, add_mul, ic3, mv2, resnet18, resnet50, mobilebert, emformer_transcribe]
+        backend: [portable, xnnpack-quantization-delegation]
+        runner: [linux.2xlarge]
+        include:
+          - model: ic4
+            backend: portable
+            runner: linux.4xlarge.memory
+          - model: ic4
+            backend: xnnpack-quantization-delegation
+            runner: linux.4xlarge.memory
+          - model: emformer_join
+            backend: portable
+            runner: linux.4xlarge.memory
+          - model: emformer_join
+            backend: xnnpack-quantization-delegation
+            runner: linux.4xlarge.memory
+          - model: phi-4-mini
+            backend: portable
+            runner: linux.4xlarge.memory
+          - model: llama3_2_vision_encoder
+            backend: portable
+            runner: linux.4xlarge.memory
+          - model: w2l
+            backend: portable
+            runner: linux.4xlarge.memory
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=cmake
+        BACKEND=${{ matrix.backend }}
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+        # Build and test ExecuTorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-llama-runner-linux:
     name: test-llama-runner-linux
