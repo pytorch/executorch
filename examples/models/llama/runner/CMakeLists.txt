@@ -43,7 +43,7 @@ target_include_directories(
 
 list(
   APPEND _llama_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/src/tiktoken.cpp
 )
 list(APPEND _llama_runner__srcs
      ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/llama_tiktoken.cpp

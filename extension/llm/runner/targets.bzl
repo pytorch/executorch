@@ -49,7 +49,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 ":text_decoder_runner" + aten_suffix,
-                "//executorch/extension/llm/tokenizer:tokenizer_header",
+                "//pytorch/tokenizers:headers",
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
@@ -63,7 +63,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 ":text_decoder_runner" + aten_suffix,
-                "//executorch/extension/llm/tokenizer:tokenizer_header",
+                "//pytorch/tokenizers:headers",
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/extension/tensor:tensor" + aten_suffix,
             ],

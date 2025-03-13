@@ -10,6 +10,8 @@ load(":type_defs.bzl", "is_list", "is_tuple")
 
 _ET_TARGET_PREFIX = "executorch"
 
+_TOKENIZER_TARGET_PREFIX = "pytorch/tokenizers"
+
 # Indicates that an external_dep entry should fall through to the underlying
 # buck rule.
 _EXTERNAL_DEP_FALLTHROUGH = "<fallthrough>"
@@ -46,7 +48,6 @@ _EXTERNAL_DEPS = {
     "re2": "//extension/llm/tokenizers/third-party:re2",
     "sentencepiece": [], # Intentionally not supporting OSS buck build of sentencepiece.
     "sentencepiece-py": [],
-    "tiktoken": "//extension/llm/tokenizers:tiktoken",
     # Core C++ PyTorch functionality like Tensor and ScalarType.
     "torch-core-cpp": "//third-party:libtorch",
     "torchgen": "//third-party:torchgen",
@@ -66,10 +67,11 @@ def _resolve_external_dep(name):
         return [res]
 
 def _start_with_et_targets(target):
-    prefix = "//" + _ET_TARGET_PREFIX
-    for suffix in ("/", ":"):
-        if target.startswith(prefix + suffix):
-            return True
+    for prefix in [_ET_TARGET_PREFIX, _TOKENIZER_TARGET_PREFIX]:
+        prefix = "//" + prefix
+        for suffix in ("/", ":"):
+            if target.startswith(prefix + suffix):
+                return True
     return False
 
 def _patch_platforms(kwargs):
@@ -199,7 +201,11 @@ def _target_needs_patch(target):
     return _start_with_et_targets(target) or target.startswith(":")
 
 def _patch_target_for_env(target):
-    return target.replace("//executorch/", "//", 1)
+    if _ET_TARGET_PREFIX in target:
+        return target.replace("//executorch/", "//", 1)
+    elif _TOKENIZER_TARGET_PREFIX in target:
+        return target.replace("//pytorch/tokenizers", "//extension/llm/tokenizers", 1)
+    return target
 
 def _struct_to_json(object):
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.

@@ -11,8 +11,28 @@
 
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
+#include <pytorch/tokenizers/tokenizer.h>
 #include <executorch/extension/tensor/tensor.h>
+
+#define ET_UNWRAP_TOKENIZER(result__) \
+({  \
+  auto tk_result__ = (result__); \
+  if (!tk_result__.ok()) {          \
+    ET_LOG(Error, "Tokenizers error code %d", static_cast<uint32_t>(tk_result__.error())); \
+    return ::executorch::runtime::Error::InvalidArgument;     \
+  }                         \
+  std::move(*tk_result__);          \
+})
+
+#define ET_CHECK_TK_OK_OR_RETURN_ERROR(result__, ...) \
+({ \
+  auto tk_result__ = (result__); \
+  if (tk_result__ != ::tokenizers::Error::Ok) { \
+    ET_LOG(Error, "Tokenizer error: %d", static_cast<uint32_t>(tk_result__)); \
+    ET_LOG(Error, __VA_ARGS__); \
+    return ::executorch::runtime::Error::InvalidArgument; \
+  } \
+})
 
 namespace executorch {
 namespace extension {
@@ -21,7 +41,7 @@ namespace llm {
 class ET_EXPERIMENTAL TextTokenGenerator {
  public:
   TextTokenGenerator(
-      Tokenizer* tokenizer,
+      ::tokenizers::Tokenizer* tokenizer,
       TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
@@ -106,7 +126,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
 
       // print the token as string, decode it with the Tokenizer object
-      token_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
+      token_callback(ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
 
       if (should_stop_) {
         break;
@@ -130,7 +150,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   }
 
  private:
-  Tokenizer* tokenizer_;
+  ::tokenizers::Tokenizer* tokenizer_;
   TextDecoderRunner* text_decoder_runner_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
   bool use_kv_cache_;

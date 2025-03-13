@@ -20,6 +20,14 @@ clean_executorch_install_folders() {
   ./install_executorch.sh --clean
 }
 
+update_tokenizers_git_submodule() {
+  echo "Updating tokenizers git submodule..."
+  git submodule update --init
+  pushd extension/llm/tokenizers
+  git submodule update --init
+  popd
+}
+
 install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the

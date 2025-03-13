@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/extension/llm/tokenizer/tiktoken.h>
+#include <pytorch/tokenizers/tiktoken.h>
 
 namespace example {
 
@@ -17,7 +17,9 @@ enum class Version {
   Multimodal,
 };
 
-std::unique_ptr<::executorch::extension::llm::Tiktoken> get_tiktoken_for_llama(
+std::unique_ptr<::tokenizers::Tiktoken> get_tiktoken_for_llama(
     Version version = Version::Default);
+
+std::unique_ptr<std::vector<std::string>> get_multimodal_special_tokens();
 
 } // namespace example
