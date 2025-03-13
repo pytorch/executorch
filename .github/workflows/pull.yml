@@ -59,7 +59,8 @@ jobs:
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
           - runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-clang12
-          - runner: linux.arm64.2xlarge # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
+          # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
+          - runner: linux.arm64.2xlarge 
             build-tool: buck2
       fail-fast: false
     with:
