@@ -11,6 +11,7 @@ from . import (  # noqa
     op_add,
     op_amax,
     op_amin,
+    op_any,
     op_avg_pool2d,
     op_bmm,
     op_cat,

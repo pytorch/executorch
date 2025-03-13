@@ -447,7 +447,9 @@ Error Runner::generate(
   if (stats_callback) {
     stats_callback(stats_);
   }
-  io_mgr_->reset_io();
+  io_mgr_->reset_io(
+      get_methods_meta(prefill_forward_name_),
+      get_methods_meta(kv_forward_name_));
   prompt_.clear();
   return Error::Ok;
 }
