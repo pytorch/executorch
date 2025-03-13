@@ -89,6 +89,7 @@ deps = [
   "executorch",
   "executorch_core",
   "extension_threadpool",
+  "optimized_cpublas",
   "portable_kernels",
 ]
 
@@ -146,6 +147,7 @@ deps = [
   "executorch_core",
   "executorch",
   "extension_threadpool",
+  "optimized_cpublas",
   "portable_kernels",
 ]
 # ---------------------------------- core end ----------------------------------
@@ -413,6 +415,7 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "optimized_cpublas",
   "optimized_kernels",
   "extension_threadpool",
   "reduce_util",
@@ -452,6 +455,7 @@ deps = [
   "extension_data_loader",
   "extension_module",
   "extension_threadpool",
+  "optimized_cpublas",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
