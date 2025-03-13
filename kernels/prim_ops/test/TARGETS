@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
@@ -17,7 +17,7 @@ python_unittest(
     ],
 )
 
-cpp_unittest(
+runtime.cxx_test(
     name = "prim_ops_test_cpp",
     srcs = [
         "prim_ops_test.cpp",
@@ -31,6 +31,6 @@ cpp_unittest(
         "//executorch/runtime/kernel:kernel_runtime_context",  # @manual
         "//executorch/runtime/kernel:operator_registry",
         "//executorch/runtime/platform:platform",
-        "//executorch/test/utils:utils_aten",
+        "//executorch/test/utils:utils",
     ],
 )

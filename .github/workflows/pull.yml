@@ -13,24 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gather-models:
-    runs-on: ubuntu-22.04
-    outputs:
-      models: ${{ steps.gather-models.outputs.models }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'false'
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Extract the list of models to test
-        id: gather-models
-        run: |
-          set -eux
-
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${GITHUB_EVENT_NAME}"
-
   test-setup-linux-gcc:
     name: test-setup-linux-gcc
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -62,9 +44,12 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix:
+        model: [mv3, vit]
+        backend: [portable, xnnpack-quantization-delegation]
+        build-tool: [cmake, buck2]
+        runner: [linux.2xlarge]
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
