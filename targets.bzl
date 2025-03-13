@@ -1,5 +1,8 @@
+load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "APPLE", "CXX", "FBCODE")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/third-party:glob_defs.bzl", "subdir_glob")
+
+PLATFORMS = (CXX, ANDROID, APPLE, FBCODE)
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -18,6 +21,7 @@ def define_common_targets():
             "//pytorch/tokenizers/...",
         ],
         header_namespace = "",
+        platforms = PLATFORMS,
     )
 
     runtime.cxx_library(
@@ -39,6 +43,7 @@ def define_common_targets():
             "sentencepiece",
             "abseil-cpp",
         ],
+        platforms = PLATFORMS,
     )
 
     runtime.cxx_library(
@@ -60,6 +65,7 @@ def define_common_targets():
         exported_external_deps = [
             "re2",
         ],
+        platforms = PLATFORMS,
     )
 
     runtime.cxx_library(
@@ -72,6 +78,7 @@ def define_common_targets():
             ("include", "pytorch/tokenizers/third-party/llama.cpp-unicode/*.h"),
         ]),
         header_namespace = "",
+        platforms = PLATFORMS,
     )
 
     runtime.cxx_library(
@@ -97,6 +104,7 @@ def define_common_targets():
             "re2",
             "nlohmann_json",
         ],
+        platforms = PLATFORMS,
     )
 
     runtime.cxx_library(
@@ -111,4 +119,5 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
             "//pytorch/tokenizers/...",
         ],
+        platforms = PLATFORMS,
     )
