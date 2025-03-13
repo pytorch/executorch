@@ -49,11 +49,22 @@ jobs:
         model: [mv3, vit]
         backend: [portable, xnnpack-quantization-delegation]
         build-tool: [cmake, buck2]
-        runner: [linux.2xlarge]
+        runner: [linux.2xlarge, linux.arm64.2xlarge]
+        docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
+        # Excluding specific runner + docker image combinations that don't make sense:
+        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
+        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
+        exclude:
+          - runner: linux.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+          - runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-clang12
+          - runner: linux.arm64.2xlarge # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
+            build-tool: buck2
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ${{ matrix.docker-image }}
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
