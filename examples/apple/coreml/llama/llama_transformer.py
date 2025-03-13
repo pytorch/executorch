@@ -42,6 +42,7 @@ class ModelArgs:
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
     max_batch_size: int = 1
+    static_seq_len: int = 32
     max_seq_len: int = 128
     max_context_len: int = 2048
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
@@ -398,15 +399,18 @@ class Transformer(nn.Module):
         self.input_prune_map = params.input_prune_map
         self.output_prune_map = params.output_prune_map
         self.use_cache_list = params.use_cache_list
+        if self.use_cache_list:
+            # pyre-ignore: Incompatible attribute type [8]
+            self.forward = self.forward_use_cache_list
 
-    def forward(
+    def forward_use_cache_list(
         self,
         tokens: torch.LongTensor,  # tokens
         input_pos: torch.LongTensor,
-        input_length: torch.LongTensor,  # input_length
         k_caches: List[torch.FloatTensor],
         v_caches: List[torch.FloatTensor],
-        attn_mask: torch.LongTensor,
+        attn_mask: torch.FloatTensor,
+        input_length: torch.LongTensor,  # input_length
         h: Optional[torch.FloatTensor] = None,  # embeddings
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if (tokens is None) ^ (h is not None):
@@ -425,8 +429,54 @@ class Transformer(nn.Module):
                 h,
                 freqs_cos,
                 freqs_sin,
-                k_caches[i] if self.use_cache_list else k_caches[i, :, :, :, :],
-                v_caches[i] if self.use_cache_list else v_caches[i, :, :, :, :],
+                k_caches[i],
+                v_caches[i],
+                attn_mask,
+            )
+            k_out.append(new_k)
+            v_out.append(new_v)
+
+        if not self.generate_full_logits:
+            # Only the last logit is used for the new generated token
+            h = h[:, input_length - 1, :].squeeze(1)
+
+        h = self.norm(h)
+
+        logits = self.output(h)
+
+        if not self.use_cache_list:
+            k_out = torch.stack(k_out, dim=0)
+            v_out = torch.stack(v_out, dim=0)
+        return logits, k_out, v_out  # pyre-ignore[7]
+
+    def forward(
+        self,
+        tokens: torch.LongTensor,  # tokens
+        input_pos: torch.LongTensor,
+        k_caches: torch.FloatTensor,
+        v_caches: torch.FloatTensor,
+        attn_mask: torch.FloatTensor,
+        input_length: torch.LongTensor,  # input_length
+        h: Optional[torch.FloatTensor] = None,  # embeddings
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if (tokens is None) ^ (h is not None):
+            raise ValueError(
+                "You cannot specify both tokens and h at the same time, and must specify either one"
+            )
+        if tokens is not None and h is None:
+            h = self.tok_embeddings(tokens)
+        seqlen = h.shape[1]
+        freqs_cos, freqs_sin = self.rope.get_freqs(input_pos, seqlen)
+
+        k_out = []
+        v_out = []
+        for i, layer in enumerate(self.layers):
+            h, new_k, new_v = layer(
+                h,
+                freqs_cos,
+                freqs_sin,
+                k_caches[i, :, :, :, :],
+                v_caches[i, :, :, :, :],
                 attn_mask,
             )
             k_out.append(new_k)
@@ -446,7 +496,9 @@ class Transformer(nn.Module):
         return logits, k_out, v_out  # pyre-ignore[7]
 
 
-def load_model(checkpoint_path, params_path, max_seq_length, use_cache_list):
+def load_model(
+    checkpoint_path, params_path, max_seq_length, use_cache_list, static_seq_len=32
+):
     import json
 
     with open(params_path, "r") as f:
@@ -454,6 +506,7 @@ def load_model(checkpoint_path, params_path, max_seq_length, use_cache_list):
 
     args = ModelArgs(
         max_seq_len=max_seq_length,
+        static_seq_len=static_seq_len,
         generate_full_logits=False,
         use_cache_list=use_cache_list,
         **params,
@@ -618,14 +671,14 @@ class InputManager:
             ).reshape(1, -1),
             # input_pos
             torch.tensor([self.input_pos], dtype=torch.long),
-            # input_length
-            torch.tensor([input_length], dtype=torch.long),
             # k_cache
             self.k_caches,
             # v_cache
             self.v_caches,
             # attn_mask
-            self.attn_mask,
+            torch.zeros(self.attn_mask.shape, dtype=torch.float16),
+            # input_length
+            torch.tensor([input_length], dtype=torch.long),
         )
 
     def get_inputs_and_remaining_tokens(self, tokens: List[int]):
