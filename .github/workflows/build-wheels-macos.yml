@@ -1,11 +1,11 @@
 # From https://github.com/pytorch/test-infra/wiki/Using-Nova-Reusable-Build-Workflows
-name: Build M1 Wheels
+name: Build macOS Wheels
 
 on:
   pull_request:
     paths:
       - build/packaging/**
-      - .github/workflows/build-wheels-m1.yml
+      - .github/workflows/build-wheels-macos.yml
   push:
     branches:
       - nightly
@@ -56,7 +56,7 @@ jobs:
       # files to look at.
       submodules: true
       delocate-wheel: false
-      env-var-script: build/packaging/env_var_script_m1.sh
+      env-var-script: build/packaging/env_var_script_macos.sh
       pre-script: ${{ matrix.pre-script }}
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
