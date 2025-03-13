@@ -11,7 +11,7 @@ def define_common_targets():
     # build, where the portable ops are built from source and linked with :all_deps
     runtime.cxx_library(
         name = "all_deps",
-        deps = [
+        exported_deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
