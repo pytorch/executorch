@@ -139,7 +139,6 @@ Tensor& quantize_per_tensor_out(
     switch (out.scalar_type()) {                         \
       ET_FORALL_INT_TYPES_WITH(IN_CTYPE, QUANTIZE_IMPL); \
       QUANTIZE_IMPL(IN_CTYPE, uint16_t, Bits16)          \
-      QUANTIZE_IMPL(IN_CTYPE, uint16_t, UInt16)          \
       default:                                           \
         ET_CHECK_MSG(                                    \
             false,                                       \
@@ -336,7 +335,6 @@ Tensor& quantize_per_channel_out(
     switch (out.scalar_type()) {                         \
       ET_FORALL_INT_TYPES_WITH(CTYPE_IN, QUANTIZE_IMPL); \
       QUANTIZE_IMPL(CTYPE_IN, uint16_t, Bits16)          \
-      QUANTIZE_IMPL(CTYPE_IN, uint16_t, UInt16)          \
       default:                                           \
         ET_CHECK_MSG(                                    \
             false,                                       \
