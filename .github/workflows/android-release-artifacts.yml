@@ -53,6 +53,7 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
+        export BUILD_AAR_DIR="$(mkdir -p aar-out)"
         source build/build_android_library.sh
         build_jar
         build_android_native_library "arm64-v8a"
