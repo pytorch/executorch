@@ -18,37 +18,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gather-models:
-    runs-on: ubuntu-22.04
-    outputs:
-      models: ${{ steps.gather-models.outputs.models }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'false'
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Extract the list of models to test
-        id: gather-models
-        run: |
-          set -eux
-
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os macos --event "${GITHUB_EVENT_NAME}"
-
   test-models-macos:
     name: test-models-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix:
+        model: [add, add_mul, emformer_join, emformer_transcribe, ic3, ic4, linear, llama2, mobilebert, mv2, mv3, resnet18, resnet50, vit, w2l]
+        backend: [portable, xnnpack-quantization-delegation]
+        build-tool: [cmake]
+        runner: [macos-m1-stable]
+        include:
+          - model: efficient_sam
+            backend: portable
+          - model: llama
+            backend: portable
+          - model: llama3_2_vision_encoder
+            backend: portable
+          - model: lstm
+            backend: portable
+          - model: mul
+            backend: portable
+          - model: phi-4-mini
+            backend: portable
+          - model: qwen2_5
+            backend: portable
+          - model: softmax
+            backend: portable
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: ${{ matrix.timeout }}
+      timeout: 90
       script: |
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
