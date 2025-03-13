@@ -15,6 +15,9 @@ from executorch.backends.arm._passes.annotate_decomposed_matmul import (
 )
 from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
 from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
+from executorch.backends.arm._passes.convert_any_default_dim_dims_pass import (
+    ConvertAnyDefaultDimDimsPass,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -110,6 +113,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ConvertAnyDefaultDimDimsPass())
 
         self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
@@ -155,6 +159,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ConvertAnyDefaultDimDimsPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())

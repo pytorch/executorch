@@ -680,6 +680,11 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         )
 
 
+@register_annotator([torch.ops.aten.bitwise_or.Tensor, torch.ops.aten.__or__.Tensor])
+def annotate_bitwise_or(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.pow.Tensor_Tensor])
 def annotate_pow(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
