@@ -47,12 +47,17 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   message("Generated files ${gen_command_sources}")
 
   # optimized_native_cpu_ops_lib: Register optimized op kernels into the runtime
+  if(TARGET optimized_portable_kernels)
+    set(_optimized_native_cpu_ops_lib_portable_kernels_lib optimized_portable_kernels)
+  else()
+    set(_optimized_native_cpu_ops_lib_portable_kernels_lib portable_kernels)
+  endif()
   gen_operators_lib(
     LIB_NAME
     "optimized_native_cpu_ops_lib"
     KERNEL_LIBS
-    portable_kernels
     optimized_kernels
+    ${_optimized_native_cpu_ops_lib_portable_kernels_lib}
     DEPS
     executorch
   )
