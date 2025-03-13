@@ -25,8 +25,6 @@ jobs:
       matrix:
         model: [add, add_mul, emformer_join, emformer_transcribe, ic3, ic4, linear, llama2, mobilebert, mv2, mv3, resnet18, resnet50, vit, w2l]
         backend: [portable, xnnpack-quantization-delegation]
-        build-tool: [cmake]
-        runner: [macos-m1-stable]
         include:
           - model: efficient_sam
             backend: portable
@@ -46,14 +44,14 @@ jobs:
             backend: portable
       fail-fast: false
     with:
-      runner: ${{ matrix.runner }}
+      runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
         MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL=cmake
         BACKEND=${{ matrix.backend }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
