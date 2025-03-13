@@ -15,6 +15,9 @@ from executorch.backends.arm._passes.annotate_decomposed_matmul import (
 )
 from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
 from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
+from executorch.backends.arm._passes.convert_any_default_dim_dims_pass import (
+    ConvertAnyDefaultDimDimsPass,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -51,6 +54,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     RetraceFoldedDtypesPass,
 )
 from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import FuseConstantOpsPass
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (  # type: ignore[import-not-found]
     FuseQuantizedActivationPass,
 )
@@ -78,6 +82,7 @@ from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
@@ -108,13 +113,13 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ConvertAnyDefaultDimDimsPass())
 
         self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
-        self.add_pass(InsertTableOpsPass(exported_program))
 
         self.add_pass(RemoveClonePass())
         self.add_pass(SizeAdjustConv2DPass())
@@ -128,8 +133,12 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
+        self.add_pass(FuseViewCopyTransform())
+        self.add_pass(FuseConstantOpsPass(exported_program))
+        self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
+
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
@@ -150,12 +159,12 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ConvertAnyDefaultDimDimsPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
-        self.add_pass(InsertTableOpsPass(exported_program))
 
         self.add_pass(RemoveClonePass())
         self.add_pass(SizeAdjustConv2DPass())
@@ -169,6 +178,9 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
+        self.add_pass(FuseViewCopyTransform())
+        self.add_pass(FuseConstantOpsPass(exported_program))
+        self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
 

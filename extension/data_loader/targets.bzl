@@ -71,11 +71,18 @@ def define_common_targets():
         name = "mmap_data_loader",
         srcs = [
             "mmap_data_loader.cpp"
-        ] + (["mman_windows.cpp"] if host_info().os.is_windows else []),
-        headers = [
+        ] + select({
+            "DEFAULT": [],
+            "ovr_config//os:windows": ["mman_windows.cpp"],
+        }),
+        headers = select({
+            "DEFAULT": [],
+            "ovr_config//os:windows": ["mman_windows.h"],
+        }),
+        exported_headers = [
             "mman.h",
-        ] + (["mman_windows.h"] if host_info().os.is_windows else []),
-        exported_headers = ["mmap_data_loader.h"],
+            "mmap_data_loader.h"
+        ],
         visibility = [
             "//executorch/test/...",
             "//executorch/extension/pybindings/...",

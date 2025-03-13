@@ -31,8 +31,9 @@ This file contains the pytest hooks, fixtures etc. for the Arm test suite.
 def pytest_configure(config):
     pytest._test_options = {}  # type: ignore[attr-defined]
     pytest._test_options["corstone_fvp"] = False  # type: ignore[attr-defined]
+
     if (
-        getattr(config.option, "arm_run_corestoneFVP", False)
+        getattr(config.option, "arm_run_corstoneFVP", False)
         and config.option.arm_run_corstoneFVP
     ):
         corstone300_exists = shutil.which("FVP_Corstone_SSE-300_Ethos-U55")
