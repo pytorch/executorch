@@ -353,7 +353,7 @@ jobs:
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       upload-artifact: ios-apps
       secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD

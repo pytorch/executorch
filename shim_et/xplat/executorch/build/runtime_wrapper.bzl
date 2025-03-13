@@ -193,7 +193,7 @@ def _patch_kwargs_common(kwargs):
     # Patch up references to "//executorch/..." in lists of build targets,
     # if necessary.
     use_static_deps = kwargs.pop("use_static_deps", False)
-    for dep_type in ("deps", "exported_deps", "visibility"):
+    for dep_type in ("deps", "exported_deps", "visibility", "preload_deps"):
         if kwargs.get(dep_type):
             # deps may contain select() elements, dicts that map names to lists
             # of targets. selects.apply() will run the provided function on all
