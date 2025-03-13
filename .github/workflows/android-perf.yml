@@ -362,8 +362,13 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
-        export ANDROID_ABIS="arm64-v8a"
-        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029 bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
+        source build/build_android_library.sh
+        PYTHON_EXECUTABLE=python build_jar
+        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029 build_android_native_library "arm64-v8a"
+        build_aar
+        source build/build_android_demo_app.sh
+        PYTHON_EXECUTABLE=python build_android_llama_demo
+        PYTHON_EXECUTABLE=python .ci/scripts/collect_android_artifacts_for_upload.sh $ARTIFACTS_DIR_NAME
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   benchmark-on-device:

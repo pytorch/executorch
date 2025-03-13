@@ -28,8 +28,16 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
+        source build/build_android_library.sh
+        build_jar
+        build_android_native_library "arm64-v8a"
+        build_aar
         # Build LLM Demo for Android
-        bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
+        source build/build_android_demo_app.sh
+        build_android_llama_demo
+        build_android_test
+        # Upload
+        .ci/scripts/collect_android_artifacts_for_upload.sh $ARTIFACTS_DIR_NAME
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:

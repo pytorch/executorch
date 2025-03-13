@@ -137,51 +137,9 @@ build_aar() {
   popd
 }
 
-build_android_demo_apps() {
-  mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
-  cp ${BUILD_AAR_DIR}/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
-  pushd examples/demo-apps/android/LlamaDemo
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
-  popd
-
-  mkdir -p extension/benchmark/android/benchmark/app/libs
-  cp ${BUILD_AAR_DIR}/executorch.aar extension/benchmark/android/benchmark/app/libs
-  pushd extension/benchmark/android/benchmark
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
-  popd
-
-  pushd extension/android_test
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew testDebugUnitTest
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
-  popd
-}
-
-collect_artifacts_to_be_uploaded() {
-  ARTIFACTS_DIR_NAME="$1"
-  DEMO_APP_DIR="${ARTIFACTS_DIR_NAME}/llm_demo"
-  # The app directory is named using its build flavor as a suffix.
-  mkdir -p "${DEMO_APP_DIR}"
-  # Collect the app and its test suite
-  cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${DEMO_APP_DIR}"
-  cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${DEMO_APP_DIR}"
-  # Collect JAR and AAR
-  cp extension/android/build/libs/executorch.jar "${DEMO_APP_DIR}"
-  find "${BUILD_AAR_DIR}/" -name 'executorch*.aar' -exec cp {} "${DEMO_APP_DIR}" \;
-  # Collect MiniBench APK
-  MINIBENCH_APP_DIR="${ARTIFACTS_DIR_NAME}/minibench"
-  mkdir -p "${MINIBENCH_APP_DIR}"
-  cp extension/benchmark/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
-  cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
-  # Collect Java library test
-  JAVA_LIBRARY_TEST_DIR="${ARTIFACTS_DIR_NAME}/library_test_dir"
-  mkdir -p "${JAVA_LIBRARY_TEST_DIR}"
-  cp extension/android_test/build/outputs/apk/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
-  cp extension/android_test/build/outputs/apk/androidTest/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
-}
-
 main() {
   if [[ -z "${BUILD_AAR_DIR:-}" ]]; then
-    BUILD_AAR_DIR="$(mktemp -d)"
+    BUILD_AAR_DIR="$(mkdir -p aar-out)"
   fi
   export BUILD_AAR_DIR
   if [ -z "$ANDROID_ABIS" ]; then
@@ -189,17 +147,11 @@ main() {
   fi
   export ANDROID_ABIS
 
-  ARTIFACTS_DIR_NAME="$1"
-
   build_jar
   for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
     build_android_native_library ${ANDROID_ABI}
   done
   build_aar
-  build_android_demo_apps
-  if [ -n "$ARTIFACTS_DIR_NAME" ]; then
-    collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}
-  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
