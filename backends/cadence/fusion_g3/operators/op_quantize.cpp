@@ -299,7 +299,6 @@ Tensor& quantize_impl(
   case ScalarType::in_dtype:                                         \
     switch (out.scalar_type()) {                                     \
       ET_FORALL_INT_TYPES_WITH(IN_CTYPE, ASYM_QUANTIZE_IMPL_TENSOR); \
-      ASYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, UInt16)          \
       default:                                                       \
         ET_CHECK_MSG(                                                \
             false,                                                   \
@@ -372,7 +371,6 @@ Tensor& quantize_impl(
   case ScalarType::in_dtype:                                          \
     switch (out.scalar_type()) {                                      \
       ET_FORALL_INT_TYPES_WITH(CTYPE_IN, ASYM_QUANTIZE_IMPL_CHANNEL); \
-      ASYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, UInt16)          \
       default:                                                        \
         ET_CHECK_MSG(                                                 \
             false,                                                    \
@@ -505,7 +503,6 @@ Tensor& quantize_impl(
   case ScalarType::in_dtype:                                        \
     switch (out.scalar_type()) {                                    \
       ET_FORALL_INT_TYPES_WITH(IN_CTYPE, SYM_QUANTIZE_IMPL_TENSOR); \
-      SYM_QUANTIZE_IMPL_TENSOR(IN_CTYPE, uint16_t, UInt16)          \
       default:                                                      \
         ET_CHECK_MSG(                                               \
             false,                                                  \
@@ -577,7 +574,6 @@ Tensor& quantize_impl(
   case ScalarType::in_dtype:                                         \
     switch (out.scalar_type()) {                                     \
       ET_FORALL_INT_TYPES_WITH(CTYPE_IN, SYM_QUANTIZE_IMPL_CHANNEL); \
-      SYM_QUANTIZE_IMPL_CHANNEL(CTYPE_IN, uint16_t, UInt16)          \
       default:                                                       \
         ET_CHECK_MSG(                                                \
             false,                                                   \
