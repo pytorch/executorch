@@ -435,7 +435,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@addNewJsonOutput
     strategy:
       matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
