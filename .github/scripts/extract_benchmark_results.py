@@ -594,6 +594,7 @@ def generateDeviceLevelFailureRecord(
     osPrefix = getDeviceOsType(app)
     job_report_os = job_report["os"]
 
+    # make sure the device os name has prefix iOS and Android
     device_os = job_report_os
     if not job_report_os.startswith(osPrefix):
         device_os = f"{osPrefix} {job_report_os}"
