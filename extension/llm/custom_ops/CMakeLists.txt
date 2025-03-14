@@ -49,7 +49,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
   )
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
   )
