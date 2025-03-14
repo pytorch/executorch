@@ -102,7 +102,7 @@ void et_view(KernelRuntimeContext& context, EValue** stack) {
           out,
           /*buffer=*/self.mutable_data_ptr(),
           /*buffer_size=*/out.nbytes()) == Error::Ok,
-      InvalidArgument,
+      Internal,
       ,
       "Failed to set data_ptr for out to self.");
 }
