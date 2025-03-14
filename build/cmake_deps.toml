@@ -353,24 +353,6 @@ filters = [
 # ---------------------------------- MPS end ----------------------------------
 # ---------------------------------- XNNPACK start ----------------------------------
 
-[targets.xnn_executor_runner]
-buck_targets = [
-  "//examples/xnnpack:xnn_executor_runner",
-]
-filters = [
-  ".cpp$",
-]
-excludes = [
-  "^codegen",
-]
-deps = [
-  "executorch",
-  "executorch_core",
-  "extension_threadpool",
-  "xnnpack_backend",
-  "portable_kernels",
-]
-
 [targets.xnnpack_backend]
 buck_targets = [
   "//backends/xnnpack:xnnpack_backend",
