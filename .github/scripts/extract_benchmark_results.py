@@ -99,7 +99,7 @@ def parse_args() -> Any:
         type=str,
         required=True,
         choices=["android", "ios"],
-        help="the type of app, ios or android, this is mainly used when a failed job happens to generate default record",
+        help="the type of app, ios or android, this is mainly used to generate default record when a failed job happens",
     )
 
     return parser.parse_args()
