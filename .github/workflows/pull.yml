@@ -38,8 +38,8 @@ jobs:
         # Build and test ExecuTorch with the add model on portable backend.
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
 
-  test-models-linux-basic:
-    name: test-models-linux-basic
+  test-models-linux:
+    name: test-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -49,26 +49,14 @@ jobs:
         model: [mv3, vit]
         backend: [portable, xnnpack-quantization-delegation]
         build-tool: [cmake, buck2]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
-        docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
-        # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
-        exclude:
-          - runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-          # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
-          - runner: linux.arm64.2xlarge 
-            build-tool: buck2
+        runner: [linux.2xlarge]
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ${{ matrix.docker-image }}
+      docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: ${{ matrix.timeout }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -77,66 +65,13 @@ jobs:
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
         BACKEND=${{ matrix.backend }}
+        DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
-
-  test-models-linux:
-    name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        model: [linear, add, add_mul, ic3, mv2, resnet18, resnet50, mobilebert, emformer_transcribe]
-        backend: [portable, xnnpack-quantization-delegation]
-        runner: [linux.2xlarge]
-        include:
-          - model: ic4
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: ic4
-            backend: xnnpack-quantization-delegation
-            runner: linux.4xlarge.memory
-          - model: emformer_join
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: emformer_join
-            backend: xnnpack-quantization-delegation
-            runner: linux.4xlarge.memory
-          - model: phi-4-mini
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: llama3_2_vision_encoder
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: w2l
-            backend: portable
-            runner: linux.4xlarge.memory
-      fail-fast: false
-    with:
-      runner: ${{ matrix.runner }}
-      docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=cmake
-        BACKEND=${{ matrix.backend }}
-
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
 
   test-llama-runner-linux:
-    # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -145,29 +80,21 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        mode: [xnnpack+custom+qe,xnnpack+custom+quantize_kv,xnnpack+quantize_kv]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
-        docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
+        mode: [portable, xnnpack+custom, xnnpack+custom+qe,xnnpack+custom+quantize_kv,xnnpack+quantize_kv]
         include:
           - dtype: bf16
+            mode: portable
+          - dtype: bf16
             mode: custom
-            runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-        # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
-        exclude:
-          - runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
-      runner: ${{ matrix.runner }}
-      docker-image: ${{ matrix.docker-image }}
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
+      upload-artifact: android-models
+      upload-artifact-to-s3: true
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")

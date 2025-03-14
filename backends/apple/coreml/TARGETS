@@ -5,14 +5,6 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-# TODO: this is a placeholder to support internal fbcode build. We should add the coreml backend target properly.
-runtime.python_library(
-    name = "coreml",
-    visibility = [
-        "@EXECUTORCH_CLIENTS",
-    ],
-)
-
 runtime.python_library(
     name = "backend",
     srcs = glob([
