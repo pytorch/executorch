@@ -19,7 +19,6 @@ from extract_benchmark_results import (
     process_benchmark_results
 )
 
-
 def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
     return {
         "git_job_name": "benchmark-on-device (ic4, mps, apple_iphone_15, arn:aws:devicefarm:us-west-2:308535385114:devicep... / mobile-job (ios)",
@@ -151,7 +150,7 @@ def mockExtractBenchmarkResults(artifact_type, artifact_s3_url):
 class Test(unittest.TestCase):
     @mock.patch("extract_benchmark_results.extract_ios_benchmark_results")
     @mock.patch("extract_benchmark_results.read_benchmark_config")
-    def test_processBenchmarkResults_when_ios_succuess_then_returnBenchmarkResults(
+    def test_process_benchmark_results_when_ios_succuess_then_returnBenchmarkResults(
         self, read_benchmark_config_mock, extract_ios_mock
     ):
         # setup mocks
@@ -173,7 +172,7 @@ class Test(unittest.TestCase):
 
     @mock.patch("extract_benchmark_results.extract_android_benchmark_results")
     @mock.patch("extract_benchmark_results.read_benchmark_config")
-    def test_processBenchmarkResults_when_android_succuess_then_returnBenchmarkResults(
+    def test_process_benchmark_results_when_android_succuess_then_returnBenchmarkResults(
         self, read_benchmark_config_mock, extract_android_mock
     ):
         # setup mocks
@@ -189,7 +188,7 @@ class Test(unittest.TestCase):
         result = process_benchmark_results(content, "android", "benchmark_configs")
         self.assertGreaterEqual(len(result), 2)
 
-    def test_processBenchmarkResults_when_ANDROID_git_job_fails_then_returnBenchmarkRecordWithFailure(
+    def test_process_benchmark_results_when_ANDROID_git_job_fails_then_returnBenchmarkRecordWithFailure(
         self,
     ):
         # setup mocks
@@ -220,7 +219,7 @@ class Test(unittest.TestCase):
                 "extra_info": {
                     "app_type": "ANDROID_APP",
                     "job_conclusion": "FAILURE",
-                    "failure_level": "GIT_JOB",
+                    "failure_type": "GIT_JOB",
                     "job_report": "{}",
                 },
             },
@@ -230,7 +229,7 @@ class Test(unittest.TestCase):
         self.assertEqual(result[0]["runners"][0]["type"], "Android")
         self.assertEqual(result[0]["metric"]["name"], "FAILURE_REPORT")
 
-    def test_processBenchmarkResults_when_IOS_git_job_fails_then_returnBenchmarkRecordWithFailure(
+    def test_process_benchmark_results_when_IOS_git_job_fails_then_returnBenchmarkRecordWithFailure(
         self,
     ):
         # setup mocks
@@ -261,7 +260,7 @@ class Test(unittest.TestCase):
                 "extra_info": {
                     "app_type": "IOS_APP",
                     "job_conclusion": "FAILURE",
-                    "failure_level": "GIT_JOB",
+                    "failure_type": "GIT_JOB",
                     "job_report": "{}",
                 },
             },
@@ -272,7 +271,7 @@ class Test(unittest.TestCase):
 
     @mock.patch("extract_benchmark_results.extract_ios_benchmark_results")
     @mock.patch("extract_benchmark_results.read_benchmark_config")
-    def test_processBenchmarkResults_when_one_IOS_mobile_job_fails_then_returnBenchmarkRecordWithFailure(
+    def test_process_benchmark_results_when_one_IOS_mobile_job_fails_then_returnBenchmarkRecordWithFailure(
         self, read_benchmark_config_mock, extract_ios_mock
     ):
         # setup mocks
@@ -302,6 +301,49 @@ class Test(unittest.TestCase):
         self.assertEqual(result[0]["metric"]["name"], "FAILURE_REPORT")
 
         self.assertNotEqual(result[1]["metric"]["name"], "FAILURE_REPORT")
+
+    @mock.patch("extract_benchmark_results.extract_ios_benchmark_results")
+    @mock.patch("extract_benchmark_results.read_benchmark_config")
+    def test_process_benchmark_results_when_one_mobile_job_fails_with_invalid_app_type_then_throw_errors(
+        self, read_benchmark_config_mock, extract_ios_mock
+    ):
+        # setup mocks
+        content = get_mock_happy_flow_content()
+        content["job_reports"][0]["result"] = "FAILED"
+
+        extract_ios_mock.side_effect = (
+            lambda artifact_type, artifact_s3_url: mockExtractBenchmarkResults(
+                artifact_type, artifact_s3_url
+            )
+        )
+        read_benchmark_config_mock.return_value = {}
+
+        # execute
+        with self.assertRaises(ValueError) as context:
+            _ = process_benchmark_results(content, "random", "benchmark_configs")
+
+        # assert
+        self.assertTrue("unknown device type detected: random" in str(context.exception))
+        read_benchmark_config_mock.assert_not_called()
+        extract_ios_mock.assert_not_called()
+
+
+    def test_process_benchmark_results_when_git_job_fails_with_invalid_git_job_name_then_throw_errors(
+        self,
+    ):
+        # setup mocks
+        # mimic artifact when job is failed.
+        content = {
+            "git_job_name": "benchmark-on (ic4, qnn_q8, samsung_galaxy_s22, arn:aws:devicefarm:us-west-2:308535385114:d... / mobile-job (android)"
+        }
+
+        # execute
+        with self.assertRaises(ValueError) as context:
+            _ = process_benchmark_results(content, "ios", "benchmark_configs")
+
+        # assert
+        print("exception yang:",str(context.exception))
+        self.assertTrue("regex pattern not found from git_job_name" in str(context.exception))
 
 
 def get_mock_extract_result():

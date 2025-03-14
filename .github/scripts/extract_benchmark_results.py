@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import sys
 import zipfile
 from argparse import Action, ArgumentParser, Namespace
 from io import BytesIO
@@ -389,9 +390,14 @@ def transform(
     ]
 
 
-def extract_model_info(git_job_name: str) -> Optional[Dict[str, str]]:
+def extract_model_info(git_job_name: str) -> Dict[str, str]:
     """
-    Get model infomation form git_job_name, for example:
+    Get model infomation form git_job_name.
+    CHANGE IF CHANGE:
+        - get_benchmark_configs() in executorch/.ci/scripts/gather_benchmark_configs.py
+        - job name benchmark-on-device in executorch/.github/workflows/android-perf.yml
+        - job name benchmark-on-device in executorch/.github/workflows/apple-perf.yml
+    for example:
         benchmark-on-device (ic4, qnn_q8, samsung_galaxy_s24, arn:aws:devicefarm:us-west-2:308535385114:d... / mobile-job (android)
         benchmark-on-device (llama, xnnpack_q8, apple_iphone_15, arn:aws:devicefarm:us-west-2:30853538511... / mobile-job (ios)
     """
@@ -400,18 +406,16 @@ def extract_model_info(git_job_name: str) -> Optional[Dict[str, str]]:
     pattern = r"benchmark-on-device \((.+)"
     match = re.search(pattern, git_job_name)
     if not match:
-        warning(
-            f"pattern not found from git_job_name {git_job_name}, cannot extract correct names"
+        raise ValueError(
+            f"regex pattern not found from git_job_name: pattern: `{pattern}`, git_job_name: `{git_job_name}`. please check if pattern is in sync with executorch/.ci/scripts/gather_benchmark_configs.py"
         )
-        return None
 
     extracted_content = match.group(1)  # Get content after the opening parenthesis
     items = extracted_content.split(",")
     if len(items) < 3:
-        warning(
-            f"expect at least 3 items extrac from git_job_name {git_job_name}, but got {items}"
+        raise ValueError(
+            f"expect at least 3 items extrac from git_job_name {git_job_name}, but got {items}. please check if pattern is in sync with executorch/.ci/scripts/gather_benchmark_configs.py"
         )
-        return None
 
     return {
         "model_name": items[0].strip(),
@@ -441,7 +445,7 @@ def transform_failure_record(
             "extra_info": {
                 "app_type": app_type,
                 "job_conclusion": result,
-                "failure_level": level,
+                "failure_type": level,
                 "job_report": json.dumps(report),
             },
         },
@@ -507,7 +511,7 @@ def get_benchmark_config(
     return read_benchmark_config(artifact_s3_url, benchmark_configs)
 
 
-def extractBenchmarkResultFromArtifact(
+def extract_benchmark_result_from_artifact(
     artifact: Dict[str, Any],
     benchmark_config: Dict[str, str],
 ) -> List[Any]:
@@ -533,44 +537,45 @@ def extractBenchmarkResultFromArtifact(
     return transform(app_type, benchmark_results, benchmark_config, job_name)
 
 
-def getAppType(type: str):
+def get_app_type(type: str):
     match type:
         case "ios":
             return "IOS_APP"
         case "android":
             return "ANDROID_APP"
-    warning(
-        f"unknown device type detected: {type}, currently we only support ios and android"
-    )
-    return "UNKNOWN"
+        case _:
+            raise ValueError(
+                f"unknown device type detected: {type}, currently we only support `ios` and `android`"
+            )
 
 
-def getDeviceOsType(type: str):
+def get_device_os_type(type: str):
     match type:
         case "ios":
             return "iOS"
         case "android":
             return "Android"
-    return "UNKNOWN"
+        case _:
+            raise ValueError(
+                f"unknown device type detected: {type}, currently we only support `ios` and `android`"
+            )
 
 
-def generateGitJobLevelFailureRecord(git_job_name: str, app: str) -> Any:
+def generate_git_job_level_failure_record(git_job_name: str, app: str) -> Any:
     """
     generates benchmark record for GIT_JOB level failure, this is mainly used as placeholder in UI to indicate job failures.
     """
     level = "GIT_JOB"
-    app_type = getAppType(app)
-    device_prefix = getDeviceOsType(app)
+
+    app_type = get_app_type(app)
+    device_prefix = get_device_os_type(app)
 
     model_infos = extract_model_info(git_job_name)
-    model_name = "UNKNOWN"
-    model_backend = "UNKNOWN"
-    device_pool_name = "UNKNOWN"
 
-    if model_infos:
-        model_name = model_infos["model_name"]
-        model_backend = model_infos["model_backend"]
-        device_pool_name = model_infos["device_pool_name"]
+    model_name = model_infos["model_name"]
+    model_backend = model_infos["model_backend"]
+    device_pool_name = model_infos["device_pool_name"]
+
     return transform_failure_record(
         app_type,
         level,
@@ -582,17 +587,20 @@ def generateGitJobLevelFailureRecord(git_job_name: str, app: str) -> Any:
     )
 
 
-def generateDeviceLevelFailureRecord(
+def generate_device_level_failure_record(
     git_job_name: str, job_report: Any, app: str
 ) -> Any:
     """
     generates benchmark record for DEVICE_JOB level failure, this is mainly used as placeholder in UI to indicate job failures.
     """
     level = "DEVICE_JOB"
+
     model_infos = extract_model_info(git_job_name)
-    model_name = "UNKNOWN"
-    model_backend = "UNKNOWN"
-    osPrefix = getDeviceOsType(app)
+
+    model_name = model_infos["model_name"]
+    model_backend = model_infos["model_backend"]
+
+    osPrefix = get_device_os_type(app)
     job_report_os = job_report["os"]
 
     # make sure the device os name has prefix iOS and Android
@@ -600,9 +608,6 @@ def generateDeviceLevelFailureRecord(
     if not job_report_os.startswith(osPrefix):
         device_os = f"{osPrefix} {job_report_os}"
 
-    if model_infos:
-        model_name = model_infos["model_name"]
-        model_backend = model_infos["model_backend"]
     return transform_failure_record(
         job_report["app_type"],
         level,
@@ -619,6 +624,8 @@ def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
     """
     main code to run to extract benchmark results from artifacts.
     Job can be failed at two levels: GIT_JOB and DEVICE_JOB. If any job fails, generate failure benchmark record.
+
+    this function is mainly used in android-perf and apple-perf workflow.
     """
     artifacts = content.get("artifacts")
     git_job_name = content["git_job_name"]
@@ -626,7 +633,13 @@ def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
     # this indicated that the git job fails, generate a failure record
     if not artifacts:
         info(f"job failed at GIT_JOB level with git job name {git_job_name}")
-        return [generateGitJobLevelFailureRecord(git_job_name, app)]
+        try:
+            failure_record = generate_git_job_level_failure_record(git_job_name, app)
+        except Exception as e:
+            raise ValueError(
+                f"Fail to generate record for GIT_JOB level failure for {git_job_name}: {e}"
+            )
+        return [failure_record]
 
     arn_to_artifacts = group_by_arn(artifacts)
     job_reports = content["job_reports"]
@@ -649,14 +662,20 @@ def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
             arn = job_report["arn"]
             info(f"job {arn} failed at DEVICE_JOB level with result {result}")
             # device test failed, generate a failure record instead
-            all_benchmark_results.append(
-                generateDeviceLevelFailureRecord(git_job_name, job_report, app)
-            )
+            try:
+                failure_record = generate_device_level_failure_record(
+                    git_job_name, job_report, app
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Fail to generate record for DEVICE_JOB level failure for job {job_arn}: {e}"
+                )
+            all_benchmark_results.append(failure_record)
         else:
             benchmark_config = get_benchmark_config(job_artifacts, benchmark_configs)
             for job_artifact in job_artifacts:
                 # generate result for each schema
-                results = extractBenchmarkResultFromArtifact(
+                results = extract_benchmark_result_from_artifact(
                     job_artifact, benchmark_config
                 )
                 all_benchmark_results.extend(results)

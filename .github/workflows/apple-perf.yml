@@ -425,6 +425,7 @@ jobs:
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
 
+  # CHANGE IF this job name 'benchmark-on-device' changed: extract_model_info() in executorch/.github/scripts/extract_benchmark_results.py
   benchmark-on-device:
     if: always()
     needs:
