@@ -402,7 +402,6 @@ def extract_model_info(git_job_name: str) -> Dict[str, str]:
         benchmark-on-device (llama, xnnpack_q8, apple_iphone_15, arn:aws:devicefarm:us-west-2:30853538511... / mobile-job (ios)
     """
     # Extract content inside the first parentheses,
-
     pattern = r"benchmark-on-device \((.+)"
     match = re.search(pattern, git_job_name)
     if not match:
