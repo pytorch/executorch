@@ -18,12 +18,14 @@ namespace detail {
 // ---- Helper utils start -----------------------------------------------------
 namespace {
 
-static uint64_t _max_size() { return std::numeric_limits<uint64_t>::max(); }
+static uint64_t _max_size() {
+  return std::numeric_limits<uint64_t>::max();
+}
 
-static std::vector<uint64_t>
-_byte_pair_merge(const std::string &piece,
-                 const std::unordered_map<std::string, uint64_t> &ranks,
-                 std::function<uint64_t(uint64_t, uint64_t)> func) {
+static std::vector<uint64_t> _byte_pair_merge(
+    const std::string& piece,
+    const std::unordered_map<std::string, uint64_t>& ranks,
+    std::function<uint64_t(uint64_t, uint64_t)> func) {
   // This is a vector of (start, rank).
   // The rank is of the byte pair starting at position start.
   // The rank of the last item in the vector is not a valid value.
@@ -33,10 +35,10 @@ _byte_pair_merge(const std::string &piece,
     parts.emplace_back(idx, _max_size());
   }
 
-  auto get_rank =
-      [&piece, &ranks](const std::vector<std::pair<uint64_t, uint64_t>> &parts,
-                       uint64_t start_idx,
-                       uint64_t skip) -> std::optional<uint64_t> {
+  auto get_rank = [&piece, &ranks](
+                      const std::vector<std::pair<uint64_t, uint64_t>>& parts,
+                      uint64_t start_idx,
+                      uint64_t skip) -> std::optional<uint64_t> {
     if (start_idx + skip + 2 < parts.size()) {
       auto s = parts[start_idx].first;
       auto e = parts[start_idx + skip + 2].first;
@@ -132,7 +134,8 @@ _byte_pair_merge(const std::string &piece,
 
 std::pair<std::optional<std::string>, re2::StringPiece>
 BPETokenizerBase::split_with_allowed_special_token_(
-    re2::StringPiece &input, const Encoder &allowed_special) const {
+    re2::StringPiece& input,
+    const Encoder& allowed_special) const {
   if (!special_token_regex_) {
     return std::make_pair(std::nullopt, input);
   }
@@ -158,7 +161,8 @@ BPETokenizerBase::split_with_allowed_special_token_(
 
 Result<std::pair<std::vector<uint64_t>, uint64_t>>
 BPETokenizerBase::encode_with_special_token_(
-    const std::string &text, const Encoder &allowed_special) const {
+    const std::string& text,
+    const Encoder& allowed_special) const {
   std::vector<uint64_t> tokens;
   uint64_t last_piece_token_len = 0;
   re2::StringPiece input(text);
@@ -172,7 +176,7 @@ BPETokenizerBase::encode_with_special_token_(
       uint64_t token = 0;
       try {
         token = special_token_encoder_.at(*special);
-      } catch (const std::out_of_range &) {
+      } catch (const std::out_of_range&) {
         // Should never go here, since special pattern includes all special
         // chars.
         TK_LOG(Error, "unknown special token: %s\n", special->c_str());
@@ -192,9 +196,9 @@ BPETokenizerBase::encode_with_special_token_(
   return std::make_pair(tokens, last_piece_token_len);
 }
 
-Result<std::vector<uint64_t>>
-BPETokenizerBase::byte_pair_encode_(const std::string &piece,
-                                    const Encoder &encoder) const {
+Result<std::vector<uint64_t>> BPETokenizerBase::byte_pair_encode_(
+    const std::string& piece,
+    const Encoder& encoder) const {
   if (piece.size() == 1) {
     auto iter = encoder.find(piece);
     if (iter != encoder.end()) {
@@ -205,26 +209,27 @@ BPETokenizerBase::byte_pair_encode_(const std::string &piece,
     }
   }
 
-  return _byte_pair_merge(piece, encoder,
-                          [&piece, &encoder](uint64_t start, uint64_t stop) {
-                            std::string key = piece.substr(start, stop - start);
-                            auto iter = encoder.find(key);
-                            if (iter != encoder.end()) {
-                              return iter->second;
-                            } else {
-                              // TODO: what if key does not exist? Should we
-                              // return `unknown`? assert(false); // ??
-                              return uint64_t(0);
-                            }
-                          });
+  return _byte_pair_merge(
+      piece, encoder, [&piece, &encoder](uint64_t start, uint64_t stop) {
+        std::string key = piece.substr(start, stop - start);
+        auto iter = encoder.find(key);
+        if (iter != encoder.end()) {
+          return iter->second;
+        } else {
+          // TODO: what if key does not exist? Should we
+          // return `unknown`? assert(false); // ??
+          return uint64_t(0);
+        }
+      });
 }
 
 // ---- protected end ----------------------------------------------------------
 // ---- public start -----------------------------------------------------------
 
-Result<std::vector<uint64_t>> BPETokenizerBase::encode(const std::string &text,
-                                                       int8_t bos,
-                                                       int8_t eos) const {
+Result<std::vector<uint64_t>> BPETokenizerBase::encode(
+    const std::string& text,
+    int8_t bos,
+    int8_t eos) const {
   if (!initialized_) {
     return Error::Uninitialized;
   }
@@ -239,8 +244,8 @@ Result<std::vector<uint64_t>> BPETokenizerBase::encode(const std::string &text,
   return Result<std::vector<uint64_t>>(std::move(res));
 }
 
-Result<std::string> BPETokenizerBase::decode(uint64_t prev,
-                                             uint64_t cur) const {
+Result<std::string> BPETokenizerBase::decode(uint64_t prev, uint64_t cur)
+    const {
   (void)prev;
   if (!initialized_) {
     return Error::Uninitialized;

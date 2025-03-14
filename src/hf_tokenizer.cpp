@@ -26,7 +26,7 @@ namespace tokenizers {
 // -------------------------private method end-------------------------------
 // -------------------------public method start-------------------------------
 
-Error HFTokenizer::load(const std::string &path) {
+Error HFTokenizer::load(const std::string& path) {
   // If this is a directory, look for tokenizer.json and tokenizer_config.json
   std::string model_json = path;
   std::string model_config_json = "";
@@ -49,19 +49,19 @@ Error HFTokenizer::load(const std::string &path) {
     fprintf(stderr, "failed to open encoder file: %s\n", path.c_str());
     return Error::LoadFailure;
   }
-  std::string contents((std::istreambuf_iterator<char>(file)),
-                       std::istreambuf_iterator<char>());
+  std::string contents(
+      (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   json parsed_json;
   try {
     parsed_json = json::parse(contents);
-  } catch (const json::exception &e) {
+  } catch (const json::exception& e) {
     std::cout << "Error parsing json file: " << e.what() << std::endl;
     return Error::LoadFailure;
   }
 
   // Parse the special tokens
   try {
-    const auto &special_tokens = parsed_json.at("added_tokens");
+    const auto& special_tokens = parsed_json.at("added_tokens");
     for (auto it = special_tokens.begin(); it != special_tokens.end(); ++it) {
       const std::string token = it->at("content");
       const uint64_t token_id = it->at("id");
@@ -74,15 +74,15 @@ Error HFTokenizer::load(const std::string &path) {
         return Error::LoadFailure;
       }
     }
-  } catch (const json::out_of_range &e) {
+  } catch (const json::out_of_range& e) {
     fprintf(stderr, "Could not parse special tokens: %s\n", e.what());
     return Error::LoadFailure;
   }
 
   // Parse the standard tokens
   try {
-    const auto &vocab = parsed_json.at("/model/vocab"_json_pointer);
-    for (const auto &entry : vocab.items()) {
+    const auto& vocab = parsed_json.at("/model/vocab"_json_pointer);
+    for (const auto& entry : vocab.items()) {
       const std::string token = entry.key();
       const uint64_t token_id = entry.value();
       // Skip adding special tokens to the standard encoder/decoder
@@ -98,7 +98,7 @@ Error HFTokenizer::load(const std::string &path) {
         }
       }
     }
-  } catch (const json::out_of_range &e) {
+  } catch (const json::out_of_range& e) {
     fprintf(stderr, "Could not parse tokens: %s\n", e.what());
     return Error::LoadFailure;
   }
@@ -111,7 +111,7 @@ Error HFTokenizer::load(const std::string &path) {
     _pretokenizer = PreTokenizerConfig()
                         .parse_json(parsed_json.at("pre_tokenizer"))
                         .create();
-  } catch (const json::out_of_range &e) {
+  } catch (const json::out_of_range& e) {
     fprintf(stderr, "Could not parse pre_tokenizer: %s\n", e.what());
     return Error::LoadFailure;
   }
@@ -120,7 +120,7 @@ Error HFTokenizer::load(const std::string &path) {
   try {
     _decoder =
         TokenDecoderConfig().parse_json(parsed_json.at("decoder")).create();
-  } catch (const json::out_of_range &e) {
+  } catch (const json::out_of_range& e) {
     // No decoder specified
   }
 
@@ -134,12 +134,13 @@ Error HFTokenizer::load(const std::string &path) {
       fprintf(stderr, "failed to open encoder file: %s\n", path.c_str());
       return Error::LoadFailure;
     }
-    std::string config_contents((std::istreambuf_iterator<char>(config_file)),
-                                std::istreambuf_iterator<char>());
+    std::string config_contents(
+        (std::istreambuf_iterator<char>(config_file)),
+        std::istreambuf_iterator<char>());
     json parsed_config_json;
     try {
       parsed_config_json = json::parse(config_contents);
-    } catch (const json::exception &e) {
+    } catch (const json::exception& e) {
       std::cout << "Error parsing model config json json file: " << e.what()
                 << std::endl;
       return Error::LoadFailure;
@@ -149,23 +150,23 @@ Error HFTokenizer::load(const std::string &path) {
     try {
       const std::string bos_token = parsed_config_json.at("bos_token");
       const std::string eos_token = parsed_config_json.at("eos_token");
-      const auto &bos_it = special_token_encoder_.find(bos_token);
-      const auto &eos_it = special_token_encoder_.find(eos_token);
+      const auto& bos_it = special_token_encoder_.find(bos_token);
+      const auto& eos_it = special_token_encoder_.find(eos_token);
       if (bos_it == special_token_encoder_.end()) {
-        fprintf(stderr, "BOS token %s not in special tokens\n",
-                bos_token.c_str());
+        fprintf(
+            stderr, "BOS token %s not in special tokens\n", bos_token.c_str());
         return Error::LoadFailure;
       }
       if (eos_it == special_token_encoder_.end()) {
-        fprintf(stderr, "EOS token %s not in special tokens\n",
-                eos_token.c_str());
+        fprintf(
+            stderr, "EOS token %s not in special tokens\n", eos_token.c_str());
         return Error::LoadFailure;
       }
       bos_tok_ = bos_it->second;
       eos_tok_ = eos_it->second;
-    } catch (const json::out_of_range &e) {
-      fprintf(stderr, "Could not eos/bos from tokenizer config: %s\n",
-              e.what());
+    } catch (const json::out_of_range& e) {
+      fprintf(
+          stderr, "Could not eos/bos from tokenizer config: %s\n", e.what());
       return Error::LoadFailure;
     }
   }
@@ -177,7 +178,7 @@ Error HFTokenizer::load(const std::string &path) {
   else {
     std::vector<std::string> bos_candidates;
     std::vector<std::string> eos_candidates;
-    for (const auto &token : special_token_encoder_) {
+    for (const auto& token : special_token_encoder_) {
       if (token.first.find("bos") != std::string::npos ||
           token.first.find("begin") != std::string::npos) {
         bos_candidates.push_back(token.first);
@@ -190,7 +191,7 @@ Error HFTokenizer::load(const std::string &path) {
     if (bos_candidates.size() > 1) {
       const auto orig_candidates = bos_candidates;
       bos_candidates.clear();
-      for (const auto &cand : orig_candidates) {
+      for (const auto& cand : orig_candidates) {
         if (cand.find("text") != std::string::npos) {
           bos_candidates.push_back(cand);
         }
@@ -199,7 +200,7 @@ Error HFTokenizer::load(const std::string &path) {
     if (eos_candidates.size() > 1) {
       const auto orig_candidates = eos_candidates;
       eos_candidates.clear();
-      for (const auto &cand : orig_candidates) {
+      for (const auto& cand : orig_candidates) {
         if (cand.find("text") != std::string::npos) {
           eos_candidates.push_back(cand);
         }
@@ -234,9 +235,11 @@ Error HFTokenizer::load(const std::string &path) {
 // -------------------------public method end-----------------------------------
 // -------------------------private method start--------------------------------
 
-Error HFTokenizer::_encode(re2::StringPiece &input, std::vector<uint64_t> &ret,
-                           uint64_t &last_piece_token_len) const {
-  for (const auto &piece : _pretokenizer->pre_tokenize(input)) {
+Error HFTokenizer::_encode(
+    re2::StringPiece& input,
+    std::vector<uint64_t>& ret,
+    uint64_t& last_piece_token_len) const {
+  for (const auto& piece : _pretokenizer->pre_tokenize(input)) {
     auto iter = encoder_.find(piece);
     if (iter != encoder_.end()) {
       last_piece_token_len = 1;
@@ -251,7 +254,7 @@ Error HFTokenizer::_encode(re2::StringPiece &input, std::vector<uint64_t> &ret,
   return Error::Ok;
 }
 
-void HFTokenizer::_decode(re2::StringPiece input, std::string &ret) const {
+void HFTokenizer::_decode(re2::StringPiece input, std::string& ret) const {
   if (_decoder) {
     ret += _decoder->decode(input);
   } else {

@@ -21,14 +21,14 @@
 namespace tokenizers {
 
 class Tokenizer {
-public:
+ public:
   explicit Tokenizer() {}
   virtual ~Tokenizer() {}
 
-  virtual Error load(const std::string &tokenizer_path) = 0;
+  virtual Error load(const std::string& tokenizer_path) = 0;
 
   virtual Result<std::vector<uint64_t>>
-  encode(const std::string &input, int8_t bos, int8_t eos) const = 0;
+  encode(const std::string& input, int8_t bos, int8_t eos) const = 0;
 
   Error decode_verify(uint64_t token) const {
     if (!initialized_) {
@@ -40,17 +40,23 @@ public:
     return Error::Ok;
   }
 
-  virtual Result<std::string> decode(uint64_t prev_token,
-                                     uint64_t token) const = 0;
+  virtual Result<std::string> decode(uint64_t prev_token, uint64_t token)
+      const = 0;
 
   // getters
-  int32_t vocab_size() const { return vocab_size_; }
+  int32_t vocab_size() const {
+    return vocab_size_;
+  }
 
-  uint64_t bos_tok() const { return bos_tok_; }
+  uint64_t bos_tok() const {
+    return bos_tok_;
+  }
 
-  uint64_t eos_tok() const { return eos_tok_; }
+  uint64_t eos_tok() const {
+    return eos_tok_;
+  }
 
-protected:
+ protected:
   bool initialized_ = false;
   int32_t vocab_size_ = 0;
   uint64_t bos_tok_, eos_tok_ = 0;

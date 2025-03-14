@@ -25,12 +25,12 @@
    limitations under the License.
  *************************************************************************/
 
-#include "re2/re2.h"
+#include <pytorch/tokenizers/base64.h>
+#include <pytorch/tokenizers/tiktoken.h>
 #include <cinttypes>
 #include <fstream>
 #include <limits>
-#include <pytorch/tokenizers/base64.h>
-#include <pytorch/tokenizers/tiktoken.h>
+#include "re2/re2.h"
 
 namespace tokenizers {
 
@@ -39,15 +39,15 @@ using namespace detail;
 // ------------------------------Util start------------------------------------
 namespace {
 
-static Re2UPtr _create_regex(const std::string &pattern) {
+static Re2UPtr _create_regex(const std::string& pattern) {
   assert(!pattern.empty());
 
   return std::make_unique<re2::RE2>("(" + pattern + ")");
 }
 
-static Re2UPtr _build_special_token_regex(const Encoder &special_encoder) {
+static Re2UPtr _build_special_token_regex(const Encoder& special_encoder) {
   std::string special_pattern;
-  for (const auto &ele : special_encoder) {
+  for (const auto& ele : special_encoder) {
     if (!special_pattern.empty()) {
       special_pattern += "|";
     }
@@ -61,52 +61,60 @@ static Re2UPtr _build_special_token_regex(const Encoder &special_encoder) {
   return _create_regex(special_pattern);
 }
 
-static Result<std::pair<std::string, uint64_t>>
-_parse(const std::string &line) {
+static Result<std::pair<std::string, uint64_t>> _parse(
+    const std::string& line) {
   // Tiktoken format
   // https://github.com/openai/tiktoken/blob/main/tiktoken/load.py#L140 <base64
   // encoded token str> <rank>
   auto pos = line.find(" ");
-  TK_CHECK_OR_RETURN_ERROR(pos != std::string::npos, ParseFailure,
-                           "invalid tiktoken line: %s", line.c_str());
+  TK_CHECK_OR_RETURN_ERROR(
+      pos != std::string::npos,
+      ParseFailure,
+      "invalid tiktoken line: %s",
+      line.c_str());
 
   auto token = TK_UNWRAP(base64::decode({line.data(), pos}));
   uint64_t rank = 0;
   try {
     rank = std::stoul(line.substr(pos + 1));
-  } catch (const std::exception &) {
-    TK_CHECK_OR_RETURN_ERROR(false, EncodeFailure, "invalid encoder rank: %s",
-                             line.c_str());
+  } catch (const std::exception&) {
+    TK_CHECK_OR_RETURN_ERROR(
+        false, EncodeFailure, "invalid encoder rank: %s", line.c_str());
   }
 
   return std::pair{std::move(token), rank};
 }
 
-static Result<Encoder> _load_encoder(const std::string &path) {
+static Result<Encoder> _load_encoder(const std::string& path) {
   std::ifstream file(path);
-  TK_CHECK_OR_RETURN_ERROR(file, LoadFailure, "failed to open encoder file: %s",
-                           path.c_str());
+  TK_CHECK_OR_RETURN_ERROR(
+      file, LoadFailure, "failed to open encoder file: %s", path.c_str());
 
   Encoder encoder;
   std::string line;
   while (std::getline(file, line)) {
     auto [token, rank] = TK_UNWRAP(_parse(line));
 
-    TK_CHECK_OR_RETURN_ERROR(encoder.emplace(std::move(token), rank).second,
-                             ParseFailure, "duplicate item: %s", line.c_str());
+    TK_CHECK_OR_RETURN_ERROR(
+        encoder.emplace(std::move(token), rank).second,
+        ParseFailure,
+        "duplicate item: %s",
+        line.c_str());
   }
 
   return encoder;
 }
 
-static Result<Decoder> _build_decoder(const Encoder &encoder) {
+static Result<Decoder> _build_decoder(const Encoder& encoder) {
   Decoder decoder;
-  for (const auto &[k, v] : encoder) {
+  for (const auto& [k, v] : encoder) {
     decoder.emplace(v, k);
   }
 
-  TK_CHECK_OR_RETURN_ERROR(encoder.size() == decoder.size(), LoadFailure,
-                           "duplicate items in encoder");
+  TK_CHECK_OR_RETURN_ERROR(
+      encoder.size() == decoder.size(),
+      LoadFailure,
+      "duplicate items in encoder");
 
   return decoder;
 }
@@ -118,8 +126,9 @@ static Result<Decoder> _build_decoder(const Encoder &encoder) {
 
 template <typename T>
 std::pair<std::optional<std::string>, re2::StringPiece>
-Tiktoken::_split_with_allowed_special_token(re2::StringPiece &input,
-                                            const T &allowed_special) const {
+Tiktoken::_split_with_allowed_special_token(
+    re2::StringPiece& input,
+    const T& allowed_special) const {
   if (!special_token_regex_) {
     return std::make_pair(std::nullopt, input);
   }
@@ -127,7 +136,7 @@ Tiktoken::_split_with_allowed_special_token(re2::StringPiece &input,
 #if __cplusplus >= 202002L
   auto start = input.begin();
 #else
-  const char *start = input.data();
+  const char* start = input.data();
 #endif
   std::string special;
   while (true) {
@@ -153,8 +162,10 @@ Tiktoken::_split_with_allowed_special_token(re2::StringPiece &input,
   return std::make_pair(std::nullopt, input);
 }
 
-Error Tiktoken::_encode(re2::StringPiece &input, std::vector<uint64_t> &ret,
-                        uint64_t &last_piece_token_len) const {
+Error Tiktoken::_encode(
+    re2::StringPiece& input,
+    std::vector<uint64_t>& ret,
+    uint64_t& last_piece_token_len) const {
   std::string piece;
   assert(_regex);
   while (re2::RE2::FindAndConsume(&input, *_regex, &piece)) {
@@ -171,7 +182,7 @@ Error Tiktoken::_encode(re2::StringPiece &input, std::vector<uint64_t> &ret,
   return Error::Ok;
 }
 
-void Tiktoken::_decode(re2::StringPiece input, std::string &ret) const {
+void Tiktoken::_decode(re2::StringPiece input, std::string& ret) const {
 #ifdef _USE_INTERNAL_STRING_VIEW
   ret += input.as_string();
 #else
@@ -181,8 +192,9 @@ void Tiktoken::_decode(re2::StringPiece input, std::string &ret) const {
 
 template <typename T>
 Result<std::pair<std::vector<uint64_t>, uint64_t>>
-Tiktoken::_encode_with_special_token(const std::string &text,
-                                     const T &allowed_special) const {
+Tiktoken::_encode_with_special_token(
+    const std::string& text,
+    const T& allowed_special) const {
   std::vector<uint64_t> tokens;
   uint64_t last_piece_token_len = 0;
   re2::StringPiece input(text);
@@ -197,7 +209,7 @@ Tiktoken::_encode_with_special_token(const std::string &text,
       uint64_t token = 0;
       try {
         token = special_token_encoder_.at(*special);
-      } catch (const std::out_of_range &) {
+      } catch (const std::out_of_range&) {
         // Should never go here, since special pattern includes all special
         // chars.
         TK_LOG(Error, "unknown special token: %s", special->c_str());
@@ -228,7 +240,7 @@ Encoder Tiktoken::_build_special_token_encoder(ssize_t num_base_tokens) const {
 // -------------------------private method end-------------------------------
 // -------------------------public method start-------------------------------
 
-Error Tiktoken::load(const std::string &path) {
+Error Tiktoken::load(const std::string& path) {
   encoder_ = TK_UNWRAP(_load_encoder(path));
   special_token_encoder_ = _build_special_token_encoder(encoder_.size());
 
