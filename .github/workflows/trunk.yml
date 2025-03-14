@@ -572,6 +572,7 @@ jobs:
         MODE=${{ matrix.mode }}
         PT2E_QUANTIZE=${{ matrix.pt2e_quantize }}
 
+        ./install_requirements.sh --use-pt-pinned-commit
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
