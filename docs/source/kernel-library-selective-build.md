@@ -36,7 +36,7 @@ The basic flow looks like this:
 
 ## APIs
 
-We expose a CMake macro `[gen_selected_ops](https://github.com/pytorch/executorch/blob/main/scripts/build/Codegen.cmake#L12)`, to allow users specifying op info:
+We expose a CMake macro `[gen_selected_ops](https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12)`, to allow users specifying op info:
 
 ```
 gen_selected_ops(

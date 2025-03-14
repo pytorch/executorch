@@ -32,7 +32,6 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:slice_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:upsample_util",
-            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )

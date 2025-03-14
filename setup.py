@@ -652,6 +652,10 @@ class CustomBuild(build):
 
         build_args = [f"-j{self.parallel}"]
 
+        # TODO(dbort): Try to manage these targets and the cmake args from the
+        # extension entries themselves instead of hard-coding them here.
+        build_args += ["--target", "flatc"]
+
         if ShouldBuild.pybindings():
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",

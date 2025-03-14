@@ -28,6 +28,10 @@ if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
 
+if(NOT FLATC_EXECUTABLE)
+  set(FLATC_EXECUTABLE flatc)
+endif()
+
 # Include this file to access target_link_options_shared_lib This is required to
 # provide access to target_link_options_shared_lib which allows libraries to be
 # linked with the --whole-archive flag. This is required for libraries that
@@ -88,7 +92,6 @@ add_custom_command(
     ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
     "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/" ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
-  DEPENDS flatc
   COMMENT "Generating vulkan_schema headers"
   VERBATIM
 )

@@ -36,7 +36,7 @@ find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml
