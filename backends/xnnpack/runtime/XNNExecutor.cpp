@@ -68,6 +68,11 @@ ET_NODISCARD Error XNNExecutor::initialize(
  * delegate->execute()
  */
 ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
+  ET_CHECK_OR_RETURN_ERROR(
+      runtime_ != nullptr,
+      Internal,
+      "XNNPACK Delegate did not compile correctly");
+
   // Create xnn_externals_value from evalue args
   xnn_status status;
   for (uint32_t i = 0; i < externals_.size(); ++i) {
