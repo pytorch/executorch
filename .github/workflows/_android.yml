@@ -30,6 +30,7 @@ jobs:
 
         # Build LLM Demo for Android
         bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
+        bash build/build_android_instrumentation.sh
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
