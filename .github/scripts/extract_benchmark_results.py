@@ -407,7 +407,7 @@ def extract_model_info(git_job_name: str) -> Dict[str, str]:
     match = re.search(pattern, git_job_name)
     if not match:
         raise ValueError(
-            f"regex pattern not found from git_job_name: pattern: `{pattern}`, git_job_name: `{git_job_name}`. please check if pattern is in sync with executorch/.ci/scripts/gather_benchmark_configs.py and the workflow you called"
+            f"regex pattern not found from git_job_name: pattern: `{pattern}`, git_job_name: `{git_job_name}`. please check if pattern is in sync with executorch/.ci/scripts/gather_benchmark_configs.py and the job name from previous step"
         )
 
     extracted_content = match.group(1)  # Get content after the opening parenthesis
