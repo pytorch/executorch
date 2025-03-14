@@ -623,8 +623,9 @@ def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
 
         result = job_report.get("result", "")
         if result != "PASSED":
+            arn = job_report["arn"]
             info(
-                f"job {job_report.get("arn")} failed at DEVICE_JOB level with result {result}"
+                f"job {arn} failed at DEVICE_JOB level with result {result}"
             )
             # device test failed, generate a failure record instead
             all_benchmark_results.append(
