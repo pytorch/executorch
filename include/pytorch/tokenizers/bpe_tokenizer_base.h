@@ -41,7 +41,7 @@ class BPETokenizerBase : public Tokenizer {
 
  protected:
   explicit BPETokenizerBase() {}
-  virtual ~BPETokenizerBase() {}
+  virtual ~BPETokenizerBase() override {}
 
   std::pair<std::optional<std::string>, re2::StringPiece>
   split_with_allowed_special_token_(
