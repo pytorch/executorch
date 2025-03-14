@@ -94,6 +94,13 @@ target_sources(
           ${HOST_ARCHITECTURE}/HtpGraphCustomConfig.cpp
 )
 
+# qnn_op_package_manager
+target_sources(
+  qnn_op_package_manager
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnOpPackageManager.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnOpPackageManager.cpp
+)
+
 # qnn_backend
 target_sources(
   qnn_backend
