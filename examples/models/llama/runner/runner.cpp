@@ -17,6 +17,7 @@
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
+#include <executorch/extension/llm/tokenizer/hf_tokenizer.h>
 
 namespace example {
 
@@ -75,20 +76,33 @@ Error Runner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
-  // load tokenizer. Assuming tiktoken is the default tokenizer
+  // Load tokenizer.
   tokenizer_ = nullptr;
-  tokenizer_ = get_tiktoken_for_llama();
-  Error err = tokenizer_->load(tokenizer_path_);
-  // Rely on tiktoken to throw error if the artifact is incompatible. Then we
-  // fallback to BPE tokenizer.
-  if (err == Error::InvalidArgument) {
-    ET_LOG(
-        Info,
-        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
-        tokenizer_path_.c_str());
-    tokenizer_.reset();
-    tokenizer_ = std::make_unique<llm::BPETokenizer>();
+  // Check if tokenizer_path_ ends with ".json".
+  if (tokenizer_path_.size() >= 5 &&
+      tokenizer_path_.compare(tokenizer_path_.size() - 5, 5, ".json") == 0) {
+    tokenizer_ = std::make_unique<llm::HfTokenizer>();
     tokenizer_->load(tokenizer_path_);
+    ET_LOG(
+        Info, "Loaded tokenizer %s as HF tokenizer", tokenizer_path_.c_str());
+  } else {
+    // Else assume TikToken is the default tokenizer, using BPE as a fallback.
+    tokenizer_ = get_tiktoken_for_llama();
+    Error err = tokenizer_->load(tokenizer_path_);
+    if (err == Error::InvalidArgument) {
+      tokenizer_.reset();
+      tokenizer_ = std::make_unique<llm::BPETokenizer>();
+      tokenizer_->load(tokenizer_path_);
+      ET_LOG(
+          Info,
+          "Loaded tokenizer %s as BPE tokenizer",
+          tokenizer_path_.c_str());
+    } else {
+      ET_LOG(
+          Info,
+          "Loaded tokenizer %s as TikToken tokenizer",
+          tokenizer_path_.c_str());
+    }
   }
 
   ET_LOG(Info, "Reading metadata from model");
