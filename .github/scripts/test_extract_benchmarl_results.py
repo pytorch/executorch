@@ -14,9 +14,9 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 from extract_benchmark_results import (
-    process_benchmark_results,
     extract_android_benchmark_results,
     extract_ios_benchmark_results,
+    process_benchmark_results
 )
 
 
