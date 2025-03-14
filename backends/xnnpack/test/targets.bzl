@@ -27,6 +27,7 @@ def define_common_targets():
             third_party_dep("FP16"),
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/backends/xnnpack:xnnpack_backend",
         ],
     )
 
@@ -34,6 +35,7 @@ def define_common_targets():
         name = "test_xnn_weights_cache",
         srcs = ["runtime/test_xnn_weights_cache.cpp"],
         deps = [
+            third_party_dep("XNNPACK"),
             "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/runtime/executor:pte_data_map",
             "//executorch/extension/data_loader:file_data_loader",
