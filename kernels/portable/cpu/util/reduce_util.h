@@ -10,7 +10,6 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-#include <executorch/runtime/kernel/thread_parallel_interface.h>
 #include <cstring>
 #include <tuple>
 
@@ -811,24 +810,6 @@ bool check_prod_out_args(
     Tensor& out);
 
 #endif
-
-/**
- * parallel_for wrapper for reductions that call reduce_over_dim or
- * map_reduce_over_dim for each output element. Automatically
- * calculates appropriate grain size.
- */
-template <typename Func>
-[[nodiscard]] bool parallel_for_each_reduce_over_dim_output_index(
-    const Tensor& in,
-    optional<int64_t> dim,
-    const Tensor& out,
-    const Func& func) {
-  const int64_t reduction_size = get_reduced_dim_product(in, dim);
-  const auto grain_size = std::max(
-      static_cast<int64_t>(1),
-      executorch::extension::internal::GRAIN_SIZE / reduction_size);
-  return executorch::extension::parallel_for(0, out.numel(), grain_size, func);
-}
 
 } // namespace executor
 } // namespace torch
