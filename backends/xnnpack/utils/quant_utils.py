@@ -6,7 +6,7 @@
 
 import operator
 from itertools import accumulate
-from typing import cast
+from typing import cast, Union
 
 import torch
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
@@ -195,3 +195,62 @@ def extract_qdq_affine_op_args_for_decomposed_ops(node: torch.fx.Node):
     args.append(node.args[-1])
 
     return args
+
+
+def is_tensor_subnormal(tensor: torch.Tensor):
+    finfo = torch.finfo(tensor.dtype)
+    return (tensor >= 0) & (torch.abs(tensor) < finfo.smallest_normal)
+
+
+def validate_quant_scales(scales: Union[float, torch.Tensor]):
+    if isinstance(scales, float):
+        scales = torch.tensor([scales])
+
+    is_infinite = torch.isinf(scales) | torch.isnan(scales)
+
+    is_subnormal = is_tensor_subnormal(scales)
+
+    if is_infinite.nonzero().numel() != 0:
+        idx = torch.where(is_infinite)
+        idx = tuple(int(index[0]) for index in idx)
+        value = scales[idx]
+        raise ValueError(
+            f"Scales must be finite and normal, however found scale value: {value}"
+            f" in scale tensor at index: {idx}"
+        )
+
+    if is_subnormal.nonzero().numel() != 0:
+        idx = torch.where(is_subnormal)
+        idx = tuple(int(index[0]) for index in idx)
+        value = scales[idx]
+        raise ValueError(
+            f"Scales must be finite and normal, however found scale value: {value}"
+            f" in scale tensor at index: {tuple(idx)}"
+        )
+
+
+def validate_quant_zeropoints(
+    zp: Union[float, int, torch.Tensor], dtype: torch.dtype, is_4bit: bool
+):
+    if not isinstance(zp, torch.Tensor):
+        zp = torch.tensor([zp])
+
+    if dtype == torch.int8 or dtype == torch.qint8:
+        if is_4bit:
+            invalid_zp = (zp < 0) | (zp > 15)
+        else:
+            invalid_zp = (zp < -128) | (zp > 127)
+    elif dtype == torch.uint8 or dtype == torch.quint8:
+        invalid_zp = (zp < 0) | (zp > 255)
+    elif dtype == torch.int32:
+        invalid_zp = zp != 0
+    else:
+        raise ValueError("Unsupported dtype for quantization")
+
+    if invalid_zp.nonzero().numel() != 0:
+        idx = torch.where(invalid_zp)
+        idx = tuple(int(index[0]) for index in idx)
+        value = zp[tuple(idx)]
+        raise ValueError(
+            f"Found invalid zeropoint {value}" f" in zero point tensor at index: {idx}"
+        )
