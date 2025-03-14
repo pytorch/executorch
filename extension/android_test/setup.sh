@@ -56,15 +56,10 @@ build_native_library "arm64-v8a"
 build_native_library "x86_64"
 build_aar
 bash examples/models/llama/install_requirements.sh
-source ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${BUILD_AAR_DIR}
+source ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dty pe fp16 -mode portable -upload ${BUILD_AAR_DIR}
 popd
 mkdir -p "$BASEDIR"/src/libs
 cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/src/libs/executorch.aar
 python add_model.py
 mv "add.pte" "$BASEDIR"/src/androidTest/resources/add.pte
 unzip -o "$BUILD_AAR_DIR"/model.zip -d "$BASEDIR"/src/androidTest/resources
-
-if [ -n "$ARTIFACTS_DIR_NAME" ]; then
-  mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom/
-  cp "$BUILD_AAR_DIR"/model.zip ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom/model.zip
-fi

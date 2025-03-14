@@ -33,6 +33,9 @@ jobs:
         bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
         bash build/build_android_instrumentation.sh ${ARTIFACTS_DIR_NAME}
 
+        mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+        bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dty pe fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+
         mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
         cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
         pushd examples/demo-apps/android/LlamaDemo
