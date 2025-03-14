@@ -88,7 +88,7 @@ void et_view(KernelRuntimeContext& context, EValue** stack) {
       resize_tensor(
           out, {expected_output_size, static_cast<size_t>(out.dim())}) ==
           Error::Ok,
-      InvalidArgument,
+      Internal,
       ,
       "Failed to resize output tensor.");
 
