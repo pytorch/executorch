@@ -45,13 +45,11 @@ class RecomposePixelUnshuffle(ExportPass):
                         continue
 
                     view_node = premute_node.args[0]
-                    if any(
-                        [
-                            view_node.op != "call_function",
-                            view_node.target != self.view_target,
-                            len(view_node.args[1]) != 6,
-                            len(premute_node.args[1]) != 6,
-                        ]
+                    if (
+                        view_node.op != "call_function"
+                        or view_node.target != self.view_target
+                        or len(view_node.args[1]) != 6
+                        or len(premute_node.args[1]) != 6
                     ):
                         continue
 
