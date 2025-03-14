@@ -67,7 +67,7 @@ class TestBackendWithNamedDataMap(unittest.TestCase):
 
             def forward(self, x, y):
                 z = x / y
-                z = torch.cond(z > 1, self.true_branch, self.false_branch, [x])
+                z = torch.cond(z.sum() > 0, self.true_branch, self.false_branch, [x])
                 return z - z
 
         ep = to_edge(torch.export.export(M(), (torch.randn(1, 2), torch.randn(1, 2))))
