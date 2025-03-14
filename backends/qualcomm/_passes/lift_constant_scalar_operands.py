@@ -46,6 +46,7 @@ SCALAR_OPS = {
     aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False),
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
     aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True),
+    aten.where.ScalarOther: TensorOpInfo(aten.where.self, False),
 }
 
 

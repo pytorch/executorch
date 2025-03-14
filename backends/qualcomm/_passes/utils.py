@@ -93,7 +93,7 @@ def get_passes_dependency_for_capture_program():
         ConvertToLinear: [RecomposePixelUnshuffle],
         DecomposeAny: [RemoveRedundancy],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
-        ExpandBroadcastTensorShape: [RemoveRedundancy],
+        ExpandBroadcastTensorShape: [ConstantI64toI32, TensorI64toI32],
         FoldQDQ: [AnnotateQuantAttrs, AnnotateDecomposed],
         LayoutTransform: [
             AnnotateQuantAttrs,
