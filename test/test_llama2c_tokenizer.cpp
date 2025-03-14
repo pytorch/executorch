@@ -12,10 +12,10 @@ namespace tokenizers {
 
 namespace {
 // Test case based on llama2.c tokenizer
-static inline std::string _get_resource_path(const std::string &name) {
+static inline std::string _get_resource_path(const std::string& name) {
 #ifdef TOKENIZERS_FB_BUCK
-  return facebook::xplat::testing::getPathForTestResource("test/resources/" +
-                                                          name);
+  return facebook::xplat::testing::getPathForTestResource(
+      "test/resources/" + name);
 #else
   return std::getenv("RESOURCES_PATH") + std::string("/") + name;
 #endif
@@ -24,7 +24,7 @@ static inline std::string _get_resource_path(const std::string &name) {
 } // namespace
 
 class Llama2cTokenizerTest : public Test {
-public:
+ public:
   void SetUp() override {
     tokenizer_ = std::make_unique<Llama2cTokenizer>();
     modelPath_ = _get_resource_path("test_llama2c_tokenizer.bin");
