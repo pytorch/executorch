@@ -89,7 +89,7 @@ public:
     /// @param error   On failure, error is filled with the failure information.
     /// @retval `true` if the execution succeeded otherwise `false`.
     virtual bool execute(Handle* handle,
-                         const std::vector<MultiArray>& args,
+                         std::vector<MultiArray>& args,
                          const ModelLoggingOptions& logging_options,
                          ModelEventLogger* event_logger,
                          std::error_code& error) const noexcept = 0;

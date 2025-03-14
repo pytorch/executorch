@@ -15,6 +15,7 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+dist/
 ethos-u-scratch/
 executorch.egg-info
 pip-out/
