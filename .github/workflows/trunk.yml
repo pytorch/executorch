@@ -23,6 +23,9 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
+        # Mac runners are expensive and limited, and non reliable. 
+        # Do some basic testing for macos jobs, and rely mostly on 
+        # test-models-linux-aarch64 job instead.
         model: [emformer_join, ic4, llama2, mobilebert, mv3, resnet50, vit, w2l]
         backend: [xnnpack-quantization-delegation]
         include:
@@ -33,10 +36,6 @@ jobs:
           - model: llama3_2_vision_encoder
             backend: portable
           - model: mv3
-            backend: portable
-          - model: phi-4-mini
-            backend: portable
-          - model: qwen2_5
             backend: portable
       fail-fast: false
     with:
@@ -72,6 +71,12 @@ jobs:
           - model: mul
             backend: portable
           - model: softmax
+            backend: portable
+          - model: phi-4-mini
+            backend: portable
+          - model: qwen2_5
+            backend: portable
+          - model: llama3_2_vision_encoder
             backend: portable
       fail-fast: false
     with:
