@@ -374,14 +374,6 @@ jobs:
         cp extension/benchmark/android/benchmark/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
         cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 
-        DEMO_APP_DIR="${ARTIFACTS_DIR_NAME}/llm_demo"
-        # The app directory is named using its build flavor as a suffix.
-        mkdir -p "${DEMO_APP_DIR}"
-        # Collect the app and its test suite
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${DEMO_APP_DIR}"
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${DEMO_APP_DIR}"
-
-
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   benchmark-on-device:
     if: always()
