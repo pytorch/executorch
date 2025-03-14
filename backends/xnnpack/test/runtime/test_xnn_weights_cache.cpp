@@ -281,7 +281,6 @@ TEST_F(XNNWeightsCacheTest, ReusePackedWeights) {
   // Packed Data Still exists because it has a ref count of 2
   ASSERT_EQ(packed_data_names.size(), 1);
   weight_cache.delete_packed_data(weight_cache.get_packed_data_names());
-  packed_data_names =
-      weight_cache.get_packed_data_names();
+  packed_data_names = weight_cache.get_packed_data_names();
   ASSERT_EQ(packed_data_names.size(), 0);
 }
