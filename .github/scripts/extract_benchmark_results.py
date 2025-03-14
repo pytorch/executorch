@@ -98,7 +98,6 @@ def parse_args() -> Any:
         "--app",
         type=str,
         required=True,
-        action=ValidateDir,
         help="the type of app, ios or android, this is mainly used when a failed job happens to generate default record",
     )
 
@@ -389,10 +388,11 @@ def transform(
     ]
 
 
-def get_model_info(git_job_name: str) -> Optional[Dict[str, str]]:
+def extract_model_info(git_job_name: str) -> Optional[Dict[str, str]]:
     """
-    Get model name and backend from git job name.
-    the git job name is currently in the format of  the git_job_name "benchmark-on-device (ic4, xnnpack_q8, samsung_galaxy_s22, arn:..""
+    Get model infomation form git_job_name, for example:
+        benchmark-on-device (ic4, qnn_q8, samsung_galaxy_s24, arn:aws:devicefarm:us-west-2:308535385114:d... / mobile-job (android)
+        benchmark-on-device (llama, xnnpack_q8, apple_iphone_15, arn:aws:devicefarm:us-west-2:30853538511... / mobile-job (ios)
     """
     # Extract content inside the first parentheses,
 
@@ -561,7 +561,7 @@ def generateGitJobLevelFailureRecord(git_job_name: str, app: str) -> Any:
     app_type = getAppType(app)
     device_prefix = getDeviceOsType(app)
 
-    model_infos = get_model_info(git_job_name)
+    model_infos = extract_model_info(git_job_name)
     model_name = "UNKNOWN"
     model_backend = "UNKNOWN"
     device_pool_name = "UNKNOWN"
@@ -588,7 +588,7 @@ def generateDeviceLevelFailureRecord(
     generates benchmark record for DEVICE_JOB level failure, this is mainly used as placeholder in UI to indicate job failures.
     """
     level = "DEVICE_JOB"
-    model_infos = get_model_info(git_job_name)
+    model_infos = extract_model_info(git_job_name)
     model_name = "UNKNOWN"
     model_backend = "UNKNOWN"
     osPrefix = getDeviceOsType(app)
