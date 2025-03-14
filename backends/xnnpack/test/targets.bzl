@@ -40,5 +40,6 @@ def define_common_targets():
             "//executorch/runtime/executor:pte_data_map",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/testing_util:temp_file",
+            "//executorch/schema:program",
         ],
     )
