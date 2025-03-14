@@ -63,3 +63,8 @@ cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/src/libs/executorch.aar
 python add_model.py
 mv "add.pte" "$BASEDIR"/src/androidTest/resources/add.pte
 unzip -o "$BUILD_AAR_DIR"/model.zip -d "$BASEDIR"/src/androidTest/resources
+
+if [ -n "$ARTIFACTS_DIR_NAME" ]; then
+  mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom/
+  cp "$BUILD_AAR_DIR"/model.zip ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom/model.zip
+fi
