@@ -361,7 +361,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        ./install_requirements.sh --use-pt-pinned-comit
+        ./install_requirements.sh --use-pt-pinned-commit
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
         strip cmake-out/test/size_test
@@ -397,7 +397,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        ./install_requirements.sh --use-pt-pinned-comit
+        ./install_requirements.sh --use-pt-pinned-commit
 
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
