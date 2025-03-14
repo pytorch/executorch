@@ -20,35 +20,30 @@ static constexpr int32_t kSpecialTokensSize = 256;
 static inline std::unique_ptr<std::vector<std::string>> _get_special_tokens() {
   auto special_tokens =
       std::make_unique<std::vector<std::string>>(std::vector<std::string>{
-          "<|begin_of_text|>",
-          "<|end_of_text|>",
-          "<|reserved_special_token_0|>",
-          "<|reserved_special_token_1|>",
-          "<|reserved_special_token_2|>",
-          "<|reserved_special_token_3|>",
-          "<|start_header_id|>",
-          "<|end_header_id|>",
-          "<|reserved_special_token_4|>",
-          "<|eot_id|>"});
+          "<|begin_of_text|>", "<|end_of_text|>",
+          "<|reserved_special_token_0|>", "<|reserved_special_token_1|>",
+          "<|reserved_special_token_2|>", "<|reserved_special_token_3|>",
+          "<|start_header_id|>", "<|end_header_id|>",
+          "<|reserved_special_token_4|>", "<|eot_id|>"});
 
   // pad the rest of the special tokens with reserved tokens
   ssize_t reserved_special_token_num = 5;
   while (special_tokens->size() < kSpecialTokensSize) {
-    special_tokens->emplace_back(
-        "<|reserved_special_token_" +
-        std::to_string(reserved_special_token_num++) + "|>");
+    special_tokens->emplace_back("<|reserved_special_token_" +
+                                 std::to_string(reserved_special_token_num++) +
+                                 "|>");
   }
   return special_tokens;
 }
 
-static inline std::string _get_resource_path(const std::string& name) {
+static inline std::string _get_resource_path(const std::string &name) {
   return std::getenv("RESOURCES_PATH") + std::string("/") + name;
 }
 
 } // namespace
 
 class TiktokenTest : public Test {
- public:
+public:
   void SetUp() override {
     tokenizer_ = std::make_unique<Tiktoken>(_get_special_tokens(), 0, 1);
     modelPath_ = _get_resource_path("test_tiktoken_tokenizer.model");
@@ -115,14 +110,11 @@ TEST_F(TiktokenTest, ConstructionWithInvalidBOSIndex) {
   // gtest death test doesn't work on iOS:
   // https://github.com/google/googletest/issues/2834
 #if !GTEST_OS_IOS
-  EXPECT_EXIT(
-      std::make_unique<Tiktoken>(
-          std::make_unique<std::vector<std::string>>(
-              std::vector<std::string>{"<|end_of_text|>"}),
-          1,
-          0),
-      ::testing::KilledBySignal(SIGABRT),
-      "");
+  EXPECT_EXIT(std::make_unique<Tiktoken>(
+                  std::make_unique<std::vector<std::string>>(
+                      std::vector<std::string>{"<|end_of_text|>"}),
+                  1, 0),
+              ::testing::KilledBySignal(SIGABRT), "");
 #endif
 }
 
@@ -130,14 +122,11 @@ TEST_F(TiktokenTest, ConstructionWithInvalidEOSIndex) {
   // gtest death test doesn't work on iOS:
   // https://github.com/google/googletest/issues/2834
 #if !GTEST_OS_IOS
-  EXPECT_EXIT(
-      std::make_unique<Tiktoken>(
-          std::make_unique<std::vector<std::string>>(
-              std::vector<std::string>{"<|begin_of_text|>"}),
-          0,
-          1),
-      ::testing::KilledBySignal(SIGABRT),
-      "");
+  EXPECT_EXIT(std::make_unique<Tiktoken>(
+                  std::make_unique<std::vector<std::string>>(
+                      std::vector<std::string>{"<|begin_of_text|>"}),
+                  0, 1),
+              ::testing::KilledBySignal(SIGABRT), "");
 #endif
 }
 

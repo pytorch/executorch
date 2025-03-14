@@ -28,7 +28,7 @@ namespace tokenizers {
  * input string piece
  */
 class PreTokenizer {
- public:
+public:
   /** Shared pointer type */
   typedef std::shared_ptr<PreTokenizer> Ptr;
 
@@ -41,8 +41,8 @@ class PreTokenizer {
    * NOTE: Pass by value per best practice
    *  https://abseil.io/docs/cpp/guides/strings#string_view
    */
-  virtual std::vector<std::string> pre_tokenize(
-      re2::StringPiece input) const = 0;
+  virtual std::vector<std::string>
+  pre_tokenize(re2::StringPiece input) const = 0;
 
   virtual ~PreTokenizer() = default;
 }; // end class PreTokenizer
@@ -50,11 +50,11 @@ class PreTokenizer {
 // -- Factory ------------------------------------------------------------------
 
 // Helper macro to standardize addition of config member fields
-#define CONFIG_MEMBER(type, name)            \
-  std::optional<type> name;                  \
-  PreTokenizerConfig& set_##name(type arg) { \
-    this->name = std::move(arg);             \
-    return *this;                            \
+#define CONFIG_MEMBER(type, name)                                              \
+  std::optional<type> name;                                                    \
+  PreTokenizerConfig &set_##name(type arg) {                                   \
+    this->name = std::move(arg);                                               \
+    return *this;                                                              \
   }
 
 /**
@@ -75,7 +75,7 @@ class PreTokenizer {
  * const auto pre_tokenized = pre_tokenizer->pre_tokenize("Hello World!");
  */
 class PreTokenizerConfig {
- public:
+public:
   /*------------------------*/
   /* Public mutable members */
   /*------------------------*/
@@ -123,7 +123,7 @@ class PreTokenizerConfig {
   /**
    * Populate from a json config file
    */
-  PreTokenizerConfig& parse_json(const nlohmann::json& json_config);
+  PreTokenizerConfig &parse_json(const nlohmann::json &json_config);
 
 }; // end class PreTokenizerConfig
 
@@ -137,17 +137,17 @@ class PreTokenizerConfig {
 //  https://github.com/huggingface/tokenizers/blob/main/tokenizers/src/tokenizer/pattern.rs#L128
 
 class RegexPreTokenizer : public PreTokenizer {
- public:
+public:
   typedef std::unique_ptr<re2::RE2> Re2UPtr;
 
-  explicit RegexPreTokenizer(const std::string& pattern)
+  explicit RegexPreTokenizer(const std::string &pattern)
       : regex_(RegexPreTokenizer::create_regex_(pattern)) {}
 
   /** Pre-tokenize with the stored regex */
   std::vector<std::string> pre_tokenize(re2::StringPiece input) const;
 
- protected:
-  static Re2UPtr create_regex_(const std::string& pattern);
+protected:
+  static Re2UPtr create_regex_(const std::string &pattern);
 
   Re2UPtr regex_;
 
@@ -159,11 +159,10 @@ class RegexPreTokenizer : public PreTokenizer {
 // https://github.com/huggingface/tokenizers/blob/main/tokenizers/src/pre_tokenizers/digits.rs
 
 class DigitsPreTokenizer : public RegexPreTokenizer {
- public:
+public:
   explicit DigitsPreTokenizer(bool individual_digits = false)
-      : RegexPreTokenizer(
-            individual_digits ? R"([^\p{N}]+|\p{N})"
-                              : R"([^\p{N}]+|[\p{N}]+)") {}
+      : RegexPreTokenizer(individual_digits ? R"([^\p{N}]+|\p{N})"
+                                            : R"([^\p{N}]+|[\p{N}]+)") {}
 }; // end class DigitsPreTokenizer
 
 // -- ByteLevel ----------------------------------------------------------------
@@ -172,22 +171,21 @@ class DigitsPreTokenizer : public RegexPreTokenizer {
 // https://github.com/huggingface/tokenizers/blob/main/tokenizers/src/pre_tokenizers/byte_level.rs
 
 class ByteLevelPreTokenizer : public PreTokenizer {
- public:
+public:
   /**
    * @param add_prefix_space: Whether to add a leading space to the first word
    * @param pattern: A user-supplied regex to use for token splitting. If not
    *    provided, it use the standard GPT2 pattern.
    */
-  ByteLevelPreTokenizer(
-      bool add_prefix_space = true,
-      const std::string& pattern = "");
-  explicit ByteLevelPreTokenizer(const std::string& pattern)
+  ByteLevelPreTokenizer(bool add_prefix_space = true,
+                        const std::string &pattern = "");
+  explicit ByteLevelPreTokenizer(const std::string &pattern)
       : ByteLevelPreTokenizer(true, pattern) {}
 
   /** Perform pre-tokenization */
   std::vector<std::string> pre_tokenize(re2::StringPiece input) const override;
 
- private:
+private:
   const std::string pattern_;
   const bool add_prefix_space_;
 
@@ -199,7 +197,7 @@ class ByteLevelPreTokenizer : public PreTokenizer {
 // https://github.com/huggingface/tokenizers/blob/main/tokenizers/src/pre_tokenizers/sequence.rs
 
 class SequencePreTokenizer : public PreTokenizer {
- public:
+public:
   /**
    * @param pre_tokenizers: The sequence of owned pre-tokenizer objects to use
    */
@@ -208,7 +206,7 @@ class SequencePreTokenizer : public PreTokenizer {
   /** Perform pre-tokenization */
   std::vector<std::string> pre_tokenize(re2::StringPiece input) const override;
 
- private:
+private:
   const std::vector<PreTokenizer::Ptr> pre_tokenizers_;
 
 }; // end class ByteLevelPreTokenizer

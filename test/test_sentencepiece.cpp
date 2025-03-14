@@ -13,7 +13,7 @@
 namespace tokenizers {
 
 namespace {
-static inline std::string _get_resource_path(const std::string& name) {
+static inline std::string _get_resource_path(const std::string &name) {
   return std::getenv("RESOURCES_PATH") + std::string("/") + name;
 }
 } // namespace

@@ -37,7 +37,7 @@ TokenDecoder::Ptr TokenDecoderConfig::create() const {
   throw std::runtime_error("Unsupported TokenDecoder type: " + type);
 }
 
-TokenDecoderConfig& TokenDecoderConfig::parse_json(const json& json_config) {
+TokenDecoderConfig &TokenDecoderConfig::parse_json(const json &json_config) {
   type = json_config.at("type");
   if (type == "ByteLevel") {
     // No parameters to parse
@@ -54,7 +54,7 @@ namespace {
 // Copied from llama.cpp
 // CITE:
 // https://github.com/ggerganov/llama.cpp/blob/master/src/llama-vocab.cpp#L20
-static std::string format(const char* fmt, ...) {
+static std::string format(const char *fmt, ...) {
   va_list ap;
   va_list ap2;
   va_start(ap, fmt);
@@ -84,7 +84,7 @@ std::string ByteLevelTokenDecoder::decode(re2::StringPiece token) const {
     const auto utf8 = unicode_cpt_to_utf8(cpt);
     try {
       decoded_text += unicode_utf8_to_byte(utf8);
-    } catch (const std::out_of_range& /*e*/) {
+    } catch (const std::out_of_range & /*e*/) {
       decoded_text += "[UNK_BYTE_0x";
       for (const auto c : utf8) {
         decoded_text += format("%02x", (uint8_t)c);

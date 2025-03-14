@@ -29,8 +29,8 @@ init_command = [
 [[linter]]
 code = 'UFMT'
 include_patterns = [
-    '**/*.py',
-    '**/*.pyi',
+    '*.py',
+    '*.pyi',
 ]
 exclude_patterns = [
     'third-party/**',
@@ -135,3 +135,33 @@ command = [
     '@{{PATHSFILE}}',
 ]
 is_formatter = true
+
+[[linter]]
+code = 'MYPY'
+include_patterns = [
+    '*.py',
+]
+exclude_patterns = [
+    'third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'mypy_linter',
+    '--config=.mypy.ini',
+    '--show-disable',
+    '--',
+    '--explicit-package-bases',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]

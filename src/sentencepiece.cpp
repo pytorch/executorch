@@ -8,10 +8,10 @@
 
 // A tokenizer that works with sentencepiece.
 
-#include <pytorch/tokenizers/sentencepiece.h>
-#include <cinttypes>
-#include <string>
 #include "third_party/absl/strings/str_replace.h"
+#include <cinttypes>
+#include <pytorch/tokenizers/sentencepiece.h>
+#include <string>
 namespace tokenizers {
 const char kSpaceSymbol[] = "\xe2\x96\x81";
 
@@ -29,7 +29,7 @@ SPTokenizer::SPTokenizer()
  * @param tokenizer_path The path to the tokenizer file.
  * @return Error
  */
-Error SPTokenizer::load(const std::string& tokenizer_path) {
+Error SPTokenizer::load(const std::string &tokenizer_path) {
   if (initialized_) {
     fprintf(stderr, "Tokenizer already initialized.\n");
     return Error::Ok;
@@ -37,13 +37,11 @@ Error SPTokenizer::load(const std::string& tokenizer_path) {
   // read in the file
   const auto status = _processor->Load(tokenizer_path);
   if (!status.ok()) {
-    fprintf(
-        stderr,
-        "couldn't load %s. \nError message: \n%s\n"
-        "It is likely that the tokenizer artifact is "
-        "broken or of a different format.",
-        tokenizer_path.c_str(),
-        status.error_message());
+    fprintf(stderr,
+            "couldn't load %s. \nError message: \n%s\n"
+            "It is likely that the tokenizer artifact is "
+            "broken or of a different format.",
+            tokenizer_path.c_str(), status.error_message());
     return Error::LoadFailure;
   }
   // load vocab_size, bos_tok, eos_tok
@@ -64,8 +62,8 @@ SPTokenizer::~SPTokenizer() {}
  * @return Result<std::string> The string representation of the
  * token.
  */
-Result<std::string> SPTokenizer::decode(uint64_t prev_token, uint64_t token)
-    const {
+Result<std::string> SPTokenizer::decode(uint64_t prev_token,
+                                        uint64_t token) const {
   if (!initialized_) {
     fprintf(stderr, "Tokenizer not initialized\n");
     return Error::Uninitialized;
@@ -101,7 +99,7 @@ Result<std::string> SPTokenizer::decode(uint64_t prev_token, uint64_t token)
  * @return Result<std::vector<uint64_t>>
  */
 Result<std::vector<uint64_t>>
-SPTokenizer::encode(const std::string& text, int8_t bos, int8_t eos) const {
+SPTokenizer::encode(const std::string &text, int8_t bos, int8_t eos) const {
   if (!initialized_) {
     fprintf(stderr, "Tokenizer not initialized\n");
     return Error::Uninitialized;

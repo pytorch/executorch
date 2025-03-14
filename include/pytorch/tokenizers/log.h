@@ -40,7 +40,7 @@
 #include <sal.h>
 #define TK_PRINTFLIKE(_string_index, _va_index) _Printf_format_string_
 #else
-#define TK_PRINTFLIKE(_string_index, _va_index) \
+#define TK_PRINTFLIKE(_string_index, _va_index)                                \
   __attribute__((format(printf, _string_index, _va_index)))
 #endif
 
@@ -122,12 +122,8 @@ typedef enum {
  * @param[in] length Message string length.
  */
 inline void TK_INTERNAL_PLATFORM_WEAKNESS tk_pal_emit_log_message(
-    tk_pal_log_level_t level,
-    const char* filename,
-    const char* function,
-    size_t line,
-    const char* message,
-    size_t length) {
+    tk_pal_log_level_t level, const char *filename, const char *function,
+    size_t line, const char *message, size_t length) {
   // Use a format similar to glog and folly::logging, except:
   // - Print time since et_pal_init since we don't have wall time
   // - Don't include the thread ID, to avoid adding a threading dependency
@@ -135,13 +131,8 @@ inline void TK_INTERNAL_PLATFORM_WEAKNESS tk_pal_emit_log_message(
   //
   // Clients who want to change the format or add other fields can override this
   // weak implementation of et_pal_emit_log_message.
-  fprintf(
-      TK_LOG_OUTPUT_FILE,
-      "%c tokenizers:%s:%zu] %s\n",
-      level,
-      filename,
-      line,
-      message);
+  fprintf(TK_LOG_OUTPUT_FILE, "%c tokenizers:%s:%zu] %s\n", level, filename,
+          line, message);
   fflush(TK_LOG_OUTPUT_FILE);
 }
 
@@ -212,13 +203,8 @@ static constexpr tk_pal_log_level_t kLevelToPal[size_t(LogLevel::NumLevels)] = {
  * @param[in] args Variable argument list.
  */
 TK_PRINTFLIKE(5, 0)
-inline void vlogf(
-    LogLevel level,
-    const char* filename,
-    const char* function,
-    size_t line,
-    const char* format,
-    va_list args) {
+inline void vlogf(LogLevel level, const char *filename, const char *function,
+                  size_t line, const char *format, va_list args) {
   // Maximum length of a log message.
   static constexpr size_t kMaxLogMessageLength = 256;
   char buf[kMaxLogMessageLength];
@@ -231,8 +217,8 @@ inline void vlogf(
 
   tk_pal_log_level_t pal_level =
       (int(level) >= 0 && level < LogLevel::NumLevels)
-      ? kLevelToPal[size_t(level)]
-      : tk_pal_log_level_t::kUnknown;
+          ? kLevelToPal[size_t(level)]
+          : tk_pal_log_level_t::kUnknown;
 
   tk_pal_emit_log_message(pal_level, filename, function, line, buf, len);
 }
@@ -249,13 +235,8 @@ inline void vlogf(
  * @param[in] format Format string.
  */
 TK_PRINTFLIKE(5, 6)
-inline void logf(
-    LogLevel level,
-    const char* filename,
-    const char* function,
-    size_t line,
-    const char* format,
-    ...) {
+inline void logf(LogLevel level, const char *filename, const char *function,
+                 size_t line, const char *format, ...) {
 #if TK_LOG_ENABLED
   va_list args;
   va_start(args, format);
@@ -276,19 +257,14 @@ inline void logf(
  * @param[in] _level Log severity level.
  * @param[in] _format Log message format string.
  */
-#define TK_LOG(_level, _format, ...)                                       \
-  do {                                                                     \
-    const auto _log_level = ::tokenizers::LogLevel::_level;                \
-    if (static_cast<uint32_t>(_log_level) >=                               \
-        static_cast<uint32_t>(::tokenizers::LogLevel::TK_MIN_LOG_LEVEL)) { \
-      ::tokenizers::internal::logf(                                        \
-          _log_level,                                                      \
-          TK_SHORT_FILENAME,                                               \
-          TK_FUNCTION,                                                     \
-          TK_LINE,                                                         \
-          _format,                                                         \
-          ##__VA_ARGS__);                                                  \
-    }                                                                      \
+#define TK_LOG(_level, _format, ...)                                           \
+  do {                                                                         \
+    const auto _log_level = ::tokenizers::LogLevel::_level;                    \
+    if (static_cast<uint32_t>(_log_level) >=                                   \
+        static_cast<uint32_t>(::tokenizers::LogLevel::TK_MIN_LOG_LEVEL)) {     \
+      ::tokenizers::internal::logf(_log_level, TK_SHORT_FILENAME, TK_FUNCTION, \
+                                   TK_LINE, _format, ##__VA_ARGS__);           \
+    }                                                                          \
   } while (0)
 #else // TK_LOG_ENABLED
 

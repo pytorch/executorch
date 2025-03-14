@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <pytorch/tokenizers/base64.h>
 #include "gtest/gtest.h"
+#include <pytorch/tokenizers/base64.h>
 
 namespace tokenizers {
 

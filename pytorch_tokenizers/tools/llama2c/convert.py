@@ -10,14 +10,8 @@
 # postprocessing logic. The output can be consumed by llama2c_tokenizer.cpp.
 
 import argparse
-import logging
-import os
-import struct
-from typing import List
 
 from pytorch_tokenizers import Llama2cTokenizer
-
-from sentencepiece import SentencePieceProcessor as SentencePieceProcessor
 
 
 if __name__ == "__main__":

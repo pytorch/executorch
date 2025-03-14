@@ -27,7 +27,7 @@
 
 namespace tokenizers {
 class HFTokenizer : public detail::BPETokenizerBase {
- public:
+public:
   /*-- Public Interface --*/
 
   /**
@@ -39,15 +39,13 @@ class HFTokenizer : public detail::BPETokenizerBase {
   /**
    * Load the model data into the
    */
-  Error load(const std::string& tokenizer_path) override;
+  Error load(const std::string &tokenizer_path) override;
 
- private:
-  Error _encode(
-      re2::StringPiece& input,
-      std::vector<uint64_t>& ret,
-      uint64_t& last_piece_token_len) const override;
+private:
+  Error _encode(re2::StringPiece &input, std::vector<uint64_t> &ret,
+                uint64_t &last_piece_token_len) const override;
 
-  void _decode(re2::StringPiece input, std::string& ret) const override;
+  void _decode(re2::StringPiece input, std::string &ret) const override;
 
   PreTokenizer::Ptr _pretokenizer;
   TokenDecoder::Ptr _decoder;
