@@ -568,6 +568,14 @@ class Cos(torch.nn.Module):
         return torch.cos(x)
 
 
+class CumSum(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.cumsum(dim=0)
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()

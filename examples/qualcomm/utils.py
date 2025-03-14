@@ -428,6 +428,15 @@ def segmentation_metrics(predictions, targets, classes):
     return (pa, mpa, miou, cls_iou)
 
 
+def class_agnostic_mIoU(predictions, targets):
+    total_iou = 0
+    for pred, tar in zip(predictions, targets):
+        inter = np.count_nonzero(pred & tar)
+        union = np.count_nonzero(pred | tar)
+        total_iou += inter / (union + 1e-10)
+    return total_iou / len(predictions)
+
+
 def get_imagenet_dataset(
     dataset_path, data_size, image_shape, crop_size=None, shuffle=True
 ):
