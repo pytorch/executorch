@@ -1,13 +1,11 @@
-/* Copyright Statement:
+/*
+ * Copyright (c) 2024 MediaTek Inc.
  *
- * This software/firmware and related documentation ("MediaTek Software") are
- * protected under relevant copyright laws. The information contained herein
- * is confidential and proprietary to MediaTek Inc. and/or its licensors.
- * Without the prior written permission of MediaTek inc. and/or its licensors,
- * any reproduction, modification, use or disclosure of MediaTek Software,
- * and information contained herein, in whole or in part, shall be strictly
- * prohibited.
+ * Licensed under the BSD License (the "License"); you may not use this file
+ * except in compliance with the License. See the license file in the root
+ * directory of this source tree for more details.
  */
+
 /* MediaTek Inc. (C) 2020. All rights reserved.
  *
  * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
