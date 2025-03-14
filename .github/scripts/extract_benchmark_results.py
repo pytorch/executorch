@@ -98,6 +98,7 @@ def parse_args() -> Any:
         "--app",
         type=str,
         required=True,
+        choices=["android", "ios"],
         help="the type of app, ios or android, this is mainly used when a failed job happens to generate default record",
     )
 
