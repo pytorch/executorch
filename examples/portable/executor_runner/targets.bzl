@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
+load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -17,6 +18,26 @@ def define_common_targets():
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/extension/runner_util:inputs",
+        ],
+        external_deps = [
+            "gflags",
+        ],
+        define_static_target = True,
+        visibility = [
+            "//executorch/examples/...",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "executor_runner_lib_with_threadpool",
+        srcs = ["executor_runner.cpp"],
+        deps = [
+            "//executorch/runtime/executor:program",
+            "//executorch/extension/data_loader:file_data_loader",
+            "//executorch/extension/evalue_util:print_evalue",
+            "//executorch/extension/runner_util:inputs",
+            "//executorch/extension/threadpool:cpuinfo_utils",
+            "//executorch/extension/threadpool:threadpool",
         ],
         external_deps = [
             "gflags",
@@ -51,4 +72,37 @@ def define_common_targets():
         ] + custom_ops_lib,
         define_static_target = True,
         **get_oss_build_kwargs()
+    )
+
+    executorch_generated_lib(
+        name = "generated_op_lib_for_runner",
+        deps = [
+            "//executorch/kernels/optimized:optimized_operators",
+            "//executorch/kernels/optimized:optimized_oplist",
+            "//executorch/kernels/portable:executorch_aten_ops",
+            "//executorch/kernels/portable:executorch_custom_ops",
+            "//executorch/kernels/portable:operators",
+        ],
+        custom_ops_aten_kernel_deps = [
+            "//executorch/kernels/portable:operators_aten",
+        ],
+        functions_yaml_target = "//executorch/kernels/optimized:optimized.yaml",
+        custom_ops_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
+        fallback_yaml_target = "//executorch/kernels/portable:functions.yaml",
+        define_static_targets = True,
+    )
+
+    # Test driver for models, should have all fast CPU kernels
+    # (XNNPACK, custom SDPA, etc.) available.
+    runtime.cxx_binary(
+        name = "executor_runner_opt",
+        srcs = [],
+        deps = [
+            ":executor_runner_lib_with_threadpool",
+            ":generated_op_lib_for_runner",
+            "//executorch/backends/xnnpack:xnnpack_backend",
+            "//executorch/configurations:executor_cpu_optimized",
+            "//executorch/extension/llm/custom_ops:custom_ops",
+            "//executorch/kernels/quantized:generated_lib",
+        ],
     )
