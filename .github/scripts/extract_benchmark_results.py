@@ -544,12 +544,22 @@ def getAppType(type: str):
     return "UNKNOWN"
 
 
+def getDeviceOsType(type: str):
+    match type:
+        case "ios":
+            return "iOS"
+        case "android":
+            return "Android"
+    return "UNKNOWN"
+
+
 def generateGitJobLevelFailureRecord(git_job_name: str, app: str) -> Any:
     """
     generates benchmark record for GIT_JOB level failure, this is mainly used as placeholder in UI to indicate job failures.
     """
     level = "GIT_JOB"
     app_type = getAppType(app)
+    device_os = getDeviceOsType(app)
     model_infos = get_model_info(git_job_name)
     model_name = "UNKNOWN"
     model_backend = "UNKNOWN"
@@ -565,12 +575,14 @@ def generateGitJobLevelFailureRecord(git_job_name: str, app: str) -> Any:
         model_name,
         model_backend,
         device_pool_name,
-        "UNKNOWN",
+        device_os,
         "FAILURE",
     )
 
 
-def generateDeviceLevelFailureRecord(git_job_name: str, job_report: Any) -> Any:
+def generateDeviceLevelFailureRecord(
+    git_job_name: str, job_report: Any, app: str
+) -> Any:
     """
     generates benchmark record for DEVICE_JOB level failure, this is mainly used as placeholder in UI to indicate job failures.
     """
@@ -578,6 +590,9 @@ def generateDeviceLevelFailureRecord(git_job_name: str, job_report: Any) -> Any:
     model_infos = get_model_info(git_job_name)
     model_name = "UNKNOWN"
     model_backend = "UNKNOWN"
+    osPrefix = getDeviceOsType(app)
+    version = job_report["os"]
+    device_os = f"{osPrefix} {version}"
     if model_infos:
         model_name = model_infos["model_name"]
         model_backend = model_infos["model_backend"]
@@ -587,7 +602,7 @@ def generateDeviceLevelFailureRecord(git_job_name: str, job_report: Any) -> Any:
         model_name,
         model_backend,
         job_report["name"],
-        job_report["os"],
+        device_os,
         job_report["result"],
         job_report,
     )
@@ -625,12 +640,10 @@ def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
         result = job_report.get("result", "")
         if result != "PASSED":
             arn = job_report["arn"]
-            info(
-                f"job {arn} failed at DEVICE_JOB level with result {result}"
-            )
+            info(f"job {arn} failed at DEVICE_JOB level with result {result}")
             # device test failed, generate a failure record instead
             all_benchmark_results.append(
-                generateDeviceLevelFailureRecord(git_job_name, job_report)
+                generateDeviceLevelFailureRecord(git_job_name, job_report, app)
             )
         else:
             benchmark_config = get_benchmark_config(job_artifacts, benchmark_configs)

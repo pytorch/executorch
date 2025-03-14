@@ -33,7 +33,7 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "s3_url": "https://job_arn_1/test-workflow1/1/syslog.syslog",
                 "app_type": app_type,
                 "job_name": "job_arn_1_name",
-                "os": "Android 14",
+                "os": "14",
                 "job_arn": "job_arn_1",
                 "job_conclusion": "PASSED",
             },
@@ -46,7 +46,7 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "s3_url": "job_arn_1_test_spec_output",
                 "app_type": app_type,
                 "job_name": "job_arn_1_device_name",
-                "os": "Android 14",
+                "os": "14",
                 "job_arn": "job_arn_1",
                 "job_conclusion": "PASSED",
             },
@@ -59,7 +59,7 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "s3_url": "https://job_arn_1_customer_artifact1",
                 "app_type": app_type,
                 "job_name": "job_arn_1_device_name",
-                "os": "Android 14",
+                "os": "14",
                 "job_arn": "job_arn_1",
                 "job_conclusion": "PASSED",
             },
@@ -72,7 +72,7 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "s3_url": "https://job_arn_1/test-workflow1/1/syslog.syslog",
                 "app_type": app_type,
                 "job_name": "job_arn_2_name",
-                "os": "Android 14",
+                "os": "14",
                 "job_arn": "job_arn_2",
                 "job_conclusion": "PASSED",
             },
@@ -85,7 +85,7 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "s3_url": "job_arn_2_test_spec_output",
                 "app_type": app_type,
                 "job_name": "job_arn_2_name",
-                "os": "Android 14",
+                "os": "14",
                 "job_arn": "job_arn_2",
                 "job_conclusion": "PASSED",
             },
@@ -98,7 +98,7 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "s3_url": "https://job_arn_1_customer_artifact1",
                 "app_type": app_type,
                 "job_name": "job_arn_2_name",
-                "os": "Android 14",
+                "os": "14",
                 "job_arn": "job_arn_2",
                 "job_conclusion": "PASSED",
             },
@@ -123,7 +123,7 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "app_type": app_type,
                 "infos": {},
                 "parent_arn": "run_arn_1",
-                "os": "Android 14",
+                "os": "14",
             },
             {
                 "name": "job_arn_2_name_report",
@@ -134,7 +134,7 @@ def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
                 "app_type": app_type,
                 "infos": {},
                 "parent_arn": "run_arn_1",
-                "os": "Android 14",
+                "os": "14",
             },
         ],
     }
@@ -189,7 +189,48 @@ class Test(unittest.TestCase):
         result = process_benchmark_results(content, "android", "benchmark_configs")
         self.assertGreaterEqual(len(result), 2)
 
-    def test_processBenchmarkResults_when_git_job_fails_then_returnBenchmarkRecordWithFailure(
+    def test_processBenchmarkResults_when_ANDROID_git_job_fails_then_returnBenchmarkRecordWithFailure(
+        self,
+    ):
+        # setup mocks
+        # mimic artifact when job is failed.
+        content = {
+            "git_job_name": "benchmark-on-device (ic4, qnn_q8, samsung_galaxy_s22, arn:aws:devicefarm:us-west-2:308535385114:d... / mobile-job (android)"
+        }
+
+        # execute
+        result = process_benchmark_results(content, "android", "benchmark_configs")
+
+        # assert
+        self.assertGreaterEqual(len(result), 1)
+
+        self.assertEqual(
+            result[0]["model"],
+            {
+                "name": "ic4",
+                "type": "OSS model",
+                "backend": "qnn_q8",
+            },
+        )
+        self.assertEqual(
+            result[0]["benchmark"],
+            {
+                "name": "ExecuTorch",
+                "mode": "inference",
+                "extra_info": {
+                    "app_type": "ANDROID_APP",
+                    "job_conclusion": "FAILURE",
+                    "failure_level": "GIT_JOB",
+                    "job_report": "{}",
+                },
+            },
+        )
+
+        self.assertEqual(result[0]["runners"][0]["name"], "samsung_galaxy_s22")
+        self.assertEqual(result[0]["runners"][0]["type"], "Android")
+        self.assertEqual(result[0]["metric"]["name"], "FAILURE_REPORT")
+
+    def test_processBenchmarkResults_when_IOS_git_job_fails_then_returnBenchmarkRecordWithFailure(
         self,
     ):
         # setup mocks
@@ -225,6 +266,9 @@ class Test(unittest.TestCase):
                 },
             },
         )
+
+        self.assertEqual(result[0]["runners"][0]["name"], "apple_iphone_15")
+        self.assertEqual(result[0]["runners"][0]["type"], "iOS")
         self.assertEqual(result[0]["metric"]["name"], "FAILURE_REPORT")
 
     @mock.patch("extract_benchmark_results.extract_ios_benchmark_results")
