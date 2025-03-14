@@ -16,8 +16,9 @@ from unittest.mock import MagicMock
 from extract_benchmark_results import (
     extract_android_benchmark_results,
     extract_ios_benchmark_results,
-    process_benchmark_results
+    process_benchmark_results,
 )
+
 
 def get_mock_happy_flow_content(app_type: str = "IOS_APP"):
     return {
@@ -323,10 +324,11 @@ class Test(unittest.TestCase):
             _ = process_benchmark_results(content, "random", "benchmark_configs")
 
         # assert
-        self.assertTrue("unknown device type detected: random" in str(context.exception))
+        self.assertTrue(
+            "unknown device type detected: random" in str(context.exception)
+        )
         read_benchmark_config_mock.assert_not_called()
         extract_ios_mock.assert_not_called()
-
 
     def test_process_benchmark_results_when_git_job_fails_with_invalid_git_job_name_then_throw_errors(
         self,
@@ -342,8 +344,10 @@ class Test(unittest.TestCase):
             _ = process_benchmark_results(content, "ios", "benchmark_configs")
 
         # assert
-        print("exception yang:",str(context.exception))
-        self.assertTrue("regex pattern not found from git_job_name" in str(context.exception))
+        print("exception yang:", str(context.exception))
+        self.assertTrue(
+            "regex pattern not found from git_job_name" in str(context.exception)
+        )
 
 
 def get_mock_extract_result():
