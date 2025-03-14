@@ -1025,6 +1025,28 @@ class NotEqualConstant(torch.nn.Module):
         return x != self.constant
 
 
+class OrBitWise(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.pos = pos
+        self.neg = neg
+
+    def forward(self, x, y):
+        bitwise_or = torch.bitwise_or(x, y).bool()
+        return torch.where(bitwise_or, self.pos, self.neg)
+
+
+class OrOperator(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.pos = pos
+        self.neg = neg
+
+    def forward(self, x, y):
+        operator_or = x.to(torch.bool) | y.to(torch.bool)
+        return torch.where(operator_or, self.pos, self.neg)
+
+
 class Pad(torch.nn.Module):
     def __init__(self):
         super().__init__()

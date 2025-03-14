@@ -178,27 +178,9 @@ TEST_F(ProfilerETDumpTest, AllocationEvents) {
 TEST_F(ProfilerETDumpTest, DebugEvent) {
   for (size_t i = 0; i < 2; i++) {
     for (size_t j = 0; j < 2; j++) {
-      TensorFactory<ScalarType::Float> tf;
-      EValue evalue(tf.ones({3, 2}));
-
       etdump_gen[i]->create_event_block("test_block");
 
       void* ptr = malloc(2048);
-      Span<uint8_t> buffer((uint8_t*)ptr, 2048);
-
-      auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
-
-      // using span to record debug data
-      if (j == 0) {
-        etdump_gen[i]->set_debug_buffer(buffer);
-      }
-      // using data sink to record debug data
-      else {
-        etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
-      }
-
-      etdump_gen[i]->log_evalue(evalue);
-      etdump_gen[i]->log_evalue(evalue, LoggedEValueType::kProgramOutput);
 
       EValue evalue_int((int64_t)5);
       etdump_gen[i]->log_evalue(evalue_int);
@@ -210,6 +192,27 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
       etdump_gen[i]->log_evalue(evalue_bool);
 
       etdump_gen[i]->log_evalue(evalue_bool);
+
+      TensorFactory<ScalarType::Float> tf;
+      EValue evalue_tensor(tf.ones({3, 2}));
+
+      // using span to record debug data
+      Span<uint8_t> buffer((uint8_t*)ptr, 2048);
+      auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
+      if (j == 0) {
+        ET_EXPECT_DEATH(
+            etdump_gen[i]->log_evalue(evalue_tensor),
+            "Must set data sink before writing tensor-like data");
+        etdump_gen[i]->set_debug_buffer(buffer);
+      }
+      // using data sink to record debug data
+      else {
+        etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
+      }
+
+      etdump_gen[i]->log_evalue(evalue_tensor);
+      etdump_gen[i]->log_evalue(
+          evalue_tensor, LoggedEValueType::kProgramOutput);
 
       free(ptr);
     }
@@ -487,7 +490,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
                 "test_event_tensor",
                 static_cast<torch::executor::DebugHandle>(-1),
                 tf.ones({3, 2})),
-            "Must pre-set data sink before logging evalue with set_data_sink");
+            "Must set data sink before writing tensor-like data");
         etdump_gen[i]->set_debug_buffer(buffer);
       }
       // using data sink to record debug data
