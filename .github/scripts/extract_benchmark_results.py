@@ -559,7 +559,8 @@ def generateGitJobLevelFailureRecord(git_job_name: str, app: str) -> Any:
     """
     level = "GIT_JOB"
     app_type = getAppType(app)
-    device_os = getDeviceOsType(app)
+    device_prefix = getDeviceOsType(app)
+
     model_infos = get_model_info(git_job_name)
     model_name = "UNKNOWN"
     model_backend = "UNKNOWN"
@@ -575,7 +576,7 @@ def generateGitJobLevelFailureRecord(git_job_name: str, app: str) -> Any:
         model_name,
         model_backend,
         device_pool_name,
-        device_os,
+        device_prefix,
         "FAILURE",
     )
 
@@ -591,8 +592,12 @@ def generateDeviceLevelFailureRecord(
     model_name = "UNKNOWN"
     model_backend = "UNKNOWN"
     osPrefix = getDeviceOsType(app)
-    version = job_report["os"]
-    device_os = f"{osPrefix} {version}"
+    job_report_os = job_report["os"]
+
+    device_os = job_report_os
+    if not job_report_os.startswith(osPrefix):
+        device_os = f"{osPrefix} {job_report_os}"
+
     if model_infos:
         model_name = model_infos["model_name"]
         model_backend = model_infos["model_backend"]

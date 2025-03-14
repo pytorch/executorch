@@ -266,14 +266,13 @@ class Test(unittest.TestCase):
                 },
             },
         )
-
         self.assertEqual(result[0]["runners"][0]["name"], "apple_iphone_15")
         self.assertEqual(result[0]["runners"][0]["type"], "iOS")
         self.assertEqual(result[0]["metric"]["name"], "FAILURE_REPORT")
 
     @mock.patch("extract_benchmark_results.extract_ios_benchmark_results")
     @mock.patch("extract_benchmark_results.read_benchmark_config")
-    def test_processBenchmarkResults_when_one_mobile_job_fails_then_returnBenchmarkRecordWithFailure(
+    def test_processBenchmarkResults_when_one_IOS_mobile_job_fails_then_returnBenchmarkRecordWithFailure(
         self, read_benchmark_config_mock, extract_ios_mock
     ):
         # setup mocks
@@ -301,6 +300,7 @@ class Test(unittest.TestCase):
             },
         )
         self.assertEqual(result[0]["metric"]["name"], "FAILURE_REPORT")
+
         self.assertNotEqual(result[1]["metric"]["name"], "FAILURE_REPORT")
 
 
