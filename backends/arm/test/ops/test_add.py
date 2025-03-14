@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -106,24 +106,8 @@ def test_add_i32_tosa_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
+@common.XfailIfNoCorstone300
 def test_add_u55_BI(test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
-        Add(), test_data, aten_op, exir_op, run_on_fvp=False
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Add.test_data)
-def test_add_u85_BI(test_data: input_t1):
-    pipeline = EthosU85PipelineBI[input_t1](
-        Add(), test_data, aten_op, exir_op, run_on_fvp=False
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Add.test_data)
-@common.SkipIfNoCorstone300
-def test_add_u55_BI_on_fvp(test_data: input_t1):
     pipeline = EthosU55PipelineBI[input_t1](
         Add(), test_data, aten_op, exir_op, run_on_fvp=True
     )
@@ -131,8 +115,8 @@ def test_add_u55_BI_on_fvp(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
-@common.SkipIfNoCorstone320
-def test_add_u85_BI_on_fvp(test_data: input_t1):
+@common.XfailIfNoCorstone320
+def test_add_u85_BI(test_data: input_t1):
     pipeline = EthosU85PipelineBI[input_t1](
         Add(), test_data, aten_op, exir_op, run_on_fvp=True
     )
@@ -140,28 +124,20 @@ def test_add_u85_BI_on_fvp(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add2.test_data)
-def test_add2_tosa_MI(test_data: input_t2):
+def test_add_2_tosa_MI(test_data: input_t2):
     pipeline = TosaPipelineMI[input_t2](Add2(), test_data, aten_op, exir_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add2.test_data)
-def test_add2_tosa_BI(test_data: input_t2):
+def test_add_2_tosa_BI(test_data: input_t2):
     pipeline = TosaPipelineBI[input_t2](Add2(), test_data, aten_op, exir_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add2.test_data)
-def test_add2_u55_BI(test_data: input_t2):
-    pipeline = EthosU55PipelineBI[input_t2](
-        Add2(), test_data, aten_op, exir_op, run_on_fvp=False
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Add2.test_data)
-@common.SkipIfNoCorstone300
-def test_add2_u55_BI_on_fvp(test_data: input_t2):
+@common.XfailIfNoCorstone300
+def test_add_2_u55_BI(test_data: input_t2):
     pipeline = EthosU55PipelineBI[input_t2](
         Add2(), test_data, aten_op, exir_op, run_on_fvp=True
     )
@@ -169,16 +145,8 @@ def test_add2_u55_BI_on_fvp(test_data: input_t2):
 
 
 @common.parametrize("test_data", Add2.test_data)
-def test_add2_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
-        Add2(), test_data, aten_op, exir_op, run_on_fvp=False
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Add2.test_data)
-@common.SkipIfNoCorstone320
-def test_add2_u85_BI_on_fvp(test_data: input_t2):
+@common.XfailIfNoCorstone320
+def test_add_2_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
         Add2(), test_data, aten_op, exir_op, run_on_fvp=True
     )
