@@ -529,6 +529,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_backend</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">Partitioner</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.capture._config</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.delegate</span><span class="w"> </span><span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">is_lowered_module</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.emit</span><span class="w"> </span><span class="kn">import</span> <span class="n">emit_program</span><span class="p">,</span> <span class="n">EmitterOutput</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.emit._emitter</span><span class="w"> </span><span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.error</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportError</span>
@@ -1807,6 +1808,7 @@
         <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">ops_set_to_not_decompose</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">named_data_store</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">NamedDataStore</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Should not be called directly by users. User should use :func:&#39;to_edge&#39; instead.</span>
@@ -1830,7 +1832,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="n">edge_programs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="o">=</span> <span class="n">constant_methods</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store</span> <span class="o">=</span> <span class="n">NamedDataStore</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store</span> <span class="o">=</span> <span class="n">named_data_store</span> <span class="ow">or</span> <span class="n">NamedDataStore</span><span class="p">()</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
@@ -1940,9 +1942,30 @@
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="n">new_edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">)</span>
 
+        <span class="c1"># collected all the named data into the named data store for deduplication</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">collect_named_data_store_outputs</span><span class="p">(</span>
+            <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">executorch_call_delegate</span><span class="p">:</span>
+                    <span class="n">lbm</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                    <span class="k">assert</span> <span class="n">is_lowered_module</span><span class="p">(</span><span class="n">lbm</span><span class="p">)</span>
+                    <span class="n">data_store_output</span> <span class="o">=</span> <span class="n">lbm</span><span class="o">.</span><span class="n">named_data_store_output</span>
+                    <span class="k">if</span> <span class="n">data_store_output</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store</span><span class="o">.</span><span class="n">merge_named_data_store</span><span class="p">(</span><span class="n">data_store_output</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">graph_module</span><span class="p">):</span>
+                <span class="n">collect_named_data_store_outputs</span><span class="p">(</span><span class="n">submod</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">new_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">collect_named_data_store_outputs</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+
         <span class="n">config</span> <span class="o">=</span> <span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
-            <span class="n">new_edge_programs</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">),</span> <span class="n">config</span>
+            <span class="n">new_edge_programs</span><span class="p">,</span>
+            <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">),</span>
+            <span class="n">config</span><span class="p">,</span>
+            <span class="n">named_data_store</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store</span><span class="p">,</span>
         <span class="p">)</span>
 
     <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_executorch&quot;</span><span class="p">)</span>
