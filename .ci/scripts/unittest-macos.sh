@@ -35,6 +35,7 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     .ci/scripts/unittest-macos-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
     .ci/scripts/unittest-buck2.sh
+    # .ci/scripts/unittest-macos-buck2.sh
 else
     echo "Unknown build tool $BUILD_TOOL"
     exit 1

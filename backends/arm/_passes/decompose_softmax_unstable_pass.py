@@ -1,5 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
-# All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,7 +45,7 @@ def get_logsoftmax_ops(op) -> tuple:
     raise RuntimeError(f"Can't get softmax decomposition ops for op {op}")
 
 
-class DecomposeSoftmaxesPass(ExportPass):
+class DecomposeSoftmaxUnstablePass(ExportPass):
     """
     This pass decomposes log softmax or softmax into more primitive ops.
 
