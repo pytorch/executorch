@@ -284,7 +284,6 @@ ATEN_OPS = (
         name = "op_argmin",
         deps = [
             "//executorch/kernels/portable/cpu/util:reduce_util",
-            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
     ),
     op_target(
