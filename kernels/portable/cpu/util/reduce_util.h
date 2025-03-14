@@ -820,7 +820,7 @@ bool check_prod_out_args(
 template <typename Func>
 [[nodiscard]] bool parallel_for_each_reduce_over_dim_output_index(
     const Tensor& in,
-    optional<int64_t> dim,
+    executorch::aten::optional<int64_t> dim,
     const Tensor& out,
     const Func& func) {
   const ssize_t reduction_size = get_reduced_dim_product(in, dim);
