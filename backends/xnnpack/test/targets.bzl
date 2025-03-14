@@ -35,6 +35,7 @@ def define_common_targets():
         name = "test_xnn_weights_cache",
         srcs = ["runtime/test_xnn_weights_cache.cpp"],
         deps = [
+            third_party_dep("XNNPACK"),
             "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/runtime/executor:pte_data_map",
             "//executorch/extension/data_loader:file_data_loader",
