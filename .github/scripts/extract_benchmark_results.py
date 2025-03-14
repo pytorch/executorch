@@ -603,6 +603,7 @@ def process_benchmark_results(content: Any, app: str, benchmark_configs: str):
 
     # this indicated that the git job fails, generate a failure record
     if not artifacts:
+        info(f"job failed at GIT_JOB level with git job name {git_job_name}")
         return [generateGitJobLevelFailureRecord(git_job_name, app)]
 
     arn_to_artifacts = group_by_arn(artifacts)
