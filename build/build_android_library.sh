@@ -159,9 +159,8 @@ collect_artifacts_to_be_uploaded() {
   # Collect the app and its test suite
   cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${DEMO_APP_DIR}"
   cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${DEMO_APP_DIR}"
-  # Collect JAR and AAR
-  cp extension/android/build/libs/executorch.jar "${DEMO_APP_DIR}"
-  find "${BUILD_AAR_DIR}/" -name 'executorch*.aar' -exec cp {} "${DEMO_APP_DIR}" \;
+  # Collect AAR
+  cp "${BUILD_AAR_DIR}/executorch.aar" "${DEMO_APP_DIR}"
   # Collect MiniBench APK
   MINIBENCH_APP_DIR="${ARTIFACTS_DIR_NAME}/minibench"
   mkdir -p "${MINIBENCH_APP_DIR}"
@@ -186,10 +185,10 @@ main() {
     build_android_native_library ${ANDROID_ABI}
   done
   build_aar
-  build_android_demo_apps
-  if [ -n "$ARTIFACTS_DIR_NAME" ]; then
-    collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}
-  fi
+  # build_android_demo_apps
+  # if [ -n "$ARTIFACTS_DIR_NAME" ]; then
+    # collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}
+  # fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
