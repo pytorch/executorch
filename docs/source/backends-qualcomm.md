@@ -59,7 +59,7 @@ This example is verified with SM8550 and SM8450.
    - Click the "Get Software" button to download a version of QNN SDK.
    - However, at the moment of updating this tutorial, the above website doesn't provide QNN SDK newer than 2.22.6.
    - The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.
-   - [QNN 2.28.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.28.0.241029.zip)
+   - [QNN 2.31.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.31.0.250130.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
@@ -175,7 +175,7 @@ cmake .. \
     -DPYTHON_EXECUTABLE=python3 \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
-    -DANDROID_NATIVE_API_LEVEL=23
+    -DANDROID_NATIVE_API_LEVEL=30
 
 # nproc is used to detect the number of available CPU.
 # If it is not applicable, please feel free to use the number you want.
@@ -184,7 +184,7 @@ cmake --build $PWD --target install -j$(nproc)
 cmake ../examples/qualcomm \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
-    -DANDROID_NATIVE_API_LEVEL=23 \
+    -DANDROID_NATIVE_API_LEVEL=30 \
     -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
     -DPYTHON_EXECUTABLE=python3 \

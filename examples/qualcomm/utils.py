@@ -132,7 +132,9 @@ class SimpleADB:
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
             f"{self.build_path}/{self.runner}",
             f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+            f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
         ]
+
         input_list_file, input_files = generate_inputs(
             self.working_dir, self.input_list_filename, inputs, input_list
         )
@@ -301,6 +303,7 @@ def build_executorch_binary(
     dump_intermediate_outputs=False,
     passes_job=None,
     qat_training_data=None,
+    online_prepare=False,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -319,6 +322,7 @@ def build_executorch_binary(
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
         custom_pass_config (frozenset, optional): Set of custom passes for model processing.
+        online_prepare (bool, optional): Compose QNN graph on device if set to True
 
     Returns:
         None: The function writes the output to a specified .pte file.
@@ -352,6 +356,7 @@ def build_executorch_binary(
             backend_options=backend_options,
             shared_buffer=shared_buffer,
             dump_intermediate_outputs=dump_intermediate_outputs,
+            online_prepare=online_prepare,
         ),
         skip_node_id_set,
         skip_node_op_set,
@@ -499,6 +504,13 @@ def setup_common_args_and_variables():
         help="hostname where android device is connected.",
         default=None,
         type=str,
+    )
+
+    parser.add_argument(
+        "--online_prepare",
+        help="If specified, Compose QNN graph on device.",
+        action="store_true",
+        default=False,
     )
 
     parser.add_argument(

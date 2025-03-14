@@ -12,11 +12,12 @@ namespace qnn {
 
 using executorch::runtime::Error;
 
-Error QnnGraph::Configure(const std::string& graph_name) {
+Error QnnGraph::Configure(
+    const std::string& graph_name,
+    const bool skip_create) {
   // create qnn backend
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-
   std::vector<const QnnGraph_Config_t*> temp_graph_config;
   ET_CHECK_OR_RETURN_ERROR(
       MakeConfig(temp_graph_config) == Error::Ok,
@@ -44,13 +45,17 @@ Error QnnGraph::Configure(const std::string& graph_name) {
     }
   } else if (
       context_->GetCacheState() == QnnBackendCache::SERIALIZE ||
-      context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
-    Qnn_ErrorHandle_t error = qnn_interface.qnn_graph_create(
-        context_->GetHandle(),
-        graph_name.c_str(),
-        temp_graph_config.empty() ? nullptr : temp_graph_config.data(),
-        &graph_handle);
-
+      context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE ||
+      context_->GetCacheState() == QnnBackendCache::MULTI_GRAPH) {
+    // Since the graph has already been created from the DLC, we need to skip
+    // creating the QNN graph
+    if (!skip_create) {
+      error = qnn_interface.qnn_graph_create(
+          context_->GetHandle(),
+          graph_name.c_str(),
+          temp_graph_config.empty() ? nullptr : temp_graph_config.data(),
+          &graph_handle);
+    }
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_ERROR(
           "qnn_graph_create failed. Error  %d", QNN_GET_ERROR_CODE(error));

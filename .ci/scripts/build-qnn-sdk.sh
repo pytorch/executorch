@@ -12,7 +12,7 @@ set -o xtrace
 build_qnn_backend() {
   echo "Start building qnn backend."
   export ANDROID_NDK_ROOT=/opt/ndk
-  export QNN_SDK_ROOT=/tmp/qnn/2.28.0.241029
+  export QNN_SDK_ROOT=/tmp/qnn/2.31.0.250130
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
   # Workaround to avoid issues around missing flatccrt library (depending on the
@@ -33,6 +33,7 @@ set_up_aot() {
   cmake .. \
       -DCMAKE_INSTALL_PREFIX=$PWD \
       -DEXECUTORCH_BUILD_QNN=ON \
+      -DANDROID_NATIVE_API_LEVEL=30 \
       -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
       -DEXECUTORCH_BUILD_DEVTOOLS=ON \
       -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \

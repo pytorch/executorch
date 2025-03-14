@@ -70,6 +70,7 @@ endif()
 
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
+  ${QNN_SDK_ROOT}/share/QNN/converter/jni
   ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
@@ -174,6 +175,7 @@ target_link_libraries(
   qnn_factory PRIVATE qnn_schema qnn_backend qnn_device qnn_context qnn_graph
           qnn_mem_manager qnn_custom_protocol
 )
+
 target_link_libraries(
   qnn_manager PRIVATE qnn_factory wrappers qnn_schema utils shared_buffer
 )

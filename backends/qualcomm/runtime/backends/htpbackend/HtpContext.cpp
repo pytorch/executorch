@@ -8,7 +8,6 @@
 
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
-
 #include "HTP/QnnHtpCommon.h"
 #include "Saver/QnnSaverCommon.h"
 
