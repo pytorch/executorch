@@ -466,8 +466,6 @@ def transform_failure_record(
             {
                 "name": device_name,
                 "type": device_os,
-                "avail_mem_in_gb": "",
-                "total_mem_in_gb": "",
             }
         ],
     }
