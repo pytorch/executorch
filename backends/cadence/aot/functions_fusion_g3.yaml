@@ -51,7 +51,7 @@
 - op: clamp.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::clamp_tensor_out
+      kernel_name: cadence::impl::G3::clamp_Tensor_out
 
 - op: clone.out
   kernels:
@@ -81,12 +81,12 @@
 - op: lt.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::lt_scalar_out
+      kernel_name: cadence::impl::G3::lt_Scalar_out
 
 - op: lt.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::lt_tensor_out
+      kernel_name: cadence::impl::G3::lt_Tensor_out
 
 - op: mul.out
   kernels:
@@ -155,7 +155,7 @@
 - op: where.self_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::where_out
+      kernel_name: cadence::impl::G3::where_self_out
 
 - op: native_layer_norm.out
   kernels:
