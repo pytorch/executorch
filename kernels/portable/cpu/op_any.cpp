@@ -96,16 +96,21 @@ Tensor& any_dims_out(
               static_cast<CTYPE_OUT>(static_cast<bool>(in_data[out_ix]));
         }
       } else {
-        for (const auto out_ix : c10::irange(out.numel())) {
-          bool any = false;
-          if (in_not_empty) {
-            any = plan->execute<CTYPE_IN, bool>(
-                [](CTYPE_IN v) { return static_cast<bool>(v); },
-                [](bool outv, bool acc) { return acc || outv; },
-                out_ix);
-          }
-          out_data[out_ix] = static_cast<CTYPE_OUT>(any);
-        }
+        const bool success =
+            parallel_for_each_reduce_over_dim_list_output_index(
+                in, dim_list, out, [&](const auto begin, const auto end) {
+                  for (const auto out_ix : c10::irange(begin, end)) {
+                    bool any = false;
+                    if (in_not_empty) {
+                      any = plan->execute<CTYPE_IN, bool>(
+                          [](CTYPE_IN v) { return static_cast<bool>(v); },
+                          [](bool outv, bool acc) { return acc || outv; },
+                          out_ix);
+                    }
+                    out_data[out_ix] = static_cast<CTYPE_OUT>(any);
+                  }
+                });
+        ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
       }
     });
   });
