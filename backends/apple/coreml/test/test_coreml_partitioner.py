@@ -117,7 +117,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         v = torch.randn(batch_size, n_heads, max_seq_length, embedding_dim)
         mask = torch.randn(seq_len, max_seq_length)
         example_inputs = (q, k, v, mask)
-        ep = torch.export.export(model, example_inputs)
+        ep = torch.export.export(model, example_inputs, strict=True)
         coreml_partitioner = CoreMLPartitioner()
 
         # Using to_edge_transform_and_lower, we expect SDPA will be preserved and show up in delegated graph

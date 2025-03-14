@@ -67,7 +67,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20250131"
+NIGHTLY_VERSION = "dev20250311"
 
 
 def install_requirements(use_pytorch_nightly):

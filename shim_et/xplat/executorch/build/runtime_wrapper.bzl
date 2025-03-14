@@ -187,10 +187,13 @@ def _patch_kwargs_common(kwargs):
     for dep_type in ("deps", "exported_deps"):
         env.patch_deps(kwargs, dep_type)
 
+    if "visibility" not in kwargs:
+        kwargs["visibility"] = ["//executorch/..."]
+
     # Patch up references to "//executorch/..." in lists of build targets,
     # if necessary.
     use_static_deps = kwargs.pop("use_static_deps", False)
-    for dep_type in ("deps", "exported_deps", "visibility"):
+    for dep_type in ("deps", "exported_deps", "visibility", "preload_deps"):
         if kwargs.get(dep_type):
             # deps may contain select() elements, dicts that map names to lists
             # of targets. selects.apply() will run the provided function on all
@@ -201,10 +204,6 @@ def _patch_kwargs_common(kwargs):
                 obj = kwargs.get(dep_type),
                 function = native.partial(_patch_executorch_references, use_static_deps = use_static_deps),
             )
-
-    # Make all targets private by default, like in xplat.
-    if "visibility" not in kwargs:
-        kwargs["visibility"] = []
 
     # If we see certain strings in the "visibility" list, expand them.
     if "@EXECUTORCH_CLIENTS" in kwargs["visibility"]:

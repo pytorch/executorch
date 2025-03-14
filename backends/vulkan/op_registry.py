@@ -522,15 +522,11 @@ def register_view_op(features: OpFeatures):
 @update_features(
     [
         # Shape Manipulation
-        exir_ops.edge.aten.squeeze_copy.dims,
-        exir_ops.edge.aten.unsqueeze_copy.default,
-        exir_ops.edge.aten.permute_copy.default,
         exir_ops.edge.aten.t_copy.default,
         # Indexing and lookup
         exir_ops.edge.aten.flip.default,
         exir_ops.edge.aten.index_select.default,
         exir_ops.edge.aten.select_copy.int,
-        exir_ops.edge.aten.slice_copy.Tensor,
         # Tensor combination
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
@@ -553,6 +549,24 @@ def register_view_op(features: OpFeatures):
 def register_ported_op(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims={PackedDim.CHANNELS},
+    )
+    return features
+
+
+# Ops ported from PyTorch Vulkan backend. These ops are in a separate registry becasue they support all packed dimensions
+@update_features(
+    [
+        # Indexing and lookup
+        exir_ops.edge.aten.slice_copy.Tensor,
+        # Shape Manipulation
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+    ]
+)
+def register_ported_op_all_packed_dims(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims=all_packed_dims,
     )
     return features
 

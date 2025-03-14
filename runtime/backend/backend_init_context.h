@@ -8,6 +8,7 @@
 
 #pragma once
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch {
 namespace runtime {
@@ -21,8 +22,11 @@ class BackendInitContext final {
   explicit BackendInitContext(
       MemoryAllocator* runtime_allocator,
       EventTracer* event_tracer = nullptr,
-      const char* method_name = nullptr)
-      : runtime_allocator_(runtime_allocator), method_name_(method_name) {}
+      const char* method_name = nullptr,
+      const NamedDataMap* named_data_map = nullptr)
+      : runtime_allocator_(runtime_allocator),
+        method_name_(method_name),
+        named_data_map_(named_data_map) {}
 
   /** Get the runtime allocator passed from Method. It's the same runtime
    * executor used by the standard executor runtime and the life span is the
@@ -52,10 +56,18 @@ class BackendInitContext final {
     return method_name_;
   }
 
+  /** Get the named data map from ExecuTorch runtime.
+   * This provides a way for backends to retrieve data blobs by key.
+   */
+  const NamedDataMap* get_named_data_map() const {
+    return named_data_map_;
+  }
+
  private:
   MemoryAllocator* runtime_allocator_ = nullptr;
   EventTracer* event_tracer_ = nullptr;
   const char* method_name_ = nullptr;
+  const NamedDataMap* named_data_map_ = nullptr;
 };
 
 } // namespace runtime

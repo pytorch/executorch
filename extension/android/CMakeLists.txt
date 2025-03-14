@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 
 project(executorch_jni)
 
@@ -84,10 +84,6 @@ if(TARGET optimized_native_cpu_ops_lib)
     APPEND
     link_libraries
     optimized_native_cpu_ops_lib
-    optimized_kernels
-    portable_kernels
-    cpublas
-    eigen_blas
   )
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
@@ -115,16 +111,10 @@ if(TARGET vulkan_backend)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/extension/llm/custom_ops
-    ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/custom_ops
-  )
-  list(APPEND link_libraries custom_ops)
-  target_link_options_shared_lib(custom_ops)
+  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
 if(TARGET pthreadpool)
-  target_compile_definitions(executorch_jni PRIVATE ET_USE_THREADPOOL=1)
   target_include_directories(
     executorch_jni
     PUBLIC

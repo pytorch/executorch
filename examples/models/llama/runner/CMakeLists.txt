@@ -21,7 +21,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -66,11 +66,11 @@ set(ABSL_PROPAGATE_CXX_STD ON)
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(
-  ${EXECUTORCH_ROOT}/extension/llm/third-party/abseil-cpp
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/abseil-cpp
   ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
 )
 add_subdirectory(
-  ${EXECUTORCH_ROOT}/extension/llm/third-party/re2
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/re2
   ${CMAKE_CURRENT_BINARY_DIR}/re2
 )
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
@@ -82,6 +82,8 @@ set(llama_runner_deps executorch extension_data_loader extension_module
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
 
 target_include_directories(
-  llama_runner INTERFACE ${_common_include_directories} ${EXECUTORCH_ROOT}
+  llama_runner
+  INTERFACE ${_common_include_directories} ${EXECUTORCH_ROOT}
+            ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 target_compile_options(llama_runner PUBLIC ${_preprocessor_flag})

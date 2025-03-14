@@ -1016,6 +1016,9 @@ def _remove_invalid_ops_for_not_decompose(
             torch.ops.aten.add.Tensor,
             torch.ops.aten.sub.Tensor,
             torch.ops.aten.div.Tensor,
+            torch.ops.aten.item.default,
+            torch.ops.aten._local_scalar_dense.default,
+            torch.ops.aten.unbind.int,
         ]:
             logging.warn(
                 f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."

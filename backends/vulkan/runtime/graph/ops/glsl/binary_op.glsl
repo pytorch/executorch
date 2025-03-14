@@ -11,8 +11,12 @@
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_type(DTYPE)}
+#define T ${buffer_scalar_type(DTYPE)}
 
 #define op(X, Y, A) ${OPERATOR}
+
+${define_active_storage_type(STORAGE)}
+${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
@@ -20,28 +24,70 @@ ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_other", DTYPE, STORAGE)}
 
+$if STORAGE == "buffer":
+  layout(push_constant) uniform restrict Block {
+    ivec4 in_sizes;
+    ivec4 other_sizes;
+    ivec4 out_strides;
+    ivec4 in_strides;
+    ivec4 other_strides;
+    int out_numel;
+    float alpha;
+  };
+$else:
+  layout(push_constant) uniform restrict Block {
+    ivec4 out_sizes;
+    ivec4 in_sizes;
+    ivec4 other_sizes;
+    ivec2 broadcast_params;
+    float alpha;
+  };
+
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
-const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
-const lowp int packed_dim = unhash_packed_dim(out_layout);
+$if STORAGE == "buffer":
+  ${layout_declare_spec_const(C, "int", "out_packed_dim", "DEFAULT_LAYOUT")}
+  ${layout_declare_spec_const(C, "int", "in_packed_dim", "DEFAULT_LAYOUT")}
+  ${layout_declare_spec_const(C, "int", "other_packed_dim", "DEFAULT_LAYOUT")}
+$else:
+  ${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+  const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
+  const lowp int packed_dim = unhash_packed_dim(out_layout);
 
-${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
-const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
+  ${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+  const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
 
-${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
-const lowp ivec4 other_axis_map = unhash_axis_map(other_layout);
+  ${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
+  const lowp ivec4 other_axis_map = unhash_axis_map(other_layout);
 
-layout(push_constant) uniform restrict Block {
-  ivec4 out_sizes;
-  ivec4 in_sizes;
-  ivec4 other_sizes;
-  ivec2 broadcast_params;
-  float alpha;
-};
+#ifdef USING_BUFFER
+
+void main() {
+  const int out_bufi = ivec3(gl_GlobalInvocationID).x;
+  if (out_bufi >= out_numel) {
+    return;
+  }
+
+  // Simple case; no broadcasting
+  if (in_sizes == other_sizes) {
+    t_out[out_bufi] = T(op(t_in[out_bufi], t_other[out_bufi], T(alpha)));
+    return;
+  }
+
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
+  const ivec4 in_tidx = min(out_tidx, in_sizes - 1);
+  const ivec4 other_tidx = min(out_tidx, other_sizes - 1);
+
+  const int in_bufi = tidx_to_bufi(in_tidx, in_strides);
+  const int other_bufi = tidx_to_bufi(other_tidx, other_strides);
+
+  t_out[out_bufi] = T(op(t_in[in_bufi], t_other[other_bufi], T(alpha)));
+}
+
+#else // USING_TEXTURE
 
 void main() {
   const ivec3 lpos = ivec3(gl_GlobalInvocationID);
@@ -79,3 +125,5 @@ void main() {
     VEC4_T(op(in_texel, other_texel, alpha)),
     out_axis_map);
 }
+
+#endif

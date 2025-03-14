@@ -112,6 +112,13 @@ class BaseTOSASupportList(OperatorSupportBase):
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.any.default,
+            exir_ops.edge.aten.any.dim,
+            exir_ops.edge.aten.any.dims,
+            exir_ops.edge.aten.logical_and.default,
+            exir_ops.edge.aten.logical_or.default,
+            exir_ops.edge.aten.logical_xor.default,
+            exir_ops.edge.aten.logical_not.default,
             exir_ops.edge.aten.bitwise_and.Tensor,
             exir_ops.edge.aten.bitwise_or.Tensor,
             exir_ops.edge.aten.bitwise_xor.Tensor,
@@ -190,9 +197,16 @@ class EthosU55NotSupported(OperatorSupportBase):
     ) -> bool:
         if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
             unsupported_ops = [
+                exir_ops.edge.aten.any.default,
+                exir_ops.edge.aten.any.dim,
+                exir_ops.edge.aten.any.dims,
                 exir_ops.edge.aten.bitwise_and.Tensor,
                 exir_ops.edge.aten.bitwise_or.Tensor,
                 exir_ops.edge.aten.bitwise_xor.Tensor,
+                exir_ops.edge.aten.logical_and.default,
+                exir_ops.edge.aten.logical_or.default,
+                exir_ops.edge.aten.logical_xor.default,
+                exir_ops.edge.aten.logical_not.default,
                 exir_ops.edge.aten.amax.default,
                 exir_ops.edge.aten.amin.default,
                 exir_ops.edge.aten.eq.Tensor,

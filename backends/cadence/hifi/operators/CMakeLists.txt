@@ -12,7 +12,7 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -78,7 +78,8 @@ target_include_directories(
 # Custom ops that are needed to run the test model.
 add_library(
   custom_ops "op_quantized_linear_out.cpp" "op_quantized_layer_norm.cpp"
-             "op_quantize_per_tensor.cpp" "op_quantized_relu_out.cpp" "op_dequantize_per_tensor.cpp" "op_quantized_fully_connected_out"
+             "op_quantize_per_tensor.cpp" "op_quantized_relu_out.cpp" "op_dequantize_per_tensor.cpp"
+             "op_quantized_conv_out.cpp" "op_quantized_fully_connected_out"
 )
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}

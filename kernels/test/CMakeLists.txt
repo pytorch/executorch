@@ -23,11 +23,11 @@ foreach(kernel ${_kernels})
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/test"
   )
   set(_wrapper_path "${_wrapper_dir}/FunctionHeaderWrapper.h")
+  set(_functions_include "#include <executorch/kernels/${kernel}/Functions.h>")
   add_custom_command(
     OUTPUT "${_wrapper_path}"
     COMMAND mkdir -p ${_wrapper_dir}
-    COMMAND echo "#include <executorch/kernels/${kernel}/Functions.h>" >
-            "${_wrapper_path}"
+    COMMAND echo ${_functions_include} > "${_wrapper_path}"
     DEPENDS
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
@@ -53,7 +53,17 @@ foreach(kernel ${_kernels})
     COMMENT "Generating ${_wrapper_dir}/supported_features.cpp and header"
     VERBATIM
   )
-
+  if(${kernel} STREQUAL "optimized")
+    set(_kernel_ops_lib "optimized_native_cpu_ops_lib")
+    set(_kernel_ops_lib_path
+        "${CMAKE_CURRENT_BINARY_DIR}/../../configurations/optimized_native_cpu_ops_lib"
+    )
+  else()
+    set(_kernel_ops_lib "${kernel}_ops_lib")
+    set(_kernel_ops_lib_path
+        "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib"
+    )
+  endif()
   add_custom_command(
     OUTPUT
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
@@ -63,10 +73,9 @@ foreach(kernel ${_kernels})
       mkdir -p
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
     COMMAND
-      cp
-      "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib/*.h"
+      cp "${_kernel_ops_lib_path}/*.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
-    DEPENDS "${kernel}_ops_lib"
+    DEPENDS ${_kernel_ops_lib}
   )
 endforeach()
 
@@ -275,9 +284,15 @@ set(_optimized_kernels_test_sources
     "op_native_layer_norm_test.cpp"
     "op_neg_test.cpp"
     "op_sub_test.cpp"
+    "op_where_test.cpp"
     "UnaryUfuncRealHBBF16ToFloatHBF16Test.cpp"
     ${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp
 )
+
+if(TARGET optimized_portable_kernels)
+  list(APPEND _optimized_kernels_test_sources ${all_test_sources})
+  list(REMOVE_DUPLICATES _optimized_kernels_test_sources)
+endif()
 
 et_cxx_test(
   optimized_kernels_test
@@ -286,16 +301,16 @@ et_cxx_test(
   EXTRA_LIBS
   cpuinfo
   extension_threadpool
-  optimized_kernels
-  optimized_ops_lib
-  portable_kernels
+  optimized_native_cpu_ops_lib
   pthreadpool
   eigen_blas
 )
 add_dependencies(optimized_kernels_test generate_wrapper)
 target_include_directories(
-  optimized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
-                                 "${CMAKE_INSTALL_PREFIX}/include"
+  optimized_kernels_test
+  PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
+          "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
+          "${CMAKE_INSTALL_PREFIX}/include"
 )
 
 if(TARGET quantized_kernels)

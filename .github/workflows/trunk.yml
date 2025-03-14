@@ -18,40 +18,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gather-models:
-    runs-on: ubuntu-22.04
-    outputs:
-      models: ${{ steps.gather-models.outputs.models }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'false'
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Extract the list of models to test
-        id: gather-models
-        run: |
-          set -eux
-
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os macos --event "${GITHUB_EVENT_NAME}"
-
   test-models-macos:
     name: test-models-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix:
+        model: [add, add_mul, emformer_join, emformer_transcribe, ic3, ic4, linear, llama2, mobilebert, mv2, mv3, resnet18, resnet50, vit, w2l]
+        backend: [portable, xnnpack-quantization-delegation]
+        include:
+          - model: efficient_sam
+            backend: portable
+          - model: llama
+            backend: portable
+          - model: llama3_2_vision_encoder
+            backend: portable
+          - model: lstm
+            backend: portable
+          - model: mul
+            backend: portable
+          - model: phi-4-mini
+            backend: portable
+          - model: qwen2_5
+            backend: portable
+          - model: softmax
+            backend: portable
       fail-fast: false
     with:
-      runner: ${{ matrix.runner }}
+      runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: ${{ matrix.timeout }}
+      timeout: 90
       script: |
         MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL=cmake
         BACKEND=${{ matrix.backend }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
@@ -60,6 +60,37 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         # Build and test executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
+
+  test-models-linux-aarch64:
+    name: test-models-linux-aarch64
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
+        backend: [portable, xnnpack-quantization-delegation]
+        runner: [linux.arm64.2xlarge]
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL="cmake"
+        BACKEND=${{ matrix.backend }}
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+        # Build and test ExecuTorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
@@ -228,6 +259,28 @@ jobs:
 
         # see if we can import the module successfully
         ${CONDA_RUN} python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
+
+  test-static-llama-ane:
+    name: test-static-llama-ane
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Install requirements
+        ${CONDA_RUN} sh install_requirements.sh
+        ${CONDA_RUN} sh backends/apple/coreml/scripts/install_requirements.sh
+        ${CONDA_RUN} python install_executorch.py --pybind coreml
+        ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
+
+        # Test ANE llama
+        ${CONDA_RUN} sh .ci/scripts/test_ane_static_llama.sh
 
   test-llama-runner-macos:
     name: test-llama-runner-mac

@@ -35,6 +35,11 @@
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #endif // ET_EVENT_TRACER_ENABLED
 
+#if defined(ET_USE_THREADPOOL)
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
+
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
 static uint8_t temp_allocator_pool[1024U * 1024U];
@@ -47,6 +52,10 @@ DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
 #endif // ET_EVENT_TRACER_ENABLED
+DEFINE_int32(
+    cpu_threads,
+    -1,
+    "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
 using executorch::extension::FileDataLoader;
 using executorch::runtime::Error;
@@ -124,6 +133,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+#if defined(ET_USE_THREADPOOL)
+  auto cpu_threads = FLAGS_cpu_threads;
+  uint32_t num_performant_cores = cpu_threads == -1
+      ? ::executorch::extension::cpuinfo::get_num_performant_cores()
+      : static_cast<uint32_t>(cpu_threads);
+  ET_LOG(
+      Info, "Resetting threadpool with num threads = %d", num_performant_cores);
+  if (num_performant_cores > 0) {
+    ::executorch::extension::threadpool::get_threadpool()
+        ->_unsafe_reset_threadpool(num_performant_cores);
+  }
+#endif // ET_USE_THREADPOOL
   // Create a loader to get the data of the program file. There are other
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.

@@ -35,6 +35,7 @@ MODEL_NAME_TO_MODEL = {
     "llava": ("llava", "LlavaModel"),
     "efficient_sam": ("efficient_sam", "EfficientSAM"),
     "qwen2_5": ("qwen2_5", "Qwen2_5Model"),
+    "phi-4-mini": ("phi-4-mini", "Phi4MiniModel"),
 }
 
 __all__ = [

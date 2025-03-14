@@ -13,14 +13,5 @@ set -euxo pipefail
 # not install them. TODO(dbort): Switch to using `python -m build --wheel`,
 # which does install them. Though we'd need to disable build isolation to be
 # able to see the installed torch package.
-readonly BUILD_DEPS=(
-  # This list must match the build-system.requires list from pyproject.toml.
-  "cmake"
-  "pip>=23"
-  "pyyaml"
-  "setuptools>=63"
-  "tomli"
-  "wheel"
-  "zstd"
-)
-pip install --progress-bar off "${BUILD_DEPS[@]}"
+
+pip install --progress-bar off -r requirements-dev.txt
