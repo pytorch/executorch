@@ -459,6 +459,15 @@ class Module {
     return event_tracer_.get();
   }
 
+  ET_NODISCARD
+  runtime::Result<runtime::Method*> get_method(const std::string& method_name) {
+    if (methods_.count(method_name) == 0) {
+      ET_LOG(Info, "Method %s not found", method_name.c_str());
+      return runtime::Error::NotFound;
+    }
+    return methods_[method_name].method.get();
+  }
+
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> planned_buffers;

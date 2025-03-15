@@ -53,6 +53,7 @@ TEST_F(ModuleTest, TestLoadNonExistent) {
   EXPECT_FALSE(module.is_loaded());
 }
 
+
 TEST_F(ModuleTest, TestLoadCorruptedFile) {
   Module module("/dev/null");
   const auto error = module.load();
@@ -94,6 +95,30 @@ TEST_F(ModuleTest, TestLoadNonExistentMethod) {
   EXPECT_FALSE(module.is_method_loaded("backward"));
   EXPECT_TRUE(module.is_loaded());
 }
+
+TEST_F(ModuleTest, TestGetMethod) {
+  Module module(model_path_);
+
+  const auto error = module.load_method("forward");
+  EXPECT_EQ(error, Error::Ok);
+  auto method_res = module.get_method("forward");
+  EXPECT_EQ(method_res.error(), Error::Ok);
+  auto method = method_res.get();
+  EXPECT_EQ(strcmp(method->method_meta().name(), "forward"), 0);
+
+}
+
+TEST_F(ModuleTest, TestGetNonExistMethod) {
+  Module module(model_path_);
+
+  const auto error = module.load_method("forward");
+  EXPECT_EQ(error, Error::Ok);
+
+  // Try to get a method that doesn't exist
+  auto method_res = module.get_method("backward");
+  EXPECT_EQ(method_res.error(), Error::NotFound);
+}
+
 
 TEST_F(ModuleTest, TestMethodMeta) {
   Module module(model_path_);
