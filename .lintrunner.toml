@@ -343,3 +343,28 @@ init_command = [
     '--dry-run={{DRYRUN}}',
     '--requirement=requirements-lintrunner.txt',
 ]
+
+[[linter]]
+code = 'LICENSELINT'
+include_patterns = [
+    '**/*',
+]
+exclude_patterns = [
+    '**/fb/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=Confidential and proprietary',
+    '--linter-name=LICENSELINT',
+    '--error-name=Wrong license',
+    """--error-description=\
+        Code contributed to ExecuTorch open source repo should have \
+        BSD-license header \
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]
