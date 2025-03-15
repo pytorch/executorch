@@ -460,7 +460,7 @@ endif()
 # tools like `flatc`, along with example executables like `executor_runner` and
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
 # cross-compiling, but some required tools that would have been built need to be
-# provided directly (via, for example, FLATC_EXECUTABLE).
+# provided directly.
 cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON
   "NOT CMAKE_TOOLCHAIN_IOS" OFF
@@ -471,9 +471,8 @@ cmake_dependent_option(
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
-  "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF
+  "NOT FLATC_EXECUTABLE" OFF
 )
-
 
 set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "")
 set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "")
@@ -507,6 +506,9 @@ if(EXECUTORCH_BUILD_FLATC)
                -DFLATBUFFERS_BUILD_TESTS=${FLATBUFFERS_BUILD_TESTS}
                -DFLATBUFFERS_INSTALL=${FLATBUFFERS_INSTALL}
                -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}"
+               # Flags "unset" to prevent platform flags from being propagated.
+               $<$<BOOL:${CMAKE_TOOLCHAIN_IOS}>:-DCMAKE_TOOLCHAIN_FILE=>
+               $<$<BOOL:${CMAKE_TOOLCHAIN_IOS}>:-DCMAKE_OSX_SYSROOT=>
     INSTALL_COMMAND ""
     BUILD_BYPRODUCTS <BINARY_DIR>/flatc
   )
@@ -515,6 +517,8 @@ if(EXECUTORCH_BUILD_FLATC)
     # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
     # config, but from CMake's perspective the build type is always Debug.
     set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc.exe)
+  elseif(CMAKE_TOOLCHAIN_IOS)
+    set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc)
   else()
     set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
   endif()
@@ -528,12 +532,7 @@ if(NOT FLATC_EXECUTABLE)
   find_program(FLATC_EXECUTABLE flatc)
 
   if(NOT FLATC_EXECUTABLE)
-    message(
-      FATAL_ERROR
-        "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled. "
-        "Note that EXECUTORCH_BUILD_FLATC may be disabled implicitly when "
-        "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled."
-    )
+    message(FATAL_ERROR "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled.")
   endif()
 endif()
 

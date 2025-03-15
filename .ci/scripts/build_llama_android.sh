@@ -60,6 +60,5 @@ build_llama_runner() {
 
     cmake --build cmake-android-out/examples/models/llama -j4 --config Release
 }
-install_flatc_from_source
 install_executorch_and_backend_lib
 build_llama_runner
