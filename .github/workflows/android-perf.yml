@@ -375,6 +375,7 @@ jobs:
         cp extension/benchmark/android/benchmark/app/build/outputs/apk/androidTest/debug/*.apk "${MINIBENCH_APP_DIR}"
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
+  # CHANGE IF this job name 'benchmark-on-device' changed: extract_model_info() in executorch/.github/scripts/extract_benchmark_results.py
   benchmark-on-device:
     if: always()
     permissions:
@@ -401,6 +402,7 @@ jobs:
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/minibench/app-debug-androidTest.apk
       test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/android-llm-device-farm-test-spec.yml
+      new-output-format-flag: true
 
   upload-benchmark-results:
     needs:
@@ -460,6 +462,8 @@ jobs:
 
       - name: Extract the benchmark results JSON
         shell: bash
+        env:
+          DEVICE_TYPE: android
         run: |
           set -eux
 
@@ -471,6 +475,7 @@ jobs:
             ${CONDA_RUN} python .github/scripts/extract_benchmark_results.py \
               --artifacts "${ARTIFACTS_BY_JOB}" \
               --output-dir benchmark-results \
+              --app "${DEVICE_TYPE}" \
               --benchmark-configs benchmark-configs
           done
 
