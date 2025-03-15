@@ -8,16 +8,7 @@
 # should typically only contain shell variable assignments. Be sure to export
 # any variables so that subprocesses will see them.
 
-# Enable pybindings so that users can execute ExecuTorch programs from python.
-export EXECUTORCH_BUILD_PYBIND=1
-
-# Ensure that CMAKE_ARGS is defined before referencing it. Defaults to empty
-# if not defined.
-export CMAKE_ARGS="${CMAKE_ARGS:-}"
-
-# Link the XNNPACK backend into the pybindings runtime so that users can execute
-# ExecuTorch programs that delegate to it.
-CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_XNNPACK=ON"
+source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
 
 # When building for macOS, link additional backends into the pybindings runtime.
 CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_COREML=ON"

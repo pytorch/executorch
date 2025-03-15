@@ -14,4 +14,4 @@ set -euxo pipefail
 # which does install them. Though we'd need to disable build isolation to be
 # able to see the installed torch package.
 
-pip install --progress-bar off -r requirements-dev.txt
+"${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh"
