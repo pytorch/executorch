@@ -42,6 +42,8 @@ build_android_native_library() {
 
   EXECUTORCH_BUILD_VULKAN="${EXECUTORCH_BUILD_VULKAN:-OFF}"
 
+  export EXECUTORCH_BUILD_EXTENSION_LLM=OFF
+
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
