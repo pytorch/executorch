@@ -193,14 +193,13 @@ for i in "${!test_model[@]}"; do
         output_folder=${et_build_root}/${model_short_name}
     fi
 
+    mkdir -p ${output_folder}
     output_folder=$(realpath ${output_folder})
     pte_file="${output_folder}/${model_filename}"
 
-    mkdir -p ${output_folder}
-
     # Remove old pte files
     rm -f "${output_folder}/${model_filename}"
-    
+
     ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --so_library=$SO_LIB --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2

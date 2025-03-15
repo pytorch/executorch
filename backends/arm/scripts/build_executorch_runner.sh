@@ -106,6 +106,7 @@ then
     fi
 fi
 
+mkdir -p "${output_folder}"
 output_folder=$(realpath ${output_folder})
 
 if [[ ${target} == *"ethos-u55"*  ]]; then
@@ -128,7 +129,6 @@ if [ "$build_with_etdump" = true ] ; then
 fi
 
 echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
-mkdir -p "${output_folder}"
 
 cmake \
     -DCMAKE_BUILD_TYPE=${build_type}            \
