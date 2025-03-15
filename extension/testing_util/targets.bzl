@@ -17,5 +17,6 @@ def define_common_targets():
             "//executorch/extension/fb/ptez/decompression_methods/test/...",
             "//executorch/extension/fb/ptez/test/...",
             "//executorch/runtime/executor/test/...",
+            "//executorch/backends/xnnpack/test/...",
         ],
     )
