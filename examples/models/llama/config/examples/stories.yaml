@@ -1,0 +1,104 @@
+architecture:
+  dim: 768
+  ffn_dim_multiplier: null
+  head_dim: null
+  hidden_dim: null
+  multiple_of: 32
+  n_heads: 12
+  n_kv_heads: null
+  n_layers: 12
+  norm_eps: 1.0e-05
+  vocab_size: 32000
+attention:
+  qkv_bias: false
+  type: mha
+  use_qk_norm: false
+backends:
+  coreml:
+    compute_units: cpu_only
+    enable_state: false
+    enabled: false
+    ios_version: 15
+    preserve_sdpa: false
+    quantize: null
+  mps:
+    enabled: false
+  qnn:
+    enabled: false
+    soc_model: SM8650
+  vulkan:
+    enabled: false
+  xnnpack:
+    enabled: true
+    extended_ops: true
+calibration:
+  data: Once upon a time
+  limit: null
+  seq_length: null
+  tasks: null
+export:
+  apply_embedding: true
+  apply_output: true
+  checkpoint: stories110M.pt
+  checkpoint_dir: null
+  dtype_override: fp32
+  enable_dynamic_shape: true
+  export_only: false
+  generate_etrecord: false
+  generate_full_logits: false
+  num_sharding: 0
+  output_dir: tmp
+  output_name: tinyllama_xnnpack+custom_fp32_test.pte
+  params: params.json
+  profile_memory: false
+  profile_path: null
+  tokenizer_path: null
+kv_cache:
+  enabled: true
+  quantize: false
+  use_sdpa: true
+limits:
+  max_batch_size: 32
+  max_context_len: 128
+  max_seq_len: 128
+misc:
+  fairseq2: false
+  metadata: null
+  optimized_rotation_path: null
+  so_library: null
+  use_attention_sink: null
+  use_lora: 0
+  verbose: false
+model:
+  name: llama3
+  type: LLAMA
+moe:
+  enabled: false
+  num_activated_experts: 2
+  num_experts: 8
+pruning:
+  input_map: null
+  output_map: null
+quantization:
+  embedding_quantize: null
+  group_size: 128
+  preq_embedding_quantize: 8,0
+  preq_group_size: 32
+  preq_mode: null
+  pt2e_quantize: null
+  quantization_mode: 8da4w
+  use_qat: false
+  use_qnn_sha: false
+  use_spin_quant: null
+rope:
+  expand_rope_table: false
+  freq_base: 10000.0
+  scale_factor: 8
+  theta: null
+  use_hf_rope: false
+  use_scaled_rope: false
+special_tokens:
+  bos_count: -1
+  bos_idx: 1
+  eos_count: 2
+  eos_idx: 3

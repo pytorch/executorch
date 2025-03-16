@@ -1,0 +1,131 @@
+# Model Identification and Type
+model:
+  name: "llama3"  # From --model default, choices: stories110m, llama2, llama3, llama3_1, llama3_2, etc.
+  type: "LLAMA"  # From --fairseq2 default (false), choices: LLAMA or FAIRSEQ2
+
+# Core Model Architecture
+architecture:
+  dim: 4096
+  n_layers: 32
+  n_heads: 32
+  n_kv_heads: null  # defaults to n_heads if not specified
+  vocab_size: -1  # defined later by tokenizer
+  hidden_dim: null  # calculated if not specified
+  head_dim: null  # calculated as dim/n_heads if not specified
+  multiple_of: 256  # make SwiGLU hidden layer size multiple of large power of 2
+  ffn_dim_multiplier: null
+  norm_eps: 1.0e-5
+
+# Sequence and Batch Settings
+limits:
+  max_batch_size: 32
+  max_seq_len: 128  # From --max_seq_length default, maximum length sequence to evaluate
+  max_context_len: 128  # From --max_context_length default, maximum length of context for model to remember
+
+# Attention Configuration
+attention:
+  type: "mha"  # Attention type, registered in attention.py
+  qkv_bias: false
+  use_qk_norm: false
+
+# RoPE (Rotary Position Embedding) Settings
+rope:
+  use_hf_rope: false  # From --use_hf_rope default, Use HuggingFace's RoPE implementation
+  theta: null  # overrides freq_base if set
+  freq_base: 10000.0
+  use_scaled_rope: false  # From --use_scaled_rope default
+  scale_factor: 8  # From --rope_scale_factor default
+  expand_rope_table: false  # From --expand_rope_table default, [Temp workaround] Expand sin/cos table in head dim to take vectorized path in optimized kernels
+
+# Mixture of Experts Configuration
+moe:
+  enabled: false  # From --moe default
+  num_experts: 8
+  num_activated_experts: 2
+
+# KV Cache Settings
+kv_cache:
+  enabled: false  # From --use_kv_cache default, Whether or not to export a model using kv cache
+  quantize: false  # From --quantize_kv_cache default, Whether or not to export a model using int8 per token quantized kv cache
+  use_sdpa: false  # From --use_sdpa_with_kv_cache default, Whether to use sdpa_with_kv_cache update op when using kv cache
+
+# Token Pruning
+pruning:
+  input_map: null  # From --input_prune_map default, path to the input pruning token mapping file (token_map.json)
+  output_map: null  # From --output_prune_map default, path to the output pruning token mapping file (token_map.json)
+
+# Model Special Tokens
+special_tokens:
+  bos_idx: 1
+  eos_idx: 3
+  bos_count: -1  # i.e., a single EOS is used as BOS
+  eos_count: 2
+
+# Export Settings
+export:
+  output_dir: "."  # From --output-dir default, output directory
+  checkpoint: null
+  checkpoint_dir: null  # takes precedence over checkpoint if both set
+  tokenizer_path: null  # From --tokenizer_path default, Note: .model not .bin
+  output_name: null  # From --output_name default, Override output filename of the saved pte model file
+  enable_dynamic_shape: true  # From --enable_dynamic_shape default, Enable dynamic shape along seq dim. Used for faster prefill
+  generate_full_logits: false  # From --generate_full_logits default, Generate logits for all inputs
+  apply_embedding: true
+  apply_output: true
+  profile_memory: false  # From --profile_memory default, Generate chrome trace of activation memory for intermediate tensors
+  profile_path: null  # From --profile_path default, Use cProfile to profile model export
+  num_sharding: 0  # From --num_sharding default, Number of splits for fallback custom op
+  dtype_override: "fp32"  # From --dtype-override default, choices: fp32, fp16, bf16
+  export_only: false  # From --export_only default, If true, stops right after torch.export() and saves the exported model
+  generate_etrecord: false  # From --generate_etrecord default, Generate the ETRecord debug artifact
+  params: null  # From --params default, config.json file path
+
+# Quantization Settings
+quantization:
+  pt2e_quantize: null  # From --pt2e_quantize default, choices: xnnpack_dynamic, xnnpack_dynamic_qc4, qnn_8a8w, etc.
+  embedding_quantize: null  # From --embedding-quantize default, format: <bitwidth>,<groupsize>, e.g., 8,1024
+  quantization_mode: null  # From --quantization_mode default, type of quantization
+  group_size: null  # From --group_size default, group_size for weight quantization
+  use_qnn_sha: false  # From --use_qnn_sha default, Change multi head attention to multiple single head attention for QNN backend
+  use_spin_quant: null  # From --use_spin_quant default, choices: cuda, native, Use SpinQuant for better quantization performance
+  use_qat: false  # From --use_qat default, Whether the checkpoint is pre-quantized with QAT or not
+  preq_mode: null  # From --preq_mode default, choices: 8da4w, 8da4w_output_8da8w
+  preq_group_size: 32  # From --preq_group_size default, group_size for pre-quantized checkpoint weight quantization
+  preq_embedding_quantize: "8,0"  # From --preq_embedding_quantize default, type of embedding quantization for pre-quantized checkpoint
+
+# Calibration Settings
+calibration:
+  tasks: null  # From --calibration_tasks default, List of tasks for GPTQ calibration from lm_eval
+  limit: null  # From --calibration_limit default, Number of samples for calibration
+  seq_length: null  # From --calibration_seq_length default, Sequence length for calibration
+  data: "Once upon a time"  # From --calibration_data default, Calibration prompts from users
+
+# Backend Selection
+backends:
+  xnnpack:
+    enabled: false  # From --xnnpack default, Delegate to DQLinear ops to the xnnpack backend
+    extended_ops: false  # From --xnnpack-extended-ops default, Delegate more operators beyond DQLinear
+  vulkan:
+    enabled: false  # From --vulkan default
+  mps:
+    enabled: false  # From --mps default
+  coreml:
+    enabled: false  # From --coreml default
+    enable_state: false  # From --coreml-enable-state default, Supported for MacOS15+/iOS18+
+    preserve_sdpa: false  # From --coreml-preserve-sdpa default, Use coreml iOS18.sdpa op
+    ios_version: 15  # From --coreml-ios default, choices: 15, 16, 17, 18
+    compute_units: "cpu_only"  # From --coreml-compute-units default, choices: cpu_only, cpu_and_gpu, cpu_and_ne, all
+    quantize: null  # From --coreml-quantize default, choices: b4w, c4w
+  qnn:
+    enabled: false  # From --qnn default, Delegate llama2 to qnn backend (Qualcomm)
+    soc_model: "SM8650"  # From --soc_model default, SoC model of current device (e.g. SM8650 for Snapdragon 8 Gen 3)
+
+# Additional Settings
+misc:
+  verbose: false  # From --verbose default
+  fairseq2: false  # From --fairseq2 default
+  use_lora: 0  # From --use_lora default, Whether the checkpoint contains LoRA adaptors (0: no LoRA adaptors)
+  optimized_rotation_path: null  # From --optimized_rotation_path default, [QNN backend] Optimized rotation checkpoint path
+  metadata: null  # From --metadata default, metadata string in json format
+  so_library: null  # From --so_library default, shared library for quantized operators
+  use_attention_sink: null  # From --use_attention_sink default, format: <sink_size>,<window_size>,<batch_eviction_size>, e.g., 4,2044,1024 

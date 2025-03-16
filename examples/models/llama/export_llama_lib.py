@@ -141,28 +141,50 @@ def build_model(
 
 
 def build_args_parser() -> argparse.ArgumentParser:
+    class TrackingArgumentParser(argparse.ArgumentParser):
+        """ArgumentParser subclass that tracks which arguments were explicitly set."""
+        def __init__(self, *args, **kwargs):
+            # Initialize dest_to_option before calling super().__init__
+            self.dest_to_option = {}
+            super().__init__(*args, **kwargs)
+
+        def add_argument(self, *args, **kwargs):
+            action = super().add_argument(*args, **kwargs)
+            # Store the first option string for this argument
+            if args and isinstance(args[0], str):
+                self.dest_to_option[action.dest] = args[0]
+            return action
+
+    parser = TrackingArgumentParser()
+    
+    # Add config file option at the top level
+    # It's using config/default.yaml to load the default values.
+    # To avoid confusion, don't set default values here, except for action="store_true"
+    # Instead, set default values in the centralized place of config/default.yaml
+    parser.add_argument(
+        "--config",
+        type=str,
+        help="Path to YAML config file. CLI arguments will override config file values.",
+    )
+    
     ckpt_dir = f"{Path(__file__).absolute().parent.as_posix()}"
-    parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output-dir", default=".", help="output directory")
     # parser.add_argument(
     #     "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     # )
     parser.add_argument(
         "--model",
-        default="llama3",
         choices=EXECUTORCH_DEFINED_MODELS + TORCHTUNE_DEFINED_MODELS,
         help="The Lllama model to export. stories110M, llama2, llama3, llama3_1, and llama3_2 use the same underlying LlamaTransformer architecture defined in ExecuTorch. All other models use TorchTune model definitions.",
     )
     parser.add_argument(
         "-E",
         "--embedding-quantize",
-        default=None,
         type=str,
         help="type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
     )
     parser.add_argument(
         "--pt2e_quantize",
-        default=None,
         choices=[
             "xnnpack_dynamic",
             "xnnpack_dynamic_qc4",
@@ -183,20 +205,17 @@ def build_args_parser() -> argparse.ArgumentParser:
         "-qmode",
         "--quantization_mode",
         type=_qmode_type,
-        default=None,
         help="type of quantization",
     )
 
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
     )
 
     parser.add_argument(
         "--checkpoint_dir",
-        default=None,
         help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
     )
 
@@ -228,7 +247,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--calibration_data",
         type=str,
-        default="Once upon a time",
         help="Calibration prompts from users",
     )
     parser.add_argument(
@@ -240,85 +258,70 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-kv",
         "--use_kv_cache",
-        default=False,
         action="store_true",
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
         "--quantize_kv_cache",
-        default=False,
         action="store_true",
         help="Whether or not to export a model using int8 per token quantized kv cache",
     )
     parser.add_argument(
         "--num_sharding",
         type=int,
-        default=0,
         help="Specify the number of splits by inserting the fallback custom op. The graph will be split evenly by layers.",
     )
     parser.add_argument(
         "--use_sdpa_with_kv_cache",
-        default=False,
         action="store_true",
         help="Whether to use sdpa_with_kv_cache update op when using kv cache",
     )
     parser.add_argument(
         "--disable_dynamic_shape",
         dest="enable_dynamic_shape",
-        default=True,  # Enable this by default
         action="store_false",
         help="Enable dynamic shape along seq dim. Used for faster prefill",
     )
     parser.add_argument(
         "-p",
         "--params",
-        default=f"{ckpt_dir}/params/demo_config.json",
         help="config.json",
     )
     parser.add_argument(
         "--optimized_rotation_path",
-        default=None,
-        required=False,
         help="[QNN backend] Optimized rotation checkpoint path. Just apply R1/R2 here."
         "You can download the optimized rotation matrices from https://github.com/facebookresearch/SpinQuant/tree/main",
     )
     parser.add_argument(
         "-m",
         "--metadata",
-        default=None,
         help='metadata string in json format. Example {"key": 1, "key2": "value2"}',
     )
     parser.add_argument(
         "-s",
         "--so_library",
-        default=None,
-        required=False,
         help="shared library for quantized operators",
     )
     parser.add_argument(
         "--profile_memory",
-        required=False,
         action="store_true",
         help="Generate chrome trace of activation memory for intermediate tensors.",
     )
     parser.add_argument(
         "-prof",
         "--profile_path",
-        default=None,
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
     parser.add_argument(
         "-G",
         "--group_size",
         type=int,
-        default=None,
         help="group_size for weight quantization",
     )
 
     parser.add_argument(
         "-d",
         "--dtype-override",
-        default="fp32",
         type=str,
         choices=["fp32", "fp16", "bf16"],
         help="Override the dtype of the model (default is the checkpoint dtype)."
@@ -328,21 +331,18 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-n",
         "--output_name",
-        default=None,
         help="Override the output filename of the saved pte model file.",
     )
 
     parser.add_argument(
         "--max_seq_length",
         type=int,
-        default=128,
         help="maximum length sequence to evaluate",
     )
 
     parser.add_argument(
         "--max_context_length",
         type=int,
-        default=128,
         help="maximum length of context for model to remember",
     )
 
@@ -374,21 +374,18 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--coreml-quantize",
-        default=None,
         choices=["b4w", "c4w"],
         help="This option is only for coreml: Use coreml quantization, e.g. b4w (for blockwise 4 bit weight), c4w (for channelwise 4 bit weight)",
     )
     parser.add_argument(
         "--coreml-ios",
         type=int,
-        default=15,
         choices=(15, 16, 17, 18),
         help="This option is only for coreml: The minimum iOS version to deploy",
     )
     parser.add_argument(
         "--coreml-compute-units",
         type=str,
-        default="cpu_only",
         choices=("cpu_only", "cpu_and_gpu", "cpu_and_ne", "all"),
         help="This option is only for coreml: the compute units to use when running the model",
     )
@@ -400,7 +397,6 @@ def build_args_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--expand_rope_table",
-        default=False,
         action="store_true",
         help="[Temp workaround] Expand sin/cos table in head dim to take vectorized path in optimized kernels.",
     )
@@ -409,7 +405,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--generate_etrecord",
         action="store_true",
         required=False,
-        default=False,
         help="Generate the ETRecord debug artifact.",
     )
 
@@ -417,7 +412,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--generate_full_logits",
         action="store_true",
         required=False,
-        default=False,
         help="Generate logits for all inputs.",
     )
 
@@ -426,14 +420,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="[QNN backend] SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
         type=str,
         required=False,
-        default="SM8650",
     )
 
     parser.add_argument(
         "-sq",
         "--use_spin_quant",
         type=str,
-        default=None,
         choices=["cuda", "native"],
         help="Use SpinQuant for better quantization performance. Only support cuda and native.",
     )
@@ -441,7 +433,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-qat",
         "--use_qat",
-        default=False,
         action="store_true",
         help="Whether the checkpoin is pre-quantized with QAT or not.",
     )
@@ -450,7 +441,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         "-lora",
         "--use_lora",
         type=int,
-        default=0,
         help="Whether the checkpoint contains LoRA adaptors or not. 0: no LoRA adaptors; "
         "otherwise, it means the rank of LoRA adaptors. Currently it only works if QAT is enabled.",
     )
@@ -458,7 +448,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--preq_mode",
         type=str,
-        default=None,
         choices=["8da4w", "8da4w_output_8da8w"],
         help="Quantization mode used for pre-quantized checkpoint. Only support 8da4w and 8da4w_output_8da8w right now.",
     )
@@ -466,39 +455,33 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--preq_group_size",
         type=int,
-        default=32,
         help="group_size for pre-quantized checkpoint weight quantization",
     )
 
     parser.add_argument(
         "--preq_embedding_quantize",
-        default="8,0",
         type=str,
         help="type of embedding quantization for pre-quantized checkpoint, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
     )
 
     parser.add_argument(
         "--use_attention_sink",
-        default=None,
         type=str,
         help="Use attention sink to have fluent multi-round conversation. '<sink_size>,<window_size>,<batch_eviction_size>', e.g., '4,2044,1024'.",
     )
 
     parser.add_argument(
         "--output_prune_map",
-        default=None,
         help="path to the output pruning token mapping file (token_map.json)",
     )
 
     parser.add_argument(
         "--input_prune_map",
-        default=None,
         help="path to the input pruning token mapping file (token_map.json)",
     )
 
     parser.add_argument(
         "--export_only",
-        default=False,
         action="store_true",
         help="If true, stops right after torch.export() and saves the exported model.",
     )
@@ -1201,3 +1184,92 @@ def _get_source_transforms(  # noqa
         transforms.append(replace_with_vulkan_rotary_emb)
 
     return transforms
+
+
+def main():
+    """CLI entry point."""
+    parser = build_args_parser()
+    args = parser.parse_args()
+    
+    try:
+        # Create config from all sources
+        from .config.loader import create_config, get_model_args_from_config
+        from .config.validation import ConfigValidationError
+        
+        try:
+            config = create_config(
+                yaml_path=args.config,
+                cli_args=args,
+                params_json_path=args.params  # Include params.json
+            )
+        except ConfigValidationError as e:
+            logging.error(f"Configuration validation failed: {str(e)}")
+            logging.error("Please check your configuration and try again.")
+            return 1
+        except Exception as e:
+            logging.error(f"Error loading configuration: {str(e)}")
+            return 1
+        
+        # Convert config back to args format for backward compatibility
+        args_dict = {
+            'model': config['model']['name'],
+            'output_dir': config['export']['output_dir'],
+            'checkpoint': config['export']['checkpoint'],
+            'checkpoint_dir': config['export']['checkpoint_dir'],
+            'tokenizer_path': config['export']['tokenizer_path'],
+            'pt2e_quantize': config['quantization']['pt2e_quantize'],
+            'embedding_quantize': config['quantization']['embedding_quantize'],
+            'quantization_mode': config['quantization']['quantization_mode'],
+            'group_size': config['quantization']['group_size'],
+            'use_qnn_sha': config['quantization']['use_qnn_sha'],
+            'use_kv_cache': config['kv_cache']['enabled'],
+            'quantize_kv_cache': config['kv_cache']['quantize'],
+            'use_sdpa_with_kv_cache_op': config['kv_cache']['use_sdpa'],
+            'enable_dynamic_shape': config['export']['enable_dynamic_shape'],
+            'generate_full_logits': config['export']['generate_full_logits'],
+            'dtype_override': config['export']['dtype_override'],
+            'output_name': config['export']['output_name'],
+            'profile_memory': config['export']['profile_memory'],
+            'profile_path': config['export']['profile_path'],
+            'num_sharding': config['export']['num_sharding'],
+            'xnnpack': config['backends']['xnnpack']['enabled'],
+            'xnnpack-extended-ops': config['backends']['xnnpack']['extended_ops'],
+            'vulkan': config['backends']['vulkan']['enabled'],
+            'mps': config['backends']['mps']['enabled'],
+            'coreml': config['backends']['coreml']['enabled'],
+            'coreml-enable-state': config['backends']['coreml']['enable_state'],
+            'coreml-preserve-sdpa': config['backends']['coreml']['preserve_sdpa'],
+            'verbose': config['misc']['verbose'],
+            'fairseq2': config['model']['type'] == 'FAIRSEQ2',
+            'optimized_rotation_path': config['misc']['optimized_rotation_path'],
+            'metadata': config['misc']['metadata'],
+            'so_library': config['misc']['so_library'],
+        }
+        
+        # Update args with config values
+        for k, v in args_dict.items():
+            if not hasattr(args, k) or getattr(args, k) is None:
+                setattr(args, k, v)
+        
+        # Create ModelArgs from config
+        model_args_dict = get_model_args_from_config(config)
+        
+        # Export model using existing function with updated args
+        output_path = export_llama(args)
+        
+        # Save the final config
+        if args.output_dir:
+            final_config_path = Path(args.output_dir) / "used_config.yaml"
+            from .config.loader import save_yaml_config
+            save_yaml_config(config, final_config_path)
+            logging.info(f"Saved final configuration to: {final_config_path}")
+            
+        return 0
+            
+    except Exception as e:
+        logging.error(f"Export failed: {str(e)}")
+        return 1
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

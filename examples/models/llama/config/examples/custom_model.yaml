@@ -1,0 +1,55 @@
+# Example configuration for using a custom model
+model:
+  # Custom model configuration
+  custom_model: "mymodule.CustomLLM"  # Replace with your model's import path
+  custom_model_kwargs:
+    hidden_size: 768
+    num_layers: 12
+    num_attention_heads: 12
+    intermediate_size: 3072
+    max_position_embeddings: 512
+    vocab_size: 50257
+    layer_norm_eps: 1e-5
+    initializer_range: 0.02
+    use_cache: true
+
+# Export settings
+export:
+  output_dir: "exported_model"
+  checkpoint: null  # Not used with custom model
+  params: null  # Not used with custom model
+  tokenizer_path: "path/to/tokenizer"  # Update with your tokenizer path
+  use_kv_cache: true
+  use_sdpa_with_kv_cache: true
+  generate_full_logits: false
+  weight_type: "LLAMA"
+  enable_dynamic_shape: false
+
+# Sequence and batch settings
+sequence:
+  max_seq_len: 512
+  max_batch_size: 1
+  max_context_len: 512
+
+# RoPE settings
+rope:
+  scaling_factor: 1.0
+  traditional: false
+  dynamic: false
+
+# KV cache settings
+kv_cache:
+  enabled: true
+  block_size: 16
+  cache_dtype: "fp16"
+
+# Quantization settings
+quantization:
+  embedding_quantize: null
+  pt2e_quantize: null
+
+# Backend selection
+backend:
+  use_cuda: true
+  use_cpu: false
+  use_vulkan: false 
