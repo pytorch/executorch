@@ -68,8 +68,8 @@
 #include "llama_runner/llm_helper/include/llm_types.h"
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
-#include <executorch/extension/llm/tokenizer/tiktoken.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
+#include <pytorch/tokenizers/tiktoken.h>
 
 // Llama model options
 DEFINE_uint64(
@@ -140,10 +140,10 @@ using example::utils::read_file;
 using example::utils::split;
 using example::utils::Timer;
 using example::utils::to_string;
-using executorch::extension::llm::BPETokenizer;
-using executorch::extension::llm::Tokenizer;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
+using tokenizers::Llama2cTokenizer;
+using tokenizers::Tokenizer;
 
 LlamaModelOptions get_model_options() {
   LlamaModelOptions options = {

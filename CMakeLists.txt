@@ -506,13 +506,18 @@ if(EXECUTORCH_BUILD_FLATC)
                -DFLATBUFFERS_BUILD_FLATLIB=${FLATBUFFERS_BUILD_FLATLIB}
                -DFLATBUFFERS_BUILD_TESTS=${FLATBUFFERS_BUILD_TESTS}
                -DFLATBUFFERS_INSTALL=${FLATBUFFERS_INSTALL}
-               -DCMAKE_BUILD_TYPE=Release
                -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}"
     INSTALL_COMMAND ""
     BUILD_BYPRODUCTS <BINARY_DIR>/flatc
   )
   ExternalProject_Get_Property(flatbuffers BINARY_DIR)
-  set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
+  if(WIN32)
+    # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
+    # config, but from CMake's perspective the build type is always Debug.
+    set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc.exe)
+  else()
+    set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
+  endif()
   set(FLATC_EXECUTABLE_BUILT_FROM_SOURCE YES)
 endif()
 
