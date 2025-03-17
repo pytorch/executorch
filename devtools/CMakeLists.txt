@@ -20,7 +20,11 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 if(NOT FLATCC_EXECUTABLE)
-  set(FLATCC_EXECUTABLE ${_flatcc_source_dir}/bin/flatcc)
+  if(WIN32)
+    set(FLATCC_EXECUTABLE ${_flatcc_source_dir}/bin/${CMAKE_BUILD_TYPE}/flatcc)
+  else()
+    set(FLATCC_EXECUTABLE ${_flatcc_source_dir}/bin/flatcc)
+  endif()
 endif()
 
 # Source root directory for executorch.
@@ -32,10 +36,6 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
-endif()
-
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
 endif()
 
 # Paths to headers generated from the .fbs files. set(_etdump_schemas
@@ -159,6 +159,12 @@ file(MAKE_DIRECTORY
      ${_program_schema__include_dir}/executorch/devtools/bundled_program
 )
 
+if(WIN32)
+  set(RM_COMMAND rmdir /s /q)
+else()
+  set(RM_COMMAND rm -rf)
+endif()
+
 add_custom_command(
   OUTPUT ${_etdump_schema__outputs}
   COMMAND
@@ -168,10 +174,12 @@ add_custom_command(
     ${FLATCC_EXECUTABLE} -cwr -o
     ${_program_schema__include_dir}/executorch/devtools/etdump
     ${_etdump_schema__srcs}
-  COMMAND rm -rf ${_etdump_schema_cleanup_paths}
+  COMMAND ${RM_COMMAND} ${_etdump_schema_cleanup_paths}
   DEPENDS ${_etdump_schema_gen_dep}
   COMMENT "Generating etdump headers"
 )
+
+unset(RM_COMMAND)
 
 add_library(
   etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
@@ -193,7 +201,7 @@ add_custom_command(
     "${_bundled_schema__include_dir}/executorch/devtools/bundled_program/schema"
     ${_bundled_program_schema__srcs}
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/devtools
-  DEPENDS ${FLATC_EXECUTABLE} ${_bundled_program_schema__srcs}
+  DEPENDS flatc ${_bundled_program_schema__srcs}
   COMMENT "Generating bundled_program headers"
   VERBATIM
 )

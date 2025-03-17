@@ -345,22 +345,30 @@ class BuiltFile(_BaseExtension):
 class BuiltExtension(_BaseExtension):
     """An extension that installs a python extension that was built by cmake."""
 
-    def __init__(self, src: str, modpath: str):
+    def __init__(self, src: str, modpath: str, src_dir: Optional[str] = None):
         """Initializes a BuiltExtension.
 
         Args:
-            src: The path to the file to install (typically a shared library),
-                relative to the cmake-out directory. May be an fnmatch-style
-                glob that matches exactly one file. If the path ends in `.so`,
-                this class will also look for similarly-named `.dylib` files.
+            src_dir: The directory of the file to install, relative to the cmake-out
+                directory. A placeholder %BUILD_TYPE% will be replaced with the build
+                type for multi-config generators (like Visual Studio) where the build
+                output is in a subdirectory named after the build type. For single-
+                config generators (like Makefile Generators or Ninja), this placeholder
+                will be removed.
+            src_name: The name of the file to install. If the path ends in `.so`,
             modpath: The dotted path of the python module that maps to the
                 extension.
         """
         assert (
             "/" not in modpath
         ), f"modpath must be a dotted python module path: saw '{modpath}'"
+        full_src = src
+        if src_dir is None and platform.system() == "Windows":
+            src_dir = "%BUILD_TYPE%/"
+        if src_dir is not None:
+            full_src = os.path.join(src_dir, src)
         # This is a real extension, so use the modpath as the name.
-        super().__init__(src=f"%CMAKE_CACHE_DIR%/{src}", dst=modpath, name=modpath)
+        super().__init__(src=f"%CMAKE_CACHE_DIR%/{full_src}", dst=modpath, name=modpath)
 
     def src_path(self, installer: "InstallerBuildExt") -> Path:
         """Returns the path to the source file, resolving globs.
@@ -463,7 +471,8 @@ class InstallerBuildExt(build_ext):
         dst_file: Path = ext.dst_path(self)
 
         # Ensure that the destination directory exists.
-        self.mkpath(os.fspath(dst_file.parent))
+        if not dst_file.parent.exists():
+            self.mkpath(os.fspath(dst_file.parent))
 
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
@@ -651,10 +660,6 @@ class CustomBuild(build):
 
         build_args = [f"-j{self.parallel}"]
 
-        # TODO(dbort): Try to manage these targets and the cmake args from the
-        # extension entries themselves instead of hard-coding them here.
-        build_args += ["--target", "flatc"]
-
         if ShouldBuild.pybindings():
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",
@@ -783,7 +788,12 @@ def get_ext_modules() -> List[Extension]:
             # portable kernels, and a selection of backends. This lets users
             # load and execute .pte files from python.
             BuiltExtension(
-                "_portable_lib.*", "executorch.extension.pybindings._portable_lib"
+                (
+                    "_portable_lib.cp*"
+                    if platform.system() == "Windows"
+                    else "_portable_lib.*"
+                ),
+                "executorch.extension.pybindings._portable_lib",
             )
         )
         if ShouldBuild.training():

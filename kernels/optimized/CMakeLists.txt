@@ -34,7 +34,7 @@ list(APPEND _common_compile_options -DET_BUILD_WITH_BLAS)
 # compiling for avx2 for now punting this to come back
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -43,7 +43,7 @@ endif()
 list(TRANSFORM _optimized_cpublas__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(cpublas STATIC ${_optimized_cpublas__srcs})
 target_link_libraries(
-  cpublas PUBLIC executorch_core eigen_blas extension_parallel extension_threadpool
+  cpublas PUBLIC executorch_core eigen_blas extension_threadpool
 )
 target_compile_options(cpublas PUBLIC ${_common_compile_options})
 

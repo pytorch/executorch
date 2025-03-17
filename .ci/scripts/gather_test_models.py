@@ -5,6 +5,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# WARNING: The CI runner logic should directly be in the corresponding yml files
+# This file will be deleted once the reference in periodic.yml is deleted.
+
 import itertools
 import json
 import os
@@ -30,6 +33,7 @@ CUSTOM_RUNNERS = {
         "dl3": "linux.4xlarge.memory",
         "emformer_join": "linux.4xlarge.memory",
         "emformer_predict": "linux.4xlarge.memory",
+        "phi-4-mini": "linux.4xlarge.memory",
     }
 }
 

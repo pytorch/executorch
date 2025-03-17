@@ -1722,6 +1722,7 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
         )
 
 
+# pyre-ignore[6]: Incompatible parameter type (doesn't get the inheritance)
 register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
 
 

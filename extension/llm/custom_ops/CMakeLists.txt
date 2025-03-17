@@ -23,7 +23,7 @@ endif()
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -49,7 +49,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
   )
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
   )
@@ -78,7 +78,7 @@ target_include_directories(
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
 target_compile_options(
-  custom_ops PUBLIC ${_common_compile_options} -DET_USE_THREADPOOL
+  custom_ops PUBLIC ${_common_compile_options}
 )
 
 install(TARGETS custom_ops DESTINATION lib)
@@ -130,7 +130,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   target_compile_options(
     custom_ops_aot_lib
     PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
-           ${_common_compile_options} -DET_USE_THREADPOOL
+           ${_common_compile_options}
   )
 
   install(TARGETS custom_ops_aot_lib

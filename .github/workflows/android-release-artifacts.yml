@@ -52,8 +52,12 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
-        # Build LLM Demo for Android
-        bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
+        # Build AAR Package
+        mkdir aar-out
+        export BUILD_AAR_DIR=aar-out
+        bash build/build_android_library.sh
+        mkdir -p "${ARTIFACTS_DIR_NAME}/llm_demo"
+        cp aar-out/executorch.aar "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 
         shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
 

@@ -549,7 +549,12 @@ class SPVGenerator:
 
         self.env = env
         self.glslc_path = glslc_path
-        self.glslc_flags = glslc_flags
+        self.glslc_flags = glslc_flags.split()
+        self.glslc_flags_no_opt = self.glslc_flags.copy()
+        if "-O" in self.glslc_flags_no_opt:
+            self.glslc_flags_no_opt.remove("-O")
+        if "-Os" in self.glslc_flags_no_opt:
+            self.glslc_flags_no_opt.remove("-Os")
         self.replace_u16vecn = replace_u16vecn
 
         self.glsl_src_files: Dict[str, str] = {}
@@ -751,25 +756,37 @@ class SPVGenerator:
             if self.glslc_path is not None:
                 spv_out_path = os.path.join(output_dir, f"{shader_name}.spv")
 
-                cmd = (
-                    [
-                        self.glslc_path,
-                        "-fshader-stage=compute",
-                        glsl_out_path,
-                        "-o",
-                        spv_out_path,
-                        "--target-env=vulkan1.1",
-                        "-Werror",
-                    ]
-                    + [
-                        arg
-                        for src_dir_path in self.src_dir_paths
-                        for arg in ["-I", src_dir_path]
-                    ]
-                    + self.glslc_flags.split()
-                )
+                cmd_base = [
+                    self.glslc_path,
+                    "-fshader-stage=compute",
+                    glsl_out_path,
+                    "-o",
+                    spv_out_path,
+                    "--target-env=vulkan1.1",
+                    "-Werror",
+                ] + [
+                    arg
+                    for src_dir_path in self.src_dir_paths
+                    for arg in ["-I", src_dir_path]
+                ]
+                cmd = cmd_base + self.glslc_flags
 
-                subprocess.check_call(cmd)
+                try:
+                    subprocess.run(cmd, check=True, capture_output=True, text=True)
+                except subprocess.CalledProcessError as e:
+                    opt_fail = "compilation succeeded but failed to optimize"
+                    err_msg_base = f"Failed to compile {os.getcwd()}/{glsl_out_path}: "
+                    if opt_fail in e.stderr or opt_fail in e.stdout:
+                        cmd_no_opt = cmd_base + self.glslc_flags_no_opt
+                        try:
+                            subprocess.run(cmd_no_opt, check=True, capture_output=True)
+                        except subprocess.CalledProcessError as e_no_opt:
+                            raise RuntimeError(
+                                f"{err_msg_base} {e_no_opt.stderr}"
+                            ) from e_no_opt
+
+                    else:
+                        raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
 
                 return (spv_out_path, glsl_out_path)
 

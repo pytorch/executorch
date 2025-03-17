@@ -17,7 +17,7 @@ COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-contex
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
   clean_executorch_install_folders
-
+  update_tokenizers_git_submodule
   CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \

@@ -19,5 +19,6 @@ python_library(
         "//executorch/exir/passes:const_prop_pass",
         "//executorch/exir/passes:memory_format_ops_pass",
         "//executorch/exir/program:program",
+        "//executorch/backends/transforms:utils",
     ],
 )

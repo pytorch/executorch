@@ -58,6 +58,21 @@ deps = [
   "executorch_core",
 ]
 
+# HACK: prevent reduce_util from also showing up in custom_ops. The
+# actual medium-term fix is to stop using Buck to drive our CMake
+# builds.
+[targets.reduce_util]
+buck_targets = [
+  "//kernels/portable/cpu/util:reduce_util",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_core",
+]
+
 [targets.optimized_kernels]
 buck_targets = [
   "//kernels/optimized:generated_lib",
@@ -73,8 +88,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
-  "extension_parallel",
   "extension_threadpool",
+  "optimized_cpublas",
   "portable_kernels",
 ]
 
@@ -116,7 +131,7 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
-  "extension_parallel",
+  "extension_threadpool",
 ]
 
 [targets.optimized_native_cpu_ops]
@@ -131,8 +146,8 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
-  "extension_parallel",
   "extension_threadpool",
+  "optimized_cpublas",
   "portable_kernels",
 ]
 # ---------------------------------- core end ----------------------------------
@@ -210,19 +225,6 @@ deps = [
   "executorch_core",
   "extension_module",
   "extension_runner_util",
-]
-
-[targets.extension_parallel]
-buck_targets = [
-  "//extension/parallel:thread_parallel",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch",
-  "executorch_core",
-  "extension_threadpool",
 ]
 
 [targets.extension_tensor]
@@ -364,6 +366,7 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -378,6 +381,7 @@ filters = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
 ]
 
 [targets.xnnpack_schema]
@@ -411,9 +415,10 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "optimized_cpublas",
   "optimized_kernels",
-  "extension_parallel",
   "extension_threadpool",
+  "reduce_util",
   "xnnpack_backend",
 ]
 
@@ -449,7 +454,8 @@ deps = [
   "executorch_core",
   "extension_data_loader",
   "extension_module",
-  "extension_parallel",
+  "extension_threadpool",
+  "optimized_cpublas",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
