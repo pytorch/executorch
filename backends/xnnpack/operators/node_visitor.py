@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
+import hashlib
 
 from typing import cast, Dict, List, Optional, Tuple
 
@@ -582,9 +583,8 @@ class NodeVisitor:
             ctypes.POINTER(array_type),
         ).contents
 
-        named_key = get_tensor_name(self.exported_program, get_attr_node)
-        if named_key == "":
-            raise ValueError(f"Tensor from node: {get_attr_node} has no name")
+        sha256_hash = hashlib.sha256(bytes(array))
+        named_key = sha256_hash.hexdigest()
 
         size = const_val.untyped_storage().nbytes()
         xnn_graph.constant_data.append(
