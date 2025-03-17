@@ -209,7 +209,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   endif()
 endif()
 
-target_include_directories(llama_main PUBLIC ${_common_include_directories})
+target_include_directories(
+  llama_main
+  PUBLIC ${_common_include_directories}
+         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 

@@ -37,7 +37,7 @@ def define_common_targets():
             ],
             fbcode_exported_deps = [
                 "//common/gtest:gtest",
-            ],
+            ] if not runtime.is_oss else [],
             xplat_exported_deps = [
                 "//third-party/googletest:gtest_main",
             ],
@@ -68,7 +68,7 @@ def define_common_targets():
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
-            ],
+            ] if not runtime.is_oss else [],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
