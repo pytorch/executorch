@@ -249,18 +249,24 @@ int main(int argc, char** argv) {
       (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
 
-  // Allocate input tensors and set all of their elements to 1. The `inputs`
-  // variable owns the allocated memory and must live past the last call to
-  // `execute()`.
-  auto inputs = executorch::extension::prepare_input_tensors(*method);
-  ET_CHECK_MSG(
-      inputs.ok(),
-      "Could not prepare inputs: 0x%" PRIx32,
-      (uint32_t)inputs.error());
-  ET_LOG(Info, "Inputs prepared.");
-
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
+    ET_LOG(Info, "Preparing inputs.");
+    // Allocate input tensors and set all of their elements to 1. The `inputs`
+    // variable owns the allocated memory and must live past the last call to
+    // `execute()`.
+    //
+    // NOTE: we have to re-prepare input tensors on every execution
+    // because inputs whose space gets reused by memory planning (if
+    // any such inputs exist) will not be preserved for the next
+    // execution.
+    auto inputs = executorch::extension::prepare_input_tensors(*method);
+    ET_CHECK_MSG(
+        inputs.ok(),
+        "Could not prepare inputs: 0x%" PRIx32,
+        (uint32_t)inputs.error());
+    ET_LOG(Info, "Inputs prepared.");
+
     Error status = method->execute();
     ET_CHECK_MSG(
         status == Error::Ok,
