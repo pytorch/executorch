@@ -118,7 +118,7 @@ include(cmake/Dependencies.cmake)
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
 target_link_libraries(
-  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema
+  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema extension_threadpool
 )
 
 target_include_directories(
