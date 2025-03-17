@@ -251,7 +251,7 @@ int main(int argc, char** argv) {
 
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
-    ET_LOG(Info, "Preparing inputs.");
+    ET_LOG(Debug, "Preparing inputs.");
     // Allocate input tensors and set all of their elements to 1. The `inputs`
     // variable owns the allocated memory and must live past the last call to
     // `execute()`.
@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
         inputs.ok(),
         "Could not prepare inputs: 0x%" PRIx32,
         (uint32_t)inputs.error());
-    ET_LOG(Info, "Inputs prepared.");
+    ET_LOG(Debug, "Inputs prepared.");
 
     Error status = method->execute();
     ET_CHECK_MSG(
