@@ -528,7 +528,7 @@ class CustomBuildPy(build_py):
             ),
             # Install executorch-wheel-config.cmake to pip package.
             (
-                "build/executorch-wheel-config.cmake",
+                "tools/cmake/executorch-wheel-config.cmake",
                 "share/cmake/executorch-config.cmake",
             ),
         ]
