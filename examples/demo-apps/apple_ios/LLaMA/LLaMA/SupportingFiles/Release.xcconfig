@@ -19,9 +19,7 @@ OTHER_LDFLAGS = $(inherited) \
 HEADER_SEARCH_PATHS = $(inherited) \
     $(SRCROOT)/../../../../.. \
     $(TEMP_DIR)/cmake/include \
-    $(SRCROOT)/../../../../extension/llm/tokenizers/include \
-    $(SRCROOT)/../../../../extension/llm/tokenizers/third-party/json/include \
-    $(SRCROOT)/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode/include
+    $(SRCROOT)/../../../../extension/llm/tokenizers/include
 
 LIBRARY_SEARCH_PATHS = $(inherited) \
     $(TEMP_DIR)/cmake/lib
