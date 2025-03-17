@@ -16,7 +16,10 @@ OTHER_LDFLAGS = $(inherited) \
 // Include headers and libraries from $(TEMP_DIR)/cmake for it.
 HEADER_SEARCH_PATHS = $(inherited) \
     $(SRCROOT)/../../../../.. \
-    $(TEMP_DIR)/cmake/include
+    $(TEMP_DIR)/cmake/include \
+    $(SRCROOT)/../../../../extension/llm/tokenizers/include \
+    $(SRCROOT)/../../../../extension/llm/tokenizers/third-party/json/include \
+    $(SRCROOT)/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode/include 
 
 LIBRARY_SEARCH_PATHS = $(inherited) \
     $(TEMP_DIR)/cmake/lib
