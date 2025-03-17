@@ -825,6 +825,8 @@
             <span class="n">new_input_specs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">lifted_constants</span><span class="p">)</span>
             <span class="n">lifted_constants</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="n">new_input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">lifted_constants</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">new_input_specs</span> <span class="o">=</span> <span class="n">lifted_constants</span> <span class="o">+</span> <span class="n">new_input_specs</span>
     <span class="n">ep</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">input_specs</span> <span class="o">=</span> <span class="n">new_input_specs</span>
     <span class="n">ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">recompile</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">ep</span>
