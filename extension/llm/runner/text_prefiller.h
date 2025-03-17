@@ -12,8 +12,6 @@
 #pragma once
 
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
-#include <functional>
 
 namespace executorch {
 namespace extension {

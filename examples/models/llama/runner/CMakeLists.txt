@@ -21,7 +21,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -43,7 +43,7 @@ target_include_directories(
 
 list(
   APPEND _llama_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/src/tiktoken.cpp
 )
 list(APPEND _llama_runner__srcs
      ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/llama_tiktoken.cpp
@@ -83,7 +83,10 @@ target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
 
 target_include_directories(
   llama_runner
-  INTERFACE ${_common_include_directories} ${EXECUTORCH_ROOT}
-            ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+  INTERFACE ${_common_include_directories}
+)
+target_include_directories(
+  llama_runner
+  PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 target_compile_options(llama_runner PUBLIC ${_preprocessor_flag})

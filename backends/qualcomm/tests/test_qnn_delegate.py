@@ -502,6 +502,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(2, 3, 4, 5),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_up_sampling_nearest_2d_with_scale_factor(self):
+        module = UpsampleNearest2D(scale_factor=2)  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_size(self):
+        module = UpsampleNearest2D(sizes=(144, 208))  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_layer_norm(self):
         modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
         sample_input = (torch.randn(196, 768),)
@@ -1482,6 +1492,18 @@ class TestQNNQuantizedOperator(TestQNN):
         # TODO: Fix op not supported KeyError: 'aten.randn.default'
         module = ResizeNearest2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_scale_factor(self):
+        module = UpsampleNearest2D(scale_factor=2)  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_size(self):
+        module = UpsampleNearest2D(sizes=(144, 208))  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 

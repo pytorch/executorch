@@ -11,15 +11,15 @@
 #include <ctime>
 #include <iostream>
 
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 using executorch::aten::ScalarType;
 using executorch::extension::Module;
-using executorch::extension::llm::BPETokenizer;
 using executorch::extension::llm::Sampler;
 using executorch::runtime::Error;
+using tokenizers::Llama2cTokenizer;
 
 namespace example {
 
@@ -32,14 +32,14 @@ Runner::Runner(
     const std::string& tokenizer_path,
     const float temperature)
     : module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
-      tokenizer_(std::make_unique<BPETokenizer>()),
+      tokenizer_(std::make_unique<Llama2cTokenizer>()),
       sampler_(std::make_unique<Sampler>(
           VOCABULARY_SIZE,
           temperature,
           SAMPLER_TOP,
           static_cast<unsigned long long>(std::time(nullptr)))) {
   ET_CHECK_MSG(
-      tokenizer_->load(tokenizer_path) == Error::Ok,
+      tokenizer_->load(tokenizer_path) == tokenizers::Error::Ok,
       "Failed to load tokenizer at %s",
       tokenizer_path.c_str());
   ET_LOG(
@@ -52,7 +52,9 @@ Runner::Runner(
 void Runner::generate(const std::string& prompt, std::size_t max_seq_len) {
   auto encode_res = tokenizer_->encode(prompt, 0, 0);
   ET_CHECK_MSG(
-      encode_res.error() == Error::Ok, "Failed to encode %s", prompt.c_str());
+      encode_res.error() == tokenizers::Error::Ok,
+      "Failed to encode %s",
+      prompt.c_str());
   auto input_tokens = encode_res.get();
   auto prev_token = input_tokens.back();
   auto current_token = prefill(input_tokens);
