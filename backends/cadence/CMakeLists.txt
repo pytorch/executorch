@@ -28,7 +28,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 if(EXECUTORCH_CADENCE_CPU_RUNNER)
-  include(${EXECUTORCH_ROOT}/scripts/build/Codegen.cmake)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
   if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
