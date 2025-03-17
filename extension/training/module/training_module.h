@@ -33,7 +33,7 @@ class ET_EXPERIMENTAL TrainingModule final
       std::unique_ptr<runtime::DataLoader> data_loader,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<etdump::ETDumpGen> event_tracer = nullptr,
       std::unique_ptr<runtime::DataLoader> data_map_data_loader = nullptr)
       : executorch::extension::Module(
             std::move(data_loader),
