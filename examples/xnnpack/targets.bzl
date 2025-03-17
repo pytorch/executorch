@@ -49,15 +49,3 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
-
-    # executor_runner for XNNPACK Backend and portable kernels.
-    runtime.cxx_binary(
-        name = "xnn_executor_runner",
-        deps = [
-            "//executorch/examples/portable/executor_runner:executor_runner_lib",
-            "//executorch/backends/xnnpack:xnnpack_backend",
-            "//executorch/kernels/portable:generated_lib",
-        ],
-        define_static_target = True,
-        **get_oss_build_kwargs()
-    )

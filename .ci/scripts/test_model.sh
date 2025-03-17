@@ -115,8 +115,8 @@ test_model() {
   run_portable_executor_runner
 }
 
-build_cmake_xnn_executor_runner() {
-  echo "Building xnn_executor_runner"
+build_cmake_executor_runner() {
+  echo "Building executor_runner"
 
   (rm -rf ${CMAKE_OUTPUT_DIR} \
     && mkdir ${CMAKE_OUTPUT_DIR} \
@@ -152,12 +152,12 @@ test_model_with_xnnpack() {
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-    buck2 run //examples/xnnpack:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
+    buck2 run //examples/portable/executor_runner:executor_runner_opt -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    if [[ ! -f ${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner ]]; then
-      build_cmake_xnn_executor_runner
+    if [[ ! -f ${CMAKE_OUTPUT_DIR}/executor_runner ]]; then
+      build_cmake_executor_runner
     fi
-    ./${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner --model_path "${OUTPUT_MODEL_PATH}"
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
