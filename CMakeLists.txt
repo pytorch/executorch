@@ -42,7 +42,7 @@
 # It should also be cmake-lint clean.
 #
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
 include(build/Utils.cmake)
 include(CMakeDependentOption)
@@ -917,6 +917,14 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Generate lib to register quantized ops
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
+  endif()
+
+  if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+    list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+  endif()
+
+  if(EXECUTORCH_BUILD_XNNPACK)
+    list(APPEND _executor_runner_libs xnnpack_backend)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
