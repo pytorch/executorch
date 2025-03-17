@@ -21,11 +21,11 @@ class SplitLinearModule(torch.nn.Module):
         self.out_split_sizes = self._get_split_sizes(
             out_features, out_target_split_size, out_max_splits
         )
-        self.in_split_sizes = self._get_split_sizes(
-            in_features, in_target_split_size, in_max_splits
-        )
         print(
             f"Splitting out_features={out_features} into {len(self.out_split_sizes)} of size {self.out_split_sizes[0]}."
+        )
+        self.in_split_sizes = self._get_split_sizes(
+            in_features, in_target_split_size, in_max_splits
         )
         print(
             f"Splitting in_features={in_features} into {len(self.in_split_sizes)} of size {self.in_split_sizes[0]}."
