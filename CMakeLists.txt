@@ -682,7 +682,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
+install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
 #
 # executor_runner: Host tool that demonstrates program execution.
