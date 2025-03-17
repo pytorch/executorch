@@ -10,6 +10,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.avg_pool_2d_converter import (
     AvgPool2dConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clone_converter import (
+    CloneConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.constant_pad_nd_converter import (
     ConstantPadNDConverter,
 )
@@ -62,6 +65,7 @@ __all__ = [
     "MaxPool2dConverter",
     "AvgPool2dConverter",
     "AddTensorConverter",
+    "CloneConverter",
     "AdaptiveAvgPool2dConverter",
     "HardTanhConverter",
 ]

@@ -251,6 +251,15 @@ class Conv2dPattern(QuantizationPattern):
         )
 
 
+class DropoutPattern(SharedSpecPattern):
+    """
+    Quantizer for Dropout operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.dropout.default]
+
+
 class FlattenPattern(SharedSpecPattern):
     """
     Quantizer for Flatten operator.
