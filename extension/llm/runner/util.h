@@ -15,6 +15,30 @@
 #include <sys/resource.h>
 #endif
 
+#define ET_UNWRAP_TOKENIZER(result__)                       \
+  ({                                                        \
+    auto tk_result__ = (result__);                          \
+    if (!tk_result__.ok()) {                                \
+      ET_LOG(                                               \
+          Error,                                            \
+          "Tokenizers error code %d",                       \
+          static_cast<uint32_t>(tk_result__.error()));      \
+      return ::executorch::runtime::Error::InvalidArgument; \
+    }                                                       \
+    std::move(*tk_result__);                                \
+  })
+
+#define ET_CHECK_TK_OK_OR_RETURN_ERROR(result__, ...)                        \
+  ({                                                                         \
+    auto tk_result__ = (result__);                                           \
+    if (tk_result__ != ::tokenizers::Error::Ok) {                            \
+      ET_LOG(                                                                \
+          Error, "Tokenizer error: %d", static_cast<uint32_t>(tk_result__)); \
+      ET_CHECK_OK_OR_RETURN_ERROR(                                           \
+          ::executorch::runtime::Error::InvalidArgument, ##__VA_ARGS__);     \
+    }                                                                        \
+  })
+
 namespace executorch {
 namespace extension {
 namespace llm {

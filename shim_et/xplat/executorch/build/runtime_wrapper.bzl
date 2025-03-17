@@ -38,6 +38,9 @@ def struct_to_json(x):
 def get_default_executorch_platforms():
     return env.default_platforms
 
+def get_executorch_supported_platforms():
+    return env.supported_platforms
+
 def _patch_executorch_references(targets, use_static_deps = False):
     """Patches up references to "//executorch/..." in lists of build targets.
 
