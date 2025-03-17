@@ -37,6 +37,19 @@ option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE
 # Keeping this OFF by default due to regressions in decode and model load with
 # kleidi kernels
 option(EXECUTORCH_XNNPACK_ENABLE_KLEIDI "Enable Arm Kleidi kernels" OFF)
+
+# Turning this on cache weights between partitions and methods. If weights
+# are shared across methods/partitions then this can reduce load time and
+# memory usage
+
+# Keeping this off maintains existing behavior. Turning this on serializes
+# execution and initialization of delegates, to be revisited
+option(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE
+        "Enable weights cache to cache and manage all packed weights" OFF)
+
+if(EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE)
+  add_definitions(-DENABLE_XNNPACK_WEIGHTS_CACHE)
+endif()
 if(EXECUTORCH_XNNPACK_SHARED_WORKSPACE)
   add_definitions(-DENABLE_XNNPACK_SHARED_WORKSPACE)
 endif()
@@ -69,6 +82,12 @@ foreach(fbs_file ${_xnnpack_schema__srcs})
   )
 endforeach()
 
+if(WIN32)
+  set(MV_COMMAND powershell -Command "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs}")
+else()
+  set(MV_COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs})
+endif()
+
 # Generate the headers from the .fbs files.
 add_custom_command(
   OUTPUT ${_xnnpack_schema__outputs}
@@ -76,12 +95,14 @@ add_custom_command(
     ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
     "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack/serialization"
     ${_xnnpack_schema__srcs}
-  COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs}
+  COMMAND ${MV_COMMAND}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   DEPENDS flatc
   COMMENT "Generating xnnpack_schema headers"
   VERBATIM
 )
+
+unset(MV_COMMAND)
 
 add_library(xnnpack_schema INTERFACE ${_xnnpack_schema__outputs})
 set_target_properties(xnnpack_schema PROPERTIES LINKER_LANGUAGE CXX)
@@ -90,14 +111,14 @@ target_include_directories(
                            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
 )
 
-set(xnnpack_third_party pthreadpool cpuinfo)
+set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
 
 include(cmake/Dependencies.cmake)
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
 target_link_libraries(
-  xnnpack_backend PRIVATE ${xnnpack_third_party} executorch_core xnnpack_schema
+  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema extension_threadpool
 )
 
 target_include_directories(

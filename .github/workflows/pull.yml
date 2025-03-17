@@ -361,6 +361,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        ./install_requirements.sh --use-pt-pinned-commit
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
         strip cmake-out/test/size_test
@@ -395,6 +396,8 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
+
+        ./install_requirements.sh --use-pt-pinned-commit
 
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
@@ -510,6 +513,7 @@ jobs:
         MODE=${{ matrix.mode }}
         PT2E_QUANTIZE=${{ matrix.pt2e_quantize }}
 
+        ./install_requirements.sh --use-pt-pinned-commit
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
@@ -541,6 +545,7 @@ jobs:
 
         BUILD_TOOL="cmake"
 
+        ./install_requirements.sh --use-pt-pinned-commit
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 

@@ -26,6 +26,7 @@ from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
@@ -321,6 +322,8 @@ def lift_constant_tensor_pass(ep):
             new_input_specs.extend(lifted_constants)
             lifted_constants.clear()
         new_input_specs.append(s)
+    if len(lifted_constants) > 0:
+        new_input_specs = lifted_constants + new_input_specs
     ep.graph_signature.input_specs = new_input_specs
     ep.graph_module.recompile()
     return ep
@@ -1304,6 +1307,7 @@ class EdgeProgramManager:
         constant_methods: Optional[Dict[str, Any]] = None,
         compile_config: Optional[EdgeCompileConfig] = None,
         ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
+        named_data_store: Optional[NamedDataStore] = None,
     ):
         """
         Should not be called directly by users. User should use :func:'to_edge' instead.
@@ -1327,7 +1331,7 @@ class EdgeProgramManager:
         self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
 
-        self._named_data_store = NamedDataStore()
+        self._named_data_store = named_data_store or NamedDataStore()
 
     @property
     def methods(self) -> Set[str]:
@@ -1437,9 +1441,30 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 new_edge_programs[name] = to_backend(program, partitioner)
 
+        # collected all the named data into the named data store for deduplication
+        def collect_named_data_store_outputs(
+            graph_module: torch.fx.GraphModule,
+        ) -> None:
+            for node in graph_module.graph.nodes:
+                if node.target == executorch_call_delegate:
+                    lbm = getattr(graph_module, node.args[0].name)
+                    assert is_lowered_module(lbm)
+                    data_store_output = lbm.named_data_store_output
+                    if data_store_output is not None:
+                        self._named_data_store.merge_named_data_store(data_store_output)
+
+            for _, submod, _ in get_control_flow_submodules(graph_module):
+                collect_named_data_store_outputs(submod)
+
+        for _, program in new_edge_programs.items():
+            collect_named_data_store_outputs(program.graph_module)
+
         config = EdgeCompileConfig(_check_ir_validity=False)
         return EdgeProgramManager(
-            new_edge_programs, copy.deepcopy(self._config_methods), config
+            new_edge_programs,
+            copy.deepcopy(self._config_methods),
+            config,
+            named_data_store=self._named_data_store,
         )
 
     @et_logger("to_executorch")
