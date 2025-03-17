@@ -27,7 +27,7 @@ SOFTWARE.
 
 // generated with scripts/gen-unicode-data.py
 
-#include <pytorch/tokenizers/third-party/llama.cpp-unicode/unicode-data.h>
+#include "unicode-data.h"
 
 #include <cstdint>
 #include <unordered_map>

@@ -1,8 +1,7 @@
-load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID", "APPLE", "CXX", "FBCODE")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime", "get_executorch_supported_platforms")
 load("@fbsource//xplat/executorch/third-party:glob_defs.bzl", "subdir_glob")
 
-PLATFORMS = (CXX, ANDROID, APPLE, FBCODE)
+PLATFORMS = get_executorch_supported_platforms()
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -69,19 +68,6 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "unicode",
-        srcs = [
-            "third-party/llama.cpp-unicode/src/unicode.cpp",
-            "third-party/llama.cpp-unicode/src/unicode-data.cpp",
-        ],
-        exported_headers = subdir_glob([
-            ("include", "pytorch/tokenizers/third-party/llama.cpp-unicode/*.h"),
-        ]),
-        header_namespace = "",
-        platforms = PLATFORMS,
-    )
-
-    runtime.cxx_library(
         name = "hf_tokenizer",
         srcs = [
             "src/hf_tokenizer.cpp",
@@ -91,7 +77,7 @@ def define_common_targets():
         ],
         exported_deps = [
             ":headers",
-            ":unicode",
+            "//pytorch/tokenizers/third-party:unicode",
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",

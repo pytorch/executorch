@@ -8,7 +8,7 @@
 
 // Local
 #include <pytorch/tokenizers/pre_tokenizer.h>
-#include <pytorch/tokenizers/third-party/llama.cpp-unicode/unicode.h>
+#include <unicode.h>
 
 // Standard
 #include <algorithm>
@@ -63,37 +63,35 @@ PreTokenizer::Ptr PreTokenizerConfig::create() const {
           "Missing pretokenizers for PreTokenizer of type Sequence");
     }
     std::vector<PreTokenizer::Ptr> pretoks;
-    std::transform(
-        pretokenizers->begin(),
-        pretokenizers->end(),
-        std::back_inserter(pretoks),
-        [](const PreTokenizerConfig& cfg) { return cfg.create(); });
+    std::transform(pretokenizers->begin(), pretokenizers->end(),
+                   std::back_inserter(pretoks),
+                   [](const PreTokenizerConfig &cfg) { return cfg.create(); });
     return PreTokenizer::Ptr(new SequencePreTokenizer(pretoks));
   }
   throw std::runtime_error("Unsupported PreTokenizer type: " + type);
 }
 
-PreTokenizerConfig& PreTokenizerConfig::parse_json(const json& json_config) {
+PreTokenizerConfig &PreTokenizerConfig::parse_json(const json &json_config) {
   type = json_config.at("type");
   if (type == "Split") {
     try {
       pattern = json_config.at("pattern");
-    } catch (json::out_of_range&) {
+    } catch (json::out_of_range &) {
     }
   } else if (type == "Digits") {
     try {
       individual_digits = json_config.at("individual_digits");
-    } catch (json::out_of_range&) {
+    } catch (json::out_of_range &) {
     }
   } else if (type == "ByteLevel") {
     try {
       add_prefix_space = json_config.at("add_prefix_space");
-    } catch (json::out_of_range&) {
+    } catch (json::out_of_range &) {
     }
     // TODO: trim_offsets, use_regex
   } else if (type == "Sequence") {
     pretokenizers = std::vector<PreTokenizerConfig>();
-    for (const auto& entry : json_config.at("pretokenizers")) {
+    for (const auto &entry : json_config.at("pretokenizers")) {
       pretokenizers->push_back(PreTokenizerConfig().parse_json(entry));
     }
   } else {
@@ -104,14 +102,14 @@ PreTokenizerConfig& PreTokenizerConfig::parse_json(const json& json_config) {
 
 // RegexPreTokenizer ///////////////////////////////////////////////////////////
 
-RegexPreTokenizer::Re2UPtr RegexPreTokenizer::create_regex_(
-    const std::string& pattern) {
+RegexPreTokenizer::Re2UPtr
+RegexPreTokenizer::create_regex_(const std::string &pattern) {
   assert(!pattern.empty());
   return std::make_unique<re2::RE2>("(" + pattern + ")");
 }
 
-std::vector<std::string> RegexPreTokenizer::pre_tokenize(
-    re2::StringPiece input) const {
+std::vector<std::string>
+RegexPreTokenizer::pre_tokenize(re2::StringPiece input) const {
   std::vector<std::string> result;
   std::string piece;
   while (RE2::FindAndConsume(&input, *regex_, &piece)) {
@@ -138,14 +136,13 @@ constexpr char GPT2_EXPR[] =
 // Construction //
 //////////////////
 
-ByteLevelPreTokenizer::ByteLevelPreTokenizer(
-    bool add_prefix_space,
-    const std::string& pattern)
+ByteLevelPreTokenizer::ByteLevelPreTokenizer(bool add_prefix_space,
+                                             const std::string &pattern)
     : pattern_(pattern.empty() ? GPT2_EXPR : pattern),
       add_prefix_space_(add_prefix_space) {}
 
-std::vector<std::string> ByteLevelPreTokenizer::pre_tokenize(
-    re2::StringPiece input) const {
+std::vector<std::string>
+ByteLevelPreTokenizer::pre_tokenize(re2::StringPiece input) const {
   // Add the prefix space if configured to do so
   std::string input_str(input);
   if (add_prefix_space_ && !input_str.empty() && input_str[0] != ' ') {
@@ -161,13 +158,13 @@ SequencePreTokenizer::SequencePreTokenizer(
     std::vector<PreTokenizer::Ptr> pre_tokenizers)
     : pre_tokenizers_(std::move(pre_tokenizers)) {}
 
-std::vector<std::string> SequencePreTokenizer::pre_tokenize(
-    re2::StringPiece input) const {
+std::vector<std::string>
+SequencePreTokenizer::pre_tokenize(re2::StringPiece input) const {
   std::vector<std::string> pieces{std::string(input)};
-  for (const auto& pre_tokenizer : pre_tokenizers_) {
+  for (const auto &pre_tokenizer : pre_tokenizers_) {
     std::vector<std::string> new_pieces;
-    for (const auto& piece : pieces) {
-      for (const auto& subpiece : pre_tokenizer->pre_tokenize(piece)) {
+    for (const auto &piece : pieces) {
+      for (const auto &subpiece : pre_tokenizer->pre_tokenize(piece)) {
         new_pieces.push_back(subpiece);
       }
     }

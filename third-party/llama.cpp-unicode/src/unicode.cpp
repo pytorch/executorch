@@ -29,8 +29,8 @@ SOFTWARE.
 #define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
 #endif
 
-#include <pytorch/tokenizers/third-party/llama.cpp-unicode/unicode.h>
-#include <pytorch/tokenizers/third-party/llama.cpp-unicode/unicode-data.h>
+#include "unicode.h"
+#include "unicode-data.h"
 
 #include <algorithm>
 #include <cassert>
@@ -62,7 +62,7 @@ size_t unicode_len_utf8(char src) {
 //   return result;
 // }
 
-uint32_t unicode_cpt_from_utf8(const std::string &utf8, size_t &offset) {
+uint32_t unicode_cpt_from_utf8(const std::string& utf8, size_t& offset) {
   assert(offset < utf8.size());
   if (!(utf8[offset + 0] & 0x80)) {
     auto result = utf8[offset + 0];
@@ -86,7 +86,7 @@ uint32_t unicode_cpt_from_utf8(const std::string &utf8, size_t &offset) {
       throw std::invalid_argument("invalid character");
     }
     auto result = ((utf8[offset + 0] & 0x0f) << 12) |
-                  ((utf8[offset + 1] & 0x3f) << 6) | (utf8[offset + 2] & 0x3f);
+        ((utf8[offset + 1] & 0x3f) << 6) | (utf8[offset + 2] & 0x3f);
     offset += 3;
     return result;
   }
@@ -97,8 +97,8 @@ uint32_t unicode_cpt_from_utf8(const std::string &utf8, size_t &offset) {
       throw std::invalid_argument("invalid character");
     }
     auto result = ((utf8[offset + 0] & 0x07) << 18) |
-                  ((utf8[offset + 1] & 0x3f) << 12) |
-                  ((utf8[offset + 2] & 0x3f) << 6) | (utf8[offset + 3] & 0x3f);
+        ((utf8[offset + 1] & 0x3f) << 12) | ((utf8[offset + 2] & 0x3f) << 6) |
+        (utf8[offset + 3] & 0x3f);
     offset += 4;
     return result;
   }
@@ -157,12 +157,13 @@ uint32_t unicode_cpt_from_utf8(const std::string &utf8, size_t &offset) {
 // }
 
 static std::vector<codepoint_flags> unicode_cpt_flags_array() {
-  std::vector<codepoint_flags> cpt_flags(MAX_CODEPOINTS,
-                                         codepoint_flags::UNDEFINED);
+  std::vector<codepoint_flags> cpt_flags(
+      MAX_CODEPOINTS, codepoint_flags::UNDEFINED);
 
   assert(unicode_ranges_flags.begin()[0].first == 0);
-  assert(unicode_ranges_flags.begin()[unicode_ranges_flags.size() - 1].first ==
-         MAX_CODEPOINTS);
+  assert(
+      unicode_ranges_flags.begin()[unicode_ranges_flags.size() - 1].first ==
+      MAX_CODEPOINTS);
   for (size_t i = 1; i < unicode_ranges_flags.size(); ++i) {
     const auto range_ini =
         unicode_ranges_flags.begin()[i - 1]; // codepoint_ini, flags
@@ -185,7 +186,7 @@ static std::vector<codepoint_flags> unicode_cpt_flags_array() {
     cpt_flags[p.second].is_uppercase = true;
   }
 
-  for (auto &range : unicode_ranges_nfd) { // start, last, nfd
+  for (auto& range : unicode_ranges_nfd) { // start, last, nfd
     cpt_flags[range.nfd].is_nfd = true;
   }
 
@@ -240,15 +241,15 @@ static std::unordered_map<std::string, uint8_t> unicode_utf8_to_byte_map() {
   return map;
 }
 
-static inline std::wstring unicode_wstring_from_utf8(const std::string &s) {
+static inline std::wstring unicode_wstring_from_utf8(const std::string& s) {
   std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
   return conv.from_bytes(s);
 }
 
-static std::vector<std::string>
-unicode_byte_encoding_process(const std::vector<std::string> &bpe_words) {
+static std::vector<std::string> unicode_byte_encoding_process(
+    const std::vector<std::string>& bpe_words) {
   std::vector<std::string> bpe_encoded_words;
-  for (const auto &word : bpe_words) {
+  for (const auto& word : bpe_words) {
     std::string text_utf;
     auto utf_word = unicode_cpts_from_utf8(word);
     for (size_t i = 0; i < utf_word.size(); ++i) {
@@ -256,7 +257,7 @@ unicode_byte_encoding_process(const std::vector<std::string> &bpe_words) {
     }
 
     std::string encoded_token;
-    for (char &c : text_utf) {
+    for (char& c : text_utf) {
       encoded_token += unicode_byte_to_utf8(c);
     }
     bpe_encoded_words.emplace_back(encoded_token);
@@ -266,9 +267,9 @@ unicode_byte_encoding_process(const std::vector<std::string> &bpe_words) {
 
 // GPT2 system regex:  's|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+|
 // ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
-static std::vector<size_t>
-unicode_regex_split_custom_gpt2(const std::string &text,
-                                const std::vector<size_t> &offsets) {
+static std::vector<size_t> unicode_regex_split_custom_gpt2(
+    const std::string& text,
+    const std::vector<size_t>& offsets) {
   std::vector<size_t> bpe_offsets; // store the offset of each word
   bpe_offsets.reserve(
       offsets.size()); // Reserve memory for the approximate size
@@ -289,8 +290,8 @@ unicode_regex_split_custom_gpt2(const std::string &text,
 
     auto _get_flags = [&](const size_t pos) -> codepoint_flags {
       return (offset_ini <= pos && pos < offset_end)
-                 ? unicode_cpt_flags(cpts[pos])
-                 : codepoint_flags{};
+          ? unicode_cpt_flags(cpts[pos])
+          : codepoint_flags{};
     };
 
     size_t _prev_end = offset_ini;
@@ -395,9 +396,9 @@ unicode_regex_split_custom_gpt2(const std::string &text,
 // LLAMA3 system regex:
 // "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}|
 // ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
-static std::vector<size_t>
-unicode_regex_split_custom_llama3(const std::string &text,
-                                  const std::vector<size_t> &offsets) {
+static std::vector<size_t> unicode_regex_split_custom_llama3(
+    const std::string& text,
+    const std::vector<size_t>& offsets) {
   std::vector<size_t> bpe_offsets; // store the offset of each word
   bpe_offsets.reserve(
       offsets.size()); // Reserve memory for the approximate size
@@ -418,8 +419,8 @@ unicode_regex_split_custom_llama3(const std::string &text,
 
     auto _get_flags = [&](const size_t pos) -> codepoint_flags {
       return (offset_ini <= pos && pos < offset_end)
-                 ? unicode_cpt_flags(cpts[pos])
-                 : codepoint_flags{};
+          ? unicode_cpt_flags(cpts[pos])
+          : codepoint_flags{};
     };
 
     size_t _prev_end = offset_ini;
@@ -546,18 +547,18 @@ unicode_regex_split_custom_llama3(const std::string &text,
 }
 
 // use std::wregex to split the text
-static std::vector<size_t>
-unicode_regex_split_stl(const std::wstring &wtext,
-                        const std::wstring &regex_expr,
-                        const std::vector<size_t> &offsets) {
+static std::vector<size_t> unicode_regex_split_stl(
+    const std::wstring& wtext,
+    const std::wstring& regex_expr,
+    const std::vector<size_t>& offsets) {
   std::wregex expr(regex_expr);
   std::vector<size_t> bpe_offsets; // store the offset of each word
   bpe_offsets.reserve(
       offsets.size()); // Reserve memory for the approximate size
   size_t start = 0;
   for (auto offset : offsets) {
-    std::wcregex_iterator it(wtext.data() + start,
-                             wtext.data() + start + offset, expr);
+    std::wcregex_iterator it(
+        wtext.data() + start, wtext.data() + start + offset, expr);
     std::wcregex_iterator end;
 
     int64_t start_idx = 0;
@@ -581,17 +582,18 @@ unicode_regex_split_stl(const std::wstring &wtext,
 }
 
 // use std::regex to split the text
-static std::vector<size_t>
-unicode_regex_split_stl(const std::string &text, const std::string &regex_expr,
-                        const std::vector<size_t> &offsets) {
+static std::vector<size_t> unicode_regex_split_stl(
+    const std::string& text,
+    const std::string& regex_expr,
+    const std::vector<size_t>& offsets) {
   std::regex expr(regex_expr);
   std::vector<size_t> bpe_offsets; // store the offset of each word
   bpe_offsets.reserve(
       offsets.size()); // Reserve memory for the approximate size
   size_t start = 0;
   for (auto offset : offsets) {
-    std::cregex_iterator it(text.data() + start, text.data() + start + offset,
-                            expr);
+    std::cregex_iterator it(
+        text.data() + start, text.data() + start + offset, expr);
     std::cregex_iterator end;
 
     int64_t start_idx = 0;
@@ -614,14 +616,15 @@ unicode_regex_split_stl(const std::string &text, const std::string &regex_expr,
   return bpe_offsets;
 }
 
-static std::vector<size_t>
-unicode_regex_split_custom(const std::string &text,
-                           const std::string &regex_expr,
-                           const std::vector<size_t> &offsets) {
+static std::vector<size_t> unicode_regex_split_custom(
+    const std::string& text,
+    const std::string& regex_expr,
+    const std::vector<size_t>& offsets) {
   std::vector<size_t> bpe_offsets;
 
-  if (regex_expr == "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| "
-                    "?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)") {
+  if (regex_expr ==
+      "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| "
+      "?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)") {
     bpe_offsets = unicode_regex_split_custom_gpt2(text, offsets);
   } else if (
       regex_expr ==
@@ -631,7 +634,6 @@ unicode_regex_split_custom(const std::string &text,
           "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^"
           "\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| "
           "?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+") {
-
     bpe_offsets = unicode_regex_split_custom_llama3(text, offsets);
   }
 
@@ -671,23 +673,24 @@ std::string unicode_cpt_to_utf8(uint32_t cp) {
   throw std::invalid_argument("invalid codepoint");
 }
 
-std::vector<uint32_t>
-unicode_cpts_normalize_nfd(const std::vector<uint32_t> &cpts) {
-  auto comp = [](const uint32_t cpt, const range_nfd &range) {
+std::vector<uint32_t> unicode_cpts_normalize_nfd(
+    const std::vector<uint32_t>& cpts) {
+  auto comp = [](const uint32_t cpt, const range_nfd& range) {
     return cpt < range.first;
   };
   std::vector<uint32_t> result(cpts.size());
   for (size_t i = 0; i < cpts.size(); ++i) {
     const uint32_t cpt = cpts[i];
-    auto it = std::upper_bound(unicode_ranges_nfd.begin(),
-                               unicode_ranges_nfd.end(), cpt, comp) -
-              1;
+    auto it =
+        std::upper_bound(
+            unicode_ranges_nfd.begin(), unicode_ranges_nfd.end(), cpt, comp) -
+        1;
     result[i] = (it->first <= cpt && cpt <= it->last) ? it->nfd : cpt;
   }
   return result;
 }
 
-std::vector<uint32_t> unicode_cpts_from_utf8(const std::string &utf8) {
+std::vector<uint32_t> unicode_cpts_from_utf8(const std::string& utf8) {
   std::vector<uint32_t> result;
   result.reserve(utf8.size());
   size_t offset = 0;
@@ -703,7 +706,7 @@ codepoint_flags unicode_cpt_flags(const uint32_t cp) {
   return cp < cpt_flags.size() ? cpt_flags[cp] : undef;
 }
 
-codepoint_flags unicode_cpt_flags(const std::string &utf8) {
+codepoint_flags unicode_cpt_flags(const std::string& utf8) {
   static const codepoint_flags undef(codepoint_flags::UNDEFINED);
   if (utf8.empty()) {
     return undef; // undefined
@@ -718,7 +721,7 @@ std::string unicode_byte_to_utf8(uint8_t byte) {
   return map.at(byte);
 }
 
-uint8_t unicode_utf8_to_byte(const std::string &utf8) {
+uint8_t unicode_utf8_to_byte(const std::string& utf8) {
   static std::unordered_map<std::string, uint8_t> map =
       unicode_utf8_to_byte_map();
   return map.at(utf8);
@@ -726,19 +729,22 @@ uint8_t unicode_utf8_to_byte(const std::string &utf8) {
 
 uint32_t unicode_tolower(uint32_t cp) {
   // binary search
-  auto it = std::lower_bound(unicode_map_lowercase.begin(),
-                             unicode_map_lowercase.end(), cp,
-                             [](const std::pair<uint32_t, uint32_t> &pair,
-                                uint32_t value) { return pair.first < value; });
+  auto it = std::lower_bound(
+      unicode_map_lowercase.begin(),
+      unicode_map_lowercase.end(),
+      cp,
+      [](const std::pair<uint32_t, uint32_t>& pair, uint32_t value) {
+        return pair.first < value;
+      });
   if (it != unicode_map_lowercase.end() && it->first == cp) {
     return it->second;
   }
   return cp; // Return the original code point if no lowercase mapping is found
 }
 
-std::vector<std::string>
-unicode_regex_split(const std::string &text,
-                    const std::vector<std::string> &regex_exprs) {
+std::vector<std::string> unicode_regex_split(
+    const std::string& text,
+    const std::vector<std::string>& regex_exprs) {
   // unicode categories
   static const std::map<std::string, int> k_ucat_enum = {
       {"\\p{N}", codepoint_flags::NUMBER},
@@ -753,7 +759,7 @@ unicode_regex_split(const std::string &text,
   };
 
   static const std::map<int, std::string> k_ucat_map = {
-      {codepoint_flags::NUMBER, "\x30-\x39"},          // 0-9
+      {codepoint_flags::NUMBER, "\x30-\x39"}, // 0-9
       {codepoint_flags::LETTER, "\x41-\x5A\x61-\x7A"}, // A-Za-z
       {codepoint_flags::PUNCTUATION,
        "\x21-\x23\x25-\x2A\x2C-\x2F\x3A-\x3B\x3F-\x40\\\x5B-"
@@ -762,9 +768,9 @@ unicode_regex_split(const std::string &text,
 
   // compute collapsed codepoints only if needed by at least one regex
   bool need_collapse = false;
-  for (auto &regex_expr : regex_exprs) {
+  for (auto& regex_expr : regex_exprs) {
     // search for unicode categories
-    for (const auto &ucat : k_ucat_enum) {
+    for (const auto& ucat : k_ucat_enum) {
       if (std::string::npos != regex_expr.find(ucat.first)) {
         need_collapse = true;
         break;
@@ -806,7 +812,7 @@ unicode_regex_split(const std::string &text,
 
   std::vector<size_t> bpe_offsets = {cpts.size()};
 
-  for (auto &regex_expr : regex_exprs) {
+  for (auto& regex_expr : regex_exprs) {
     // first, see if we have an efficient custom regex implementation
     auto tmp = unicode_regex_split_custom(text, regex_expr, bpe_offsets);
 
@@ -821,7 +827,7 @@ unicode_regex_split(const std::string &text,
       // and replace the unicode category with the corresponding collapsed
       // representation
       bool use_collapsed = false;
-      for (auto &ucat : k_ucat_enum) {
+      for (auto& ucat : k_ucat_enum) {
         if (std::string::npos != regex_expr.find(ucat.first)) {
           use_collapsed = true;
           break;
@@ -900,7 +906,7 @@ unicode_regex_split(const std::string &text,
         // printf("regex_expr: %s\n", regex_expr.c_str());
         bpe_offsets = unicode_regex_split_stl(wtext, wregex_expr, bpe_offsets);
       }
-    } catch (std::regex_error &e) {
+    } catch (std::regex_error& e) {
       fprintf(stderr, "Failed to process regex: '%s'\n", regex_expr.c_str());
       fprintf(stderr, "Regex error: %s\n", e.what());
       throw std::runtime_error("Failed to process regex");
@@ -912,7 +918,7 @@ unicode_regex_split(const std::string &text,
       bpe_offsets.size()); // reserve memory for the approximate size
 
   size_t start = 0;
-  for (size_t &offset : bpe_offsets) {
+  for (size_t& offset : bpe_offsets) {
     bpe_words.emplace_back();
     for (size_t i = start; i < start + offset; ++i) {
       bpe_words.back() += unicode_cpt_to_utf8(cpts[i]);

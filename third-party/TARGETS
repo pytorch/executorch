@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/third-party:glob_defs.bzl", "subdir_glob")
 
 oncall("executorch")
 
@@ -44,4 +45,16 @@ runtime.cxx_library(
     ],
     visibility = ["PUBLIC"],
     _is_external_target = True,
+)
+
+runtime.cxx_library(
+    name = "unicode",
+    srcs = [
+        "llama.cpp-unicode/src/unicode.cpp",
+        "llama.cpp-unicode/src/unicode-data.cpp",
+    ],
+    exported_headers = subdir_glob([
+        ("include", "*.h"),
+    ]),
+    header_namespace = "",
 )
