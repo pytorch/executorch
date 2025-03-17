@@ -51,7 +51,7 @@ def clean():
     print("Done cleaning build artifacts.")
 
 
-VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
+VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training", "openvino"]
 
 
 ################################################################################
