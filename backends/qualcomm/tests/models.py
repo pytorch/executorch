@@ -1201,6 +1201,17 @@ class ResizeNearest2D(torch.nn.Module):
         )
 
 
+class UpsampleNearest2D(torch.nn.Module):
+    def __init__(self, sizes=None, scale_factor=None):
+        super().__init__()
+        self.upsample_neareast_2d = torch.nn.UpsamplingNearest2d(  # noqa: TOR101
+            size=sizes, scale_factor=scale_factor
+        )
+
+    def forward(self, x):
+        return self.upsample_neareast_2d(x)
+
+
 class RmsNorm(torch.nn.Module):
     def __init__(self):
         super().__init__()

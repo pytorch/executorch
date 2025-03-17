@@ -42,6 +42,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.pixel_unshuffle.default,
         exir_ops.edge.aten.upsample_bilinear2d.default,
         exir_ops.edge.aten.upsample_nearest2d.default,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
     }
 
     layout_agnostic_ops = {
