@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
@@ -91,29 +91,49 @@ def get_tosa_compile_spec_unbuilt(
 
 
 def get_u55_compile_spec(
-    custom_path=None,
+    macs: int = 128,
+    system_config: str = "Ethos_U55_High_End_Embedded",
+    memory_mode: str = "Shared_Sram",
+    extra_flags: str = "--debug-force-regor --output-format=raw",
+    custom_path: Optional[str] = None,
 ) -> list[CompileSpec]:
     """
-    Default compile spec for Ethos-U55 tests.
+    Compile spec for Ethos-U55.
     """
     return get_u55_compile_spec_unbuilt(
+        macs=macs,
+        system_config=system_config,
+        memory_mode=memory_mode,
+        extra_flags=extra_flags,
         custom_path=custom_path,
     ).build()
 
 
 def get_u85_compile_spec(
+    macs: int = 128,
+    system_config="Ethos_U85_SYS_DRAM_Mid",
+    memory_mode="Shared_Sram",
+    extra_flags="--output-format=raw",
     custom_path=None,
 ) -> list[CompileSpec]:
     """
-    Default compile spec for Ethos-U85 tests.
+    Compile spec for Ethos-U85.
     """
     return get_u85_compile_spec_unbuilt(  # type: ignore[attr-defined]
+        macs=macs,
+        system_config=system_config,
+        memory_mode=memory_mode,
+        extra_flags=extra_flags,
         custom_path=custom_path,
     ).build()
 
 
 def get_u55_compile_spec_unbuilt(
-    custom_path=None,
+    macs: int,
+    system_config: str,
+    memory_mode: str,
+    extra_flags: str,
+    custom_path: Optional[str],
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -121,13 +141,17 @@ def get_u55_compile_spec_unbuilt(
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u55_")
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)
+
+    # https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md
+    assert macs in [32, 64, 128, 256], "Unsupported MACs value"
+
     compile_spec = (
         ArmCompileSpecBuilder()
         .ethosu_compile_spec(
-            "ethos-u55-128",
-            system_config="Ethos_U55_High_End_Embedded",
-            memory_mode="Shared_Sram",
-            extra_flags="--debug-force-regor --output-format=raw",
+            f"ethos-u55-{macs}",
+            system_config=system_config,
+            memory_mode=memory_mode,
+            extra_flags=extra_flags,
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
@@ -135,19 +159,28 @@ def get_u55_compile_spec_unbuilt(
 
 
 def get_u85_compile_spec_unbuilt(
-    custom_path=None,
+    macs: int,
+    system_config: str,
+    memory_mode: str,
+    extra_flags: str,
+    custom_path: Optional[str],
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
     """
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u85_")
+    if not os.path.exists(artifact_path):
+        os.makedirs(artifact_path, exist_ok=True)
+
+    assert macs in [128, 256, 512, 1024, 2048], "Unsupported MACs value"
+
     compile_spec = (
         ArmCompileSpecBuilder()
         .ethosu_compile_spec(
-            "ethos-u85-128",
-            system_config="Ethos_U85_SYS_DRAM_Mid",
-            memory_mode="Shared_Sram",
-            extra_flags="--output-format=raw",
+            f"ethos-u85-{macs}",
+            system_config=system_config,
+            memory_mode=memory_mode,
+            extra_flags=extra_flags,
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
