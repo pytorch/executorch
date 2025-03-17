@@ -34,11 +34,16 @@ from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_input_node,
     get_param_tensor,
+    get_tensor_name,
     is_param_node,
     PERM_NCHW_TO_NHWC,
 )
 
-from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
+from executorch.backends.xnnpack.utils.xnnpack_constants import (
+    UINT64_MAX,
+    XNN_INVALID_VALUE_ID,
+)
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from torch.export import ExportedProgram
 
 XNN_TYPE_MAP = {
@@ -46,8 +51,6 @@ XNN_TYPE_MAP = {
 }
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
-    _aligned_size,
-    _pad_to,
     CONSTANT_TENSOR_ALIGNMENT,
 )
 
@@ -86,11 +89,11 @@ class NodeVisitor:
         self,
         exported_program: ExportedProgram,
         external_ids: Dict,
-        constant_data_bytes: bytearray,
+        named_data_store: NamedDataStore,
     ) -> None:
         self._external_ids = external_ids or {}
         self._exported_program = exported_program or None
-        self._constant_data_bytes = constant_data_bytes
+        self._named_data_store = named_data_store
 
     @property
     def external_ids(self) -> Dict:
@@ -579,11 +582,16 @@ class NodeVisitor:
             ctypes.POINTER(array_type),
         ).contents
 
-        offset = len(self._constant_data_bytes)
+        named_key = get_tensor_name(self.exported_program, get_attr_node)
+        if named_key == "":
+            raise ValueError(f"Tensor from node: {get_attr_node} has no name")
+
         size = const_val.untyped_storage().nbytes()
-        xnn_graph.constant_data.append(ConstantDataOffset(offset=offset, size=size))
-        self._constant_data_bytes.extend(
-            _pad_to(bytes(array), _aligned_size(size, CONSTANT_TENSOR_ALIGNMENT))
+        xnn_graph.constant_data.append(
+            ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
+        )
+        self._named_data_store.add_named_data(
+            named_key, bytes(array), alignment=CONSTANT_TENSOR_ALIGNMENT
         )
 
         return buffer_idx

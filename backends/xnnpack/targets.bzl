@@ -6,11 +6,15 @@ def _get_preprocessor_flags():
     Disable if someone explictly specified a config option,
     else Enable otherwise
     """
-    if native.read_config("executorch", "xnnpack_workspace_sharing", "0") == "0":
-        return []
+    preprocessor_flags = []
+    if native.read_config("executorch", "xnnpack_workspace_sharing", "0") != "0":
+        preprocessor_flags.append("-DENABLE_XNNPACK_SHARED_WORKSPACE")
+
+    if native.read_config("executorch", "xnnpack_weights_cache", "0") != "0":
+        preprocessor_flags.append("-DENABLE_XNNPACK_WEIGHTS_CACHE")
 
     # Enable if not disabled through config
-    return ["-DENABLE_XNNPACK_SHARED_WORKSPACE"]
+    return preprocessor_flags
 
 def define_common_targets():
     runtime.cxx_library(
@@ -60,6 +64,7 @@ def define_common_targets():
             "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
             "//executorch/extension/threadpool:threadpool",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/runtime/executor:pte_data_map"
         ],
         # XnnpackBackend.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)

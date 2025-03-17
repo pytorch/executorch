@@ -30,7 +30,8 @@ using executorch::runtime::kTensorDimensionLimit;
 ET_NODISCARD Error XNNExecutor::initialize(
     xnn_runtime_t runtime,
     std::vector<uint32_t>&& input_ids,
-    std::vector<uint32_t>&& output_ids) {
+    std::vector<uint32_t>&& output_ids,
+    std::vector<std::string>&& packed_data_names) {
   runtime_ = std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)>(
       runtime, xnn_delete_runtime);
 
@@ -51,6 +52,7 @@ ET_NODISCARD Error XNNExecutor::initialize(
   std::sort(output_ids_.begin(), output_ids_.end());
 
   externals_.resize(input_ids_.size() + output_ids_.size());
+  packed_data_names_ = std::move(packed_data_names);
 
   return Error::Ok;
 }
