@@ -83,7 +83,7 @@ function(generate_bindings_for_kernels)
   execute_process(
     COMMAND
       "${PYTHON_EXECUTABLE}" -c
-      "from importlib.util import find_spec;print(find_spec('torchgen').submodule_search_locations[0])"
+      "import torchgen;import os; print(os.path.dirname(torchgen.__file__))"
     OUTPUT_VARIABLE site-packages-out
     ERROR_VARIABLE site-packages-out-error
     RESULT_VARIABLE site-packages-result
