@@ -9,6 +9,7 @@
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <c10/util/irange.h>
 
 #include <array>
 
@@ -24,12 +25,6 @@ Tensor& opt_linear_out(
     const Tensor& mat2,
     const optional<Tensor>& bias,
     Tensor& out) {
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      !bias.has_value(),
-      InvalidArgument,
-      out,
-      "bias not supported yet in linear");
   ET_KERNEL_CHECK(ctx, check_linear_args(in, mat2, out), InvalidArgument, out);
 
   size_t output_ndim = 0;
@@ -56,6 +51,33 @@ Tensor& opt_linear_out(
         size_t k = in.sizes()[in.dim() - 1];
         size_t m = mat2.size(0);
 
+        // If bias is provided, verify its shape and pre-fill the output tensor.
+        if (bias.has_value()) {
+          auto bias_value = bias.value();
+          // Check that bias is 1D and its size matches m.
+          ET_KERNEL_CHECK_MSG(
+            ctx,
+            bias_value.dim() == 1 && bias_value.size(0) == m,
+            InvalidArgument,
+            out,
+            "Bias must be 1D and of size m. Got: ",
+            bias_value.size(0),
+            ", expected: ",
+            m
+          );
+          auto bias_ptr = bias_value.const_data_ptr<CTYPE>();
+          CTYPE* out_ptr = out.mutable_data_ptr<CTYPE>();
+          // Broadcast the bias to every column of the output.
+          auto row_size = m * sizeof(CTYPE);
+          for (const auto col : c10::irange(n)) {
+            std::memcpy(out_ptr + col * m, bias_ptr, row_size);
+          }
+        }
+
+        // Set beta to 1 if bias was applied so that GEMM adds to the pre-filled bias,
+        // otherwise beta remains 0 (i.e. the output is fully overwritten by GEMM).
+        CTYPE beta_val = bias.has_value() ? static_cast<CTYPE>(1) : static_cast<CTYPE>(0);
+
         executorch::cpublas::gemm(
             executorch::cpublas::TransposeType::Transpose,
             executorch::cpublas::TransposeType::NoTranspose,
@@ -67,7 +89,7 @@ Tensor& opt_linear_out(
             k,
             in.const_data_ptr<CTYPE>(),
             k,
-            static_cast<CTYPE>(0),
+            beta_val,
             out.mutable_data_ptr<CTYPE>(),
             m);
       });
