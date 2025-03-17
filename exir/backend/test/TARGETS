@@ -39,6 +39,62 @@ python_library(
 )
 
 python_library(
+    name = "backend_with_named_data_map",
+    srcs = [
+        "backend_with_named_data_map.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:delegate",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/dialects:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/extension/pytree:pylib",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+    ],
+)
+
+python_unittest(
+    name = "test_backend_with_named_data_map",
+    srcs = [
+        "test_backend_with_named_data_map.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:delegate",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/dialects:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/extension/pytree:pylib",
+        ":backend_with_named_data_map",
+    ],
+)
+
+python_library(
     name = "qnn_backend_demo",
     srcs = [
         "qnn_backend_demo.py",

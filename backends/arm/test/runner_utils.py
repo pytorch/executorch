@@ -530,7 +530,7 @@ def get_elf_path(target_board):
         "arm_executor_runner",
     )
     if not os.path.exists(elf_path):
-        raise RuntimeError(
+        raise FileNotFoundError(
             f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
         )
     else:

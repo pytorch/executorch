@@ -8,7 +8,7 @@
 Please refer to executorch/backends/qualcomm/serialization/schema.fbs for the schema definitions
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, unique
 
 
@@ -53,7 +53,7 @@ class QcomChipset(IntEnum):
 @dataclass
 class SocInfo:
     soc_model: QcomChipset = QcomChipset.UNKNOWN_SM
-    htp_info: HtpInfo = HtpInfo()
+    htp_info: HtpInfo = field(default_factory=HtpInfo)
 
 
 _soc_info_table = {
