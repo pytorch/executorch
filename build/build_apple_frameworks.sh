@@ -10,7 +10,7 @@ set -euo pipefail
 SOURCE_ROOT_DIR=""
 OUTPUT="cmake-out"
 MODES=()
-TOOLCHAIN=""
+USER_SET_TOOLCHAIN=""
 PYTHON=$(which python3)
 FLATC=$(which flatc)
 COREML=OFF
@@ -111,7 +111,7 @@ for arg in "$@"; do
           MODES+=("Debug")
         fi
         ;;
-      --toolchain=*) TOOLCHAIN="${arg#*=}" ;;
+      --toolchain=*) USER_SET_TOOLCHAIN="${arg#*=}" ;;
       --python=*) PYTHON="${arg#*=}" ;;
       --flatc=*) FLATC="${arg#*=}" ;;
       --coreml) COREML=ON ;;
@@ -140,10 +140,23 @@ if [[ -z "$SOURCE_ROOT_DIR" ]]; then
     SOURCE_ROOT_DIR=$(pwd)
 fi
 
-if [[ -z "$TOOLCHAIN" ]]; then
-    TOOLCHAIN="$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake"
-fi
-[[ -f "$TOOLCHAIN" ]] || { echo >&2 "Toolchain file $TOOLCHAIN does not exist."; exit 1; }
+# Determine the toolchain to use for a platform. Returns the path to the
+# toolchain. The toolchain can be empty, intending to be built for the host.
+#
+# @param platform The platform to check.
+toolchain_for_platform() {
+  local platform=$1
+
+  if [[ -n "${USER_SET_TOOLCHAIN}" ]]; then
+    echo "${USER_SET_TOOLCHAIN}"
+  elif [[ "$platform" =~ [Mm][Aa][Cc] ]]; then
+    # If building for macOS, don't explicitly set the toolchain and rely on
+    # cmake to use the host toolchain.
+    return 0
+  else
+    echo "${SOURCE_ROOT_DIR}/third-party/ios-cmake/ios.toolchain.cmake"
+  fi
+}
 
 check_command() {
   command -v "$1" >/dev/null 2>&1 || { echo >&2 "$1 is not installed"; exit 1; }
@@ -163,11 +176,13 @@ cmake_build() {
     local platform_flag=$2
     local platform_target=$3
     local mode=$4
-    echo "Building for $platform ($mode) with flag $platform_flag"
+    local toolchain=$(toolchain_for_platform "${platform}")
+
+    echo "Building for $platform ($mode) with flag '$platform_flag' using toolchain '${toolchain}'"
     mkdir -p "$platform" && cd "$platform" || exit 1
     cmake "$SOURCE_ROOT_DIR" -G Xcode \
         -DCMAKE_BUILD_TYPE="$mode" \
-        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
+        ${toolchain:+-DCMAKE_TOOLCHAIN_FILE="${toolchain}"} \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
         -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
