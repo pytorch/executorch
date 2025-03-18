@@ -145,14 +145,31 @@ if [[ -z "$TOOLCHAIN" ]]; then
 fi
 [[ -f "$TOOLCHAIN" ]] || { echo >&2 "Toolchain file $TOOLCHAIN does not exist."; exit 1; }
 
+BUCK2=$("$PYTHON" "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
+
+if [[ "$BUCK2" == "buck2" ]]; then
+  BUCK2=$(command -v buck2)
+fi
+
 check_command() {
-  command -v "$1" >/dev/null 2>&1 || { echo >&2 "$1 is not installed"; exit 1; }
+  if [[ "$1" == */* ]]; then
+    if [[ ! -x "$1" ]]; then
+      echo "Error: Command not found or not executable at '$1'" >&2
+      exit 1
+    fi
+  else
+    if ! command -v "$1" >/dev/null 2>&1; then
+      echo "Error: Command '$1' not found in PATH" >&2
+      exit 1
+    fi
+  fi
 }
 
 check_command cmake
 check_command rsync
 check_command "$PYTHON"
 check_command "$FLATC"
+check_command "$BUCK2"
 
 echo "Building libraries"
 
@@ -204,14 +221,6 @@ done
 echo "Exporting headers"
 
 mkdir -p "$HEADERS_PATH"
-
-BUCK2=$("$PYTHON" "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
-if [[ -z "$BUCK2" ]]; then
-  echo "Could not find buck2 executable in any buck2-bin directory under $SOURCE_ROOT_DIR"
-  BUCK2=$(which buck2)
-fi
-
-check_command "$BUCK2"
 
 "$SOURCE_ROOT_DIR"/build/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
