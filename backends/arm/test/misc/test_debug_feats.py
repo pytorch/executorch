@@ -9,7 +9,6 @@ import os
 import shutil
 import tempfile
 import unittest
-from importlib.metadata import version
 
 import torch
 from executorch.backends.arm.test import common
@@ -193,16 +192,15 @@ class TestCollateTosaTests(unittest.TestCase):
             .to_edge_transform_and_lower()
             .to_executorch()
         )
-        et_version = version("executorch")
         # test that the output directory is created and contains the expected files
         assert os.path.exists(
             "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests"
         )
         assert os.path.exists(
-            f"test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag6_TOSA-0.80+BI_{et_version}.tosa"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output_tag6.tosa"
         )
         assert os.path.exists(
-            f"test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag6_TOSA-0.80+BI_{et_version}.json"
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc_tag6.json"
         )
 
         os.environ.pop("TOSA_TESTCASES_BASE_PATH")
