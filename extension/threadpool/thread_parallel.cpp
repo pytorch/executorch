@@ -65,7 +65,7 @@ bool parallel_for(
   std::tie(num_tasks, chunk_size) =
       calc_num_tasks_and_chunk_size(begin, end, grain_size);
 
-  auto task = [f, begin, end, chunk_size](size_t task_id) {
+  auto task = [&f, begin, end, chunk_size](size_t task_id) {
     set_thread_num(task_id);
     int64_t local_start = begin + static_cast<int64_t>(task_id) * chunk_size;
     if (local_start < end) {
