@@ -15,6 +15,9 @@ from executorch.backends.arm._passes.annotate_decomposed_matmul import (
 )
 from executorch.backends.arm._passes.cast_int64_pass import CastInt64ToInt32Pass
 from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
+from executorch.backends.arm._passes.convert_any_default_dim_dims_pass import (
+    ConvertAnyDefaultDimDimsPass,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -41,8 +44,9 @@ from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMean
 from executorch.backends.arm._passes.decompose_select import (  # type: ignore[import-not-found]
     DecomposeSelectPass,
 )
-from executorch.backends.arm._passes.decompose_softmaxes_pass import (
-    DecomposeSoftmaxesPass,
+from executorch.backends.arm._passes.decompose_softmax_pass import DecomposeSoftmaxPass
+from executorch.backends.arm._passes.decompose_softmax_unstable_pass import (
+    DecomposeSoftmaxUnstablePass,
 )
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -78,7 +82,7 @@ from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
 from executorch.backends.arm._passes.unsqueeze_scalar_placeholders_pass import (
     UnsqueezeScalarPlaceholdersPass,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 
 from executorch.backends.transforms.replace_scalar_with_tensor import (
@@ -110,6 +114,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ConvertAnyDefaultDimDimsPass())
 
         self.add_pass(ReplaceScalarWithTensorArgPass())
         self.add_pass(AnnotateDecomposedMatmulPass())
@@ -151,10 +156,11 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(ConvertMeanDimToAveragePoolPass())
         self.add_pass(DecomposeDivPass())
-        self.add_pass(DecomposeSoftmaxesPass())
+        self.add_pass(DecomposeSoftmaxPass())
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
+        self.add_pass(ConvertAnyDefaultDimDimsPass())
 
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
@@ -199,6 +205,12 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())
         self.add_pass(DecomposeDivPass())
-        self.add_pass(DecomposeSoftmaxesPass())
+
+        if isinstance(self.tosa_spec, Tosa_0_80) and self.tosa_spec.is_U55_subset:
+            # Numerically stable softmax uses amax which is not supported on Ethos-U55
+            self.add_pass(DecomposeSoftmaxUnstablePass())
+        else:
+            self.add_pass(DecomposeSoftmaxPass())
+
         self.add_pass(ConvertMinMaxPass())
         return self._transform(graph_module)

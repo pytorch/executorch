@@ -99,6 +99,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_where",
         deps = [
             "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
     ),
 )

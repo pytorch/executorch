@@ -33,6 +33,12 @@ class IoMgrBase {
       std::vector<std::shared_ptr<executorch::extension::Module>>& modules);
   virtual ~IoMgrBase();
   virtual void init_io() = 0;
+  virtual void reset_io(
+      const std::vector<executorch::runtime::Result<
+          executorch::runtime::MethodMeta>>& prefill_methods_meta,
+      const std::vector<
+          executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+          kv_methods_meta) = 0;
   virtual void prepare_prefill_io(
       const std::vector<
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&
@@ -97,6 +103,12 @@ class ShiftPointerIoMgr : public IoMgrBase {
       const bool use_int64_token);
 
   void init_io() override;
+  void reset_io(
+      const std::vector<executorch::runtime::Result<
+          executorch::runtime::MethodMeta>>& prefill_methods_meta,
+      const std::vector<
+          executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+          kv_methods_meta) override;
   void prepare_prefill_io(
       const std::vector<
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&
@@ -199,6 +211,12 @@ class SmartMaskIoMgr : public IoMgrBase {
       const bool use_int64_token);
 
   void init_io() override;
+  void reset_io(
+      const std::vector<executorch::runtime::Result<
+          executorch::runtime::MethodMeta>>& prefill_methods_meta,
+      const std::vector<
+          executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+          kv_methods_meta) override;
   void prepare_prefill_io(
       const std::vector<
           executorch::runtime::Result<executorch::runtime::MethodMeta>>&

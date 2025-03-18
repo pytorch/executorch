@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 
 from install_requirements import (
     install_requirements,
@@ -26,6 +27,17 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [ExecuTorch] %(levelname)s: %(message)s"
 )
 logger = logging.getLogger()
+
+
+@contextmanager
+def pushd(new_dir):
+    """Change the current directory to new_dir and yield. When exiting the context, change back to the original directory."""
+    original_dir = os.getcwd()
+    os.chdir(new_dir)
+    try:
+        yield
+    finally:
+        os.chdir(original_dir)
 
 
 def clean():
@@ -66,6 +78,7 @@ REQUIRED_SUBMODULES = {
     "pthreadpool": "CMakeLists.txt",
     "pybind11": "CMakeLists.txt",
     "shim": "BUCK",
+    "tokenizers": "CMakeLists.txt",
     "XNNPACK": "CMakeLists.txt",
 }
 
@@ -117,6 +130,11 @@ def check_and_update_submodules():
                 logger.error(f"{file} not found in {path}.")
                 logger.error("Please run `git submodule update --init`.")
                 exit(1)
+    # Go into tokenizers submodule and install its submodules
+    tokenizers_path = get_required_submodule_paths().get("tokenizers", None)
+    if tokenizers_path:
+        with pushd(tokenizers_path):
+            subprocess.check_call(["git", "submodule", "update", "--init"])
     logger.info("All required submodules are present.")
 
 

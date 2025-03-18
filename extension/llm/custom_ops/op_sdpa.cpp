@@ -19,8 +19,8 @@
 #include <vector>
 
 #ifdef ET_USE_THREADPOOL
-#include <executorch/extension/parallel/thread_parallel.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
@@ -472,10 +472,11 @@ void cpu_flash_attention(
             static_cast<accum_t>(0),
             qk_data,
             kvBlockSize);
-        // There are 4 cases that is_causal has to cover to fill not-attendable-position with -inf
-        /* 1. Everything is attended to. This happens when m_start_pos > n + kvSplitSize
-              e.g m_pos [8:15] and n_pos [0:7]. Since you must attend to all previous tokens
-              matrix is full
+        // There are 4 cases that is_causal has to cover to fill
+        // not-attendable-position with -inf
+        /* 1. Everything is attended to. This happens when m_start_pos > n +
+        kvSplitSize e.g m_pos [8:15] and n_pos [0:7]. Since you must attend to
+        all previous tokens matrix is full
         + + + + + + + +
         + + + + + + + +
         + + + + + + + +
@@ -483,11 +484,11 @@ void cpu_flash_attention(
         + + + + + + + +
         + + + + + + + +
         + + + + + + + +
-           2. Everything is not attended to. However only some tokens at the beginning dont attend
-              to everything. This happens when m_start_pos <= n + kvSplitSize but m_start_pos + qBlockSize > n + kvSplitSize
-              m_start_pos = 8 qBlockSize = 8
-              n = 4 kvSplitSize = 8
-              For example m_pos [8:15] but n_pos is [4:11]
+           2. Everything is not attended to. However only some tokens at the
+        beginning dont attend to everything. This happens when m_start_pos <= n
+        + kvSplitSize but m_start_pos + qBlockSize > n + kvSplitSize m_start_pos
+        = 8 qBlockSize = 8 n = 4 kvSplitSize = 8 For example m_pos [8:15] but
+        n_pos is [4:11]
         + + + + + - - -
         + + + + + + - -
         + + + + + + + -
@@ -496,12 +497,10 @@ void cpu_flash_attention(
         + + + + + + + +
         + + + + + + + +
         + + + + + + + +
-           3. In this case only last few tokens have something to attend to. This happens when m_start_pos < n
-              and m_start_pos + qBlockSize >= n
-              and m_start_pos + qBlockSize <= n + kvSplitSize
-              m_start_pos = 8 qBlockSize = 8
-              n = 13 kvSplitSize = 8
-              For example m_pos [8:15] but n_pos is [13:20]
+           3. In this case only last few tokens have something to attend to.
+        This happens when m_start_pos < n and m_start_pos + qBlockSize >= n and
+        m_start_pos + qBlockSize <= n + kvSplitSize m_start_pos = 8 qBlockSize =
+        8 n = 13 kvSplitSize = 8 For example m_pos [8:15] but n_pos is [13:20]
         - - - - - - - -
         - - - - - - - -
         - - - - - - - -
@@ -510,15 +509,20 @@ void cpu_flash_attention(
         + - - - - - - -
         + + - - - - - -
         + + + - - - - -
-           4. In this no tokens attend to anything, but we dont really have to take care of this case because
-              the loop for (int64_t n = 0; n < num_keys; n += kvSplitSize) will exit before that.
+           4. In this no tokens attend to anything, but we dont really have to
+        take care of this case because the loop for (int64_t n = 0; n <
+        num_keys; n += kvSplitSize) will exit before that.
         */
         if (is_causal && m_start_pos <= n + kvSplitSize) {
           // For this fn to work k_split_size > q_split_size
-          for (int32_t row = 0; row < qBlockSize && (m_start_pos + row < n + (kvSplitSize - 1)); ++row) {
-            // When last_col is 0, it means that the entire row is not attended to
-            // because m_pos is smaller than n_pos. So everything in n is for future.
-            int64_t last_col = n > (m_start_pos + row) ? 0 : row + m_start_pos + 1 - n;
+          for (int32_t row = 0;
+               row < qBlockSize && (m_start_pos + row < n + (kvSplitSize - 1));
+               ++row) {
+            // When last_col is 0, it means that the entire row is not attended
+            // to because m_pos is smaller than n_pos. So everything in n is for
+            // future.
+            int64_t last_col =
+                n > (m_start_pos + row) ? 0 : row + m_start_pos + 1 - n;
             accum_t* row_ptr = qk_data + row * kvBlockSize;
             fill_stub(
                 row_ptr + last_col,
