@@ -746,13 +746,19 @@ class HardTanh(torch.nn.Module):
 
 
 class Index(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, axis):
         super().__init__()
         self.idx0 = torch.tensor([[0, 1], [2, 3], [4, 5]], dtype=torch.int32)
         self.idx1 = torch.tensor([[1, 2], [3, 4], [5, 6]], dtype=torch.int32)
+        self.axis = axis
+        self.dispatcher = {
+            0: lambda x: x[self.idx0] + x[self.idx1],
+            1: lambda x: x[:, self.idx0] + x[:, self.idx1],
+            2: lambda x: x[:, :, self.idx0] + x[:, :, self.idx1],
+        }
 
     def forward(self, x):
-        return x[self.idx0] + x[self.idx1]
+        return self.dispatcher[self.axis](x)
 
 
 class IndexPut(torch.nn.Module):
