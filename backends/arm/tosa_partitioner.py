@@ -80,7 +80,7 @@ class TOSAPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            tosa_support_factory(tosa_spec, self.additional_checks),
+            tosa_support_factory(tosa_spec, exported_program, self.additional_checks),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
