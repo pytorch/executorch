@@ -14,7 +14,7 @@ import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.print_program import inspect_node
+from executorch.exir.print_program import add_cursor_to_graph
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
@@ -32,7 +32,8 @@ def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
 
 def get_node_debug_info(node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> str:
     output = (
-        f"  {inspect_node(graph=graph_module.graph, node=node)}\n"
+        " Here is the node in the graph:\n"
+        f"  {add_cursor_to_graph(graph=graph_module.graph, finding_node=node)}\n"
         "-- NODE DEBUG INFO --\n"
         f"  Op is {node.op}\n"
         f"  Name is {node.name}\n"
@@ -43,10 +44,17 @@ def get_node_debug_info(node: torch.fx.Node, graph_module: torch.fx.GraphModule)
         "  Node.meta = \n"
     )
     for k, v in node.meta.items():
-        output += f"    '{k}' = {v}\n"
-        if isinstance(v, list):
-            for i in v:
-                output += f"      {i}\n"
+        if k == "stack_trace":
+            matches = v.split("\n")
+            output += "      'stack_trace =\n"
+            for m in matches:
+                output += f"      {m}\n"
+        else:
+            output += f"    '{k}' = {v}\n"
+
+            if isinstance(v, list):
+                for i in v:
+                    output += f"      {i}\n"
     return output
 
 
@@ -78,10 +86,10 @@ def dbg_fail(
     tosa_graph: Optional[ts.TosaSerializer] = None,
     path: Optional[str] = None,
 ):
-    logger.warning("Internal error due to poorly handled node:")
+    logger.warning(f" Internal error due to poorly handled node: {node.name}")
     if tosa_graph is not None and path is not None:
         dbg_tosa_dump(tosa_graph, path)
-        logger.warning(f"Debug output captured in '{path}'.")
+        logger.warning(f" Debug output captured in '{path}'.")
     dbg_node(node, graph_module)
 
 

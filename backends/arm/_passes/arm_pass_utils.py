@@ -7,12 +7,12 @@
 
 # pyre-unsafe
 
+import traceback
 from inspect import isclass
 from typing import Optional, Sequence
 
 import torch
 import torch.fx
-
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -96,6 +96,7 @@ def create_node(
     kwargs: Optional[dict] = None,
     quantize: bool = False,
     q_params: Optional[tuple] = None,
+    from_node: Optional[torch.fx.Node] = None,
 ):
     """
     Adds a node to 'graph'. graph.inserting_before/after() should be used before the call to decide where to insert the node.
@@ -108,8 +109,18 @@ def create_node(
         args=args,
         kwargs=kwargs or {},
     )
+
+    new_meta = {}
+    if from_node:
+        keys = from_node.meta.keys()
+        for key in keys:
+            new_meta[key] = from_node.meta[key]
+    old_stack_trace = new_meta.get("stack_trace", "")
+    new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
+    node.meta = new_meta
+
     if quantize and q_params:
-        return insert_q_dq_pair(graph, node, q_params)
+        return insert_q_dq_pair(graph, node, q_params, from_node)
     return node
 
 
@@ -117,6 +128,7 @@ def insert_q_dq_pair(
     graph: torch.fx.Graph,
     anchor: torch.fx.Node,
     q_params: tuple,
+    from_node: Optional[torch.fx.Node] = None,
 ):
     """
     Inserts a q dq node pair after the node 'anchor'.
@@ -127,6 +139,7 @@ def insert_q_dq_pair(
             graph=graph,
             op_target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             args=(),  # We add the argument last
+            from_node=from_node if from_node else anchor,
         )
         q.meta = anchor.meta
     with graph.inserting_after(q):
@@ -134,6 +147,7 @@ def insert_q_dq_pair(
             graph=graph,
             op_target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             args=(q,) + q_params,
+            from_node=from_node if from_node else anchor,
         )
         dq.meta = q.meta
     anchor.replace_all_uses_with(dq)
