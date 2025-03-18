@@ -12,7 +12,6 @@
 #
 import logging
 import os
-from importlib.metadata import version
 from typing import cast, final, List
 
 import serializer.tosa_serializer as ts  # type: ignore
@@ -126,12 +125,10 @@ class TOSABackend(BackendDetails):
 
         if artifact_path:
             tag = _get_first_delegation_tag(graph_module)
-            et_version = version("executorch")
             dbg_tosa_dump(
                 tosa_graph,
                 artifact_path,
-                suffix="{}".format(f"_{tag}" if tag else "")
-                + (f"_{tosa_spec}" + (f"_{et_version}")),
+                suffix="{}".format(f"_{tag}" if tag else ""),
             )
 
         # Serialize and return the TOSA flatbuffer.
