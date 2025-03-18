@@ -111,6 +111,7 @@ def define_common_targets():
             ":broadcast_util",
             ":dtype_util",
             "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
         deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
