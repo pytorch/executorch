@@ -122,6 +122,11 @@ class BroadcastIndexesIterator {
     }
 
     output_index() += n;
+    if (output_dim_or_zero_if_no_broadcasting_ == 0) {
+      std::fill(
+          current_indexes_.begin() + 1, current_indexes_.end(), output_index());
+      return *this;
+    }
     delinearize_index(
         output_index(),
         output_shape_,
