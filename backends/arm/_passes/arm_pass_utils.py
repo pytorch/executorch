@@ -8,7 +8,7 @@
 # pyre-unsafe
 
 from inspect import isclass
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 import torch.fx

@@ -34,11 +34,10 @@ class TestConformer(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
         "executorch_exir_dialects_edge__ops_aten_eq_Scalar": 2,
         "executorch_exir_dialects_edge__ops_aten_where_self": 4,
-        "executorch_exir_dialects_edge__ops_aten_any_dim": 2,
         "torch.ops.aten._assert_scalar.default": 10,
         "torch.ops.aten._local_scalar_dense.default": 1,
         "torch.ops.aten.scalar_tensor.default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 4,
+        "torch.ops.higher_order.executorch_call_delegate": 6,
     }
 
     dim = 16
@@ -94,7 +93,7 @@ class TestConformer(unittest.TestCase):
             )
         )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
+    @conftest.expectedFailureOnFVP  # TODO(MLETORCH-635)
     def test_conformer_u55_BI(self):
         tester = (
             ArmTester(
@@ -116,7 +115,7 @@ class TestConformer(unittest.TestCase):
                 inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
             )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
+    @conftest.expectedFailureOnFVP  # TODO(MLETORCH-635)
     def test_conformer_u85_BI(self):
         tester = (
             ArmTester(

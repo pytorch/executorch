@@ -17,7 +17,7 @@ if(NOT ANDROID)
 endif()
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 if(NOT ANDROID_PLATFORM)
@@ -84,10 +84,6 @@ if(TARGET optimized_native_cpu_ops_lib)
     APPEND
     link_libraries
     optimized_native_cpu_ops_lib
-    optimized_kernels
-    portable_kernels
-    cpublas
-    eigen_blas
   )
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()

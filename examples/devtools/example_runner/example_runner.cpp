@@ -17,6 +17,7 @@
  * all fp32 tensors.
  */
 
+#include <array>
 #include <fstream>
 #include <memory>
 
