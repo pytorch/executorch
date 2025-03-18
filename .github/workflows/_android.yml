@@ -29,8 +29,25 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
+        export BUILD_AAR_DIR=aar-out
         bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
-        bash build/build_android_instrumentation.sh
+        bash build/build_android_instrumentation.sh ${ARTIFACTS_DIR_NAME}
+
+        mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+        bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+
+        mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
+        cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
+        pushd examples/demo-apps/android/LlamaDemo
+        ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
+        popd
+
+        DEMO_APP_DIR="${ARTIFACTS_DIR_NAME}/llm_demo"
+        # The app directory is named using its build flavor as a suffix.
+        mkdir -p "${DEMO_APP_DIR}"
+        # Collect the app and its test suite
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${DEMO_APP_DIR}"
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${DEMO_APP_DIR}"
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
