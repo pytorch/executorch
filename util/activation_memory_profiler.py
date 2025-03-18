@@ -29,6 +29,7 @@ class Allocation:
     size_bytes: int
     fqn: str
     file_and_line_num: str
+    overlap_with_subsequent: bool = False
 
 
 @dataclass
@@ -74,6 +75,10 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
             size = num_bytes_from_shape_and_dtype(
                 typing.cast(torch.Size, tensor_spec.shape), tensor_spec.dtype
             )
+            # skip 0 byte allocations
+            if size == 0:
+                continue
+
             stack_trace = node.meta.get("stack_trace")
             fqn = _get_module_hierarchy(node)
             for j in range(start, end + 1):
@@ -143,6 +148,16 @@ def generate_memory_trace(
         start_time = 0
         if memory_timeline_event is None:
             continue
+        # "collapse" tensors that shared the same memory space at a given time
+        for index, element in enumerate(memory_timeline_event.allocations):
+            if index == len(memory_timeline_event.allocations) - 1:
+                break
+            if (
+                element.memory_offset
+                == memory_timeline_event.allocations[index + 1].memory_offset
+            ):
+                element.overlap_with_subsequent = True
+
         for allocation in memory_timeline_event.allocations:
             e: Dict[str, Any] = {}
             e["name"] = allocation.name
@@ -166,7 +181,8 @@ def generate_memory_trace(
                 e["args"]["fqn"] = f"{allocation.fqn}"
                 e["args"]["source"] = f"{allocation.file_and_line_num}"
                 e["args"]["bytes"] = allocation.size_bytes
-            start_time += allocation_size_kb
+            if not allocation.overlap_with_subsequent:
+                start_time += allocation_size_kb
             trace_events.append(e)
         tid += 1
 
