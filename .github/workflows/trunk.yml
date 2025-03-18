@@ -18,48 +18,85 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gather-models:
-    runs-on: ubuntu-22.04
-    outputs:
-      models: ${{ steps.gather-models.outputs.models }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'false'
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Extract the list of models to test
-        id: gather-models
-        run: |
-          set -eux
-
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os macos --event "${GITHUB_EVENT_NAME}"
-
   test-models-macos:
     name: test-models-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix:
+        # Mac runners are expensive and limited, and non reliable. 
+        # Do some basic testing for macos jobs, and rely mostly on 
+        # test-models-linux-aarch64 job instead.
+        model: [emformer_join, ic4, llama2, mobilebert, mv3, resnet50, vit, w2l]
+        backend: [xnnpack-quantization-delegation]
+        include:
+          - model: efficient_sam
+            backend: portable
+          - model: llama
+            backend: portable
+          - model: llama3_2_vision_encoder
+            backend: portable
+          - model: mv3
+            backend: portable
       fail-fast: false
     with:
-      runner: ${{ matrix.runner }}
+      runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: ${{ matrix.timeout }}
+      timeout: 90
       script: |
         MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL=cmake
         BACKEND=${{ matrix.backend }}
-        DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
         bash .ci/scripts/setup-conda.sh
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         # Build and test executorch
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+
+  test-models-linux-aarch64:
+    name: test-models-linux-aarch64
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
+        backend: [portable, xnnpack-quantization-delegation]
+        include:
+          - model: lstm
+            backend: portable
+          - model: mul
+            backend: portable
+          - model: softmax
+            backend: portable
+          - model: phi-4-mini
+            backend: portable
+          - model: qwen2_5
+            backend: portable
+          - model: llama3_2_vision_encoder
+            backend: portable
+      fail-fast: false
+    with:
+      runner: linux.arm64.2xlarge
+      docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL="cmake"
+        BACKEND=${{ matrix.backend }}
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+        # Build and test ExecuTorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
@@ -79,7 +116,7 @@ jobs:
 
         bash .ci/scripts/setup-conda.sh
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         # Build and test custom ops
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
 
@@ -101,7 +138,7 @@ jobs:
 
         bash .ci/scripts/setup-conda.sh
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         # Build and test selective build
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
@@ -128,7 +165,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         BUILD_TOOL=${{ matrix.build-tool }}
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
@@ -150,7 +187,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch "use-pt-pinned-commit"
+        install_executorch "--use-pt-pinned-commit"
 
         .ci/scripts/setup-arm-baremetal-tools.sh
 
@@ -180,7 +217,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch "use-pt-pinned-commit"
+        install_executorch "--use-pt-pinned-commit"
 
         .ci/scripts/setup-arm-baremetal-tools.sh
 
@@ -201,7 +238,7 @@ jobs:
 
         bash .ci/scripts/setup-conda.sh
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         # Build and test coreml delegate
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/build_all.sh
 
@@ -224,10 +261,91 @@ jobs:
 
         # build module for executorch.extension.pybindings.portable_lib
         BUILD_TOOL=${{ matrix.build-tool }}
-        EXECUTORCH_BUILD_PYBIND=ON PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        EXECUTORCH_BUILD_PYBIND=ON PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
         # see if we can import the module successfully
         ${CONDA_RUN} python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
+
+  test-static-llama-ane:
+    name: test-static-llama-ane
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Install requirements
+        ${CONDA_RUN} sh install_requirements.sh
+        ${CONDA_RUN} sh backends/apple/coreml/scripts/install_requirements.sh
+        ${CONDA_RUN} python install_executorch.py --pybind coreml
+        ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
+
+        # Test ANE llama
+        ${CONDA_RUN} sh .ci/scripts/test_ane_static_llama.sh
+
+  test-llama-runner-linux:
+    # Test Both linux x86 and linux aarch64
+    name: test-llama-runner-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        dtype: [fp32]
+        mode: [portable, xnnpack+custom]
+        runner: [linux.2xlarge, linux.arm64.2xlarge]
+        docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
+        include:
+          - dtype: bf16
+            mode: portable
+            runner: linux.2xlarge
+            docker-image: executorch-ubuntu-22.04-clang12
+          - dtype: bf16
+            mode: portable
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+          - dtype: bf16
+            mode: custom
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+        # Excluding specific runner + docker image combinations that don't make sense:
+        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
+        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
+        exclude:
+          - runner: linux.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+          - runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-clang12
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      docker-image: ${{ matrix.docker-image }}
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        DTYPE=${{ matrix.dtype }}
+        BUILD_TOOL="cmake"
+        MODE=${{ matrix.mode }}
+        ARTIFACTS_DIR_NAME="artifacts-to-be-uploaded/${DTYPE}-${MODE}"
+        ARTIFACTS_DIR_NAME="${ARTIFACTS_DIR_NAME/+/-}"
+
+        # Setup executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+        # Install requirements for export_llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+        # Test llama2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
   test-llama-runner-macos:
     name: test-llama-runner-mac
@@ -235,12 +353,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        mode: [portable, xnnpack+kv+custom, mps, coreml, xnnpack+custom+quantize_kv]
-        include:
-          - dtype: bf16
-            mode: portable
-          - dtype: bf16
-            mode: custom
+        mode: [mps, coreml, xnnpack+custom+quantize_kv]
       fail-fast: false
     with:
       runner: macos-m1-stable
@@ -256,7 +369,7 @@ jobs:
         bash .ci/scripts/setup-conda.sh
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh cmake
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool cmake
 
         if [[ "${MODE}" == "mps" ]]; then
           # Install mps delegate
@@ -290,7 +403,7 @@ jobs:
 
   #       bash .ci/scripts/setup-conda.sh
   #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
-  #       GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+  #       GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
   #       # install Llava requirements
   #       ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
@@ -311,7 +424,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [dl3, mv3, mv2, ic4, ic3, vit]
+        model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -323,7 +436,7 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
@@ -345,7 +458,7 @@ jobs:
         bash .ci/scripts/setup-conda.sh
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
         echo "Finishing installing coreml."
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
@@ -394,7 +507,7 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
         echo "::endgroup::"
 
         echo "::group::Set up Hugging Face"
@@ -459,11 +572,12 @@ jobs:
         MODE=${{ matrix.mode }}
         PT2E_QUANTIZE=${{ matrix.pt2e_quantize }}
 
+        ./install_requirements.sh --use-pt-pinned-commit
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2

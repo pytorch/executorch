@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 
 from install_requirements import (
     install_requirements,
@@ -26,6 +27,17 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [ExecuTorch] %(levelname)s: %(message)s"
 )
 logger = logging.getLogger()
+
+
+@contextmanager
+def pushd(new_dir):
+    """Change the current directory to new_dir and yield. When exiting the context, change back to the original directory."""
+    original_dir = os.getcwd()
+    os.chdir(new_dir)
+    try:
+        yield
+    finally:
+        os.chdir(original_dir)
 
 
 def clean():
@@ -65,6 +77,8 @@ REQUIRED_SUBMODULES = {
     "prelude": "BUCK",
     "pthreadpool": "CMakeLists.txt",
     "pybind11": "CMakeLists.txt",
+    "shim": "BUCK",
+    "tokenizers": "CMakeLists.txt",
     "XNNPACK": "CMakeLists.txt",
 }
 
@@ -116,6 +130,11 @@ def check_and_update_submodules():
                 logger.error(f"{file} not found in {path}.")
                 logger.error("Please run `git submodule update --init`.")
                 exit(1)
+    # Go into tokenizers submodule and install its submodules
+    tokenizers_path = get_required_submodule_paths().get("tokenizers", None)
+    if tokenizers_path:
+        with pushd(tokenizers_path):
+            subprocess.check_call(["git", "submodule", "update", "--init"])
     logger.info("All required submodules are present.")
 
 
@@ -137,6 +156,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use-pt-pinned-commit",
         action="store_true",
         help="build from the pinned PyTorch commit instead of nightly",
+    )
+    parser.add_argument(
+        "--editable",
+        "-e",
+        action="store_true",
+        help="build an editable pip wheel, changes to python code will be "
+        "picked up without rebuilding the wheel. Extension libraries will be "
+        "installed inside the source tree.",
     )
     return parser
 
@@ -226,6 +253,9 @@ def main(args):
             "-m",
             "pip",
             "install",
+        ]
+        + (["--editable"] if args.editable else [])
+        + [
             ".",
             "--no-build-isolation",
             "-v",

@@ -15,7 +15,7 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)  # 3.24 is required for WHOLE_ARCHIVE
 project(llama_runner)
 
 # Duplicating options as root CMakeLists.txt
@@ -46,7 +46,7 @@ endif()
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -84,14 +84,6 @@ if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
   target_link_options_shared_lib(executorch)
 endif()
 
-# custom ops library
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/custom_ops
-    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
-  )
-endif()
-
 # llama_runner library
 add_subdirectory(runner)
 
@@ -119,8 +111,7 @@ target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  target_link_options_shared_lib(custom_ops)
-  list(APPEND link_libraries custom_ops)
+  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)
@@ -140,7 +131,6 @@ endif()
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
-  list(APPEND _common_compile_options -DET_USE_THREADPOOL)
   list(APPEND link_libraries extension_threadpool pthreadpool)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/pthreadpool/include
@@ -219,7 +209,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   endif()
 endif()
 
-target_include_directories(llama_main PUBLIC ${_common_include_directories})
+target_include_directories(
+  llama_main
+  PUBLIC ${_common_include_directories}
+         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 

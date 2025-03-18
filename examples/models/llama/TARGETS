@@ -16,6 +16,7 @@ runtime.python_library(
         "rope.py",
         "attention.py",
         "model_args.py",
+        "norm.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",

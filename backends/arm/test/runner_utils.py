@@ -180,7 +180,8 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
-        if not self.ran_tosa_dispatch:
+        # Only raise this error if we ran the model without errors.
+        if not self.ran_tosa_dispatch and exc_type is None:
             raise RuntimeError(
                 "Ran model with TosaReferenceModelDispatch but never ran TOSABackend delegate."
             )
@@ -529,7 +530,7 @@ def get_elf_path(target_board):
         "arm_executor_runner",
     )
     if not os.path.exists(elf_path):
-        raise RuntimeError(
+        raise FileNotFoundError(
             f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
         )
     else:

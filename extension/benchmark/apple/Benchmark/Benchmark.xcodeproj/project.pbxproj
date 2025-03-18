@@ -3,15 +3,13 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032A73C82CAFBA8600932D36 /* LLaMATests.mm */; };
 		032A74182CAFBB7800932D36 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73DB2CAFBB7800932D36 /* text_decoder_runner.cpp */; };
-		032A741A2CAFBB7800932D36 /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73FA2CAFBB7800932D36 /* bpe_tokenizer.cpp */; };
 		032A741D2CAFBB7800932D36 /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73DD2CAFBB7800932D36 /* text_prefiller.cpp */; };
-		032A741E2CAFBB7800932D36 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73FE2CAFBB7800932D36 /* tiktoken.cpp */; };
 		032A741F2CAFBB7800932D36 /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A73E62CAFBB7800932D36 /* sampler.cpp */; };
 		032A74232CAFC1B300932D36 /* runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A74222CAFC1B300932D36 /* runner.cpp */; };
 		032A74262CAFC34800932D36 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032A74252CAFC34800932D36 /* llama_tiktoken.cpp */; };
@@ -20,21 +18,18 @@
 		03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B011902CAD114E00054791 /* ResourceTestCase.m */; };
 		03B2D3682C8A515A0046936E /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3672C8A515A0046936E /* App.swift */; };
 		03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03B2D3792C8A515C0046936E /* GenericTests.mm */; };
-		03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */; };
-		03DD00AA2C8FE44600FE4619 /* kernels_custom.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */; };
-		03DD00AF2C8FE44600FE4619 /* kernels_portable.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */; };
-		03DD00B02C8FE44600FE4619 /* kernels_optimized.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A02C8FE44600FE4619 /* kernels_optimized.xcframework */; };
-		03DD00B12C8FE44600FE4619 /* backend_xnnpack.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A12C8FE44600FE4619 /* backend_xnnpack.xcframework */; };
-		03DD00B22C8FE44600FE4619 /* backend_mps.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A22C8FE44600FE4619 /* backend_mps.xcframework */; };
-		03DD00B32C8FE44600FE4619 /* executorch.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A32C8FE44600FE4619 /* executorch.xcframework */; settings = {ATTRIBUTES = (Required, ); }; };
-		03DD00B52C8FE44600FE4619 /* kernels_quantized.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03DD00A52C8FE44600FE4619 /* kernels_quantized.xcframework */; };
 		03E7E6792CBDCAE900205E71 /* CoreMLTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */; };
-		03ED6D0F2C8AAFE900F2D6EE /* libsqlite3.0.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D0E2C8AAFE900F2D6EE /* libsqlite3.0.tbd */; };
-		03ED6D112C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D102C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework */; };
-		03ED6D132C8AAFF700F2D6EE /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D122C8AAFF700F2D6EE /* MetalPerformanceShaders.framework */; };
-		03ED6D152C8AAFFF00F2D6EE /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D142C8AAFFF00F2D6EE /* Metal.framework */; };
-		03ED6D172C8AB00500F2D6EE /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D162C8AB00500F2D6EE /* CoreML.framework */; };
-		03ED6D192C8AB00A00F2D6EE /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */; };
+		03F1814E2D7262FC0058BDF9 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1814D2D7262FC0058BDF9 /* backend_coreml */; };
+		03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1814F2D7262FC0058BDF9 /* backend_mps */; };
+		03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181512D7262FC0058BDF9 /* backend_xnnpack */; };
+		03F181542D7262FC0058BDF9 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181532D7262FC0058BDF9 /* executorch */; };
+		03F181562D7262FC0058BDF9 /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181552D7262FC0058BDF9 /* kernels_custom */; };
+		03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181572D7262FC0058BDF9 /* kernels_optimized */; };
+		03F1815A2D7262FC0058BDF9 /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181592D7262FC0058BDF9 /* kernels_portable */; };
+		03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1815B2D7262FC0058BDF9 /* kernels_quantized */; };
+		F292B01D2D88AF3500BE6839 /* bpe_tokenizer_base.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */; };
+		F292B0202D88AF3500BE6839 /* llama2c_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B0172D88AF3500BE6839 /* llama2c_tokenizer.cpp */; };
+		F292B0212D88AF3500BE6839 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B01A2D88AF3500BE6839 /* tiktoken.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,12 +56,6 @@
 		032A73DF2CAFBB7800932D36 /* util.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
 		032A73E52CAFBB7800932D36 /* sampler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
 		032A73E62CAFBB7800932D36 /* sampler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
-		032A73F82CAFBB7800932D36 /* base64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = base64.h; sourceTree = "<group>"; };
-		032A73F92CAFBB7800932D36 /* bpe_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bpe_tokenizer.h; sourceTree = "<group>"; };
-		032A73FA2CAFBB7800932D36 /* bpe_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = bpe_tokenizer.cpp; sourceTree = "<group>"; };
-		032A73FD2CAFBB7800932D36 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
-		032A73FE2CAFBB7800932D36 /* tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = tiktoken.cpp; sourceTree = "<group>"; };
-		032A73FF2CAFBB7800932D36 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
 		032A74212CAFC1B300932D36 /* runner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../../examples/models/llama/runner/runner.h; sourceTree = SOURCE_ROOT; };
 		032A74222CAFC1B300932D36 /* runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../../examples/models/llama/runner/runner.cpp; sourceTree = SOURCE_ROOT; };
 		032A74242CAFC34800932D36 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../../examples/models/llama/tokenizer/llama_tiktoken.h; sourceTree = SOURCE_ROOT; };
@@ -83,21 +72,18 @@
 		03B2D3752C8A515C0046936E /* Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		03B2D3792C8A515C0046936E /* GenericTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GenericTests.mm; sourceTree = "<group>"; };
 		03C7FA322C8AA24200E6E9AE /* Resources */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources; sourceTree = SOURCE_ROOT; };
-		03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_coreml.xcframework; path = Frameworks/backend_coreml.xcframework; sourceTree = "<group>"; };
-		03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_custom.xcframework; path = Frameworks/kernels_custom.xcframework; sourceTree = "<group>"; };
-		03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_portable.xcframework; path = Frameworks/kernels_portable.xcframework; sourceTree = "<group>"; };
-		03DD00A02C8FE44600FE4619 /* kernels_optimized.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_optimized.xcframework; path = Frameworks/kernels_optimized.xcframework; sourceTree = "<group>"; };
-		03DD00A12C8FE44600FE4619 /* backend_xnnpack.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_xnnpack.xcframework; path = Frameworks/backend_xnnpack.xcframework; sourceTree = "<group>"; };
-		03DD00A22C8FE44600FE4619 /* backend_mps.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = backend_mps.xcframework; path = Frameworks/backend_mps.xcframework; sourceTree = "<group>"; };
-		03DD00A32C8FE44600FE4619 /* executorch.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = executorch.xcframework; path = Frameworks/executorch.xcframework; sourceTree = "<group>"; };
-		03DD00A52C8FE44600FE4619 /* kernels_quantized.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = kernels_quantized.xcframework; path = Frameworks/kernels_quantized.xcframework; sourceTree = "<group>"; };
 		03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CoreMLTests.mm; sourceTree = "<group>"; };
-		03ED6D0E2C8AAFE900F2D6EE /* libsqlite3.0.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.0.tbd; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/usr/lib/libsqlite3.0.tbd; sourceTree = DEVELOPER_DIR; };
-		03ED6D102C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShadersGraph.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/MetalPerformanceShadersGraph.framework; sourceTree = DEVELOPER_DIR; };
-		03ED6D122C8AAFF700F2D6EE /* MetalPerformanceShaders.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShaders.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/MetalPerformanceShaders.framework; sourceTree = DEVELOPER_DIR; };
-		03ED6D142C8AAFFF00F2D6EE /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/Metal.framework; sourceTree = DEVELOPER_DIR; };
-		03ED6D162C8AB00500F2D6EE /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
-		03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.5.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
+		F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer_base.cpp; path = src/bpe_tokenizer_base.cpp; sourceTree = "<group>"; };
+		F292B0172D88AF3500BE6839 /* llama2c_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama2c_tokenizer.cpp; path = src/llama2c_tokenizer.cpp; sourceTree = "<group>"; };
+		F292B01A2D88AF3500BE6839 /* tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = tiktoken.cpp; path = src/tiktoken.cpp; sourceTree = "<group>"; };
+		F292B0222D88AF4800BE6839 /* base64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = base64.h; sourceTree = "<group>"; };
+		F292B0232D88AF4800BE6839 /* bpe_tokenizer_base.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bpe_tokenizer_base.h; sourceTree = "<group>"; };
+		F292B0242D88AF4800BE6839 /* error.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = error.h; sourceTree = "<group>"; };
+		F292B0262D88AF4800BE6839 /* llama2c_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = llama2c_tokenizer.h; sourceTree = "<group>"; };
+		F292B0272D88AF4800BE6839 /* log.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = log.h; sourceTree = "<group>"; };
+		F292B0292D88AF4800BE6839 /* result.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = result.h; sourceTree = "<group>"; };
+		F292B02B2D88AF4800BE6839 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
+		F292B02D2D88AF4800BE6839 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,20 +98,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03ED6D192C8AB00A00F2D6EE /* Accelerate.framework in Frameworks */,
-				03ED6D172C8AB00500F2D6EE /* CoreML.framework in Frameworks */,
-				03ED6D152C8AAFFF00F2D6EE /* Metal.framework in Frameworks */,
-				03ED6D132C8AAFF700F2D6EE /* MetalPerformanceShaders.framework in Frameworks */,
-				03ED6D112C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework in Frameworks */,
-				03ED6D0F2C8AAFE900F2D6EE /* libsqlite3.0.tbd in Frameworks */,
-				03DD00A92C8FE44600FE4619 /* backend_coreml.xcframework in Frameworks */,
-				03DD00B22C8FE44600FE4619 /* backend_mps.xcframework in Frameworks */,
-				03DD00B12C8FE44600FE4619 /* backend_xnnpack.xcframework in Frameworks */,
-				03DD00B32C8FE44600FE4619 /* executorch.xcframework in Frameworks */,
-				03DD00AA2C8FE44600FE4619 /* kernels_custom.xcframework in Frameworks */,
-				03DD00B02C8FE44600FE4619 /* kernels_optimized.xcframework in Frameworks */,
-				03DD00AF2C8FE44600FE4619 /* kernels_portable.xcframework in Frameworks */,
-				03DD00B52C8FE44600FE4619 /* kernels_quantized.xcframework in Frameworks */,
+				03F181542D7262FC0058BDF9 /* executorch in Frameworks */,
+				03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */,
+				03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */,
+				03F1814E2D7262FC0058BDF9 /* backend_coreml in Frameworks */,
+				03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */,
+				03F181562D7262FC0058BDF9 /* kernels_custom in Frameworks */,
+				03F1815A2D7262FC0058BDF9 /* kernels_portable in Frameworks */,
+				03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,7 +117,7 @@
 			children = (
 				032A73E02CAFBB7800932D36 /* runner */,
 				032A73E92CAFBB7800932D36 /* sampler */,
-				032A74022CAFBB7800932D36 /* tokenizer */,
+				032A74022CAFBB7800932D36 /* tokenizers */,
 				032A73C82CAFBA8600932D36 /* LLaMATests.mm */,
 			);
 			path = LLaMA;
@@ -173,20 +153,18 @@
 			path = ../../../llm/sampler;
 			sourceTree = SOURCE_ROOT;
 		};
-		032A74022CAFBB7800932D36 /* tokenizer */ = {
+		032A74022CAFBB7800932D36 /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
-				032A73F82CAFBB7800932D36 /* base64.h */,
-				032A73F92CAFBB7800932D36 /* bpe_tokenizer.h */,
-				032A73FA2CAFBB7800932D36 /* bpe_tokenizer.cpp */,
+				F292B0302D88AF4800BE6839 /* include */,
+				F292B0162D88AF3500BE6839 /* bpe_tokenizer_base.cpp */,
+				F292B0172D88AF3500BE6839 /* llama2c_tokenizer.cpp */,
+				F292B01A2D88AF3500BE6839 /* tiktoken.cpp */,
 				032A74242CAFC34800932D36 /* llama_tiktoken.h */,
 				032A74252CAFC34800932D36 /* llama_tiktoken.cpp */,
-				032A73FD2CAFBB7800932D36 /* tiktoken.h */,
-				032A73FE2CAFBB7800932D36 /* tiktoken.cpp */,
-				032A73FF2CAFBB7800932D36 /* tokenizer.h */,
 			);
-			name = tokenizer;
-			path = ../../../llm/tokenizer;
+			name = tokenizers;
+			path = ../../../llm/tokenizers;
 			sourceTree = SOURCE_ROOT;
 		};
 		03B0118D2CAC567900054791 /* TestUtils */ = {
@@ -204,7 +182,6 @@
 			isa = PBXGroup;
 			children = (
 				03B2D3662C8A515A0046936E /* App */,
-				03ED6CEB2C8AAF5300F2D6EE /* Frameworks */,
 				03C7FA322C8AA24200E6E9AE /* Resources */,
 				03B2D3782C8A515C0046936E /* Tests */,
 				03B0118D2CAC567900054791 /* TestUtils */,
@@ -242,26 +219,36 @@
 			path = Tests;
 			sourceTree = SOURCE_ROOT;
 		};
-		03ED6CEB2C8AAF5300F2D6EE /* Frameworks */ = {
+		F292B02E2D88AF4800BE6839 /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
-				03ED6D182C8AB00A00F2D6EE /* Accelerate.framework */,
-				03ED6D162C8AB00500F2D6EE /* CoreML.framework */,
-				03ED6D142C8AAFFF00F2D6EE /* Metal.framework */,
-				03ED6D122C8AAFF700F2D6EE /* MetalPerformanceShaders.framework */,
-				03ED6D102C8AAFF200F2D6EE /* MetalPerformanceShadersGraph.framework */,
-				03ED6D0E2C8AAFE900F2D6EE /* libsqlite3.0.tbd */,
-				03DD00992C8FE44600FE4619 /* backend_coreml.xcframework */,
-				03DD00A22C8FE44600FE4619 /* backend_mps.xcframework */,
-				03DD00A12C8FE44600FE4619 /* backend_xnnpack.xcframework */,
-				03DD00A32C8FE44600FE4619 /* executorch.xcframework */,
-				03DD009A2C8FE44600FE4619 /* kernels_custom.xcframework */,
-				03DD00A02C8FE44600FE4619 /* kernels_optimized.xcframework */,
-				03DD009F2C8FE44600FE4619 /* kernels_portable.xcframework */,
-				03DD00A52C8FE44600FE4619 /* kernels_quantized.xcframework */,
+				F292B0222D88AF4800BE6839 /* base64.h */,
+				F292B0232D88AF4800BE6839 /* bpe_tokenizer_base.h */,
+				F292B0242D88AF4800BE6839 /* error.h */,
+				F292B0262D88AF4800BE6839 /* llama2c_tokenizer.h */,
+				F292B0272D88AF4800BE6839 /* log.h */,
+				F292B0292D88AF4800BE6839 /* result.h */,
+				F292B02B2D88AF4800BE6839 /* tiktoken.h */,
+				F292B02D2D88AF4800BE6839 /* tokenizer.h */,
 			);
-			name = Frameworks;
-			sourceTree = SOURCE_ROOT;
+			path = tokenizers;
+			sourceTree = "<group>";
+		};
+		F292B02F2D88AF4800BE6839 /* pytorch */ = {
+			isa = PBXGroup;
+			children = (
+				F292B02E2D88AF4800BE6839 /* tokenizers */,
+			);
+			path = pytorch;
+			sourceTree = "<group>";
+		};
+		F292B0302D88AF4800BE6839 /* include */ = {
+			isa = PBXGroup;
+			children = (
+				F292B02F2D88AF4800BE6839 /* pytorch */,
+			);
+			path = include;
+			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
@@ -329,6 +316,9 @@
 				Base,
 			);
 			mainGroup = 03B2D35B2C8A515A0046936E;
+			packageReferences = (
+				03F1814C2D7262FC0058BDF9 /* XCLocalSwiftPackageReference "../../../.." */,
+			);
 			productRefGroup = 03B2D3652C8A515A0046936E /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -367,7 +357,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run sudo /Applications/CMake.app/Contents/bin/cmake-gui --install to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    local target=$2\n    shift 2\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\" --target \"$target\"\n    if [[ \"$target\" == \"install\" ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../../llm/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../llm/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../../llm/third-party/sentencepiece\" \"sentencepiece-static\" \\\n    -DSPM_ENABLE_SHARED=OFF\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
+			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run sudo /Applications/CMake.app/Contents/bin/cmake-gui --install to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    local target=$2\n    shift 2\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\" --target \"$target\"\n    if [[ \"$target\" == \"install\" ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/sentencepiece\" \"sentencepiece-static\" \\\n    -DSPM_ENABLE_SHARED=OFF\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -386,11 +376,12 @@
 			files = (
 				03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */,
 				032A74182CAFBB7800932D36 /* text_decoder_runner.cpp in Sources */,
-				032A741A2CAFBB7800932D36 /* bpe_tokenizer.cpp in Sources */,
 				032A741D2CAFBB7800932D36 /* text_prefiller.cpp in Sources */,
-				032A741E2CAFBB7800932D36 /* tiktoken.cpp in Sources */,
 				032A741F2CAFBB7800932D36 /* sampler.cpp in Sources */,
 				03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */,
+				F292B01D2D88AF3500BE6839 /* bpe_tokenizer_base.cpp in Sources */,
+				F292B0202D88AF3500BE6839 /* llama2c_tokenizer.cpp in Sources */,
+				F292B0212D88AF3500BE6839 /* tiktoken.cpp in Sources */,
 				03E7E6792CBDCAE900205E71 /* CoreMLTests.mm in Sources */,
 				032A74232CAFC1B300932D36 /* runner.cpp in Sources */,
 				03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */,
@@ -671,6 +662,48 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		03F1814C2D7262FC0058BDF9 /* XCLocalSwiftPackageReference "../../../.." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../../..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		03F1814D2D7262FC0058BDF9 /* backend_coreml */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = backend_coreml;
+		};
+		03F1814F2D7262FC0058BDF9 /* backend_mps */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = backend_mps;
+		};
+		03F181512D7262FC0058BDF9 /* backend_xnnpack */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = backend_xnnpack;
+		};
+		03F181532D7262FC0058BDF9 /* executorch */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = executorch;
+		};
+		03F181552D7262FC0058BDF9 /* kernels_custom */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = kernels_custom;
+		};
+		03F181572D7262FC0058BDF9 /* kernels_optimized */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = kernels_optimized;
+		};
+		03F181592D7262FC0058BDF9 /* kernels_portable */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = kernels_portable;
+		};
+		03F1815B2D7262FC0058BDF9 /* kernels_quantized */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = kernels_quantized;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 03B2D35C2C8A515A0046936E /* Project object */;
 }

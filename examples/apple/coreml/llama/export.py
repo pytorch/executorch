@@ -1,15 +1,23 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-
-# pyre-strict
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 import argparse
-
-import sys
 
 import coremltools as ct
 import torch
 from executorch.backends.apple.coreml.compiler import CoreMLBackend  # pyre-ignore
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner  # pyre-ignore
+
+from executorch.examples.apple.coreml.llama.llama_transformer import (
+    InputManager,
+    load_model,
+)
+from executorch.examples.apple.coreml.llama.utils import (
+    replace_linear_with_split_linear,
+)
 from executorch.examples.models.llama.source_transformation.quantize import (
     EmbeddingQuantHandler,
 )
@@ -21,58 +29,6 @@ from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.program._program import to_edge_with_preserved_ops
 from executorch.extension.export_util.utils import save_pte_program
-
-sys.path.insert(0, ".")
-from llama_transformer import InputManager, load_model
-
-
-class SplitLinearModule(torch.nn.Module):
-    def __init__(self, in_features, out_features, target_split_size, max_splits):
-        super(SplitLinearModule, self).__init__()
-        num_splits = max(out_features // target_split_size, 1)
-        if num_splits > max_splits:
-            num_splits = max_splits
-
-        self.split_size = out_features // num_splits
-        self.split_remainder = out_features % num_splits
-        self.splits = torch.nn.ModuleList(
-            [torch.nn.Linear(in_features, self.split_size) for _ in range(num_splits)]
-        )
-        print(
-            f"Splitting out_features={out_features} into {num_splits} of size {self.split_size}"
-        )
-        if self.split_remainder > 0:
-            print(
-                f"Warning: remainder {self.split_remainder} after splitting out_features={out_features} into {num_splits} of size {self.split_size}"
-            )
-            self.splits.append(torch.nn.Linear(in_features, self.split_remainder))
-
-    def split_sizes(self):
-        return [split.out_features for split in self.splits]
-
-    def forward(self, x):
-        return torch.cat([split(x) for split in self.splits], dim=-1)
-
-
-def replace_linear_with_split_linear(model, target_split_size, max_splits):
-    for name, module in model.named_children():
-        if isinstance(module, torch.nn.Linear):
-            new_module = SplitLinearModule(
-                module.in_features, module.out_features, target_split_size, max_splits
-            )
-            split_sizes = new_module.split_sizes()
-            if module.bias is not None:
-                split_bias = module.bias.split(split_sizes)
-            split_weights = module.weight.split(split_sizes, dim=0)
-            for i, split in enumerate(new_module.splits):
-                split.weight = torch.nn.Parameter(split_weights[i])
-                if module.bias is not None:
-                    split.bias = torch.nn.Parameter(split_bias[i])
-                else:
-                    split.bias = None
-            setattr(model, name, new_module)
-        else:
-            replace_linear_with_split_linear(module, target_split_size, max_splits)
 
 
 def main() -> None:
@@ -175,7 +131,13 @@ def main() -> None:
 
     if export_args.target_split_size is not None:
         replace_linear_with_split_linear(
-            model, export_args.target_split_size, export_args.max_splits
+            model,
+            out_target_split_size=export_args.target_split_size,
+            out_max_splits=export_args.max_splits,
+            # I have not found splitting on in_features to be beneficial,
+            # and it often leads to OOM so I set in_max_splits to 1
+            in_target_split_size=1,
+            in_max_splits=1,
         )
 
     model.eval()
@@ -230,10 +192,7 @@ def main() -> None:
     )
     example_inputs = input_manager.get_inputs(tokens=[0])
 
-    ep = torch.export.export(
-        model,
-        example_inputs,
-    )
+    ep = torch.export.export(model, example_inputs, strict=True)
     print("Exported program")
     print(ep)
 
@@ -241,7 +200,9 @@ def main() -> None:
         ep,
         preserve_ops=[
             torch.ops.aten.scaled_dot_product_attention.default,
+            # preserve norm op for numerical stability
             torch.ops.aten.linalg_vector_norm.default,
+            torch.ops.aten.reciprocal.default,
         ],
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,

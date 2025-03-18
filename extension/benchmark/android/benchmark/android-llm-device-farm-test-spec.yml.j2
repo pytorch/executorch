@@ -35,6 +35,10 @@ phases:
 
   test:
     commands:
+      # Fail the test if the model doesn't exist, doing it here so that AWS can report the status back
+      - echo "Verify model"
+      - curl -I --fail '{{ model_path }}' || false
+
       # By default, the following ADB command is used by Device Farm to run your Instrumentation test.
       # Please refer to Android's documentation for more options on running instrumentation tests with adb:
       # https://developer.android.com/studio/test/command-line#run-tests-with-adb
@@ -104,6 +108,10 @@ phases:
       - echo "Run benchmark"
       - |
         adb -s $DEVICEFARM_DEVICE_UDID shell am force-stop org.pytorch.minibench
+
+        adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle force-idle
+        adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle unforce
+        adb -s $DEVICEFARM_DEVICE_UDID shell sleep 10
 
         if [ -n "$BIN_FOUND" ]; then
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \

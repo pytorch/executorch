@@ -42,9 +42,9 @@
 # It should also be cmake-lint clean.
 #
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
-include(build/Utils.cmake)
+include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -248,14 +248,15 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
-if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
+  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+  set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
+  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
+if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-  set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
@@ -473,6 +474,17 @@ cmake_dependent_option(
   "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF
 )
 
+
+set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "")
+set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "")
+set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "")
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "")
+set(FLATBUFFERS_INSTALL OFF CACHE BOOL "")
+# exir lets users set the alignment of tensor data embedded in the flatbuffer,
+# and some users need an alignment larger than the default, which is typically
+# 32.
+set(FLATBUFFERS_MAX_ALIGNMENT 1024)
+
 if(EXECUTORCH_BUILD_FLATC)
   if(FLATC_EXECUTABLE)
     # We could ignore this, but it could lead to confusion about which `flatc`
@@ -481,41 +493,55 @@ if(EXECUTORCH_BUILD_FLATC)
       FATAL_ERROR "May not set both EXECUTORCH_BUILD_FLATC and FLATC_EXECUTABLE"
     )
   endif()
-  set(FLATC_EXECUTABLE flatc)
-  set(FLATBUFFERS_BUILD_FLATC
-      ON
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_FLATHASH
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_FLATLIB
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_BUILD_TESTS
-      OFF
-      CACHE BOOL ""
-  )
-  set(FLATBUFFERS_INSTALL
-      OFF
-      CACHE BOOL ""
-  )
-  add_subdirectory(third-party/flatbuffers)
 
-  # exir lets users set the alignment of tensor data embedded in the flatbuffer,
-  # and some users need an alignment larger than the default, which is typically
-  # 32.
-  target_compile_definitions(flatc PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024)
+  # Build flatc for the *host* to generate files as part of the build step.
+  include(ExternalProject)
+  ExternalProject_Add(
+    flatbuffers
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
+    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/third-party/flatbuffers
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third-party/flatbuffers
+    CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
+               -DFLATBUFFERS_BUILD_FLATHASH=${FLATBUFFERS_BUILD_FLATHASH}
+               -DFLATBUFFERS_BUILD_FLATLIB=${FLATBUFFERS_BUILD_FLATLIB}
+               -DFLATBUFFERS_BUILD_TESTS=${FLATBUFFERS_BUILD_TESTS}
+               -DFLATBUFFERS_INSTALL=${FLATBUFFERS_INSTALL}
+               -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}"
+    INSTALL_COMMAND ""
+    BUILD_BYPRODUCTS <BINARY_DIR>/flatc
+  )
+  ExternalProject_Get_Property(flatbuffers BINARY_DIR)
+  if(WIN32)
+    # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
+    # config, but from CMake's perspective the build type is always Debug.
+    set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc.exe)
+  else()
+    set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
+  endif()
+  set(FLATC_EXECUTABLE_BUILT_FROM_SOURCE YES)
 endif()
+
 if(NOT FLATC_EXECUTABLE)
   message(
-    FATAL_ERROR
-      "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled. "
-      "Note that EXECUTORCH_BUILD_FLATC may be disabled implicitly when "
-      "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled."
+    WARNING "FLATC_EXECUTABLE not specified, looking for flatc"
   )
+  find_program(FLATC_EXECUTABLE flatc)
+
+  if(NOT FLATC_EXECUTABLE)
+    message(
+      FATAL_ERROR
+        "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled. "
+        "Note that EXECUTORCH_BUILD_FLATC may be disabled implicitly when "
+        "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled."
+    )
+  endif()
+endif()
+
+add_executable(flatc IMPORTED GLOBAL)
+set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${FLATC_EXECUTABLE})
+
+if(FLATC_EXECUTABLE_BUILT_FROM_SOURCE)
+  add_dependencies(flatc flatbuffers)
 endif()
 
 #
@@ -656,7 +682,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
+install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
 #
 # executor_runner: Host tool that demonstrates program execution.
@@ -724,7 +750,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor/serialize)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
@@ -749,7 +774,6 @@ endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL
    AND EXECUTORCH_BUILD_CPUINFO
-   AND CMAKE_CXX_STANDARD GREATER_EQUAL 14
 )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
@@ -895,12 +919,24 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
+  if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+    list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+  endif()
+
+  if(EXECUTORCH_BUILD_XNNPACK)
+    list(APPEND _executor_runner_libs xnnpack_backend)
+  endif()
+
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
     if(EXECUTORCH_BUILD_DEVTOOLS)
       list(APPEND _executor_runner_libs etdump flatccrt)
     else()
       message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
     endif()
+  endif()
+
+  if(EXECUTORCH_BUILD_COREML)
+    list(APPEND _executor_runner_libs coremldelegate)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})

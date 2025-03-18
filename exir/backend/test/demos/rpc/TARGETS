@@ -47,7 +47,7 @@ python_unittest(
         "test_rpc.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/configurations:optimized_native_cpu_ops",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
         # the executor backend is prebuilt and linked when building the unit test binary. When it's linked, it'll register the backend.
         # It can also be loaded in PyThon runtime via torch.ops.load_library("//executorch/exir/backend/test/demos/rpc:executor_backend")

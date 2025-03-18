@@ -475,6 +475,37 @@ inline bool tensor_is_type(
   return true;
 }
 
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    executorch::aten::ScalarType dtype,
+    executorch::aten::ScalarType dtype2) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype || t.scalar_type() == dtype2,
+      "Expected to find %s or %s type, but tensor has type %s",
+      torch::executor::toString(dtype),
+      torch::executor::toString(dtype2),
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_type(
+    executorch::aten::Tensor t,
+    executorch::aten::ScalarType dtype,
+    executorch::aten::ScalarType dtype2,
+    executorch::aten::ScalarType dtype3) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == dtype || t.scalar_type() == dtype2 ||
+          t.scalar_type() == dtype3,
+      "Expected to find %s, %s, or %s type, but tensor has type %s",
+      torch::executor::toString(dtype),
+      torch::executor::toString(dtype2),
+      torch::executor::toString(dtype3),
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
 inline bool tensor_is_integral_type(
     executorch::aten::Tensor t,
     bool includeBool = false) {
@@ -584,7 +615,7 @@ inline bool tensors_have_same_dtype(
 
 inline bool tensor_is_rank(executorch::aten::Tensor t, size_t rank) {
   ET_CHECK_OR_RETURN_FALSE(
-      t.dim() == rank,
+      static_cast<size_t>(t.dim()) == rank,
       "Expected tensor.dim() to be %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -596,7 +627,7 @@ inline bool tensor_has_rank_greater_or_equal_to(
     executorch::aten::Tensor t,
     size_t rank) {
   ET_CHECK_OR_RETURN_FALSE(
-      t.dim() >= rank,
+      static_cast<size_t>(t.dim()) >= rank,
       "Expected tensor.dim() to be >= %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -608,7 +639,7 @@ inline bool tensor_has_rank_smaller_or_equal_to(
     executorch::aten::Tensor t,
     size_t rank) {
   ET_CHECK_OR_RETURN_FALSE(
-      t.dim() <= rank,
+      static_cast<size_t>(t.dim()) <= rank,
       "Expected tensor.dim() to be <= %zu, but got %zu",
       static_cast<size_t>(rank),
       static_cast<size_t>(t.dim()));
@@ -665,12 +696,12 @@ inline bool tensors_have_same_size_at_dims(
     executorch::aten::Tensor b,
     size_t dim_b) {
   ET_CHECK_OR_RETURN_FALSE(
-      dim_a < a.dim(),
+      dim_a < static_cast<size_t>(a.dim()),
       "Cannot retrieve dim %zu from tensor with dim %zu",
       static_cast<size_t>(dim_a),
       static_cast<size_t>(a.dim()));
   ET_CHECK_OR_RETURN_FALSE(
-      dim_b < b.dim(),
+      dim_b < static_cast<size_t>(b.dim()),
       "Cannot retrieve dim %zu from tensor with dim %zu",
       static_cast<size_t>(dim_b),
       static_cast<size_t>(b.dim()));
@@ -702,7 +733,9 @@ inline bool tensors_have_same_shape(
         static_cast<size_t>(b.numel()),
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()));
-    for (size_t d = 0; d < ET_MIN2(a.dim(), b.dim()); ++d) {
+    // Using [[maybe_unused]] as ET_LOG may not trigger based on verbosity
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN2(a.dim(), b.dim()))) {
       ET_LOG(
           Error,
           "    size(%zu): (%zu, %zu)",
@@ -739,7 +772,8 @@ inline bool tensors_have_same_shape(
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()),
         static_cast<size_t>(c.dim()));
-    for (size_t d = 0; d < ET_MIN3(a.dim(), b.dim(), c.dim()); ++d) {
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN3(a.dim(), b.dim(), c.dim()))) {
       ET_LOG(
           Error,
           "    size(%zu): (%zu, %zu, %zu)",
@@ -779,7 +813,8 @@ inline bool tensor_has_expected_size(
         static_cast<size_t>(expected_sizes.size()));
     size_t a_dim = static_cast<size_t>(a.dim());
     size_t expected_dim = static_cast<size_t>(expected_sizes.size());
-    for (size_t d = 0; d < ET_MIN2(a_dim, expected_dim); ++d) {
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN2(a_dim, expected_dim))) {
       ET_LOG(
           Error,
           "    size(%zu): (%zu, %zu)",
@@ -802,7 +837,8 @@ inline bool tensors_have_same_strides(
         ET_TENSOR_CHECK_PREFIX__ ": dim=(%zu, %zu)",
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()));
-    for (size_t d = 0; d < ET_MIN2(a.dim(), b.dim()); ++d) {
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN2(a.dim(), b.dim()))) {
       ET_LOG(
           Error,
           "    stride(%zu): (%zu, %zu)",
@@ -827,7 +863,8 @@ inline bool tensors_have_same_strides(
         static_cast<size_t>(a.dim()),
         static_cast<size_t>(b.dim()),
         static_cast<size_t>(c.dim()));
-    for (size_t d = 0; d < ET_MIN3(a.dim(), b.dim(), c.dim()); ++d) {
+    for ([[maybe_unused]] const auto d :
+         c10::irange(ET_MIN3(a.dim(), b.dim(), c.dim()))) {
       ET_LOG(
           Error,
           "    stride(%zu): (%zu, %zu, %zu)",
@@ -894,7 +931,7 @@ inline size_t getLeadingDims(
       dim,
       ssize_t(tensor.dim()));
   size_t dims = 1;
-  for (size_t i = 0; i < dim; ++i) {
+  for (const auto i : c10::irange(dim)) {
     dims *= static_cast<size_t>(tensor.size(i));
   }
   return dims;
@@ -911,7 +948,7 @@ inline size_t getTrailingDims(
       dim,
       ssize_t(tensor.dim()));
   size_t dims = 1;
-  for (size_t i = dim + 1; i < tensor.dim(); ++i) {
+  for (size_t i = dim + 1; i < static_cast<size_t>(tensor.dim()); ++i) {
     dims *= static_cast<size_t>(tensor.size(i));
   }
   return dims;
@@ -984,7 +1021,7 @@ inline void indexToCoordinate(
     const executorch::aten::Tensor& tensor,
     size_t index,
     size_t* coordinate) {
-  ET_CHECK(index < tensor.numel());
+  ET_CHECK(index < static_cast<size_t>(tensor.numel()));
   for (auto i = 0; i < tensor.dim(); ++i) {
     auto dim = tensor.dim() - 1 - i;
     size_t dim_size = tensor.size(dim);

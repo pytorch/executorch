@@ -10,12 +10,15 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
 toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+_setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 pte_file=""
 target="ethos-u55-128"
 build_type="Release"
-system_config=""
 bundleio=false
+system_config=""
+memory_mode=""
 build_with_etdump=false
 extra_build_flags=""
 output_folder_set=false
@@ -32,9 +35,12 @@ help() {
     echo "  --pte=<PTE_FILE>                pte file (genrated by the aot_arm_compier from the model to include in the elf"
     echo "  --target=<TARGET>               Target to build and run for Default: ${target}"
     echo "  --build_type=<TYPE>             Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
-    echo "  --system_config=<CONFIG>        System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
-    echo "                                     NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
     echo "  --bundleio                      Support both pte and Bundle IO bpte using Devtools BundelIO with Input/RefOutput included"
+    echo "  --system_config=<CONFIG>        System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
+    echo "                                     NOTE: If given, this option must match the given target. This option along with the memory_mode sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
+    echo "  --memory_mode=<CONFIG>          Vela memory mode, used for setting the Timing Adapter parameters of the Corstone platforms."
+    echo "                                  Valid values are Shared_Sram(for Ethos-U55, Ethos-U65, Ethos-85), Sram_Only(for Ethos-U55, Ethos-U65, Ethos-U85) or Dedicated_Sram(for Ethos-U65, Ethos-U85)."
+    echo "                                  Default: Shared_Sram for the Ethos-U55 and Sram_Only for the Ethos-U85"
     echo "  --etdump                        Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --extra_build_flags=<FLAGS>     Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --output=<FOLDER>               Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
@@ -49,8 +55,9 @@ for arg in "$@"; do
       --pte=*) pte_file="${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --build_type=*) build_type="${arg#*=}";;
-      --system_config=*) system_config="${arg#*=}";;
       --bundleio) bundleio=true ;;
+      --system_config=*) system_config="${arg#*=}";;
+      --memory_mode=*) memory_mode="${arg#*=}";;
       --etdump) build_with_etdump=true ;;
       --extra_build_flags=*) extra_build_flags="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
@@ -61,9 +68,17 @@ for arg in "$@"; do
     esac
 done
 
+# Source the tools
+# This should be prepared by the setup.sh
+[[ -f ${setup_path_script} ]] \
+    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
+
+source ${setup_path_script}
+
 pte_file=$(realpath ${pte_file})
 ethosu_tools_dir=$(realpath ${ethosu_tools_dir})
 ethos_u_root_dir="$ethosu_tools_dir/ethos-u"
+mkdir -p "${ethos_u_root_dir}"
 ethosu_tools_dir=$(realpath ${ethos_u_root_dir})
 
 et_build_dir=${et_build_root}/cmake-out
@@ -83,6 +98,16 @@ then
     fi
 fi
 
+if [[ ${memory_mode} == "" ]]
+then
+    memory_mode="Shared_Sram"
+    if [[ ${target} =~ "ethos-u85" ]]
+    then
+        memory_mode="Sram_Only"
+    fi
+fi
+
+mkdir -p "${output_folder}"
 output_folder=$(realpath ${output_folder})
 
 if [[ ${target} == *"ethos-u55"*  ]]; then
@@ -91,7 +116,7 @@ else
     target_cpu=cortex-m85
 fi
 echo "--------------------------------------------------------------------------------"
-echo "Build Arm Baremetal executor_runner for ${target} with ${pte_file} using ${system_config} ${extra_build_flags} to '${output_folder}/cmake-out'"
+echo "Build Arm Baremetal executor_runner for ${target} with ${pte_file} using ${system_config} ${memory_mode} ${extra_build_flags} to '${output_folder}/cmake-out'"
 echo "--------------------------------------------------------------------------------"
 
 cd ${et_root_dir}/examples/arm/executor_runner
@@ -105,7 +130,6 @@ if [ "$build_with_etdump" = true ] ; then
 fi
 
 echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
-mkdir -p "${output_folder}"
 
 cmake \
     -DCMAKE_BUILD_TYPE=${build_type}            \
@@ -120,6 +144,7 @@ cmake \
     ${build_with_etdump_flags}                  \
     -DPYTHON_EXECUTABLE=$(which python3)        \
     -DSYSTEM_CONFIG=${system_config}            \
+    -DMEMORY_MODE=${memory_mode}                \
     ${extra_build_flags}                        \
     -B ${output_folder}/cmake-out
 

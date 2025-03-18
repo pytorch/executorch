@@ -55,12 +55,6 @@ class FuseConsecutiveTranspose(ExportPass):
                             clone_permute_node.meta = n.meta
                             users[i].replace_input_with(n, clone_permute_node)
 
-    def _is_dispensable(self, axis_order):
-        for index, value in enumerate(axis_order):
-            if index != value:
-                return False
-        return True
-
     def _traverse(self, node):
         if node in self.visited or node.target not in self.op_map:
             return
@@ -87,25 +81,22 @@ class FuseConsecutiveTranspose(ExportPass):
                 axis_order = torch.arange(len(input_shape)).tolist()
                 for node in self.nodes:
                     axis_order = [axis_order[i] for i in node.args[1]]
-                # If axis order is just [0,1,2,3], we ignore permute node
-                if self._is_dispensable(axis_order):
-                    for user in output_node.users.copy():
-                        user.replace_input_with(output_node, n.args[0])
-                else:
-                    with graph.inserting_after(input_node):
-                        permute_op = exir_ops.edge.aten.permute_copy.default
-                        permute_node = graph.create_node(
-                            "call_function", permute_op, (input_node, axis_order)
-                        )
-                        users = output_node.users.copy()
-                        for user in users:
-                            user.replace_input_with(output_node, permute_node)
 
-                        # copy metadata
-                        permute_node.meta = output_node.meta
-                        # Without "qnn_permute", we might obtain wrong input shape
-                        if [pn.meta.get(QCOM_INSERTED_PERMUTE) for pn in self.nodes]:
-                            permute_node.meta[QCOM_INSERTED_PERMUTE] = True
+                # Reserve [0,1,2,3] permute node to ensure the next node get the right axis order.
+                with graph.inserting_after(input_node):
+                    permute_op = exir_ops.edge.aten.permute_copy.default
+                    permute_node = graph.create_node(
+                        "call_function", permute_op, (input_node, axis_order)
+                    )
+                    users = output_node.users.copy()
+                    for user in users:
+                        user.replace_input_with(output_node, permute_node)
+
+                    # copy metadata
+                    permute_node.meta = output_node.meta
+                    # Without "qnn_permute", we might obtain wrong input shape
+                    if [pn.meta.get(QCOM_INSERTED_PERMUTE) for pn in self.nodes]:
+                        permute_node.meta[QCOM_INSERTED_PERMUTE] = True
 
             # clear current stack
             self.nodes = []

@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -32,6 +32,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:slice_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:upsample_util",
+            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -61,17 +62,22 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
     runtime.cxx_library(
         name = "broadcast_util",
-        srcs = ["broadcast_util.cpp"],
+        srcs = [
+            "broadcast_util.cpp",
+            "delinearize_index.cpp",
+        ],
         exported_headers = [
             "broadcast_util.h",
+            "delinearize_index.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        exported_deps = [
+            ":broadcast_indexes_range",
+        ],
         deps = [
             ":repeat_util",
             "//executorch/runtime/kernel:kernel_includes",
@@ -100,9 +106,13 @@ def define_common_targets():
             "elementwise_util.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
-        deps = [
+        exported_deps = [
+            ":broadcast_indexes_range",
             ":broadcast_util",
             ":dtype_util",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+        ],
+        deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -280,8 +290,21 @@ def define_common_targets():
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
+    runtime.cxx_library(
+        name = "broadcast_indexes_range",
+        exported_headers = ["broadcast_indexes_range.h"],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     # Utility functions that can be used by operators that perform reduction
-    for aten_mode in [True, False]:
+    for aten_mode in get_aten_mode_options():
         suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
             name = "reduce_util{}".format(suffix),
@@ -290,6 +313,9 @@ def define_common_targets():
             deps = [
                 "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
                 "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
+            ],
+            exported_deps = [
+                "//executorch/runtime/kernel:thread_parallel_interface",
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = [

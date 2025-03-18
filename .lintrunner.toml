@@ -75,6 +75,7 @@ exclude_patterns = [
     'examples/apple/**',
     'examples/demo-apps/apple_ios/**',
     'examples/demo-apps/react-native/rnllama/ios/**',
+    'extension/apple/**',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
@@ -218,6 +219,8 @@ exclude_patterns = [
     'examples/**',
     'extension/**',
     'kernels/optimized/**',
+    # Justified <functional> include.
+    'runtime/kernel/thread_parallel_interface.h',
     'scripts/**',
     'third-party/**',
     'util/**',
@@ -339,4 +342,30 @@ init_command = [
     'pip_init',
     '--dry-run={{DRYRUN}}',
     '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'LICENSELINT'
+include_patterns = [
+    '**/*',
+]
+exclude_patterns = [
+    '**/fb/**',
+    '.lintrunner.toml',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern=Confidential and proprietary',
+    '--linter-name=LICENSELINT',
+    '--error-name=Wrong license',
+    """--error-description=\
+        Code contributed to ExecuTorch open source repo should have \
+        BSD-license header \
+    """,
+    '--',
+    '@{{PATHSFILE}}',
 ]

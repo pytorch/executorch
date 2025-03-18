@@ -47,12 +47,30 @@ _DYNAMIC_OPS = {
 
 
 def is_dynamic_qdq(node: torch.fx.Node) -> bool:
-    if node.op != "call_function":
+    # check has dynamic qdq name
+    if not (is_quant(node) or is_dequant(node)):
         return False
-    node_name = format_target_name(node.target.__name__)  # pyre-ignore
-    is_dynamic_affine = is_per_token(node) and not is_per_channel_group(node)
 
-    return node_name in _DYNAMIC_OPS or is_dynamic_affine
+    # check scales and zp are dynamically chosen
+    node_input_args = node.args
+    if is_affine_qdq(node):
+        node_input_args = extract_qdq_affine_op_args_for_decomposed_ops(node)
+
+    scale = node_input_args[1]
+    zp = node_input_args[2]
+    if not (isinstance(scale, torch.fx.Node) and isinstance(zp, torch.fx.Node)):
+        return False
+
+    if not (scale.target == operator.getitem and zp.target == operator.getitem):
+        return False
+
+    scale_choose_qparam = scale.all_input_nodes[0]
+    zp_choose_qparam = zp.all_input_nodes[0]
+
+    if not (is_qparam(scale_choose_qparam) and is_qparam(zp_choose_qparam)):
+        return False
+
+    return True
 
 
 def is_qparam(node: torch.fx.Node) -> bool:
@@ -87,6 +105,15 @@ def is_per_channel(node: torch.fx.Node) -> bool:
     is_per_channel = "per_channel" in node.target.__name__  # pyre-ignore
 
     return is_per_channel or is_affine_per_channel_group
+
+
+def is_per_tensor(node: torch.fx.Node) -> bool:
+    if not (is_quant(node) or is_dequant(node)):
+        return False
+
+    is_per_tensor = "per_tensor" in node.target.__name__  # pyre-ignore
+
+    return is_per_tensor and not (is_per_channel(node))
 
 
 def is_affine_qdq(node: torch.fx.Node) -> bool:
