@@ -46,6 +46,7 @@ libmpsdelegate.a,\
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
 libcpuinfo.a,\
+libextension_threadpool.a,\
 libpthreadpool.a,\
 libxnnpack_backend.a,\
 libmicrokernels-prod.a,\
@@ -53,7 +54,6 @@ libmicrokernels-prod.a,\
 
 FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
 libcustom_ops.a,\
-libextension_threadpool.a,\
 :"
 
 FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
