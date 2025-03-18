@@ -8,25 +8,26 @@
 
 #include <gtest/gtest.h>
 #include <cstdio>
-#include <stdio.h>
+#include <memory>
 
 #include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/data_sinks/file_data_sink.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
+#include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <cstdint>
 #include <cstring>
-#include <fstream>
 
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::etdump::ETDumpGen;
 using ::executorch::etdump::ETDumpResult;
+using ::executorch::extension::testing::TempFile;
 using ::executorch::runtime::AllocatorID;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::BoxedEvalueList;
@@ -50,21 +51,19 @@ class ProfilerETDumpTest : public ::testing::Test {
     buf = (uint8_t*)malloc(buf_size * sizeof(uint8_t));
     etdump_gen[1] = new ETDumpGen(Span<uint8_t>(buf, buf_size));
 
-    std::array<char, L_tmpnam> dummy_name;
-    dummy_name[L_tmpnam-1] = '\0';
-    dump_file_path = std::string(dummy_name.data()) + "-dump";
+    temp_file = std::make_unique<TempFile>(std::string());
+    dump_file_path = temp_file->path();
   }
 
   void TearDown() override {
     delete etdump_gen[0];
     delete etdump_gen[1];
     free(buf);
-
-    std::remove(dump_file_path.c_str());
   }
 
   ETDumpGen* etdump_gen[2];
   uint8_t* buf = nullptr;
+  std::unique_ptr<TempFile> temp_file;
   std::string dump_file_path;
 };
 
@@ -267,7 +266,7 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
       }
       // using file data sink to record debug dats
       else {
-          etdump_gen[i]->set_data_sink(&file_data_sink.get());
+        etdump_gen[i]->set_data_sink(&file_data_sink.get());
       }
 
       etdump_gen[i]->log_evalue(evalue);
@@ -301,7 +300,7 @@ TEST_F(ProfilerETDumpTest, VerifyLogging) {
       }
       // using buffer data sink to record debug data
       else {
-          etdump_gen[i]->set_data_sink(&file_data_sink.get());
+        etdump_gen[i]->set_data_sink(&file_data_sink.get());
       }
 
       etdump_gen[i]->log_evalue(evalue);

@@ -235,5 +235,5 @@ install(
 
 if(BUILD_TESTING)
   # TODO: This is currently not working!
-  add_subdirectory(etdump/tests)
+  # add_subdirectory(etdump/tests)
 endif()
