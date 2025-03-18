@@ -38,6 +38,9 @@ def struct_to_json(x):
 def get_default_executorch_platforms():
     return env.default_platforms
 
+def get_executorch_supported_platforms():
+    return env.supported_platforms
+
 def _patch_executorch_references(targets, use_static_deps = False):
     """Patches up references to "//executorch/..." in lists of build targets.
 
@@ -193,7 +196,7 @@ def _patch_kwargs_common(kwargs):
     # Patch up references to "//executorch/..." in lists of build targets,
     # if necessary.
     use_static_deps = kwargs.pop("use_static_deps", False)
-    for dep_type in ("deps", "exported_deps", "visibility"):
+    for dep_type in ("deps", "exported_deps", "visibility", "preload_deps"):
         if kwargs.get(dep_type):
             # deps may contain select() elements, dicts that map names to lists
             # of targets. selects.apply() will run the provided function on all

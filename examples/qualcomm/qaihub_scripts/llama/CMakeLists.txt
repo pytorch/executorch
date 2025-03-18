@@ -27,7 +27,7 @@ list(PREPEND _qaihub_llama2_7b_runner__srcs
 # build qaihub llama2 7b runner
 add_executable(qaihub_llama2_7b_runner ${_qaihub_llama2_7b_runner__srcs})
 target_include_directories(
-  qaihub_llama2_7b_runner PUBLIC ${_common_include_directories}
+  qaihub_llama2_7b_runner PUBLIC ${_common_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
 )
 target_link_libraries(
   qaihub_llama2_7b_runner
@@ -58,7 +58,7 @@ list(APPEND _common_compile_options -DQAIHUB_LLAMA3_RUNNER)
 
 list(
   APPEND _qaihub_llama3_8b_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/src/tiktoken.cpp
 )
 list(
   APPEND
@@ -69,7 +69,7 @@ list(
 # build qaihub llama3 8b runner
 add_executable(qaihub_llama3_8b_runner ${_qaihub_llama3_8b_runner__srcs})
 target_include_directories(
-  qaihub_llama3_8b_runner PUBLIC ${_common_include_directories}
+  qaihub_llama3_8b_runner PUBLIC ${_common_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
 )
 
 target_link_libraries(

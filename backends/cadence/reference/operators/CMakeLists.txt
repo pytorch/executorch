@@ -12,7 +12,7 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -90,6 +90,7 @@ add_library(
   "quantized_fully_connected_out.cpp"
   "dequantize_per_tensor.cpp"
   "quantized_matmul_out.cpp"
+  "requantize_out.cpp"
   "im2row_out.cpp"
 )
 target_include_directories(

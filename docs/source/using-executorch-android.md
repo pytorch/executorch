@@ -42,7 +42,7 @@ To add the Java library to your app:
 1. Download the AAR.
 2. Add it to your gradle build rule as a file path.
 
-The Java package requires `fbjni` and `soloader`, and currently requires users to explicitly declare the dependency. Therefore, two more `dependencies` in gradle rule is required:
+An AAR file itself does not contain dependency info. The Java package requires `fbjni` and `soloader`, and currently requires users to explicitly declare the dependency. Therefore, two more `dependencies` in gradle rule is required:
 ```
 implementation("com.facebook.soloader:soloader:0.10.5")
 implementation("com.facebook.fbjni:fbjni:0.5.1")
@@ -108,7 +108,12 @@ after installing and setting up the SDK, set `NEURON_BUFFER_ALLOCATOR_LIB` and `
 #### Using Qualcomm AI Engine Backend
 
 To use [Qualcomm AI Engine Backend](https://pytorch.org/executorch/main/backends-qualcomm.html#qualcomm-ai-engine-backend),
-after installing and setting up the SDK, set `QNN_SDK_ROOT` to the corresponding path
+after installing and setting up the SDK, set `QNN_SDK_ROOT` to the corresponding path.
+
+#### Using Vulkan Backend
+
+To use [Vulkan Backend](https://pytorch.org/executorch/main/backends-vulkan.html#vulkan-backend),
+set `EXECUTORCH_BUILD_VULKAN` to `ON`.
 
 ## Android Backends
 
@@ -156,6 +161,6 @@ Please use [ExecuTorchDemo](https://github.com/pytorch/executorch/tree/main/exam
 and [LlamaDemo](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo) for the code examples
 using ExecuTorch AAR package.
 
-## Next Steps
+## Java API reference
 
-TODO Link to Java API reference and other relevant material
+Please see [Java API reference](https://pytorch.org/executorch/main/javadoc/).

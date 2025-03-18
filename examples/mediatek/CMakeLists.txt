@@ -20,7 +20,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -122,33 +122,33 @@ if(${ANDROID})
   )
   # Build ABSL and RE2
   set(EXTENSIONS_LLM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm)
-  set(THIRD_PARTY_ABSL_DIR ${EXTENSIONS_LLM_DIR}/third-party/abseil-cpp)
-  set(THIRD_PARTY_RE2_DIR ${EXTENSIONS_LLM_DIR}/third-party/re2)
+  set(THIRD_PARTY_ABSL_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/abseil-cpp)
+  set(THIRD_PARTY_RE2_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/re2)
   set(ABSL_ENABLE_INSTALL ON)
   set(ABSL_PROPAGATE_CXX_STD ON)
   set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   add_subdirectory(
-    ${THIRD_PARTY_ABSL_DIR} ${CMAKE_CURRENT_BINARY_DIR}/third-party/abseil
+    ${THIRD_PARTY_ABSL_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/abseil
   )
   add_subdirectory(
-    ${THIRD_PARTY_RE2_DIR} ${CMAKE_CURRENT_BINARY_DIR}/third-party/re2
+    ${THIRD_PARTY_RE2_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/re2
   )
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
   # Build tokenizers
-  set(LLAMA2_TOKENIZER_DIR ${EXTENSIONS_LLM_DIR}/tokenizer)
+  set(LLAMA2_TOKENIZER_DIR ${EXTENSIONS_LLM_DIR}/tokenizers)
   add_library(tokenizer STATIC)
   target_include_directories(
     tokenizer PUBLIC ${_common_include_directories} ${THIRD_PARTY_ABSL_DIR}
-                     ${THIRD_PARTY_RE2_DIR}
+                     ${THIRD_PARTY_RE2_DIR} ${LLAMA2_TOKENIZER_DIR}/include
   )
   target_link_libraries(tokenizer PRIVATE re2::re2)
   target_sources(
     tokenizer
     PRIVATE
-      ${LLAMA2_TOKENIZER_DIR}/tiktoken.cpp
-      ${LLAMA2_TOKENIZER_DIR}/bpe_tokenizer.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/tiktoken.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/llama2c_tokenizer.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/../models/llama/tokenizer/llama_tiktoken.cpp
   )
 

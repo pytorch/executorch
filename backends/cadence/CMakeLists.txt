@@ -28,7 +28,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 if(EXECUTORCH_CADENCE_CPU_RUNNER)
-  include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
   if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -79,6 +79,7 @@ if(EXECUTORCH_NNLIB_OPT)
   set(TARGET_DIR hifi)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib
   ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
 elseif(EXECUTORCH_FUSION_G3_OPT)
   set(TARGET_DIR fusion_g3)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib
@@ -87,5 +88,5 @@ else()
   set(TARGET_DIR reference)
 endif()
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators)

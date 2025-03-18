@@ -120,6 +120,7 @@ def _(
                 backend_id=backend_id,
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_specs,
+                named_data_store_output=preprocess_result.data_store_output,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
