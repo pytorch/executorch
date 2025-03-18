@@ -194,10 +194,9 @@ for i in "${!test_model[@]}"; do
         output_folder=${et_build_root}/${model_short_name}
     fi
 
+    mkdir -p ${output_folder}
     output_folder=$(realpath ${output_folder})
     pte_file="${output_folder}/${model_filename}"
-
-    mkdir -p ${output_folder}
 
     # Remove old pte files
     rm -f "${output_folder}/${model_filename}"
