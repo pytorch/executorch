@@ -19,8 +19,8 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -137,18 +137,18 @@ if(${ANDROID})
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
   # Build tokenizers
-  set(LLAMA2_TOKENIZER_DIR ${EXTENSIONS_LLM_DIR}/tokenizer)
+  set(LLAMA2_TOKENIZER_DIR ${EXTENSIONS_LLM_DIR}/tokenizers)
   add_library(tokenizer STATIC)
   target_include_directories(
     tokenizer PUBLIC ${_common_include_directories} ${THIRD_PARTY_ABSL_DIR}
-                     ${THIRD_PARTY_RE2_DIR}
+                     ${THIRD_PARTY_RE2_DIR} ${LLAMA2_TOKENIZER_DIR}/include
   )
   target_link_libraries(tokenizer PRIVATE re2::re2)
   target_sources(
     tokenizer
     PRIVATE
-      ${LLAMA2_TOKENIZER_DIR}/tiktoken.cpp
-      ${LLAMA2_TOKENIZER_DIR}/bpe_tokenizer.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/tiktoken.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/llama2c_tokenizer.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/../models/llama/tokenizer/llama_tiktoken.cpp
   )
 

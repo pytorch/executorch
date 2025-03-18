@@ -46,7 +46,7 @@ endif()
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -209,7 +209,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   endif()
 endif()
 
-target_include_directories(llama_main PUBLIC ${_common_include_directories})
+target_include_directories(
+  llama_main
+  PUBLIC ${_common_include_directories}
+         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 

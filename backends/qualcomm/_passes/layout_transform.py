@@ -19,8 +19,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.sym_util import eval_shape
 
-from .utils import dq_ops, q_ops
-
 
 class LayoutTransform(ExportPass):
     """
@@ -42,11 +40,13 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.pixel_unshuffle.default,
         exir_ops.edge.aten.upsample_bilinear2d.default,
         exir_ops.edge.aten.upsample_nearest2d.default,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
     }
 
     layout_agnostic_ops = {
         exir_ops.edge.aten.abs.default,
         exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.bitwise_or.Tensor,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.ceil.default,
@@ -89,8 +89,6 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.topk.default,
         exir_ops.edge.aten._to_copy.default,
         exir_ops.edge.aten.where.self,
-        *q_ops,
-        *dq_ops,
         _operator.getitem,
     }
 
@@ -115,7 +113,6 @@ class LayoutTransform(ExportPass):
         super(LayoutTransform, self).__init__()
         self.edge_program = edge_program
         self.insert_permute = insert_permute
-        self.qdq_opset = {*q_ops, *dq_ops}
         self.transformed_tag = QCOM_AXIS_ORDER
 
     def mark_as_transformed(self, node: torch.fx.Node) -> None:

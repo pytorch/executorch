@@ -104,7 +104,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
                                error:(NSError* __autoreleasing*)error;
 
 - (BOOL)executeModelWithHandle:(ModelHandle*)handle
-                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
+                       argsVec:(std::vector<executorchcoreml::MultiArray>&)argsVec
                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                          error:(NSError* __autoreleasing*)error;
@@ -199,7 +199,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
 }
 
 - (BOOL)executeModelWithHandle:(ModelHandle*)handle
-                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
+                       argsVec:(std::vector<executorchcoreml::MultiArray>&)argsVec
                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                          error:(NSError* __autoreleasing*)error {
@@ -286,7 +286,7 @@ public:
     }
     
     bool execute(Handle* handle,
-                 const std::vector<MultiArray>& args,
+                 std::vector<MultiArray>& args,
                  const ModelLoggingOptions& logging_options,
                  ModelEventLogger *event_logger,
                  std::error_code& ec) const noexcept override {

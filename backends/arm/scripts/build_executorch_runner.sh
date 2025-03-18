@@ -10,6 +10,8 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
 toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+_setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 pte_file=""
 target="ethos-u55-128"
@@ -66,9 +68,17 @@ for arg in "$@"; do
     esac
 done
 
+# Source the tools
+# This should be prepared by the setup.sh
+[[ -f ${setup_path_script} ]] \
+    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
+
+source ${setup_path_script}
+
 pte_file=$(realpath ${pte_file})
 ethosu_tools_dir=$(realpath ${ethosu_tools_dir})
 ethos_u_root_dir="$ethosu_tools_dir/ethos-u"
+mkdir -p "${ethos_u_root_dir}"
 ethosu_tools_dir=$(realpath ${ethos_u_root_dir})
 
 et_build_dir=${et_build_root}/cmake-out
@@ -97,6 +107,7 @@ then
     fi
 fi
 
+mkdir -p "${output_folder}"
 output_folder=$(realpath ${output_folder})
 
 if [[ ${target} == *"ethos-u55"*  ]]; then
@@ -119,7 +130,6 @@ if [ "$build_with_etdump" = true ] ; then
 fi
 
 echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
-mkdir -p "${output_folder}"
 
 cmake \
     -DCMAKE_BUILD_TYPE=${build_type}            \

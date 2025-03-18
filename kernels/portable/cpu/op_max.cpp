@@ -83,21 +83,26 @@ std::tuple<Tensor&, Tensor&> max_out(
         CTYPE* max_data = max.mutable_data_ptr<CTYPE>();
         long* max_indices_data = max_indices.mutable_data_ptr<long>();
 
-        for (const auto out_ix : c10::irange(max.numel())) {
-          std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
-              [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-                if (!std::isnan(acc_val) && (std::isnan(v) || v > acc_val)) {
-                  acc_val = v;
-                  acc_ix = ix;
-                }
-                return std::tuple<CTYPE, long>{acc_val, acc_ix};
-              },
-              in,
-              dim,
-              out_ix);
-          max_data[out_ix] = std::get<0>(acc);
-          max_indices_data[out_ix] = std::get<1>(acc);
-        }
+        const bool success = parallel_for_each_reduce_over_dim_output_index(
+            in, dim, max, [&](const auto begin, const auto end) {
+              for (const auto out_ix : c10::irange(begin, end)) {
+                std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
+                    [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
+                      if (!std::isnan(acc_val) &&
+                          (std::isnan(v) || v > acc_val)) {
+                        acc_val = v;
+                        acc_ix = ix;
+                      }
+                      return std::tuple<CTYPE, long>{acc_val, acc_ix};
+                    },
+                    in,
+                    dim,
+                    out_ix);
+                max_data[out_ix] = std::get<0>(acc);
+                max_indices_data[out_ix] = std::get<1>(acc);
+              }
+            });
+        ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
       });
 
   return {max, max_indices};
