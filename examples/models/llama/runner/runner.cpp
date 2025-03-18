@@ -16,7 +16,7 @@
 #include <executorch/extension/llm/runner/util.h>
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 namespace example {
 
@@ -78,17 +78,21 @@ Error Runner::load() {
   // load tokenizer. Assuming tiktoken is the default tokenizer
   tokenizer_ = nullptr;
   tokenizer_ = get_tiktoken_for_llama();
-  Error err = tokenizer_->load(tokenizer_path_);
+  ::tokenizers::Error err = tokenizer_->load(tokenizer_path_);
   // Rely on tiktoken to throw error if the artifact is incompatible. Then we
   // fallback to BPE tokenizer.
-  if (err == Error::InvalidArgument) {
+  if (err != ::tokenizers::Error::Ok) {
     ET_LOG(
         Info,
         "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
         tokenizer_path_.c_str());
     tokenizer_.reset();
-    tokenizer_ = std::make_unique<llm::BPETokenizer>();
-    tokenizer_->load(tokenizer_path_);
+    tokenizer_ = std::make_unique<::tokenizers::Llama2cTokenizer>();
+    err = tokenizer_->load(tokenizer_path_);
+    ET_CHECK_TK_OK_OR_RETURN_ERROR(
+        err,
+        "Failed to load %s as a llama2.c tokenizer artifact",
+        tokenizer_path_.c_str());
   }
 
   ET_LOG(Info, "Reading metadata from model");
@@ -201,12 +205,12 @@ Error Runner::generate(
       ? seq_len
       : metadata_.at(kMaxSeqLen);
 
-  Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+  ::tokenizers::Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
       prompt,
       /* bos */ 0,
       /* eos */ 0);
 
-  ET_CHECK_OK_OR_RETURN_ERROR(
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
       encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
 
   // encode the (string) prompt into tokens sequence
@@ -242,7 +246,8 @@ Error Runner::generate(
   uint64_t cur_token = prefill_res.get();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
+  wrapped_callback(
+      ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));
   RUNNER_ET_LOG(
       warmup,
       "RSS after prompt prefill: %f MiB (0 if unsupported)",

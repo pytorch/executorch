@@ -24,6 +24,7 @@ runtime.cxx_test(
     ],
     deps = [
         "//executorch/kernels/prim_ops:prim_ops_registry",  # @manual
+        "//executorch/kernels/test:test_util",  # @manual
         "//executorch/runtime/core:evalue",  # @manual
         "//executorch/runtime/core/exec_aten:lib",  # @manual
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",  # @manual
