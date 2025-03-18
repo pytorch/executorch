@@ -322,6 +322,8 @@ def lift_constant_tensor_pass(ep):
             new_input_specs.extend(lifted_constants)
             lifted_constants.clear()
         new_input_specs.append(s)
+    if len(lifted_constants) > 0:
+        new_input_specs = lifted_constants + new_input_specs
     ep.graph_signature.input_specs = new_input_specs
     ep.graph_module.recompile()
     return ep

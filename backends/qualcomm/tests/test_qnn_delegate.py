@@ -469,9 +469,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index(self):
-        module = Index()  # noqa: F405
+        modules = [Index(0), Index(1), Index(2)]  # noqa: F405
         sample_input = (torch.randn([8, 172, 64]),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index_put(self):
         module = IndexPut()  # noqa: F405
@@ -1457,10 +1459,12 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index(self):
-        module = Index()  # noqa: F405
+        modules = [Index(0), Index(1), Index(2)]  # noqa: F405
         sample_input = (torch.randn([8, 172, 64]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index_put(self):
         module = IndexPut()  # noqa: F405
