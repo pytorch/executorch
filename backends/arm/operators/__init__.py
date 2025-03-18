@@ -35,7 +35,7 @@ from . import (  # noqa
     op_reciprocal,
     op_repeat,
     op_rescale,
-    op_rshift,
+    op_rshift_tensor,
     op_rsqrt,
     op_sigmoid,
     op_slice,

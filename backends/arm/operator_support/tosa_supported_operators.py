@@ -205,6 +205,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.amin.default,
             exir_ops.edge.aten.eye.default,
             exir_ops.edge.aten.linspace.default,
+            exir_ops.edge.aten.bitwise_left_shift.Tensor,
+            exir_ops.edge.aten.__lshift__.Scalar,
         ]
 
         return supported
