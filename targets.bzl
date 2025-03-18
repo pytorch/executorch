@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime", "get_executorch_supported_platforms")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_executorch_supported_platforms", "runtime")
 load("@fbsource//xplat/executorch/third-party:glob_defs.bzl", "subdir_glob")
 
 PLATFORMS = get_executorch_supported_platforms()
