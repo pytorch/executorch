@@ -42,11 +42,6 @@ def smollm_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
         new_key = get_mapped_key(key, inverted_mapping_dict)
         converted_state_dict[new_key] = value
 
-    # Input and output embeddings are tied.
-    converted_state_dict["output.weight"] = converted_state_dict[
-        "tok_embeddings.weight"
-    ]
-
     return converted_state_dict
 
 
@@ -68,7 +63,7 @@ def main():
         checkpoint_dir=args.input_dir,
         checkpoint_files=["model.safetensors"],
         output_dir=".",
-        model_type="MISTRAL",
+        model_type="LLAMA",
     )
 
     print("Loading checkpoint...")
