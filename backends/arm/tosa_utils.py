@@ -7,32 +7,31 @@
 
 import logging
 import os
-from typing import Any, Optional, Tuple
+from typing import Any, Tuple
 
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.print_program import inspect_node
 from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
 TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
 if TOSA_DBG_VERBOSE:
     logging.basicConfig(level=logging.INFO)
     logger.setLevel(logging.INFO)
 
 
-def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
+def dbg_node(node: torch.fx.Node):
     # Debug output of node information
-    logger.info(get_node_debug_info(node, graph_module))
+    logger.info(get_node_debug_info(node))
 
 
-def get_node_debug_info(node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> str:
+def get_node_debug_info(node: torch.fx.Node) -> str:
     output = (
-        f"  {inspect_node(graph=graph_module.graph, node=node)}\n"
         "-- NODE DEBUG INFO --\n"
         f"  Op is {node.op}\n"
         f"  Name is {node.name}\n"
@@ -72,24 +71,21 @@ def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
     assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
 
 
-def dbg_fail(
-    node,
-    graph_module,
-    tosa_graph: Optional[ts.TosaSerializer] = None,
-    path: Optional[str] = None,
-):
+def dbg_fail(node, tosa_graph, path):
+    dbg_tosa_dump(tosa_graph, path)
     logger.warning("Internal error due to poorly handled node:")
-    if tosa_graph is not None and path is not None:
-        dbg_tosa_dump(tosa_graph, path)
-        logger.warning(f"Debug output captured in '{path}'.")
-    dbg_node(node, graph_module)
+    dbg_node(node)
+    logger.warning(f"Debug output captured in '{path}'.")
+    raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
 
 
 def getNodeArgs(node: Node) -> list[TosaArg]:
     try:
         return [TosaArg(arg) for arg in node.args]
     except ValueError as e:
-        raise ValueError(f"Failed processing args to op:\n{node}") from e
+        raise ValueError(
+            f"Failed processing args to op:\n{get_node_debug_info(node)}"
+        ) from e
 
 
 def get_output_node(node: Node) -> Node:
