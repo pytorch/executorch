@@ -5,12 +5,12 @@ oncall("executorch")
 fb_android_library(
     name = "executorch",
     srcs = [
-        "src/main/java/org/pytorch/executorch/DType.java",
-        "src/main/java/org/pytorch/executorch/EValue.java",
-        "src/main/java/org/pytorch/executorch/Module.java",
-        "src/main/java/org/pytorch/executorch/NativePeer.java",
-        "src/main/java/org/pytorch/executorch/Tensor.java",
-        "src/main/java/org/pytorch/executorch/annotations/Experimental.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/DType.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/EValue.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/Module.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/NativePeer.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/Tensor.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/annotations/Experimental.java",
     ],
     autoglob = False,
     language = "JAVA",
@@ -23,8 +23,8 @@ fb_android_library(
 fb_android_library(
     name = "executorch_llama",
     srcs = [
-        "src/main/java/org/pytorch/executorch/LlamaCallback.java",
-        "src/main/java/org/pytorch/executorch/LlamaModule.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/LlamaCallback.java",
+        "executorch_android/src/main/java/org/pytorch/executorch/LlamaModule.java",
     ],
     autoglob = False,
     language = "JAVA",
