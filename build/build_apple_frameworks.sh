@@ -205,7 +205,7 @@ echo "Exporting headers"
 
 mkdir -p "$HEADERS_PATH"
 
-BUCK2=$(find $SOURCE_ROOT_DIR -type f -path '*/buck2-bin/buck2-*' | head -n 1)
+BUCK2=$("$PYTHON" "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="buck2-bin")
 if [[ -z "$BUCK2" ]]; then
   echo "Could not find buck2 executable in any buck2-bin directory under $SOURCE_ROOT_DIR"
   BUCK2=$(which buck2)
