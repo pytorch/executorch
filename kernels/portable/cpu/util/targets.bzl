@@ -244,6 +244,9 @@ def define_common_targets():
         name = "functional_util",
         srcs = [],
         exported_headers = ["functional_util.h"],
+        exported_deps = [
+            "//executorch/runtime/kernel:thread_parallel_interface",
+        ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
