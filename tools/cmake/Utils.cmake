@@ -218,8 +218,8 @@ function(extract_sources sources_file)
     endif()
     execute_process(
       COMMAND
-        ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
-        --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
+        ${PYTHON_EXECUTABLE} ${executorch_root}/tools/cmake/extract_sources.py
+        --config=${executorch_root}/tools/cmake/cmake_deps.toml --out=${sources_file}
         --buck2=${BUCK2} ${target_platforms_arg}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
@@ -254,7 +254,7 @@ function(resolve_buck2)
   endif()
 
   set(resolve_buck2_command
-      ${PYTHON_EXECUTABLE} ${executorch_root}/build/resolve_buck.py
+      ${PYTHON_EXECUTABLE} ${executorch_root}/tools/cmake/resolve_buck.py
       --cache_dir=buck2-bin
   )
 
