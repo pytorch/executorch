@@ -98,20 +98,37 @@ def quantize(  # noqa C901
         matches = re.findall(pattern, qmode)
         assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
         bitwidth = int(matches[0][0])
-        _load_torchao_aten_lib(libname="libtorchao_ops_aten")
-        from torchao.experimental.quant_api import Int8DynActIntxWeightLinearQuantizer
+        # _load_torchao_aten_lib(libname="libtorchao_ops_aten")
+        # from torchao.experimental.quant_api import Int8DynActIntxWeightLinearQuantizer
+        from torchao.experimental.quant_api import int8_dynamic_activation_intx_weight, Int8DynActIntxWeightLinearQuantizer
+        from torchao.quantization.quant_api import quantize_
+        from torchao.utils import unwrap_tensor_subclass
+        from torchao.quantization.granularity import PerRow, PerGroup
 
         with torch.no_grad():
-            model = Int8DynActIntxWeightLinearQuantizer(
-                device="cpu",
-                precision=torch.float32,
-                groupsize=group_size,
-                bitwidth=bitwidth,
-                has_weight_zeros=False,
-            ).quantize(model)
+            # model = Int8DynActIntxWeightLinearQuantizer(
+            #     device="cpu",
+            #     precision=torch.float32,
+            #     groupsize=group_size,
+            #     bitwidth=bitwidth,
+            #     has_weight_zeros=False,  
+            # ).quantize(model)
 
+            quantize_(model,
+                int8_dynamic_activation_intx_weight(
+                    # group_size=group_size,
+                    # nbit=bitwidth,
+                    # has_weight_zeros=False,
+                    weight_dtype=getattr(torch, f"int{bitwidth}"),
+                    granularity=PerRow() if group_size == 0 else PerGroup(group_size),
+                    has_weight_zeros=False,
+                ),
+            )
+            model = unwrap_tensor_subclass(model)
         if verbose:
             print("quantized model:", model)
+        return model
+
         return model
     elif qmode == "8da4w":
         # Check for required args
@@ -752,7 +769,7 @@ def get_quant_embedding_transform(args):
         bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
         group_size = int(group_size)
         bitwidth = int(bitwidth)
-        _load_torchao_aten_lib(libname="libtorchao_ops_aten")
+        # _load_torchao_aten_lib(libname="libtorchao_ops_aten")
         from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
 
         def _torchao_embedding_quantizer(model):
