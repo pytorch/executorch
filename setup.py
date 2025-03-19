@@ -83,7 +83,7 @@ class ShouldBuild:
 
     @classmethod
     def pybindings(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
+        return cls._is_env_enabled("EXECUTORCH_BUILD_PYBIND", default=True)
 
     @classmethod
     def training(cls) -> bool:
@@ -248,6 +248,7 @@ class _BaseExtension(Extension):
         # Construct the full source path, resolving globs. If there are no glob
         # pattern characters, this will just ensure that the source file exists.
         srcs = tuple(build_dir.glob(src_path))
+
         if len(srcs) != 1:
             raise ValueError(
                 f"Expecting exactly 1 file matching {self.src} in {build_dir}, "
@@ -783,6 +784,14 @@ def get_ext_modules() -> List[Extension]:
         )
 
     if ShouldBuild.pybindings():
+        ext_modules.append(
+            BuiltExtension(
+                src="executorchcoreml.*",
+                src_dir="backends/apple/coreml",
+                modpath="executorch.backends.apple.coreml.executorchcoreml",
+            )
+        )
+
         ext_modules.append(
             # Install the prebuilt pybindings extension wrapper for the runtime,
             # portable kernels, and a selection of backends. This lets users

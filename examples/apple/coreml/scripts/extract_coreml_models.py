@@ -10,7 +10,7 @@ from pathlib import Path
 
 from typing import List, Optional
 
-import executorchcoreml
+from executorch.backends.apple.coreml import executorchcoreml
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 

@@ -170,7 +170,7 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
 )
 
-option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
+option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" ON)
 
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
 
@@ -204,7 +204,7 @@ option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
 option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
 
-option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
+option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" ON)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
 
@@ -811,6 +811,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_COREML)
     list(APPEND _dep_libs coremldelegate)
+    list(APPEND _dep_libs executorchcoreml)
   endif()
 
   if(EXECUTORCH_BUILD_MPS)
@@ -935,6 +936,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   if(EXECUTORCH_BUILD_COREML)
     list(APPEND _executor_runner_libs coremldelegate)
+    list(APPEND _executor_runner_libs executorchcoreml)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})

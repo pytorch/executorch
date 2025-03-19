@@ -10,6 +10,8 @@ SCRIPT_DIR_PATH="$(
     pwd -P
 )"
 
+COREMLTOOLS_VERSION="8.1"  # Keep this in sync with pyproject.toml
+
 red=`tput setaf 1`
 green=`tput setaf 2`
 
@@ -24,7 +26,7 @@ rm -rf "$COREML_DIR_PATH/third-party"
 mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone --depth 1 --branch 8.1 "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
+git clone --depth 1 --branch "${COREMLTOOLS_VERSION}" "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
 cd $COREMLTOOLS_DIR_PATH
 
 STATUS=$?

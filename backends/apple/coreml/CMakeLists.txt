@@ -20,15 +20,6 @@ endif()
 
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
 
-# inmemoryfs sources
-set(INMEMORYFS_SOURCES
-    runtime/inmemoryfs/inmemory_filesystem.cpp
-    runtime/inmemoryfs/inmemory_filesystem_utils.mm
-    runtime/inmemoryfs/memory_buffer.cpp
-    runtime/inmemoryfs/memory_stream.cpp
-    runtime/inmemoryfs/reversed_memory_stream.cpp
-)
-
 # kvstore sources
 set(KVSTORE_SOURCES
     runtime/kvstore/database.cpp runtime/kvstore/json_key_value_store.cpp
@@ -55,9 +46,6 @@ set(DELEGATE_SOURCES
     runtime/delegate/multiarray.mm
     runtime/delegate/serde_json.mm
 )
-
-# util sources
-set(UTIL_SOURCES runtime/util/json_util.cpp runtime/util/objc_json_serde.mm)
 
 # sdk sources
 set(SDK_SOURCES
@@ -111,11 +99,34 @@ set(PROTOBUF_SOURCES
     runtime/sdk/format/WordTagger.pb.cc
 )
 
+# CoreML util
+add_library(coreml_util)
+target_sources(coreml_util
+  PRIVATE runtime/util/json_util.cpp
+          runtime/util/objc_json_serde.mm
+)
+target_include_directories(coreml_util
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
+)
+
+# CoreML inmemoryfs
+add_library(coreml_inmemoryfs)
+target_sources(coreml_inmemoryfs
+  PRIVATE runtime/inmemoryfs/inmemory_filesystem.cpp
+          runtime/inmemoryfs/inmemory_filesystem_utils.mm
+          runtime/inmemoryfs/memory_buffer.cpp
+          runtime/inmemoryfs/memory_stream.cpp
+          runtime/inmemoryfs/reversed_memory_stream.cpp
+)
+target_include_directories(coreml_inmemoryfs
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
+)
+target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util)
+
 # Define the delegate library
 add_library(coremldelegate)
-target_sources(
-  coremldelegate PRIVATE ${INMEMORYFS_SOURCES} ${KVSTORE_SOURCES}
-                         ${DELEGATE_SOURCES} ${UTIL_SOURCES}
+target_sources(coremldelegate
+  PRIVATE ${INMEMORYFS_SOURCES} ${KVSTORE_SOURCES} ${DELEGATE_SOURCES}
 )
 
 target_include_directories(
@@ -125,17 +136,13 @@ target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/kvstore
 )
 target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
-)
-target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
-)
-target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 target_compile_definitions(coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
+target_link_libraries(coremldelegate PRIVATE coreml_util)
+target_link_libraries(coremldelegate PRIVATE coreml_inmemoryfs)
 target_link_libraries(coremldelegate PRIVATE executorch_core)
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
@@ -204,3 +211,14 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+if(EXECUTORCH_BUILD_PYBIND OR EXECUTORCH_BUILD_COREML)
+  add_subdirectory(${EXECUTORCH_ROOT}/third-party/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/pybind11)
+
+  pybind11_add_module(executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp)
+
+  set(_executorchcoreml_compile_options -mmacosx-version-min=10.15 -g)
+  target_compile_options(executorchcoreml PUBLIC ${_executorchcoreml_compile_options})
+  target_link_libraries(executorchcoreml PRIVATE coreml_util)
+  target_link_libraries(executorchcoreml PRIVATE coreml_inmemoryfs)
+endif()
