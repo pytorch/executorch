@@ -8,7 +8,7 @@
 
 plugins {
     id "com.android.library" version "8.9.0"
-    id "maven-publish"
+    id "com.vanniktech.maven.publish" version "0.31.0"
 }
 
 android {
@@ -30,4 +30,40 @@ android {
 dependencies {
     implementation 'com.facebook.fbjni:fbjni-java-only:0.5.1'
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
+}
+
+import com.vanniktech.maven.publish.SonatypeHost
+
+mavenPublishing {
+  publishToMavenCentral(SonatypeHost.DEFAULT)
+  signAllPublications()
+
+  coordinates("org.pytorch", "executorch-android", "0.6.0-SNAPSHOT")
+
+  pom {
+    name = "ExecuTorch Android"
+    description = "ExecuTorch Android API"
+    inceptionYear = "2025"
+    url = "https://github.com/pytorch/executorch/"
+    licenses {
+      license {
+        name = "BSD 3-Clause"
+        url = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+        distribution = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+      }
+    }
+    developers {
+      developer {
+        id = "pytorch"
+        name = "pytorch"
+        url = "https://github.com/pytorch/executorch/"
+      }
+    }
+    scm {
+      url = "https://github.com/pytorch/executorch.git"
+      connection = "scm:git:https://github.com/pytorch/executorch"
+      developerConnection = "scm:git:git@github.com:pytorch/executorch.git"
+    }
+  }
+
 }
