@@ -86,12 +86,6 @@ load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_bool_or_byte(
 template <typename CTYPE_COMMON, const char* op_name>
 load_to_common_fn<CTYPE_COMMON> get_load_to_common_fn_same_as_compute(
     const Tensor& t) {
-  constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
-  ET_CHECK_MSG(
-      t.scalar_type() == common_scalar_type,
-      "Unhandled dtype %s for %s",
-      ::executorch::runtime::toString(common_scalar_type),
-      op_name);
   return internal::load_and_convert<CTYPE_COMMON, CTYPE_COMMON>;
 }
 
@@ -180,11 +174,6 @@ template <typename CTYPE_COMMON, const char* op_name>
 store_common_to_tensor_fn<CTYPE_COMMON>
 get_store_common_to_tensor_fn_same_as_compute(const Tensor& t) {
   constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
-  ET_CHECK_MSG(
-      t.scalar_type() == common_scalar_type,
-      "Unhandled dtype %s for %s",
-      ::executorch::runtime::toString(common_scalar_type),
-      op_name);
   return internal::convert_and_store<CTYPE_COMMON, CTYPE_COMMON>;
 }
 

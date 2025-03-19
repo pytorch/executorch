@@ -51,6 +51,13 @@ inline int64_t scalar_to<int64_t>(const Scalar& s) {
 }
 
 namespace internal {
+template <typename Ignore, typename T>
+using ignore_first_yield_second = T;
+
+template <typename CTYPE_COMMON, typename Op, typename... Args>
+using op_call_result =
+    std::invoke_result_t<Op, ignore_first_yield_second<Args, CTYPE_COMMON>...>;
+
 template <
     typename CTYPE_COMMON,
     const char* op_name,
@@ -89,9 +96,16 @@ inline void apply_elementwise_fn(
       inputs.first->element_size(),
   })...};
 
-  const auto store_common_to_out =
-      internal::get_store_common_to_tensor_fn<CTYPE_COMMON, op_name>(
-          out, out_dtypes);
+  // NOTE: the result of compute_fun is not necessarily CTYPE_COMMON!
+  // For example, consider the possibility that compute_fun is a
+  // trigonometric function like acos, the common input type is bool,
+  // and the output type is float -- we would truncate acos(0) ~= 1.67
+  // to just 1. Conveniently, it costs us nothing at runtime to handle
+  // this correctly.
+  const auto store_compute_result_to_out =
+      internal::get_store_common_to_tensor_fn<
+          op_call_result<CTYPE_COMMON, Op, Args...>,
+          op_name>(out, out_dtypes);
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
   const auto out_element_size = out.element_size();
 
@@ -114,7 +128,8 @@ inline void apply_elementwise_fn(
                      .data_ptr[indexes[idx + 1] * input_info.element_size]);
           }
           auto result = std::apply(compute_fun, loaded_inputs);
-          store_common_to_out(result, &data_out[indexes[0] * out_element_size]);
+          store_compute_result_to_out(
+              result, &data_out[indexes[0] * out_element_size]);
         }
       });
 }
