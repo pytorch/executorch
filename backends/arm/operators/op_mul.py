@@ -24,6 +24,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_utils import reshape_for_broadcast
 from serializer.tosa_serializer import TosaOp
 
 
@@ -43,6 +44,12 @@ class MulVisitor_080_BI(NodeVisitor):
         output: TosaArg,
     ) -> None:
         assert inputs[0].dtype == inputs[1].dtype == output.dtype == ts.DType.INT8
+
+        dim_order = (
+            inputs[0].dim_order
+            if len(inputs[0].shape) > len(inputs[1].shape)
+            else inputs[1].dim_order
+        )
         input_A = inputs[0]
         input_B = inputs[1]
         input_qparams = get_input_qparams(node)  # pyre-ignore[16]
@@ -68,15 +75,21 @@ class MulVisitor_080_BI(NodeVisitor):
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)
         mul_output = tosa_graph.addIntermediate(output_shape, ts.DType.INT32)
 
+        input1, input2 = tutils.reshape_for_broadcast(
+            tosa_graph,
+            [
+                input_A_rescaled,
+                input_B_rescaled,
+            ],
+            dim_order,
+        )
+
         # Do the INT32 Mul
         attr = ts.TosaSerializerAttribute()
         attr.MulAttribute(shift=0)
         tosa_graph.addOperator(
             TosaOp.Op().MUL,
-            [
-                input_A_rescaled.name,
-                input_B_rescaled.name,
-            ],
+            [input1.name, input2.name],
             [mul_output.name],
             attr,
         )
@@ -101,8 +114,11 @@ class MulVisitor_080_MI(MulVisitor_080_BI):
     ) -> None:
         if inputs[0].dtype == ts.DType.INT8:
             return super().define_node(node, tosa_graph, inputs, output)
+
+        input1, input2 = reshape_for_broadcast(tosa_graph, inputs)
+
         attr = ts.TosaSerializerAttribute()
         attr.MulAttribute(shift=0)
         tosa_graph.addOperator(
-            TosaOp.Op().MUL, [inputs[0].name, inputs[1].name], [output.name], attr
+            TosaOp.Op().MUL, [input1.name, input2.name], [output.name], attr
         )

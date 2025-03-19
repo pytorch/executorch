@@ -18,6 +18,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNode,
 )
 from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dynamic_qdq,
     is_per_channel_group,
     is_per_token,
 )
@@ -138,13 +139,14 @@ class OpQuantizeAffine(NodeVisitor):
         """
         We always define quantize affine nodes because they are always explicit
         """
-        if is_per_channel_group(node):
+        is_dynamic = is_dynamic_qdq(node)
+        if is_per_channel_group(node) and not is_dynamic:
             # Affine quantized was recognized as per channel group which means that it should
             # be skipped as this means it is used in front of a weight node
             return
 
         check_or_raise(
-            is_per_token(node),
+            is_per_token(node) and is_dynamic,
             "Encountered affine quantized op which does not have per-token semantics",
         )
         # Treat this node as dynamic per-token quantization
