@@ -527,8 +527,6 @@ def register_view_op(features: OpFeatures):
         exir_ops.edge.aten.flip.default,
         exir_ops.edge.aten.index_select.default,
         exir_ops.edge.aten.select_copy.int,
-        # Tensor combination
-        exir_ops.edge.aten.repeat.default,
         # Tensor creation
         exir_ops.edge.aten.arange.start_step,
         exir_ops.edge.aten.clone.default,
@@ -561,6 +559,7 @@ def register_ported_op(features: OpFeatures):
         exir_ops.edge.aten.permute_copy.default,
         # Tensor combination
         exir_ops.edge.aten.cat.default,
+        exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.split.Tensor,
     ]
