@@ -42,9 +42,9 @@
 # It should also be cmake-lint clean.
 #
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
-include(build/Utils.cmake)
+include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -506,12 +506,18 @@ if(EXECUTORCH_BUILD_FLATC)
                -DFLATBUFFERS_BUILD_FLATLIB=${FLATBUFFERS_BUILD_FLATLIB}
                -DFLATBUFFERS_BUILD_TESTS=${FLATBUFFERS_BUILD_TESTS}
                -DFLATBUFFERS_INSTALL=${FLATBUFFERS_INSTALL}
-               -DCMAKE_BUILD_TYPE=Release
                -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${FLATBUFFERS_MAX_ALIGNMENT}"
     INSTALL_COMMAND ""
+    BUILD_BYPRODUCTS <BINARY_DIR>/flatc
   )
   ExternalProject_Get_Property(flatbuffers BINARY_DIR)
-  set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
+  if(WIN32)
+    # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
+    # config, but from CMake's perspective the build type is always Debug.
+    set(FLATC_EXECUTABLE ${BINARY_DIR}/$<CONFIG>/flatc.exe)
+  else()
+    set(FLATC_EXECUTABLE ${BINARY_DIR}/flatc)
+  endif()
   set(FLATC_EXECUTABLE_BUILT_FROM_SOURCE YES)
 endif()
 
@@ -676,7 +682,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
+install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
 #
 # executor_runner: Host tool that demonstrates program execution.
@@ -913,12 +919,24 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
+  if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+    list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+  endif()
+
+  if(EXECUTORCH_BUILD_XNNPACK)
+    list(APPEND _executor_runner_libs xnnpack_backend)
+  endif()
+
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
     if(EXECUTORCH_BUILD_DEVTOOLS)
       list(APPEND _executor_runner_libs etdump flatccrt)
     else()
       message(SEND_ERROR "Use of 'EXECUTORCH_ENABLE_EVENT_TRACER' requires 'EXECUTORCH_BUILD_DEVTOOLS' to be enabled.")
     endif()
+  endif()
+
+  if(EXECUTORCH_BUILD_COREML)
+    list(APPEND _executor_runner_libs coremldelegate)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
