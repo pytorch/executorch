@@ -18,7 +18,9 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export.graph_signature import InputKind
 from torch.fx.passes.operator_support import any_chain, chain, OperatorSupportBase
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
@@ -73,7 +75,6 @@ def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
 def get_registered_tosa_support_checks(
     tosa_spec: TosaSpecification,
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
-
     if tosa_spec not in _tosa_spec_support:
         raise RuntimeError(
             f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support.keys())}"
@@ -84,9 +85,10 @@ def get_registered_tosa_support_checks(
 
 def tosa_support_factory(
     tosa_spec: TosaSpecification,
+    exported_program: ExportedProgram,
     additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
 ) -> OperatorSupportBase:
-    negative_checks: list[OperatorSupportBase] = []
+    negative_checks: list[OperatorSupportBase] = [CheckInt64Inputs(exported_program)]
     if not tosa_spec.support_float():
         negative_checks.append(NeedsDecompositionCheck())
         negative_checks.append(CheckProperQuantization())
@@ -162,7 +164,6 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.select_copy.int,
             exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
             exir_ops.edge.aten.upsample_nearest2d.vec,
@@ -247,6 +248,10 @@ class NeedsDecompositionCheck(OperatorSupportBase):
             exir_ops.edge.aten._log_softmax.default,
             exir_ops.edge.aten.var.correction,
             exir_ops.edge.aten.var.dim,
+            exir_ops.edge.aten.add.Scalar,
+            exir_ops.edge.aten.sub.Scalar,
+            exir_ops.edge.aten.mul.Scalar,
+            exir_ops.edge.aten.div.Scalar,
         ]
         return not needs_decomp
 
@@ -312,6 +317,8 @@ class CheckProperQuantization(OperatorSupportBase):
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.convolution.default,
             exir_ops.edge.aten.exp.default,
+            exir_ops.edge.aten.full.default,
+            exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.log.default,
@@ -370,4 +377,30 @@ class CheckProperQuantization(OperatorSupportBase):
 
         if not output_quantized:
             return False
+        return True
+
+
+class CheckInt64Inputs(OperatorSupportBase):
+
+    def __init__(self, exported_program: ExportedProgram):
+        self.input_names = [
+            spec.arg.name
+            for spec in exported_program.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT
+        ]
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+
+        for input_node in node.all_input_nodes:
+            # We can cast constant placeholders AOT, not call_functions.
+            if (
+                input_node.name in self.input_names
+                or not input_node.op == "placeholder"
+            ):
+                tensor = get_first_fake_tensor(input_node)
+                if tensor.dtype == torch.int64:
+                    return False
         return True
