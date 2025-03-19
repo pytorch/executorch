@@ -92,9 +92,14 @@ build_executorch_runner_cmake() {
   mkdir "${CMAKE_OUTPUT_DIR}"
 
   pushd "${CMAKE_OUTPUT_DIR}" || return
+  if [[ $1 == "Debug" ]]; then
+      CXXFLAGS="-fsanitize=address,undefined"
+  else
+      CXXFLAGS=""
+  fi
   # This command uses buck2 to gather source files and buck2 could crash flakily
   # on MacOS
-  retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
+  CXXFLAGS="$CXXFLAGS" retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
   popd || return
 
   if [ "$(uname)" == "Darwin" ]; then
