@@ -922,18 +922,18 @@ def get_split_with_sizes_inputs():
     Test = namedtuple("VkSliceTest", ["self", "sizes", "dim"])
     test_cases = [
         # Split on Width
-        Test(self=(S1, 7, 10, 11), sizes=[1, 3, 3, 5], dim=3),
+        Test(self=(S1, 7, 10, 11), sizes=[1, 3, 2, 5], dim=3),
         Test(self=(S1, 7, 10, 10), sizes=[1, 2, 3, 4], dim=3),
-        Test(self=(7, 10, 11), sizes=[1, 3, 3, 5], dim=2),
+        Test(self=(7, 10, 11), sizes=[1, 3, 2, 5], dim=2),
         Test(self=(7, 10, 10), sizes=[1, 2, 3, 4], dim=2),
         Test(self=(7, 10, 11), sizes=[3, 8], dim=2),
         Test(self=(7, 10, 10), sizes=[1, 9], dim=2),
         Test(self=(10, 10), sizes=[1, 9], dim=1),
         Test(self=(10,), sizes=[1, 9], dim=0),
         # Split on Height
-        Test(self=(S1, 7, 11, 10), sizes=[1, 3, 3, 5], dim=2),
+        Test(self=(S1, 7, 11, 10), sizes=[1, 3, 2, 5], dim=2),
         Test(self=(S1, 7, 10, 10), sizes=[1, 2, 3, 4], dim=2),
-        Test(self=(7, 11, 10), sizes=[1, 3, 3, 5], dim=1),
+        Test(self=(7, 11, 10), sizes=[1, 3, 2, 5], dim=1),
         Test(self=(7, 10, 10), sizes=[1, 2, 3, 4], dim=1),
         Test(self=(7, 11, 11), sizes=[3, 8], dim=1),
         Test(self=(7, 10, 10), sizes=[10], dim=1),
@@ -945,7 +945,7 @@ def get_split_with_sizes_inputs():
         # Split on Channel
         Test(self=(7, 13, 4, 8), sizes=[3, 5, 2, 3], dim=1),
         Test(self=(7, 13, 4, 8), sizes=[3, 6, 1, 3], dim=1),
-        Test(self=(7, 13, 4, 8), sizes=[3, 3, 2, 5, 1], dim=1),
+        Test(self=(7, 13, 4, 8), sizes=[3, 2, 2, 5, 1], dim=1),
         Test(self=(7, 13, 4, 8), sizes=[3, 3, 3, 3, 1], dim=1),
         Test(self=(13, 4, 8), sizes=[3, 5, 2, 1, 2], dim=0),
         Test(self=(13, 4, 8), sizes=[3, 3, 3, 3, 1], dim=0),
@@ -964,61 +964,57 @@ def get_split_with_sizes_inputs():
     return test_suite
 
 
-# @register_test_suite("aten.split.Tensor")
-# def get_split_tensor_inputs():
-#     test_suite = VkTestSuite(
-#         [
-#             # Split on Width
-#             ((M1, 7, 10, 12), 12, 3),
-#             ((S1, 7, 10, 12), 12, 3),
-#             ((M1, 7, 10, 12), 3, 3),
-#             ((S1, 7, 10, 12), 3, 3),
-#             ((M1, 7, 10, 12), 1, 3),
-#             ((S1, 7, 10, 12), 1, 3),
-#             ((7, 10, 12), 12, 2),
-#             ((7, 10, 12), 3, 2),
-#             ((7, 10, 12), 1, 2),
-#             ((2, 3, 4), 1, 2),
-#             ((10, 12), 12, 1),
-#             ((10, 12), 3, 1),
-#             ((10, 12), 1, 1),
-#             ((12,), 12, 0),
-#             ((12,), 3, 0),
-#             ((12,), 1, 0),
-#             # Split on Height
-#             ((S1, 7, 12, 8), 12, 2),
-#             ((S1, 7, 12, 8), 3, 2),
-#             ((S1, 7, 12, 8), 1, 2),
-#             ((7, 12, 8), 12, 1),
-#             ((7, 12, 8), 3, 1),
-#             ((7, 12, 8), 1, 1),
-#             ((12, 8), 12, 0),
-#             ((12, 8), 3, 0),
-#             ((12, 8), 1, 0),
-#             # Split  on Batch
-#             ((12, 7, 10, 10), 12, 0),
-#             ((12, 7, 10, 10), 3, 0),
-#             ((12, 7, 10, 10), 1, 0),
-#             # Split  on Channel
-#             ((7, 15, 10, 10), 15, 1),
-#             ((7, 15, 10, 10), 5, 1),
-#             ((7, 15, 10, 10), 3, 1),
-#             ((7, 15, 10, 10), 1, 1),
-#             ((15, 10, 10), 15, 0),
-#             ((15, 10, 10), 5, 0),
-#             ((15, 10, 10), 3, 0),
-#             ((15, 10, 10), 1, 0),
-#         ]
-#     )
+@register_test_suite("aten.split.Tensor")
+def get_split_tensor_inputs():
+    test_suite = VkTestSuite(
+        [
+            # Split on Width
+            ((S1, 7, 10, 12), 12, 3),
+            ((S1, 7, 10, 12), 3, 3),
+            ((S1, 7, 10, 12), 1, 3),
+            ((7, 10, 12), 12, 2),
+            ((7, 10, 12), 3, 2),
+            ((7, 10, 12), 1, 2),
+            ((10, 12), 12, 1),
+            ((10, 12), 3, 1),
+            ((10, 12), 1, 1),
+            ((12,), 12, 0),
+            ((12,), 3, 0),
+            ((12,), 1, 0),
+            # Split on Height
+            ((S1, 7, 12, 8), 12, 2),
+            ((S1, 7, 12, 8), 3, 2),
+            ((S1, 7, 12, 8), 1, 2),
+            ((7, 12, 8), 12, 1),
+            ((7, 12, 8), 3, 1),
+            ((7, 12, 8), 1, 1),
+            ((12, 8), 12, 0),
+            ((12, 8), 3, 0),
+            ((12, 8), 1, 0),
+            # Split  on Batch
+            ((12, 7, 10, 10), 12, 0),
+            ((12, 7, 10, 10), 3, 0),
+            ((12, 7, 10, 10), 1, 0),
+            # Split  on Channel
+            ((7, 15, 10, 10), 15, 1),
+            ((7, 15, 10, 10), 5, 1),
+            ((7, 15, 10, 10), 3, 1),
+            ((7, 15, 10, 10), 1, 1),
+            ((15, 10, 10), 15, 0),
+            ((15, 10, 10), 5, 0),
+            ((15, 10, 10), 3, 0),
+            ((15, 10, 10), 1, 0),
+        ]
+    )
 
-#     test_suite.layouts = [
-#         "utils::kWidthPacked",
-#         "utils::kHeightPacked",
-#         "utils::kChannelsPacked",
-#     ]
-#     test_suite.data_gen = "make_seq_tensor"
-#     test_suite.dtypes = ["at::kFloat"]
-#     return test_suite
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.dtypes = ["at::kFloat"]
+    return test_suite
 
 
 def get_reduce_inputs(is_softmax: bool = False):

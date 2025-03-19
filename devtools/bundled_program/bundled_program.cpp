@@ -361,6 +361,11 @@ ET_NODISCARD Error verify_method_outputs(
   auto bundled_expected_outputs =
       method_test.get()->test_cases()->Get(testset_idx)->expected_outputs();
 
+  if (bundled_expected_outputs->size() == 0) {
+    // No bundled expected outputs, so we can't verify the method outputs.
+    return Error::NotSupported;
+  }
+
   for (size_t output_idx = 0; output_idx < method.outputs_size();
        output_idx++) {
     auto bundled_expected_output =

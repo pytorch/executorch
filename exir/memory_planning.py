@@ -24,7 +24,7 @@ from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 
 from torch import fx
-from torch.export.exported_program import ExportGraphSignature
+from torch.export.exported_program import ExportGraphSignature, InputKind
 from torch.fx import Node
 from torch.utils._pytree import tree_flatten
 
@@ -247,7 +247,10 @@ class Verifier:
                     graph_output_allocated = allocated
                     has_dynamic_unbound_output |= has_dynamic_unbound_tensor
 
-        if "placeholder" in check_list:
+        # only check if inputs are allocated if there are user inputs:
+        user_inputs_exist = _do_user_inputs_exist(graph_signature=self.graph_signature)
+
+        if "placeholder" in check_list and user_inputs_exist:
             assert graph_input_allocated is not None, "graph_input_allocated not set"
             if not has_dynamic_unbound_input:
                 assert (
@@ -325,6 +328,22 @@ def _is_mutable_buffer(
                 if fqn in graph_signature.buffers_to_mutate.values():
                     return True
     return False
+
+
+def _do_user_inputs_exist(graph_signature: Optional[ExportGraphSignature]) -> bool:
+    if graph_signature is None:
+        return False
+
+    return (
+        len(
+            list(
+                filter(
+                    lambda input: input.kind == InputKind.USER_INPUT,
+                    graph_signature.input_specs,
+                )
+            )
+        )
+    ) > 0
 
 
 def get_graph_input_tensors(

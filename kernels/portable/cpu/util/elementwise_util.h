@@ -13,6 +13,7 @@
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 #include <array>
 #include <utility>
@@ -76,11 +77,6 @@ inline void apply_elementwise_fn(
           internal::check_tensor_dtype(out, out_dtypes, compute_type),
       InvalidArgument, );
 
-  bool any_is_broadcasted = false;
-  if constexpr (kNumInputs > 1) {
-    any_is_broadcasted = (!out.sizes().equals(inputs.first->sizes()) || ...);
-  }
-
   struct InputInfo {
     load_to_common_fn<CTYPE_COMMON> load_to_common;
     const char* data_ptr;
@@ -99,30 +95,28 @@ inline void apply_elementwise_fn(
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
   const auto out_element_size = out.element_size();
 
-  if (any_is_broadcasted) {
-    for (const auto& indexes :
-         BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...)) {
-      std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
-      for (const auto idx : c10::irange(kNumInputs)) {
-        const auto& input_info = inputs_info[idx];
-        loaded_inputs[idx] = input_info.load_to_common(
-            &input_info.data_ptr[indexes[idx + 1] * input_info.element_size]);
-      }
-      auto result = std::apply(compute_fun, loaded_inputs);
-      store_common_to_out(result, &data_out[indexes[0] * out_element_size]);
-    }
-  } else {
-    for (const auto i : c10::irange(out.numel())) {
-      std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
-      for (const auto idx : c10::irange(kNumInputs)) {
-        const auto& input_info = inputs_info[idx];
-        loaded_inputs[idx] = input_info.load_to_common(
-            &input_info.data_ptr[i * input_info.element_size]);
-      }
-      auto result = std::apply(compute_fun, loaded_inputs);
-      store_common_to_out(result, &data_out[i * out_element_size]);
-    }
-  }
+  ::executorch::extension::parallel_for(
+      0,
+      out.numel(),
+      ::executorch::extension::internal::GRAIN_SIZE,
+      [&](const auto begin, const auto end) {
+        const auto range =
+            BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...);
+        auto begin_it = range.begin();
+        begin_it += begin;
+        for (; (*begin_it)[0] < end; ++begin_it) {
+          const auto& indexes = *begin_it;
+          std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
+          for (const auto idx : c10::irange(kNumInputs)) {
+            const auto& input_info = inputs_info[idx];
+            loaded_inputs[idx] = input_info.load_to_common(
+                &input_info
+                     .data_ptr[indexes[idx + 1] * input_info.element_size]);
+          }
+          auto result = std::apply(compute_fun, loaded_inputs);
+          store_common_to_out(result, &data_out[indexes[0] * out_element_size]);
+        }
+      });
 }
 } // namespace internal
 
