@@ -173,27 +173,13 @@ get_store_common_to_tensor_fn_bool_or_byte(const Tensor& t) {
 template <typename CTYPE_COMMON, const char* op_name>
 store_common_to_tensor_fn<CTYPE_COMMON>
 get_store_common_to_tensor_fn_same_as_compute(const Tensor& t) {
-  return internal::convert_and_store<CTYPE_COMMON, CTYPE_COMMON>;
+  // We already validate tensor types earlier in the process, so at
+  // this phase, treat same_as_compute the same as our widest
+  // SupportedTensorDtypes set.
+  return get_store_common_to_tensor_fn_realhbf16<CTYPE_COMMON, op_name>(t);
 }
 
-template <
-    typename CTYPE_COMMON,
-    const char* op_name,
-    std::enable_if_t<std::is_same_v<CTYPE_COMMON, float>, bool> = true>
-store_common_to_tensor_fn<CTYPE_COMMON>
-get_store_common_to_tensor_fn_same_as_common(const Tensor& t) {
-  void (*result)(CTYPE_COMMON, void*) = nullptr;
-  ET_SWITCH_THREE_TYPES(
-      Float, Half, BFloat16, t.scalar_type(), unused, op_name, CTYPE, [&]() {
-        result = internal::convert_and_store<CTYPE, CTYPE_COMMON>;
-      });
-  return result;
-}
-
-template <
-    typename CTYPE_COMMON,
-    const char* op_name,
-    std::enable_if_t<!std::is_same_v<CTYPE_COMMON, float>, bool> = true>
+template <typename CTYPE_COMMON, const char* op_name>
 store_common_to_tensor_fn<CTYPE_COMMON>
 get_store_common_to_tensor_fn_same_as_common(const Tensor& t) {
   return get_store_common_to_tensor_fn_same_as_compute<CTYPE_COMMON, op_name>(
