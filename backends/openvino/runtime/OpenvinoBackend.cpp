@@ -170,6 +170,10 @@ ov::element::Type OpenvinoBackend::convert_to_openvino_type(
       return ov::element::i32;
     case exa::ScalarType::Char:
       return ov::element::i8;
+    case exa::ScalarType::Long:
+      return ov::element::i64;
+    case exa::ScalarType::Bool:
+      return ov::element::boolean;
     default:
       throw std::runtime_error("Unsupported scalar type");
   }

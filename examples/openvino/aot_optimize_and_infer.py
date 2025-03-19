@@ -105,7 +105,7 @@ def load_calibration_dataset(
 
 def infer_model(
     exec_prog: EdgeProgramManager,
-    input_shape,
+    inputs,
     num_iter: int,
     warmup_iter: int,
     input_path: str,
@@ -115,7 +115,7 @@ def infer_model(
     Executes inference and reports the average timing.
 
     :param exec_prog: EdgeProgramManager of the lowered model
-    :param input_shape: The input shape for the model.
+    :param inputs: The inputs for the model.
     :param num_iter: The number of iterations to execute inference for timing.
     :param warmup_iter: The number of iterations to execute inference for warmup before timing.
     :param input_path: Path to the input tensor file to read the input for inference.
@@ -128,8 +128,6 @@ def infer_model(
     # 2: Initialize inputs
     if input_path:
         inputs = (torch.load(input_path, weights_only=False),)
-    else:
-        inputs = (torch.randn(input_shape),)
 
     # 3: Execute warmup
     for _i in range(warmup_iter):
@@ -232,7 +230,14 @@ def main(  # noqa: C901
         msg = "Input shape must be a list or tuple."
         raise ValueError(msg)
     # Provide input
-    example_args = (torch.randn(*input_shape),)
+    if suite == "huggingface":
+        if hasattr(model, 'config') and hasattr(model.config, 'vocab_size'):
+            vocab_size = model.config.vocab_size
+        else:
+            vocab_size = 30522
+        example_args = (torch.randint(0, vocab_size, input_shape, dtype=torch.int64), )
+    else:
+        example_args = (torch.randn(*input_shape),)
 
     # Export the model to the aten dialect
     aten_dialect: ExportedProgram = export(model, example_args)
@@ -301,7 +306,7 @@ def main(  # noqa: C901
     if infer:
         print("Start inference of the model:")
         avg_time = infer_model(
-            exec_prog, input_shape, num_iter, warmup_iter, input_path, output_path
+            exec_prog, example_args, num_iter, warmup_iter, input_path, output_path
         )
         print(f"Average inference time: {avg_time}")
 
