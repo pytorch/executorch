@@ -75,7 +75,6 @@ def register_tosa_support_check(checker: Type[SupportedTOSAOperatorCheck]):
 def get_registered_tosa_support_checks(
     tosa_spec: TosaSpecification,
 ) -> list[Type[SupportedTOSAOperatorCheck]]:
-
     if tosa_spec not in _tosa_spec_support:
         raise RuntimeError(
             f"TOSA specification not valid: {tosa_spec} not in {list(_tosa_spec_support.keys())}"
@@ -165,7 +164,6 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.select_copy.int,
             exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.tanh.default,
             exir_ops.edge.aten.upsample_nearest2d.vec,
