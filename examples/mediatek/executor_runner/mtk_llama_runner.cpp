@@ -1,4 +1,4 @@
- /*
+/*
  * Copyright (c) 2024 MediaTek Inc.
  *
  * Licensed under the BSD License (the "License"); you may not use this file
