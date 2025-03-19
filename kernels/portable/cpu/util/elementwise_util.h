@@ -60,10 +60,9 @@ using op_call_result =
 
 template <
     typename CTYPE_COMMON,
-    const char* op_name,
     typename Op,
-    typename... Args>
-inline void apply_elementwise_fn(
+  typename... Args>
+inline bool validate_elementwise_fn_inputs(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
     const Tensor& out,
@@ -72,7 +71,6 @@ inline void apply_elementwise_fn(
   static_assert(
       (std::is_same_v<Args, std::pair<const Tensor*, SupportedTensorDtypes>> &&
        ...));
-  constexpr auto kNumInputs = sizeof...(inputs);
   constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
   const auto check_input_dtype = [](auto input, auto compute_type) {
     return internal::check_tensor_dtype(
@@ -82,7 +80,33 @@ inline void apply_elementwise_fn(
       ctx,
       (check_input_dtype(inputs, compute_type) && ...) &&
           internal::check_tensor_dtype(out, out_dtypes, compute_type),
-      InvalidArgument, );
+      InvalidArgument, false);
+
+  return true;
+}
+
+template <
+    typename CTYPE_COMMON,
+    const char* op_name,
+    typename Op,
+    typename... Args>
+inline void apply_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& out,
+    SupportedTensorDtypes out_dtypes,
+    Args... inputs) {
+  const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMMON>(
+      compute_fun,
+      ctx,
+      out,
+      out_dtypes,
+      inputs...);
+  if (!inputs_valid) {
+    return;
+  }
+
+  constexpr auto kNumInputs = sizeof...(inputs);
 
   struct InputInfo {
     load_to_common_fn<CTYPE_COMMON> load_to_common;
@@ -135,6 +159,7 @@ inline void apply_elementwise_fn(
 }
 } // namespace internal
 
+/// DEPRECATED: prefer the variant with out_dtypes in the template argument.
 template <typename CTYPE_COMMON, const char* op_name, typename Op>
 inline void apply_unitensor_elementwise_fn(
     const Op& compute_fun,
@@ -147,10 +172,19 @@ inline void apply_unitensor_elementwise_fn(
       compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
 }
 
+template <typename CTYPE_COMMON, const char* op_name, SupportedTensorDtypes out_dtypes, typename Op>
+inline void apply_unitensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& out) {
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
+      compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
+}
+
 /**
- * Useful for bi-tensor elementwise operators. For each element of the inputs,
- * perform a computation and write to the corresponding element of the output.
- * Tensor broadcasting is applied wherever it is required.
+ * DEPRECATED: prefer the variant with out_dtypes in the template argument list.
  */
 template <typename CTYPE_COMMON, const char* op_name, typename Op>
 inline void apply_bitensor_elementwise_fn(
@@ -169,6 +203,54 @@ inline void apply_bitensor_elementwise_fn(
       out_dtypes,
       std::make_pair(&a, a_dtypes),
       std::make_pair(&b, b_dtypes));
+}
+
+/**
+ * Useful for bi-tensor elementwise operators. For each element of the inputs,
+ * perform a computation and write to the corresponding element of the output.
+ * Tensor broadcasting is applied wherever it is required.
+ */
+template <typename CTYPE_COMMON, const char* op_name, SupportedTensorDtypes out_dtypes, typename Op>
+inline void apply_bitensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& b,
+    SupportedTensorDtypes b_dtypes,
+    const Tensor& out) {
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
+      compute_fun,
+      ctx,
+      out,
+      out_dtypes,
+      std::make_pair(&a, a_dtypes),
+      std::make_pair(&b, b_dtypes));
+}
+
+/**
+ * DEPRECATED: prefer the variant with out_dtypes in the template argument list.
+ */
+template <typename CTYPE_COMMON, const char* op_name, typename Op>
+inline void apply_tritensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& b,
+    SupportedTensorDtypes b_dtypes,
+    const Tensor& c,
+    SupportedTensorDtypes c_dtypes,
+    const Tensor& out,
+    SupportedTensorDtypes out_dtypes) {
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
+      compute_fun,
+      ctx,
+      out,
+      out_dtypes,
+      std::make_pair(&a, a_dtypes),
+      std::make_pair(&b, b_dtypes),
+      std::make_pair(&c, c_dtypes));
 }
 
 /**
@@ -191,7 +273,7 @@ inline void apply_bitensor_elementwise_fn(
  * static constexpr const char op_name[] = "my_op";
  * apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>.
  */
-template <typename CTYPE_COMMON, const char* op_name, typename Op>
+template <typename CTYPE_COMMON, const char* op_name, SupportedTensorDtypes out_dtypes, typename Op>
 inline void apply_tritensor_elementwise_fn(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
@@ -201,8 +283,7 @@ inline void apply_tritensor_elementwise_fn(
     SupportedTensorDtypes b_dtypes,
     const Tensor& c,
     SupportedTensorDtypes c_dtypes,
-    const Tensor& out,
-    SupportedTensorDtypes out_dtypes) {
+    const Tensor& out) {
   internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
       compute_fun,
       ctx,
