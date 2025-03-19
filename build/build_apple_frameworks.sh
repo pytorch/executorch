@@ -12,7 +12,6 @@ OUTPUT="cmake-out"
 MODES=()
 TOOLCHAIN=""
 PYTHON=$(which python3)
-FLATC=$(which flatc)
 COREML=OFF
 CUSTOM=OFF
 MPS=OFF
@@ -46,6 +45,7 @@ libmpsdelegate.a,\
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
 libcpuinfo.a,\
+libextension_threadpool.a,\
 libpthreadpool.a,\
 libxnnpack_backend.a,\
 libmicrokernels-prod.a,\
@@ -53,7 +53,6 @@ libmicrokernels-prod.a,\
 
 FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
 libcustom_ops.a,\
-libextension_threadpool.a,\
 :"
 
 FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
@@ -83,7 +82,6 @@ usage() {
   echo "  --Release            Build Release version."
   echo "  --toolchain=FILE     CMake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake'"
   echo "  --python=FILE        Python executable path. Default: Path of python3 in \$PATH"
-  echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: Path of flatc in \$PATH"
   echo "  --coreml             Build the Core ML backend."
   echo "  --custom             Build the Custom kernels."
   echo "  --mps                Build the Metal Performance Shaders backend."
@@ -113,7 +111,6 @@ for arg in "$@"; do
         ;;
       --toolchain=*) TOOLCHAIN="${arg#*=}" ;;
       --python=*) PYTHON="${arg#*=}" ;;
-      --flatc=*) FLATC="${arg#*=}" ;;
       --coreml) COREML=ON ;;
       --custom) CUSTOM=ON ;;
       --mps) MPS=ON ;;
@@ -145,14 +142,30 @@ if [[ -z "$TOOLCHAIN" ]]; then
 fi
 [[ -f "$TOOLCHAIN" ]] || { echo >&2 "Toolchain file $TOOLCHAIN does not exist."; exit 1; }
 
+BUCK2=$("$PYTHON" "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
+
+if [[ "$BUCK2" == "buck2" ]]; then
+  BUCK2=$(command -v buck2)
+fi
+
 check_command() {
-  command -v "$1" >/dev/null 2>&1 || { echo >&2 "$1 is not installed"; exit 1; }
+  if [[ "$1" == */* ]]; then
+    if [[ ! -x "$1" ]]; then
+      echo "Error: Command not found or not executable at '$1'" >&2
+      exit 1
+    fi
+  else
+    if ! command -v "$1" >/dev/null 2>&1; then
+      echo "Error: Command '$1' not found in PATH" >&2
+      exit 1
+    fi
+  fi
 }
 
 check_command cmake
 check_command rsync
 check_command "$PYTHON"
-check_command "$FLATC"
+check_command "$BUCK2"
 
 echo "Building libraries"
 
@@ -173,7 +186,6 @@ cmake_build() {
         -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
         -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
         -DPYTHON_EXECUTABLE="$PYTHON" \
-        -DFLATC_EXECUTABLE="$FLATC" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
@@ -204,14 +216,6 @@ done
 echo "Exporting headers"
 
 mkdir -p "$HEADERS_PATH"
-
-BUCK2=$(find $SOURCE_ROOT_DIR -type f -path '*/buck2-bin/buck2-*' | head -n 1)
-if [[ -z "$BUCK2" ]]; then
-  echo "Could not find buck2 executable in any buck2-bin directory under $SOURCE_ROOT_DIR"
-  BUCK2=$(which buck2)
-fi
-
-check_command "$BUCK2"
 
 "$SOURCE_ROOT_DIR"/build/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \

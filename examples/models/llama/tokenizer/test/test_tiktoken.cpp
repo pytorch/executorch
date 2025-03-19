@@ -10,7 +10,7 @@
 
 #include <vector>
 
-#include <executorch/runtime/platform/runtime.h>
+#include <executorch/extension/llm/tokenizer/tiktoken.h>
 
 #include <gtest/gtest.h>
 
@@ -36,8 +36,8 @@ static std::string get_resource_path(const std::string& name) {
 class MultimodalTiktokenV5ExtensionTest : public Test {
  public:
   void SetUp() override {
-    executorch::runtime::runtime_init();
-    tokenizer_ = get_tiktoken_for_llama(Version::Multimodal);
+    tokenizer_ = std::make_unique<executorch::extension::llm::Tiktoken>(
+        example::get_multimodal_special_tokens(), 0, 1);
     modelPath_ = get_resource_path("test_tiktoken_tokenizer.model");
   }
 
