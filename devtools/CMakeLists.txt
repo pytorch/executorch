@@ -186,6 +186,8 @@ add_library(
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/emitter.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/buffer_data_sink.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/buffer_data_sink.h
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/file_data_sink.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/file_data_sink.h
 )
 
 target_link_libraries(

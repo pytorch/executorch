@@ -173,7 +173,6 @@ get_store_common_to_tensor_fn_bool_or_byte(const Tensor& t) {
 template <typename CTYPE_COMMON, const char* op_name>
 store_common_to_tensor_fn<CTYPE_COMMON>
 get_store_common_to_tensor_fn_same_as_compute(const Tensor& t) {
-  constexpr auto common_scalar_type = CppTypeToScalarType<CTYPE_COMMON>::value;
   return internal::convert_and_store<CTYPE_COMMON, CTYPE_COMMON>;
 }
 
