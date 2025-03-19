@@ -94,7 +94,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "static_llama",
     "qwen2_5",
     "phi-4-mini",
-    "smolllm2",
+    "smollm2",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
