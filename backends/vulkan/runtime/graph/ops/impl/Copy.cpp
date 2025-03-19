@@ -25,7 +25,9 @@ void add_copy_offset_node(
     const ivec3& range,
     const ivec4& src_offset,
     const ivec4& dst_offset,
-    const ValueRef out) {
+    const ValueRef out,
+    bool calc_out_pos_using_src_chnl,
+    bool calc_in_pos_using_dst_chnl) {
   vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
@@ -49,7 +51,11 @@ void add_copy_offset_node(
       // Parameter buffers
       {},
       // Specialization Constants
-      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(in),
+       (calc_out_pos_using_src_chnl      ? 1
+            : calc_in_pos_using_dst_chnl ? 2
+                                         : 0)},
       nullptr,
       {},
       {
@@ -256,7 +262,8 @@ void add_copy_offset_node(
   ivec4 src_offset = {src[0], src[1], src[2], 0};
   ivec4 dst_offset = {dst[0], dst[1], dst[2], 0};
 
-  add_copy_offset_node(graph, in, range, src_offset, dst_offset, out);
+  add_copy_offset_node(
+      graph, in, range, src_offset, dst_offset, out, false, false);
 }
 
 void copy_offset(ComputeGraph& graph, const std::vector<ValueRef>& args) {
