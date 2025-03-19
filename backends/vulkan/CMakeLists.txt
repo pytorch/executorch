@@ -32,7 +32,7 @@ endif()
 # provide access to target_link_options_shared_lib which allows libraries to be
 # linked with the --whole-archive flag. This is required for libraries that
 # perform dynamic registration via static initialization.
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 include(cmake/ShaderLibrary.cmake)
 

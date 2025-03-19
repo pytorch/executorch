@@ -263,7 +263,8 @@ def is_valid_huggingface_model_id(model_name: str) -> bool:
 def get_benchmark_configs() -> Dict[str, Dict]:  # noqa: C901
     """
     Gather benchmark configurations for a given set of models on the target operating system and devices.
-
+    CHANGE IF this function's return changed:
+        extract_model_info() in executorch/.github/scripts/extract_benchmark_results.py IF YOU CHANGE THE RESULT OF THIS FUNCTION.
     Args:
         None
 
