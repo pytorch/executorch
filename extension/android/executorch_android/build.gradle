@@ -38,7 +38,7 @@ mavenPublishing {
   publishToMavenCentral(SonatypeHost.DEFAULT)
   signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android", "0.6.0-SNAPSHOT")
+  coordinates("org.pytorch", "executorch-android", "0.5.0-SNAPSHOT")
 
   pom {
     name = "ExecuTorch Android"
@@ -66,4 +66,10 @@ mavenPublishing {
     }
   }
 
+}
+
+repositories {
+    maven {
+        url "https://oss.sonatype.org/content/repositories/snapshots"
+    }
 }
