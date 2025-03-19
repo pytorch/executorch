@@ -26,7 +26,7 @@ jobs:
     with:
       job-name: Build doc
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: executorch-ubuntu-22.04-clang12-android
       submodules: 'true'
       repository: pytorch/executorch
       upload-artifact: docs
@@ -70,7 +70,7 @@ jobs:
 
         # Build javadoc:
         cd extension/android
-        ./gradlew :executorch_android:javaDocReleaseGeneration
+        ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:javaDocReleaseGeneration
         cp -rf executorch_android/build/intermediates/java_doc_dir/release/javaDocReleaseGeneration "${RUNNER_DOCS_DIR}/javadoc"
         cd ../..
 

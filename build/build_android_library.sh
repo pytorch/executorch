@@ -125,7 +125,7 @@ build_aar() {
   if [ "$EXECUTORCH_CMAKE_BUILD_TYPE" == "Release" ]; then
     find . -type f -name "*.so" -exec "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip {} \;
   fi
-  ./gradlew build
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
   cp executorch_android/build/outputs/aar/executorch_android-debug.aar executorch.aar
   popd
 }
