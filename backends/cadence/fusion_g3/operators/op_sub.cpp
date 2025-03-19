@@ -400,7 +400,7 @@ Tensor& sub_out(
   return out;
 }
 
-Tensor& sub_scalar_out(
+Tensor& sub_Scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,

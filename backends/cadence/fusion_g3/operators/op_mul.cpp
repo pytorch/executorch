@@ -221,7 +221,7 @@ Tensor& mul_out(
   return out;
 }
 
-Tensor& mul_scalar_out(
+Tensor& mul_Scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,

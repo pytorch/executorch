@@ -30,7 +30,7 @@ namespace native {
     const ::executorch::aten::Scalar& alpha,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& add_scalar_out(
+::executorch::aten::Tensor& add_Scalar_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Scalar& b,
@@ -80,13 +80,13 @@ namespace native {
     ::executorch::aten::optional<::executorch::aten::string_view> mode,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& div_scalar_out(
+::executorch::aten::Tensor& div_Scalar_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Scalar& b,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& div_scalar_mode_out(
+::executorch::aten::Tensor& div_Scalar_mode_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Scalar& b,
@@ -113,7 +113,7 @@ namespace native {
     const ::executorch::aten::Tensor& b,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& mul_scalar_out(
+::executorch::aten::Tensor& mul_Scalar_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Scalar& b,
@@ -177,7 +177,7 @@ native_layer_norm_out(
     const ::executorch::aten::Scalar& alpha,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& sub_scalar_out(
+::executorch::aten::Tensor& sub_Scalar_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Scalar& b,
@@ -204,19 +204,19 @@ native_layer_norm_out(
     const ::executorch::aten::Tensor& in,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& lt_scalar_out(
+::executorch::aten::Tensor& lt_Scalar_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Scalar& b,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& lt_tensor_out(
+::executorch::aten::Tensor& lt_Tensor_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Tensor& b,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& where_out(
+::executorch::aten::Tensor& where_self_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& cond,
     const ::executorch::aten::Tensor& a,
@@ -230,7 +230,7 @@ native_layer_norm_out(
     const ::executorch::aten::optional<::executorch::aten::Scalar>& max_opt,
     ::executorch::aten::Tensor& out);
 
-::executorch::aten::Tensor& clamp_tensor_out(
+::executorch::aten::Tensor& clamp_Tensor_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,
     const ::executorch::aten::optional<::executorch::aten::Tensor>& min_opt,

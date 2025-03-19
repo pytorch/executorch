@@ -30,7 +30,7 @@
 - op: add.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::add_scalar_out
+      kernel_name: cadence::impl::G3::add_Scalar_out
 
 - op: bmm.out
   kernels:
@@ -95,7 +95,7 @@
 - op: mul.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::mul_scalar_out
+      kernel_name: cadence::impl::G3::mul_Scalar_out
 
 - op: permute_copy.out
   kernels:
@@ -135,7 +135,7 @@
 - op: sub.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::sub_scalar_out
+      kernel_name: cadence::impl::G3::sub_Scalar_out
 
 - op: tanh.out
   kernels:

@@ -21,6 +21,17 @@ random_manager.seed(1729)
 MAX_CASES = 50
 
 
+def special_input_contraint(spec: object, op_name: str) -> None:
+    match op_name:
+        case "div.Tensor" | "div.Tensor_mode":
+            # pyre-ignore[16]: `object` has no attribute `inspec`.
+            spec.inspec[1].constraints.extend(
+                [
+                    cp.Dtype.Eq(lambda deps: deps[0].dtype),
+                ]
+            )
+
+
 def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> None:
     additional_tensor_constraints = [
         cp.Dtype.In(lambda deps: [torch.int, torch.float]),
@@ -33,6 +44,14 @@ def apply_tensor_contraints(op_name: str, tensor_constraints: list[object]) -> N
     ]
 
     match op_name:
+        case "div.Tensor" | "div.Tensor_mode":
+            additional_tensor_constraints.extend(
+                [
+                    cp.Value.Ne(lambda deps, dtype, struct: 0),
+                    cp.Value.Le(lambda deps, dtype, struct: 2**3),
+                    cp.Rank.Le(lambda deps: 2**2),
+                ]
+            )
         case "where.self":
             additional_tensor_constraints = [
                 cp.Dtype.In(lambda deps: [torch.float, torch.int, torch.bool]),
@@ -139,6 +158,7 @@ def facto_testcase_gen(op_name: str) -> List[Tuple[List[str], OrderedDict[str, s
                     cp.Dtype.In(lambda deps: [torch.bool]),
                 ]
             )
+    special_input_contraint(spec, op_name)
 
     return [
         (posargs, inkwargs)

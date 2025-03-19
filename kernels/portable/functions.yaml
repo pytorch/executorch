@@ -296,12 +296,12 @@
 - op: div.Scalar_mode_out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::div_scalar_mode_out
+      kernel_name: torch::executor::div_Scalar_mode_out
 
 - op: div.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::div_scalar_out
+      kernel_name: torch::executor::div_Scalar_out
 
 - op: div.out_mode
   kernels:

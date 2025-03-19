@@ -450,7 +450,7 @@ Tensor& div_out_mode(
   return out;
 }
 
-Tensor& div_scalar_out(
+Tensor& div_Scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
@@ -548,14 +548,14 @@ Tensor& div_scalar_out(
   return out;
 }
 
-Tensor& div_scalar_mode_out(
+Tensor& div_Scalar_mode_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
     optional<string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
-    return div_scalar_out(ctx, a, b, out);
+    return div_Scalar_out(ctx, a, b, out);
   }
 
   auto mode_val = mode.value();

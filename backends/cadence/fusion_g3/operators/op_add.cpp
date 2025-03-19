@@ -246,7 +246,7 @@ Tensor& add_out(
   return out;
 }
 
-Tensor& add_scalar_out(
+Tensor& add_Scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
