@@ -69,18 +69,53 @@ void add_repeat_node(
   vTensorPtr t_out = graph.get_tensor(out);
   check_args(*t_in, repeats, *t_out);
 
-  const utils::ivec4 src_offset{
+  const utils::ivec4 src_dims{
       dim_at<kWidth4D>(t_in->sizes()),
       dim_at<kHeight4D>(t_in->sizes()),
       dim_at<kChannel4D>(t_in->sizes()),
       dim_at<kBatch4D>(t_in->sizes())};
-  const utils::ivec4 dst_offset{
+  const utils::ivec4 dst_dims{
       dim_at<kWidth4D>(repeats),
       dim_at<kHeight4D>(repeats),
       dim_at<kChannel4D>(repeats),
       dim_at<kBatch4D>(repeats)};
-  add_copy_packed_dim_offset_node(
-      graph, in, t_out->logical_limits(), src_offset, dst_offset, out, true);
+  //   add_copy_packed_dim_offset_node(
+  //       graph, in, t_out->logical_limits(), src_offset, dst_offset, out,
+  //       true);
+
+  std::string kernel_name = "repeat";
+  kernel_name.reserve(kShaderNameReserve);
+  add_dtype_suffix(kernel_name, *t_out);
+
+  // A copy of range with the last element set to batch size of the input tensor
+  const utils::ivec3 wg_size = t_out->logical_limits();
+
+  const auto shader = VK_KERNEL_FROM_STR(kernel_name);
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      wg_size,
+      graph.create_local_wg_size(wg_size),
+      // Inputs and Outputs
+      {
+          {out, vkapi::MemoryAccessType::WRITE},
+          {out, vkapi::MemoryAccessType::READ},
+          {in, vkapi::MemoryAccessType::READ},
+      },
+      // Parameter buffers
+      {},
+      // Specialization Constants
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
+      nullptr,
+      {},
+      {
+          PushConstantDataInfo(&wg_size, sizeof(wg_size), sizeof(utils::ivec4)),
+          PushConstantDataInfo(
+              &src_dims, sizeof(src_dims), sizeof(utils::ivec4)),
+          PushConstantDataInfo(
+              &dst_dims, sizeof(dst_dims), sizeof(utils::ivec4)),
+      }));
 }
 
 void repeat(ComputeGraph& graph, const std::vector<ValueRef>& args) {
