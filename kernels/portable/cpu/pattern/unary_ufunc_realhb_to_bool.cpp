@@ -7,7 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -30,25 +30,23 @@ Tensor& unary_ufunc_realhb_to_bool(
       out,
       "Failed to resize output tensor.");
 
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      out.scalar_type() == executorch::aten::ScalarType::Bool,
-      InvalidArgument,
-      out,
-      "Expected out tensor to have dtype Bool, but got %" PRId8 " instead.",
-      static_cast<int8_t>(out.scalar_type()));
-
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   const auto in_type = in.scalar_type();
 
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
-    apply_unary_map_fn(
+  // TODO: this is broken for dtype_selective_build: this was
+  // __func__, which isn't the operator name.
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "unary_ufunc_realhb_to_bool";
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, op_name, CTYPE_IN, [&] {
+    utils::apply_unitensor_elementwise_fn<CTYPE_IN, op_name>(
         [fn](const CTYPE_IN val_in) { return fn(val_in); },
-        in.const_data_ptr<CTYPE_IN>(),
-        out.mutable_data_ptr<bool>(),
-        in.numel());
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::BOOL);
   });
 
   return out;

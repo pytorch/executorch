@@ -7,7 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -38,17 +38,20 @@ Tensor& unary_ufunc_realhbbf16_to_floathbf16(
   const auto in_type = in.scalar_type();
   const auto out_type = out.scalar_type();
 
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
-    ET_SWITCH_FLOATHBF16_TYPES(out_type, ctx, __func__, CTYPE_OUT, [&] {
-      apply_unary_map_fn(
-          [fn](const CTYPE_IN val_in) {
-            CTYPE_OUT xi = static_cast<CTYPE_OUT>(val_in);
-            return static_cast<CTYPE_OUT>(fn(xi));
-          },
-          in.const_data_ptr<CTYPE_IN>(),
-          out.mutable_data_ptr<CTYPE_OUT>(),
-          in.numel());
-    });
+  // TODO: this is broken for dtype_selective_build: this was
+  // __func__, which isn't the operator name.
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] =
+      "unary_ufunc_realhbbf16_to_floathbf16";
+
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, op_name, CTYPE_IN, [&] {
+    utils::apply_unitensor_elementwise_fn<CTYPE_IN, op_name>(
+        [fn](const CTYPE_IN val_in) { return fn(val_in); },
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALHBBF16,
+        out,
+        utils::SupportedTensorDtypes::FLOATHBF16);
   });
 
   return out;

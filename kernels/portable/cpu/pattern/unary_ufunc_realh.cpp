@@ -7,7 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -36,12 +36,19 @@ Tensor& unary_ufunc_realh(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
-    apply_unary_map_fn(
+  // TODO: this is broken for dtype_selective_build: this was
+  // __func__, which isn't the operator name.
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "unary_ufunc_realh";
+
+  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
+    utils::apply_unitensor_elementwise_fn<CTYPE, op_name>(
         [fn](const CTYPE val_in) { return static_cast<CTYPE>(fn(val_in)); },
-        in.const_data_ptr<CTYPE>(),
-        out.mutable_data_ptr<CTYPE>(),
-        in.numel());
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALH,
+        out,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON);
   });
 
   return out;
