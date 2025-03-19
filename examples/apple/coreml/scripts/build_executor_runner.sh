@@ -77,4 +77,11 @@ XCODE_WORKSPACE_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/executor_runner"
 XCODE_BUILD_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/xcode-build"
 
 xcodebuild build -workspace "$XCODE_WORKSPACE_DIR_PATH/coreml_executor_runner.xcworkspace" -scheme coreml_executor_runner BUILD_DIR="$XCODE_BUILD_DIR_PATH"
-cp -f "$XCODE_BUILD_DIR_PATH/DEBUG/coreml_executor_runner" "$PWD"
+
+if [[ -z "${COREML_EXECUTOR_RUNNER_OUT_DIR:-}" ]]; then
+    COREML_EXECUTOR_RUNNER_OUT_DIR=$(pwd)
+elif [[ ! -d "${COREML_EXECUTOR_RUNNER_OUT_DIR}" ]]; then
+    mkdir -p "${COREML_EXECUTOR_RUNNER_OUT_DIR}"
+fi
+cp -f "$XCODE_BUILD_DIR_PATH/DEBUG/coreml_executor_runner" "${COREML_EXECUTOR_RUNNER_OUT_DIR}"
+echo "created ${COREML_EXECUTOR_RUNNER_OUT_DIR}/coreml_executor_runner"
