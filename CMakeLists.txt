@@ -645,13 +645,18 @@ target_link_options_shared_lib(executorch)
 # Real integrations should supply their own YAML file that only lists the
 # operators necessary for the models that will run.
 #
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  # find pytorch lib here to make it available to all
+  # sub-directories. Find it before including portable so that
+  # optimized_portabale_kernels can use it.
+  find_package_torch_headers()
+endif()
+
 if(BUILD_EXECUTORCH_PORTABLE_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
-  # find pytorch lib here to make it available to all sub-directories
-  find_package_torch_headers()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 

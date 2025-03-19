@@ -73,6 +73,7 @@ def define_common_targets():
             # -Wmacro-redefined, and we only care about getting
             # reasonable vectorization and Sleef support.
             "-DCPU_CAPABILITY_AVX2",
+            "-DET_USE_PYTORCH_HEADERS",
             "-DHAVE_AVX2_CPU_DEFINITION",
             "-DSTANDALONE_TORCH_HEADER",
         ] + get_sleef_preprocessor_flags(),
@@ -87,5 +88,5 @@ def define_common_targets():
             # linker failure.
             "ovr_config//cpu:arm64": get_sleef_preprocessor_flags(),
             "DEFAULT": [],
-        }) + ["-DSTANDALONE_TORCH_HEADER"],
+        }) + ["-DET_USE_PYTORCH_HEADERS", "-DSTANDALONE_TORCH_HEADER"],
     )

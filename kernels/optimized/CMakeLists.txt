@@ -62,6 +62,7 @@ message("Generated files ${gen_command_sources}")
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
 target_include_directories(optimized_kernels PRIVATE ${TORCH_INCLUDE_DIRS} "${EXECUTORCH_ROOT}/third-party/pocketfft")
+target_compile_definitions(optimized_kernels PRIVATE ET_USE_PYTORCH_HEADERS)
 target_link_libraries(
   optimized_kernels PUBLIC executorch_core cpublas extension_threadpool
 )
