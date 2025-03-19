@@ -42,9 +42,9 @@
 # It should also be cmake-lint clean.
 #
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(executorch)
-include(build/Utils.cmake)
+include(tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -682,7 +682,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
+install(FILES tools/cmake/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
 #
 # executor_runner: Host tool that demonstrates program execution.
@@ -917,6 +917,14 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Generate lib to register quantized ops
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
+  endif()
+
+  if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+    list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+  endif()
+
+  if(EXECUTORCH_BUILD_XNNPACK)
+    list(APPEND _executor_runner_libs xnnpack_backend)
   endif()
 
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
