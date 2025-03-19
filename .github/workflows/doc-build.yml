@@ -70,8 +70,8 @@ jobs:
 
         # Build javadoc:
         cd extension/android
-        ./gradlew javadoc
-        cp -rf build/docs/javadoc "${RUNNER_DOCS_DIR}"
+        ./gradlew :executorch_android:javaDocReleaseGeneration
+        cp -rf executorch_android/build/intermediates/java_doc_dir/release/javaDocReleaseGeneration "${RUNNER_DOCS_DIR}/javadoc"
         cd ../..
 
         # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
