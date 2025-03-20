@@ -204,7 +204,8 @@ class MethodMeta final {
    * Get the backend name at the given index.
    *
    * @param[in] index The index of the backend name.
-   * @returns The backend name as a C-style string, or nullptr if the index is invalid.
+   * @returns The backend name as a C-style string, or nullptr if the index is
+   * invalid.
    */
   const char* get_backend_name(size_t index) const;
 
