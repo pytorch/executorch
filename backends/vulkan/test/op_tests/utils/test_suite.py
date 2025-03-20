@@ -47,3 +47,4 @@ class VkTestSuite(TestSuite):
         self.storage_types: List[str] = ["utils::kTexture3D"]
         self.layouts: List[str] = ["utils::kChannelsPacked"]
         self.data_gen: str = "make_rand_tensor"
+        self.force_io: bool = False
