@@ -67,6 +67,9 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
+#
+# NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
+# by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
 NIGHTLY_VERSION = "dev20250311"
 
 
