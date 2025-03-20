@@ -19,7 +19,6 @@ python_library(
     srcs = ["runner_utils.py"],
     deps = [
         ":conftest",
-        "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/arm:arm_backend",
         "//executorch/exir:lib",
         "//executorch/exir/backend:compile_spec_schema",
@@ -31,10 +30,7 @@ python_library(
     srcs = ["common.py"],
     deps = [
         ":runner_utils",
-        "//executorch/backends/xnnpack/test/tester:tester",
-        "//executorch/backends/arm:arm_backend",
-        "//executorch/exir:lib",
-        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/backends/arm:tosa_specification",
         "fbsource//third-party/pypi/pytest:pytest",
     ]
 )
@@ -43,12 +39,11 @@ python_library(
     name = "arm_tester",
     srcs = glob(["tester/*.py"]),
     deps = [
-        ":runner_utils",
         ":common",
-        "//executorch/backends/arm:tosa_mapping",
-        "//executorch/backends/arm:tosa_specification",
-        "//executorch/backends/arm/quantizer:arm_quantizer",
+        "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/arm:arm_partitioner",
+        "//executorch/backends/arm/quantizer:arm_quantizer",
+        "//executorch/backends/arm:tosa_mapping",
         "//executorch/devtools/backend_debug:delegation_info",
         "fbsource//third-party/pypi/tabulate:tabulate",
     ]
