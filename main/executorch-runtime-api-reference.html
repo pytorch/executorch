@@ -1051,6 +1051,31 @@
 </dd></dl>
 
 <dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime10MethodMeta12num_backendsEv">
+<span id="_CPPv3NK10executorch7runtime10MethodMeta12num_backendsEv"></span><span id="_CPPv2NK10executorch7runtime10MethodMeta12num_backendsEv"></span><span id="executorch::runtime::MethodMeta::num_backendsC"></span><span class="target" id="classexecutorch_1_1runtime_1_1MethodMeta_1a80eb15f88116cdf7df615a0f97db743f"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">num_backends</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime10MethodMeta12num_backendsEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the number of backends used in this method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The total number of backend names. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK10executorch7runtime10MethodMeta16get_backend_nameE6size_t">
+<span id="_CPPv3NK10executorch7runtime10MethodMeta16get_backend_nameE6size_t"></span><span id="_CPPv2NK10executorch7runtime10MethodMeta16get_backend_nameE6size_t"></span><span id="executorch::runtime::MethodMeta::get_backend_name__sC"></span><span class="target" id="classexecutorch_1_1runtime_1_1MethodMeta_1aaebc3962b10e8dcfed6be6675deee681"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">get_backend_name</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK10executorch7runtime10MethodMeta16get_backend_nameE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the backend name at the given index.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>index</strong> – <strong>[in]</strong> The index of the backend name. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The backend name as a C-style string, or nullptr if the index is invalid. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
 <dt class="sig sig-object cpp">
 <span class="target" id="classexecutorch_1_1runtime_1_1MethodMeta_1a04e70f479b33be427a3aa5e55786f24f"></span><span class="sig-name descname"><span class="pre">ET_EXPERIMENTAL</span> <span class="pre">size_t</span> <span class="pre">num_instructions</span> <span class="pre">()</span> <span class="pre">const</span></span></dt>
 <dd><p>Get the number of instructions in this method.</p>
