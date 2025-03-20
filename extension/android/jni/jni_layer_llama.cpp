@@ -75,14 +75,14 @@ std::string token_buffer;
 
 namespace executorch_jni {
 
-class ExecuTorchLlamaCallbackJni
-    : public facebook::jni::JavaClass<ExecuTorchLlamaCallbackJni> {
+class ExecuTorchLlmCallbackJni
+    : public facebook::jni::JavaClass<ExecuTorchLlmCallbackJni> {
  public:
   constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/LlamaCallback;";
+      "Lorg/pytorch/executorch/LlmCallback;";
 
   void onResult(std::string result) const {
-    static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
+    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
     static const auto method =
         cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onResult");
 
@@ -99,7 +99,7 @@ class ExecuTorchLlamaCallbackJni
   }
 
   void onStats(const llm::Stats& result) const {
-    static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
+    static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
     static const auto method = cls->getMethod<void(jfloat)>("onStats");
     double eval_time =
         (double)(result.inference_end_ms - result.prompt_eval_end_ms);
@@ -111,8 +111,7 @@ class ExecuTorchLlamaCallbackJni
   }
 };
 
-class ExecuTorchLlamaJni
-    : public facebook::jni::HybridClass<ExecuTorchLlamaJni> {
+class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
   int model_type_category_;
@@ -120,8 +119,7 @@ class ExecuTorchLlamaJni
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
 
  public:
-  constexpr static auto kJavaDescriptor =
-      "Lorg/pytorch/executorch/LlamaModule;";
+  constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/LlmModule;";
 
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
@@ -142,7 +140,7 @@ class ExecuTorchLlamaJni
         data_path);
   }
 
-  ExecuTorchLlamaJni(
+  ExecuTorchLlmJni(
       jint model_type_category,
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
@@ -197,7 +195,7 @@ class ExecuTorchLlamaJni
       jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       auto image_size = image->size();
@@ -296,7 +294,7 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       jlong start_pos,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
       return static_cast<jint>(Error::NotSupported);
@@ -329,22 +327,22 @@ class ExecuTorchLlamaJni
 
   static void registerNatives() {
     registerHybrid({
-        makeNativeMethod("initHybrid", ExecuTorchLlamaJni::initHybrid),
-        makeNativeMethod("generate", ExecuTorchLlamaJni::generate),
-        makeNativeMethod("stop", ExecuTorchLlamaJni::stop),
-        makeNativeMethod("load", ExecuTorchLlamaJni::load),
+        makeNativeMethod("initHybrid", ExecuTorchLlmJni::initHybrid),
+        makeNativeMethod("generate", ExecuTorchLlmJni::generate),
+        makeNativeMethod("stop", ExecuTorchLlmJni::stop),
+        makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "prefillImagesNative", ExecuTorchLlamaJni::prefill_images),
+            "prefillImagesNative", ExecuTorchLlmJni::prefill_images),
         makeNativeMethod(
-            "prefillPromptNative", ExecuTorchLlamaJni::prefill_prompt),
+            "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
         makeNativeMethod(
-            "generateFromPos", ExecuTorchLlamaJni::generate_from_pos),
+            "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
     });
   }
 };
 
 } // namespace executorch_jni
 
-void register_natives_for_llama() {
-  executorch_jni::ExecuTorchLlamaJni::registerNatives();
+void register_natives_for_llm() {
+  executorch_jni::ExecuTorchLlmJni::registerNatives();
 }
