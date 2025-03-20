@@ -115,21 +115,24 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
 endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)
-  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-  set(TORCHAO_BUILD_CPU_AARCH64 ON)
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
-    ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental
-  )
-  target_link_options_shared_lib(torchao_ops_executorch)
-  list(APPEND link_libraries torchao_ops_executorch)
-  # if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-  #   add_subdirectory(
-  #     ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
-  #     ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
-  #   target_link_options_shared_lib(torchao_ops_mps_executorch)
-  #   list(APPEND link_libraries torchao_ops_mps_executorch)
-  # endif()
+  # Currently only enable this on Arm-based Macs
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+    set(TORCHAO_BUILD_CPU_AARCH64 ON)
+    add_subdirectory(
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
+      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental
+    )
+    target_link_options_shared_lib(torchao_ops_executorch)
+    list(APPEND link_libraries torchao_ops_executorch)
+    if(EXECUTORCH_BUILD_MPS)
+      add_subdirectory(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
+        ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
+      target_link_options_shared_lib(torchao_ops_mps_executorch)
+      list(APPEND link_libraries torchao_ops_mps_executorch)
+    endif()
+  endif()
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)

@@ -380,6 +380,79 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 ### Android
 Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
 
+## Running with low-bit kernels
+
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac.  Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
+
+First export your model for lowbit quantization (step 2 above):
+
+```
+# Set these paths to point to the downloaded files
+LLAMA_CHECKPOINT=path/to/checkpoint.pth
+LLAMA_PARAMS=path/to/params.json
+
+# Set low-bit quantization parameters
+QLINEAR_BITWIDTH=3 # Can be 1-8
+QLINEAR_GROUP_SIZE=128 # Must be multiple of 16
+QEMBEDDING_BITWIDTH=4 # Can be 1-8
+QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16
+
+python -m examples.models.llama.export_llama \
+  --model "llama3_2" \
+  --checkpoint "${LLAMA_CHECKPOINT:?}" \
+  --params "${LLAMA_PARAMS:?}" \
+  -kv \
+  --use_sdpa_with_kv_cache \
+  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
+  --output_name="llama3_2.pte" \
+  -qmode "torchao:8da${QLINEAR_BITWIDTH}w" \
+  --group_size ${QLINEAR_GROUP_SIZE} \
+  -E "torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
+  --disable_dynamic_shape \
+  -d fp32
+```
+
+Once the model is exported, we need to build ExecuTorch and the runner with the low-bit kernels.
+
+The first step is to install ExecuTorch (the same as step 3.1 above):
+
+```
+cmake -DPYTHON_EXECUTABLE=python \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DEXECUTORCH_ENABLE_LOGGING=1 \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -Bcmake-out .
+cmake --build cmake-out -j16 --target install --config Release
+```
+
+Next install the llama runner with torchao kernels enabled (similar to step 3.2 above):
+
+```
+cmake -DPYTHON_EXECUTABLE=python \
+    -DCMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=OFF \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+    -DEXECUTORCH_BUILD_TORCHAO=ON \
+    -Bcmake-out/examples/models/llama \
+    examples/models/llama
+cmake --build cmake-out/examples/models/llama -j16 --config Release
+```
+
+Finally run your model (similar to step 3.3 above):
+
+```
+cmake-out/examples/models/llama/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
+```
 
 ## Utility tools for Llama enablement
 

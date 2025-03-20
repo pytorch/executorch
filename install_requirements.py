@@ -6,11 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import os
 import platform
 import re
 import subprocess
 import sys
-import os
 
 
 def python_is_compatible():
@@ -119,7 +119,7 @@ def install_requirements(use_pytorch_nightly):
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.
     new_env = os.environ.copy()
-    new_env["USE_CPP"] = "1" # build torchao kernels
+    new_env["USE_CPP"] = "1"
     subprocess.run(
         [
             sys.executable,
@@ -147,8 +147,6 @@ def main(args):
 
 
 if __name__ == "__main__":
-    import os
-
     # Before doing anything, cd to the directory containing this script.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     if not python_is_compatible():
