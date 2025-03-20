@@ -209,9 +209,14 @@ test_model_with_qnn() {
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
+# Run CoreML tests.
+#
+# @param should_test If true, build and test the model using the coreml_executor_runner.
 test_model_with_coreml() {
-  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-    echo "coreml doesn't support buck2."
+  local should_test="$1"
+
+  if [[ "${BUILD_TOOL}" != "cmake" ]]; then
+    echo "coreml only supports cmake."
     exit 1
   fi
 
@@ -228,6 +233,14 @@ test_model_with_coreml() {
   else
     echo "No .pte file found"
     exit 1
+  fi
+
+  # Run the model
+  if [ "${should_test}" = true ]; then
+    echo "Testing exported model with coreml_executor_runner..."
+    local out_dir=$(mktemp -d)
+    COREML_EXECUTOR_RUNNER_OUT_DIR="${out_dir}" examples/apple/coreml/scripts/build_executor_runner.sh
+    "${out_dir}/coreml_executor_runner" --model_path "${EXPORTED_MODEL}"
   fi
 }
 
@@ -247,7 +260,11 @@ elif [[ "${BACKEND}" == *"qnn"* ]]; then
   fi
 elif [[ "${BACKEND}" == *"coreml"* ]]; then
   echo "Testing ${MODEL_NAME} with coreml..."
-  test_model_with_coreml
+  should_test_coreml=false
+  if [[ "${BACKEND}" == *"test"* ]]; then
+    should_test_coreml=true
+  fi
+  test_model_with_coreml "${should_test_coreml}"
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
