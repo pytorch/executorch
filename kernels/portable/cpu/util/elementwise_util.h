@@ -15,6 +15,10 @@
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 
+#ifdef ET_USE_PYTORCH_HEADERS
+#include <ATen/cpu/vec/vec.h>
+#endif // ET_USE_PYTORCH_HEADERS
+
 #include <array>
 #include <utility>
 
@@ -58,6 +62,38 @@ template <typename CTYPE_COMMON, typename Op, typename... Args>
 using op_call_result =
     std::invoke_result_t<Op, ignore_first_yield_second<Args, CTYPE_COMMON>...>;
 
+#ifdef ET_USE_PYTORCH_HEADERS
+template <typename T>
+struct is_vectorized : public std::false_type {};
+
+template <typename T>
+struct is_vectorized<at::vec::Vectorized<T>> : public std::true_type {};
+
+// TODO: can_use_vectorized and can_use_vectorized_impl are a failed
+// attempt to use SFINAE to detect whether our generic lambda argument
+// with deduced return type would compile if it was passed
+// Vectorized<CTYPE_COMMON> instead of CTYPE_COMMON. SFINAE does not
+// work that way (see
+// e.g. https://stackoverflow.com/questions/53344484/hard-error-when-using-stdinvoke-result-t-with-a-generic-lambda,
+// https://stackoverflow.com/questions/31368601/how-to-detect-if-a-generic-lambda-is-uncompilable-in-c-14);
+// if we really want to do it then we need to at least require that
+// our lambdas actively participate in being SFINAE-friendly, as in
+// https://stackoverflow.com/questions/76525790/detecting-if-a-generic-lambda-with-certain-arguments-is-invocable.
+template <typename CTYPE_COMMON, typename Op, typename Enable=void, typename... Args>
+struct can_use_vectorized_impl : std::false_type {};
+template <typename CTYPE_COMMON, typename Op, typename... Args>
+struct can_use_vectorized_impl<CTYPE_COMMON, Op, typename std::void_t<decltype(std::declval<std::invoke_result_t<
+      Op,
+                                                                               ignore_first_yield_second<Args, at::vec::Vectorized<CTYPE_COMMON>>...>>().store(std::declval<CTYPE_COMMON*>()))>, Args...> : public std::true_type {};//std::bool_constant<is_vectorized<std::invoke_result_t<Op,ignore_first_yield_second<Args, at::vec::Vectorized<CTYPE_COMMON>>...>>::value> {};
+
+// Can I call a function of type Op with sizeof...(Args) arguments of type
+// at::vec::Vectorized<CTYPE_COMMON>?
+// This is not possible in C++17 as the code is currently set up; see TODO above.
+template <typename CTYPE_COMMON, typename Op, typename...Args>
+struct can_use_vectorized : public can_use_vectorized_impl<CTYPE_COMMON, Op, void, Args...> {};
+
+#endif // ET_USE_PYTORCH_HEADERS
+
 template <
     typename CTYPE_COMMON,
     typename CTYPE_OUT,
@@ -68,13 +104,71 @@ inline void dtype_specialized_elementwise_fn_impl(
     KernelRuntimeContext& ctx,
     const Tensor& out,
     Args... inputs) {
+  static_assert(
+      (std::is_same_v<Args, std::pair<const Tensor*, SupportedTensorDtypes>> &&
+       ...));
   constexpr auto kNumInputs = sizeof...(inputs);
-  ET_DCHECK(((inputs.first->element_size() == sizeof(CTYPE_COMMON)) && ...));
+  // All inputs must be of type CTYPE_COMMON.
+  ET_DCHECK(
+      ((inputs.first->scalar_type() ==
+        CppTypeToScalarType<CTYPE_COMMON>::value) &&
+       ...));
 
   std::array<const CTYPE_COMMON*, kNumInputs> inputs_data_ptrs = {
       inputs.first->template const_data_ptr<CTYPE_COMMON>()...};
 
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+
+#ifdef ET_USE_PYTORCH_HEADERS
+  if constexpr (can_use_vectorized<CTYPE_COMMON, Op, Args...>::value) {
+    const bool any_is_broadcasted =
+        !(torch::executor::internal::sizes_match_ignoring_leading_1s(
+              inputs.first->sizes(), out.sizes()) &&
+          ...);
+    if (!any_is_broadcasted) {
+      using Vec = at::vec::Vectorized<CTYPE_COMMON>;
+      ::executorch::extension::parallel_for(
+          0,
+          out.numel(),
+          ::executorch::extension::internal::GRAIN_SIZE,
+          [&](const auto begin, const auto end) {
+            const auto vectorized_begin =
+                begin + (Vec::size() - begin % Vec::size()) % Vec::size();
+            const auto vectorized_end = end - (end % Vec::size());
+            // Scalar prologue.
+            for (const auto idx : c10::irange(begin, vectorized_begin)) {
+              std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
+              }
+              data_out[idx] = std::apply(compute_fun, loaded_inputs);
+            }
+
+            // Main vectorized loop.
+            for (auto idx = vectorized_begin; idx < vectorized_end;
+                 idx += Vec::size()) {
+              std::array<Vec, kNumInputs> loaded_vec_inputs;
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_vec_inputs[input_idx] =
+                    Vec::loadu(&inputs_data_ptrs[input_idx][idx]);
+              }
+              auto result_vec = std::apply(compute_fun, loaded_vec_inputs);
+              result_vec.store(&data_out[idx]);
+            }
+
+            // Scalar epilogue.
+            for (const auto idx : c10::irange(vectorized_end, end)) {
+              std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
+              }
+              data_out[idx] = std::apply(compute_fun, loaded_inputs);
+            }
+          });
+      return;
+    }
+  }
+#endif
 
   ::executorch::extension::parallel_for(
       0,

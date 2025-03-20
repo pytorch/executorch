@@ -49,7 +49,10 @@ def define_common_targets():
     runtime.cxx_library(
         name = "aten_headers_for_executorch",
         srcs = [],
-        visibility = ["//executorch/kernels/optimized/..."],
+        visibility = [
+            "//executorch/kernels/optimized/...",
+            "//executorch/kernels/portable/cpu/util/...",
+        ],
         exported_deps = select({
             "DEFAULT": [],
             "ovr_config//cpu:arm64": [

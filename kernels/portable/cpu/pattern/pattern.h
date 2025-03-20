@@ -80,13 +80,12 @@ Tensor& unary_ufunc_realh(
       ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
 
   ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
-    utils::apply_unitensor_elementwise_fn<CTYPE, op_name>(
+    utils::apply_unitensor_elementwise_fn<CTYPE, op_name, utils::SupportedTensorDtypes::SAME_AS_COMMON>(
         fn,
         ctx,
         in,
         utils::SupportedTensorDtypes::REALH,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
+        out);
   });
   return out;
 }
@@ -107,13 +106,12 @@ Tensor& unary_ufunc_realhb_to_bool(
     return out;
   }
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
-    utils::apply_unitensor_elementwise_fn<CTYPE_IN, op_name>(
+    utils::apply_unitensor_elementwise_fn<CTYPE_IN, op_name, utils::SupportedTensorDtypes::BOOL>(
         [fn](const CTYPE_IN val_in) { return fn(val_in); },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::BOOL);
+        out);
   });
 
   return out;
@@ -138,13 +136,12 @@ Tensor& unary_ufunc_realhbbf16_to_floathbf16(
   }
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
-    utils::apply_unitensor_elementwise_fn<CTYPE_IN, op_name>(
+    utils::apply_unitensor_elementwise_fn<CTYPE_IN, op_name, utils::SupportedTensorDtypes::FLOATHBF16>(
         [fn](const CTYPE_IN val_in) { return fn(val_in); },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::FLOATHBF16);
+        out);
   });
 
   return out;
