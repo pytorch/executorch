@@ -13,9 +13,11 @@ fi
 which "${PYTHON_EXECUTABLE}"
 
 build_android_test() {
-  pushd extension/android_test
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew testDebugUnitTest
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
+  mkdir -p extension/android/executorch_android/src/androidTest/resources
+  cp extension/module/test/resources/add.pte extension/android/executorch_android/src/androidTest/resources
+  pushd extension/android
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest
   popd
 }
 
@@ -24,8 +26,7 @@ collect_artifacts_to_be_uploaded() {
   # Collect Java library test
   JAVA_LIBRARY_TEST_DIR="${ARTIFACTS_DIR_NAME}/library_test_dir"
   mkdir -p "${JAVA_LIBRARY_TEST_DIR}"
-  cp extension/android_test/build/outputs/apk/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
-  cp extension/android_test/build/outputs/apk/androidTest/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
+  cp executorch_android/build/outputs/apk/androidTest/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
 }
 
 main() {
