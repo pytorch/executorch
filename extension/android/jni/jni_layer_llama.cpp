@@ -79,7 +79,7 @@ class ExecuTorchLlmCallbackJni
     : public facebook::jni::JavaClass<ExecuTorchLlmCallbackJni> {
  public:
   constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/LlmCallback;";
+      "Lorg/pytorch/executorch/extension/llm/LlmCallback;";
 
   void onResult(std::string result) const {
     static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
@@ -119,7 +119,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
 
  public:
-  constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/LlmModule;";
+  constexpr static auto kJavaDescriptor =
+      "Lorg/pytorch/executorch/extension/llm/LlmModule;";
 
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
