@@ -229,10 +229,11 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
 }
 
 bool MethodMeta::uses_backend(const char* backend_name) const {
+  ET_CHECK_MSG(backend_name, "backend name is null");
   const auto delegates = s_plan_->delegates();
   for (size_t i = 0; i < delegates->size(); i++) {
     auto delegate = delegates->Get(i);
-    if (strcmp(delegate->id()->c_str(), backend_name) == 0) {
+    if (std::strcmp(delegate->id()->c_str(), backend_name) == 0) {
       return true;
     }
   }
