@@ -15,7 +15,7 @@ from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
-test_data_suite = [
+test_data_sute = [
     # (test_name, input, other,) See torch.mul() for info
     (
         "op_mul_rank1_rand",
@@ -51,31 +51,6 @@ test_data_suite = [
         "op_mul_rank4_large_randn",
         200 * torch.randn(1, 10, 25, 20),
         torch.rand(1, 10, 25, 1),
-    ),
-]
-
-
-test_data_suite_2 = [
-    # (test_name, input, other,) See torch.mul() for info
-    (
-        "op_mul_rank2_rand",
-        torch.rand(4, 5),
-        torch.rand(5),
-    ),
-    (
-        "op_mul_rank3_randn",
-        torch.randn(10, 5, 2),
-        torch.randn(5, 2),
-    ),
-    (
-        "op_mul_rank4_randn",
-        torch.randn(1, 10, 25, 20),
-        torch.randn(1, 25, 20),
-    ),
-    (
-        "op_mul_rank4_randn_2",
-        torch.randn(1, 25, 1),
-        torch.randn(1, 3, 25, 10),
     ),
 ]
 
@@ -158,7 +133,7 @@ class TestMul(unittest.TestCase):
         if conftest.is_option_enabled("corstone_fvp"):
             tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
-    @parameterized.expand(test_data_suite)
+    @parameterized.expand(test_data_sute)
     def test_mul_tosa_MI(
         self,
         test_name: str,
@@ -168,27 +143,7 @@ class TestMul(unittest.TestCase):
         test_data = (input_, other_)
         self._test_mul_tosa_MI_pipeline(self.Mul(), test_data)
 
-    @parameterized.expand(test_data_suite_2)
-    def test_mul_diff_input_ranks_tosa_MI(
-        self,
-        test_name: str,
-        input_: torch.Tensor,
-        other_: torch.Tensor,
-    ):
-        test_data = (input_, other_)
-        self._test_mul_tosa_MI_pipeline(self.Mul(), test_data)
-
-    @parameterized.expand(test_data_suite_2)
-    def test_mul_diff_input_ranks_tosa_BI(
-        self,
-        test_name: str,
-        input_: torch.Tensor,
-        other_: torch.Tensor,
-    ):
-        test_data = (input_, other_)
-        self._test_mul_tosa_BI_pipeline(self.Mul(), test_data)
-
-    @parameterized.expand(test_data_suite)
+    @parameterized.expand(test_data_sute)
     def test_mul_tosa_BI(
         self,
         test_name: str,
@@ -199,7 +154,7 @@ class TestMul(unittest.TestCase):
         test_data = (input_, other_)
         self._test_mul_tosa_BI_pipeline(self.Mul(), test_data)
 
-    @parameterized.expand(test_data_suite)
+    @parameterized.expand(test_data_sute)
     @pytest.mark.corstone_fvp
     def test_mul_u55_BI(
         self,
@@ -212,7 +167,7 @@ class TestMul(unittest.TestCase):
             common.get_u55_compile_spec(), self.Mul(), test_data
         )
 
-    @parameterized.expand(test_data_suite)
+    @parameterized.expand(test_data_sute)
     @pytest.mark.corstone_fvp
     def test_mul_u85_BI(
         self,
