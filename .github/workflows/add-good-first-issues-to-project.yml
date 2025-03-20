@@ -1,0 +1,63 @@
+name: Add Good First Issues to Project
+
+on:
+  issues:
+    types:
+      - labeled
+
+jobs:
+  add-to-project:
+    name: Add issue to project
+    if: github.event.label.name == 'good first issue'
+    runs-on: ubuntu-latest
+    permissions:
+      # Need read access to issues to get issue details
+      issues: read
+      # Need write access to organization projects to add issues
+      organization-projects: write
+    steps:
+      - name: Add issue to project
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.ET_GH_TOKEN_ISSUES_PROJECTS }}
+          script: |
+            const core = require('@actions/core');
+            
+            try {
+              // First get the project ID
+              const projectQuery = `
+                query {
+                  organization(login: "pytorch") {
+                    projectV2(number: 102) {
+                      id
+                    }
+                  }
+                }
+              `;
+              
+              const projectResult = await github.graphql(projectQuery);
+              const projectId = projectResult.organization.projectV2.id;
+              
+              // Add the issue to the project
+              const addToProjectMutation = `
+                mutation($projectId: ID!, $contentId: ID!) {
+                  addProjectV2ItemById(input: {
+                    projectId: $projectId
+                    contentId: $contentId
+                  }) {
+                    item {
+                      id
+                    }
+                  }
+                }
+              `;
+              
+              await github.graphql(addToProjectMutation, {
+                projectId: projectId,
+                contentId: context.payload.issue.node_id
+              });
+              
+              console.log(`Successfully added issue #${context.issue.number} to project`);
+            } catch (error) {
+              core.setFailed(`Failed to add issue to project: ${error.message}`);
+            }
