@@ -13,7 +13,7 @@ fi
 which "${PYTHON_EXECUTABLE}"
 
 copy_src() {
-  cp -r extension/android/build.gradle extension/android/settings.gradle extension/android/gradlew extension/android/gradle extension/android/gradlew.bat "${BUILD_AAR_DIR}"
+  cp -r extension/android/build.gradle extension/android/settings.gradle extension/android/gradlew extension/android/gradle extension/android/gradlew.bat extension/android/gradle.properties "${BUILD_AAR_DIR}"
   cp -r extension/android/executorch_android "${BUILD_AAR_DIR}/executorch_android"
 }
 
