@@ -51,7 +51,6 @@ build_native_library() {
 }
 
 pushd "$BASEDIR"/../../
-build_jar
 build_native_library "arm64-v8a"
 build_native_library "x86_64"
 build_aar
