@@ -12,7 +12,7 @@ on:
       - install_executorch.sh
       - backends/apple/**
       - scripts/build_apple_frameworks.sh
-      - build/build_apple_llm_demo.sh
+      - scripts/build_apple_llm_demo.sh
       - build/create_frameworks.sh
       - .ci/scripts/test_ios_ci.sh
       - examples/demo-apps/apple_ios/**
@@ -319,5 +319,5 @@ jobs:
         echo "::group::Build ExecuTorch benchmark app"
         mkdir -p extension/benchmark/apple/Benchmark/Models
         ${CONDA_RUN} --no-capture-output \
-          build/build_apple_llm_demo.sh "${ARTIFACTS_DIR_NAME}"
+          scripts/build_apple_llm_demo.sh "${ARTIFACTS_DIR_NAME}"
         echo "::endgroup::"
