@@ -80,25 +80,6 @@ install_pytorch_and_domains() {
   sccache --show-stats || true
 }
 
-install_flatc_from_source() {
-  # NB: This function could be used to install flatbuffer from source
-  pushd third-party/flatbuffers || return
-
-  cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-  if [ "$(uname)" == "Darwin" ]; then
-    CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
-  else
-    CMAKE_JOBS=$(( $(nproc) - 1 ))
-  fi
-  cmake --build . -j "${CMAKE_JOBS}"
-
-  # Copy the flatc binary to conda path
-  EXEC_PATH=$(dirname "$(which python)")
-  cp flatc "${EXEC_PATH}"
-
-  popd || return
-}
-
 build_executorch_runner_buck2() {
   # Build executorch runtime with retry as this step is flaky on macos CI
   retry buck2 build //examples/portable/executor_runner:executor_runner
@@ -111,9 +92,14 @@ build_executorch_runner_cmake() {
   mkdir "${CMAKE_OUTPUT_DIR}"
 
   pushd "${CMAKE_OUTPUT_DIR}" || return
+  if [[ $1 == "Debug" ]]; then
+      CXXFLAGS="-fsanitize=address,undefined"
+  else
+      CXXFLAGS=""
+  fi
   # This command uses buck2 to gather source files and buck2 could crash flakily
   # on MacOS
-  retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
+  CXXFLAGS="$CXXFLAGS" retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
   popd || return
 
   if [ "$(uname)" == "Darwin" ]; then
