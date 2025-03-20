@@ -148,10 +148,11 @@ void add_repeat_node(
   if (int64_t channel_repeat = dim_at<kChannel4D>(repeats);
       channel_repeat == 1) {
     // If no repeat, short-cut to a direct copy
-    utils::ivec3 src_offset{0, 0, 0};
-    utils::ivec3 dst_offset{0, 0, 0};
+    utils::ivec4 src_offset{0, 0, 0, 0};
+    utils::ivec4 dst_offset{0, 0, 0, 0};
 
-    add_copy_offset_node(graph, in, running_range, src_offset, dst_offset, out);
+    add_copy_offset_node(
+        graph, in, running_range, src_offset, dst_offset, out, false, false);
 
   } else {
     add_repeat_channel_node(graph, in, channel_repeat, out, running_range);
@@ -160,13 +161,13 @@ void add_repeat_node(
   // TODO: refactor width, height, and batch into a common helper function.
   // Width
   if (int64_t width_repeat = dim_at<kWidth4D>(repeats); width_repeat > 1) {
-    utils::ivec3 src_offset{0, 0, 0};
+    utils::ivec4 src_offset{0, 0, 0, 0};
 
     for (int i = 1; i < width_repeat; ++i) {
-      utils::ivec3 dst_offset{i * dim_at<kWidth4D>(in_sizes), 0, 0};
+      utils::ivec4 dst_offset{i * dim_at<kWidth4D>(in_sizes), 0, 0, 0};
 
       add_copy_offset_node(
-          graph, out, running_range, src_offset, dst_offset, out);
+          graph, out, running_range, src_offset, dst_offset, out, true, false);
     }
 
     running_range[0] = running_range[0] * width_repeat;
@@ -174,13 +175,13 @@ void add_repeat_node(
 
   // Height
   if (int64_t height_repeat = dim_at<kHeight4D>(repeats); height_repeat > 1) {
-    utils::ivec3 src_offset{0, 0, 0};
+    utils::ivec4 src_offset{0, 0, 0, 0};
 
     for (int i = 1; i < height_repeat; ++i) {
-      utils::ivec3 dst_offset = {0, i * dim_at<kHeight4D>(in_sizes), 0};
+      utils::ivec4 dst_offset = {0, i * dim_at<kHeight4D>(in_sizes), 0, 0};
 
       add_copy_offset_node(
-          graph, out, running_range, src_offset, dst_offset, out);
+          graph, out, running_range, src_offset, dst_offset, out, true, false);
     }
 
     running_range[1] = running_range[1] * height_repeat;
@@ -188,13 +189,13 @@ void add_repeat_node(
 
   // Batch
   if (int64_t batch_repeat = dim_at<kBatch4D>(repeats); batch_repeat > 1) {
-    utils::ivec3 src_offset{0, 0, 0};
+    utils::ivec4 src_offset{0, 0, 0, 0};
 
     for (int i = 1; i < batch_repeat; ++i) {
-      utils::ivec3 dst_offset = {0, 0, i * running_range[2]};
+      utils::ivec4 dst_offset = {0, 0, i * running_range[2], 0};
 
       add_copy_offset_node(
-          graph, out, running_range, src_offset, dst_offset, out);
+          graph, out, running_range, src_offset, dst_offset, out, true, false);
     }
 
     running_range[2] = running_range[2] * batch_repeat;

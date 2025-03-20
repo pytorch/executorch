@@ -347,6 +347,35 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
   EXPECT_EQ(method_res.error(), Error::Ok);
 }
 
+TEST_P(BackendIntegrationTest, GetBackendNamesSuccess) {
+  // Load the program from file.
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Get method metadata for the "forward" method.
+  auto method_meta = program->method_meta("forward");
+
+  // Ensure the StubBackend is used.
+  EXPECT_TRUE(method_meta->uses_backend(StubBackend::kName));
+
+  // Retrieve the number of backends.
+  size_t num_backends = method_meta->num_backends();
+  EXPECT_GT(num_backends, 0u);
+
+  // Iterate through each backend and verify its name.
+  for (size_t i = 0; i < num_backends; ++i) {
+    const char* name = method_meta->get_backend_name(i);
+    EXPECT_NE(name, nullptr);
+    // For this test, we expect that the only backend is StubBackend.
+    EXPECT_STREQ(name, StubBackend::kName);
+  }
+  // Check that an out-of-range index returns nullptr.
+  EXPECT_EQ(method_meta->get_backend_name(num_backends), nullptr);
+}
+
 TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   // Install an init() implementation that frees its processed buffer, and lets
   // us know that it was actually called by setting init_called.
