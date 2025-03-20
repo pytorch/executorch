@@ -217,7 +217,7 @@ echo "Exporting headers"
 
 mkdir -p "$HEADERS_PATH"
 
-"$SOURCE_ROOT_DIR"/build/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
+"$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
   //extension/tensor: \
 | rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
