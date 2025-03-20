@@ -9,6 +9,7 @@ __pycache__/
 
 # Build and tool-generated files
 arm_test/
+build/
 buck-out/
 buck2-bin/
 cmake-android-out/
