@@ -92,19 +92,37 @@ void add_copy_packed_dim_offset_node(
   ivec4 final_range = {
       range[0], range[1], range[2], dim_at(t_in->sizes(), kBatch4D)};
   ivec3 global_wg_size = t_out->logical_limits();
+  // The starting offset in a texel where this tensor will start copying from
+  const auto src_lane_offset = src_offset[packed_dim] & 0x3;
   // The starting offset in a texel where this tensor will start copying to
   const auto dst_lane_offset = dst_offset[packed_dim] & 0x3;
+
+  // The total packed texels this tensor will be copied from
+  // The first texel of tensor data in packed dimension will be copied from
+  // remaining lanes from current source Hence (4 - src_lane_offset) is added
+  // to tensor size in packed dimension
+  const auto src_packed_size = utils::div_up_4(
+      (4 - src_lane_offset) +
+      dim_at(t_out->sizes(), normalize_to_dim_index(*t_out, packed_dim)));
+
   // The total packed texels this tensor will be copied to
-  // The first texel of tensor data in packed dimension will be copied to remain
-  // lanes from previous write Hence (4 - dst_lane_offset) is added to tensor
-  // size in packed dimension
+  // The first texel of tensor data in packed dimension will be copied to
+  // remaining lanes from previous write Hence (4 - dst_lane_offset) is added to
+  // tensor size in packed dimension
   const auto dst_packed_size = utils::div_up_4(
       (4 - dst_lane_offset) +
       dim_at(t_in->sizes(), normalize_to_dim_index(*t_in, packed_dim)));
 
-  // If the starting offset is not 0, and the total packed texels is greater
+  // If the starting src offset is not 0, and the total packed texels is greater
   // than the source texel range
-  if (dst_lane_offset != 0 && dst_packed_size > final_range[packed_dim]) {
+  const bool has_additional_src_work =
+      src_lane_offset != 0 && src_packed_size > final_range[packed_dim];
+  // If the starting dst offset is not 0, and the total packed texels is greater
+  // than the source texel range
+  const bool has_additional_dst_work =
+      dst_lane_offset != 0 && dst_packed_size > final_range[packed_dim];
+
+  if (has_additional_src_work || has_additional_dst_work) {
     global_wg_size[packed_dim]++; // Increase the global work group size in
                                   // packed dimension
     final_range[packed_dim]++; // Increase the range in packed dimension
