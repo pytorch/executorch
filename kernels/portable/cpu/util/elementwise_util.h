@@ -222,8 +222,6 @@ inline void apply_elementwise_fn(
     return;
   }
 
-  constexpr auto kNumInputs = sizeof...(inputs);
-
   constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
   const bool all_inputs_compute_dtype =
       ((inputs.first->scalar_type() == compute_type) && ...);
@@ -269,7 +267,7 @@ inline void apply_unitensor_elementwise_fn(
     SupportedTensorDtypes a_dtypes,
     const Tensor& out) {
   internal::apply_elementwise_fn<CTYPE_COMMON, op_name, out_dtypes>(
-      compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
+      compute_fun, ctx, out, std::make_pair(&a, a_dtypes));
 }
 
 /**
