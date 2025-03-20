@@ -24,7 +24,7 @@ The AAR artifact contains the Java library for users to integrate with their Jav
 
 ## Using AAR from Maven Central
 
-TODO: Add the link to maven page.
+ExecuTorch is available on [Maven Central](https://mvnrepository.com/artifact/org.pytorch/executorch-android).
 
 Simply add the target [`org.pytorch:executorch-android:0.5.1`](https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/0.5.1/) to your Android app dependency (build.gradle), and build your app.
 
