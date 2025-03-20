@@ -59,6 +59,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
+    QnnExecuTorchOpPackageOptions,
     QnnExecuTorchOptions,
     QnnExecuTorchProfileLevel,
 )
@@ -1170,6 +1171,7 @@ def generate_qnn_executorch_compiler_spec(
     multiple_graphs: bool = False,
     weight_sharing: bool = False,
     graph_name: str = "forward",
+    op_package_options: QnnExecuTorchOpPackageOptions = None,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -1201,6 +1203,8 @@ def generate_qnn_executorch_compiler_spec(
             Please see test cases for post-processing example.
         weight_sharing: Used with multiple_graphs, where model size will be reduced when operations have the same weights across multiple graphs.
         graph_name: Assign unique graph name if 'multiple_graphs' is used.
+        op_package_options: Optional structure to specify op packages
+            loaded and used by the backend.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -1272,6 +1276,9 @@ def generate_qnn_executorch_compiler_spec(
             and weight_sharing
         ):
             backend_options.htp_options.use_weight_sharing = True
+
+    if op_package_options and len(op_package_options.op_package_infos) > 0:
+        qnn_executorch_options.op_package_options = op_package_options
 
     return [
         CompileSpec(QCOM_QNN_COMPILE_SPEC, option_to_flatbuffer(qnn_executorch_options))
