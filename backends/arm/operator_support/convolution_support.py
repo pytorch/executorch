@@ -34,6 +34,9 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
 
         for pad in output_padding:
             if pad != 0:
+                self.reporter.report_reject(
+                    node, "Convolutions with non-zero output padding not implemented."
+                )
                 return False
 
         # Hardware specific constraints
@@ -56,19 +59,33 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
             # Depthwise convolution
             for dim in shape_in[1:]:
                 if not 1 <= dim <= 65536:
+                    self.reporter.report_reject(
+                        node,
+                        f"Depthwise convolution must have CWH <= 65536, got {dim})",
+                    )
                     return False
         else:
             # Convolution
             if not 1 <= C_in <= 65536:
+                self.reporter.report_reject(
+                    node, f"Convolution must have C <= 65536, got {C_in})"
+                )
                 return False
 
         kernel_w = kernel[2]
         kernel_h = kernel[3] if len(kernel) > 3 else 1
         # Kernel condition misses constraint on sum of absolute weights
         if not 1 <= kernel_h <= 64 or not 1 <= kernel_w * kernel_h <= 4096:
+            self.reporter.report_reject(
+                node,
+                f"Convolution needs to have kernel_y<=64, kernel_x*kernel_y<=4096, got kernel ({kernel_w}, {kernel_h})",
+            )
             return False
 
         if not self._stride_condition(node):
+            self.reporter.report_reject(
+                node, "Failed condition on stride, pad and dilation combination."
+            )
             return False
 
         return True

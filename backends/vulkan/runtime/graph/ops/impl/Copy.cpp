@@ -16,15 +16,18 @@
 namespace vkcompute {
 
 using utils::ivec3;
+using utils::ivec4;
 using utils::uvec3;
 
 void add_copy_offset_node(
     ComputeGraph& graph,
     const ValueRef in,
     const ivec3& range,
-    const ivec3& src_offset,
-    const ivec3& dst_offset,
-    const ValueRef out) {
+    const ivec4& src_offset,
+    const ivec4& dst_offset,
+    const ValueRef out,
+    bool calc_out_pos_using_src_chnl,
+    bool calc_in_pos_using_dst_chnl) {
   vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
@@ -48,15 +51,107 @@ void add_copy_offset_node(
       // Parameter buffers
       {},
       // Specialization Constants
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(in),
+       (calc_out_pos_using_src_chnl      ? 1
+            : calc_in_pos_using_dst_chnl ? 2
+                                         : 0)},
+      nullptr,
+      {},
+      {
+          PushConstantDataInfo(&range, sizeof(range), sizeof(ivec4)),
+          PushConstantDataInfo(&src_offset, sizeof(src_offset), sizeof(ivec4)),
+          PushConstantDataInfo(&dst_offset, sizeof(dst_offset), sizeof(ivec4)),
+      }));
+}
+
+void add_copy_packed_dim_offset_node(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ivec3& range,
+    const ivec4& src_offset,
+    const ivec4& dst_offset,
+    const ValueRef out) {
+  vTensorPtr t_in = graph.get_tensor(in);
+  vTensorPtr t_out = graph.get_tensor(out);
+
+  // Check the packed dimension is same for both tensors, and if the packed
+  // dimension is Width or Height. Since the function does not support channel
+  // packing.
+  VK_CHECK_COND(
+      check_same_packed_dim(*t_in, *t_out) &&
+      (check_packed_dim_is(*t_in, WHCN::kWidthDim) ||
+       check_packed_dim_is(*t_in, WHCN::kHeightDim)));
+
+  std::string kernel_name = "copy_packed_dim_offset";
+  kernel_name.reserve(kShaderNameReserve);
+  add_dtype_suffix(kernel_name, *t_out);
+
+  const auto packed_dim = t_in->packed_dim();
+  // A copy of range with the last element set to batch size of the input tensor
+  ivec4 final_range = {
+      range[0], range[1], range[2], dim_at(t_in->sizes(), kBatch4D)};
+  ivec3 global_wg_size = t_out->logical_limits();
+  // The starting offset in a texel where this tensor will start copying from
+  const auto src_lane_offset = src_offset[packed_dim] & 0x3;
+  // The starting offset in a texel where this tensor will start copying to
+  const auto dst_lane_offset = dst_offset[packed_dim] & 0x3;
+
+  // The total packed texels this tensor will be copied from
+  // The first texel of tensor data in packed dimension will be copied from
+  // remaining lanes from current source Hence (4 - src_lane_offset) is added
+  // to tensor size in packed dimension
+  const auto src_packed_size = utils::div_up_4(
+      (4 - src_lane_offset) +
+      dim_at(t_out->sizes(), normalize_to_dim_index(*t_out, packed_dim)));
+
+  // The total packed texels this tensor will be copied to
+  // The first texel of tensor data in packed dimension will be copied to
+  // remaining lanes from previous write Hence (4 - dst_lane_offset) is added to
+  // tensor size in packed dimension
+  const auto dst_packed_size = utils::div_up_4(
+      (4 - dst_lane_offset) +
+      dim_at(t_in->sizes(), normalize_to_dim_index(*t_in, packed_dim)));
+
+  // If the starting src offset is not 0, and the total packed texels is greater
+  // than the source texel range
+  const bool has_additional_src_work =
+      src_lane_offset != 0 && src_packed_size > final_range[packed_dim];
+  // If the starting dst offset is not 0, and the total packed texels is greater
+  // than the source texel range
+  const bool has_additional_dst_work =
+      dst_lane_offset != 0 && dst_packed_size > final_range[packed_dim];
+
+  if (has_additional_src_work || has_additional_dst_work) {
+    global_wg_size[packed_dim]++; // Increase the global work group size in
+                                  // packed dimension
+    final_range[packed_dim]++; // Increase the range in packed dimension
+  }
+
+  auto shader = VK_KERNEL_FROM_STR(kernel_name);
+
+  graph.execute_nodes().emplace_back(new DispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
+      // Inputs and Outputs
+      {
+          {out, vkapi::MemoryAccessType::WRITE},
+          {out, vkapi::MemoryAccessType::READ},
+          {in, vkapi::MemoryAccessType::READ},
+      },
+      // Parameter buffers
+      {},
+      // Specialization Constants
       {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
       nullptr,
       {},
       {
-          PushConstantDataInfo(&range, sizeof(range), sizeof(utils::ivec4)),
           PushConstantDataInfo(
-              &src_offset, sizeof(src_offset), sizeof(utils::ivec4)),
-          PushConstantDataInfo(
-              &dst_offset, sizeof(dst_offset), sizeof(utils::ivec4)),
+              &final_range, sizeof(final_range), sizeof(ivec4)),
+          PushConstantDataInfo(&src_offset, sizeof(src_offset), sizeof(ivec4)),
+          PushConstantDataInfo(&dst_offset, sizeof(dst_offset), sizeof(ivec4)),
       }));
 }
 
@@ -140,7 +235,7 @@ void add_copy_channel_offset_node(
         static_cast<int>(global_size[2]),
         channel_range};
 
-    const utils::ivec4 offset_params = {
+    const ivec4 offset_params = {
         dst_offset[0], dst_offset[1], dst_offset[2], dst_channel_offset};
 
     auto shader = VK_KERNEL_FROM_STR(kernel_name);
@@ -179,10 +274,14 @@ void add_copy_offset_node(
     ValueRef dst_offset_ref,
     ValueRef out) {
   ivec3 range = utils::make_ivec3(*graph.get_int_list(range_ref));
-  ivec3 src_offset = utils::make_ivec3(*graph.get_int_list(src_offset_ref));
-  ivec3 dst_offset = utils::make_ivec3(*graph.get_int_list(dst_offset_ref));
+  ivec3 src = utils::make_ivec3(*graph.get_int_list(src_offset_ref));
+  ivec3 dst = utils::make_ivec3(*graph.get_int_list(dst_offset_ref));
 
-  add_copy_offset_node(graph, in, range, src_offset, dst_offset, out);
+  ivec4 src_offset = {src[0], src[1], src[2], 0};
+  ivec4 dst_offset = {dst[0], dst[1], dst[2], 0};
+
+  add_copy_offset_node(
+      graph, in, range, src_offset, dst_offset, out, false, false);
 }
 
 void copy_offset(ComputeGraph& graph, const std::vector<ValueRef>& args) {

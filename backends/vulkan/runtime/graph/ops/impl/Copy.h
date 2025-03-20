@@ -17,16 +17,48 @@ namespace vkcompute {
 // add_copy_offset_node resumes the vkCmdCopyImage command. It copies the
 // texture extents specified by the range, src_offset, and dst_offset (all are
 // in texture coordinate (x, y, z) from the input image to the output image.
+// src_offset.w and dst_offset.w may contain channel size information.
 //
 // It is possible to have input and output to point to the same image
 // object. But when the source range and destination range overlap, the behavior
 // is undefined.
+//
+// boolean flags calc_out_pos_using_src_chnl and calc_in_pos_using_dst_chnl
+// can be used to specify an indexing function in the shader
+// If calc_out_pos_using_src_chnl is set to true channel and batch index will be
+// calculated based on source channel size and will be used to determine
+// destination texel position.
+//
+// If calc_in_pos_using_dst_chnl is set to truechannel and batch index will be
+// calculated based on destination channel size and will be used to determine
+// source texel position.
+//
+// If both are true calc_out_pos_using_src_chnl is picked. If both are false no
+// index calculation happens.
 void add_copy_offset_node(
     ComputeGraph& graph,
     const ValueRef in,
     const utils::ivec3& range,
-    const utils::ivec3& src_offset,
-    const utils::ivec3& dst_offset,
+    const utils::ivec4& src_offset,
+    const utils::ivec4& dst_offset,
+    const ValueRef out,
+    bool calc_out_pos_using_src_chnl,
+    bool calc_in_pos_using_dst_chnl);
+
+// add_copy_packed_dim_offset_node behaves similar to add_copy_node, except that
+// its used when copying packed dimension, if tensor is width or height packed.
+// src_offset.w and dst_offset.w may contain channel size information.
+//
+// It copies the texture extents specified by the range, src_offset, and
+// dst_offset (all are in texture coordinate (x, y, z) from the input image to
+// the output image.
+//
+void add_copy_packed_dim_offset_node(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const utils::ivec3& range,
+    const utils::ivec4& src_offset,
+    const utils::ivec4& dst_offset,
     const ValueRef out);
 
 // add_copy_channel_offset_node behaves similar to add_copy_node, except that it

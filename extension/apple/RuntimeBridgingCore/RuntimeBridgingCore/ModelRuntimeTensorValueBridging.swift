@@ -16,7 +16,3 @@ public class ModelRuntimeTensorValueBridgingTuple: NSObject {
     self.shape = shape
   }
 }
-
-@objc public protocol ModelRuntimeTensorValueBridging {
-  func floatRepresentation() throws -> ModelRuntimeTensorValueBridgingTuple
-}

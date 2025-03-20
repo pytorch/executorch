@@ -93,7 +93,7 @@ class TestConformer(unittest.TestCase):
             )
         )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
+    @conftest.expectedFailureOnFVP  # TODO(MLETORCH-635)
     def test_conformer_u55_BI(self):
         tester = (
             ArmTester(
@@ -115,7 +115,7 @@ class TestConformer(unittest.TestCase):
                 inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
             )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
+    @conftest.expectedFailureOnFVP  # TODO(MLETORCH-635)
     def test_conformer_u85_BI(self):
         tester = (
             ArmTester(

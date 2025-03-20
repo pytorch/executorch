@@ -43,37 +43,40 @@ void add_split_with_sizes_default_node(
   }
 
   if (dim_index == kWidth4D) {
-    utils::ivec3 src_offset = utils::make_ivec3({0, 0, 0}, false);
-    utils::ivec3 dst_offset = utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec4 src_offset = utils::make_ivec4({0, 0, 0, 0}, false);
+    utils::ivec4 dst_offset = utils::make_ivec4({0, 0, 0, 0}, false);
 
     for (ValueRef out_ref : *out_list) {
       // Doesn't need to use split_size since we have already verified that the
       // output tensor's size matches with the split_size.
       vTensorPtr t_out = graph.get_tensor(out_ref);
       utils::ivec3 range = t_out->logical_limits();
-      add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
+      add_copy_offset_node(
+          graph, in, range, src_offset, dst_offset, out_ref, false, true);
 
       src_offset[0] += range[0];
     }
   } else if (dim_index == kHeight4D) {
-    utils::ivec3 src_offset = utils::make_ivec3({0, 0, 0}, false);
-    utils::ivec3 dst_offset = utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec4 src_offset = utils::make_ivec4({0, 0, 0, 0}, false);
+    utils::ivec4 dst_offset = utils::make_ivec4({0, 0, 0, 0}, false);
 
     for (ValueRef out_ref : *out_list) {
       vTensorPtr t_out = graph.get_tensor(out_ref);
       utils::ivec3 range = t_out->logical_limits();
-      add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
+      add_copy_offset_node(
+          graph, in, range, src_offset, dst_offset, out_ref, false, true);
 
       src_offset[1] += range[1];
     }
   } else if (dim_index == kBatch4D) {
-    utils::ivec3 src_offset = utils::make_ivec3({0, 0, 0}, false);
-    utils::ivec3 dst_offset = utils::make_ivec3({0, 0, 0}, false);
+    utils::ivec4 src_offset = utils::make_ivec4({0, 0, 0, 0}, false);
+    utils::ivec4 dst_offset = utils::make_ivec4({0, 0, 0, 0}, false);
 
     for (ValueRef out_ref : *out_list) {
       vTensorPtr t_out = graph.get_tensor(out_ref);
       utils::ivec3 range = t_out->logical_limits();
-      add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
+      add_copy_offset_node(
+          graph, in, range, src_offset, dst_offset, out_ref, false, true);
 
       src_offset[2] += range[2];
     }

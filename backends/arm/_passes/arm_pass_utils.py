@@ -8,7 +8,7 @@
 # pyre-unsafe
 
 from inspect import isclass
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 import torch.fx
@@ -149,7 +149,7 @@ def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
     If the node contains many fake tensors, return the first one.
     """
     if isinstance(
-        node.meta["val"], (tuple, torch.fx.immutable_collections.immutable_list)
+        node.meta["val"], (Sequence, torch.fx.immutable_collections.immutable_list)
     ):
         fake_tensor = node.meta["val"][0]
     else:

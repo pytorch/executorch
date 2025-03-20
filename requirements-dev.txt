@@ -1,4 +1,4 @@
-cmake  # For building binary targets in the wheel.
+cmake>=3.19  # For building binary targets in the wheel.
 pip>=23  # For building the pip package.
 pyyaml  # Imported by the kernel codegen tools.
 setuptools>=63  # For building the pip package contents.

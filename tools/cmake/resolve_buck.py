@@ -37,10 +37,10 @@ buck2:
 
 """
 
+
 # Path to the file containing BUCK2 version (build date) for ExecuTorch.
-# Note that this path is relative to this script file, not the working
-# directory.
-BUCK_VERSION_FILE = "../.ci/docker/ci_commit_pins/buck2.txt"
+def _buck_version_path() -> Path:
+    return buck_util.repo_root_dir() / ".ci/docker/ci_commit_pins/buck2.txt"
 
 
 @dataclass
@@ -125,9 +125,7 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
 
     # Read the target version (build date) from the CI pin file. Note that
     # this path is resolved relative to the directory containing this script.
-    script_dir = os.path.dirname(__file__)
-    version_file_path = Path(script_dir) / BUCK_VERSION_FILE
-    with open(version_file_path.absolute().as_posix()) as f:
+    with open(_buck_version_path().absolute().as_posix()) as f:
         target_buck_version = f.read().strip()
 
     # Determine the target buck2 version string according to the current

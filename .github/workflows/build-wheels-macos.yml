@@ -4,7 +4,7 @@ name: Build macOS Wheels
 on:
   pull_request:
     paths:
-      - build/packaging/**
+      - .ci/**/*
       - .github/workflows/build-wheels-macos.yml
   push:
     branches:
@@ -39,9 +39,9 @@ jobs:
       matrix:
         include:
           - repository: pytorch/executorch
-            pre-script: build/packaging/pre_build_script.sh
-            post-script: build/packaging/post_build_script.sh
-            smoke-test-script: build/packaging/smoke_test.py
+            pre-script: .ci/scripts/wheel/pre_build_script.sh
+            post-script: .ci/scripts/wheel/post_build_script.sh
+            smoke-test-script: .ci/scripts/wheel/test_macos.py
             package-name: executorch
     name: ${{ matrix.repository }}
     uses: pytorch/test-infra/.github/workflows/build_wheels_macos.yml@main
@@ -51,12 +51,9 @@ jobs:
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
       build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
-      # ExecuTorch only needs the first layer of submodules; override the
-      # "recursive" default to do less work, and to give the buck daemon fewer
-      # files to look at.
-      submodules: true
+      submodules: recursive
       delocate-wheel: false
-      env-var-script: build/packaging/env_var_script_macos.sh
+      env-var-script: .ci/scripts/wheel/envvar_macos.sh
       pre-script: ${{ matrix.pre-script }}
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}

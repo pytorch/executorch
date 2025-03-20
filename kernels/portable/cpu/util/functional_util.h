@@ -12,6 +12,7 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 namespace torch {
 namespace executor {
@@ -53,9 +54,15 @@ inline void apply_unary_map_fn(
     CTYPE_OUT* const data_out,
     const int64_t size,
     const int64_t stride = 1) {
-  for (const auto i : c10::irange(size)) {
-    data_out[i * stride] = map_fun(data_in[i * stride]);
-  }
+  executorch::extension::parallel_for(
+      0,
+      size,
+      ::executorch::extension::internal::GRAIN_SIZE,
+      [&](const auto begin, const auto end) {
+        for (const auto i : c10::irange(begin, end)) {
+          data_out[i * stride] = map_fun(data_in[i * stride]);
+        }
+      });
 }
 
 //

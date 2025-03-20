@@ -34,14 +34,17 @@ class BroadcastIndexesIterator {
 
   template <typename... Args>
   explicit BroadcastIndexesIterator(const Tensor& output, const Args&... args)
-      : output_dim_(output.dim()),
-        output_shape_(output.sizes()),
-        effective_input_broadcast_strides_{
-            effective_input_broadcast_stride(output, args)...} {
+      : output_dim_or_zero_if_no_broadcasting_(
+            ((args.sizes() == output.sizes()) && ...) ? 0 : output.dim()),
+        output_shape_(output.sizes()) {
     static_assert(
         sizeof...(args) == kNumInputs && (std::is_same_v<Args, Tensor> && ...),
         "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
         "arguments!");
+    if (output_dim_or_zero_if_no_broadcasting_ != 0) {
+      effective_input_broadcast_strides_ = {
+          effective_input_broadcast_stride(output, args)...};
+    }
   }
 
   struct make_end_t {
@@ -73,9 +76,14 @@ class BroadcastIndexesIterator {
 
   BroadcastIndexesIterator& operator++() {
     output_index()++;
+    if (output_dim_or_zero_if_no_broadcasting_ == 0) {
+      std::fill(
+          current_indexes_.begin() + 1, current_indexes_.end(), output_index());
+      return *this;
+    }
     // TODO: add optimization for particular input tensors not being
     // broadcasted?
-    for (auto ii = output_dim_ - 1; ii >= 0; --ii) {
+    for (auto ii = output_dim_or_zero_if_no_broadcasting_ - 1; ii >= 0; --ii) {
       // You might wonder what happens if output_shape_[ii] == 0. In
       // that case, output.numel() would be 0, and thus we would have
       // begin() == end() and no iteration.
@@ -114,6 +122,11 @@ class BroadcastIndexesIterator {
     }
 
     output_index() += n;
+    if (output_dim_or_zero_if_no_broadcasting_ == 0) {
+      std::fill(
+          current_indexes_.begin() + 1, current_indexes_.end(), output_index());
+      return *this;
+    }
     delinearize_index(
         output_index(),
         output_shape_,
@@ -121,7 +134,8 @@ class BroadcastIndexesIterator {
         delinearized_output_index_.size());
     for (const auto ii : c10::irange(1, kNumInputs + 1)) {
       current_indexes_[ii] = 0;
-      for (const auto jj : c10::irange(output_dim_)) {
+      for (const auto jj :
+           c10::irange(output_dim_or_zero_if_no_broadcasting_)) {
         current_indexes_[ii] += delinearized_output_index_[jj] *
             effective_input_broadcast_strides_[ii - 1][jj];
       }
@@ -180,7 +194,7 @@ class BroadcastIndexesIterator {
   // followed by kNumInputs input indexes.
   std::array<ssize_t, kNumInputs + 1> current_indexes_ = {0};
   ShapeType delinearized_output_index_ = {0};
-  ssize_t output_dim_;
+  ssize_t output_dim_or_zero_if_no_broadcasting_;
   ArrayRef<exec_aten::SizesType> output_shape_;
   // The linear index for a broadcast tensor is
   // sum(delinearized_output_index_[i] * input_stride_[i] if
@@ -189,8 +203,7 @@ class BroadcastIndexesIterator {
   // output_dim. This is straightforwardly implementable with an
   // adjusted stride array that contains 0s where the padded input
   // shape would contain 1s.
-  std::array<ShapeType, kNumInputs> effective_input_broadcast_strides_ = {
-      {{0}}};
+  std::array<ShapeType, kNumInputs> effective_input_broadcast_strides_;
 };
 } // namespace internal
 
