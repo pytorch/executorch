@@ -164,6 +164,11 @@ runtime::Error Module::load(const runtime::Program::Verification verification) {
   return runtime::Error::Ok;
 }
 
+runtime::Result<size_t> Module::num_methods() {
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  return program_->num_methods();
+}
+
 runtime::Result<std::unordered_set<std::string>> Module::method_names() {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
   const auto method_count = program_->num_methods();

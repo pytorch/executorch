@@ -69,6 +69,14 @@ TEST_F(ModuleTest, TestMethodNames) {
   EXPECT_EQ(method_names.get(), std::unordered_set<std::string>{"forward"});
 }
 
+TEST_F(ModuleTest, TestNumMethods) {
+  Module module(model_path_);
+
+  const auto num_methods = module.num_methods();
+  EXPECT_EQ(num_methods.error(), Error::Ok);
+  EXPECT_EQ(num_methods.get(), 1);
+}
+
 TEST_F(ModuleTest, TestNonExistentMethodNames) {
   Module module("/path/to/nonexistent/file.pte");
 
