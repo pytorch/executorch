@@ -12,6 +12,6 @@ export BUILD_AAR_DIR
 
 BASEDIR=$(dirname "$0")
 mkdir -p "$BASEDIR"/app/libs
-bash "$BASEDIR"/../../../../build/build_android_library.sh
+bash "$BASEDIR"/../../../../scripts/build_android_library.sh
 
 cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/app/libs/executorch.aar

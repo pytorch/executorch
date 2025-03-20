@@ -55,7 +55,7 @@ jobs:
         # Build AAR Package
         mkdir aar-out
         export BUILD_AAR_DIR=aar-out
-        bash build/build_android_library.sh
+        bash scripts/build_android_library.sh
         mkdir -p "${ARTIFACTS_DIR_NAME}"
         cp aar-out/executorch.aar "${ARTIFACTS_DIR_NAME}/executorch.aar"
 

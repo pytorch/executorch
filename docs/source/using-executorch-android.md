@@ -70,7 +70,7 @@ Now you can compile your app with the ExecuTorch Android library.
 
 ## Building from Source
 
-`build/build_android_library.sh` is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file. It can also build
+`scripts/build_android_library.sh` is a helper script to build the Java library (into .jar), native library (into .so), and the packaged AAR file. It can also build
 demo apps to showcase the AAR is integrated into a user app correctly.
 
 You need Android [SDK](https://developer.android.com/studio) and [NDK](https://developer.android.com/ndk/downloads) to use it.
@@ -81,7 +81,7 @@ You need to set `ANDROID_NDK` to the correct NDK root (containing NOTICE file).
 
 ```
 export ANDROID_NDK=/path/to/ndk
-sh build/build_android_library.sh
+sh scripts/build_android_library.sh
 ```
 
 ### Optional environment variables
@@ -94,7 +94,7 @@ Set environment variable `ANDROID_ABIS` to either `arm64-v8a` or `x86_64` if you
 export ANDROID_ABIS=arm64-v8a
 # or
 # export ANDROID_ABIS=x86_64
-sh build/build_android_library.sh
+sh scripts/build_android_library.sh
 ```
 
 #### EXECUTORCH_CMAKE_BUILD_TYPE
