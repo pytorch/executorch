@@ -30,6 +30,7 @@ jobs:
 
         # Build LLM Demo for Android
         export BUILD_AAR_DIR=aar-out
+        mkdir -p $BUILD_AAR_DIR
         bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
         bash .ci/scripts/build_android_instrumentation.sh ${ARTIFACTS_DIR_NAME}
 
