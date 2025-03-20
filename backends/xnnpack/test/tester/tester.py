@@ -26,6 +26,9 @@ from executorch.exir import (
     to_edge,
     to_edge_transform_and_lower,
 )
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
+)
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
@@ -177,6 +180,8 @@ class Quantize(Stage):
                 prepared(*inputs)
 
         converted = convert_pt2e(prepared)
+        DuplicateDynamicQuantChainPass()(converted)
+
         self.converted_graph = converted
 
     @property

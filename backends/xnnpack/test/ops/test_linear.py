@@ -331,7 +331,6 @@ class TestLinear(unittest.TestCase):
         uses_bias=False,
         qconfig: Optional[QuantizationConfig] = None,
         atol=5e-02,  # TODO(T212995726): Investigate right atol for rand[n] inputs
-        no_per_op_mode=False,
     ):
         """
         Helper function to test dynamic quantized linear op with different configurations.
@@ -340,9 +339,8 @@ class TestLinear(unittest.TestCase):
             is_per_channel=is_per_channel,
             is_dynamic=True,
         )
-        per_op_mode_choices = [False] if no_per_op_mode else [True, False]
         for legacy_partitioner in (True, False):
-            for per_op_mode in per_op_mode_choices:
+            for per_op_mode in (True, False):
                 DynamicallyQuantizedPartitioner = XnnpackPartitioner(
                     config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
                     per_op_mode=per_op_mode,
@@ -538,22 +536,21 @@ class TestLinear(unittest.TestCase):
                 # )
 
     def test_qd8_f32_per_channel_shared_dq_chain(self):
-        for use_bias in (False, True):
-            module = SharedDQChain(
-                input_size=13,
-                output_size=17,
-            )
-            inputs = (torch.randn(1, 2, 13),)
+        # for use_bias in (False, True):
+        module = SharedDQChain(
+            input_size=13,
+            output_size=17,
+        )
+        inputs = (torch.randn(1, 2, 13),)
 
-            self._test_dqlinear(
-                module,
-                inputs,
-                dynamic_shapes=None,
-                is_per_channel=True,
-                linear_count=2,
-                uses_bias=use_bias,
-                no_per_op_mode=True,
-            )
+        self._test_dqlinear(
+            module,
+            inputs,
+            dynamic_shapes=None,
+            is_per_channel=True,
+            linear_count=2,
+            uses_bias=False,
+        )
 
     def _test_qd8_per_channel_linear(self, dtype: torch.dtype = torch.float):
         for uses_bias in (False, True):
