@@ -171,12 +171,12 @@ public class LlamaModule {
     return mModule.generateFromPos(prompt, seqLen, startPos, new LlmCallback() {
           @Override
           public void onResult(String result) {
-            llamaCallback.onResult(result);
+            callback.onResult(result);
           }
 
           @Override
           public void onStats(float tps) {
-            llamaCallback.onStats(tps);
+            callback.onStats(tps);
           }
         }, echo);
       }
