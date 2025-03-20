@@ -224,14 +224,20 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
 )
 """Xfails a test if Corsone320 FVP is not installed, or if the executor runner is not built"""
 
+xfail_type = str | tuple[str, type[Exception]]
+
 
 def parametrize(
-    arg_name: str, test_data: dict[str, Any], xfails: dict[str, str] = None
+    arg_name: str,
+    test_data: dict[str, Any],
+    xfails: dict[str, xfail_type] | None = None,
 ):
     """
     Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
         - test_data is expected as a dict of (id, test_data) pairs
-        - alllows to specifiy a dict of (id, failure_reason) pairs to mark specific tests as xfail
+        - alllows to specifiy a dict of (id, failure_reason) pairs to mark specific tests as xfail.
+          Failure_reason can be str, type[Exception], or tuple[str, type[Exception]].
+          Strings set the reason for failure, the exception type sets expected error.
     """
     if xfails is None:
         xfails = {}
@@ -241,8 +247,21 @@ def parametrize(
         pytest_testsuite = []
         for id, test_parameters in test_data.items():
             if id in xfails:
+                xfail_info = xfails[id]
+                reason = ""
+                raises = None
+                if isinstance(xfail_info, str):
+                    reason = xfail_info
+                elif isinstance(xfail_info, tuple):
+                    reason, raises = xfail_info
+                else:
+                    raise RuntimeError(
+                        "xfail info needs to be str, or tuple[str, type[Exception]]"
+                    )
                 pytest_param = pytest.param(
-                    test_parameters, id=id, marks=pytest.mark.xfail(reason=xfails[id])
+                    test_parameters,
+                    id=id,
+                    marks=pytest.mark.xfail(reason=reason, raises=raises, strict=True),
                 )
             else:
                 pytest_param = pytest.param(test_parameters, id=id)
