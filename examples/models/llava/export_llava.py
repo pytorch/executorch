@@ -17,6 +17,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from executorch.examples.models.llama.export_llama_lib import (
+    _convert_args_to_config,
     build_args_parser,
     get_quantizer_and_quant_params,
 )
@@ -110,8 +111,9 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             "4,32",
         ]
     )
-    quant_transform = get_quant_weight_transform(args, dtype_override)
-    _, quantizers, _ = get_quantizer_and_quant_params(args)
+    config = _convert_args_to_config(args)
+    quant_transform = get_quant_weight_transform(config, dtype_override)
+    _, quantizers, _ = get_quantizer_and_quant_params(config)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
         source_transforms.append(replace_kv_cache_with_custom_kv_cache)
