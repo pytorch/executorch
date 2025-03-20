@@ -47,7 +47,7 @@ function build_semihosting_executorch_runner() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build ${build_test_dir} -- -j"$((n - 5))" arm_executor_runner
+    cmake --build ${build_test_dir} -j"$((n - 5))" -- arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file: with semihosting enabled"
     find ${build_test_dir} -name "arm_executor_runner"
 }

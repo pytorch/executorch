@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
@@ -37,7 +39,9 @@ class NestedModule(torch.nn.Module):
         return self.nested(a, b)
 
 
-def test_single_reject():
+def test_single_reject(caplog):
+    caplog.set_level(logging.INFO)
+
     module = CustomPartitioning()
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
@@ -57,6 +61,7 @@ def test_single_reject():
         .run_method_and_compare_outputs(inputs=inputs)
     )
     assert check.has_rejected_node()
+    assert "Rejected by DontPartition" in caplog.text
 
 
 def test_multiple_reject():
@@ -83,7 +88,9 @@ def test_multiple_reject():
     assert check.has_rejected_node()
 
 
-def test_torch_op_reject():
+def test_torch_op_reject(caplog):
+    caplog.set_level(logging.INFO)
+
     module = CustomPartitioning()
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
@@ -103,6 +110,7 @@ def test_torch_op_reject():
         .run_method_and_compare_outputs(inputs=inputs)
     )
     assert check.has_rejected_node()
+    assert "Rejected by DontPartition" in caplog.text
 
 
 def test_string_op_reject():
@@ -128,7 +136,9 @@ def test_string_op_reject():
     assert check.has_rejected_node()
 
 
-def test_name_reject():
+def test_name_reject(caplog):
+    caplog.set_level(logging.INFO)
+
     module = CustomPartitioning()
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
@@ -148,6 +158,7 @@ def test_name_reject():
         .run_method_and_compare_outputs(inputs=inputs)
     )
     assert check.has_rejected_node()
+    assert "Rejected by DontPartitionName" in caplog.text
 
 
 def test_module_reject():
@@ -172,7 +183,9 @@ def test_module_reject():
     assert check.has_rejected_node()
 
 
-def test_inexact_module_reject():
+def test_inexact_module_reject(caplog):
+    caplog.set_level(logging.INFO)
+
     module = NestedModule()
     inputs = module.inputs
     compile_spec = common.get_tosa_compile_spec("TOSA-0.80+MI")
@@ -192,6 +205,7 @@ def test_inexact_module_reject():
         .run_method_and_compare_outputs(inputs=inputs)
     )
     assert check.has_rejected_node()
+    assert "Rejected by DontPartitionModule" in caplog.text
 
 
 def test_module_instance_reject():
