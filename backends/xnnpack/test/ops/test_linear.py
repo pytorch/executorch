@@ -536,21 +536,21 @@ class TestLinear(unittest.TestCase):
                 # )
 
     def test_qd8_f32_per_channel_shared_dq_chain(self):
-        # for use_bias in (False, True):
-        module = SharedDQChain(
-            input_size=13,
-            output_size=17,
-        )
-        inputs = (torch.randn(1, 2, 13),)
+        for use_bias in (False, True):
+            module = SharedDQChain(
+                input_size=13,
+                output_size=17,
+            )
+            inputs = (torch.randn(1, 2, 13),)
 
-        self._test_dqlinear(
-            module,
-            inputs,
-            dynamic_shapes=None,
-            is_per_channel=True,
-            linear_count=2,
-            uses_bias=False,
-        )
+            self._test_dqlinear(
+                module,
+                inputs,
+                dynamic_shapes=None,
+                is_per_channel=True,
+                linear_count=2,
+                uses_bias=use_bias,
+            )
 
     def _test_qd8_per_channel_linear(self, dtype: torch.dtype = torch.float):
         for uses_bias in (False, True):
