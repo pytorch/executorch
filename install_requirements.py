@@ -119,7 +119,7 @@ def install_requirements(use_pytorch_nightly):
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.
     new_env = os.environ.copy()
-    new_env["USE_CPP"] = "1"
+    new_env["USE_CPP"] = "1"  # install torchao kernels
     subprocess.run(
         [
             sys.executable,

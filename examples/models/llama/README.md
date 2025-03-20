@@ -382,7 +382,7 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac.  Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac.  Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.  Currently dynamic shapes must be disabled when exporting a model with these kernels.
 
 First export your model for lowbit quantization (step 2 above):
 
