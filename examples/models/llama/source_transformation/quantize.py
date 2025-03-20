@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from executorch.extension.llm.export.builder import DType
+from omegaconf import DictConfig
 
 from sentencepiece import SentencePieceProcessor
 
@@ -35,33 +36,36 @@ except:
 
 def quantize(  # noqa C901
     model: torch.nn.Module,
-    qmode: str,
-    activation_dtype: Optional[DType],
+    config: DictConfig,
     checkpoint_path: Optional[Path] = None,
-    # following arguments only available when setting int4 or gptq quantization.
-    group_size: Optional[int] = 128,
-    # following arguments are only used for GPTQ
-    calibration_tasks: Optional[list] = None,
-    calibration_limit: Optional[int] = None,
-    calibration_seq_length: Optional[int] = None,
-    pad_calibration_inputs: bool = False,
-    percdamp: float = 0.01,
-    blocksize: int = 128,
-    tokenizer_path: Optional[Path] = None,
     verbose: bool = False,
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
     Args:
         model: A model to quantize.
-        qmode: quantization mode, e.g. int8, 8da4w, 8da4w-gptq
+        config: Configuration containing quantization settings
+        checkpoint_path: Path to the checkpoint file
+        verbose: Whether to print verbose information
     Returns:
         A quantized model.
     """
-    if activation_dtype is not None:
-        torch_dtype = activation_dtype.to_torch_dtype()
+    if config.model.dtype_override is not None:
+        torch_dtype = DType[config.model.dtype_override].to_torch_dtype()
     else:
         torch_dtype = torch.float16
+
+    assert checkpoint_path, "Need to specify a checkpoint"
+
+    qmode = config.quantization.mode
+    group_size = config.quantization.group_size
+    calibration_tasks = config.calibration.tasks
+    calibration_limit = config.calibration.limit
+    calibration_seq_length = config.calibration.seq_length
+    pad_calibration_inputs = False  # Default value
+    percdamp = 0.01  # Default value
+    blocksize = 128  # Default value
+    tokenizer_path = config.export.tokenizer_path
 
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
@@ -750,9 +754,11 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 ############################ Source Transform Start #######################
 
 
-def get_quant_embedding_transform(args):
-    if args.embedding_quantize.startswith("torchao:"):
-        bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
+def get_quant_embedding_transform(config: DictConfig):
+    if config.quantization.embedding_quantize.startswith("torchao:"):
+        bitwidth, group_size = config.quantization.embedding_quantize.split(":")[
+            1
+        ].split(",")
         group_size = int(group_size)
         bitwidth = int(bitwidth)
         from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
@@ -769,7 +775,7 @@ def get_quant_embedding_transform(args):
 
         return _torchao_embedding_quantizer
 
-    bitwidth, group_size = args.embedding_quantize.split(",")
+    bitwidth, group_size = config.quantization.embedding_quantize.split(",")
     if group_size == "none" or group_size == "None" or group_size == "0":
         group_size = None
     else:
@@ -783,30 +789,14 @@ def get_quant_embedding_transform(args):
     ).quantized_model()
 
 
-def get_quant_weight_transform(args, dtype_override, verbose):
-    # If these optional args are None, don't provide them to quantize()
-    quant_args_str = [
-        "group_size",
-        "calibration_tasks",
-        "calibration_limit",
-        "calibration_seq_length",
-    ]
-    arg_dict = vars(args)
-    quant_args = {
-        param: val
-        for param in quant_args_str
-        if (val := arg_dict.get(param)) is not None
-    }
-
+def get_quant_weight_transform(config: DictConfig, dtype_override, verbose):
     return partial(
         quantize,
-        **quant_args,
-        qmode=args.quantization_mode,
-        activation_dtype=dtype_override,
-        checkpoint_path=(Path(path) if (path := args.checkpoint) is not None else None),
-        tokenizer_path=(
-            Path(path) if (path := args.tokenizer_path) is not None else None
+        config=config,
+        checkpoint_path=(
+            Path(path) if (path := config.export.checkpoint) is not None else None
         ),
+        verbose=verbose,
     )
 
 
