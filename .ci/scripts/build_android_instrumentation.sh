@@ -26,7 +26,7 @@ collect_artifacts_to_be_uploaded() {
   # Collect Java library test
   JAVA_LIBRARY_TEST_DIR="${ARTIFACTS_DIR_NAME}/library_test_dir"
   mkdir -p "${JAVA_LIBRARY_TEST_DIR}"
-  cp executorch_android/build/outputs/apk/androidTest/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
+  cp extension/android/executorch_android/build/outputs/apk/androidTest/debug/*.apk "${JAVA_LIBRARY_TEST_DIR}"
 }
 
 main() {
