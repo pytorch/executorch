@@ -674,7 +674,8 @@ utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
 }
 
 const vkapi::BufferBindInfo vTensor::sizes_ubo() {
-  const size_t size_per_ubo = context()->adapter_ptr()->min_ubo_alignment();
+  const size_t size_per_ubo =
+      storage_.context_->adapter_ptr()->min_ubo_alignment();
   const size_t max_ubo_size = kMaxMetadataFieldCount * size_per_ubo;
   if (!uniforms_.buffer()) {
     uniforms_ = ParamsBuffer(storage_.context_, max_ubo_size, true);
@@ -692,7 +693,8 @@ const vkapi::BufferBindInfo vTensor::sizes_ubo() {
 }
 
 const vkapi::BufferBindInfo vTensor::strides_ubo() {
-  const size_t size_per_ubo = context()->adapter_ptr()->min_ubo_alignment();
+  const size_t size_per_ubo =
+      storage_.context_->adapter_ptr()->min_ubo_alignment();
   const size_t max_ubo_size = kMaxMetadataFieldCount * size_per_ubo;
   if (!uniforms_.buffer()) {
     uniforms_ = ParamsBuffer(storage_.context_, max_ubo_size, true);
@@ -712,7 +714,8 @@ const vkapi::BufferBindInfo vTensor::strides_ubo() {
 }
 
 const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
-  const size_t size_per_ubo = context()->adapter_ptr()->min_ubo_alignment();
+  const size_t size_per_ubo =
+      storage_.context_->adapter_ptr()->min_ubo_alignment();
   const size_t max_ubo_size = kMaxMetadataFieldCount * size_per_ubo;
   if (!uniforms_.buffer()) {
     uniforms_ = ParamsBuffer(storage_.context_, max_ubo_size, true);
@@ -730,7 +733,8 @@ const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
 }
 
 const vkapi::BufferBindInfo vTensor::numel_ubo() {
-  const size_t size_per_ubo = context()->adapter_ptr()->min_ubo_alignment();
+  const size_t size_per_ubo =
+      storage_.context_->adapter_ptr()->min_ubo_alignment();
   const size_t max_ubo_size = kMaxMetadataFieldCount * size_per_ubo;
   if (!uniforms_.buffer()) {
     uniforms_ = ParamsBuffer(storage_.context_, max_ubo_size, true);
