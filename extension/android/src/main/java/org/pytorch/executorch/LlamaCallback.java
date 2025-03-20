@@ -14,8 +14,9 @@ import com.facebook.jni.annotations.DoNotStrip;
  * Callback interface for Llama model. Users can implement this interface to receive the generated
  * tokens and statistics.
  *
- * @deprecated: Please use {@link org.pytorch.executorch.extension.llm.LlmModule} instead.
+ * Note: deprecated! Please use {@link org.pytorch.executorch.extension.llm.LlamaCallback} instead.
  */
+@Deprecated
 public interface LlamaCallback {
   /**
    * Called when a new result is available from JNI. Users will keep getting onResult() invocations

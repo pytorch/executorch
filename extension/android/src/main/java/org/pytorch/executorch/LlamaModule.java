@@ -15,8 +15,9 @@ import org.pytorch.executorch.extension.llm.LlmCallback;
  * LlamaModule is a wrapper around the Executorch Llama model. It provides a simple interface to
  * generate text from the model.
  *
- * @deprecated: Please use {@link org.pytorch.executorch.extension.llm.LlmModule} instead.
+ * Note: deprecated! Please use {@link org.pytorch.executorch.extension.llm.LlmModule} instead.
  */
+@Deprecated
 public class LlamaModule {
 
   public static final int MODEL_TYPE_TEXT = 1;
