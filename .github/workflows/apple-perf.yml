@@ -387,7 +387,7 @@ jobs:
 
         echo "::group::Build ExecuTorch iOS frameworks"
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          build/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+          scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
         echo "::endgroup::"
 
         # NB: Although exported models can be copied to this directory and bundled together with the
