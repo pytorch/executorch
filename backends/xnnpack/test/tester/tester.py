@@ -15,6 +15,9 @@ from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
+)
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
@@ -25,9 +28,6 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge,
     to_edge_transform_and_lower,
-)
-from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
-    DuplicateDynamicQuantChainPass,
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
