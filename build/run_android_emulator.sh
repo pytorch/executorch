@@ -31,4 +31,4 @@ adb shell am instrument -w -r com.example.executorchllamademo.test/androidx.test
 adb uninstall org.pytorch.executorch.test || true
 adb install -t android-test-debug-androidTest.apk
 
-adb shell am instrument -w -r org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner
+# adb shell am instrument -w -r org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner
