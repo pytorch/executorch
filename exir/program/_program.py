@@ -1113,7 +1113,7 @@ def collect_named_data_store_from_exported_program(
     ) -> None:
         for node in graph_module.graph.nodes:
             if node.target == executorch_call_delegate:
-                lbm = getattr(graph_module, node.args[0].name)
+                lbm = getattr(graph_module, node.args[0].target)
                 assert is_lowered_module(lbm)
                 data_store_output = lbm.named_data_store_output
                 if data_store_output is not None:
