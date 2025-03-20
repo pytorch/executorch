@@ -63,35 +63,16 @@ using op_call_result =
     std::invoke_result_t<Op, ignore_first_yield_second<Args, CTYPE_COMMON>...>;
 
 #ifdef ET_USE_PYTORCH_HEADERS
-template <typename T>
-struct is_vectorized : public std::false_type {};
-
-template <typename T>
-struct is_vectorized<at::vec::Vectorized<T>> : public std::true_type {};
-
-// TODO: can_use_vectorized and can_use_vectorized_impl are a failed
-// attempt to use SFINAE to detect whether our generic lambda argument
-// with deduced return type would compile if it was passed
-// Vectorized<CTYPE_COMMON> instead of CTYPE_COMMON. SFINAE does not
-// work that way (see
-// e.g. https://stackoverflow.com/questions/53344484/hard-error-when-using-stdinvoke-result-t-with-a-generic-lambda,
-// https://stackoverflow.com/questions/31368601/how-to-detect-if-a-generic-lambda-is-uncompilable-in-c-14);
-// if we really want to do it then we need to at least require that
-// our lambdas actively participate in being SFINAE-friendly, as in
-// https://stackoverflow.com/questions/76525790/detecting-if-a-generic-lambda-with-certain-arguments-is-invocable.
-template <typename CTYPE_COMMON, typename Op, typename Enable=void, typename... Args>
-struct can_use_vectorized_impl : std::false_type {};
-template <typename CTYPE_COMMON, typename Op, typename... Args>
-struct can_use_vectorized_impl<CTYPE_COMMON, Op, typename std::void_t<decltype(std::declval<std::invoke_result_t<
-      Op,
-                                                                               ignore_first_yield_second<Args, at::vec::Vectorized<CTYPE_COMMON>>...>>().store(std::declval<CTYPE_COMMON*>()))>, Args...> : public std::true_type {};//std::bool_constant<is_vectorized<std::invoke_result_t<Op,ignore_first_yield_second<Args, at::vec::Vectorized<CTYPE_COMMON>>...>>::value> {};
-
 // Can I call a function of type Op with sizeof...(Args) arguments of type
 // at::vec::Vectorized<CTYPE_COMMON>?
-// This is not possible in C++17 as the code is currently set up; see TODO above.
-template <typename CTYPE_COMMON, typename Op, typename...Args>
-struct can_use_vectorized : public can_use_vectorized_impl<CTYPE_COMMON, Op, void, Args...> {};
-
+//
+// See [NOTE: Generic lambdas] below for requirements on Op.
+template <typename CTYPE_COMMON, typename Op, typename... Args>
+constexpr bool can_use_vectorized() {
+  return std::is_invocable_v<
+      Op,
+      ignore_first_yield_second<Args, at::vec::Vectorized<CTYPE_COMMON>>...>;
+}
 #endif // ET_USE_PYTORCH_HEADERS
 
 template <
@@ -349,6 +330,17 @@ inline void apply_unitensor_elementwise_fn(
       compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
 }
 
+/**
+ * Useful for unary elementwise operators. For each element of the
+ * input, call Op and write to the corresponding element of the
+ * output. Tensor broadcasting is applied wherever it is required.
+ *
+ * [NOTE: Generic lambdas]: If Op is a *generic* lambda (i.e., one with `auto`
+ * parameters; normal lambdas are fine), it must fulfill one of the
+ * following conditions. Either:
+ * 1) It must in fact compile when passed at::vec::Vectorized<CTYPE_COMMON>, or
+ * 2) It must be actively SFINAE-friendly, as per the C++17 examples in https://stackoverflow.com/questions/76525790/detecting-if-a-generic-lambda-with-certain-arguments-is-invocable .
+ */
 template <
     typename CTYPE_COMMON,
     const char* op_name,
@@ -390,6 +382,7 @@ inline void apply_bitensor_elementwise_fn(
  * Useful for bi-tensor elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
  * Tensor broadcasting is applied wherever it is required.
+ * See [NOTE: Generic lambdas] if you want to pass a generic lambda for compute_fun.
  */
 template <
     typename CTYPE_COMMON,
@@ -456,6 +449,8 @@ inline void apply_tritensor_elementwise_fn(
  *
  * static constexpr const char op_name[] = "my_op";
  * apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>.
+ *
+ * See [NOTE: Generic lambdas] if you want to pass a generic lambda for compute_fun.
  */
 template <
     typename CTYPE_COMMON,
