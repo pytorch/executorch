@@ -240,6 +240,19 @@ bool MethodMeta::uses_backend(const char* backend_name) const {
   return false;
 }
 
+size_t MethodMeta::num_backends() const {
+  const auto delegates = s_plan_->delegates();
+  return delegates ? delegates->size() : 0;
+}
+
+const char* MethodMeta::get_backend_name(size_t index) const {
+  const auto delegates = s_plan_->delegates();
+  if (delegates && index < delegates->size()) {
+    return delegates->Get(index)->id()->c_str();
+  }
+  return nullptr;
+}
+
 size_t MethodMeta::num_instructions() const {
   const auto chains = s_plan_->chains();
   if (chains == nullptr) {
