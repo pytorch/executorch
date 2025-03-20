@@ -23,6 +23,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
 functions_converters = {
+    exir_ops.edge.aten.abs.default: AbsConverter,  # noqa F405
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405

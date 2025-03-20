@@ -1,3 +1,6 @@
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.abs_converter import (
+    AbsConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.adaptive_avg_pool_2d_converter import (
     AdaptiveAvgPool2dConverter,
 )
@@ -66,6 +69,7 @@ __all__ = [
     "AvgPool2dConverter",
     "AddTensorConverter",
     "CloneConverter",
+    "AbsConverter",
     "AdaptiveAvgPool2dConverter",
     "HardTanhConverter",
 ]
