@@ -105,6 +105,15 @@ class SharedSpecPattern(QuantizationPattern):
         )
 
 
+class AbsPattern(SharedSpecPattern):
+    """
+    Quantizer for Abs operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.abs.default]
+
+
 class AdaptiveAvgPoolPattern(SharedSpecPattern):
     """
     Quantizer for AdaptiveAvgPool2D operator.
