@@ -63,10 +63,6 @@ def quantize(  # noqa C901
     else:
         torch_dtype = torch.float16
 
-    assert checkpoint_path, "Need to specify a checkpoint"
-    # if checkpoint_path is None:
-    #     checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
-
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
@@ -155,6 +151,7 @@ def quantize(  # noqa C901
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
         if tokenizer_path is None:
+            assert checkpoint_path is not None, "checkpoint_path must be specified"
             tokenizer_path = checkpoint_path.parent / "tokenizer.model"
         assert tokenizer_path.is_file(), tokenizer_path
         tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
