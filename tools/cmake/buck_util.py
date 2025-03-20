@@ -8,12 +8,20 @@
 import os
 import subprocess
 import sys
+from functools import cache
+from pathlib import Path
 
 from typing import Optional, Sequence
 
 
-# Run buck2 from the same directory (and thus repo) as this script.
-BUCK_CWD: str = os.path.dirname(os.path.realpath(__file__))
+@cache
+def repo_root_dir() -> Path:
+    git_root = subprocess.check_output(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=os.path.dirname(os.path.realpath(__file__)),
+        text=True,
+    ).strip()
+    return Path(git_root)
 
 
 class Buck2Runner:
@@ -26,7 +34,7 @@ class Buck2Runner:
             cp: subprocess.CompletedProcess = subprocess.run(
                 [self._path] + args,  # type: ignore[operator]
                 capture_output=True,
-                cwd=BUCK_CWD,
+                cwd=repo_root_dir(),
                 check=True,
             )
             return [line.strip().decode("utf-8") for line in cp.stdout.splitlines()]
