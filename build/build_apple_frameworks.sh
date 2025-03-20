@@ -12,7 +12,6 @@ OUTPUT="cmake-out"
 MODES=()
 TOOLCHAIN=""
 PYTHON=$(which python3)
-FLATC=$(which flatc)
 COREML=OFF
 CUSTOM=OFF
 MPS=OFF
@@ -83,7 +82,6 @@ usage() {
   echo "  --Release            Build Release version."
   echo "  --toolchain=FILE     CMake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake'"
   echo "  --python=FILE        Python executable path. Default: Path of python3 in \$PATH"
-  echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: Path of flatc in \$PATH"
   echo "  --coreml             Build the Core ML backend."
   echo "  --custom             Build the Custom kernels."
   echo "  --mps                Build the Metal Performance Shaders backend."
@@ -113,7 +111,6 @@ for arg in "$@"; do
         ;;
       --toolchain=*) TOOLCHAIN="${arg#*=}" ;;
       --python=*) PYTHON="${arg#*=}" ;;
-      --flatc=*) FLATC="${arg#*=}" ;;
       --coreml) COREML=ON ;;
       --custom) CUSTOM=ON ;;
       --mps) MPS=ON ;;
@@ -168,7 +165,6 @@ check_command() {
 check_command cmake
 check_command rsync
 check_command "$PYTHON"
-check_command "$FLATC"
 check_command "$BUCK2"
 
 echo "Building libraries"
@@ -190,7 +186,6 @@ cmake_build() {
         -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
         -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
         -DPYTHON_EXECUTABLE="$PYTHON" \
-        -DFLATC_EXECUTABLE="$FLATC" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
