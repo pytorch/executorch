@@ -168,7 +168,17 @@ public class LlamaModule {
    */
   public int generateFromPos(
       String prompt, int seqLen, long startPos, LlamaCallback callback, boolean echo) {
-    return mModule.generateFromPos(prompt, seqLen, startPos, callback, echo);
+    return mModule.generateFromPos(prompt, seqLen, startPos, new LlmCallback() {
+          @Override
+          public void onResult(String result) {
+            llamaCallback.onResult(result);
+          }
+
+          @Override
+          public void onStats(float tps) {
+            llamaCallback.onStats(tps);
+          }
+        }, echo);
       }
 
   /** Stop current generate() before it finishes. */
