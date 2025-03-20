@@ -401,6 +401,12 @@ def _(
         tagged_exported_program,
     )
 
+    # Partitioner added delegation tags to the graph module nodes,
+    # we make sure to remove them after we finished partition_and_lower
+    for node in tagged_graph_module.graph.nodes:
+        if "delegation_tag" in node.meta:
+            del node.meta["delegation_tag"]
+
     return ExportedProgram(
         root=tagged_graph_module,
         graph=tagged_graph_module.graph,
