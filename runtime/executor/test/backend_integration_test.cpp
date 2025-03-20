@@ -362,18 +362,20 @@ TEST_P(BackendIntegrationTest, GetBackendNamesSuccess) {
   EXPECT_TRUE(method_meta->uses_backend(StubBackend::kName));
 
   // Retrieve the number of backends.
-  size_t num_backends = method_meta->num_backends();
+  const size_t num_backends = method_meta->num_backends();
   EXPECT_GT(num_backends, 0u);
 
   // Iterate through each backend and verify its name.
   for (size_t i = 0; i < num_backends; ++i) {
-    const char* name = method_meta->get_backend_name(i);
-    EXPECT_NE(name, nullptr);
+    auto backend_name_result = method_meta->get_backend_name(i);
+    ASSERT_TRUE(backend_name_result.ok());
+    const char* name = backend_name_result.get();
     // For this test, we expect that the only backend is StubBackend.
     EXPECT_STREQ(name, StubBackend::kName);
   }
-  // Check that an out-of-range index returns nullptr.
-  EXPECT_EQ(method_meta->get_backend_name(num_backends), nullptr);
+  // Check that an out-of-range index returns an error.
+  auto out_of_range_result = method_meta->get_backend_name(num_backends);
+  EXPECT_FALSE(out_of_range_result.ok());
 }
 
 TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
