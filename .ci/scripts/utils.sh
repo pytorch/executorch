@@ -63,24 +63,24 @@ install_pytorch_and_domains() {
   git submodule update --init --recursive
 
   SYSTEM_NAME=$(uname)
-  PLATFORM=$(python -c 'import sysconfig; print(sysconfig.get_platform().replace("-", "_").replace(".", "_"))')
-  PYTHON_VERSION=$(python -c 'import platform; v = platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
+  # The platform version needs to match MACOSX_DEPLOYMENT_TARGET used to build the wheel
+  PLATFORM=$(python -c 'import sysconfig; platform=sysconfig.get_platform(); platform[1]="14_0"; print("_".join(platform))')
+  PYTHON_VERSION=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
   TORCH_RELEASE=$(cat version.txt)
   TORCH_SHORT_HASH=${TORCH_VERSION:0:7}
-  TORCH_WHEEL_NAME="torch-${TORCH_RELEASE}%2Bgit${TORCH_SHORT_HASH}-cp${PYTHON_VERSION}-cp${PYTHON_VERSION}-${PLATFORM}.whl"
   TORCH_WHEEL_PATH="cached_artifacts/pytorch/executorch/pytorch_wheels/${SYSTEM_NAME}/${PYTHON_VERSION}"
+  TORCH_WHEEL_NAME="torch-${TORCH_RELEASE}%2Bgit${TORCH_SHORT_HASH}-cp${PYTHON_VERSION}-cp${PYTHON_VERSION}-${PLATFORM}.whl"
 
+  CACHE_TORCH_WHEEL="https://gha-artifacts.s3.us-east-1.amazonaws.com/${TORCH_WHEEL_PATH}/${TORCH_WHEEL_NAME}"
   # Cache PyTorch wheel is only needed on MacOS, Linux CI already has this as part
   # of the Docker image
   if [[ "${SYSTEM_NAME}" == "Darwin" ]]; then
-    pip install "https://gha-artifacts.s3.us-east-1.amazonaws.com/${TORCH_WHEEL_PATH}/${TORCH_WHEEL_NAME}" || TORCH_WHEEL_NOT_FOUND=1
+    pip install "${CACHE_TORCH_WHEEL}" || TORCH_WHEEL_NOT_FOUND=1
   fi
 
   # Found no such wheel, we will build it from source then
   if [[ "${TORCH_WHEEL_NOT_FOUND:-0}" == "1" ]]; then
-    export USE_DISTRIBUTED=1
-    # Then build and install PyTorch
-    python setup.py bdist_wheel
+    USE_DISTRIBUTED=1 MACOSX_DEPLOYMENT_TARGET=14.0 python setup.py bdist_wheel
     pip install "$(echo dist/*.whl)"
 
     # Only AWS runners have access to S3
@@ -90,6 +90,8 @@ install_pytorch_and_domains() {
         aws s3 cp "${WHEEL_PATH}" "s3://gha-artifacts/${TORCH_WHEEL_PATH}/${WHEEL_NAME}"
       done
     fi
+  else
+    echo "Use cached wheel at ${CACHE_TORCH_WHEEL}"
   fi
 
   # Grab the pinned audio and vision commits from PyTorch
