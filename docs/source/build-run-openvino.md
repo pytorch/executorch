@@ -69,7 +69,7 @@ Follow the steps below to setup your build environment:
 
 3. Navigate to `scripts/` directory.
 
-4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-openvino-out/backends/openvino/` as `libopenvino_backend.so`
+4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
 
    ```bash
    ./openvino_build.sh
@@ -84,7 +84,7 @@ Below is an example to export a ResNet50 model from Torchvision model suite for 
 
 ```bash
 cd executorch/examples/openvino/aot
-python aot_openvino_compiler.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device CPU
+python aot_openvino_compiler.py --export --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device CPU
 ```
 The exported model will be saved as 'resnet50.pte' in the current directory.
 
@@ -93,48 +93,20 @@ Build the backend and the examples by executing the script:
 ```bash
 ./openvino_build_example.sh
 ```
-The executable is saved in `<executorch_root>/cmake-openvino-out/examples/openvino/`
+The executable is saved in `<executorch_root>/cmake-openvino-out/backends/openvino/`
 
-Now, run the example using the executable generated in the above step. The executable requires a model file (`.pte` file generated in the aot step), number of inference iterations, and optional input/output paths.
-
-#### Command Syntax:
-
-```
-cd ../../cmake-openvino-out/examples/openvino
-
-./openvino_executor_runner \
-    --model_path=<path_to_model> \
-    --num_iter=<iterations> \
-    [--input_list_path=<path_to_input_list>] \
-    [--output_folder_path=<path_to_output_folder>]
-```
-#### Command-Line Arguments
-
-- `--model_path`: (Required) Path to the model serialized in `.pte` format.
-- `--num_iter`: (Optional) Number of times to run inference (default: 1).
-- `--input_list_path`: (Optional) Path to a file containing the list of raw input tensor files.
-- `--output_folder_path`: (Optional) Path to a folder where output tensor files will be saved.
+Now, run the example using the executable generated in the above step. The executable requires a model file (`.pte` file generated in the aot step), number of inference executions.
 
 #### Example Usage
 
-Run inference with a given model for 10 iterations and save outputs:
+Run inference with a given model for 10 executions:
 
 ```
 ./openvino_executor_runner \
     --model_path=model.pte \
-    --num_iter=10 \
-    --output_folder_path=outputs/
+    --num_executions=10
 ```
 
-Run inference with an input tensor file:
-
-```
-./openvino_executor_runner \
-    --model_path=model.pte \
-    --num_iter=5 \
-    --input_list_path=input_list.txt \
-    --output_folder_path=outputs/
-```
 
 ## Supported model list
 
