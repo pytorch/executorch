@@ -35,7 +35,7 @@ jobs:
         bash .ci/scripts/build_android_instrumentation.sh ${ARTIFACTS_DIR_NAME}
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
-        bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+        PYTHON_EXECUTABLE=python bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
 
         mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
         cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
