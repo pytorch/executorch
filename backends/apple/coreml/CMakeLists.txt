@@ -29,6 +29,7 @@ option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
 set(INMEMORYFS_SOURCES
     runtime/inmemoryfs/inmemory_filesystem.cpp
     runtime/inmemoryfs/inmemory_filesystem_utils.mm
+    runtime/inmemoryfs/inmemory_filesystem_utils.cpp
     runtime/inmemoryfs/memory_buffer.cpp
     runtime/inmemoryfs/memory_stream.cpp
     runtime/inmemoryfs/reversed_memory_stream.cpp
@@ -122,6 +123,13 @@ target_sources(coreml_util PRIVATE ${UTIL_SOURCES})
 target_include_directories(coreml_util
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
+set(TARGET coreml_util
+    APPEND_STRING PROPERTY COMPILE_FLAGS "-x objective-c++"
+)
+
+# nlohmann/json
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+add_subdirectory(third-party/json)
 
 # CoreML inmemoryfs
 add_library(coreml_inmemoryfs)
@@ -129,7 +137,11 @@ target_sources(coreml_inmemoryfs PRIVATE ${INMEMORYFS_SOURCES})
 target_include_directories(coreml_inmemoryfs
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
 )
+set(TARGET coreml_inmemoryfs
+    APPEND_STRING PROPERTY COMPILE_FLAGS "-x objective-c++"
+)
 target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util)
+target_link_libraries(coreml_inmemoryfs PRIVATE nlohmann_json::nlohmann_json)
 
 # Define the delegate library
 add_library(coremldelegate)
