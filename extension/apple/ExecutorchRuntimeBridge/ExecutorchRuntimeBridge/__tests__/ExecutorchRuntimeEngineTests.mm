@@ -26,8 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
   XCTAssertNil(engine);
   XCTAssertNotNil(runtimeInitError);
 
-  XCTAssertEqual(runtimeInitError.code, 0);
-  XCTAssertEqualObjects(runtimeInitError.userInfo[NSDebugDescriptionErrorKey], @"34");
+  XCTAssertEqual(runtimeInitError.code, 34);
   // 34 is the code for AccessFailed.
 }
 

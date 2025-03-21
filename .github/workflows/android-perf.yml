@@ -2,7 +2,7 @@ name: android-perf
 
 on:
   schedule:
-    - cron: 0 0 * * *
+    - cron: 0 0,8,16 * * *
   pull_request:
     paths:
       - .github/workflows/android-perf.yml
