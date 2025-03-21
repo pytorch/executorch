@@ -302,7 +302,7 @@ int main(int argc, char** argv) {
   if (tracer.get_event_tracer()) {
     // Dump ETDump data containing profiling/debugging data to file specified in
     // command line flag.
-    Error status = tracer.write_etdump_to_file();
+    status = tracer.write_etdump_to_file();
     ET_CHECK_MSG(status == Error::Ok, "Failed to save ETDump file.");
   }
 
