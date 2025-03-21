@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package org.pytorch.executorch;
+package org.pytorch.executorch.extension.llm;
 
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
@@ -15,13 +15,13 @@ import com.facebook.soloader.nativeloader.SystemDelegate;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
- * LlamaModule is a wrapper around the Executorch Llama model. It provides a simple interface to
+ * LlmModule is a wrapper around the Executorch LLM. It provides a simple interface to
  * generate text from the model.
  *
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public class LlamaModule {
+public class LlmModule {
 
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
@@ -41,21 +41,21 @@ public class LlamaModule {
   private static native HybridData initHybrid(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath);
 
-  /** Constructs a LLAMA Module for a model with given model path, tokenizer, temperature. */
-  public LlamaModule(String modulePath, String tokenizerPath, float temperature) {
+  /** Constructs a LLM Module for a model with given model path, tokenizer, temperature. */
+  public LlmModule(String modulePath, String tokenizerPath, float temperature) {
     mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, null);
   }
 
   /**
-   * Constructs a LLAMA Module for a model with given model path, tokenizer, temperature and data
+   * Constructs a LLM Module for a model with given model path, tokenizer, temperature and data
    * path.
    */
-  public LlamaModule(String modulePath, String tokenizerPath, float temperature, String dataPath) {
+  public LlmModule(String modulePath, String tokenizerPath, float temperature, String dataPath) {
     mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, dataPath);
   }
 
   /** Constructs a LLM Module for a model with given path, tokenizer, and temperature. */
-  public LlamaModule(int modelType, String modulePath, String tokenizerPath, float temperature) {
+  public LlmModule(int modelType, String modulePath, String tokenizerPath, float temperature) {
     mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, null);
   }
 
@@ -67,10 +67,10 @@ public class LlamaModule {
    * Start generating tokens from the module.
    *
    * @param prompt Input prompt
-   * @param llamaCallback callback object to receive results.
+   * @param llmCallback callback object to receive results.
    */
-  public int generate(String prompt, LlamaCallback llamaCallback) {
-    return generate(prompt, DEFAULT_SEQ_LEN, llamaCallback, DEFAULT_ECHO);
+  public int generate(String prompt, LlmCallback llmCallback) {
+    return generate(prompt, DEFAULT_SEQ_LEN, llmCallback, DEFAULT_ECHO);
   }
 
   /**
@@ -78,21 +78,21 @@ public class LlamaModule {
    *
    * @param prompt Input prompt
    * @param seqLen sequence length
-   * @param llamaCallback callback object to receive results.
+   * @param llmCallback callback object to receive results.
    */
-  public int generate(String prompt, int seqLen, LlamaCallback llamaCallback) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llamaCallback, DEFAULT_ECHO);
+  public int generate(String prompt, int seqLen, LlmCallback llmCallback) {
+    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, DEFAULT_ECHO);
   }
 
   /**
    * Start generating tokens from the module.
    *
    * @param prompt Input prompt
-   * @param llamaCallback callback object to receive results
+   * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public int generate(String prompt, LlamaCallback llamaCallback, boolean echo) {
-    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, llamaCallback, echo);
+  public int generate(String prompt, LlmCallback llmCallback, boolean echo) {
+    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, llmCallback, echo);
   }
 
   /**
@@ -100,11 +100,11 @@ public class LlamaModule {
    *
    * @param prompt Input prompt
    * @param seqLen sequence length
-   * @param llamaCallback callback object to receive results
+   * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public int generate(String prompt, int seqLen, LlamaCallback llamaCallback, boolean echo) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llamaCallback, echo);
+  public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
+    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo);
   }
 
   /**
@@ -116,7 +116,7 @@ public class LlamaModule {
    * @param channels Input image number of channels
    * @param prompt Input prompt
    * @param seqLen sequence length
-   * @param llamaCallback callback object to receive results.
+   * @param llmCallback callback object to receive results.
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
   @DoNotStrip
@@ -127,7 +127,7 @@ public class LlamaModule {
       int channels,
       String prompt,
       int seqLen,
-      LlamaCallback llamaCallback,
+      LlmCallback llmCallback,
       boolean echo);
 
   /**
@@ -186,7 +186,7 @@ public class LlamaModule {
    * @return The error code.
    */
   public native int generateFromPos(
-      String prompt, int seqLen, long startPos, LlamaCallback callback, boolean echo);
+      String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo);
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip

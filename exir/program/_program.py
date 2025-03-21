@@ -995,17 +995,22 @@ def _remove_invalid_ops_for_not_decompose(
 
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
-        if native_schema.is_mutable:
+        if native_schema is None:
             logging.warn(
-                f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
+                f"Torchgen is not able to parse the schema of {op._schema}.  This is not fatal."
             )
-            return False
+        else:
+            if native_schema.is_mutable:
+                logging.warn(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
+                )
+                return False
 
-        if native_schema.aliased_return_names() != [None]:
-            logging.warn(
-                f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
-            )
-            return False
+            if native_schema.aliased_return_names() != [None]:
+                logging.warn(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
+                )
+                return False
 
         # Explicit block list of ops that don't work if asked for
         # preservation

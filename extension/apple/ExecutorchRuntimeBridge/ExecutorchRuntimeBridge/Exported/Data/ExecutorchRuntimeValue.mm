@@ -5,7 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
- 
+
 #import "ExecutorchRuntimeValue.h"
 
 #import <map>
@@ -48,9 +48,10 @@ using torch::executor::EValue;
   }
 
   if (error) {
-    *error = [ModelRuntimeValueErrorFactory
-              invalidType:[NSString stringWithFormat:@"Tag::%d", _value.tag]
-              expectedType:@"Tag::Tensor"];
+    *error = [NSError
+      errorWithDomain:@"ExecutorchRuntimeEngine"
+      code:static_cast<uint32_t>(executorch::runtime::Error::InvalidArgument)
+      userInfo: @{NSDebugDescriptionErrorKey: [NSString stringWithFormat:@"Invalid type: Tag::%d, expected Tag::Tensor", _value.tag]}];
   }
   return nil;
 }

@@ -49,17 +49,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import org.pytorch.executorch.LlamaCallback;
-import org.pytorch.executorch.LlamaModule;
+import org.pytorch.executorch.extension.llm.LlmCallback;
+import org.pytorch.executorch.extension.llm.LlmModule;
 
-public class MainActivity extends AppCompatActivity implements Runnable, LlamaCallback {
+public class MainActivity extends AppCompatActivity implements Runnable, LlmCallback {
   private EditText mEditTextMessage;
   private ImageButton mSendButton;
   private ImageButton mGalleryButton;
   private ImageButton mCameraButton;
   private ListView mMessagesView;
   private MessageAdapter mMessageAdapter;
-  private LlamaModule mModule = null;
+  private LlmModule mModule = null;
   private Message mResultMessage = null;
   private ImageButton mSettingsButton;
   private TextView mMemoryView;
@@ -124,7 +124,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     }
     long runStartTime = System.currentTimeMillis();
     mModule =
-        new LlamaModule(
+        new LlmModule(
             ModelUtils.getModelCategory(
                 mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
             modelPath,
@@ -714,7 +714,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
           // Scroll to bottom of the list
           mMessagesView.smoothScrollToPosition(mMessageAdapter.getCount() - 1);
           // After images are added to prompt and chat thread, we clear the imageURI list
-          // Note: This has to be done after imageURIs are no longer needed by LlamaModule
+          // Note: This has to be done after imageURIs are no longer needed by LlmModule
           mSelectedImageUri = null;
           promptID++;
           Runnable runnable =
