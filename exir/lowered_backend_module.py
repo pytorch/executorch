@@ -107,6 +107,7 @@ class LoweredBackendModule(torch.nn.Module):
             backend_id=self._backend_id,
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
+            named_data_store_output=self._named_data_store_output,
         )
         # pyre-fixme[16]: `LoweredBackendModule` has no attribute `meta`.
         res.meta = copy.copy(getattr(self, "meta", {}))

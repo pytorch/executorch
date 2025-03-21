@@ -25,8 +25,6 @@ void add_split_with_sizes_default_node(
     ValueRef out_list_ref) {
   vTensorPtr t_in = graph.get_tensor(in);
 
-  VK_CHECK_COND(check_packed_dim_is(*t_in, WHCN::kChannelsDim));
-
   ValueListPtr out_list = graph.get_value_list(out_list_ref);
 
   DimIndex dim_index = normalize_to_dim_index(*t_in, dim);
@@ -38,62 +36,60 @@ void add_split_with_sizes_default_node(
     ValueRef out_ref = (*out_list)[split_idx];
 
     vTensorPtr t_out = graph.get_tensor(out_ref);
-    VK_CHECK_COND(check_packed_dim_is(*t_out, WHCN::kChannelsDim));
     VK_CHECK_COND(dim_at(*t_out, dim_index) == split_size);
   }
 
-  if (dim_index == kWidth4D) {
-    utils::ivec4 src_offset = utils::make_ivec4({0, 0, 0, 0}, false);
-    utils::ivec4 dst_offset = utils::make_ivec4({0, 0, 0, 0}, false);
+  const auto packed_dim = t_in->packed_dim();
+  const auto packed_dim_index = static_cast<DimIndex>(kWidth4D - packed_dim);
 
-    for (ValueRef out_ref : *out_list) {
-      // Doesn't need to use split_size since we have already verified that the
-      // output tensor's size matches with the split_size.
-      vTensorPtr t_out = graph.get_tensor(out_ref);
-      utils::ivec3 range = t_out->logical_limits();
+  // Index of dimension to be concatenated in (w, h, c * b) coordinate system
+  const auto dim_xyz_index = std::min(2, -dim_index - 1);
+
+  utils::ivec4 src_offset = utils::make_ivec4({0, 0, 0, 0}, false);
+  utils::ivec4 dst_offset = utils::make_ivec4({0, 0, 0, 0}, false);
+
+  const bool is_splitting_channel = (dim_index == kChannel4D);
+
+  // if splitting channels
+  if (is_splitting_channel) {
+    // set source offset w as channel size of the input tensor
+    src_offset[3] = dim_at(t_in->sizes(), kChannel4D);
+  }
+
+  for (ValueRef out_ref : *out_list) {
+    // Doesn't need to use split_size since we have already verified that the
+    // output tensor's size matches with the split_size.
+    vTensorPtr t_out = graph.get_tensor(out_ref);
+    const auto out_channel_size = dim_at(t_out->sizes(), kChannel4D);
+    utils::ivec3 range = t_out->logical_limits();
+
+    if (dim_index == packed_dim_index) {
+      // if splitting channels, use add_copy_channel_offset_node function as
+      // add_copy_packed_dim_offset_node does not support channel packing
+      if (is_splitting_channel) {
+        add_copy_channel_offset_node(
+            graph, in, out_channel_size, src_offset[2], dst_offset[2], out_ref);
+        src_offset[dim_xyz_index] += out_channel_size;
+      } else {
+        // dst_offset[3] is not used now but will be used in the future when
+        // add_copy_packed_dim_offset_node will support channel packing
+        //
+        // set destination offset w as channel size of the output tensor if
+        // splitting channel
+        dst_offset[3] = is_splitting_channel ? out_channel_size : 0;
+        add_copy_packed_dim_offset_node(
+            graph, in, range, src_offset, dst_offset, out_ref);
+        src_offset[dim_xyz_index] += dim_at(t_out->sizes(), packed_dim_index);
+      }
+    } else {
+      // set destination offset w as channel size of the output tensor if
+      // splitting channels
+      dst_offset[3] = is_splitting_channel ? out_channel_size : 0;
       add_copy_offset_node(
           graph, in, range, src_offset, dst_offset, out_ref, false, true);
-
-      src_offset[0] += range[0];
+      src_offset[dim_xyz_index] +=
+          is_splitting_channel ? out_channel_size : range[dim_xyz_index];
     }
-  } else if (dim_index == kHeight4D) {
-    utils::ivec4 src_offset = utils::make_ivec4({0, 0, 0, 0}, false);
-    utils::ivec4 dst_offset = utils::make_ivec4({0, 0, 0, 0}, false);
-
-    for (ValueRef out_ref : *out_list) {
-      vTensorPtr t_out = graph.get_tensor(out_ref);
-      utils::ivec3 range = t_out->logical_limits();
-      add_copy_offset_node(
-          graph, in, range, src_offset, dst_offset, out_ref, false, true);
-
-      src_offset[1] += range[1];
-    }
-  } else if (dim_index == kBatch4D) {
-    utils::ivec4 src_offset = utils::make_ivec4({0, 0, 0, 0}, false);
-    utils::ivec4 dst_offset = utils::make_ivec4({0, 0, 0, 0}, false);
-
-    for (ValueRef out_ref : *out_list) {
-      vTensorPtr t_out = graph.get_tensor(out_ref);
-      utils::ivec3 range = t_out->logical_limits();
-      add_copy_offset_node(
-          graph, in, range, src_offset, dst_offset, out_ref, false, true);
-
-      src_offset[2] += range[2];
-    }
-  } else if (dim_index == kChannel4D) {
-    int32_t src_offset = 0;
-    int32_t dst_offset = 0;
-
-    for (ValueRef out_ref : *out_list) {
-      vTensorPtr t_out = graph.get_tensor(out_ref);
-      int32_t range = dim_at<kChannel4D>(t_out->sizes());
-      add_copy_channel_offset_node(
-          graph, in, range, src_offset, dst_offset, out_ref);
-      src_offset += range;
-    }
-
-  } else {
-    VK_THROW("not ipmlemented");
   }
 }
 
