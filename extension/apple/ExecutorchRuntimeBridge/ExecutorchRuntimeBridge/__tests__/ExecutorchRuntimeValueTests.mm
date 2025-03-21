@@ -46,7 +46,8 @@ using torch::executor::ScalarType;
   NSError *error = nil;
   XCTAssertNil([[ExecutorchRuntimeTensorValue alloc] initWithTensor:*new torch::executor::Tensor(&tensorImpl) error:&error]);
   XCTAssertNotNil(error);
-  XCTAssertEqualObjects([error description], @"Invalid type: torch::executor::ScalarType::3, expected torch::executor::ScalarType::Float");
+  XCTAssertEqual(error.code, static_cast<uint32_t>(executorch::runtime::Error::InvalidArgument));
+  XCTAssertEqualObjects(error.userInfo[NSDebugDescriptionErrorKey], @"Invalid type: torch::executor::ScalarType::3, expected torch::executor::ScalarType::Float");
 }
 
 - (void)testTensorValueWithError
@@ -56,7 +57,8 @@ using torch::executor::ScalarType;
   NSError *error = nil;
   XCTAssertNil([value asTensorValueAndReturnError:&error]);
   XCTAssertNotNil(error);
-  XCTAssertEqualObjects([error description], @"Invalid type: Tag::4, expected Tag::Tensor");
+  XCTAssertEqual(error.code, static_cast<uint32_t>(executorch::runtime::Error::InvalidArgument));
+  XCTAssertEqualObjects(error.userInfo[NSDebugDescriptionErrorKey], @"Invalid type: Tag::4, expected Tag::Tensor");
 }
 
 @end

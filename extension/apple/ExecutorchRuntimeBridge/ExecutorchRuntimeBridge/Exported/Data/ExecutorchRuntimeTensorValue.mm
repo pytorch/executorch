@@ -56,7 +56,10 @@ using torch::executor::ScalarType;
 {
   if (tensor.scalar_type() != ScalarType::Float) {
     if (error) {
-      *error = [ModelRuntimeValueErrorFactory invalidType:[NSString stringWithFormat:@"torch::executor::ScalarType::%hhd", tensor.scalar_type()] expectedType:@"torch::executor::ScalarType::Float"];
+      *error = [NSError
+        errorWithDomain:@"ExecutorchRuntimeEngine"
+        code:(NSInteger)executorch::runtime::Error::InvalidArgument
+        userInfo: @{NSDebugDescriptionErrorKey: [NSString stringWithFormat:@"Invalid type: torch::executor::ScalarType::%hhd, expected torch::executor::ScalarType::Float", tensor.scalar_type()]}];
     }
     return nil;
   }
@@ -90,9 +93,10 @@ using torch::executor::ScalarType;
   }
 
   if (error) {
-    *error = [ModelRuntimeValueErrorFactory
-              invalidType:[NSString stringWithFormat:@"torch::executor::ScalarType::%hhd", _tensor->scalar_type()]
-              expectedType:@"torch::executor::ScalarType::Float"];
+    *error = [NSError
+        errorWithDomain:@"ExecutorchRuntimeEngine"
+        code:(NSInteger)executorch::runtime::Error::InvalidArgument
+        userInfo: @{NSDebugDescriptionErrorKey: [NSString stringWithFormat:@"Invalid type: torch::executor::ScalarType::%hhd, expected torch::executor::ScalarType::Float", _tensor->scalar_type()]}];
   }
 
   return nil;
