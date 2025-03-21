@@ -127,7 +127,7 @@ def assert_unambiguous_dim_order(gm):
         Check every node's output tensor dim_order and raise if it is ambiguous for a list of formats.
         """
 
-        def get_tensors(node: torch.fx.Node) -> torch.Tensor:
+        def get_tensors(node: torch.fx.Node) -> List[torch.Tensor]:
             val = node.meta["val"]
             if isinstance(val, torch.Tensor):
                 return [val]

@@ -23,8 +23,8 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
-        # Mac runners are expensive and limited, and non reliable. 
-        # Do some basic testing for macos jobs, and rely mostly on 
+        # Mac runners are expensive and limited, and non reliable.
+        # Do some basic testing for macos jobs, and rely mostly on
         # test-models-linux-aarch64 job instead.
         model: [emformer_join, ic4, llama2, mobilebert, mv3, resnet50, vit, w2l]
         backend: [xnnpack-quantization-delegation]
@@ -287,6 +287,26 @@ jobs:
 
         # Test ANE llama
         ${CONDA_RUN} sh .ci/scripts/test_ane_static_llama.sh
+
+  test-llama-torchao-lowbit:
+    name: test-llama-torchao-lowbit
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Install requirements
+        ${CONDA_RUN} python install_executorch.py
+        ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
+
+        # Run test
+        ${CONDA_RUN} sh .ci/scripts/test_llama_torchao_lowbit.sh
 
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64

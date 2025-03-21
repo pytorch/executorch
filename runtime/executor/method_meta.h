@@ -204,10 +204,10 @@ class MethodMeta final {
    * Get the backend name at the given index.
    *
    * @param[in] index The index of the backend name.
-   * @returns The backend name as a C-style string, or nullptr if the index is
-   * invalid.
+   * @returns A Result wrapping the backend name as a C-style string
+   * on success, or an error if the index is invalid.
    */
-  const char* get_backend_name(size_t index) const;
+  Result<const char*> get_backend_name(size_t index) const;
 
   /**
    * Get the number of instructions in this method.
