@@ -106,7 +106,7 @@ Run inference with a given model for 10 executions:
 
 
 
-## FAQ
+## Support
 
 If you encounter any issues while reproducing the tutorial, please file a github
 issue on ExecuTorch repo and tag use `#openvino` tag
