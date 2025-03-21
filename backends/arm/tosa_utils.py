@@ -102,45 +102,6 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
 
 
-def reshape_for_broadcast(tosa_fb, inputs, dim_order=None):
-    assert len(inputs) == 2
-    input1 = inputs[0]
-    input2 = inputs[1]
-
-    def get_new_shape(l_rank_in, h_rank_in):
-        rank_diff = len(h_rank_in.shape) - len(l_rank_in.shape)
-        new_shape = list(l_rank_in.shape)
-
-        for _ in range(rank_diff):
-            new_shape.insert(0, 1)
-        return tuple(new_shape)
-
-    if len(input1.shape) == len(input2.shape):
-        return input1, input2
-    elif len(input1.shape) > len(input2.shape):
-        l_rank_in = input2
-        h_rank_in = input1
-    elif len(input1.shape) < len(input2.shape):
-        l_rank_in = input1
-        h_rank_in = input2
-
-    new_shape = get_new_shape(l_rank_in, h_rank_in)
-    dim_order = h_rank_in.dim_order if dim_order is None else dim_order
-    new_shape = tosa_shape(new_shape, dim_order)
-
-    reshaped = tosa_fb.addIntermediate(
-        new_shape,
-        inputs[0].dtype,
-    )
-
-    build_reshape(tosa_fb, l_rank_in.name, new_shape, reshaped.name)
-
-    if len(input1.shape) > len(input2.shape):
-        return input1, reshaped
-    else:
-        return reshaped, input2
-
-
 def is_consumer_node_depthwise_conv2d(node):
     consumer_node = list(node.users)[0]
     if consumer_node.target == exir_ops.edge.aten.convolution.default:

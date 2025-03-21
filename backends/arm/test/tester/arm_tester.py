@@ -3,14 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
-
 import logging
 
 import os
 from collections import Counter
 from pprint import pformat
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type, Union
+from typing import Callable, Iterable, List, Optional, Tuple, Type, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
@@ -50,13 +48,11 @@ from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
-
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
     ExecutorchProgramManager,
     ExportedProgram,
-    to_edge_transform_and_lower,
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -66,7 +62,6 @@ from executorch.exir.pass_base import ExportPass
 from executorch.exir.program._program import _update_exported_program_graph_module
 
 from tabulate import tabulate
-
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
 from torch.utils._pytree import tree_flatten
@@ -127,27 +122,9 @@ class Partition(tester.Partition):
 
 
 class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
-    def __init__(
-        self,
-        partitioners: Optional[List[Partitioner]] = None,
-        edge_compile_config: Optional[EdgeCompileConfig] = None,
-        constant_methods: Optional[Dict[str, Any]] = None,
-    ):
-        super().__init__(partitioners, edge_compile_config)
-        self.constant_methods = constant_methods
-
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
         _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
-
-    def run(self, artifact: ExportedProgram, inputs=None) -> None:
-        artifact_to_run = copy.deepcopy(artifact)
-        self.edge_dialect_program = to_edge_transform_and_lower(
-            artifact_to_run,
-            compile_config=self.edge_compile_conf,
-            partitioner=self.partitioners,
-            constant_methods=self.constant_methods,
-        )
 
 
 class Serialize(tester.Serialize):
@@ -259,9 +236,6 @@ class ArmTester(Tester):
         model: torch.nn.Module,
         example_inputs: Tuple,
         compile_spec: List[CompileSpec],
-        tosa_ref_model_path: str | None = None,
-        dynamic_shapes: Optional[Tuple[Any]] = None,
-        constant_methods: Optional[Dict[str, Any]] = None,
     ):
         """
         Args:
@@ -270,9 +244,8 @@ class ArmTester(Tester):
             compile_spec (List[CompileSpec]): The compile spec to use
         """
 
-        self.constant_methods = constant_methods
         self.compile_spec = compile_spec
-        super().__init__(model, example_inputs, dynamic_shapes)
+        super().__init__(model, example_inputs)
         self.pipeline[self.stage_name(InitialModel)] = [
             self.stage_name(tester.Quantize),
             self.stage_name(tester.Export),
@@ -337,9 +310,7 @@ class ArmTester(Tester):
                     raise ValueError("compile spec doesn't target any Arm Partitioner")
                 partitioners = [arm_partitioner]
             to_edge_and_lower_stage = ToEdgeTransformAndLower(
-                partitioners,
-                edge_compile_config,
-                constant_methods=self.constant_methods,
+                partitioners, edge_compile_config
             )
         else:
             if partitioners is not None:

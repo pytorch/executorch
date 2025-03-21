@@ -37,7 +37,7 @@ fi
 TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
 
 all() { # Run all tests
-    # This will list all lines in this file that is starting with test_ remove () { and add this script name in
+    # This will list all lines in this file that is starting with test_ remove () { and add this script name in 
     # front of it and execute it in a sub shell
     # e.g. from this file:
     #
@@ -62,9 +62,6 @@ all() { # Run all tests
 
 test_pytest() { # Test ops and other things
     echo "${TEST_SUITE_NAME}: Run pytest"
-
-    ./examples/models/llama3_2_vision/install_requirements.sh
-
     cd "${et_root_dir}"
     source examples/arm/ethos-u-scratch/setup_path.sh
     backends/arm/scripts/build_quantized_ops_aot_lib.sh
@@ -77,7 +74,6 @@ test_pytest() { # Test ops and other things
 test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using Corstone FVP
     echo "${TEST_SUITE_NAME}: Run pytest with fvp"
 
-    ./examples/models/llama3_2_vision/install_requirements.sh
     source examples/arm/ethos-u-scratch/setup_path.sh
 
     # Prepare Corstone-3x0 FVP for pytest
@@ -111,7 +107,7 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
     echo "${TEST_SUITE_NAME}: PASS"
     }
 
-test_models_ethosu_fvp() { # End to End model tests using model_test.py
+test_models_ethosu_fvp() { # End to End model tests using model_test.py 
     echo "${TEST_SUITE_NAME}: Test ethos-u delegate models with test_model.py"
 
     source examples/arm/ethos-u-scratch/setup_path.sh
