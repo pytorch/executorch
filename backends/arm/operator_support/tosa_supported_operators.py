@@ -21,6 +21,7 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
 from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55DtypeSupport,
     EthosU55NotSupported,
+    EthosU55TransposeCheck,
 )
 from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
 from executorch.exir import ExportedProgram
@@ -123,6 +124,7 @@ def tosa_support_factory(
     if isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset:
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
+        negative_checks.append(EthosU55TransposeCheck(reporter))
 
     return chain(
         reporter.wrap_check(
