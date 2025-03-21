@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+from typing import Dict, List, ItemsView
 from contextlib import contextmanager
 
 from install_requirements import (
@@ -167,14 +168,31 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     return parser
 
+# Helper to keep track of cmake define flags.
+class CmakeDefineFlags:
+    def __init__(self):
+        self._values: Dict[str, str] = {}
+    
+    def add(self, name, value):
+        self._values[name] = value
 
-def handle_pybind(args, cmake_args, executorch_build_pybind):
+    def get(self, name) -> str:
+        return self._values[name]
+
+    def cmake_args(self) -> List[str]:
+        return [f"-D{name}={value}" for name, value in self._values.items()]
+
+    def items(self) -> ItemsView[str, str]:
+        return self._values.items()
+
+
+def handle_pybind(args, cmake_define_flags):
     # Flatten list of lists.
     args.pybind = list(itertools.chain(*args.pybind))
     if "off" in args.pybind:
         if len(args.pybind) != 1:
             raise Exception(f"Cannot combine `off` with other pybinds: {args.pybind}")
-        executorch_build_pybind = "OFF"
+        cmake_define_flags.add("EXECUTORCH_BUILD_PYBIND", "OFF")
     else:
         for pybind_arg in args.pybind:
             if pybind_arg not in VALID_PYBINDS:
@@ -182,14 +200,13 @@ def handle_pybind(args, cmake_args, executorch_build_pybind):
                     f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
                 )
             if pybind_arg == "training":
-                cmake_args += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
-                os.environ["EXECUTORCH_BUILD_TRAINING"] = "ON"
+                cmake_define_flags.add("EXECUTORCH_BUILD_EXTENSION_TRAINING", "ON")
             elif pybind_arg == "mps":
-                cmake_args += " -DEXECUTORCH_BUILD_MPS=ON"
+                cmake_define_flags.add("EXECUTORCH_BUILD_MPS", "ON")
             else:
-                cmake_args += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
-            executorch_build_pybind = "ON"
-    return executorch_build_pybind, cmake_args
+                cmake_define_flags.add(f"EXECUTORCH_BUILD_{pybind_arg.upper()}", "ON")
+
+            cmake_define_flags.add("EXECUTORCH_BUILD_PYBIND", "ON")
 
 
 def main(args):
@@ -199,14 +216,14 @@ def main(args):
     parser = build_args_parser()
     args = parser.parse_args()
 
-    EXECUTORCH_BUILD_PYBIND = ""
-    CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
+    cmake_define_flags = CmakeDefineFlags()
+    cmake_define_flags.add("EXECUTORCH_BUILD_PYBIND", "")
+
+    cmake_args = [os.getenv("CMAKE_ARGS", "")]
     use_pytorch_nightly = True
 
     if args.pybind:
-        EXECUTORCH_BUILD_PYBIND, CMAKE_ARGS = handle_pybind(
-            args, CMAKE_ARGS, EXECUTORCH_BUILD_PYBIND
-        )
+        handle_pybind(args, cmake_define_flags)
 
     if args.clean:
         clean()
@@ -221,15 +238,15 @@ def main(args):
     # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
     # or is not turned off explicitly (--pybind off)
     # then install XNNPACK by default.
-    if EXECUTORCH_BUILD_PYBIND == "":
-        EXECUTORCH_BUILD_PYBIND = "ON"
-        CMAKE_ARGS += " -DEXECUTORCH_BUILD_XNNPACK=ON"
+    if cmake_define_flags.get("EXECUTORCH_BUILD_PYBIND") == "":
+        cmake_define_flags.add("EXECUTORCH_BUILD_PYBIND", "ON")
+        cmake_define_flags.add("EXECUTORCH_BUILD_XNNPACK", "ON")
 
     # Use ClangCL on Windows.
     # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
     # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
     if os.name == "nt":
-        CMAKE_ARGS += " -T ClangCL"
+        cmake_args.append("-T ClangCL")
 
     #
     # Install executorch pip package. This also makes `flatc` available on the path.
@@ -238,8 +255,10 @@ def main(args):
     #
 
     # Set environment variables
-    os.environ["EXECUTORCH_BUILD_PYBIND"] = EXECUTORCH_BUILD_PYBIND
-    os.environ["CMAKE_ARGS"] = CMAKE_ARGS
+    for key, value in cmake_define_flags.items():
+        os.environ[key] = value
+
+    os.environ["CMAKE_ARGS"] = " ".join(cmake_args + cmake_define_flags.cmake_args()) 
 
     # Check if the required submodules are present and update them if not
     check_and_update_submodules()
