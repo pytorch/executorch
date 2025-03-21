@@ -1208,7 +1208,7 @@ def get_llama_model(args):
     _validate_args(args)
     e_mgr = _prepare_for_llama_export(args)
     model = (
-        e_mgr.model.eval().to(device="cuda")  # pyre-ignore
+        e_mgr.model.eval().to(device="cuda")
         if torch.cuda.is_available()
         else e_mgr.model.eval().to(device="cpu")
     )
