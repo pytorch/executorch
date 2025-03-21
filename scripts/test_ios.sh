@@ -90,7 +90,7 @@ curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
 
 say "Building Frameworks"
 
-./build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
+./scripts/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
 mv cmake-out "$APP_PATH/Frameworks"
 
 say "Creating Simulator"

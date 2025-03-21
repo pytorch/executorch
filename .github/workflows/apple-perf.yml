@@ -387,7 +387,7 @@ jobs:
 
         echo "::group::Build ExecuTorch iOS frameworks"
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          build/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+          scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
         echo "::endgroup::"
 
         # NB: Although exported models can be copied to this directory and bundled together with the
@@ -396,7 +396,7 @@ jobs:
         # create the directory here to pass the build
         mkdir -p extension/benchmark/apple/Benchmark/Models
         ${CONDA_RUN} --no-capture-output \
-          build/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
+          scripts/build_apple_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
   upload-benchmark-app:
     needs: build-benchmark-app
