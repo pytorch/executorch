@@ -947,6 +947,38 @@ void SmartMaskIoMgr::reset_io(
       ptr->prefill_attention_mask + prefill_attn_size,
       0);
   std::fill(ptr->kv_attention_mask, ptr->kv_attention_mask + kv_attn_size, 0);
+  input_tensors_[kv_forward_name_].clear();
+  input_tensors_[kv_forward_name_].resize(modules_.size());
+  output_tensors_[kv_forward_name_].clear();
+  output_tensors_[kv_forward_name_].resize(modules_.size());
+
+  k_cache_in_[kv_forward_name_].clear();
+  v_cache_in_[kv_forward_name_].clear();
+  k_cache_out_[kv_forward_name_].clear();
+  v_cache_out_[kv_forward_name_].clear();
+
+  input_tensors_[prefill_forward_name_].clear();
+  input_tensors_[prefill_forward_name_].resize(modules_.size());
+  output_tensors_[prefill_forward_name_].clear();
+  output_tensors_[prefill_forward_name_].resize(modules_.size());
+
+  k_cache_in_[prefill_forward_name_].clear();
+  v_cache_in_[prefill_forward_name_].clear();
+  k_cache_out_[prefill_forward_name_].clear();
+  v_cache_out_[prefill_forward_name_].clear();
+
+  switch (eval_mode_) {
+    case EvalMode::kKVCached:
+      prepare_kv_io(kv_methods_meta);
+      break;
+    case EvalMode::kHybrid:
+      prepare_prefill_io(prefill_methods_meta);
+      prepare_kv_io(kv_methods_meta);
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported mode");
+      break;
+  }
 }
 
 void SmartMaskIoMgr::prepare_kv_io(
