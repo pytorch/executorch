@@ -108,9 +108,6 @@ Run inference with a given model for 10 executions:
 ```
 
 
-## Supported model list
-
-### TODO
 
 ## FAQ
 
