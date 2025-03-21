@@ -28,7 +28,7 @@ adb push model.pte /data/local/tmp/llama
 adb push tokenizer.bin /data/local/tmp/llama
 adb shell am instrument -w -r com.example.executorchllamademo.test/androidx.test.runner.AndroidJUnitRunner
 
-adb uninstall org.pytorch.executorch.test || true
-adb install -t android-test-debug-androidTest.apk
+# adb uninstall org.pytorch.executorch.test || true
+# adb install -t android-test-debug-androidTest.apk
 
 # adb shell am instrument -w -r org.pytorch.executorch.test/androidx.test.runner.AndroidJUnitRunner
