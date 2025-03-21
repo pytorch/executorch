@@ -8,14 +8,14 @@
 
 package org.pytorch.executorch;
 
-import org.pytorch.executorch.extension.llm.LlmModule;
 import org.pytorch.executorch.extension.llm.LlmCallback;
+import org.pytorch.executorch.extension.llm.LlmModule;
 
 /**
  * LlamaModule is a wrapper around the Executorch Llama model. It provides a simple interface to
  * generate text from the model.
  *
- * Note: deprecated! Please use {@link org.pytorch.executorch.extension.llm.LlmModule} instead.
+ * <p>Note: deprecated! Please use {@link org.pytorch.executorch.extension.llm.LlmModule} instead.
  */
 @Deprecated
 public class LlamaModule {
@@ -114,7 +114,14 @@ public class LlamaModule {
       int seqLen,
       LlamaCallback llamaCallback,
       boolean echo) {
-        return mModule.generate(image, width, height, channels, prompt, seqLen, new LlmCallback() {
+    return mModule.generate(
+        image,
+        width,
+        height,
+        channels,
+        prompt,
+        seqLen,
+        new LlmCallback() {
           @Override
           public void onResult(String result) {
             llamaCallback.onResult(result);
@@ -124,8 +131,9 @@ public class LlamaModule {
           public void onStats(float tps) {
             llamaCallback.onStats(tps);
           }
-        }, echo);
-      }
+        },
+        echo);
+  }
 
   /**
    * Prefill an LLaVA Module with the given images input.
@@ -169,7 +177,11 @@ public class LlamaModule {
    */
   public int generateFromPos(
       String prompt, int seqLen, long startPos, LlamaCallback callback, boolean echo) {
-    return mModule.generateFromPos(prompt, seqLen, startPos, new LlmCallback() {
+    return mModule.generateFromPos(
+        prompt,
+        seqLen,
+        startPos,
+        new LlmCallback() {
           @Override
           public void onResult(String result) {
             callback.onResult(result);
@@ -179,8 +191,9 @@ public class LlamaModule {
           public void onStats(float tps) {
             callback.onStats(tps);
           }
-        }, echo);
-      }
+        },
+        echo);
+  }
 
   /** Stop current generate() before it finishes. */
   public void stop() {
