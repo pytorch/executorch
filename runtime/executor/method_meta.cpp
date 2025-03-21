@@ -245,12 +245,15 @@ size_t MethodMeta::num_backends() const {
   return delegates ? delegates->size() : 0;
 }
 
-const char* MethodMeta::get_backend_name(size_t index) const {
-  const auto delegates = s_plan_->delegates();
-  if (delegates && index < delegates->size()) {
-    return delegates->Get(index)->id()->c_str();
-  }
-  return nullptr;
+Result<const char*> MethodMeta::get_backend_name(size_t index) const {
+  const auto count = num_backends();
+  ET_CHECK_OR_RETURN_ERROR(
+      index < count,
+      InvalidArgument,
+      "Index %zu out of range. num_backends: %zu",
+      index,
+      count);
+  return s_plan_->delegates()->Get(index)->id()->c_str();
 }
 
 size_t MethodMeta::num_instructions() const {
