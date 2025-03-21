@@ -27,6 +27,23 @@ class ArmCompileSpecBuilder:
         self.tosa_spec = None
         self.input_order = None
 
+    def vgf_compile_spec(
+        self,
+        compiler_flags: Optional[str] = "",
+    ) -> "ArmCompileSpecBuilder":
+        """
+        Generate compile spec for VGF compatible targets
+
+        Args:
+            compiler_flags: Extra compiler flags for converter_backend
+        """
+        self.output_format = "vgf"
+        self.compiler_flags = [
+            compiler_flags,
+        ]
+        self.tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+MI")
+        return self
+
     def ethosu_compile_spec(
         self,
         target: str,
@@ -126,13 +143,16 @@ class ArmCompileSpecBuilder:
         # Always supply a TOSA version
         self.compile_spec = [CompileSpec("tosa_spec", str(self.tosa_spec).encode())]
 
-        if self.output_format == "vela":
-            self.compile_spec += [
-                CompileSpec("output_format", "vela".encode()),
-                CompileSpec("compile_flags", " ".join(self.compiler_flags).encode()),
-            ]
-        elif self.output_format == "tosa":
-            self.compile_spec.append(CompileSpec("output_format", "tosa".encode()))
+        # Add compile flags, these are backend specific, refer to the backend
+        # documentation.
+        self.compile_spec += [
+            CompileSpec("compile_flags", " ".join(self.compiler_flags).encode()),
+        ]
+
+        # encode output format
+        self.compile_spec.append(
+            CompileSpec("output_format", self.output_format.encode())
+        )
 
         if self.path_for_intermediates is not None:
             self.compile_spec.append(
@@ -165,6 +185,13 @@ def is_ethosu(compile_spec: List[CompileSpec]) -> bool:
     for spec in compile_spec:
         if spec.key == "output_format":
             return spec.value.decode() == "vela"
+    return False
+
+
+def is_vgf(compile_spec: List[CompileSpec]) -> bool:
+    for spec in compile_spec:
+        if spec.key == "output_format":
+            return spec.value.decode() == "vgf"
     return False
 
 

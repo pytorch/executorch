@@ -22,12 +22,14 @@ from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_ethosu,
     is_tosa,
+    is_vgf,
 )
 from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -36,6 +38,8 @@ from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
     MobileNetV2Evaluator,
 )
+
+from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 
@@ -145,6 +149,8 @@ def quantize(
         quantizer = EthosUQuantizer(compile_specs)
     elif is_tosa(compile_specs):
         quantizer = TOSAQuantizer(get_tosa_spec(compile_specs))
+    elif is_vgf(compile_specs):
+        quantizer = VgfQuantizer(compile_specs)
     else:
         raise RuntimeError("Unsupported compilespecs for quantization!")
 
@@ -267,6 +273,7 @@ targets = [
     "ethos-u85-512",
     "ethos-u85-1024",
     "ethos-u85-2048",
+    "vgf",
     "TOSA",
 ]
 
@@ -324,6 +331,8 @@ def get_compile_spec(
             memory_mode=memory_mode,
             extra_flags="--verbose-operators --verbose-cycle-estimate",
         )
+    elif "vgf" in target:
+        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec()
 
     if intermediates is not None:
         spec_builder.dump_intermediate_artifacts_to(intermediates)
@@ -635,6 +644,8 @@ def to_edge_TOSA_delegate(
         partitioner = EthosUPartitioner(compile_spec)
     elif is_tosa(compile_spec):
         partitioner = TOSAPartitioner(compile_spec)
+    elif is_vgf(compile_spec):
+        partitioner = VgfPartitioner(compile_spec)
     else:
         raise RuntimeError(f"Unhandled compile spec: {compile_spec}")
 

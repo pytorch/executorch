@@ -35,7 +35,7 @@ class EthosUBackend(BackendDetails):
 
     @staticmethod
     def _compile_tosa_flatbuffer(
-        tosa_flatbuffer: bytes, compile_spec: list[CompileSpec]
+        tosa_flatbuffer: bytes, compile_spec: List[CompileSpec]
     ) -> bytes:
         """
         Static helper method to do the compilation of the TOSA flatbuffer

@@ -35,15 +35,15 @@ from torch.fx import Node
 logger = logging.getLogger(__name__)
 
 
-def _get_first_delegation_tag(graph_module) -> str | None:
-    """Get the first delegation tag from the graph_module or return None."""
+def arm_get_first_delegation_tag(graph_module) -> str:
+    """Get the first delegation tag from the graph_module or return empty string."""
     for node in graph_module.graph.nodes:
         tag = node.meta.get("delegation_tag")
         if tag:
             return tag
 
     logger.debug("No delegation tag found in partition.")
-    return None
+    return ""
 
 
 @final
@@ -136,7 +136,7 @@ class TOSABackend(BackendDetails):
                 )
 
         if artifact_path:
-            tag = _get_first_delegation_tag(graph_module)
+            tag = arm_get_first_delegation_tag(graph_module)
             dbg_tosa_dump(
                 tosa_graph,
                 artifact_path,
