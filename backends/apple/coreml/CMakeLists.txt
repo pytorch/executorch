@@ -1,4 +1,9 @@
 # Copyright © 2023 Apple Inc. All rights reserved.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 cmake_minimum_required(VERSION 3.19)
 
@@ -19,6 +24,15 @@ if(EXECUTORCH_BUILD_DEVTOOLS)
 endif()
 
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
+
+# inmemoryfs sources
+set(INMEMORYFS_SOURCES
+    runtime/inmemoryfs/inmemory_filesystem.cpp
+    runtime/inmemoryfs/inmemory_filesystem_utils.mm
+    runtime/inmemoryfs/memory_buffer.cpp
+    runtime/inmemoryfs/memory_stream.cpp
+    runtime/inmemoryfs/reversed_memory_stream.cpp
+)
 
 # kvstore sources
 set(KVSTORE_SOURCES
@@ -46,6 +60,9 @@ set(DELEGATE_SOURCES
     runtime/delegate/multiarray.mm
     runtime/delegate/serde_json.mm
 )
+
+# util sources
+set(UTIL_SOURCES runtime/util/json_util.cpp runtime/util/objc_json_serde.mm)
 
 # sdk sources
 set(SDK_SOURCES
@@ -101,23 +118,14 @@ set(PROTOBUF_SOURCES
 
 # CoreML util
 add_library(coreml_util)
-target_sources(coreml_util
-  PRIVATE runtime/util/json_util.cpp
-          runtime/util/objc_json_serde.mm
-)
+target_sources(coreml_util PRIVATE ${UTIL_SOURCES})
 target_include_directories(coreml_util
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
 
 # CoreML inmemoryfs
 add_library(coreml_inmemoryfs)
-target_sources(coreml_inmemoryfs
-  PRIVATE runtime/inmemoryfs/inmemory_filesystem.cpp
-          runtime/inmemoryfs/inmemory_filesystem_utils.mm
-          runtime/inmemoryfs/memory_buffer.cpp
-          runtime/inmemoryfs/memory_stream.cpp
-          runtime/inmemoryfs/reversed_memory_stream.cpp
-)
+target_sources(coreml_inmemoryfs PRIVATE ${INMEMORYFS_SOURCES})
 target_include_directories(coreml_inmemoryfs
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
 )
@@ -125,10 +133,7 @@ target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util)
 
 # Define the delegate library
 add_library(coremldelegate)
-target_sources(coremldelegate
-  PRIVATE ${KVSTORE_SOURCES}
-          ${DELEGATE_SOURCES}
-)
+target_sources(coremldelegate PRIVATE ${KVSTORE_SOURCES} ${DELEGATE_SOURCES})
 
 target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
