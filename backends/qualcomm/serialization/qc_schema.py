@@ -10,6 +10,7 @@ Please refer to executorch/backends/qualcomm/serialization/schema.fbs for the sc
 
 from dataclasses import dataclass, field
 from enum import IntEnum, unique
+from typing import List
 
 
 @dataclass
@@ -144,6 +145,36 @@ class QnnExecuTorchBackendOptions:
     htp_options: QnnExecuTorchHtpBackendOptions
 
 
+@unique
+class QnnExecuTorchOpPackageTarget(IntEnum):
+    UNKNOWN = 0
+    CPU = 1
+    HTP = 2
+
+
+@unique
+class QnnExecuTorchOpPackagePlatform(IntEnum):
+    UNKNOWN = 0
+    X86_64 = 1
+    AARCH64_ANDROID = 2
+
+
+@dataclass
+class QnnExecuTorchOpPackageInfo:
+    op_package_name: str = ""
+    op_package_path: str = ""
+    interface_provider: str = ""
+    target: QnnExecuTorchOpPackageTarget = QnnExecuTorchOpPackageTarget.UNKNOWN
+    custom_op_name: str = ""
+    qnn_op_type_name: str = ""
+    platform: QnnExecuTorchOpPackagePlatform = QnnExecuTorchOpPackagePlatform.UNKNOWN
+
+
+@dataclass
+class QnnExecuTorchOpPackageOptions:
+    op_package_infos: List[QnnExecuTorchOpPackageInfo] = field(default_factory=list)
+
+
 @dataclass
 class QnnExecuTorchOptions:
     soc_info: SocInfo
@@ -157,3 +188,4 @@ class QnnExecuTorchOptions:
     shared_buffer: bool = False
     is_from_context_binary: bool = False
     multiple_graphs: bool = False
+    op_package_options: QnnExecuTorchOpPackageOptions = QnnExecuTorchOpPackageOptions()
