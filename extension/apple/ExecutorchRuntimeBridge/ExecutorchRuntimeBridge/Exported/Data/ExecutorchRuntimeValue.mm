@@ -1,5 +1,11 @@
-// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+ 
 #import "ExecutorchRuntimeValue.h"
 
 #import <map>
@@ -35,15 +41,7 @@ using torch::executor::EValue;
   return self;
 }
 
-- (nullable NSString *)stringValueAndReturnError:(NSError * _Nullable * _Nullable)error
-{
-  if (error) {
-    *error = [ModelRuntimeValueErrorFactory unsupportedType:@"ExecutorchRuntimeValue doesn't support strings"];
-  }
-  return nil;
-}
-
-- (nullable id<ModelRuntimeTensorValueBridging>)tensorValueAndReturnError:(NSError * _Nullable * _Nullable)error
+- (nullable ExecutorchRuntimeTensorValue *)asTensorValueAndReturnError:(NSError * _Nullable * _Nullable)error
 {
   if (_value.isTensor()) {
     return [[ExecutorchRuntimeTensorValue alloc] initWithTensor:_value.toTensor() error:error];
@@ -60,14 +58,6 @@ using torch::executor::EValue;
 - (EValue)getBackedValue
 {
   return _value;
-}
-
-- (NSArray<id<ModelRuntimeValueBridging>> *)arrayValueAndReturnError:(NSError * _Nullable * _Nullable)error
-{
-  if (error) {
-    *error = [ModelRuntimeValueErrorFactory unsupportedType:@"EValue doesn't support arrays"];
-  }
-  return nil;
 }
 
 @end

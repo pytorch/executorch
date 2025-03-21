@@ -23,7 +23,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -144,6 +144,10 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   list(APPEND xnn_executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+endif()
+
+if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
+  list(APPEND xnn_executor_runner_libs quantized_ops_lib)
 endif()
 
 list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)

@@ -199,8 +199,8 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
-        self.add_pass(ScalarsToAttributePass())
         self.add_pass(ReplaceScalarWithTensorArgPass())
+        self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeLayerNormPass())
         self.add_pass(DecomposeVarPass())
         self.add_pass(DecomposeMeanDimPass())

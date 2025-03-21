@@ -14,7 +14,7 @@ on:
       - build/build_apple_frameworks.sh
       - build/build_apple_llm_demo.sh
       - build/create_frameworks.sh
-      - build/test_ios_ci.sh
+      - .ci/scripts/test_ios_ci.sh
       - examples/demo-apps/apple_ios/**
       - extension/apple/**
       - extension/benchmark/apple/**
@@ -75,7 +75,7 @@ jobs:
 
         # Build and test iOS Demo App
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/test_ios_ci.sh "${ARTIFACTS_DIR_NAME}"
+        .ci/scripts/test_ios_ci.sh "${ARTIFACTS_DIR_NAME}"
 
   # Upload the test demo app to S3
   upload-demo-ios:
