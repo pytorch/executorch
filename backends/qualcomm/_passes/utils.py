@@ -6,7 +6,10 @@
 
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_ENCODING
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_ENCODING,
+    QCOM_NN_MODULE_STACK,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
 
@@ -105,6 +108,14 @@ def get_passes_dependency_for_capture_program():
         ReplaceIndexPutInput: [LayoutTransform],
         TensorI64toI32: [RemoveRedundancy],
     }
+
+
+def copy_nn_module_stack(src, target):
+    """
+    Copy meta["nn_module_stack"] from src node to target node if existing.
+    """
+    if value := src.meta.get(QCOM_NN_MODULE_STACK):
+        target.meta[QCOM_NN_MODULE_STACK] = value
 
 
 def is_float_tensor(node: torch.fx.Node) -> bool:

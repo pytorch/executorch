@@ -17,7 +17,11 @@ import torch
 from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import (
+    ModuleQConfig,
+    QnnQuantizer,
+    QuantDtype,
+)
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
@@ -525,6 +529,7 @@ class TestQNN(unittest.TestCase):
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
         dynamic_shapes: Dict = None,
         bypass_check: bool = False,
+        submodule_quant_config: Optional[Dict[torch.nn.Module, ModuleQConfig]] = None,
     ) -> torch.fx.GraphModule:
         m = torch.export.export(
             module, inputs, dynamic_shapes=dynamic_shapes, strict=True
@@ -532,9 +537,14 @@ class TestQNN(unittest.TestCase):
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
-        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
-        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
-        quantizer.set_quant_config(quant_dtype)
+        quantizer.set_default_quant_config(
+            quant_dtype,
+            is_conv_per_channel=is_conv_per_channel,
+            is_linear_per_channel=is_linear_per_channel,
+        )
+        submodule_quant_config = submodule_quant_config or {}
+        for submodule, module_qconfig in submodule_quant_config.items():
+            quantizer.set_submodule_quant_config(submodule, module_qconfig)
 
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
@@ -558,18 +568,26 @@ class TestQNN(unittest.TestCase):
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
+        submodule_quant_config: Optional[Dict[str, ModuleQConfig]] = None,
     ) -> torch.fx.GraphModule:
         m = torch.export.export_for_training(module, inputs).module()
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
-        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
-        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
 
         if quant_dtype == QuantDtype.use_8a8w:
-            quantizer.set_quant_config(quant_dtype, is_qat=True)
+            quantizer.set_default_quant_config(
+                quant_dtype,
+                is_qat=True,
+                is_conv_per_channel=is_conv_per_channel,
+                is_linear_per_channel=is_linear_per_channel,
+            )
         else:
-            raise RuntimeError("Shuld not be here")
+            raise RuntimeError("Should not be here")
+
+        submodule_quant_config = submodule_quant_config or {}
+        for submodule, module_qconfig in submodule_quant_config.items():
+            quantizer.set_submodule_quant_config(submodule, module_qconfig)
 
         prepared = prepare_qat_pt2e(m, quantizer)
         return torch.ao.quantization.move_exported_model_to_train(prepared)
