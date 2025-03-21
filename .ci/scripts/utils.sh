@@ -68,7 +68,7 @@ install_pytorch_and_domains() {
   TORCH_RELEASE=$(cat version.txt)
   TORCH_SHORT_HASH=${TORCH_VERSION:0:7}
   TORCH_WHEEL_NAME="torch-${TORCH_RELEASE}%2Bgit${TORCH_SHORT_HASH}-cp${PYTHON_VERSION}-cp${PYTHON_VERSION}-${PLATFORM}.whl"
-  TORCH_WHEEL_PATH="cached_artifacts/pytorch/executorch/pytorch_wheels/${SYSTEM_NAME}/${PYTHON_VERSION}/"
+  TORCH_WHEEL_PATH="cached_artifacts/pytorch/executorch/pytorch_wheels/${SYSTEM_NAME}/${PYTHON_VERSION}"
 
   # Cache PyTorch wheel is only needed on MacOS, Linux CI already has this as part
   # of the Docker image
