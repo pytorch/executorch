@@ -1534,7 +1534,7 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(program.constant_buffer[1].storage), 8)
 
     def test_emit_lifted_tensor_constant(self) -> None:
-        class LiftedConstants(nn.Module):
+        class LiftedTensorConstants(nn.Module):
             def __init__(self):
                 super().__init__()
 
@@ -1542,18 +1542,41 @@ class TestEmit(unittest.TestCase):
                 x = x * torch.tensor([[4, 3], [1, 2], [5, 6]], dtype=torch.float)
                 return x
 
-        model = LiftedConstants()
-
+        model = LiftedTensorConstants()
+        # Specify that we want to move non-lifted constants to external file
+        et_cfg = ExecutorchBackendConfig(external_constants=True)
         program = to_edge(
             export(model, (torch.ones(3, 2),), strict=True)
-        ).to_executorch()
-
+        ).to_executorch(et_cfg)
         program = program._emitter_output.program
         exec_plan = program.execution_plan[0]
         # There should only be 1 input to this model.
         self.assertEqual(len(exec_plan.inputs), 1)
         self.assertEqual(len(program.constant_buffer), 2)
         self.assertEqual(len(program.constant_buffer[1].storage), 24)
+
+    def test_emit_lifted_constant(self) -> None:
+        class LiftedConstants(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x + 1
+                return x
+
+        model = LiftedConstants()
+        # Specify that we want to move non-lifted constants to external file
+        et_cfg = ExecutorchBackendConfig(external_constants=True)
+        program = to_edge(
+            export(model, (torch.ones(3, 2),), strict=True)
+        ).to_executorch(et_cfg)
+
+        program = program._emitter_output.program
+        exec_plan = program.execution_plan[0]
+        # There should only be 1 input to this model.
+        self.assertEqual(len(exec_plan.inputs), 1)
+        self.assertEqual(len(program.constant_buffer), 2)
+        self.assertEqual(len(program.constant_buffer[1].storage), 8)
 
     def test_mutable_buffers(self) -> None:
         def count_copies(gm: torch.fx.GraphModule) -> int:

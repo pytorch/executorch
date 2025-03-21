@@ -30,7 +30,7 @@ class NodeVisitor:
     ]
 
     def __init__(self, exported_program: ExportedProgram, tosa_spec: TosaSpecification):
-        self._exported_program = exported_program or None
+        self._exported_program = exported_program
         self.tosa_spec = tosa_spec
 
     def define_node(

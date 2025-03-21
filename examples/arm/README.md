@@ -21,14 +21,19 @@ build artifacts. If supplied, the same argument must be supplied to both the scr
 To run these scripts. On a Linux system, in a terminal, with a working internet connection,
 ```
 # Step [1] - setup necessary tools
-$ ./setup.sh --i-agree-to-the-contained-eula [optional-scratch-dir]
+$ cd <EXECUTORCH-ROOT-FOLDER>
+$ executorch/examples/arm/setup.sh --i-agree-to-the-contained-eula [optional-scratch-dir]
 
-# Step [2] - build + run ExecuTorch and executor_runner baremetal application
+# Step [2] - Setup Patch to tools, The `setup.sh` script has generated a script that you need to source everytime you restart you shell. 
+$ source  executorch/examples/arm/ethos-u-scratch/setup_path.sh
+
+# Step [3] - build + run ExecuTorch and executor_runner baremetal application
 # suited for Corstone FVP's to run a simple PyTorch model.
-$ ./run.sh [--scratch-dir=same-optional-scratch-dir-as-before]
+$ executorch/examples/arm/run.sh --model_name=mv2 --target=ethos-u85-128 [--scratch-dir=same-optional-scratch-dir-as-before]
 ```
+
 ### Online Tutorial
 
 We also have a [tutorial](https://pytorch.org/executorch/stable/executorch-arm-delegate-tutorial.html) explaining the steps performed in these
-scripts, expected results, and more. It is a step-by-step guide
+scripts, expected results, possible problems and more. It is a step-by-step guide
 you can follow to better understand this delegate.

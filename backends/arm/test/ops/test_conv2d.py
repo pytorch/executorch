@@ -328,7 +328,7 @@ two_conv2d = Conv2d(
 )
 
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
-# FAIL: test_conv2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
+# FAIL: test_convolution_2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
 test_modules = {
     "2x2_3x2x40x40_nobias": conv2d_2x2_3x2x40x40_nobias,
     "3x3_1x3x256x256_st1": conv2d_3x3_1x3x256x256_st1,
@@ -358,7 +358,7 @@ input_t = Tuple[torch.Tensor]
 
 
 @common.parametrize("test_module", test_modules)
-def test_conv2d_tosa_MI(test_module):
+def test_convolution_2d_tosa_MI(test_module):
     pipeline = TosaPipelineMI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op
     )
@@ -366,7 +366,7 @@ def test_conv2d_tosa_MI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-def test_conv2d_tosa_BI(test_module):
+def test_convolution_2d_tosa_BI(test_module):
     pipeline = TosaPipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op
     )
@@ -375,7 +375,7 @@ def test_conv2d_tosa_BI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-def test_conv2d_u55_BI(test_module):
+def test_convolution_2d_u55_BI(test_module):
     pipeline = EthosU55PipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
     )
@@ -383,7 +383,7 @@ def test_conv2d_u55_BI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-def test_conv2d_u85_BI(test_module):
+def test_convolution_2d_u85_BI(test_module):
     pipeline = EthosU85PipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
     )
@@ -392,7 +392,7 @@ def test_conv2d_u85_BI(test_module):
 
 @common.parametrize("test_module", test_modules, fvp_xfails)
 @common.SkipIfNoCorstone300
-def test_conv2d_u55_BI_on_fvp(test_module):
+def test_convolution_2d_u55_BI_on_fvp(test_module):
     pipeline = EthosU55PipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
     )
@@ -401,7 +401,7 @@ def test_conv2d_u55_BI_on_fvp(test_module):
 
 @common.parametrize("test_module", test_modules, fvp_xfails)
 @common.SkipIfNoCorstone320
-def test_conv2d_u85_BI_on_fvp(test_module):
+def test_convolution_2d_u85_BI_on_fvp(test_module):
     pipeline = EthosU85PipelineBI[input_t](
         test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
     )
@@ -443,7 +443,7 @@ reject_suite = {
 
 
 @common.parametrize("module", reject_suite)
-def test_reject_conv2d_u55_BI(
+def test_reject_convolution_2d_u55_BI(
     module: Conv2d,
 ):
     (

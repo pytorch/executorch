@@ -38,7 +38,6 @@ class RescaleVisitor(NodeVisitor):
         input_zp = cast(int, node.args[3])
         output_zp = cast(int, node.args[4])
 
-        # Skip int16 cases for now.
         if input_dtype != map_dtype(torch.int8) and input_zp != 0:
             raise ValueError(
                 f"If input dtype is not int8, input_zp must be 0. Got input_dtype{ts.DTypeNames[input_dtype]}, {input_zp=}"
@@ -48,17 +47,20 @@ class RescaleVisitor(NodeVisitor):
                 f"If output dtype is not int8, output_zp must be 0. Got {output_dtype=}, {output_zp=}"
             )
 
-        scale_width = 32 if output_dtype == torch.int32 else 16
+        # scale32 gives higher accuracy but for a higher HW cost.
+        # For now, always go for scale32.
+        scale_32 = True
+        scale_width = 32 if scale_32 else 16
         multiplier, shift = tosa_quant_utils.compute_multiplier_and_shift(
-            scale, scale_width
+            [scale], scale_width
         )
         attr_rescale = ts.TosaSerializerAttribute()
         attr_rescale.RescaleAttribute(
             input_zp=input_zp,
             output_zp=output_zp,
-            multiplier=[multiplier],
-            shift=[shift],
-            scale32=output_dtype == torch.int32,
+            multiplier=multiplier,
+            shift=shift,
+            scale32=scale_32,
             double_round=False,
             per_channel=False,
             input_unsigned=False,

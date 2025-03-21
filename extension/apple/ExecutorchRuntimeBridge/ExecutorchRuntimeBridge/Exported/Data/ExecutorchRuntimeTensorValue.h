@@ -10,11 +10,11 @@
  #import <executorch/extension/module/module.h>
  #import <executorch/runtime/core/evalue.h>
 #endif
-#import <ModelRunnerDataKit/ModelRunnerDataKit-Swift.h>
+#import <RuntimeBridgingCore/RuntimeBridgingCore-Swift.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface ExecutorchRuntimeTensorValue : NSObject <ModelRuntimeTensorValueBridging>
+@interface ExecutorchRuntimeTensorValue : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
@@ -27,6 +27,9 @@ NS_ASSUME_NONNULL_BEGIN
                        shape:(std::vector<int32_t>)shape NS_DESIGNATED_INITIALIZER;
 - (torch::executor::Tensor)backedValue;
 #endif
+
+#pragma mark - 
+- (ModelRuntimeTensorValueBridgingTuple * _Nullable)floatRepresentationAndReturnError:(NSError * _Nullable * _Nullable)error SWIFT_WARN_UNUSED_RESULT;
 
 @end
 

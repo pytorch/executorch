@@ -111,7 +111,7 @@ phases:
 
         adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle force-idle
         adb -s $DEVICEFARM_DEVICE_UDID shell dumpsys deviceidle unforce
-        adb -s $DEVICEFARM_DEVICE_UDID shell sleep 30
+        adb -s $DEVICEFARM_DEVICE_UDID shell sleep 180
 
         if [ -n "$BIN_FOUND" ]; then
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \

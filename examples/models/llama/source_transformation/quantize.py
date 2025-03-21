@@ -63,10 +63,6 @@ def quantize(  # noqa C901
     else:
         torch_dtype = torch.float16
 
-    assert checkpoint_path, "Need to specify a checkpoint"
-    # if checkpoint_path is None:
-    #     checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
-
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
@@ -98,18 +94,24 @@ def quantize(  # noqa C901
         matches = re.findall(pattern, qmode)
         assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
         bitwidth = int(matches[0][0])
-        _load_torchao_aten_lib(libname="libtorchao_ops_aten")
-        from torchao.experimental.quant_api import Int8DynActIntxWeightLinearQuantizer
+
+        from torchao.experimental.quant_api import Int8DynamicActivationIntxWeightConfig
+        from torchao.quantization.granularity import PerGroup, PerRow
+        from torchao.quantization.quant_api import quantize_
+        from torchao.utils import unwrap_tensor_subclass
 
         with torch.no_grad():
-            model = Int8DynActIntxWeightLinearQuantizer(
-                device="cpu",
-                precision=torch.float32,
-                groupsize=group_size,
-                bitwidth=bitwidth,
-                has_weight_zeros=False,
-            ).quantize(model)
-
+            quantize_(
+                model,
+                Int8DynamicActivationIntxWeightConfig(
+                    weight_dtype=getattr(torch, f"int{bitwidth}"),
+                    granularity=(
+                        PerRow() if group_size in [0, -1] else PerGroup(group_size)
+                    ),
+                    has_weight_zeros=False,
+                ),
+            )
+            model = unwrap_tensor_subclass(model)
         if verbose:
             print("quantized model:", model)
         return model
@@ -149,6 +151,7 @@ def quantize(  # noqa C901
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
         if tokenizer_path is None:
+            assert checkpoint_path is not None, "checkpoint_path must be specified"
             tokenizer_path = checkpoint_path.parent / "tokenizer.model"
         assert tokenizer_path.is_file(), tokenizer_path
         tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
@@ -752,7 +755,6 @@ def get_quant_embedding_transform(args):
         bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
         group_size = int(group_size)
         bitwidth = int(bitwidth)
-        _load_torchao_aten_lib(libname="libtorchao_ops_aten")
         from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
 
         def _torchao_embedding_quantizer(model):

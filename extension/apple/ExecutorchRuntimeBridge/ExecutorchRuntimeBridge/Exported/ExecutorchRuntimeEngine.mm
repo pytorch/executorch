@@ -102,7 +102,7 @@ static auto StringToNSString(const std::string &string) -> NSString *
     return resultValues;
   } catch (...) {
     if (error) {
-      *error = [NSError errorWithDomain:@"LiteInterpreterRuntimeEngine"
+      *error = [NSError errorWithDomain:@"ExecutorchRuntimeEngine"
                                    code:kInferenceFailed
                                userInfo:@{NSDebugDescriptionErrorKey : @"Unknown error"}];
     }

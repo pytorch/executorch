@@ -51,7 +51,7 @@ NS_ASSUME_NONNULL_BEGIN
   XCTAssertEqual(output.count, 1);
   NSError *tensorValueError = nil;
   NSError *floatRepresentationError = nil;
-  const auto resultTensorValue = [[output.firstObject tensorValueAndReturnError:&tensorValueError]
+  const auto resultTensorValue = [[output.firstObject asTensorValueAndReturnError:&tensorValueError]
                                   floatRepresentationAndReturnError:&floatRepresentationError];
 
   XCTAssertNil(tensorValueError);

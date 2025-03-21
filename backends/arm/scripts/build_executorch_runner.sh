@@ -150,7 +150,7 @@ cmake \
 
 echo "[${BASH_SOURCE[0]}] Configured CMAKE"
 
-cmake --build ${output_folder}/cmake-out --parallel -- arm_executor_runner
+cmake --build ${output_folder}/cmake-out -j$(nproc) -- arm_executor_runner
 
 echo "[${BASH_SOURCE[0]}] Generated baremetal elf file:"
 find ${output_folder}/cmake-out -name "arm_executor_runner"

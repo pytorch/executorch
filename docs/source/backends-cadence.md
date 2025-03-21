@@ -174,8 +174,6 @@ cmake -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/backends/cadence/cadence.cmake
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
     -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
     -DEXECUTORCH_BUILD_CPUINFO=OFF \
-    -DEXECUTORCH_BUILD_FLATC=OFF \
-    -DFLATC_EXECUTABLE="$(which flatc)" \
     -Bcmake-out .
 
 cmake --build cmake-out -j<num_cores> --target install --config Debug
@@ -184,8 +182,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/backends/cadence.cmake \
     -DCMAKE_PREFIX_PATH=<path_to_executorch>/cmake-out \
     -DMODEL_PATH=<path_to_program_file_generated_in_previous_step> \
-    -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> -DEXECUTORCH_BUILD_FLATC=0 \
-    -DFLATC_EXECUTABLE="$(which flatc)" \
+    -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> \
     -DNN_LIB_BASE_DIR=<path_to_nnlib_cloned_in_step_2> \
     -Bcmake-out/examples/cadence \
     examples/cadence

@@ -7,7 +7,7 @@
 
 set +ex
 
-NIGHTLY_VERSION="dev20250220"
+NIGHTLY_VERSION="dev20250311"
 
 # Install torchtune nightly for model definitions.
 pip install --pre torchtune==0.6.0.${NIGHTLY_VERSION} --extra-index-url https://download.pytorch.org/whl/nightly/cpu --no-cache-dir

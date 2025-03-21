@@ -176,8 +176,8 @@ class Conv2dVisitor(NodeVisitor):
                 conv2d_res,  # type: ignore[possibly-undefined]
                 output.name,
                 output.dtype,
-                input_scale,
-                weight_scale,
-                output_qargs[0].scale,
+                [input_scale],
+                [weight_scale],
+                [output_qargs[0].scale],
                 output_qargs[0].zp,
             )
