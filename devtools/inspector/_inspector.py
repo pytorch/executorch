@@ -1224,6 +1224,10 @@ class Inspector:
         total = 0.0
         for block in self.event_blocks:
             for event in block.events:
+                # Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax
+                if event.event_name == "OPERATOR_CALL":
+                    continue
+
                 module_hierarchy = event.module_hierarchy.values()
                 for hierarchy in module_hierarchy:
                     if not hierarchy:

@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 from typing import Tuple
 
 import torch
@@ -58,6 +57,17 @@ class Add2(torch.nn.Module):
         "4d_randn_1": (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
         "4d_randn_2": (torch.randn(1, 3, 4, 4), torch.randn(1, 3, 4, 4)),
         "4d_randn_big": (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
+    }
+
+
+class Add3(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return x + y
+
+    test_data: list[input_t2] = {
+        "3d_randn_diff_rank": (torch.randn(1, 4, 5), torch.randn(4, 1)),
+        "4d_randn_diff_rank": (torch.randn(1, 1, 4, 4), torch.randn(4, 1)),
+        "4d_randn_diff_rank_2": (torch.randn(4, 1), torch.randn(1, 1, 4, 5)),
     }
 
 
@@ -126,6 +136,18 @@ def test_add_u85_BI(test_data: input_t1):
 @common.parametrize("test_data", Add2.test_data)
 def test_add_2_tosa_MI(test_data: input_t2):
     pipeline = TosaPipelineMI[input_t2](Add2(), test_data, aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add3.test_data)
+def test_add3_tosa_MI(test_data: input_t2):
+    pipeline = TosaPipelineMI[input_t2](Add3(), test_data, aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add3.test_data)
+def test_add3_tosa_BI(test_data: input_t2):
+    pipeline = TosaPipelineBI[input_t2](Add3(), test_data, aten_op, exir_op)
     pipeline.run()
 
 

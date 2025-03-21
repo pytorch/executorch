@@ -8,42 +8,28 @@
 
 package org.pytorch.executorch;
 
-import com.facebook.jni.HybridData;
-import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
-import org.pytorch.executorch.annotations.Experimental;
+import org.pytorch.executorch.extension.llm.LlmCallback;
+import org.pytorch.executorch.extension.llm.LlmModule;
 
 /**
  * LlamaModule is a wrapper around the Executorch Llama model. It provides a simple interface to
  * generate text from the model.
  *
- * <p>Warning: These APIs are experimental and subject to change without notice
+ * <p>Note: deprecated! Please use {@link org.pytorch.executorch.extension.llm.LlmModule} instead.
  */
-@Experimental
+@Deprecated
 public class LlamaModule {
 
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
 
-  static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
-    NativeLoader.loadLibrary("executorch");
-  }
-
-  private final HybridData mHybridData;
+  private LlmModule mModule;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
 
-  @DoNotStrip
-  private static native HybridData initHybrid(
-      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath);
-
   /** Constructs a LLAMA Module for a model with given model path, tokenizer, temperature. */
   public LlamaModule(String modulePath, String tokenizerPath, float temperature) {
-    mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, null);
+    mModule = new LlmModule(modulePath, tokenizerPath, temperature);
   }
 
   /**
@@ -51,16 +37,16 @@ public class LlamaModule {
    * path.
    */
   public LlamaModule(String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, dataPath);
+    mModule = new LlmModule(modulePath, tokenizerPath, temperature, dataPath);
   }
 
   /** Constructs a LLM Module for a model with given path, tokenizer, and temperature. */
   public LlamaModule(int modelType, String modulePath, String tokenizerPath, float temperature) {
-    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, null);
+    mModule = new LlmModule(modelType, modulePath, tokenizerPath, temperature);
   }
 
   public void resetNative() {
-    mHybridData.resetNative();
+    mModule.resetNative();
   }
 
   /**
@@ -70,7 +56,7 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    */
   public int generate(String prompt, LlamaCallback llamaCallback) {
-    return generate(prompt, DEFAULT_SEQ_LEN, llamaCallback, DEFAULT_ECHO);
+    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, llamaCallback, DEFAULT_ECHO);
   }
 
   /**
@@ -119,8 +105,7 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  @DoNotStrip
-  public native int generate(
+  public int generate(
       int[] image,
       int width,
       int height,
@@ -128,7 +113,27 @@ public class LlamaModule {
       String prompt,
       int seqLen,
       LlamaCallback llamaCallback,
-      boolean echo);
+      boolean echo) {
+    return mModule.generate(
+        image,
+        width,
+        height,
+        channels,
+        prompt,
+        seqLen,
+        new LlmCallback() {
+          @Override
+          public void onResult(String result) {
+            llamaCallback.onResult(result);
+          }
+
+          @Override
+          public void onStats(float tps) {
+            llamaCallback.onStats(tps);
+          }
+        },
+        echo);
+  }
 
   /**
    * Prefill an LLaVA Module with the given images input.
@@ -142,16 +147,8 @@ public class LlamaModule {
    * @throws RuntimeException if the prefill failed
    */
   public long prefillImages(int[] image, int width, int height, int channels, long startPos) {
-    long[] nativeResult = prefillImagesNative(image, width, height, channels, startPos);
-    if (nativeResult[0] != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
-    }
-    return nativeResult[1];
+    return mModule.prefillImages(image, width, height, channels, startPos);
   }
-
-  // returns a tuple of (status, updated startPos)
-  private native long[] prefillImagesNative(
-      int[] image, int width, int height, int channels, long startPos);
 
   /**
    * Prefill an LLaVA Module with the given text input.
@@ -165,15 +162,8 @@ public class LlamaModule {
    * @throws RuntimeException if the prefill failed
    */
   public long prefillPrompt(String prompt, long startPos, int bos, int eos) {
-    long[] nativeResult = prefillPromptNative(prompt, startPos, bos, eos);
-    if (nativeResult[0] != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
-    }
-    return nativeResult[1];
+    return mModule.prefillPrompt(prompt, startPos, bos, eos);
   }
-
-  // returns a tuple of (status, updated startPos)
-  private native long[] prefillPromptNative(String prompt, long startPos, int bos, int eos);
 
   /**
    * Generate tokens from the given prompt, starting from the given position.
@@ -185,14 +175,33 @@ public class LlamaModule {
    * @param echo indicate whether to echo the input prompt or not.
    * @return The error code.
    */
-  public native int generateFromPos(
-      String prompt, int seqLen, long startPos, LlamaCallback callback, boolean echo);
+  public int generateFromPos(
+      String prompt, int seqLen, long startPos, LlamaCallback callback, boolean echo) {
+    return mModule.generateFromPos(
+        prompt,
+        seqLen,
+        startPos,
+        new LlmCallback() {
+          @Override
+          public void onResult(String result) {
+            callback.onResult(result);
+          }
+
+          @Override
+          public void onStats(float tps) {
+            callback.onStats(tps);
+          }
+        },
+        echo);
+  }
 
   /** Stop current generate() before it finishes. */
-  @DoNotStrip
-  public native void stop();
+  public void stop() {
+    mModule.stop();
+  }
 
   /** Force loading the module. Otherwise the model is loaded during first generate(). */
-  @DoNotStrip
-  public native int load();
+  public int load() {
+    return mModule.load();
+  }
 }

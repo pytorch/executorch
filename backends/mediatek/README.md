@@ -37,6 +37,7 @@ Download [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/publ
 - `libneuron_buffer_allocator.so`: This utility library is designed for allocating DMA buffers necessary for model inference.
 - `mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`: This library preprocess the model into a MediaTek representation.
 - `mtk_neuron-8.2.2-py3-none-linux_x86_64.whl`: This library converts the model to binaries.
+- Copy `NeuronAdapter.h` under `backends/mediatek/runtime/include/api/`.
 
 ### Setup
 
