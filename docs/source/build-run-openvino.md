@@ -53,7 +53,7 @@ cmake --install build --prefix <your_preferred_install_location>
 cd <your_preferred_install_location>
 source setupvars.sh
 ```
-Note: The OpenVINO backend is not yet supported in the current OpenVINO release. Therefore, it is recommended to build from source.
+Note: The OpenVINO backend is not yet supported with the current OpenVINO release packages. It is recommended to build from source. The instructions for using OpenVINO release packages will be added soon.
 
 ### Setup
 
