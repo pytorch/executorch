@@ -680,6 +680,12 @@ class CustomBuild(build):
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
             # environment variable.
 
+        if ShouldBuild.coreml():
+            cmake_args += [
+                "-DEXECUTORCH_BUILD_COREML=ON",
+            ]
+            build_args += ["--target", "executorchcoreml"]
+
         if ShouldBuild.llama_custom_ops():
             cmake_args += [
                 "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON",  # add llama sdpa ops to pybindings.
@@ -786,12 +792,12 @@ def get_ext_modules() -> List[Extension]:
             ]
         )
 
-    if ShouldBuild.pybindings() or ShouldBuild.coreml():
+    if ShouldBuild.coreml():
         ext_modules.append(
             BuiltExtension(
-                src="coreml_inmemoryfs_pybinding.*",
+                src="executorchcoreml.*",
                 src_dir="backends/apple/coreml",
-                modpath="executorch.backends.apple.coreml.inmemoryfs",
+                modpath="executorch.backends.apple.coreml.executorchcoreml",
             )
         )
 
