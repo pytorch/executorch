@@ -118,20 +118,31 @@ set(PROTOBUF_SOURCES
     runtime/sdk/format/WordTagger.pb.cc
 )
 
+find_library(FOUNDATION_FRAMEWORK Foundation)
+
 # CoreML util
-add_library(coreml_util)
-target_sources(coreml_util PRIVATE ${UTIL_SOURCES})
-target_include_directories(coreml_util
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
+add_library(coreml_util ${UTIL_SOURCES})
+target_include_directories(coreml_util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util)
+target_link_libraries(coreml_util PRIVATE ${FOUNDATION_FRAMEWORK})
+
+install(
+  TARGETS coreml_util
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
 )
 
 # CoreML inmemoryfs
-add_library(coreml_inmemoryfs)
-target_sources(coreml_inmemoryfs PRIVATE ${INMEMORYFS_SOURCES})
-target_include_directories(coreml_inmemoryfs
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
+add_library(coreml_inmemoryfs ${INMEMORYFS_SOURCES})
+target_include_directories(coreml_inmemoryfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs)
+target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util ${FOUNDATION_FRAMEWORK})
+
+install(
+  TARGETS coreml_inmemoryfs
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
 )
-target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util)
 
 # Define the delegate library
 add_library(coremldelegate)
@@ -149,9 +160,6 @@ target_include_directories(
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 target_compile_definitions(coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
-target_link_libraries(coremldelegate PRIVATE coreml_util)
-target_link_libraries(coremldelegate PRIVATE coreml_inmemoryfs)
-target_link_libraries(coremldelegate PRIVATE executorch_core)
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
   target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
@@ -171,13 +179,17 @@ endif()
 
 find_library(ACCELERATE_FRAMEWORK Accelerate)
 find_library(COREML_FRAMEWORK CoreML)
-find_library(FOUNDATION_FRAMEWORK Foundation)
 find_library(SQLITE_LIBRARY sqlite3)
 
 target_link_libraries(
   coremldelegate
-  PRIVATE executorch_core ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
-          ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
+  PUBLIC  coreml_util
+          coreml_inmemoryfs
+  PRIVATE executorch_core
+          ${ACCELERATE_FRAMEWORK}
+          ${COREML_FRAMEWORK}
+          ${FOUNDATION_FRAMEWORK}
+          ${SQLITE_LIBRARY}
 )
 
 target_link_options_shared_lib(coremldelegate)
@@ -232,6 +244,5 @@ if(EXECUTORCH_BUILD_COREML AND EXECUTORCH_BUILD_PYBIND)
   if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     target_compile_options(executorchcoreml PRIVATE -g)
   endif()
-  target_link_libraries(executorchcoreml PRIVATE coreml_util)
-  target_link_libraries(executorchcoreml PRIVATE coreml_inmemoryfs)
+  target_link_libraries(executorchcoreml PRIVATE coreml_util coreml_inmemoryfs)
 endif()
