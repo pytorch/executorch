@@ -122,9 +122,6 @@ the checkpoint format to avoid generating faulty models.
 """
             )
 
-        # Get checkpoint dtype.
-        self.dtype = get_checkpoint_dtype(checkpoint)
-
         with open(params_path, "r") as f:
             params = json.loads(f.read())
         output_prune_map = None
@@ -171,7 +168,9 @@ the checkpoint format to avoid generating faulty models.
         # Within the device="meta" context, tensors that are created do not carry data.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
         with torch.device("meta"):
+            # Model itself is loaded in default dtype, fp32.
             self.model_ = Transformer(model_args)
+            self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
@@ -241,6 +240,10 @@ the checkpoint format to avoid generating faulty models.
             # assign=True: load params/buffers by assignment instead of performing an in-place copy.
             # Because we are using device="meta", tensors do not have memory associated with them
             # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
+
+            # Also, the checkpoint is loaded and dtype promoted to the transformer's dtype, which is
+            # by default initialized to fp32. This is fine because every other supported type
+            # losslessly converts to fp32, so we don't lose precision here.
             missing, unexpected = self.model_.load_state_dict(
                 checkpoint,
                 strict=False,
@@ -277,14 +280,7 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
     def get_eager_model(self) -> torch.nn.Module:
-        if self.dtype:
-            # convert to the type of the provided checkpoint
-            # input and output are torch.long, so signature unchanged
-            return self.model_.to(self.dtype)
-        else:
-            # int8 quantization code has some bf16,
-            # switch all to FP32
-            return self.model_.to(torch.float32)
+        return self.model_
 
     def get_example_inputs(self):
         if self.use_kv_cache:
