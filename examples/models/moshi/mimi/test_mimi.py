@@ -8,9 +8,19 @@ import requests
 import torch
 import torch.nn as nn
 import torchaudio
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+from executorch.exir import to_edge_transform_and_lower
 
 from huggingface_hub import hf_hub_download
 from moshi.models import loaders
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+)
 from torch.export import export, ExportedProgram
 
 
@@ -130,6 +140,34 @@ class TestMimiModel(unittest.TestCase):
         exported_decode: ExportedProgram = export(mimi_decode, (input,), strict=False)
         ep_decode_output = exported_decode.module()(input)
         self.assertTrue(torch.allclose(ep_decode_output, ref_decode_output, atol=1e-6))
+
+        # PT2E Quantization
+        quantizer = XNNPACKQuantizer()
+        # 8 bit by default
+        quantization_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=True,
+        )
+        quantizer.set_global(quantization_config)
+        m = exported_decode.module()
+        m = prepare_pt2e(m, quantizer)
+        m(input)
+        m = convert_pt2e(m)
+        print("quantized graph:")
+        print(m.graph)
+        # Export quantized module
+        exported_decode: ExportedProgram = export(m, (input,), strict=False)
+
+        # Lower
+        edge_manager = to_edge_transform_and_lower(
+            exported_decode,
+            partitioner=[XnnpackPartitioner()],
+        )
+
+        exec_prog = edge_manager.to_executorch()
+        print("exec graph:")
+        print(exec_prog.exported_program().graph)
+        assert len(exec_prog.exported_program().graph.nodes) > 1
 
     def test_exported_encoding(self):
         """Ensure exported encoding model is consistent with reference output."""
