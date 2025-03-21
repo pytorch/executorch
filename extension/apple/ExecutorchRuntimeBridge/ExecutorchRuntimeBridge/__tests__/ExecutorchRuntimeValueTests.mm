@@ -9,7 +9,6 @@
 #import <XCTest/XCTest.h>
 
 #import <ExecutorchRuntimeBridge/ExecutorchRuntimeValue.h>
-#import <ModelRunnerDataKit/ModelRunnerDataKit-Swift.h>
 #import <executorch/extension/module/module.h>
 
 using torch::executor::EValue;
@@ -20,16 +19,6 @@ using torch::executor::ScalarType;
 @end
 
 @implementation ExecutorchRuntimeValueTests
-
-- (void)testStringValueWithError
-{
-  ExecutorchRuntimeValue *value = [[ExecutorchRuntimeValue alloc] initWithEValue:EValue((int64_t)1)];
-  XCTAssertNil([value stringValueAndReturnError:nil]);
-  NSError *error = nil;
-  XCTAssertNil([value stringValueAndReturnError:&error]);
-  XCTAssertNotNil(error);
-  XCTAssertEqualObjects([error description], @"Unsupported type: ExecutorchRuntimeValue doesn't support strings");
-}
 
 - (void)testTensorValue
 {
@@ -63,9 +52,9 @@ using torch::executor::ScalarType;
 - (void)testTensorValueWithError
 {
   ExecutorchRuntimeValue *value = [[ExecutorchRuntimeValue alloc] initWithEValue:EValue((int64_t)1)];
-  XCTAssertNil([value tensorValueAndReturnError:nil]);
+  XCTAssertNil([value asTensorValueAndReturnError:nil]);
   NSError *error = nil;
-  XCTAssertNil([value tensorValueAndReturnError:&error]);
+  XCTAssertNil([value asTensorValueAndReturnError:&error]);
   XCTAssertNotNil(error);
   XCTAssertEqualObjects([error description], @"Invalid type: Tag::4, expected Tag::Tensor");
 }

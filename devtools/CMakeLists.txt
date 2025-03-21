@@ -32,7 +32,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -186,6 +186,8 @@ add_library(
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/emitter.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/buffer_data_sink.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/buffer_data_sink.h
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/file_data_sink.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/file_data_sink.h
 )
 
 target_link_libraries(

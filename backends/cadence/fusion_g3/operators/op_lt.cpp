@@ -24,7 +24,7 @@ namespace impl {
 namespace G3 {
 namespace native {
 
-Tensor& lt_tensor_out(
+Tensor& lt_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
@@ -141,7 +141,7 @@ Tensor& lt_tensor_out(
   return out;
 }
 
-Tensor& lt_scalar_out(
+Tensor& lt_Scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,

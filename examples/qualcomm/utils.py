@@ -205,6 +205,7 @@ class SimpleADB:
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
+                    f"chmod +x ./qnn_executor_runner &&",
                     f"./qnn_executor_runner {qnn_executor_runner_args}",
                 ]
             )
