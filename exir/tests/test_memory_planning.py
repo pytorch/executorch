@@ -8,6 +8,7 @@
 
 import itertools
 import unittest
+from functools import partial
 from typing import Any, Callable, List, Optional, Tuple, Type
 
 import executorch.exir as exir
@@ -19,6 +20,9 @@ from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
     greedy,
+    heap_optimized_greedy,
+    memory_planning_algorithm_suite,
+    MemoryAlgoResult,
     naive,
     Verifier,
 )
@@ -234,7 +238,7 @@ class MultiplePoolsToyModel(torch.nn.Module):
 
 def maketest(
     module_cls: Type[torch.nn.Module],
-    criteria: Optional[List[Tuple[Callable[..., List[int]], bool]]] = None,
+    criteria: Optional[List[Tuple[Callable[..., MemoryAlgoResult], bool]]] = None,
     extra_check: Optional[Callable[..., None]] = None,
     use_functionalization: bool = True,
     alloc_graph_input: bool = True,
@@ -251,6 +255,7 @@ def maketest(
                 (naive, False),
                 # greedy algorithm should reuse tensor storages in the testing model
                 (greedy, True),
+                (heap_optimized_greedy, True),
             ]
 
         for algo, expect_reuse in criteria:
@@ -266,13 +271,13 @@ def maketest(
                 .exported_program()
                 .graph_module
             )
-
+            mem_algo = partial(memory_planning_algorithm_suite, algo_list=[algo])
             graph_module = PassManager(
                 passes=[
                     SpecPropPass(),
                     ToOutVarPass(),
                     MemoryPlanningPass(
-                        algo,
+                        mem_algo,
                         alloc_graph_input=alloc_graph_input,
                         alloc_graph_output=alloc_graph_output,
                     ),
@@ -380,6 +385,7 @@ class TestMemoryPlanning(unittest.TestCase):
         criteria=[
             (naive, False),
             (greedy, True),
+            (heap_optimized_greedy, True)
         ],
     )
 
@@ -387,6 +393,7 @@ class TestMemoryPlanning(unittest.TestCase):
         LinearsWithDifferentSizeAndViewOps,
         criteria=[
             (greedy, True),
+            (heap_optimized_greedy, True)
         ],
     )
 
@@ -397,6 +404,7 @@ class TestMemoryPlanning(unittest.TestCase):
         criteria=[
             (naive, False),
             (greedy, True),
+            (heap_optimized_greedy, True)
         ],
         extra_check=ModuleListArg.extra_check,
     )
@@ -519,10 +527,11 @@ class TestMisc(unittest.TestCase):
             export(MultiplePoolsToyModel(), (torch.ones(1),), strict=True)
         )
 
+        mem_algo = partial(memory_planning_algorithm_suite, algo_list=[algo])
         edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=CustomPoolMemoryPlanningPass(
-                    memory_planning_algo=algo,
+                    memory_planning_algo=mem_algo,
                     alignment=1,
                 ),
             )
@@ -708,10 +717,10 @@ class TestMisc(unittest.TestCase):
         et_program = et.executorch_program
         inputs = et_program.execution_plan[0].inputs
         self.assertNotEqual(
-            et_program.execution_plan[0]  # pyre-ignore
+            et_program.execution_plan[0]
             .values[inputs[0]]
             .val.allocation_info.memory_offset_low,
-            et_program.execution_plan[0]  # pyre-ignore
+            et_program.execution_plan[0]
             .values[inputs[1]]
             .val.allocation_info.memory_offset_low,
         )
