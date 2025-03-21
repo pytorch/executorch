@@ -42,8 +42,6 @@ executorch
 
 Before you begin, ensure you have openvino installed and configured on your system:
 
-## TODO: Add instructions for support with OpenVINO release package
-
 ```bash
 git clone https://github.com/openvinotoolkit/openvino.git
 cd openvino && git checkout releases/2025/1
@@ -57,6 +55,7 @@ cmake --install build --prefix <your_preferred_install_location>
 cd <your_preferred_install_location>
 source setupvars.sh
 ```
+Note: The OpenVINO backend is not yet supported with the current OpenVINO release packages. It is recommended to build from source. The instructions for using OpenVINO release packages will be added soon.
 
 ### Setup
 

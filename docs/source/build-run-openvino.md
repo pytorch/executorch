@@ -31,13 +31,14 @@ OpenVINO backend supports the following hardware:
 - Intel discrete GPUs
 - Intel NPUs
 
+For more information on the supported hardware, please refer to [OpenVINO System Requirements](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html) page.
+
 ## Instructions for Building OpenVINO Backend
 
 ### Prerequisites
 
 Before you begin, ensure you have openvino installed and configured on your system:
 
-#### TODO: Add instructions for support with OpenVINO release package
 
 ```bash
 git clone https://github.com/openvinotoolkit/openvino.git
@@ -52,6 +53,7 @@ cmake --install build --prefix <your_preferred_install_location>
 cd <your_preferred_install_location>
 source setupvars.sh
 ```
+Note: The OpenVINO backend is not yet supported with the current OpenVINO release packages. It is recommended to build from source. The instructions for using OpenVINO release packages will be added soon.
 
 ### Setup
 
@@ -67,7 +69,7 @@ Follow the steps below to setup your build environment:
 
 3. Navigate to `scripts/` directory.
 
-4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-openvino-out/backends/openvino/` as `libopenvino_backend.so`
+4. **Build OpenVINO Backend**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
 
    ```bash
    ./openvino_build.sh
@@ -76,94 +78,35 @@ Follow the steps below to setup your build environment:
 ## Build Instructions for Examples
 
 ### AOT step:
-Refer to the [README.md](../../examples/openvino/aot/README.md) in the `executorch/examples/openvino/aot` folder for detailed instructions on exporting deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to openvino backend using Executorch. Users can dynamically specify the model, input shape, and target device. 
+Refer to the [README.md](../../examples/openvino/README.md) in the `executorch/examples/openvino` folder for detailed instructions on exporting deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to openvino backend using Executorch. Users can dynamically specify the model, input shape, and target device. 
 
 Below is an example to export a ResNet50 model from Torchvision model suite for CPU device with an input shape of `[1, 3, 256, 256]`
 
 ```bash
-cd executorch/examples/openvino/aot
-python aot_openvino_compiler.py --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device CPU
+cd executorch/examples/openvino
+python aot_optimize_and_infer.py --export --suite torchvision --model resnet50 --input_shape "(1, 3, 256, 256)" --device CPU
 ```
 The exported model will be saved as 'resnet50.pte' in the current directory.
 
-#### **Arguments**
-- **`--suite`** (required):  
-  Specifies the model suite to use.  
-  Supported values:
-  - `timm` (e.g., VGG16, ResNet50)
-  - `torchvision` (e.g., resnet18, mobilenet_v2)
-  - `huggingface` (e.g., bert-base-uncased)
-
-- **`--model`** (required):  
-  Name of the model to export.  
-  Examples:
-  - For `timm`: `vgg16`, `resnet50`
-  - For `torchvision`: `resnet18`, `mobilenet_v2`
-  - For `huggingface`: `bert-base-uncased`, `distilbert-base-uncased`
-
-- **`--input_shape`** (required):  
-  Input shape for the model. Provide this as a **list** or **tuple**.  
-  Examples:
-  - `[1, 3, 224, 224]` (Zsh users: wrap in quotes)
-  - `(1, 3, 224, 224)`
-
-- **`--device`** (optional):  
-  Target device for the compiled model. Default is `CPU`.  
-  Examples: `CPU`, `GPU`
-
 ### Build C++ OpenVINO Examples
-Build the backend and the examples by executing the script:
-```bash
-./openvino_build_example.sh
-```
-The executable is saved in `<executorch_root>/cmake-openvino-out/examples/openvino/`
 
-Now, run the example using the executable generated in the above step. The executable requires a model file (`.pte` file generated in the aot step), number of inference iterations, and optional input/output paths.
+After building the OpenVINO backend following the [instructions](#setup) above, the executable will be saved in `<executorch_root>/cmake-out/backends/openvino/`.
 
-#### Command Syntax:
-
-```
-cd ../../cmake-openvino-out/examples/openvino
-
-./openvino_executor_runner \
-    --model_path=<path_to_model> \
-    --num_iter=<iterations> \
-    [--input_list_path=<path_to_input_list>] \
-    [--output_folder_path=<path_to_output_folder>]
-```
-#### Command-Line Arguments
-
-- `--model_path`: (Required) Path to the model serialized in `.pte` format.
-- `--num_iter`: (Optional) Number of times to run inference (default: 1).
-- `--input_list_path`: (Optional) Path to a file containing the list of raw input tensor files.
-- `--output_folder_path`: (Optional) Path to a folder where output tensor files will be saved.
+The executable requires a model file (`.pte` file generated in the aot step) and the number of inference executions.
 
 #### Example Usage
 
-Run inference with a given model for 10 iterations and save outputs:
+Run inference with a given model for 10 executions:
 
 ```
 ./openvino_executor_runner \
     --model_path=model.pte \
-    --num_iter=10 \
-    --output_folder_path=outputs/
+    --num_executions=10
 ```
 
-Run inference with an input tensor file:
 
-```
-./openvino_executor_runner \
-    --model_path=model.pte \
-    --num_iter=5 \
-    --input_list_path=input_list.txt \
-    --output_folder_path=outputs/
-```
 
-## Supported model list
-
-### TODO
-
-## FAQ
+## Support
 
 If you encounter any issues while reproducing the tutorial, please file a github
 issue on ExecuTorch repo and tag use `#openvino` tag
