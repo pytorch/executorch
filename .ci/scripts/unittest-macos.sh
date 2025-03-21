@@ -34,6 +34,10 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
 
     .ci/scripts/unittest-macos-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then
+    (
+        source .ci/scripts/utils.sh
+        install_pytorch_and_domains
+    )
     .ci/scripts/unittest-buck2.sh
     # .ci/scripts/unittest-macos-buck2.sh
 else
