@@ -23,8 +23,6 @@ fb_android_library(
 fb_android_library(
     name = "executorch_llama",
     srcs = [
-        "src/main/java/org/pytorch/executorch/LlamaCallback.java",
-        "src/main/java/org/pytorch/executorch/LlamaModule.java",
         "src/main/java/org/pytorch/executorch/extension/llm/LlmCallback.java",
         "src/main/java/org/pytorch/executorch/extension/llm/LlmModule.java",
     ],
