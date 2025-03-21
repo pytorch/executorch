@@ -93,7 +93,7 @@ Build the backend and the examples by executing the script:
 ```bash
 ./openvino_build_example.sh
 ```
-The executable is saved in `<executorch_root>/cmake-openvino-out/backends/openvino/`
+The executable is saved in `<executorch_root>/cmake-out/backends/openvino/`
 
 Now, run the example using the executable generated in the above step. The executable requires a model file (`.pte` file generated in the aot step), number of inference executions.
 
