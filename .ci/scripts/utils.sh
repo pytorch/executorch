@@ -77,9 +77,7 @@ install_pytorch_and_domains() {
     if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
       for WHEEL_PATH in dist/*.whl; do
         WHEEL_NAME=$(basename "${WHEEL_PATH}")
-        aws s3 cp --acl public-read \
-          "${WHEEL_PATH}" \
-          "s3://gha-artifacts/${PYTORCH_WHEEL_S3_PATH}/${WHEEL_NAME}"
+        aws s3 cp "${WHEEL_PATH}" "s3://gha-artifacts/${PYTORCH_WHEEL_S3_PATH}/${WHEEL_NAME}"
       done
     fi
   fi
