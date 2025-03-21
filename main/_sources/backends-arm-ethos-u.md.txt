@@ -114,6 +114,25 @@ At the end of the setup, if everything goes well, your top level devlopement dir
 └── setup_path.sh
 ```
 
+### Notes:
+
+The `setup.sh` script has generated a `setup_path.sh` script that you need to source everytime you restart you shell.
+
+e.g. run
+`source  executorch/examples/arm/ethos-u-scratch/setup_path.sh`
+
+As `setup.sh` will download and setup the needed Arm toolchain make sure it is used by calling
+
+`which arm-none-eabi-gcc`
+
+It should show `arm-none-eabi-gcc` in the `executorch` project and not anything in `/usr/bin` something like:
+
+`<EXECUTORCH_ROOT>/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi/bin/arm-none-eabi-gcc`
+or
+`<EXECUTORCH_ROOT>/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc`
+
+If not you might need to uninstall `arm-none-eabi-gcc` or make sure its picked after the one in the project in your $PATH env varable.
+
 ## Convert the PyTorch Model to the `.pte` File
 
 `.pte` is a binary file produced by ExecuTorch Ahead-of-Time (AoT) pipeline by taking in a PyTorch Model (a torch.nn.Module), exporting it, running a variety of passes, and finally serializing it to a `.pte` file format. This binary file is typically consumed by the ExecuTorch Runtime. This [document](https://github.com/pytorch/executorch/blob/main/docs/source/getting-started-architecture.md) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.

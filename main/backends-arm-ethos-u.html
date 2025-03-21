@@ -618,6 +618,19 @@ uname<span class="w"> </span>-m
 </pre></div>
 </div>
 </div>
+<div class="section" id="notes">
+<h3>Notes:<a class="headerlink" href="#notes" title="Permalink to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script has generated a <code class="docutils literal notranslate"><span class="pre">setup_path.sh</span></code> script that you need to source everytime you restart you shell.</p>
+<p>e.g. run
+<code class="docutils literal notranslate"><span class="pre">source</span>&#160; <span class="pre">executorch/examples/arm/ethos-u-scratch/setup_path.sh</span></code></p>
+<p>As <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> will download and setup the needed Arm toolchain make sure it is used by calling</p>
+<p><code class="docutils literal notranslate"><span class="pre">which</span> <span class="pre">arm-none-eabi-gcc</span></code></p>
+<p>It should show <code class="docutils literal notranslate"><span class="pre">arm-none-eabi-gcc</span></code> in the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> project and not anything in <code class="docutils literal notranslate"><span class="pre">/usr/bin</span></code> something like:</p>
+<p><code class="docutils literal notranslate"><span class="pre">&lt;EXECUTORCH_ROOT&gt;/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi/bin/arm-none-eabi-gcc</span></code>
+or
+<code class="docutils literal notranslate"><span class="pre">&lt;EXECUTORCH_ROOT&gt;/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc</span></code></p>
+<p>If not you might need to uninstall <code class="docutils literal notranslate"><span class="pre">arm-none-eabi-gcc</span></code> or make sure its picked after the one in the project in your $PATH env varable.</p>
+</div>
 </div>
 <div class="section" id="convert-the-pytorch-model-to-the-pte-file">
 <h2>Convert the PyTorch Model to the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> File<a class="headerlink" href="#convert-the-pytorch-model-to-the-pte-file" title="Permalink to this heading">¶</a></h2>
@@ -949,6 +962,7 @@ Describe what common errors users may see and how to resolve them.
 <li><a class="reference internal" href="#setup-the-arm-ethos-u-software-development">Setup the Arm Ethos-U Software Development</a></li>
 <li><a class="reference internal" href="#install-the-vela-compiler">Install the Vela Compiler</a></li>
 <li><a class="reference internal" href="#install-the-tosa-reference-model">Install the TOSA reference model</a></li>
+<li><a class="reference internal" href="#notes">Notes:</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#convert-the-pytorch-model-to-the-pte-file">Convert the PyTorch Model to the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> File</a><ul>
