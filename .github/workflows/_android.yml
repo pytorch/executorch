@@ -28,14 +28,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
+        mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+        bash examples/models/llama/install_requirements.sh
+        bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
+
         # Build LLM Demo for Android
         export BUILD_AAR_DIR=aar-out
         mkdir -p $BUILD_AAR_DIR
         bash build/build_android_library.sh ${ARTIFACTS_DIR_NAME}
         bash .ci/scripts/build_android_instrumentation.sh ${ARTIFACTS_DIR_NAME}
-
-        mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
-        PYTHON_EXECUTABLE=python bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
 
         mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
         cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
