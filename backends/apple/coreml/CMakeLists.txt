@@ -217,3 +217,13 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+if(EXECUTORCH_BUILD_COREML)
+  add_subdirectory(${EXECUTORCH_ROOT}/third-party/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/pybind11)
+
+  pybind11_add_module(executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp)
+
+  target_compile_options(executorchcoreml PRIVATE -mmacosx-version-min=10.15 -g)
+  target_link_libraries(executorchcoreml PRIVATE coreml_util)
+  target_link_libraries(executorchcoreml PRIVATE coreml_inmemoryfs)
+endif()
