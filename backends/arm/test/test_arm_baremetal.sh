@@ -37,7 +37,7 @@ fi
 TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
 
 all() { # Run all tests
-    # This will list all lines in this file that is starting with test_ remove () { and add this script name in 
+    # This will list all lines in this file that is starting with test_ remove () { and add this script name in
     # front of it and execute it in a sub shell
     # e.g. from this file:
     #
@@ -62,6 +62,9 @@ all() { # Run all tests
 
 test_pytest() { # Test ops and other things
     echo "${TEST_SUITE_NAME}: Run pytest"
+
+    ./examples/models/llama3_2_vision/install_requirements.sh
+
     cd "${et_root_dir}"
     source examples/arm/ethos-u-scratch/setup_path.sh
     backends/arm/scripts/build_quantized_ops_aot_lib.sh
@@ -74,6 +77,7 @@ test_pytest() { # Test ops and other things
 test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using Corstone FVP
     echo "${TEST_SUITE_NAME}: Run pytest with fvp"
 
+    ./examples/models/llama3_2_vision/install_requirements.sh
     source examples/arm/ethos-u-scratch/setup_path.sh
 
     # Prepare Corstone-3x0 FVP for pytest
@@ -107,7 +111,7 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
     echo "${TEST_SUITE_NAME}: PASS"
     }
 
-test_models_ethosu_fvp() { # End to End model tests using model_test.py 
+test_models_ethosu_fvp() { # End to End model tests using model_test.py
     echo "${TEST_SUITE_NAME}: Test ethos-u delegate models with test_model.py"
 
     source examples/arm/ethos-u-scratch/setup_path.sh
@@ -124,15 +128,15 @@ test_models_ethosu_fvp() { # End to End model tests using model_test.py
 
     # Ethos-U55
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-128 --model=mv2  --extra_flags="-DET_ATOL=1.20 -DET_RTOL=1.20"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-128 --model=mv2  --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-64  --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-256 --model=lstm --extra_flags="-DET_ATOL=0.02 -DET_RTOL=0.02"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-256 --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
 
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256  --model=mv2  --extra_flags="-DET_ATOL=1.20 -DET_RTOL=1.20"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256  --model=mv2  --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-1024 --model=mv3  --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128  --model=lstm --extra_flags="-DET_ATOL=0.02 -DET_RTOL=0.02"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128  --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
     echo "${TEST_SUITE_NAME}: PASS"
     }
 

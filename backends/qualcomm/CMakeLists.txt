@@ -39,16 +39,13 @@ if(${ANDROID})
   find_library(android_log log)
 endif()
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 set(qcir_schema_include_dir ${CMAKE_CURRENT_LIST_DIR}/aot/ir)
 set(qcir_schema_output ${qcir_schema_include_dir}/qcir_generated.h)
 add_custom_command(
   OUTPUT qcir_schema_output
   COMMAND ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
           ${qcir_schema_include_dir} ${qcir_schema_include_dir}/qcir.fbs
+  DEPENDS flatc
   COMMENT "Generating qualcomm ir schema headers"
   VERBATIM
 )
@@ -100,6 +97,7 @@ add_custom_command(
     "${_qnn_schema__include_dir}/executorch/backends/qualcomm"
     ${_qnn_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_SOURCE_DIR}
+  DEPENDS flatc
   COMMENT "Generating qnn_schema headers"
   VERBATIM
 )
@@ -126,7 +124,6 @@ add_library(qnn_executorch_logging STATIC)
 add_library(qnn_factory STATIC)
 add_library(qnn_function_interface INTERFACE)
 add_library(qnn_graph STATIC)
-add_library(qnn_header INTERFACE)
 add_library(qnn_implementation STATIC)
 add_library(qnn_logger STATIC)
 add_library(qnn_manager STATIC)
@@ -143,16 +140,12 @@ add_library(utils STATIC)
 # declare dependency
 #
 target_link_libraries(qcir_utils PRIVATE qcir)
-target_link_libraries(wrappers PRIVATE qnn_header qnn_executorch_logging)
-target_link_libraries(qnn_function_interface INTERFACE qnn_header)
+target_link_libraries(wrappers PRIVATE qnn_executorch_logging)
 target_link_libraries(
-  qnn_implementation PRIVATE qnn_function_interface qnn_header
-                             qnn_executorch_logging ${CMAKE_DL_LIBS}
+  qnn_implementation PRIVATE qnn_function_interface qnn_executorch_logging ${CMAKE_DL_LIBS}
 )
-target_link_libraries(qnn_sys_function_interface INTERFACE qnn_header)
 target_link_libraries(
-  qnn_sys_implementation PRIVATE qnn_sys_function_interface qnn_header
-                                 qnn_executorch_logging ${CMAKE_DL_LIBS}
+  qnn_sys_implementation PRIVATE qnn_sys_function_interface qnn_executorch_logging ${CMAKE_DL_LIBS}
 )
 target_link_libraries(qnn_executorch_logging PRIVATE qnn_schema)
 target_link_libraries(qnn_profiler PRIVATE qnn_executorch_logging)
@@ -178,9 +171,7 @@ target_link_libraries(
 )
 
 target_link_libraries(
-  qnn_factory
-  PUBLIC qnn_header
-  PRIVATE qnn_schema qnn_backend qnn_device qnn_context qnn_graph
+  qnn_factory PRIVATE qnn_schema qnn_backend qnn_device qnn_context qnn_graph
           qnn_mem_manager qnn_custom_protocol
 )
 target_link_libraries(

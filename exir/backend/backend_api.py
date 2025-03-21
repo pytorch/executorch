@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -56,9 +57,9 @@ def to_backend(args):
      ) -> LoweredBackendModule:
 
      def to_backend(
-         graph_module: torch.fx.GraphModule,
-         partitioner: Type[TPartitioner],
-     ) -> torch.fx.GraphModule
+         edge_program: ExportedProgram,
+         partitioner: Partitioner,
+     ) -> ExportedProgram:
     """
     pass
 
@@ -119,6 +120,7 @@ def _(
                 backend_id=backend_id,
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_specs,
+                named_data_store_output=preprocess_result.data_store_output,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map

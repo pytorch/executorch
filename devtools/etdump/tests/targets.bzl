@@ -15,18 +15,9 @@ def define_common_targets():
         deps = [
             "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/devtools/etdump:etdump_schema_flatcc",
+            "//executorch/devtools/etdump/data_sinks:file_data_sink",
+            "//executorch/extension/testing_util:temp_file",
             "//executorch/runtime/platform:platform",
-            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "buffer_data_sink_test",
-        srcs = [
-            "buffer_data_sink_test.cpp",
-        ],
-        deps = [
-            "//executorch/devtools/etdump:buffer_data_sink",
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )

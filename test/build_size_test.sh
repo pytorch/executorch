@@ -11,14 +11,13 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
 
-# TODO(#8149): Remove -Wno-sign-compare
 # TODO(#8357): Remove -Wno-int-in-bool-context
-COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-sign-compare -Wno-unknown-pragmas -Wno-int-in-bool-context"
+COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context"
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
   clean_executorch_install_folders
-
+  update_tokenizers_git_submodule
   CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \

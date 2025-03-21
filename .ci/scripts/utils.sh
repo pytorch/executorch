@@ -20,15 +20,19 @@ clean_executorch_install_folders() {
   ./install_executorch.sh --clean
 }
 
+update_tokenizers_git_submodule() {
+  echo "Updating tokenizers git submodule..."
+  git submodule update --init
+  pushd extension/llm/tokenizers
+  git submodule update --init
+  popd
+}
+
 install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory.
-  if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
-    ./install_executorch.sh --pybind xnnpack --use-pt-pinned-commit
-  else
-    ./install_executorch.sh --pybind xnnpack
-  fi
+  ./install_executorch.sh --pybind xnnpack "$@"
   # Just print out the list of packages for debugging
   pip list
 }
@@ -76,25 +80,6 @@ install_pytorch_and_domains() {
   sccache --show-stats || true
 }
 
-install_flatc_from_source() {
-  # NB: This function could be used to install flatbuffer from source
-  pushd third-party/flatbuffers || return
-
-  cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-  if [ "$(uname)" == "Darwin" ]; then
-    CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
-  else
-    CMAKE_JOBS=$(( $(nproc) - 1 ))
-  fi
-  cmake --build . -j "${CMAKE_JOBS}"
-
-  # Copy the flatc binary to conda path
-  EXEC_PATH=$(dirname "$(which python)")
-  cp flatc "${EXEC_PATH}"
-
-  popd || return
-}
-
 build_executorch_runner_buck2() {
   # Build executorch runtime with retry as this step is flaky on macos CI
   retry buck2 build //examples/portable/executor_runner:executor_runner
@@ -107,9 +92,14 @@ build_executorch_runner_cmake() {
   mkdir "${CMAKE_OUTPUT_DIR}"
 
   pushd "${CMAKE_OUTPUT_DIR}" || return
+  if [[ $1 == "Debug" ]]; then
+      CXXFLAGS="-fsanitize=address,undefined"
+  else
+      CXXFLAGS=""
+  fi
   # This command uses buck2 to gather source files and buck2 could crash flakily
   # on MacOS
-  retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
+  CXXFLAGS="$CXXFLAGS" retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
   popd || return
 
   if [ "$(uname)" == "Darwin" ]; then
@@ -165,4 +155,53 @@ do_not_use_nightly_on_ci() {
     echo "Unexpected torch version. Expected binary built from source, got ${TORCH_VERSION}"
     exit 1
   fi
+}
+
+
+parse_args() {
+  local args=("$@")
+  local i
+  local BUILD_TOOL=""
+  local BUILD_MODE=""
+  local EDITABLE=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    case "${args[$i]}" in
+      --build-tool)
+        BUILD_TOOL="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      --build-mode)
+        BUILD_MODE="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      --editable)
+        EDITABLE="${args[$((i+1))]}"
+        i=$((i+1))
+        ;;
+      *)
+        echo "Invalid argument: ${args[$i]}"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [ -z "$BUILD_TOOL" ]; then
+    echo "Missing build tool (require buck2 or cmake), exiting..."
+    exit 1
+  elif ! [[ $BUILD_TOOL =~ ^(cmake|buck2)$ ]]; then
+    echo "Require buck2 or cmake for --build-tool, got ${BUILD_TOOL}, exiting..."
+    exit 1
+  fi
+  BUILD_MODE="${BUILD_MODE:-Release}"
+  if ! [[ "$BUILD_MODE" =~ ^(Debug|Release)$ ]]; then
+    echo "Unsupported build mode ${BUILD_MODE}, options are Debug or Release."
+    exit 1
+  fi
+  EDITABLE="${EDITABLE:-false}"
+  if ! [[ $EDITABLE =~ ^(true|false)$ ]]; then
+    echo "Require true or false for --editable, got ${EDITABLE}, exiting..."
+    exit 1
+  fi
+
+  echo "$BUILD_TOOL $BUILD_MODE $EDITABLE"
 }

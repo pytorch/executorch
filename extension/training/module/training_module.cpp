@@ -43,7 +43,6 @@ TrainingModule::execute_forward_backward(
   uint64_t param_start = param_res.get()[0].toInt();
 
   // Execute the forward and backward pass.
-
   auto outputs = torch::executor::Module::execute(method_name, input);
   if (!outputs.ok()) {
     return outputs.error();
@@ -56,19 +55,23 @@ TrainingModule::execute_forward_backward(
     user_outputs.push_back(outputs.get().at(i));
   }
 
-  // Extract and store the gradients.
+  // Extract and store the gradients and params if this is the first time seeing
+  // this method.
   if (method_named_gradients_.find(method_name) ==
       method_named_gradients_.end()) {
+    // Fully qualified names
+    std::vector<runtime::EValue> fqn_list;
     method_named_gradients_.insert({method_name, {}});
 
     auto& gradients_map = method_named_gradients_.at(method_name);
-    // Get names.
+
+    // Get names if we havent seen this method before.
     const std::string fqn_method_name = fqn_method_prefix + method_name;
     auto fqn_res = executorch::extension::Module::execute(fqn_method_name);
     if (!fqn_res.ok()) {
       return fqn_res.error();
     }
-    const auto& fqn_list = fqn_res.get();
+    fqn_list = fqn_res.get();
 
     // Only have to initialize the dict once because the tensors in the dict and
     // the tensors in the method alias the same TensorImpl, so updating one will
@@ -87,43 +90,49 @@ TrainingModule::execute_forward_backward(
 runtime::Result<
     const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
 TrainingModule::named_parameters(const std::string& method_name) {
-  std::map<executorch::aten::string_view, executorch::aten::Tensor>
-      named_parameters;
-  const std::string fqn_method_name = fqn_method_prefix + method_name;
-  const std::string parameters_method_name =
-      parameters_method_prefix + method_name;
+  // If we haven't seen this method before, populate the dict.
+  if (method_named_parameters_.find(method_name) ==
+      method_named_parameters_.end()) {
+    const std::string fqn_method_name = fqn_method_prefix + method_name;
+    const std::string parameters_method_name =
+        parameters_method_prefix + method_name;
 
-  // get names.
-  auto fqn_res = executorch::extension::Module::execute(fqn_method_name);
-  if (!fqn_res.ok()) {
-    return fqn_res.error();
+    method_named_parameters_.insert({method_name, {}});
+
+    // get names.
+    auto fqn_res = executorch::extension::Module::execute(fqn_method_name);
+    if (!fqn_res.ok()) {
+      return fqn_res.error();
+    }
+    const auto& fqn_list = fqn_res.get();
+
+    // get params start.
+    auto param_res =
+        executorch::extension::Module::execute(parameters_method_name);
+    if (!param_res.ok()) {
+      return param_res.error();
+    }
+
+    uint64_t param_start = param_res.get()[0].toInt();
+
+    // Load the method if it is not already loaded.
+    auto e = executorch::extension::Module::load_method(method_name);
+    if (e != runtime::Error::Ok) {
+      return e;
+    }
+    auto& method = methods_.at(method_name).method;
+
+    // populate dict
+    size_t name_index = 0;
+    for (size_t param_index = param_start; param_index < method->outputs_size();
+         ++param_index, ++name_index) {
+      executorch::aten::string_view fqn = fqn_list.at(name_index).toString();
+      executorch::aten::Tensor param =
+          method->get_output(param_index).toTensor();
+      method_named_parameters_.at(method_name).insert({fqn, param});
+    }
   }
-  const auto& fqn_list = fqn_res.get();
-
-  // get params start.
-  auto param_res =
-      executorch::extension::Module::execute(parameters_method_name);
-  if (!param_res.ok()) {
-    return param_res.error();
-  }
-
-  uint64_t param_start = param_res.get()[0].toInt();
-
-  auto e = executorch::extension::Module::load_method(method_name);
-  if (e != runtime::Error::Ok) {
-    return e;
-  }
-  auto& method = methods_.at(method_name).method;
-
-  // create dict
-  size_t name_index = 0;
-  for (size_t param_index = param_start; param_index < method->outputs_size();
-       ++param_index, ++name_index) {
-    executorch::aten::string_view fqn = fqn_list.at(name_index).toString();
-    executorch::aten::Tensor param = method->get_output(param_index).toTensor();
-    named_parameters.insert({fqn, param});
-  }
-  return named_parameters;
+  return method_named_parameters_.at(method_name);
 }
 
 runtime::Result<

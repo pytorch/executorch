@@ -8,8 +8,11 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
+
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 namespace torch {
 namespace executor {
@@ -30,7 +33,7 @@ inline CTYPE apply_unary_reduce_fn(
     const int64_t size,
     const int64_t stride = 1) {
   CTYPE acc_val = data_in[0];
-  for (size_t i = 1; i < size; i++) {
+  for (const auto i : c10::irange(1, size)) {
     acc_val = reduce_fun(data_in[i * stride], acc_val);
   }
   return acc_val;
@@ -51,9 +54,15 @@ inline void apply_unary_map_fn(
     CTYPE_OUT* const data_out,
     const int64_t size,
     const int64_t stride = 1) {
-  for (size_t i = 0; i < size; i++) {
-    data_out[i * stride] = map_fun(data_in[i * stride]);
-  }
+  executorch::extension::parallel_for(
+      0,
+      size,
+      ::executorch::extension::internal::GRAIN_SIZE,
+      [&](const auto begin, const auto end) {
+        for (const auto i : c10::irange(begin, end)) {
+          data_out[i * stride] = map_fun(data_in[i * stride]);
+        }
+      });
 }
 
 //
@@ -77,7 +86,7 @@ inline CTYPE_OUT apply_unary_map_reduce_fn(
     const int64_t size,
     const int64_t stride = 1) {
   CTYPE_OUT acc_val = map_fun(data_in[0]);
-  for (size_t i = 1; i < size; ++i) {
+  for (const auto i : c10::irange(1, size)) {
     acc_val = reduce_fun(map_fun(data_in[i * stride]), acc_val);
   }
   return acc_val;

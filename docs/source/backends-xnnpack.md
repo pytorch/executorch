@@ -1,11 +1,13 @@
 # XNNPACK Backend
 
-The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. XNNPACK is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs. 
+The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. [XNNPACK](https://github.com/google/XNNPACK/tree/master) is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs. 
 
 ## Features
 
 - Wide operator support on Arm and x86 CPUs, available on any modern mobile phone.
 - Support for a wide variety of quantization schemes and quantized operators.
+- Supports fp32 and fp16 activations.
+- Supports 8-bit quantization.
 
 ## Target Requirements
 
@@ -16,9 +18,12 @@ The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs
 
 ## Development Requirements
 
-The XNNPACK delegate does not introduce any development system requirements beyond those required by the core ExecuTorch runtime.
+The XNNPACK delegate does not introduce any development system requirements beyond those required by 
+the core ExecuTorch runtime.
 
-## Lowering a Model to XNNPACK
+----
+
+## Using the XNNPACK Backend
 
 To target the XNNPACK backend during the export and lowering process, pass an instance of the `XnnpackPartitioner` to `to_edge_transform_and_lower`. The example below demonstrates this process using the MobileNet V2 model from torchvision.
 
@@ -49,55 +54,64 @@ The XNNPACK partitioner API allows for configuration of the model delegation to 
  - `per_op_mode`: If true, emit individual delegate calls for every operator. This is an advanced option intended to reduce memory overhead in some contexts at the cost of a small amount of runtime overhead. Defaults to false.
  - `verbose`: If true, print additional information during lowering.
 
-### Quantization
-
-The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. 
-
-### Configuring the XNNPACKQuantizer
-
-```python
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
-  XNNPACKQuantizer,
-  get_symmetric_quantization_config,
-)
-quantizer = XNNPACKQuantizer()
-quantizer.set_global(get_symmetric_quantization_config())
-```
-Here, the `XNNPACKQuantizer` is configured for symmetric quantization, indicating that the quantized zero point is set to zero with `qmin = -127` and `qmax = 127`. `get_symmetric_quantization_config()` can be configured with the following arguments:
-* `is_per_channel`
-    * Weights are quantized across channels
-* `is_qat`
-    * Quantize aware training
-* `is_dynamic`
-    * Dynamic quantization
-
-```python
-quantizer.set_global(quantization_config)
-    .set_object_type(torch.nn.Conv2d, quantization_config) # can configure by module type
-    .set_object_type(torch.nn.functional.linear, quantization_config) # or torch functional op typea
-    .set_module_name("foo.bar", quantization_config)  # or by module fully qualified name
-```
-
-#### Quantizing a model with the XNNPACKQuantizer
-After configuring the quantizer, the model can be quantized by via the `prepare_pt2e` and `convert_pt2e` APIs.
-```python
-from torch.export import export_for_training
-
-exported_model = export_for_training(model_to_quantize, example_inputs).module()
-prepared_model = prepare_pt2e(exported_model, quantizer)
-
-for cal_sample in cal_samples: # Replace with representative model inputs
-	prepared_model(cal_sample) # Calibrate
-
-quantized_model = convert_pt2e(prepared_model)
-```
-For static, post-training quantization (PTQ), the post-prepare\_pt2e model should beS run with a representative set of samples, which are used to determine the quantization parameters.
-
-After `convert_pt2e`, the model can be exported and lowered using the normal ExecuTorch XNNPACK flow. For more information on PyTorch 2 quantization [here](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html).
-
 ### Testing the Model
 
 After generating the XNNPACK-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See [Testing the Model](using-executorch-export.md#testing-the-model) for more information.
+
+----
+
+## Quantization
+
+The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. 
+
+### Supported Quantization Schemes
+The XNNPACK delegate supports the following quantization schemes:
+- 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).
+    - Supports both static and dynamic activations.
+    - Supports per-channel and per-tensor schemes.
+    - Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators.
+
+Weight-only quantization is not currently supported on XNNPACK.
+
+### 8-bit Quantization using the PT2E Flow
+
+To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model:
+
+1) Create an instance of the `XnnpackQuantizer` class. Set quantization parameters.
+2) Use `torch.export.export_for_training` to prepare for quantization.
+3) Call `prepare_pt2e` to prepare the model for quantization.
+4) For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
+5) Call `convert_pt2e` to quantize the model.
+6) Export and lower the model using the standard flow.
+
+The output of `convert_pt2e` is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques.
+
+```python
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer.xnnpack_quantizer import get_symmetric_quantization_config
+
+qparams = get_symmetric_quantization_config(is_per_channel=True) # (1)
+quantizer = XNNPACKQuantizer()
+quantizer.set_global(qparams)
+
+training_ep = torch.export.export_for_training(model, sample_inputs).module(), # (2)
+prepared_model = prepare_pt2e(training_ep, quantizer) # (3)
+
+for cal_sample in [torch.randn(1, 3, 224, 224)]: # Replace with representative model inputs
+	prepared_model(cal_sample) # (4) Calibrate
+
+quantized_model = convert_pt2e(prepared_model) # (5)
+
+et_program = to_edge_transform_and_lower( # (6)
+    torch.export.export(quantized_model, sample_inputs),
+    partitioner=[XnnpackPartitioner()],
+).to_executorch()
+```
+
+See [PyTorch 2 Export Post Training Quantization](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html) for more information.
+
+----
 
 ## Runtime Integration
 

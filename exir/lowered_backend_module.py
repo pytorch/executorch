@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import torch
 import torch.utils._pytree as pytree
 from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
@@ -62,6 +63,9 @@ class LoweredBackendModule(torch.nn.Module):
         CompileSpec
     ]  # A list of backend-specific objects with static metadata to configure the "compilation" process.
     _original_exported_program: ExportedProgram  # The original EXIR module
+    _named_data_store_output: Optional[
+        NamedDataStoreOutput
+    ]  # Named Data serialized by the backend
 
     def __init__(
         self,
@@ -69,12 +73,14 @@ class LoweredBackendModule(torch.nn.Module):
         backend_id: str,
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
+        named_data_store_output: Optional[NamedDataStoreOutput] = None,
     ) -> None:
         super().__init__()
         self._original_exported_program = edge_program
         self._backend_id = backend_id
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
+        self._named_data_store_output = named_data_store_output
 
     # pyre-ignore
     def __deepcopy__(self, memo: Optional[Dict[int, Any]]) -> "LoweredBackendModule":
@@ -101,6 +107,7 @@ class LoweredBackendModule(torch.nn.Module):
             backend_id=self._backend_id,
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
+            named_data_store_output=self._named_data_store_output,
         )
         # pyre-fixme[16]: `LoweredBackendModule` has no attribute `meta`.
         res.meta = copy.copy(getattr(self, "meta", {}))
@@ -134,6 +141,13 @@ class LoweredBackendModule(torch.nn.Module):
         """
         return self._original_exported_program
 
+    @property
+    def named_data_store_output(self) -> Optional[NamedDataStoreOutput]:
+        """
+        Returns the Named Data Store Output
+        """
+        return self._named_data_store_output
+
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
         self,
@@ -154,6 +168,7 @@ class LoweredBackendModule(torch.nn.Module):
                 segment_alignment=segment_alignment,
                 constant_tensor_alignment=constant_tensor_alignment,
                 delegate_alignment=delegate_alignment,
+                named_data=self.named_data_store_output,
             )
         )
         return out

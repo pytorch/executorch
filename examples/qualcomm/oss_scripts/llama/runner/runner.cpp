@@ -13,10 +13,11 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
+
 #include <ctime>
 #include <fstream>
 #include <sstream>
@@ -34,26 +35,32 @@ namespace example {
 
 namespace {
 static constexpr auto kTopp = 0.9f;
-void printReport(const Runner::Stats& stats);
+void printReport(
+    const Runner::Stats& stats,
+    const std::string& performance_output_path);
 std::string statsToJsonString(const Runner::Stats& stats);
 } // namespace
 
 Runner::Runner(
     const std::vector<std::string>& models_path,
     const std::string& tokenizer_path,
+    const std::string& performance_output_path,
     const float logits_scale,
     const int32_t logits_offset,
     const float temperature,
     const int eval_mode,
-    const std::string& kv_updater)
+    const std::string& kv_updater,
+    const int num_iters)
     : n_bos_(1),
       n_eos_(1),
       tokenizer_path_(tokenizer_path),
+      performance_output_path_(performance_output_path),
       logits_scale_(logits_scale),
       logits_offset_(logits_offset),
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
-      kv_updater_(kv_updater) {
+      kv_updater_(kv_updater),
+      num_iters_(num_iters) {
   for (size_t i = 0; i < models_path.size(); ++i) {
     modules_.push_back(std::make_shared<Module>(
         models_path[i], Module::LoadMode::MmapUseMlockIgnoreErrors));
@@ -185,19 +192,19 @@ Error Runner::load() {
 
   // llama3 tokenizer
   tokenizer_ = example::get_tiktoken_for_llama();
-  Error err = tokenizer_->load(tokenizer_path_);
-  if (err == Error::InvalidArgument) {
+  auto err = tokenizer_->load(tokenizer_path_);
+  if (err != tokenizers::Error::Ok) {
     ET_LOG(
         Info,
         "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
         tokenizer_path_.c_str());
     tokenizer_.reset();
     // llama2 tokenizer
-    tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
+    tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
     err = tokenizer_->load(tokenizer_path_);
     llama_version_ = LlamaVersion::kLlama2;
     ET_CHECK_MSG(
-        err == Error::Ok,
+        err == tokenizers::Error::Ok,
         "failed to load tokenizer %s",
         tokenizer_path_.c_str());
   } else {
@@ -276,7 +283,7 @@ Error Runner::generate(
   std::unordered_map<std::string, std::vector<std::vector<Tensor>>>
       input_tensors, output_tensors;
   std::unordered_map<std::string, std::vector<std::vector<EValue>>> inputs;
-  if (!is_loaded()) {
+  if (!is_loaded() || (num_iters_ > 1)) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     for (auto method_name : method_names_) {
@@ -329,9 +336,9 @@ Error Runner::generate(
   }
 
   seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
-  Result<std::vector<uint64_t>> encode_res =
+  tokenizers::Result<std::vector<uint64_t>> encode_res =
       tokenizer_->encode(prompt_, n_bos_, 0);
-  ET_CHECK_OK_OR_RETURN_ERROR(
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
       encode_res.error(), "failed to encode prompt %s", prompt_.c_str());
 
   std::vector<uint64_t> prompt_tokens = encode_res.get();
@@ -437,16 +444,21 @@ Error Runner::generate(
 
   stats_.num_prompt_tokens = num_prompt_tokens;
   stats_.num_generated_tokens = pos - num_prompt_tokens;
-  printReport(stats_);
+  printReport(stats_, performance_output_path_);
   if (stats_callback) {
     stats_callback(stats_);
   }
-
+  io_mgr_->reset_io(
+      get_methods_meta(prefill_forward_name_),
+      get_methods_meta(kv_forward_name_));
+  prompt_.clear();
   return Error::Ok;
 }
 
 namespace {
-void printReport(const Runner::Stats& stats) {
+void printReport(
+    const Runner::Stats& stats,
+    const std::string& performance_output_path) {
   printf("PyTorchObserver %s\n", statsToJsonString(stats).c_str());
 
   ET_LOG(
@@ -507,7 +519,8 @@ void printReport(const Runner::Stats& stats) {
 
   // For now, we just print the total inference time for CI, can save more info
   // in future if needed.
-  std::ofstream outfile("outputs/inference_speed.txt");
+
+  std::ofstream outfile(performance_output_path.c_str());
   if (outfile.is_open()) {
     double num_tok = (stats.num_generated_tokens) /
         (double)(stats.inference_end_ms - stats.inference_start_ms) *

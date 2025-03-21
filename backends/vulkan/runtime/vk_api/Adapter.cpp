@@ -274,6 +274,7 @@ std::string Adapter::stringize() const {
   PRINT_PROP(limits, maxImageDimension1D);
   PRINT_PROP(limits, maxImageDimension2D);
   PRINT_PROP(limits, maxImageDimension3D);
+  PRINT_PROP(limits, maxStorageBufferRange);
   PRINT_PROP(limits, maxTexelBufferElements);
   PRINT_PROP(limits, maxPushConstantsSize);
   PRINT_PROP(limits, maxMemoryAllocationCount);

@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import itertools
+
 from collections import namedtuple
 from typing import Callable
 
@@ -56,6 +58,7 @@ def get_binary_elementwise_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
     return test_suite
 
 
@@ -456,26 +459,20 @@ def get_select_int_inputs():
 
 @register_test_suite(["aten.permute.default", "aten.permute_copy.default"])
 def get_permute_inputs():
-    test_suite = VkTestSuite(
-        [
-            ((9, 2, 9, 4), [0, 1, 2, 3]),
-            ((9, 2, 9, 4), [0, 1, 3, 2]),
-            ((9, 2, 9, 4), [0, 2, 1, 3]),
-            ((9, 2, 9, 4), [0, 2, 3, 1]),
-            ((9, 2, 9, 4), [0, 3, 1, 2]),
-            ((9, 2, 9, 4), [0, 3, 2, 1]),
-            ((9, 2, 9, 4), [3, 0, 1, 2]),
-            ((9, 2, 9, 4), [3, 2, 0, 1]),
-            ((9, 2, 9, 4), [2, 3, 0, 1]),
-            ((9, 2, 9, 4), [2, 0, 3, 1]),
-            ((9, 2, 9), [2, 0, 1]),
-            ((9, 2, 9), [1, 2, 0]),
-            ((9, 2), [0, 1]),
-            ((9, 2), [1, 0]),
-        ]
-    )
+    batch_tests = [
+        ((9, 2, 5, 7), out_axis) for out_axis in itertools.permutations([0, 1, 2, 3])
+    ]
+    channel_tests = [
+        ((9, 2, 5), out_axis) for out_axis in itertools.permutations([0, 1, 2])
+    ]
+    wh_tests = [((9, 2), out_axis) for out_axis in itertools.permutations([0, 1])]
+    test_suite = VkTestSuite(batch_tests + channel_tests + wh_tests)
 
-    test_suite.layouts = ["utils::kChannelsPacked"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     return test_suite
 
 
@@ -585,7 +582,11 @@ def get_slice_out_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
-    test_suite.layouts = ["utils::kChannelsPacked"]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
+    ]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
@@ -849,8 +850,11 @@ def get_cat_inputs():
     test_suite = VkTestSuite(
         [
             # Cat on Height
+            ([(M, M, 3, 5), (M, M, 0, 5)], 2),
             ([(S1, S1, 3, 5), (S1, S1, 0, 5)], 2),
+            ([(M, M, 3, 5), (M, M, 4, 5)], 2),
             ([(S1, S1, 3, 5), (S1, S1, 4, 5)], 2),
+            ([(M2, 3, 5), (M2, 4, 5)], 1),
             ([(S1, 3, 5), (S1, 4, 5)], 1),
             ([(3, 5), (4, 5)], 0),
             ([(3, 5), (4, 5), (1, 5)], 0),
@@ -859,7 +863,9 @@ def get_cat_inputs():
                 0,
             ),
             # Cat on Width
+            ([(M, M, 5, 3), (M, M, 5, 4)], 3),
             ([(S1, S1, 5, 3), (S1, S1, 5, 4)], 3),
+            ([(M, 5, 3), (M, 5, 4)], 2),
             ([(S1, 5, 3), (S1, 5, 4)], 2),
             ([(5, 0), (5, 4)], 1),
             ([(5, 3), (5, 4)], 1),
@@ -870,7 +876,9 @@ def get_cat_inputs():
             ),
             ([(5,), (6,)], 0),
             # Cat on Batch
+            ([(M, S1, 5, 4), (M1, S1, 5, 4)], 0),
             ([(S, S1, 5, 4), (S1, S1, 5, 4)], 0),
+            ([(S, M, 5, 4), (S1, M, 5, 4)], 0),
             ([(S, XS, 5, 4), (S1, XS, 5, 4)], 0),
             ([(S, S2, 5, 4), (S1, S2, 5, 4)], 0),
             (
@@ -882,7 +890,9 @@ def get_cat_inputs():
                 0,
             ),
             # Cat on Channel
+            ([(M, 5, 4), (0, 5, 4), (M1, 5, 4)], 0),
             ([(S, 5, 4), (0, 5, 4), (S2, 5, 4)], 0),
+            ([(M, 5, 4), (M1, 5, 4), (M2, 5, 4)], 0),
             ([(S, 5, 4), (S1, 5, 4), (S2, 5, 4)], 0),
             ([(XS, 5, 4), (XS, 5, 4), (S2, 5, 4)], 0),
             ([(XS, S, 5, 4), (XS, S1, 5, 4), (XS, S2, 5, 4)], 1),
@@ -898,6 +908,8 @@ def get_cat_inputs():
         ]
     )
     test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
@@ -910,14 +922,20 @@ def get_split_with_sizes_inputs():
     Test = namedtuple("VkSliceTest", ["self", "sizes", "dim"])
     test_cases = [
         # Split on Width
+        Test(self=(S1, 7, 10, 11), sizes=[1, 3, 2, 5], dim=3),
         Test(self=(S1, 7, 10, 10), sizes=[1, 2, 3, 4], dim=3),
+        Test(self=(7, 10, 11), sizes=[1, 3, 2, 5], dim=2),
         Test(self=(7, 10, 10), sizes=[1, 2, 3, 4], dim=2),
+        Test(self=(7, 10, 11), sizes=[3, 8], dim=2),
         Test(self=(7, 10, 10), sizes=[1, 9], dim=2),
         Test(self=(10, 10), sizes=[1, 9], dim=1),
         Test(self=(10,), sizes=[1, 9], dim=0),
         # Split on Height
+        Test(self=(S1, 7, 11, 10), sizes=[1, 3, 2, 5], dim=2),
         Test(self=(S1, 7, 10, 10), sizes=[1, 2, 3, 4], dim=2),
+        Test(self=(7, 11, 10), sizes=[1, 3, 2, 5], dim=1),
         Test(self=(7, 10, 10), sizes=[1, 2, 3, 4], dim=1),
+        Test(self=(7, 11, 11), sizes=[3, 8], dim=1),
         Test(self=(7, 10, 10), sizes=[10], dim=1),
         Test(self=(7, 6, 10), sizes=[1, 1, 1, 1, 1, 1], dim=1),
         Test(self=(10, 10), sizes=[1, 2, 3, 4], dim=0),
@@ -925,8 +943,11 @@ def get_split_with_sizes_inputs():
         Test(self=(10, 7, 10, 10), sizes=[3, 6, 1], dim=0),
         Test(self=(10, 7, 10, 10), sizes=[10], dim=0),
         # Split on Channel
+        Test(self=(7, 13, 4, 8), sizes=[3, 5, 2, 3], dim=1),
         Test(self=(7, 13, 4, 8), sizes=[3, 6, 1, 3], dim=1),
+        Test(self=(7, 13, 4, 8), sizes=[3, 2, 2, 5, 1], dim=1),
         Test(self=(7, 13, 4, 8), sizes=[3, 3, 3, 3, 1], dim=1),
+        Test(self=(13, 4, 8), sizes=[3, 5, 2, 1, 2], dim=0),
         Test(self=(13, 4, 8), sizes=[3, 3, 3, 3, 1], dim=0),
         Test(self=(13, 4, 8), sizes=[2, 9, 2], dim=0),
         Test(self=(13, 4, 8), sizes=[13], dim=0),
@@ -934,6 +955,8 @@ def get_split_with_sizes_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
@@ -985,6 +1008,8 @@ def get_split_tensor_inputs():
     )
 
     test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"

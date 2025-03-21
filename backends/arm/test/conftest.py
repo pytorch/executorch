@@ -31,8 +31,9 @@ This file contains the pytest hooks, fixtures etc. for the Arm test suite.
 def pytest_configure(config):
     pytest._test_options = {}  # type: ignore[attr-defined]
     pytest._test_options["corstone_fvp"] = False  # type: ignore[attr-defined]
+
     if (
-        getattr(config.option, "arm_run_corestoneFVP", False)
+        getattr(config.option, "arm_run_corstoneFVP", False)
         and config.option.arm_run_corstoneFVP
     ):
         corstone300_exists = shutil.which("FVP_Corstone_SSE-300_Ethos-U55")
@@ -43,7 +44,7 @@ def pytest_configure(config):
             )
         # Only enable if we also have the TOSA reference model available.
         pytest._test_options["corstone_fvp"] = True  # type: ignore[attr-defined]
-
+    pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
     pytest._test_options["fast_fvp"] = False  # type: ignore[attr-defined]
     if getattr(config.option, "fast_fvp", False):
         pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
@@ -69,6 +70,11 @@ def pytest_addoption(parser):
     try_addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
     try_addoption("--arm_run_corstoneFVP", action="store_true", help="Deprecated.")
     try_addoption("--fast_fvp", action="store_true")
+    try_addoption(
+        "--llama_inputs",
+        nargs="+",
+        help="List of two files. Firstly .pt file. Secondly .json",
+    )
 
 
 def pytest_sessionstart(session):

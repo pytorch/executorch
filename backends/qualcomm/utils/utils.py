@@ -17,21 +17,20 @@ import executorch.exir as exir
 
 import torch
 from executorch.backends.qualcomm._passes import (
-    AnnotateAndQuantScalar,
     AnnotateDecomposed,
     AnnotateQuantAttrs,
     ConstantI64toI32,
-    ConvertBinaryOpsWithScalar,
     ConvertBmmToMatmul,
     ConvertInterpolateWithUpsample2D,
-    ConvertPReLU,
     ConvertToLinear,
     DecomposeAny,
     DecomposeLinalgVectorNorm,
     ExpandBroadcastTensorShape,
     FoldQDQ,
     LayoutTransform,
+    LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
+    RecomposePReLU,
     RecomposeRmsNorm,
     RemoveRedundancy,
     ReplaceIndexPutInput,
@@ -72,6 +71,9 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
     QCOM_QNN_COMPILE_SPEC,
     QCOM_QUANTIZED_IO,
+)
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
 )
 
 from executorch.exir import (
@@ -350,19 +352,18 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
-        (AnnotateAndQuantScalar, True),
         (AnnotateDecomposed, True),
         (AnnotateQuantAttrs, True),
         (ConstantI64toI32, True),
         (ConvertBmmToMatmul, True),
         (ConvertInterpolateWithUpsample2D, True),
-        (ConvertPReLU, True),
         (ConvertToLinear, True),
         (DecomposeAny, True),
         (DecomposeLinalgVectorNorm, True),
         (ExpandBroadcastTensorShape, False),
         (FoldQDQ, True),
         (LayoutTransform, True),
+        (RecomposePReLU, True),
         (RecomposePixelUnshuffle, True),
         (RecomposeRmsNorm, True),
         (RemoveRedundancy, True),
@@ -432,22 +433,29 @@ def _transform(
     return edge_program
 
 
+# Modify the fx graph at very beginning for floating point model
+# Aim to reduce registration of scalar at graph_module or program
+def _preprocess_module(module: torch.nn.Module, inputs: Tuple[torch.Tensor]):
+    if isinstance(module, torch.fx.graph_module.GraphModule):
+        return module
+    module = torch.export.export(module, inputs, strict=True).module()
+    module = DecomposeScaledDotProductAttention()(module).graph_module
+    module = DecomposeLinalgVectorNorm(True)(module).graph_module
+    module = LiftConstantScalarOperands()(module).graph_module
+    return module
+
+
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
     passes_job: OrderedDict = None,
     dynamic_shapes: Dict = None,
 ) -> exir.ExirExportedProgram:
-    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
+    module = _preprocess_module(module, inputs)
+    ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
     decomposed_ep = ep.run_decompositions(get_decomp_table())
-    # We choose call_operator by target in ConvertBinaryOpsWithScalar
-    # because it is the same source_fn_stack for MultiheadAttention
-    # TODO: Should modify the scalar op in the op builder instead of
-    #       using transformation
     core_ep = ExirExportedProgram(decomposed_ep, False)
-    core_ep.transform(
-        TensorI64toI32(edge_program=core_ep), ConvertBinaryOpsWithScalar()
-    )
+    core_ep.transform(TensorI64toI32(edge_program=core_ep))
     edge_ep = core_ep.to_edge(qnn_edge_config())
     _transform(edge_ep.exported_program, passes_job)
     return edge_ep
@@ -1272,25 +1280,33 @@ def generate_qnn_executorch_compiler_spec(
 
 def get_soc_to_arch_map():
     return {
-        "SSG2115P": HtpArch.V73,
-        "SM8750": HtpArch.V79,
-        "SM8650": HtpArch.V75,
-        "SM8550": HtpArch.V73,
-        "SM8475": HtpArch.V69,
-        "SM8450": HtpArch.V69,
         "SA8295": HtpArch.V68,
+        "SM8450": HtpArch.V69,
+        "SM8475": HtpArch.V69,
+        "SM8550": HtpArch.V73,
+        "SM8650": HtpArch.V75,
+        "SM8750": HtpArch.V79,
+        "SSG2115P": HtpArch.V73,
+        "SSG2125P": HtpArch.V73,
+        "SXR1230P": HtpArch.V73,
+        "SXR2230P": HtpArch.V69,
+        "SXR2330P": HtpArch.V79,
     }
 
 
 def get_soc_to_chipset_map():
     return {
-        "SSG2115P": QcomChipset.SSG2115P,
-        "SM8750": QcomChipset.SM8750,
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
         "SA8295": QcomChipset.SA8295,
+        "SM8450": QcomChipset.SM8450,
+        "SM8475": QcomChipset.SM8475,
+        "SM8550": QcomChipset.SM8550,
+        "SM8650": QcomChipset.SM8650,
+        "SM8750": QcomChipset.SM8750,
+        "SSG2115P": QcomChipset.SSG2115P,
+        "SSG2125P": QcomChipset.SSG2125P,
+        "SXR1230P": QcomChipset.SXR1230P,
+        "SXR2230P": QcomChipset.SXR2230P,
+        "SXR2330P": QcomChipset.SXR2330P,
     }
 
 

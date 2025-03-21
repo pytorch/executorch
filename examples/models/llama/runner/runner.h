@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -22,8 +23,8 @@
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
@@ -32,7 +33,8 @@ class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
   explicit Runner(
       const std::string& model_path,
       const std::string& tokenizer_path,
-      const float temperature = 0.8f);
+      const float temperature = 0.8f,
+      std::optional<const std::string> data_path = std::nullopt);
 
   bool is_loaded() const;
   ::executorch::runtime::Error load();
@@ -56,7 +58,7 @@ class ET_EXPERIMENTAL Runner : public executorch::extension::llm::IRunner {
   // model
   std::unique_ptr<::executorch::extension::Module> module_;
   std::string tokenizer_path_;
-  std::unique_ptr<::executorch::extension::llm::Tokenizer> tokenizer_;
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
   std::unique_ptr<::executorch::extension::llm::TextDecoderRunner>
       text_decoder_runner_;

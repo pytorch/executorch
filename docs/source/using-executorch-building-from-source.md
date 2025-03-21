@@ -45,7 +45,7 @@ portability details.
    conda activate executorch
    ```
 
-### Clone and install ExecuTorch requirements
+### Clone ExecuTorch
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
@@ -57,14 +57,17 @@ portability details.
    # Update and pull submodules
    git submodule sync
    git submodule update --init
+   ```
 
+## Install ExecuTorch pip package from Source
+   ```bash
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
    ./install_executorch.sh
    ```
 
-   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends.
+   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_executorch.sh#L26-L29) to install with pybindings and dependencies for other backends. 
    ```bash
    ./install_executorch.sh --pybind <coreml | mps | xnnpack>
 
@@ -78,6 +81,15 @@ portability details.
    By default, `./install_executorch.sh` command installs pybindings for XNNPACK. To disable any pybindings altogether:
    ```bash
    ./install_executorch.sh --pybind off
+   ```
+
+   For development mode, run the command with `--editable`, which allows us to modify Python source code and see changes reflected immediately.
+   ```bash
+   ./install_executorch.sh --editable [--pybind xnnpack]
+   
+   # Or you can directly do the following if dependencies are already installed
+   # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
+   pip install -e .
    ```
 
 > **_NOTE:_**  Cleaning the build system
@@ -96,7 +108,7 @@ portability details.
 > git submodule update --init
 > ```
 
-## Targets Built by the CMake Build System
+## Build ExecuTorch C++ runtime from source
 
 ExecuTorch's CMake build system covers the pieces of the runtime that are
 likely to be useful to embedded systems users.
@@ -116,17 +128,8 @@ likely to be useful to embedded systems users.
   `libportable_kernels.a`, so the program may use any of the operators it
   implements.
 
-## One-time setup to prepare for CMake Build
 
-Follow the steps below to have the tools ready before using CMake to build on your machine.
-
-1. If your system's version of python3 is older than 3.11:
-   - Run `pip install tomli`
-3. Install CMake version 3.19 or later:
-   - Run `conda install cmake` or `pip install cmake`.
-
-
-## Configure the CMake Build
+### Configure the CMake build
 
 Follow these steps after cloning or pulling the upstream repo, since the build
 dependencies may have changed.
@@ -143,7 +146,7 @@ cd executorch
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.
 
-### CMake Build Options
+### CMake build options
 
 The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.
 ```bash
@@ -158,7 +161,7 @@ To further optimize the release build for size, use both:
 
 See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
 
-## Build the runtime components
+### Build the runtime components
 
 Build all targets with
 
@@ -175,7 +178,7 @@ cd executorch
 cmake --build cmake-out -j9
 ```
 
-## Use an example app `executor_runner` to execute a .pte file
+## Use an example binary `executor_runner` to execute a .pte file
 
 First, generate an `add.pte` or other ExecuTorch program file using the
 instructions as described in
@@ -187,7 +190,7 @@ Then, pass it to the command line tool:
 ./cmake-out/executor_runner --model_path path/to/model.pte
 ```
 
-If it worked, you should see the message "Model executed successfully" followed
+You should see the message "Model executed successfully" followed
 by the output values.
 
 ```
@@ -218,7 +221,7 @@ Assuming Android NDK is available, run:
 mkdir cmake-android-out && cd cmake-android-out
 
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
+cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/27.2.12479018/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
 
 cd  ..
 cmake --build  cmake-android-out  -j9

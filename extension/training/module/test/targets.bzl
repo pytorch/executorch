@@ -16,9 +16,11 @@ def define_common_targets(is_fbcode = False):
             # an fbcode target path because the authoring/export tools
             # intentionally don't work in xplat (since they're host-only tools).
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
-            "ET_MODULE_SIMPLE_TRAIN_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleSimpleTrain.pte])",
-            "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
             "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
+            "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
+            "ET_MODULE_TRAIN_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleSimpleTrain.ptd])",
+            "ET_MODULE_TRAIN_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleSimpleTrainProgram.pte])",
+            "ET_MODULE_SIMPLE_TRAIN_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleSimpleTrain.pte])",
         }
 
         runtime.cxx_test(
@@ -29,6 +31,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//executorch/extension/training/module:training_module",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/kernels/portable:generated_lib",
             ],
