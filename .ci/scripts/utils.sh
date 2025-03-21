@@ -55,19 +55,29 @@ install_pytorch_and_domains() {
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   popd || return
 
-  OS_VERSION=$(uname)
-  PYTHON_VERSION=$(python -c 'import platform; print(platform.python_version())')
-  PYTORCH_WHEEL_S3_PATH="cached_artifacts/pytorch/executorch/pytorch_wheels/${OS_VERSION}/${PYTHON_VERSION}"
+  git clone https://github.com/pytorch/pytorch.git
 
-  if [[ "${FOUND_PYTORCH_WHEEL:-0}" == "0" ]]; then
-    # Found no such wheel, we will build it from source then
-    git clone https://github.com/pytorch/pytorch.git
+  # Fetch the target commit
+  pushd pytorch || return
+  git checkout "${TORCH_VERSION}"
+  git submodule update --init --recursive
 
-    # Fetch the target commit
-    pushd pytorch || return
-    git checkout "${TORCH_VERSION}"
-    git submodule update --init --recursive
+  SYSTEM_NAME=$(uname)
+  PLATFORM=$(python -c 'import sysconfig; print(sysconfig.get_platform().replace("-", "_").replace(".", "_"))')
+  PYTHON_VERSION=$(python -c 'import platform; v = platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
+  TORCH_RELEASE=$(cat version.txt)
+  TORCH_SHORT_HASH=${TORCH_VERSION:0:7}
+  TORCH_WHEEL_NAME="torch-${TORCH_RELEASE}%2Bgit${TORCH_SHORT_HASH}-cp${PYTHON_VERSION}-cp${PYTHON_VERSION}-${PLATFORM}.whl"
+  TORCH_WHEEL_PATH="cached_artifacts/pytorch/executorch/pytorch_wheels/${SYSTEM_NAME}/${PYTHON_VERSION}/"
 
+  # Cache PyTorch wheel is only needed on MacOS, Linux CI already has this as part
+  # of the Docker image
+  if [[ "${SYSTEM_NAME}" == "Darwin" ]]; then
+    pip install "https://gha-artifacts.s3.us-east-1.amazonaws.com/${TORCH_WHEEL_PATH}/${TORCH_WHEEL_NAME}" || TORCH_WHEEL_NOT_FOUND=1
+  fi
+
+  # Found no such wheel, we will build it from source then
+  if [[ "${TORCH_WHEEL_NOT_FOUND:-0}" == "1" ]]; then
     export USE_DISTRIBUTED=1
     # Then build and install PyTorch
     python setup.py bdist_wheel
@@ -77,7 +87,7 @@ install_pytorch_and_domains() {
     if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
       for WHEEL_PATH in dist/*.whl; do
         WHEEL_NAME=$(basename "${WHEEL_PATH}")
-        aws s3 cp "${WHEEL_PATH}" "s3://gha-artifacts/${PYTORCH_WHEEL_S3_PATH}/${WHEEL_NAME}"
+        aws s3 cp "${WHEEL_PATH}" "s3://gha-artifacts/${TORCH_WHEEL_PATH}/${WHEEL_NAME}"
       done
     fi
   fi
