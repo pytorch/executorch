@@ -35,9 +35,9 @@ import org.apache.commons.io.FileUtils;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.InstrumentationRegistry;
 
-/** Unit tests for {@link LlamaModule}. */
+/** Unit tests for {@link LlmModule}. */
 @RunWith(AndroidJUnit4.class)
-public class LlamaModuleInstrumentationTest implements LlamaCallback {
+public class LlmModuleInstrumentationTest implements LlmCallback {
     private static String TEST_FILE_NAME = "/tinyllama_portable_fp16_h.pte";
     private static String TOKENIZER_FILE_NAME = "/tokenizer.bin";
     private static String TEST_PROMPT = "Hello";
@@ -46,7 +46,7 @@ public class LlamaModuleInstrumentationTest implements LlamaCallback {
 
     private final List<String> results = new ArrayList<>();
     private final List<Float> tokensPerSecond = new ArrayList<>();
-    private LlamaModule mModule;
+    private LlmModule mModule;
 
     private static String getTestFilePath(String fileName) {
         return InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalCacheDir() + fileName;
@@ -65,7 +65,7 @@ public class LlamaModuleInstrumentationTest implements LlamaCallback {
         FileUtils.copyInputStreamToFile(inputStream, tokenizerFile);
         inputStream.close();
 
-        mModule = new LlamaModule(getTestFilePath(TEST_FILE_NAME), getTestFilePath(TOKENIZER_FILE_NAME), 0.0f);
+        mModule = new LlmModule(getTestFilePath(TEST_FILE_NAME), getTestFilePath(TOKENIZER_FILE_NAME), 0.0f);
     }
 
     @Rule
@@ -77,7 +77,7 @@ public class LlamaModuleInstrumentationTest implements LlamaCallback {
         // Check that the model can be load successfully
         assertEquals(OK, loadResult);
 
-        mModule.generate(TEST_PROMPT, SEQ_LEN, LlamaModuleInstrumentationTest.this);
+        mModule.generate(TEST_PROMPT, SEQ_LEN, LlmModuleInstrumentationTest.this);
         assertEquals(results.size(), SEQ_LEN);
         assertTrue(tokensPerSecond.get(tokensPerSecond.size() - 1) > 0);
     }
@@ -85,16 +85,16 @@ public class LlamaModuleInstrumentationTest implements LlamaCallback {
     @Test
     public void testGenerateAndStop() throws IOException, URISyntaxException{
         int seqLen = 32;
-        mModule.generate(TEST_PROMPT, SEQ_LEN, new LlamaCallback() {
+        mModule.generate(TEST_PROMPT, SEQ_LEN, new LlmCallback() {
             @Override
             public void onResult(String result) {
-                LlamaModuleInstrumentationTest.this.onResult(result);
+                LlmModuleInstrumentationTest.this.onResult(result);
                 mModule.stop();
             }
 
             @Override
             public void onStats(float tps) {
-                LlamaModuleInstrumentationTest.this.onStats(tps);
+                LlmModuleInstrumentationTest.this.onStats(tps);
             }
         });
 
