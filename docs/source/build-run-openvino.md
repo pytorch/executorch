@@ -86,31 +86,6 @@ python aot_openvino_compiler.py --suite torchvision --model resnet50 --input_sha
 ```
 The exported model will be saved as 'resnet50.pte' in the current directory.
 
-#### **Arguments**
-- **`--suite`** (required):  
-  Specifies the model suite to use.  
-  Supported values:
-  - `timm` (e.g., VGG16, ResNet50)
-  - `torchvision` (e.g., resnet18, mobilenet_v2)
-  - `huggingface` (e.g., bert-base-uncased)
-
-- **`--model`** (required):  
-  Name of the model to export.  
-  Examples:
-  - For `timm`: `vgg16`, `resnet50`
-  - For `torchvision`: `resnet18`, `mobilenet_v2`
-  - For `huggingface`: `bert-base-uncased`, `distilbert-base-uncased`
-
-- **`--input_shape`** (required):  
-  Input shape for the model. Provide this as a **list** or **tuple**.  
-  Examples:
-  - `[1, 3, 224, 224]` (Zsh users: wrap in quotes)
-  - `(1, 3, 224, 224)`
-
-- **`--device`** (optional):  
-  Target device for the compiled model. Default is `CPU`.  
-  Examples: `CPU`, `GPU`
-
 ### Build C++ OpenVINO Examples
 Build the backend and the examples by executing the script:
 ```bash
