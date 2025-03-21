@@ -140,6 +140,10 @@ class ShouldBuild:
         return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
 
     @classmethod
+    def coreml(cls) -> bool:
+        return cls._is_env_enabled("EXECUTORCH_BUILD_COREML", default=False)
+
+    @classmethod
     def training(cls) -> bool:
         return cls._is_cmake_arg_enabled(
             "EXECUTORCH_BUILD_EXTENSION_TRAINING", default=False
@@ -841,6 +845,15 @@ def get_ext_modules() -> List[Extension]:
                     dst="executorch/data/bin/__init__.py",
                 ),
             ]
+        )
+
+    if ShouldBuild.pybindings() or ShouldBuild.coreml():
+        ext_modules.append(
+            BuiltExtension(
+                src="coreml_inmemoryfs_pybinding.*",
+                src_dir="backends/apple/coreml",
+                modpath="executorch.backends.apple.coreml.inmemoryfs",
+            )
         )
 
     if ShouldBuild.pybindings():
