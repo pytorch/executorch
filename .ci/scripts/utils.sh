@@ -55,17 +55,34 @@ install_pytorch_and_domains() {
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   popd || return
 
-  git clone https://github.com/pytorch/pytorch.git
+  OS_VERSION=$(uname)
+  PYTHON_VERSION=$(python -c 'import platform; print(platform.python_version())')
+  PYTORCH_WHEEL_S3_PATH="cached_artifacts/pytorch/executorch/pytorch_wheels/${OS_VERSION}/${PYTHON_VERSION}"
 
-  # Fetch the target commit
-  pushd pytorch || return
-  git checkout "${TORCH_VERSION}"
-  git submodule update --init --recursive
+  if [[ "${FOUND_PYTORCH_WHEEL:-0}" == "0" ]]; then
+    # Found no such wheel, we will build it from source then
+    git clone https://github.com/pytorch/pytorch.git
 
-  export USE_DISTRIBUTED=1
-  # Then build and install PyTorch
-  python setup.py bdist_wheel
-  pip install "$(echo dist/*.whl)"
+    # Fetch the target commit
+    pushd pytorch || return
+    git checkout "${TORCH_VERSION}"
+    git submodule update --init --recursive
+
+    export USE_DISTRIBUTED=1
+    # Then build and install PyTorch
+    python setup.py bdist_wheel
+    pip install "$(echo dist/*.whl)"
+
+    # Only AWS runners have access to S3
+    if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
+      for WHEEL_PATH in dist/*.whl; do
+        WHEEL_NAME=$(basename "${WHEEL_PATH}")
+        aws s3 cp --acl public-read \
+          "${WHEEL_PATH}" \
+          "s3://gha-artifacts/${PYTORCH_WHEEL_S3_PATH}/${WHEEL_NAME}"
+      done
+    fi
+  fi
 
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
