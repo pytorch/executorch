@@ -86,6 +86,10 @@ class ShouldBuild:
         return cls._is_env_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
 
     @classmethod
+    def coreml(cls) -> bool:
+        return cls._is_env_enabled("EXECUTORCH_BUILD_COREML", default=False)
+
+    @classmethod
     def training(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_TRAINING", default=False)
 
@@ -676,6 +680,12 @@ class CustomBuild(build):
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
             # environment variable.
 
+        if ShouldBuild.coreml():
+            cmake_args += [
+                "-DEXECUTORCH_BUILD_COREML=ON",
+            ]
+            build_args += ["--target", "executorchcoreml"]
+
         if ShouldBuild.llama_custom_ops():
             cmake_args += [
                 "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON",  # add llama sdpa ops to pybindings.
@@ -780,6 +790,15 @@ def get_ext_modules() -> List[Extension]:
                     dst="executorch/data/bin/__init__.py",
                 ),
             ]
+        )
+
+    if ShouldBuild.coreml():
+        ext_modules.append(
+            BuiltExtension(
+                src="executorchcoreml.*",
+                src_dir="backends/apple/coreml",
+                modpath="executorch.backends.apple.coreml.executorchcoreml",
+            )
         )
 
     if ShouldBuild.pybindings():
