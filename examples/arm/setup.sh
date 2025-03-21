@@ -84,8 +84,10 @@ function setup_fvp() {
 
     # Mandatory user arg --i-agree-to-the-contained-eula
     eula_acceptance="${1:-'.'}"
+    eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
+
     if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
-        if [[ ${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA} != "True" ]]; then
+        if [[ ${eula_acceptance_by_variable} != "True" ]]; then
         echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
         exit 1
         else
