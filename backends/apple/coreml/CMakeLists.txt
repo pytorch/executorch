@@ -25,6 +25,8 @@ endif()
 
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
 
+set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
+
 # inmemoryfs sources
 set(INMEMORYFS_SOURCES
     runtime/inmemoryfs/inmemory_filesystem.cpp
@@ -230,7 +232,8 @@ install(
   DESTINATION ${_common_include_directories}
 )
 
-if(EXECUTORCH_BUILD_COREML)
+# We only care about building the pybinding when building for macOS wheels.
+if(EXECUTORCH_BUILD_COREML AND EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(${EXECUTORCH_ROOT}/third-party/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/pybind11)
 
   pybind11_add_module(executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp)
@@ -239,6 +242,5 @@ if(EXECUTORCH_BUILD_COREML)
   if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     target_compile_options(executorchcoreml PRIVATE -g)
   endif()
-  target_link_libraries(executorchcoreml PRIVATE coreml_util)
-  target_link_libraries(executorchcoreml PRIVATE coreml_inmemoryfs)
+  target_link_libraries(executorchcoreml PRIVATE coreml_util coreml_inmemoryfs)
 endif()
