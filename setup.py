@@ -84,6 +84,10 @@ def _cmake_args_defines() -> Dict[str, str]:
     return result
 
 
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
 class ShouldBuild:
     """Indicates whether to build various components."""
 
@@ -125,7 +129,7 @@ class ShouldBuild:
 
     @classmethod
     def coreml(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_COREML", default=False)
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_COREML", default=_is_macos())
 
     @classmethod
     def mps(cls) -> bool:
@@ -134,10 +138,6 @@ class ShouldBuild:
     @classmethod
     def xnnpack(cls) -> bool:
         return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
-
-    @classmethod
-    def coreml(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_COREML", default=False)
 
     @classmethod
     def training(cls) -> bool:
@@ -724,8 +724,14 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
+
             if ShouldBuild.training():
                 build_args += ["--target", "_training_lib"]
+
+            if ShouldBuild.coreml():
+                cmake_args += ["-DEXECUTORCH_BUILD_COREML=ON"]
+                build_args += ["--target", "executorchcoreml"]
+
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
@@ -837,15 +843,6 @@ def get_ext_modules() -> List[Extension]:
             ]
         )
 
-    if ShouldBuild.pybindings() or ShouldBuild.coreml():
-        ext_modules.append(
-            BuiltExtension(
-                src="coreml_inmemoryfs_pybinding.*",
-                src_dir="backends/apple/coreml",
-                modpath="executorch.backends.apple.coreml.inmemoryfs",
-            )
-        )
-
     if ShouldBuild.pybindings():
         ext_modules.append(
             # Install the prebuilt pybindings extension wrapper for the runtime,
@@ -866,6 +863,14 @@ def get_ext_modules() -> List[Extension]:
                 BuiltExtension(
                     "_training_lib.*",
                     "executorch.extension.training.pybindings._training_lib",
+                )
+            )
+        if ShouldBuild.coreml():
+            ext_modules.append(
+                BuiltExtension(
+                    src="executorchcoreml.*",
+                    src_dir="backends/apple/coreml",
+                    modpath="executorch.backends.apple.coreml.executorchcoreml",
                 )
             )
     if ShouldBuild.llama_custom_ops():

@@ -45,15 +45,6 @@ mkdir "$COREMLTOOLS_DIR_PATH/build"
 cmake -S "$COREMLTOOLS_DIR_PATH" -B "$COREMLTOOLS_DIR_PATH/build"
 cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel
 
-echo "${green}ExecuTorch: Installing coremltools."
-pip install "$COREMLTOOLS_DIR_PATH"
-
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to install coremltools."
-    exit 1
-fi
-
 echo "${green}ExecuTorch: Cloning nlohmann."
 git clone https://github.com/nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
 STATUS=$?
@@ -61,8 +52,6 @@ if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to clone nlohmann."
     exit 1
 fi
-
-sh "$COREML_DIR_PATH/scripts/install_inmemoryfs.sh"
 
 echo "${green}ExecuTorch: Copying protobuf files."
 mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/"
