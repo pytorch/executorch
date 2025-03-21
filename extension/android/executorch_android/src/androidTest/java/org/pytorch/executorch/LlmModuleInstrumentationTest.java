@@ -34,8 +34,10 @@ import org.junit.runners.JUnit4;
 import org.apache.commons.io.FileUtils;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.InstrumentationRegistry;
+import org.pytorch.executorch.extension.llm.LlmCallback;
+import org.pytorch.executorch.extension.llm.LlmModule;
 
-/** Unit tests for {@link LlmModule}. */
+/** Unit tests for {@link org.pytorch.executorch.extension.llm.LlmModule}. */
 @RunWith(AndroidJUnit4.class)
 public class LlmModuleInstrumentationTest implements LlmCallback {
     private static String TEST_FILE_NAME = "/tinyllama_portable_fp16_h.pte";
