@@ -35,6 +35,8 @@ libextension_tensor.a,\
 :$HEADERS_PATH"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
+libcoreml_util.a,\
+libcoreml_inmemoryfs.a,\
 libcoremldelegate.a,\
 :"
 
