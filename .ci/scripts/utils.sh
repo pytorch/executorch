@@ -63,13 +63,14 @@ install_pytorch_and_domains() {
   git submodule update --init --recursive
 
   SYSTEM_NAME=$(uname)
-  # The platform version needs to match MACOSX_DEPLOYMENT_TARGET used to build the wheel
-  PLATFORM=$(python -c 'import sysconfig; platform=sysconfig.get_platform().split("-"); platform[1]="14_0"; print("_".join(platform))')
+  if [[ "${SYSTEM_NAME}" == "Darwin" ]]; then
+    PLATFORM=$(python -c 'import sysconfig; import platform; v=platform.mac_ver()[0].split(".")[0]; platform=sysconfig.get_platform().split("-"); platform[1]=f"{v}_0"; print("_".join(platform))')
+  fi
   PYTHON_VERSION=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
   TORCH_RELEASE=$(cat version.txt)
   TORCH_SHORT_HASH=${TORCH_VERSION:0:7}
   TORCH_WHEEL_PATH="cached_artifacts/pytorch/executorch/pytorch_wheels/${SYSTEM_NAME}/${PYTHON_VERSION}"
-  TORCH_WHEEL_NAME="torch-${TORCH_RELEASE}%2Bgit${TORCH_SHORT_HASH}-cp${PYTHON_VERSION}-cp${PYTHON_VERSION}-${PLATFORM}.whl"
+  TORCH_WHEEL_NAME="torch-${TORCH_RELEASE}%2Bgit${TORCH_SHORT_HASH}-cp${PYTHON_VERSION}-cp${PYTHON_VERSION}-${PLATFORM:-}.whl"
 
   CACHE_TORCH_WHEEL="https://gha-artifacts.s3.us-east-1.amazonaws.com/${TORCH_WHEEL_PATH}/${TORCH_WHEEL_NAME}"
   # Cache PyTorch wheel is only needed on MacOS, Linux CI already has this as part
@@ -80,7 +81,7 @@ install_pytorch_and_domains() {
 
   # Found no such wheel, we will build it from source then
   if [[ "${TORCH_WHEEL_NOT_FOUND:-0}" == "1" ]]; then
-    USE_DISTRIBUTED=1 MACOSX_DEPLOYMENT_TARGET=14.0 python setup.py bdist_wheel
+    USE_DISTRIBUTED=1 python setup.py bdist_wheel
     pip install "$(echo dist/*.whl)"
 
     # Only AWS runners have access to S3
