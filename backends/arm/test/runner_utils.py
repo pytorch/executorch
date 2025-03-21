@@ -20,7 +20,7 @@ import torch
 
 logger = logging.getLogger(__name__)
 try:
-    import tosa_reference_model
+    import tosa_tools.v0_80.tosa_reference_model as tosa_reference_model
 except ImportError:
     tosa_reference_model = None
 from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
@@ -34,7 +34,7 @@ from packaging.version import Version
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
-from tosa import TosaGraph
+from tosa_tools.v0_80.tosa import TosaGraph
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.CRITICAL)
