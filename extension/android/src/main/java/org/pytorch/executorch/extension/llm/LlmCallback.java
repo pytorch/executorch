@@ -6,18 +6,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package org.pytorch.executorch;
+package org.pytorch.executorch.extension.llm;
 
 import com.facebook.jni.annotations.DoNotStrip;
+import org.pytorch.executorch.annotations.Experimental;
 
 /**
  * Callback interface for Llama model. Users can implement this interface to receive the generated
  * tokens and statistics.
  *
- * <p>Note: deprecated! Please use {@link org.pytorch.executorch.extension.llm.LlmCallback} instead.
+ * <p>Warning: These APIs are experimental and subject to change without notice
  */
-@Deprecated
-public interface LlamaCallback {
+@Experimental
+public interface LlmCallback {
   /**
    * Called when a new result is available from JNI. Users will keep getting onResult() invocations
    * until generate() finishes.
