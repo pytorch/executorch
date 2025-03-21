@@ -193,6 +193,8 @@ if(TARGET coremldelegate)
   list(
     APPEND
     link_libraries
+    coreml_util
+    coreml_inmemoryfs
     coremldelegate
     sqlite3
     "-framework Foundation"
