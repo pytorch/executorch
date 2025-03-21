@@ -25,6 +25,8 @@ endif()
 
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
 
+set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
+
 # inmemoryfs sources
 set(INMEMORYFS_SOURCES
     runtime/inmemoryfs/inmemory_filesystem.cpp
