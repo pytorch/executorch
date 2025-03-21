@@ -144,6 +144,10 @@ if [ "$BUILD_X86_64" = true ]; then
    EXAMPLE_ROOT=examples/qualcomm
    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
 
+   echo "Update tokenizers submodule..."
+   pushd $PRJ_ROOT/extension/llm/tokenizers
+   git submodule update --init
+   popd
    cmake $PRJ_ROOT/$EXAMPLE_ROOT \
        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
        -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \

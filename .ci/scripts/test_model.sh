@@ -100,6 +100,15 @@ test_model() {
       rm "./${MODEL_NAME}.pte"
       return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
   fi
+  if [[ "${MODEL_NAME}" == "phi-4-mini" ]]; then
+      # Install requirements for export_llama
+      bash examples/models/llama/install_requirements.sh
+      # Test export_llama script: python3 -m examples.models.llama.export_llama.
+      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/phi-4-mini/config.json
+      run_portable_executor_runner
+      rm "./${MODEL_NAME}.pte"
+      return
+  fi
 
   # Export a basic .pte and run the model.
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
@@ -164,6 +173,7 @@ test_model_with_qnn() {
   export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
   export PYTHONPATH=$EXECUTORCH_ROOT/..
 
+  EXTRA_FLAGS=""
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
   elif [[ "${MODEL_NAME}" == "mv3" ]]; then
@@ -176,6 +186,12 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=inception_v3
   elif [[ "${MODEL_NAME}" == "vit" ]]; then
     EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "mb" ]]; then
+    EXPORT_SCRIPT=mobilebert_fine_tune
+    EXTRA_FLAGS="--num_epochs 1"
+    pip install scikit-learn
+  elif [[ "${MODEL_NAME}" == "w2l" ]]; then
+    EXPORT_SCRIPT=wav2letter
   elif [[ "${MODEL_NAME}" == "edsr" ]]; then
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
@@ -189,13 +205,18 @@ test_model_with_qnn() {
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
+# Run CoreML tests.
+#
+# @param should_test If true, build and test the model using the coreml_executor_runner.
 test_model_with_coreml() {
-  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-    echo "coreml doesn't support buck2."
+  local should_test="$1"
+
+  if [[ "${BUILD_TOOL}" != "cmake" ]]; then
+    echo "coreml only supports cmake."
     exit 1
   fi
 
@@ -212,6 +233,14 @@ test_model_with_coreml() {
   else
     echo "No .pte file found"
     exit 1
+  fi
+
+  # Run the model
+  if [ "${should_test}" = true ]; then
+    echo "Testing exported model with coreml_executor_runner..."
+    local out_dir=$(mktemp -d)
+    COREML_EXECUTOR_RUNNER_OUT_DIR="${out_dir}" examples/apple/coreml/scripts/build_executor_runner.sh
+    "${out_dir}/coreml_executor_runner" --model_path "${EXPORTED_MODEL}"
   fi
 }
 
@@ -231,7 +260,11 @@ elif [[ "${BACKEND}" == *"qnn"* ]]; then
   fi
 elif [[ "${BACKEND}" == *"coreml"* ]]; then
   echo "Testing ${MODEL_NAME} with coreml..."
-  test_model_with_coreml
+  should_test_coreml=false
+  if [[ "${BACKEND}" == *"test"* ]]; then
+    should_test_coreml=true
+  fi
+  test_model_with_coreml "${should_test_coreml}"
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

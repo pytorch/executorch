@@ -8,11 +8,14 @@
 
 #include <gtest/gtest.h>
 #include <cstdio>
+#include <memory>
 
 #include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
+#include <executorch/devtools/etdump/data_sinks/file_data_sink.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/devtools/etdump/etdump_schema_flatcc_reader.h>
+#include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -24,6 +27,7 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::etdump::ETDumpGen;
 using ::executorch::etdump::ETDumpResult;
+using ::executorch::extension::testing::TempFile;
 using ::executorch::runtime::AllocatorID;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::BoxedEvalueList;
@@ -36,6 +40,7 @@ using ::executorch::runtime::Tag;
 using ::executorch::runtime::testing::TensorFactory;
 
 using ::executorch::etdump::BufferDataSink;
+using ::executorch::etdump::FileDataSink;
 
 class ProfilerETDumpTest : public ::testing::Test {
  protected:
@@ -45,6 +50,9 @@ class ProfilerETDumpTest : public ::testing::Test {
     const size_t buf_size = 512 * 1024;
     buf = (uint8_t*)malloc(buf_size * sizeof(uint8_t));
     etdump_gen[1] = new ETDumpGen(Span<uint8_t>(buf, buf_size));
+
+    temp_file = std::make_unique<TempFile>(std::string());
+    dump_file_path = temp_file->path();
   }
 
   void TearDown() override {
@@ -55,6 +63,8 @@ class ProfilerETDumpTest : public ::testing::Test {
 
   ETDumpGen* etdump_gen[2];
   uint8_t* buf = nullptr;
+  std::unique_ptr<TempFile> temp_file;
+  std::string dump_file_path;
 };
 
 TEST_F(ProfilerETDumpTest, SingleProfileEvent) {
@@ -177,28 +187,10 @@ TEST_F(ProfilerETDumpTest, AllocationEvents) {
 
 TEST_F(ProfilerETDumpTest, DebugEvent) {
   for (size_t i = 0; i < 2; i++) {
-    for (size_t j = 0; j < 2; j++) {
-      TensorFactory<ScalarType::Float> tf;
-      EValue evalue(tf.ones({3, 2}));
-
+    for (size_t j = 0; j < 3; j++) {
       etdump_gen[i]->create_event_block("test_block");
 
       void* ptr = malloc(2048);
-      Span<uint8_t> buffer((uint8_t*)ptr, 2048);
-
-      auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
-
-      // using span to record debug data
-      if (j == 0) {
-        etdump_gen[i]->set_debug_buffer(buffer);
-      }
-      // using data sink to record debug data
-      else {
-        etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
-      }
-
-      etdump_gen[i]->log_evalue(evalue);
-      etdump_gen[i]->log_evalue(evalue, LoggedEValueType::kProgramOutput);
 
       EValue evalue_int((int64_t)5);
       etdump_gen[i]->log_evalue(evalue_int);
@@ -211,6 +203,33 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
 
       etdump_gen[i]->log_evalue(evalue_bool);
 
+      TensorFactory<ScalarType::Float> tf;
+      EValue evalue_tensor(tf.ones({3, 2}));
+
+      // using span to record debug data
+      Span<uint8_t> buffer((uint8_t*)ptr, 2048);
+      auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
+      auto file_data_sink = FileDataSink::create(dump_file_path.c_str());
+
+      if (j == 0) {
+        ET_EXPECT_DEATH(
+            etdump_gen[i]->log_evalue(evalue_tensor),
+            "Must set data sink before writing tensor-like data");
+        etdump_gen[i]->set_debug_buffer(buffer);
+      }
+      // using buffer data sink to record debug data
+      else if (j == 1) {
+        etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
+      }
+      // using file data sink to record debug data
+      else {
+        etdump_gen[i]->set_data_sink(&file_data_sink.get());
+      }
+
+      etdump_gen[i]->log_evalue(evalue_tensor);
+      etdump_gen[i]->log_evalue(
+          evalue_tensor, LoggedEValueType::kProgramOutput);
+
       free(ptr);
     }
   }
@@ -218,7 +237,7 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
 
 TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
   for (size_t i = 0; i < 2; i++) {
-    for (size_t j = 0; j < 2; j++) {
+    for (size_t j = 0; j < 3; j++) {
       TensorFactory<ScalarType::Int> tf;
       executorch::aten::Tensor storage[2] = {tf.ones({3, 2}), tf.ones({3, 2})};
       EValue evalue_1(storage[0]);
@@ -235,14 +254,19 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
 
       auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
+      auto file_data_sink = FileDataSink::create(dump_file_path.c_str());
 
       // using span to record debug data
       if (j == 0) {
         etdump_gen[i]->set_debug_buffer(buffer);
       }
-      // using data sink to record debug data
-      else {
+      // using buffer data sink to record debug data
+      else if (j == 1) {
         etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
+      }
+      // using file data sink to record debug dats
+      else {
+        etdump_gen[i]->set_data_sink(&file_data_sink.get());
       }
 
       etdump_gen[i]->log_evalue(evalue);
@@ -264,14 +288,19 @@ TEST_F(ProfilerETDumpTest, VerifyLogging) {
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
 
       auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
+      auto file_data_sink = FileDataSink::create(dump_file_path.c_str());
 
       // using span to record debug data
       if (j == 0) {
         etdump_gen[i]->set_debug_buffer(buffer);
       }
-      // using data sink to record debug data
-      else {
+      // using buffer data sink to record debug data
+      else if (j == 1) {
         etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
+      }
+      // using buffer data sink to record debug data
+      else {
+        etdump_gen[i]->set_data_sink(&file_data_sink.get());
       }
 
       etdump_gen[i]->log_evalue(evalue);
@@ -470,11 +499,12 @@ TEST_F(ProfilerETDumpTest, VerifyData) {
 
 TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
   for (size_t i = 0; i < 2; i++) {
-    for (size_t j = 0; j < 2; j++) {
+    for (size_t j = 0; j < 3; j++) {
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
 
       auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
+      auto file_data_sink = FileDataSink::create(dump_file_path.c_str());
 
       etdump_gen[i]->create_event_block("test_block");
       TensorFactory<ScalarType::Float> tf;
@@ -487,12 +517,16 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
                 "test_event_tensor",
                 static_cast<torch::executor::DebugHandle>(-1),
                 tf.ones({3, 2})),
-            "Must pre-set data sink before logging evalue with set_data_sink");
+            "Must set data sink before writing tensor-like data");
         etdump_gen[i]->set_debug_buffer(buffer);
       }
-      // using data sink to record debug data
-      else {
+      // using buffer data sink to record debug data
+      else if (j == 1) {
         etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
+      }
+      // using file data sink to record debug data
+      else {
+        etdump_gen[i]->set_data_sink(&file_data_sink.get());
       }
 
       // Log a tensor
@@ -543,21 +577,26 @@ TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
   EValue evalue(tf.ones({3, 2}));
 
   for (size_t i = 0; i < 2; i++) {
-    for (size_t j = 0; j < 2; j++) {
+    for (size_t j = 0; j < 3; j++) {
       etdump_gen[i]->create_event_block("test_block");
 
       void* ptr = malloc(2048);
       Span<uint8_t> buffer((uint8_t*)ptr, 2048);
       ;
       auto buffer_data_sink = BufferDataSink::create(ptr, 2048);
+      auto file_data_sink = FileDataSink::create(dump_file_path.c_str());
 
       // using span to record debug data
       if (j == 0) {
         etdump_gen[i]->set_debug_buffer(buffer);
       }
-      // using data sink to record debug data
-      else {
+      // using buffer data sink to record debug data
+      else if (j == 1) {
         etdump_gen[i]->set_data_sink(&buffer_data_sink.get());
+      }
+      // using file data sink to record debug data
+      else {
+        etdump_gen[i]->set_data_sink(&file_data_sink.get());
       }
 
       // Event 0

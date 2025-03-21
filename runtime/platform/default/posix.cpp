@@ -75,6 +75,9 @@ static bool initialized = false;
  * This function should be called before any other function provided by the PAL
  * to initialize any global state. Typically overridden by PAL implementer.
  */
+#ifdef _MSC_VER
+#pragma weak et_pal_init
+#endif // _MSC_VER
 void et_pal_init(void) {
   if (initialized) {
     return;
@@ -88,6 +91,9 @@ void et_pal_init(void) {
  * Immediately abort execution, setting the device into an error state, if
  * available.
  */
+#ifdef _MSC_VER
+#pragma weak et_pal_abort
+#endif // _MSC_VER
 ET_NORETURN void et_pal_abort(void) {
   std::abort();
 }
@@ -97,6 +103,9 @@ ET_NORETURN void et_pal_abort(void) {
  *
  * @retval Timestamp value in system ticks.
  */
+#ifdef _MSC_VER
+#pragma weak et_pal_current_ticks
+#endif // _MSC_VER
 et_timestamp_t et_pal_current_ticks(void) {
   _ASSERT_PAL_INITIALIZED();
   auto systemCurrentTime = std::chrono::steady_clock::now();
@@ -113,6 +122,9 @@ et_timestamp_t et_pal_current_ticks(void) {
  *
  * @retval The ratio of nanoseconds to system ticks.
  */
+#ifdef _MSC_VER
+#pragma weak et_pal_ticks_to_ns_multiplier
+#endif // _MSC_VER
 et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
   // The system tick interval is 1 nanosecond, so the conversion factor is 1.
   return {1, 1};
@@ -130,6 +142,9 @@ et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
  * @param[in] message Message string to log.
  * @param[in] length Message string length.
  */
+#ifdef _MSC_VER
+#pragma weak et_pal_emit_log_message
+#endif // _MSC_VER
 void et_pal_emit_log_message(
     et_timestamp_t timestamp,
     et_pal_log_level_t level,
@@ -181,6 +196,9 @@ void et_pal_emit_log_message(
  * @returns the allocated memory, or nullptr on failure. Must be freed using
  *     et_pal_free().
  */
+#ifdef _MSC_VER
+#pragma weak et_pal_allocate
+#endif // _MSC_VER
 void* et_pal_allocate(size_t size) {
   return malloc(size);
 }
@@ -190,6 +208,9 @@ void* et_pal_allocate(size_t size) {
  *
  * @param[in] ptr Pointer to memory to free. May be nullptr.
  */
+#ifdef _MSC_VER
+#pragma weak et_pal_free
+#endif // _MSC_VER
 void et_pal_free(void* ptr) {
   free(ptr);
 }

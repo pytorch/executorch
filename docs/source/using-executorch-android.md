@@ -6,7 +6,7 @@ Note: This page covers Android app integration through the AAR library. The Exec
 
 ## Installation
 
-All ExecuTorch Android libraries are packaged into an Android library (AAR), `executorch.aar` for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, prebuilt AAR artifacts are uploaded to S3. Users can also build the AAR from source.
+All ExecuTorch Android libraries are packaged into an [Android library (AAR)](https://developer.android.com/studio/projects/android-library), `executorch.aar` for both generic (image/audio processing) and LLM (LLaMA) use case. In each release, prebuilt AAR artifacts are uploaded to [Maven](https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/) and S3. Users can also build the AAR from source.
 
 ### Contents of library
 
@@ -22,13 +22,31 @@ The AAR artifact contains the Java library for users to integrate with their Jav
   - LLaMa-specific Custom ops library.
 - Comes with two ABI variants, arm64-v8a and x86\_64.
 
-## Downloading AAR
+## Using AAR from Maven Central
+
+ExecuTorch is available on [Maven Central](https://mvnrepository.com/artifact/org.pytorch/executorch-android).
+
+Simply add the target [`org.pytorch:executorch-android:0.5.1`](https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/0.5.1/) to your Android app dependency (build.gradle), and build your app.
+
+For example:
+```
+# app/build.gradle.kts
+dependencies {
+    implementation("org.pytorch:executorch-android:0.5.1")
+}
+```
+
+Note: `org.pytorch:executorch-android:0.5.1` corresponds to executorch v0.5.0.
+
+## Using AAR file directly
+
+You can also directly specify an AAR file in the app. We upload pre-built AAR to S3 during each release, or as a snapshot.
 
 ### Released versions (recommended)
 
 | Version | AAR | SHASUMS |
 | ------- | --- | ------- |
-| [v0.5.0](https://github.com/pytorch/executorch/releases/tag/v0.5.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar) |
+| [v0.5.0](https://github.com/pytorch/executorch/releases/tag/v0.5.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar.sha256sums) |
 
 ### Snapshots from main branch
 
@@ -36,13 +54,13 @@ The AAR artifact contains the Java library for users to integrate with their Jav
 | ------- | --- | ------- |
 | 2025-02-27 | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-20250227/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/executorch-20250227/executorch.aar.sha256sums) |
 
-## Using prebuilt libraries
+## Using AAR file
 
-To add the Java library to your app:
+To add the AAR file to your app:
 1. Download the AAR.
 2. Add it to your gradle build rule as a file path.
 
-The Java package requires `fbjni` and `soloader`, and currently requires users to explicitly declare the dependency. Therefore, two more `dependencies` in gradle rule is required:
+An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires `fbjni` and `soloader`, and currently requires users to explicitly declare the dependency. Therefore, two more `dependencies` in gradle rule is required:
 ```
 implementation("com.facebook.soloader:soloader:0.10.5")
 implementation("com.facebook.fbjni:fbjni:0.5.1")
@@ -58,7 +76,7 @@ curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/execut
 
 And include it in gradle:
 ```
-# app/build.grardle.kts
+# app/build.gradle.kts
 dependencies {
     implementation(files("libs/executorch.aar"))
     implementation("com.facebook.soloader:soloader:0.10.5")
@@ -77,9 +95,10 @@ You need Android [SDK](https://developer.android.com/studio) and [NDK](https://d
 
 Current NDK version used in ExecuTorch CI: r27b.
 
-You need to set `ANDROID_NDK` to the correct NDK root (containing NOTICE file).
+You need to set `ANDROID_HOME` to Android SDK home and `ANDROID_NDK` to the correct NDK root (containing NOTICE file).
 
 ```
+export ANDROID_HOME=/path/to/sdk
 export ANDROID_NDK=/path/to/ndk
 sh build/build_android_library.sh
 ```
@@ -108,11 +127,24 @@ after installing and setting up the SDK, set `NEURON_BUFFER_ALLOCATOR_LIB` and `
 #### Using Qualcomm AI Engine Backend
 
 To use [Qualcomm AI Engine Backend](https://pytorch.org/executorch/main/backends-qualcomm.html#qualcomm-ai-engine-backend),
-after installing and setting up the SDK, set `QNN_SDK_ROOT` to the corresponding path
+after installing and setting up the SDK, set `QNN_SDK_ROOT` to the corresponding path.
+
+#### Using Vulkan Backend
+
+To use [Vulkan Backend](https://pytorch.org/executorch/main/backends-vulkan.html#vulkan-backend),
+set `EXECUTORCH_BUILD_VULKAN` to `ON`.
 
 ## Android Backends
 
-TODO Describe commonly used backends, including XNN, Vulkan, and NPUs.
+The following backends are available for Android:
+
+| Backend | Type | Doc |
+| ------- | -------- | --- |
+| [XNNPACK](https://github.com/google/XNNPACK) | CPU | [Doc](./backends-xnnpack.md) |
+| [MediaTek NeuroPilot](https://neuropilot.mediatek.com/) | NPU | [Doc](./backends-mediatek.md) |
+| [Qualcomm AI Engine](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) | NPU | [Doc](./backends-qualcomm.md) |
+| [Vulkan](https://www.vulkan.org/) | GPU | [Doc](./backends-vulkan.md) |
+
 
 ## Runtime Integration
 
@@ -148,6 +180,6 @@ Please use [ExecuTorchDemo](https://github.com/pytorch/executorch/tree/main/exam
 and [LlamaDemo](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo) for the code examples
 using ExecuTorch AAR package.
 
-## Next Steps
+## Java API reference
 
-TODO Link to Java API reference and other relevant material
+Please see [Java API reference](https://pytorch.org/executorch/main/javadoc/).

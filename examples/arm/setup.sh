@@ -65,7 +65,7 @@ tosa_reference_model_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
 
 # vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="46d88f56902be0706e051c10153ffb7620e01ee3"
+vela_rev="425541302c7e4b6fbeca7c0061286b131ee507c3"
 
 ########
 ### Optional user args
@@ -84,8 +84,10 @@ function setup_fvp() {
 
     # Mandatory user arg --i-agree-to-the-contained-eula
     eula_acceptance="${1:-'.'}"
+    eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
+
     if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
-        if [[ ${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA} != "True" ]]; then
+        if [[ ${eula_acceptance_by_variable} != "True" ]]; then
         echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
         exit 1
         else

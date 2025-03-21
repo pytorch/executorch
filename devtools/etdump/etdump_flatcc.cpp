@@ -351,10 +351,6 @@ void ETDumpGen::log_intermediate_output_delegate_helper(
       (name == nullptr) ^ (delegate_debug_index == -1),
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
 
-  ET_CHECK_MSG(
-      data_sink_,
-      "Must pre-set data sink before logging evalue with set_data_sink() or set_debug_buffer()\n");
-
   check_ready_to_add_events();
   int64_t string_id = name != nullptr ? create_string_entry(name) : -1;
 
@@ -503,7 +499,7 @@ void ETDumpGen::set_debug_buffer(Span<uint8_t> buffer) {
   Result<BufferDataSink> bds_ret = BufferDataSink::create(buffer);
   ET_CHECK_MSG(
       bds_ret.ok(),
-      "Failed to write tensor with error 0x%" PRIx32,
+      "Failed to create data sink from debug buffer with error 0x%" PRIx32,
       static_cast<uint32_t>(bds_ret.error()));
 
   buffer_data_sink_ = std::move(bds_ret.get());
@@ -515,8 +511,6 @@ void ETDumpGen::set_data_sink(DataSinkBase* data_sink) {
 }
 
 void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
-  ET_CHECK_MSG(data_sink_, "Must set data sink before logging evalue\n");
-
   check_ready_to_add_events();
 
   etdump_DebugEvent_start(builder_);
@@ -650,7 +644,8 @@ long ETDumpGen::write_tensor_or_raise_error(Tensor tensor) {
     return static_cast<size_t>(-1);
   }
 
-  ET_CHECK_MSG(data_sink_, "Must set data sink before writing data");
+  ET_CHECK_MSG(
+      data_sink_, "Must set data sink before writing tensor-like data");
   Result<size_t> ret =
       data_sink_->write(tensor.const_data_ptr(), tensor.nbytes());
   ET_CHECK_MSG(

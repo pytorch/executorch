@@ -19,12 +19,14 @@ from executorch.examples.models.llama.rope import precompute_freqs_cis
 def apply_rotary_emb_single(
     x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
 ) -> torch.Tensor:
-    x_r, x_i = x[..., ::2], x[..., 1::2]
-
-    # brodcast for batch_prefill mode input x
+    # The implementation of RoPE in HuggingFace processes query and key with two half instead of interleaved way.
+    # The main difference is stride in StrideSlice op. For interleaved way, stride is two which is not friendly for HTP backend.
+    # Ref: https://github.com/huggingface/transformers/issues/25199
+    x_r, x_i = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
+    # broadcast for batch_prefill mode input x
     if x.dim() == 4:
-        freqs_cos = freqs_cos[None, :, None, :]
-        freqs_sin = freqs_sin[None, :, None, :]
+        freqs_cos = freqs_cos[None, None, :, :]
+        freqs_sin = freqs_sin[None, None, :, :]
     x_out_r = x_r * freqs_cos - x_i * freqs_sin
     x_out_i = x_r * freqs_sin + x_i * freqs_cos
 
@@ -104,25 +106,33 @@ class LlamaAttention(nn.Module):
         v_caches: Optional[List[torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         bsz, seq_len, _ = hidden_states.shape
+        # In the HTP backend, the input axis order for the convolution operation is
+        # more efficient with [1, 1, seq_len, dim] compared to [1, seq_len, 1, dim].
         hidden_states = torch.reshape(
             hidden_states, (bsz, seq_len, 1, self.dim)
         ).transpose(1, 3)
         q = [
-            wq_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            wq_sha(hidden_states)
+            .permute(0, 2, 3, 1)
+            .reshape(bsz, seq_len, self.head_dim)
             for wq_sha in self.wq_sha
         ]
         k = [
-            wk_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            wk_sha(hidden_states)
+            .permute(0, 2, 3, 1)
+            .reshape(bsz, seq_len, self.head_dim)
             for wk_sha in self.wk_sha
         ]
         v = [
-            wv_sha(hidden_states).reshape(bsz, self.head_dim, seq_len).transpose(1, 2)
+            wv_sha(hidden_states)
+            .permute(0, 2, 3, 1)
+            .reshape(bsz, seq_len, self.head_dim)
             for wv_sha in self.wv_sha
         ]
         for i in range(len(q)):
             q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
         for i in range(len(k)):
-            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).permute(0, 2, 1)
+            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).transpose(1, 2)
 
         output_y = []
         kh, vh = [], []
@@ -249,10 +259,10 @@ class FeedForward(nn.Module):
 
     def forward_feedfoward_conv(self, x):
         bsz, _, _ = x.size()
-        x = torch.reshape(x, (bsz, -1, self.dim, 1))
-        x = x.transpose(1, 2)  # Transpose right before and after Conv
+        x = torch.reshape(x, (bsz, -1, 1, self.dim))
+        x = x.transpose(1, 3)  # Transpose right before and after Conv
         x = self.w2_conv(F.silu(self.w1_conv(x)) * self.w3_conv(x))
-        x = x.transpose(1, 2)
+        x = x.transpose(1, 3)
         x = torch.reshape(x, (bsz, -1, self.dim))
         return x
 
@@ -461,7 +471,7 @@ class LlamaModel(nn.Module):
             "get_bos_id": 1,
             "get_eos_id": 2,
             "get_dim": self.dim,
-            "get_head_dim": self.dim // self.n_heads,
+            "get_head_dim": self.head_dim,
             "get_max_batch_size": self.max_batch_size,
             "get_max_seq_len": self.max_seq_len,
             "get_n_bos": 1,

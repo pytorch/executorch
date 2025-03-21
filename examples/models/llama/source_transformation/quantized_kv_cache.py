@@ -205,9 +205,13 @@ def replace_kv_cache_with_quantized_kv_cache(module):
     # This is needed to ensure that custom ops are registered
     from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
-    logging.warning(
+    logging.info(
         "Replacing KVCache with QuantizedKVCache. This modifies the model in place."
     )
+    return _replace_kv_cache_with_quantized_kv_cache(module)
+
+
+def _replace_kv_cache_with_quantized_kv_cache(module):
     for name, child in module.named_children():
         if isinstance(child, KVCache) or isinstance(child, CustomKVCache):
             setattr(
@@ -220,7 +224,7 @@ def replace_kv_cache_with_quantized_kv_cache(module):
                 ),
             )
         else:
-            replace_kv_cache_with_quantized_kv_cache(child)
+            _replace_kv_cache_with_quantized_kv_cache(child)
     return module
 
 
@@ -263,16 +267,20 @@ class CustomKVCache(nn.Module):
 
 
 def replace_kv_cache_with_custom_kv_cache(module):
-    r"""
+    """
     Replace KVCache with CustomKVCache. This modifies the model in place.
     At the moment custom kv cache only supports cache with shape
     [B, S, H, D] as opposed to [B, H, S, D]
     This is because the custom op treats second dim as sequence dim.
     Future work: support [B, H, S, D]
     """
-    logging.warning(
+    logging.info(
         "Replacing KVCache with CustomKVCache. This modifies the model in place."
     )
+    return _replace_kv_cache_with_custom_kv_cache(module)
+
+
+def _replace_kv_cache_with_custom_kv_cache(module):
     for name, child in module.named_children():
         if isinstance(child, KVCache):
             cache_shape = child.k_cache.shape
@@ -290,5 +298,5 @@ def replace_kv_cache_with_custom_kv_cache(module):
                 ),
             )
         else:
-            replace_kv_cache_with_custom_kv_cache(child)
+            _replace_kv_cache_with_custom_kv_cache(child)
     return module

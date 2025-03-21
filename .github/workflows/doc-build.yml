@@ -68,6 +68,12 @@ jobs:
         make html
         cd ..
 
+        # Build javadoc:
+        cd extension/android
+        ./gradlew javadoc
+        cp -rf build/docs/javadoc "${RUNNER_DOCS_DIR}"
+        cd ../..
+
         # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
         echo "GitHub Ref: ${GITHUB_REF}"
         if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
@@ -77,6 +83,7 @@ jobs:
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
         mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
+        cp -rf "${RUNNER_DOCS_DIR}"/javadoc "${RUNNER_ARTIFACT_DIR}"/html
 
         ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
 

@@ -134,8 +134,10 @@ class RMSNorm(torch.nn.Module):
         # We have yet to do large scale evaluations on the numeric stability of this solution, but note that
         # it appears better than what exists currently (removing FP32 casts and using FP16)
         rms_norm_eps0 = (
-            x * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
-        ) / torch.linalg.vector_norm(x, dim=-1, keepdim=True)
+            x
+            * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
+            * torch.reciprocal(torch.linalg.vector_norm(x, dim=-1, keepdim=True))
+        )
         return rms_norm_eps0
 
     def forward(self, x):
@@ -441,7 +443,7 @@ class Transformer(nn.Module):
         if not self.use_cache_list:
             k_out = torch.stack(k_out, dim=0)
             v_out = torch.stack(v_out, dim=0)
-        return logits, k_out, v_out
+        return logits, k_out, v_out  # pyre-ignore[7]
 
 
 def load_model(checkpoint_path, params_path, max_seq_length, use_cache_list):
@@ -612,7 +614,7 @@ class InputManager:
                     torch.tensor(tokens, dtype=torch.int64),
                     torch.zeros(self.seq_length - input_length, dtype=torch.int64),
                 ],
-                axis=-1,
+                dim=-1,
             ).reshape(1, -1),
             # input_pos
             torch.tensor([self.input_pos], dtype=torch.long),

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -93,6 +94,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_2",
     "static_llama",
     "qwen2_5",
+    "phi-4-mini",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
@@ -1200,3 +1202,14 @@ def _get_source_transforms(  # noqa
         transforms.append(replace_with_vulkan_rotary_emb)
 
     return transforms
+
+
+def get_llama_model(args):
+    _validate_args(args)
+    e_mgr = _prepare_for_llama_export(args)
+    model = (
+        e_mgr.model.eval().to(device="cuda")
+        if torch.cuda.is_available()
+        else e_mgr.model.eval().to(device="cpu")
+    )
+    return model, e_mgr.example_inputs, e_mgr.metadata

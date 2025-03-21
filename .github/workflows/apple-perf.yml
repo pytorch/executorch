@@ -98,6 +98,63 @@ jobs:
 
           echo "benchmark_configs is: ${{ steps.set-parameters.outputs.benchmark_configs }}"
 
+  prepare-test-specs:
+    runs-on: linux.2xlarge
+    needs: set-parameters
+    strategy:
+      matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Prepare the spec
+        id: prepare
+        shell: bash
+        env:
+          BENCHMARK_CONFIG: ${{ toJSON(matrix) }}
+        working-directory: extension/benchmark/apple/Benchmark
+        run: |
+          set -eux
+
+          # The model will be exported in the next step to this S3 path
+          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/model.zip"
+          # We could write a script to properly use jinja here, but there is only one variable,
+          # so let's just sed it
+          sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' default-ios-device-farm-appium-test-spec.yml.j2
+
+          BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
+          # The config for this benchmark runs, we save it in the test spec so that it can be fetched
+          # later by the upload script
+          sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' default-ios-device-farm-appium-test-spec.yml.j2
+
+          cp default-ios-device-farm-appium-test-spec.yml.j2 default-ios-device-farm-appium-test-spec.yml
+          # Just print the test spec for debugging
+          cat default-ios-device-farm-appium-test-spec.yml
+
+          # Save the benchmark configs so that we can use it later in the dashboard
+          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_ID}.json"
+          echo "benchmark-config-id=${BENCHMARK_CONFIG_ID}" >> $GITHUB_OUTPUT
+
+      - name: Upload the spec
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml
+
+      - name: Update the benchmark configs
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
+          retention-days: 1
+          if-no-files-found: error
+          path: extension/benchmark/apple/Benchmark/${{ steps.prepare.outputs.benchmark-config-id }}.json
+
   export-models:
     name: export-models
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -287,68 +344,6 @@ jobs:
         fi
         echo "::endgroup::"
 
-  prepare-test-specs:
-    runs-on: linux.2xlarge
-    needs:
-      - set-parameters
-      - export-models
-    strategy:
-      matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Prepare the spec
-        id: prepare
-        shell: bash
-        env:
-          BENCHMARK_CONFIG: ${{ toJSON(matrix) }}
-        working-directory: extension/benchmark/apple/Benchmark
-        run: |
-          set -eux
-
-          # The model will be exported in the next step to this S3 path
-          MODEL_PATH="https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/model.zip"
-          # Check if the model artifact exists, fail this step skip generating test-spec.
-          curl -s --head -f ${MODEL_PATH}
-          # We could write a script to properly use jinja here, but there is only one variable,
-          # so let's just sed it
-          sed -i -e 's,{{ model_path }},'"${MODEL_PATH}"',g' default-ios-device-farm-appium-test-spec.yml.j2
-
-          BENCHMARK_CONFIG_ID=$(echo "${{ matrix.model }}_${{ matrix.config }}" | sed -e 's/[^A-Za-z0-9._-]/_/g')
-          # The config for this benchmark runs, we save it in the test spec so that it can be fetched
-          # later by the upload script
-          sed -i -e 's,{{ benchmark_config_id }},'"${BENCHMARK_CONFIG_ID}"',g' default-ios-device-farm-appium-test-spec.yml.j2
-
-          cp default-ios-device-farm-appium-test-spec.yml.j2 default-ios-device-farm-appium-test-spec.yml
-          # Just print the test spec for debugging
-          cat default-ios-device-farm-appium-test-spec.yml
-
-          # Save the benchmark configs so that we can use it later in the dashboard
-          echo "${BENCHMARK_CONFIG}" > "${BENCHMARK_CONFIG_ID}.json"
-          echo "benchmark-config-id=${BENCHMARK_CONFIG_ID}" >> $GITHUB_OUTPUT
-
-      - name: Upload the spec
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}
-          retention-days: 1
-          if-no-files-found: error
-          path: extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml
-
-      - name: Update the benchmark configs
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifacts/benchmark-configs/
-          retention-days: 1
-          if-no-files-found: error
-          path: extension/benchmark/apple/Benchmark/${{ steps.prepare.outputs.benchmark-config-id }}.json
-
-
   build-benchmark-app:
     name: build-benchmark-app
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -358,7 +353,7 @@ jobs:
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       upload-artifact: ios-apps
       secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_BENCHMARK_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
@@ -430,6 +425,7 @@ jobs:
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
 
+  # CHANGE IF this job name 'benchmark-on-device' changed: extract_model_info() in executorch/.github/scripts/extract_benchmark_results.py
   benchmark-on-device:
     if: always()
     needs:
@@ -458,6 +454,7 @@ jobs:
       ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.ipa
       ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/Benchmark.xctestrun.zip
       test-spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/${{ matrix.model }}_${{ matrix.config }}/default-ios-device-farm-appium-test-spec.yml
+      new-output-format-flag: true
 
   upload-benchmark-results:
     needs:
@@ -515,6 +512,8 @@ jobs:
 
       - name: Extract the benchmark results JSON
         shell: bash
+        env:
+          DEVICE_TYPE: ios
         run: |
           set -eux
 
@@ -526,28 +525,14 @@ jobs:
             ${CONDA_RUN} python .github/scripts/extract_benchmark_results.py \
               --artifacts "${ARTIFACTS_BY_JOB}" \
               --output-dir benchmark-results \
-              --repo ${{ github.repository }} \
-              --head-branch ${{ github.head_ref || github.ref_name }} \
-              --workflow-name "${{ github.workflow }}" \
-              --workflow-run-id ${{ github.run_id }} \
-              --workflow-run-attempt ${{ github.run_attempt }} \
+              --app "${DEVICE_TYPE}" \
               --benchmark-configs benchmark-configs
           done
 
-          for SCHEMA in v2 v3; do
-            for BENCHMARK_RESULTS in benchmark-results/"${SCHEMA}"/*.json; do
-              cat "${BENCHMARK_RESULTS}"
-              echo
-            done
+          for BENCHMARK_RESULTS in benchmark-results/v3/*.json; do
+            cat "${BENCHMARK_RESULTS}"
+            echo
           done
-
-      # TODO (huydhn): Remove v2 schema once the benchmark dashboard finishes the migration
-      - name: Upload the benchmark results (v2)
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
-        with:
-          benchmark-results-dir: benchmark-results/v2
-          dry-run: false
-          schema-version: v2
 
       - name: Upload the benchmark results (v3)
         uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main

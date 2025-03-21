@@ -8,6 +8,7 @@
 
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/platform.h>
 #include <stdlib.h>
 #include <cstdint>
@@ -65,6 +66,43 @@ enum class EventTracerDebugLogLevel {
   /// When set to this all intermediate outputs and program level outputs
   /// will be logged.
   kIntermediateOutputs,
+};
+
+/**
+ * EventTracerFilterBase is an abstract base class that provides an interface
+ * for filtering events based on their name or delegate debug index.
+ * Derived classes should implement the filter method to define specific
+ * filtering logic.
+ */
+class EventTracerFilterBase {
+ public:
+  /**
+   * Filters events based on the given name or delegate debug index.
+   *
+   * Note that only one of either the name or delegate_debug_index should be
+   * passed in.
+   *
+   * @param[in] name A pointer to a string representing the `name` of the
+   * event. If `delegate_debug_index` is not set to kUnsetDebugHandle, `name`
+   * should be set to nullptr.
+   *
+   * @param[in] delegate_debug_index A DebugHandle representing the debug index
+   * of the delegate. If `name` is not nullptr, this should be set to
+   * kUnsetDebugHandle.
+   *
+   * @return A Result<bool> indicating whether the event matches the filter
+   * criteria.
+   *         - True if the event matches the filter.
+   *         - False if the event does not match or is unknown.
+   *         - An error code if an error occurs during filtering.
+   */
+  virtual Result<bool> filter(char* name, DebugHandle delegate_debug_index);
+
+  /**
+   * Virtual destructor for the EventTracerFilterBase class.
+   * Ensures proper cleanup of derived class objects.
+   */
+  virtual ~EventTracerFilterBase();
 };
 
 /**
@@ -442,6 +480,12 @@ class EventTracer {
       EventTracerProfilingLevel profiling_level) {
     event_tracer_profiling_level_ = profiling_level;
   }
+
+  /**
+   * Set the filter of event tracer for delegation intermediate outputs.
+   */
+  void set_delegation_intermediate_output_filter(
+      EventTracerFilterBase* event_tracer_filter);
 
   /**
    * Return the current level of event tracer profiling.

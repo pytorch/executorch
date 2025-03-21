@@ -44,7 +44,7 @@ def _replace_linear_with_linear_8da4w_for_pre_quantization(
             # pyre-fixme[6]: For 2nd argument expected `int` but got `Union[Module,
             #  Tensor]`.
             child.out_features,
-            bias=False,
+            bias=child.bias is not None,
             device=child.weight.device,
             groupsize=group_size,
             precision=precision,

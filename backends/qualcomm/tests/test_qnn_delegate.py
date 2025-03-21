@@ -73,7 +73,7 @@ from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 
-# from executorch.examples.models.wav2letter import Wav2LetterModel
+from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import disable_validation
 from executorch.exir.passes import PassManager
@@ -310,6 +310,33 @@ class TestQNNFloatingPointOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
+    def test_qnn_backend_element_wise_or(self):
+        test_comb = [
+            {
+                QCOM_MODULE: OrBitWise(  # noqa: F405
+                    torch.tensor(1.7), torch.tensor(0.2)
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([1, 0, 1, 0], dtype=torch.bool),
+                    torch.tensor([1, 1, 0, 0], dtype=torch.bool),
+                ),
+            },
+            {
+                QCOM_MODULE: OrOperator(  # noqa: F405
+                    torch.tensor(1.5), torch.tensor(-1.2)
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.full((3, 3), 1).triu(),
+                    torch.full((3, 3), 1).tril(diagonal=0),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
     def test_qnn_backend_element_wise_sqrt(self):
         modules = [Sqrt(), SqrtConstant()]  # noqa: F405
         for i, module in enumerate(modules):
@@ -442,9 +469,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index(self):
-        module = Index()  # noqa: F405
+        modules = [Index(0), Index(1), Index(2)]  # noqa: F405
         sample_input = (torch.randn([8, 172, 64]),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index_put(self):
         module = IndexPut()  # noqa: F405
@@ -473,6 +502,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         # TODO: Fix op not supported KeyError: 'aten.randn.default'
         module = ResizeNearest2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_scale_factor(self):
+        module = UpsampleNearest2D(scale_factor=2)  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_size(self):
+        module = UpsampleNearest2D(sizes=(144, 208))  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
@@ -907,8 +946,7 @@ class TestQNNFloatingPointModel(TestQNN):
             # Fail during lowering Reopen once resolved
             # MobileBertModelExample(),
             # TorchVisionViTModel(),
-            # Encountered undefined symbol in mainline. Reopen once resolved.
-            # Wav2LetterModel(),
+            Wav2LetterModel(),
         ]
         expected_partitions = [
             1,
@@ -917,8 +955,8 @@ class TestQNNFloatingPointModel(TestQNN):
             1,
             1,
             1,
-            1,
-            1,
+            # 1,
+            # 1,
             1,
         ]
         # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
@@ -1247,6 +1285,34 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
+    def test_qnn_backend_element_wise_or(self):
+        test_comb = [
+            {
+                QCOM_MODULE: OrBitWise(  # noqa: F405
+                    torch.tensor(1.7), torch.tensor(0.2)
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([1, 0, 1, 0], dtype=torch.bool),
+                    torch.tensor([1, 1, 0, 0], dtype=torch.bool),
+                ),
+            },
+            {
+                QCOM_MODULE: OrOperator(  # noqa: F405
+                    torch.tensor(1.5), torch.tensor(-1.2)
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.full((3, 3), 1).triu(),
+                    torch.full((3, 3), 1).tril(diagonal=0),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
+
     def test_qnn_backend_element_wise_sqrt(self):
         modules = [Sqrt(), SqrtConstant()]  # noqa: F405
         for i, module in enumerate(modules):
@@ -1393,10 +1459,12 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index(self):
-        module = Index()  # noqa: F405
+        modules = [Index(0), Index(1), Index(2)]  # noqa: F405
         sample_input = (torch.randn([8, 172, 64]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index_put(self):
         module = IndexPut()  # noqa: F405
@@ -1428,6 +1496,18 @@ class TestQNNQuantizedOperator(TestQNN):
         # TODO: Fix op not supported KeyError: 'aten.randn.default'
         module = ResizeNearest2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_scale_factor(self):
+        module = UpsampleNearest2D(scale_factor=2)  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_size(self):
+        module = UpsampleNearest2D(sizes=(144, 208))  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1962,12 +2042,11 @@ class TestQNNQuantizedModel(TestQNN):
                 QCOM_ANNOTATION: (),
                 QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
-            # Encountered undefined symbol in mainline. Reopen once resolved.
-            # {
-            #     QCOM_MODULE: Wav2LetterModel(),
-            #     QCOM_ANNOTATION: (),
-            #     QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
-            # },
+            {
+                QCOM_MODULE: Wav2LetterModel(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
+            },
         ]
         expected_partitions = [
             1,
@@ -1979,7 +2058,7 @@ class TestQNNQuantizedModel(TestQNN):
             # For MobileBertModelExample
             # 1,
             1,
-            # 1, For Wav2LetterModel
+            1,
         ]
         # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
         disable_validation()

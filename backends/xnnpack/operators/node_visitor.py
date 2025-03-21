@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
+import hashlib
 
 from typing import cast, Dict, List, Optional, Tuple
 
@@ -38,7 +39,11 @@ from executorch.backends.xnnpack.utils.utils import (
     PERM_NCHW_TO_NHWC,
 )
 
-from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
+from executorch.backends.xnnpack.utils.xnnpack_constants import (
+    UINT64_MAX,
+    XNN_INVALID_VALUE_ID,
+)
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from torch.export import ExportedProgram
 
 XNN_TYPE_MAP = {
@@ -46,8 +51,6 @@ XNN_TYPE_MAP = {
 }
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
-    _aligned_size,
-    _pad_to,
     CONSTANT_TENSOR_ALIGNMENT,
 )
 
@@ -86,11 +89,11 @@ class NodeVisitor:
         self,
         exported_program: ExportedProgram,
         external_ids: Dict,
-        constant_data_bytes: bytearray,
+        named_data_store: NamedDataStore,
     ) -> None:
         self._external_ids = external_ids or {}
         self._exported_program = exported_program or None
-        self._constant_data_bytes = constant_data_bytes
+        self._named_data_store = named_data_store
 
     @property
     def external_ids(self) -> Dict:
@@ -573,17 +576,26 @@ class NodeVisitor:
         if quant_params is not None and quant_params.is_qc4w:
             const_val = self.convert_to_qc4w(const_val)
 
-        array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
+        size = const_val.untyped_storage().nbytes()
+        array_type = ctypes.c_char * size
         array = ctypes.cast(
             const_val.untyped_storage().data_ptr(),
             ctypes.POINTER(array_type),
         ).contents
 
-        offset = len(self._constant_data_bytes)
+        check_or_raise(
+            size > 0,
+            f"Serializing constant data node {tensor} but tensor value has no bytes",
+        )
+        sha256_hash = hashlib.sha256(bytes(array))
+        named_key = sha256_hash.hexdigest()
+
         size = const_val.untyped_storage().nbytes()
-        xnn_graph.constant_data.append(ConstantDataOffset(offset=offset, size=size))
-        self._constant_data_bytes.extend(
-            _pad_to(bytes(array), _aligned_size(size, CONSTANT_TENSOR_ALIGNMENT))
+        xnn_graph.constant_data.append(
+            ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
+        )
+        self._named_data_store.add_named_data(
+            named_key, bytes(array), alignment=CONSTANT_TENSOR_ALIGNMENT
         )
 
         return buffer_idx
