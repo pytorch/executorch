@@ -25,6 +25,8 @@ endif()
 
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
 
+set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
+
 # inmemoryfs sources
 set(INMEMORYFS_SOURCES
     runtime/inmemoryfs/inmemory_filesystem.cpp
@@ -223,7 +225,10 @@ if(EXECUTORCH_BUILD_COREML)
 
   pybind11_add_module(executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp)
 
-  target_compile_options(executorchcoreml PRIVATE -mmacosx-version-min=10.15 -g)
+  target_compile_options(executorchcoreml PRIVATE -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET})
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    target_compile_options(executorchcoreml PRIVATE -g)
+  endif()
   target_link_libraries(executorchcoreml PRIVATE coreml_util)
   target_link_libraries(executorchcoreml PRIVATE coreml_inmemoryfs)
 endif()
