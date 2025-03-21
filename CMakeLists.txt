@@ -811,6 +811,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_COREML)
     list(APPEND _dep_libs coremldelegate)
+    list(APPEND _dep_libs coreml_inmemoryfs_pybinding)
   endif()
 
   if(EXECUTORCH_BUILD_MPS)
@@ -935,6 +936,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   if(EXECUTORCH_BUILD_COREML)
     list(APPEND _executor_runner_libs coremldelegate)
+    list(APPEND _executor_runner_libs coreml_inmemoryfs_pybinding)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
