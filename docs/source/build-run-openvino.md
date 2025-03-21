@@ -92,7 +92,7 @@ The exported model will be saved as 'resnet50.pte' in the current directory.
 
 After building the OpenVINO backend following the [instructions](#setup) above, the executable will be saved in `<executorch_root>/cmake-out/backends/openvino/`.
 
-Now, run the example using the executable generated in the above step. The executable requires a model file (`.pte` file generated in the aot step), number of inference executions.
+The executable requires a model file (`.pte` file generated in the aot step) and the number of inference executions.
 
 #### Example Usage
 
