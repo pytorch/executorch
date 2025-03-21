@@ -67,6 +67,3 @@
 [submodule "shim"]
 	path = shim
 	url = https://github.com/facebook/buck2-shims-meta
-[submodule "backends/apple/coreml/third-party/json"]
-	path = backends/apple/coreml/third-party/json
-	url = https://github.com/nlohmann/json.git
