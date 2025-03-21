@@ -102,6 +102,16 @@ class QuantParams:
             assert group_size > 0, "Group size must be greater than 0"
         self.is_per_channel_group = self.per_channel and self.group_size > 0
 
+        if per_channel and not self.is_per_channel_group:
+            tensor = q_input.meta["val"]
+            assert (
+                tensor.shape[self.axis] == cast(torch.Tensor, self.scale).shape[0]
+            ), f"Invalid size of per channel quantization scales, axis: {self.axis}, scale size: {self.scale.shape}, tensor shape: {tensor.shape}"
+
+            assert (
+                tensor.shape[self.axis] == cast(torch.Tensor, self.zp).shape[0]
+            ), f"Invalid size of per channel quantization zero-points, axis: {self.axis}, zp size: {self.zp.shape}, tensor shape: {tensor.shape}"
+
     def quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         # Do nothing if already quantized by the Quantizer
         if tensor.dtype == self.dtype:

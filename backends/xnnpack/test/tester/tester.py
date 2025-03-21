@@ -306,9 +306,8 @@ class ToEdgeTransformAndLower(Stage):
         self.edge_dialect_program = None
 
     def run(self, artifact: ExportedProgram, inputs=None) -> None:
-        artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
-            artifact_to_run,
+            artifact,
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
         )
