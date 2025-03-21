@@ -64,7 +64,7 @@ install_pytorch_and_domains() {
 
   SYSTEM_NAME=$(uname)
   # The platform version needs to match MACOSX_DEPLOYMENT_TARGET used to build the wheel
-  PLATFORM=$(python -c 'import sysconfig; platform=sysconfig.get_platform(); platform[1]="14_0"; print("_".join(platform))')
+  PLATFORM=$(python -c 'import sysconfig; platform=sysconfig.get_platform().split("-"); platform[1]="14_0"; print("_".join(platform))')
   PYTHON_VERSION=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
   TORCH_RELEASE=$(cat version.txt)
   TORCH_SHORT_HASH=${TORCH_VERSION:0:7}
