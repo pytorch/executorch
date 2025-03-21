@@ -20,7 +20,8 @@ runtime/inmemoryfs/build/
 runtime/test/models/
 runtime/sdk/format/
 runtime/include/executorch/
-third-party/
+third-party/coremltools/
+third-party/nlohmann_json/
 
 xcode-build/
 
