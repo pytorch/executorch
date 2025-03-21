@@ -1,1 +1,1 @@
-packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"l":"org.pytorch.executorch"},{"l":"org.pytorch.executorch.annotations"}];updateSearchResults();
+packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"l":"org.pytorch.executorch"},{"l":"org.pytorch.executorch.annotations"},{"l":"org.pytorch.executorch.extension.llm"}];updateSearchResults();
