@@ -509,195 +509,198 @@
               
   <div class="section" id="core-ml-backend">
 <h1>Core ML Backend<a class="headerlink" href="#core-ml-backend" title="Permalink to this heading">¶</a></h1>
-<p>Core ML delegate uses Core ML APIs to enable running neural networks via Apple’s hardware acceleration. For more about Core ML you can read <a class="reference external" href="https://developer.apple.com/documentation/coreml">here</a>. In this tutorial, we will walk through the steps of lowering a PyTorch model to Core ML delegate</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn in this tutorial:</div>
+<p>Core ML delegate is the ExecuTorch solution to take advantage of Apple’s <a class="reference external" href="https://developer.apple.com/documentation/coreml">CoreML framework</a> for on-device ML.  With CoreML, a model can run on CPU, GPU, and the Apple Neural Engine (ANE).</p>
+<div class="section" id="features">
+<h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p class="sd-card-text">In this tutorial you will learn how to export <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model so that it runs on Core ML backend.</p></li>
-<li><p class="sd-card-text">You will also learn how to deploy and run the exported model on a supported Apple device.</p></li>
+<li><p>Dynamic dispatch to the CPU, GPU, and ANE.</p></li>
+<li><p>Supports fp32 and fp16 computation.</p></li>
 </ul>
 </div>
-</div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Tutorials we recommend you complete before this:</div>
+<div class="section" id="target-requirements">
+<h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Permalink to this heading">¶</a></h2>
+<p>Below are the minimum OS requirements on various hardware for running a CoreML-delegated ExecuTorch model:</p>
 <ul class="simple">
-<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">ExecuTorch iOS Demo App</span></a></p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0</p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/ios/">iOS</a> &gt;= 16.0</p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/ipados/">iPadOS</a> &gt;= 16.0</p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/tvos/">tvOS</a> &gt;= 16.0</p></li>
 </ul>
 </div>
-</div>
-</div>
-</div>
-</div>
-<div class="section" id="prerequisites-hardware-and-software">
-<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
-<p>In order to be able to successfully build and run the ExecuTorch’s Core ML backend you’ll need the following hardware and software components.</p>
-<div class="section" id="hardware">
-<h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="development-requirements">
+<h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Permalink to this heading">¶</a></h2>
+<p>To develop you need:</p>
 <ul class="simple">
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/">mac</a> system for building.</p></li>
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/">mac</a> or <a class="reference external" href="https://www.apple.com/iphone/">iPhone</a> or <a class="reference external" href="https://www.apple.com/ipad/">iPad</a> or <a class="reference external" href="https://www.apple.com/tv-home/">Apple TV</a> device for running the model.</p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0.</p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/documentation/xcode">Xcode</a> &gt;= 14.1</p></li>
 </ul>
-</div>
-<div class="section" id="software">
-<h3>Software:<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><a class="reference external" href="https://developer.apple.com/documentation/xcode">Xcode</a> &gt;= 14.1, <a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0 for building.</p></li>
-<li><p><a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0, <a class="reference external" href="https://developer.apple.com/ios/">iOS</a> &gt;= 16.0, <a class="reference external" href="https://developer.apple.com/ipados/">iPadOS</a> &gt;= 16.0, and <a class="reference external" href="https://developer.apple.com/tvos/">tvOS</a> &gt;= 16.0 for running the model.</p></li>
-</ul>
-</div>
-</div>
-<div class="section" id="setting-up-your-developer-environment">
-<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic simple">
-<li><p>Make sure that you have completed the ExecuTorch setup tutorials linked to at the top of this page and setup the environment.</p></li>
-<li><p>Run <code class="docutils literal notranslate"><span class="pre">install_requirements.sh</span></code> to install dependencies required by the <strong>Core ML</strong> backend.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./backends/apple/coreml/scripts/install_requirements.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="3">
-<li><p>Install <a class="reference external" href="https://developer.apple.com/xcode/">Xcode</a>.</p></li>
-<li><p>Install Xcode Command Line Tools.</p></li>
-</ol>
+<p>Before starting, make sure you install the Xcode Command Line Tools:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>xcode-select<span class="w"> </span>--install
 </pre></div>
 </div>
+<p>Finally you must install the CoreML backend by running the following script:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>sh<span class="w"> </span>./backends/apple/coreml/scripts/install_requirements.sh
+</pre></div>
 </div>
-<div class="section" id="build">
-<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="aot-ahead-of-time-components">
-<h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
-<p><strong>Exporting a Core ML delegated Program</strong>:</p>
+</div>
+<hr class="docutils" />
+<div class="section" id="using-the-coreml-backend">
+<h2>Using the CoreML Backend<a class="headerlink" href="#using-the-coreml-backend" title="Permalink to this heading">¶</a></h2>
+<p>To target the CoreML backend during the export and lowering process, pass an instance of the <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. The example below demonstrates this process using the MobileNet V2 model from torchvision.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.partition</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">CoreMLPartitioner</span><span class="p">()],</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;mv2_coreml.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">et_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="section" id="partitioner-api">
+<h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
+<p>The CoreML partitioner API allows for configuration of the model delegation to CoreML. Passing an <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the CoreML backend with default settings. This is the most common use-case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/partition/coreml_partitioner.py#L60">constructor</a>:</p>
 <ul class="simple">
-<li><p>In this step, you will lower the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the Core ML backend and export the ExecuTorch program. You’ll then deploy and run the exported program on a supported Apple device using Core ML backend.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">skip_ops_for_coreml_delegation</span></code>: Allows you to skip ops for delegation by CoreML.  By default, all ops that CoreML supports will be delegated.  See <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/test/test_coreml_partitioner.py#L42">here</a> for an example of skipping an op for delegation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compile_specs</span></code>: A list of CompileSpec for the CoreML backend.  These control low-level details of CoreML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code>: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to <a class="reference external" href="https://developer.apple.com/documentation/coreml/mlstate">CoreML MLState</a>.  If set to false, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the CoreML lowered module under the hood.  Generally setting take_over_mutable_buffer to true will result in better performance, but using MLState requires iOS &gt;= 18.0, macOS &gt;= 15.0, and XCode &gt;= 16.0.</p></li>
 </ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-
-<span class="c1"># Generates ./mv3_coreml_all.pte file.</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.scripts.export<span class="w"> </span>--model_name<span class="w"> </span>mv3
-</pre></div>
-</div>
+<div class="section" id="coreml-compilespec">
+<h4>CoreML CompileSpec<a class="headerlink" href="#coreml-compilespec" title="Permalink to this heading">¶</a></h4>
+<p>A list of CompileSpec is constructed with <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L210">CoreMLBackend.generate_compile_specs</a>.  Below are the available options:</p>
 <ul class="simple">
-<li><p>Core ML backend uses <a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/overview-coremltools.html">coremltools</a> to lower <a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc">Edge dialect</span></a> to Core ML format and then bundles it in the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compute_unit</span></code>: this controls the compute units (CPU, GPU, ANE) that are used by CoreML.  The default value is coremltools.ComputeUnit.ALL.  The available options from coremltools are:</p>
+<ul>
+<li><p>coremltools.ComputeUnit.ALL (uses the CPU, GPU, and ANE)</p></li>
+<li><p>coremltools.ComputeUnit.CPU_ONLY (uses the CPU only)</p></li>
+<li><p>coremltools.ComputeUnit.CPU_AND_GPU (uses both the CPU and GPU, but not the ANE)</p></li>
+<li><p>coremltools.ComputeUnit.CPU_AND_NE (uses both the CPU and ANE, but not the GPU)</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minimum_deployment_target</span></code>: The minimum iOS deployment target (e.g., coremltools.target.iOS18).  The default value is coremltools.target.iOS15.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compute_precision</span></code>: The compute precision used by CoreML (coremltools.precision.FLOAT16, coremltools.precision.FLOAT32).  The default value is coremltools.precision.FLOAT16.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">model_type</span></code>: Whether the model should be compiled to the CoreML <a class="reference external" href="https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device">mlmodelc format</a> during .pte creation (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</a>), or whether it should be compiled to mlmodelc on device (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70">CoreMLBackend.MODEL_TYPE.MODEL</a>).  Using CoreMLBackend.MODEL_TYPE.COMPILED_MODEL and doing compilation ahead of time should improve the first time on-device model load time.</p></li>
 </ul>
 </div>
-<div class="section" id="runtime">
-<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
-<p><strong>Running a Core ML delegated Program</strong>:</p>
+</div>
+<div class="section" id="testing-the-model">
+<h3>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h3>
+<p>After generating the CoreML-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See <a class="reference internal" href="using-executorch-export.html#testing-the-model"><span class="std std-doc">Testing the Model</span></a> for more information.</p>
+</div>
+<hr class="docutils" />
+<div class="section" id="quantization">
+<h3>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h3>
+<p>To quantize a PyTorch model for the CoreML backend, use the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, and the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code> is configured to quantize models to leverage the available quantization for the CoreML backend.</p>
+</div>
+<div class="section" id="bit-quantization-using-the-pt2e-flow">
+<h3>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Permalink to this heading">¶</a></h3>
+<p>To perform 8-bit quantization with the PT2E flow, perform the following steps:</p>
 <ol class="arabic simple">
-<li><p>Build the runner.</p></li>
+<li><p>Define <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig">coremltools.optimize.torch.quantization.LinearQuantizerConfig</a> and use to to create an instance of a <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export_for_training</span></code> to export a graph module that will be prepared for quantization.</p></li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
+<li><p>For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
+<li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
+<li><p>Export and lower the model using the standard flow.</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<p>The output of <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> is a PyTorch model which can be exported and lowered using the normal flow. As it is a regular PyTorch model, it can also be used to evaluate the accuracy of the quantized model using standard PyTorch techniques.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">coremltools</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ct</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLQuantizer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.partition</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.apple.coreml.compiler</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoreMLBackend</span>
 
-<span class="c1"># Builds `coreml_executor_runner`.</span>
-./examples/apple/coreml/scripts/build_executor_runner.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Run the CoreML delegated program.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
-<span class="c1"># Runs the exported mv3 model using the Core ML backend.</span>
-./coreml_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>mv3_coreml_all.pte
-</pre></div>
-</div>
-<p><strong>Profiling a Core ML delegated Program</strong>:</p>
-<p>Note that profiling is supported on <a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 14.4.</p>
-<ol class="arabic simple">
-<li><p>[Optional] Generate an <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> when exporting your model.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<span class="c1"># Step 1: Define a LinearQuantizerConfig and create an instance of a CoreMLQuantizer</span>
+<span class="n">quantization_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="o">.</span><span class="n">from_dict</span><span class="p">(</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;global_config&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;quantization_scheme&quot;</span><span class="p">:</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">QuantizationScheme</span><span class="o">.</span><span class="n">symmetric</span><span class="p">,</span>
+            <span class="s2">&quot;milestones&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span>
+            <span class="s2">&quot;activation_dtype&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">quint8</span><span class="p">,</span>
+            <span class="s2">&quot;weight_dtype&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
+            <span class="s2">&quot;weight_per_channel&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">quantization_config</span><span class="p">)</span>
 
-<span class="c1"># Generates `mv3_coreml_all.pte` and `mv3_coreml_etrecord.bin` files.</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.scripts.export<span class="w"> </span>--model_name<span class="w"> </span>mv3<span class="w"> </span>--generate_etrecord
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Build the runner.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Builds `coreml_executor_runner`.</span>
-./examples/apple/coreml/scripts/build_executor_runner.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="3">
-<li><p>Run and generate an <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump</span></a>.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<span class="c1"># Step 2: Export the model for training</span>
+<span class="n">training_gm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
 
-<span class="c1"># Generate the ETDump file.</span>
-./coreml_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>mv3_coreml_all.pte<span class="w"> </span>--profile_model<span class="w"> </span>--etdump_path<span class="w"> </span>etdump.etdp
-</pre></div>
-</div>
-<ol class="arabic simple" start="4">
-<li><p>Create an instance of the <a class="reference internal" href="model-inspector.html"><span class="doc std std-doc">Inspector API</span></a> by passing in the <a class="reference internal" href="etdump.html"><span class="doc std std-doc">ETDump</span></a> you have sourced from the runtime along with the optionally generated <a class="reference internal" href="etrecord.html"><span class="doc std std-doc">ETRecord</span></a> from step 1 or execute the following command in your terminal to display the profiling data table.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>examples/apple/coreml/scripts/inspector_cli.py<span class="w"> </span>--etdump_path<span class="w"> </span>etdump.etdp<span class="w"> </span>--etrecord_path<span class="w"> </span>mv3_coreml.bin
-</pre></div>
-</div>
-</div>
-</div>
-<div class="section" id="deploying-and-running-on-a-device">
-<h2>Deploying and running on a device<a class="headerlink" href="#deploying-and-running-on-a-device" title="Permalink to this heading">¶</a></h2>
-<p><strong>Running the Core ML delegated Program in the Demo iOS App</strong>:</p>
-<ol class="arabic simple">
-<li><p>Please follow the <a class="reference internal" href="demo-apps-ios.html#models-and-labels"><span class="std std-doc">Export Model</span></a> step of the tutorial to bundle the exported <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> program. You only need to do the Core ML part.</p></li>
-<li><p>Complete the <span class="xref myst">Build Runtime and Backends</span> section of the tutorial. When building the frameworks you only need the <code class="docutils literal notranslate"><span class="pre">coreml</span></code> option.</p></li>
-<li><p>Complete the <a class="reference internal" href="demo-apps-ios.html#final-steps"><span class="std std-doc">Final Steps</span></a> section of the tutorial to build and run the demo app.</p></li>
-</ol>
-<p><br><strong>Running the Core ML delegated Program in your App</strong></p>
-<ol class="arabic simple">
-<li><p>Build frameworks, running the following will create a <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> and <code class="docutils literal notranslate"><span class="pre">coreml_backend.xcframework</span></code> in the <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> directory.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./build/build_apple_frameworks.sh<span class="w"> </span>--coreml
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Create a new <a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-an-xcode-project-for-an-app#">Xcode project</a> or open an existing project.</p></li>
-<li><p>Drag the <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> and <code class="docutils literal notranslate"><span class="pre">coreml_backend.xcframework</span></code> generated from Step 2 to Frameworks.</p></li>
-<li><p>Go to the project’s <a class="reference external" href="https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target">Build Phases</a> -  Link Binaries With Libraries, click the + sign, and add the following frameworks:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">executorch</span><span class="o">.</span><span class="n">xcframework</span>
-<span class="n">coreml_backend</span><span class="o">.</span><span class="n">xcframework</span>
-<span class="n">Accelerate</span><span class="o">.</span><span class="n">framework</span>
-<span class="n">CoreML</span><span class="o">.</span><span class="n">framework</span>
-<span class="n">libsqlite3</span><span class="o">.</span><span class="n">tbd</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="5">
-<li><p>Add the exported program to the <a class="reference external" href="https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product">Copy Bundle Phase</a> of your Xcode target.</p></li>
-<li><p>Please follow the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Runtime APIs Tutorial</span></a> to integrate the code for loading an ExecuTorch program.</p></li>
-<li><p>Update the code to load the program from the Application’s bundle.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-objective-c"><div class="highlight"><pre><span></span><span class="bp">NSURL</span><span class="w"> </span><span class="o">*</span><span class="n">model_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">NBundle</span><span class="p">.</span><span class="n">mainBundle</span><span class="w"> </span><span class="n">URLForResource</span><span class="o">:</span><span class="s">@&quot;mv3_coreml_all&quot;</span><span class="w"> </span><span class="n">extension</span><span class="o">:</span><span class="s">@&quot;pte&quot;</span><span class="p">];</span>
+<span class="c1"># Step 3: Prepare the model for quantization</span>
+<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_gm</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
 
-<span class="n">Result</span><span class="o">&lt;</span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loader</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">::</span><span class="n">from</span><span class="p">(</span><span class="n">model_url</span><span class="p">.</span><span class="n">path</span><span class="p">.</span><span class="n">UTF8String</span><span class="p">);</span>
+<span class="c1"># Step 4: Calibrate the model on representative data</span>
+<span class="c1"># Replace with your own calibration data</span>
+<span class="k">for</span> <span class="n">calibration_sample</span> <span class="ow">in</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)]:</span>
+	<span class="n">prepared_model</span><span class="p">(</span><span class="n">calibration_sample</span><span class="p">)</span>
+
+<span class="c1"># Step 5: Convert the calibrated model to a quantized model</span>
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
+
+<span class="c1"># Step 6: Export the quantized model to CoreML</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span>
+        <span class="n">CoreMLPartitioner</span><span class="p">(</span>
+             <span class="c1"># iOS17 is required for the quantized ops in this example</span>
+            <span class="n">compile_specs</span><span class="o">=</span><span class="n">CoreMLBackend</span><span class="o">.</span><span class="n">generate_compile_specs</span><span class="p">(</span>
+                <span class="n">minimum_deployment_target</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">iOS17</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+    <span class="p">],</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
 </div>
-<ol class="arabic simple" start="8">
-<li><p>Use <a class="reference external" href="https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app">Xcode</a> to deploy the application on the device.</p></li>
-<li><p>The application can now run the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model on the Core ML backend.</p></li>
-</ol>
-<p><br>In this tutorial, you have learned how to lower the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the Core ML backend, deploy, and run it on an Apple device.</p>
+<p>See <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
 </div>
-<div class="section" id="frequently-encountered-errors-and-resolution">
-<h2>Frequently encountered errors and resolution.<a class="headerlink" href="#frequently-encountered-errors-and-resolution" title="Permalink to this heading">¶</a></h2>
-<p>If you encountered any bugs or issues following this tutorial please file a bug/issue <a class="reference external" href="https://github.com/pytorch/executorch/issues">here</a> with tag #coreml.</p>
+</div>
+<hr class="docutils" />
+<div class="section" id="runtime-integration">
+<h2>Runtime integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
+<p>To run the model on-device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="getting-started.html#running-on-device"><span class="std std-doc">Running on Device</span></a> for more information, including building the iOS frameworks.</p>
+<p>When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_COREML=ON</span></code> when configuring the CMake build to compile the CoreML backend.</p>
+<p>To link against the <code class="docutils literal notranslate"><span class="pre">coremldelegate</span></code> target. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
+<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
+<span class="o">...</span>
+<span class="n">target_link_libraries</span><span class="p">(</span>
+    <span class="n">my_target</span>
+    <span class="n">PRIVATE</span> <span class="n">executorch</span>
+    <span class="n">executorch_module_static</span>
+    <span class="n">executorch_tensor</span>
+    <span class="n">optimized_native_cpu_ops_lib</span>
+    <span class="n">coremldelegate</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>No additional steps are necessary to use the backend beyond linking the target. A CoreML-delegated .pte file will automatically run on the registered backend.</p>
+</div>
+<hr class="docutils" />
+<div class="section" id="advanced">
+<h2>Advanced<a class="headerlink" href="#advanced" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="extracting-the-mlpackage">
+<h3>Extracting the mlpackage<a class="headerlink" href="#extracting-the-mlpackage" title="Permalink to this heading">¶</a></h3>
+<p><a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/convert-to-ml-program.html#save-ml-programs-as-model-packages">CoreML *.mlpackage files</a> can be extracted from a CoreML-delegated *.pte file.  This can help with debugging and profiling for users who are more familiar with *.mlpackage files:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>examples/apple/coreml/scripts/extract_coreml_models.py<span class="w"> </span>-m<span class="w"> </span>/path/to/model.pte
+</pre></div>
+</div>
+<p>Note that if the ExecuTorch model has graph breaks, there may be multiple extracted *.mlpackage files.</p>
+</div>
 </div>
 </div>
 
@@ -747,19 +750,24 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Core ML Backend</a><ul>
-<li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
-<li><a class="reference internal" href="#hardware">Hardware:</a></li>
-<li><a class="reference internal" href="#software">Software:</a></li>
+<li><a class="reference internal" href="#features">Features</a></li>
+<li><a class="reference internal" href="#target-requirements">Target Requirements</a></li>
+<li><a class="reference internal" href="#development-requirements">Development Requirements</a></li>
+<li><a class="reference internal" href="#using-the-coreml-backend">Using the CoreML Backend</a><ul>
+<li><a class="reference internal" href="#partitioner-api">Partitioner API</a><ul>
+<li><a class="reference internal" href="#coreml-compilespec">CoreML CompileSpec</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#setting-up-your-developer-environment">Setting up your developer environment</a></li>
-<li><a class="reference internal" href="#build">Build</a><ul>
-<li><a class="reference internal" href="#aot-ahead-of-time-components">AOT (Ahead-of-time) components:</a></li>
-<li><a class="reference internal" href="#runtime">Runtime:</a></li>
+<li><a class="reference internal" href="#testing-the-model">Testing the Model</a></li>
+<li><a class="reference internal" href="#quantization">Quantization</a></li>
+<li><a class="reference internal" href="#bit-quantization-using-the-pt2e-flow">8-bit Quantization using the PT2E Flow</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#deploying-and-running-on-a-device">Deploying and running on a device</a></li>
-<li><a class="reference internal" href="#frequently-encountered-errors-and-resolution">Frequently encountered errors and resolution.</a></li>
+<li><a class="reference internal" href="#runtime-integration">Runtime integration</a></li>
+<li><a class="reference internal" href="#advanced">Advanced</a><ul>
+<li><a class="reference internal" href="#extracting-the-mlpackage">Extracting the mlpackage</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
