@@ -904,6 +904,11 @@
         <span class="n">tagged_exported_program</span><span class="p">,</span>
     <span class="p">)</span>
 
+    <span class="c1"># Partitioner added delegation tags to the graph module nodes,</span>
+    <span class="c1"># we make sure to remove them after we finished partition_and_lower</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
     <span class="k">return</span> <span class="n">ExportedProgram</span><span class="p">(</span>
         <span class="n">root</span><span class="o">=</span><span class="n">tagged_graph_module</span><span class="p">,</span>
         <span class="n">graph</span><span class="o">=</span><span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
