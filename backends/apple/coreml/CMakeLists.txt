@@ -1,4 +1,9 @@
 # Copyright © 2023 Apple Inc. All rights reserved.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 cmake_minimum_required(VERSION 3.19)
 
@@ -7,6 +12,8 @@ project(executorch_coreml_backend)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
+
+enable_language(OBJCXX)
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
@@ -111,12 +118,37 @@ set(PROTOBUF_SOURCES
     runtime/sdk/format/WordTagger.pb.cc
 )
 
+find_library(FOUNDATION_FRAMEWORK Foundation)
+
+# CoreML util
+add_library(coreml_util)
+target_sources(coreml_util PRIVATE ${UTIL_SOURCES})
+target_include_directories(coreml_util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util)
+target_link_libraries(coreml_util PRIVATE ${FOUNDATION_FRAMEWORK})
+
+install(
+  TARGETS coreml_util
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+
+# CoreML inmemoryfs
+add_library(coreml_inmemoryfs)
+target_sources(coreml_inmemoryfs PRIVATE ${INMEMORYFS_SOURCES})
+target_include_directories(coreml_inmemoryfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs)
+target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util ${FOUNDATION_FRAMEWORK})
+
+install(
+  TARGETS coreml_inmemoryfs
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+
 # Define the delegate library
 add_library(coremldelegate)
-target_sources(
-  coremldelegate PRIVATE ${INMEMORYFS_SOURCES} ${KVSTORE_SOURCES}
-                         ${DELEGATE_SOURCES} ${UTIL_SOURCES}
-)
+target_sources(coremldelegate PRIVATE ${KVSTORE_SOURCES} ${DELEGATE_SOURCES})
 
 target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
@@ -125,18 +157,11 @@ target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/kvstore
 )
 target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
-)
-target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
-)
-target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 target_compile_definitions(coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
-target_link_libraries(coremldelegate PRIVATE executorch_core)
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
   target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
@@ -156,13 +181,17 @@ endif()
 
 find_library(ACCELERATE_FRAMEWORK Accelerate)
 find_library(COREML_FRAMEWORK CoreML)
-find_library(FOUNDATION_FRAMEWORK Foundation)
 find_library(SQLITE_LIBRARY sqlite3)
 
 target_link_libraries(
   coremldelegate
-  PRIVATE executorch_core ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
-          ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
+  PRIVATE coreml_util
+          coreml_inmemoryfs
+          executorch_core
+          ${ACCELERATE_FRAMEWORK}
+          ${COREML_FRAMEWORK}
+          ${FOUNDATION_FRAMEWORK}
+          ${SQLITE_LIBRARY}
 )
 
 target_link_options_shared_lib(coremldelegate)

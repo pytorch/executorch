@@ -67,6 +67,8 @@ set(lib_list
     bundled_program
     extension_data_loader
     ${FLATCCRT_LIB}
+    coreml_util
+    coreml_inmemoryfs
     coremldelegate
     mpsdelegate
     neuron_backend
