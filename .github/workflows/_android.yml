@@ -27,6 +27,7 @@ jobs:
         conda activate "${CONDA_ENV}"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+        mkdir -p ${ARTIFACTS_DIR_NAME}/
 
         # Build LLM Demo for Android
         export BUILD_AAR_DIR=aar-out
