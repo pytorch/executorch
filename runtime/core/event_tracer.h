@@ -321,8 +321,12 @@ class EventTracer {
    * based names are used by this delegate to identify ops executed in the
    * backend then kUnsetDebugHandle should be passed in here.
    * @param[in] output The tensor type output to be logged.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the tensor type output was successfully logged.
+   *         - False if the tensor type output was filtered out and not logged.
+   *         - An error code if an error occurs during logging.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const executorch::aten::Tensor& output) = 0;
@@ -341,8 +345,13 @@ class EventTracer {
    * based names are used by this delegate to identify ops executed in the
    * backend then kUnsetDebugHandle should be passed in here.
    * @param[in] output The tensor array type output to be logged.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the tensor array type output was successfully logged.
+   *         - False if the tensor array type output was filtered out and not
+   * logged.
+   *         - An error code if an error occurs during logging.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const ArrayRef<executorch::aten::Tensor> output) = 0;
@@ -361,8 +370,12 @@ class EventTracer {
    * based names are used by this delegate to identify ops executed in the
    * backend then kUnsetDebugHandle should be passed in here.
    * @param[in] output The int type output to be logged.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the int type output was successfully logged.
+   *         - False if the int type output was filtered out and not logged.
+   *         - An error code if an error occurs during logging.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const int& output) = 0;
@@ -381,8 +394,12 @@ class EventTracer {
    * based names are used by this delegate to identify ops executed in the
    * backend then kUnsetDebugHandle should be passed in here.
    * @param[in] output The bool type output to be logged.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the bool type output was successfully logged.
+   *         - False if the bool type output was filtered out and not logged.
+   *         - An error code if an error occurs during logging.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const bool& output) = 0;
@@ -401,8 +418,12 @@ class EventTracer {
    * based names are used by this delegate to identify ops executed in the
    * backend then kUnsetDebugHandle should be passed in here.
    * @param[in] output The double type output to be logged.
+   * @return A Result<bool> indicating the status of the logging operation.
+   *         - True if the double type output was successfully logged.
+   *         - False if the double type output was filtered out and not logged.
+   *         - An error code if an error occurs during logging.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const double& output) = 0;
