@@ -14,11 +14,7 @@ import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.arm.tosa_utils import (
-    get_node_debug_info,
-    getNodeArgs,
-    tosa_shape,
-)
+from executorch.backends.arm.tosa_utils import getNodeArgs, tosa_shape
 from torch.export.exported_program import ExportedProgram
 
 
@@ -36,7 +32,7 @@ def process_call_function(
         output = TosaArg(node)
     except ValueError as e:
         raise ValueError(
-            f"Failed processing call_function:\n{get_node_debug_info(node)}"
+            f"Failed processing call_function: {node.name}. "
             "Is the original torch function supported?"
         ) from e
     tosa_graph.currRegion.currBasicBlock.addTensor(
@@ -74,7 +70,7 @@ def process_inputs(
         tosa_arg = TosaArg(node)
     except ValueError as e:
         raise ValueError(
-            f"Failed processing input placeholder:\n{get_node_debug_info(node)}"
+            f"Failed processing input placeholder: {node.name}. "
             "Is the original torch function supported?"
         ) from e
     input_shape = tosa_arg.shape
@@ -100,7 +96,7 @@ def process_inputs_to_parameters(
         tosa_arg = TosaArg(node)
     except ValueError as e:
         raise ValueError(
-            f"Failed processing parameter placeholder:\n{get_node_debug_info(node)}"
+            f"Failed processing parameter placeholder: {node.name}. "
             "Is the original torch function supported?"
         ) from e
     parameter_name = edge_program.graph_signature.inputs_to_parameters[tosa_arg.name]
@@ -129,7 +125,7 @@ def process_inputs_to_buffers(
         tosa_arg = TosaArg(node)
     except ValueError as e:
         raise ValueError(
-            f"Failed processing buffer placeholder:\n{get_node_debug_info(node)}"
+            f"Failed processing buffer placeholder: {node.name}. "
             "Is the original torch function supported?"
         ) from e
     buffer_name = edge_program.graph_signature.inputs_to_buffers[node.name]
@@ -157,7 +153,7 @@ def process_inputs_to_lifted_tensor_constants(
         tosa_arg = TosaArg(node)
     except ValueError as e:
         raise ValueError(
-            f"Failed processing lifted tensor constant placeholder:\n{get_node_debug_info(node)}"
+            f"Failed processing lifted tensor constant placeholder: {node.name}. "
             "Is the original torch function supported?"
         ) from e
     tensor_name = edge_program.graph_signature.inputs_to_lifted_tensor_constants[
