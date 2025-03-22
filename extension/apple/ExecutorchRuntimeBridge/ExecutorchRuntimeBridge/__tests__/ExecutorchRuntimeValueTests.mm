@@ -31,9 +31,11 @@ using torch::executor::ScalarType;
 
   ExecutorchRuntimeTensorValue *tensorValue = [[ExecutorchRuntimeTensorValue alloc] initWithFloatArray:data shape:shape];
 
-  const auto tuple = [tensorValue floatRepresentationAndReturnError:nil];
-  XCTAssertEqualObjects(tuple.floatArray, data);
-  XCTAssertEqualObjects(tuple.shape, shape);
+  const auto floatArray = [tensorValue floatArrayAndReturnError:nil];
+  const auto shapeArray = [tensorValue shape];
+
+  XCTAssertEqualObjects(floatArray, data);
+  XCTAssertEqualObjects(shapeArray, shape);
 }
 
 - (void)testTensorValueWithFloatArrayWithError
