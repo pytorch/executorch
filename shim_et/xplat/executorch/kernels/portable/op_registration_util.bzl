@@ -483,6 +483,13 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_elu",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
         name = "op_embedding",
         deps = [
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
