@@ -23,7 +23,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -118,7 +118,7 @@ include(cmake/Dependencies.cmake)
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
 target_link_libraries(
-  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema
+  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema extension_threadpool
 )
 
 target_include_directories(
@@ -144,6 +144,10 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   list(APPEND xnn_executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
+endif()
+
+if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
+  list(APPEND xnn_executor_runner_libs quantized_ops_lib)
 endif()
 
 list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)

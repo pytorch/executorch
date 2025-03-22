@@ -41,7 +41,7 @@ else()
 endif()
 
 # Required to enable linking with --whole-archive
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 function(gen_vulkan_shader_lib_cpp shaders_path)
   set(VULKAN_SHADERGEN_ENV "")

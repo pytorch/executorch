@@ -322,6 +322,8 @@ def lift_constant_tensor_pass(ep):
             new_input_specs.extend(lifted_constants)
             lifted_constants.clear()
         new_input_specs.append(s)
+    if len(lifted_constants) > 0:
+        new_input_specs = lifted_constants + new_input_specs
     ep.graph_signature.input_specs = new_input_specs
     ep.graph_module.recompile()
     return ep
@@ -993,17 +995,22 @@ def _remove_invalid_ops_for_not_decompose(
 
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
-        if native_schema.is_mutable:
+        if native_schema is None:
             logging.warn(
-                f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
+                f"Torchgen is not able to parse the schema of {op._schema}.  This is not fatal."
             )
-            return False
+        else:
+            if native_schema.is_mutable:
+                logging.warn(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
+                )
+                return False
 
-        if native_schema.aliased_return_names() != [None]:
-            logging.warn(
-                f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
-            )
-            return False
+            if native_schema.aliased_return_names() != [None]:
+                logging.warn(
+                    f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
+                )
+                return False
 
         # Explicit block list of ops that don't work if asked for
         # preservation
@@ -1094,6 +1101,33 @@ def _gen_edge_manager_for_partitioners(
         list(set().union(*ops_set_to_not_decompose_by_program.values())),
     )
     return edge_manager
+
+
+def collect_named_data_store_from_exported_program(
+    exported_program: ExportedProgram,
+    named_data_store: NamedDataStore,
+) -> None:
+    """
+    Collects all the named data store outputs found within the exported program
+    and adds them to named_data_store.
+    """
+
+    # collected all the named data into the named data store for deduplication
+    def collect_named_data_store_outputs(
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        for node in graph_module.graph.nodes:
+            if node.target == executorch_call_delegate:
+                lbm = getattr(graph_module, node.args[0].target)
+                assert is_lowered_module(lbm)
+                data_store_output = lbm.named_data_store_output
+                if data_store_output is not None:
+                    named_data_store.merge_named_data_store(data_store_output)
+
+        for _, submod, _ in get_control_flow_submodules(graph_module):
+            collect_named_data_store_outputs(submod)
+
+    collect_named_data_store_outputs(exported_program.graph_module)
 
 
 @et_logger("to_edge_transform_and_lower")
@@ -1305,7 +1339,6 @@ class EdgeProgramManager:
         constant_methods: Optional[Dict[str, Any]] = None,
         compile_config: Optional[EdgeCompileConfig] = None,
         ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
-        named_data_store: Optional[NamedDataStore] = None,
     ):
         """
         Should not be called directly by users. User should use :func:'to_edge' instead.
@@ -1329,7 +1362,11 @@ class EdgeProgramManager:
         self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
 
-        self._named_data_store = named_data_store or NamedDataStore()
+        self._named_data_store = NamedDataStore()
+        for _, program in self._edge_programs.items():
+            collect_named_data_store_from_exported_program(
+                program, self._named_data_store
+            )
 
     @property
     def methods(self) -> Set[str]:
@@ -1439,30 +1476,11 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 new_edge_programs[name] = to_backend(program, partitioner)
 
-        # collected all the named data into the named data store for deduplication
-        def collect_named_data_store_outputs(
-            graph_module: torch.fx.GraphModule,
-        ) -> None:
-            for node in graph_module.graph.nodes:
-                if node.target == executorch_call_delegate:
-                    lbm = getattr(graph_module, node.args[0].name)
-                    assert is_lowered_module(lbm)
-                    data_store_output = lbm.named_data_store_output
-                    if data_store_output is not None:
-                        self._named_data_store.merge_named_data_store(data_store_output)
-
-            for _, submod, _ in get_control_flow_submodules(graph_module):
-                collect_named_data_store_outputs(submod)
-
-        for _, program in new_edge_programs.items():
-            collect_named_data_store_outputs(program.graph_module)
-
         config = EdgeCompileConfig(_check_ir_validity=False)
         return EdgeProgramManager(
             new_edge_programs,
             copy.deepcopy(self._config_methods),
             config,
-            named_data_store=self._named_data_store,
         )
 
     @et_logger("to_executorch")

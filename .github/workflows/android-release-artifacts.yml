@@ -56,10 +56,10 @@ jobs:
         mkdir aar-out
         export BUILD_AAR_DIR=aar-out
         bash build/build_android_library.sh
-        mkdir -p "${ARTIFACTS_DIR_NAME}/llm_demo"
-        cp aar-out/executorch.aar "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
+        mkdir -p "${ARTIFACTS_DIR_NAME}"
+        cp aar-out/executorch.aar "${ARTIFACTS_DIR_NAME}/executorch.aar"
 
-        shasum -a 256 "${ARTIFACTS_DIR_NAME}/llm_demo/executorch.aar"
+        shasum -a 256 "${ARTIFACTS_DIR_NAME}/executorch.aar"
 
   upload-release-aar:
     name: upload-release-aar
@@ -78,7 +78,7 @@ jobs:
       - name: Upload AAR RC to AWS S3
         shell: bash
         run: |
-          wget https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/executorch.aar
+          wget https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/executorch.aar
           shasum -a 256 executorch.aar > executorch.aar.sha256sums
 
           pip install awscli==1.32.18
