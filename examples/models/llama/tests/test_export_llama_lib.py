@@ -9,12 +9,16 @@ import unittest
 import torch
 
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.examples.models.llama.export_llama_lib import _export_llama, build_args_parser
+from executorch.examples.models.llama.export_llama_lib import (
+    _export_llama,
+    build_args_parser,
+)
 
 UNWANTED_OPS = [
     "aten_permute_copy_default",
     "aten_transpose_copy_default",
 ]
+
 
 class ExportLlamaLibTest(unittest.TestCase):
     def test_has_expected_ops_and_op_counts(self):
@@ -32,14 +36,11 @@ class ExportLlamaLibTest(unittest.TestCase):
         # we cannot test quantization args in this way
         # since quantization requires promoting meta tensors
         # to the cpu device, which requires real weights.
-        export_args_str = """
-            --use_sdpa_with_kv_cache
-            -kv
-            --verbose
-        """
-        args_list = export_args_str.strip().split()
         parser = build_args_parser()
-        args = parser.parse_args(args_list)
+        args = parser.parse_args([])
+        args.use_sdpa_with_kv_cache = True
+        args.use_kv_cache = True
+        args.verbose = True
 
         builder = _export_llama(args)
         graph_module = builder.edge_manager.exported_program().graph_module
@@ -47,4 +48,3 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         for op, op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
-        
