@@ -110,7 +110,7 @@ def get_u55_compile_spec(
 
 
 def get_u85_compile_spec(
-    macs: int = 128,
+    macs: int = 256,
     system_config="Ethos_U85_SYS_DRAM_Mid",
     memory_mode="Shared_Sram",
     extra_flags="--output-format=raw",
