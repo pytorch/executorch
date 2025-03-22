@@ -62,10 +62,38 @@ install_pytorch_and_domains() {
   git checkout "${TORCH_VERSION}"
   git submodule update --init --recursive
 
-  export USE_DISTRIBUTED=1
-  # Then build and install PyTorch
-  python setup.py bdist_wheel
-  pip install "$(echo dist/*.whl)"
+  SYSTEM_NAME=$(uname)
+  if [[ "${SYSTEM_NAME}" == "Darwin" ]]; then
+    PLATFORM=$(python -c 'import sysconfig; import platform; v=platform.mac_ver()[0].split(".")[0]; platform=sysconfig.get_platform().split("-"); platform[1]=f"{v}_0"; print("_".join(platform))')
+  fi
+  PYTHON_VERSION=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
+  TORCH_RELEASE=$(cat version.txt)
+  TORCH_SHORT_HASH=${TORCH_VERSION:0:7}
+  TORCH_WHEEL_PATH="cached_artifacts/pytorch/executorch/pytorch_wheels/${SYSTEM_NAME}/${PYTHON_VERSION}"
+  TORCH_WHEEL_NAME="torch-${TORCH_RELEASE}%2Bgit${TORCH_SHORT_HASH}-cp${PYTHON_VERSION}-cp${PYTHON_VERSION}-${PLATFORM:-}.whl"
+
+  CACHE_TORCH_WHEEL="https://gha-artifacts.s3.us-east-1.amazonaws.com/${TORCH_WHEEL_PATH}/${TORCH_WHEEL_NAME}"
+  # Cache PyTorch wheel is only needed on MacOS, Linux CI already has this as part
+  # of the Docker image
+  if [[ "${SYSTEM_NAME}" == "Darwin" ]]; then
+    pip install "${CACHE_TORCH_WHEEL}" || TORCH_WHEEL_NOT_FOUND=1
+  fi
+
+  # Found no such wheel, we will build it from source then
+  if [[ "${TORCH_WHEEL_NOT_FOUND:-0}" == "1" ]]; then
+    USE_DISTRIBUTED=1 python setup.py bdist_wheel
+    pip install "$(echo dist/*.whl)"
+
+    # Only AWS runners have access to S3
+    if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
+      for WHEEL_PATH in dist/*.whl; do
+        WHEEL_NAME=$(basename "${WHEEL_PATH}")
+        aws s3 cp "${WHEEL_PATH}" "s3://gha-artifacts/${TORCH_WHEEL_PATH}/${WHEEL_NAME}"
+      done
+    fi
+  else
+    echo "Use cached wheel at ${CACHE_TORCH_WHEEL}"
+  fi
 
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
