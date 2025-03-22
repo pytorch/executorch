@@ -2,7 +2,6 @@ from .annotate_decomposed import AnnotateDecomposed
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .constant_i64_to_i32 import ConstantI64toI32
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
-from .convert_interpolate_with_upsample2d import ConvertInterpolateWithUpsample2D
 from .convert_to_linear import ConvertToLinear
 from .decompose_any import DecomposeAny
 from .decompose_einsum import DecomposeEinsum
@@ -30,7 +29,6 @@ __all__ = [
     AnnotateQuantAttrs,
     ConstantI64toI32,
     ConvertBmmToMatmul,
-    ConvertInterpolateWithUpsample2D,
     RecomposePReLU,
     ConvertToLinear,
     DecomposeAny,

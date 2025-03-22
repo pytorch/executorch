@@ -59,6 +59,28 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     int32_t offset = quant_info["offset"].cast<int32_t>();
     quantize_param_wrapper =
         std::make_unique<ScaleOffsetQuantizeParamsWrapper>(scale, offset);
+  } else if (encoding == QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION) {
+    int32_t axis = quant_info["axis"].cast<int32_t>();
+    std::vector<Qnn_ScaleOffset_t> scale_offset =
+        quant_info["block_scale_offset"].cast<std::vector<Qnn_ScaleOffset_t>>();
+    uint32_t num_blocks_per_axis =
+        quant_info["num_blocks_per_axis"].cast<uint32_t>();
+    uint32_t block_scale_bitwidth =
+        quant_info["block_scale_bitwidth"].cast<uint32_t>();
+    Qnn_BlockwiseExpansionBlockScaleStorageType_t block_storage_type =
+        quant_info["block_storage_type"]
+            .cast<Qnn_BlockwiseExpansionBlockScaleStorageType_t>();
+    std::vector<uint8_t> buf =
+        quant_info["block_scales"].cast<std::vector<uint8_t>>();
+    quantize_param_wrapper =
+        std::make_unique<BlockwiseExpansionQuantizeParamsWrapper>(
+            axis,
+            scale_offset,
+            num_blocks_per_axis,
+            block_scale_bitwidth,
+            block_storage_type,
+            buf.data(),
+            buf.size());
   } else {
     QNN_EXECUTORCH_LOG_ERROR(
         "Unknown the encoding of quantization: %d", encoding);
@@ -180,9 +202,6 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
 
   py::enum_<Qnn_QuantizationEncoding_t>(m, "Qnn_QuantizationEncoding_t")
       .value(
-          "QNN_QUANTIZATION_ENCODING_UNDEFINED",
-          Qnn_QuantizationEncoding_t::QNN_QUANTIZATION_ENCODING_UNDEFINED)
-      .value(
           "QNN_QUANTIZATION_ENCODING_SCALE_OFFSET",
           Qnn_QuantizationEncoding_t::QNN_QUANTIZATION_ENCODING_SCALE_OFFSET)
       .value(
@@ -196,6 +215,29 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
           "QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET",
           Qnn_QuantizationEncoding_t::
               QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET)
+      .value(
+          "QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION",
+          Qnn_QuantizationEncoding_t::
+              QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION)
+      .value(
+          "QNN_QUANTIZATION_ENCODING_UNDEFINED",
+          Qnn_QuantizationEncoding_t::QNN_QUANTIZATION_ENCODING_UNDEFINED)
+      .export_values();
+
+  py::enum_<Qnn_BlockwiseExpansionBlockScaleStorageType_t>(
+      m, "Qnn_BlockwiseExpansionBlockScaleStorageType_t")
+      .value(
+          "QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_8",
+          Qnn_BlockwiseExpansionBlockScaleStorageType_t::
+              QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_8)
+      .value(
+          "QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_16",
+          Qnn_BlockwiseExpansionBlockScaleStorageType_t::
+              QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_16)
+      .value(
+          "QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_UNDEFINED",
+          Qnn_BlockwiseExpansionBlockScaleStorageType_t::
+              QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_UNDEFINED)
       .export_values();
 
   py::class_<OpWrapper, std::shared_ptr<OpWrapper>>(m, "OpWrapper")
@@ -476,7 +518,6 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
             return std::vector<Qnn_ScaleOffset_t>(
                 aso.scaleOffset, aso.scaleOffset + aso.numScaleOffsets);
           });
-  // op_wrapper.GetParams() get std::vector<ParamWrapper*>
 }
 } // namespace qnn
 } // namespace backends

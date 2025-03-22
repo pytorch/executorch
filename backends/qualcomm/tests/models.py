@@ -441,13 +441,20 @@ class Conv2dSequential(torch.nn.Module):
 
 
 class Conv2dSingle(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(
+        self,
+        bias=True,
+        in_channel=1,
+        out_channel=3,
+        kernel_size=(3, 3),
+        padding=1,
+    ):
         super().__init__()
         self.conv = torch.nn.Conv2d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=(3, 3),
-            padding=1,
+            in_channels=in_channel,
+            out_channels=out_channel,
+            kernel_size=kernel_size,
+            padding=padding,
             bias=bias,
         )
 
@@ -1188,7 +1195,7 @@ class ResizeBilinear2D(torch.nn.Module):
         output_shape = [dim * 2 for dim in x.shape[-2:]]
         return torch.nn.functional.interpolate(
             x,
-            size=list(torch.randn(output_shape).shape),
+            size=output_shape,
             mode="bilinear",
             align_corners=False,
         )
@@ -1202,7 +1209,7 @@ class ResizeNearest2D(torch.nn.Module):
         output_shape = [dim * 2 for dim in x.shape[-2:]]
         return torch.nn.functional.interpolate(
             x,
-            size=list(torch.randn(output_shape).shape),
+            size=output_shape,
             mode="nearest",
         )
 

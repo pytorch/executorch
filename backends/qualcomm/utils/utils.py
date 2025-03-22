@@ -21,7 +21,6 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConstantI64toI32,
     ConvertBmmToMatmul,
-    ConvertInterpolateWithUpsample2D,
     ConvertToLinear,
     DecomposeAny,
     DecomposeLinalgVectorNorm,
@@ -332,6 +331,8 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
+        torch.ops.pt2e_quant.quantize_affine.default,
+        torch.ops.pt2e_quant.dequantize_affine.default,
         torch.ops.aten._safe_softmax.default,
     ]
 
@@ -356,7 +357,6 @@ def get_capture_program_passes():
         (AnnotateQuantAttrs, True),
         (ConstantI64toI32, True),
         (ConvertBmmToMatmul, True),
-        (ConvertInterpolateWithUpsample2D, True),
         (ConvertToLinear, True),
         (DecomposeAny, True),
         (DecomposeLinalgVectorNorm, True),
@@ -409,6 +409,13 @@ def _topological_sort_passes(passes: OrderedDict):
 def _transform(
     edge_program: ExportedProgram, passes_job: OrderedDict = None
 ) -> ExportedProgram:
+    # TODO: remove this workaround when target could be correclty detected
+    from executorch.backends.qualcomm._passes import utils
+    from executorch.exir.dialects._ops import ops as exir_ops
+
+    utils.q_ops.add(exir_ops.edge.pt2e_quant.quantize_affine.default)
+    utils.dq_ops.add(exir_ops.edge.pt2e_quant.dequantize_affine.default)
+
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure

@@ -900,6 +900,12 @@ def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None
     if _is_annotated([node]):
         return
 
+    # block quantization
+    if quantization_config.block_size is not None:
+        quantization_config.weight.observer_or_fake_quant_ctr.p.keywords.update(
+            {"block_size": quantization_config.block_size}
+        )
+
     input_qspec_map = {}
     input_act = node.args[0]
     assert isinstance(input_act, Node)
@@ -930,6 +936,7 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
     act_node = node.args[0]
     weight_node = node.args[1]
     bias_node = None
+
     if len(node.args) > 2:
         bias_node = node.args[2]
 
