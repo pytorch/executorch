@@ -124,26 +124,19 @@ def verbose_export():
 
 
 def build_model(
-    modelname: str = "llama3",
-    extra_opts: str = "",
-    *,
-    par_local_output: bool = False,
-    resource_pkg_name: str = __name__,
+    model: str,
+    checkpoint: str,
+    params: str,
+    output_dir: Optional[str] = ".",
+    extra_opts: Optional[str] = "",
 ) -> str:
-    if False:  # par_local_output:
-        output_dir_path = "par:."
-    else:
-        output_dir_path = "."
-
-    argString = f"--model {modelname} --checkpoint par:model_ckpt.pt --params par:model_params.json {extra_opts} --output-dir {output_dir_path}"
+    argString = f"--model {model} --checkpoint {checkpoint} --params {params} {extra_opts} --output-dir {output_dir}"
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
-    # pkg_name = resource_pkg_name
     return export_llama(args)
 
 
 def build_args_parser() -> argparse.ArgumentParser:
-    ckpt_dir = f"{Path(__file__).absolute().parent.as_posix()}"
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output-dir", default=".", help="output directory")
     # parser.add_argument(
@@ -192,8 +185,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=f"{ckpt_dir}/params/demo_rand_params.pth",
-        help="checkpoint path",
+        required=False,
+        help="Path to the checkpoint .pth file. When not provided, the model will be initialized with random weights.",
     )
 
     parser.add_argument(
@@ -274,8 +267,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-p",
         "--params",
-        default=f"{ckpt_dir}/params/demo_config.json",
-        help="config.json",
+        required=False,
+        help="Config file for model parameters. When not provided, the model will fallback on default values defined in examples/models/llama/model_args.py.",
     )
     parser.add_argument(
         "--optimized_rotation_path",
@@ -562,7 +555,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     checkpoint_dir = (
         canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
     )
-    params_path = canonical_path(args.params)
+    params_path = canonical_path(args.params) if args.params else None
     output_dir_path = canonical_path(args.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
@@ -985,7 +978,7 @@ def _load_llama_model(
     *,
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
-    params_path: str,
+    params_path: Optional[str] = None,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     generate_full_logits: bool = False,
@@ -1011,13 +1004,6 @@ def _load_llama_model(
     Returns:
         An instance of LLMEdgeManager which contains the eager mode model.
     """
-
-    assert (
-        checkpoint or checkpoint_dir
-    ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
-    logging.info(
-        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
-    )
 
     if modelname in EXECUTORCH_DEFINED_MODELS:
         module_name = "llama"
