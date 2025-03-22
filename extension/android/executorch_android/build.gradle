@@ -40,6 +40,8 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test:rules:1.2.0'
     androidTestImplementation 'commons-io:commons-io:2.4'
+    androidTestImplementation 'com.facebook.fbjni:fbjni-java-only:0.5.1'
+    androidTestImplementation 'com.facebook.soloader:nativeloader:0.10.5'
 }
 
 import com.vanniktech.maven.publish.SonatypeHost
