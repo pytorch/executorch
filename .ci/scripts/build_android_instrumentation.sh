@@ -12,24 +12,10 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
 fi
 which "${PYTHON_EXECUTABLE}"
 
-build_android_test() {
-  mkdir -p "${BUILD_AAR_DIR}"/executorch_android/src/androidTest/resources
-  cp extension/module/test/resources/add.pte "${BUILD_AAR_DIR}"/executorch_android/src/androidTest/resources
+mkdir -p "${BUILD_AAR_DIR}"/executorch_android/src/androidTest/resources
+cp extension/module/test/resources/add.pte "${BUILD_AAR_DIR}"/executorch_android/src/androidTest/resources
 
-  pushd "${BUILD_AAR_DIR}"
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest
-  if [ -n "$ARTIFACTS_DIR_NAME" ]; then
-    mkdir -p "${ARTIFACTS_DIR_NAME}/library_test_dir"
-    cp executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
-  fi
-  popd
-}
-
-main() {
-  build_android_test
-}
-
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  main "$@"
-fi
+pushd "${BUILD_AAR_DIR}"
+ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
+ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:assembleAndroidTest
+popd
