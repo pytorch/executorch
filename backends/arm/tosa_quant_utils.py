@@ -130,7 +130,7 @@ class QuantArgs(NamedTuple):
         ).to(self.dtype)
 
     def dequantize_value(self, qx: torch.Tensor) -> torch.Tensor:
-        return (qx - self.zp) * self.scale
+        return (qx.to(torch.int64) - self.zp) * self.scale
 
     @classmethod
     def from_operator(cls, op, args):
