@@ -7,15 +7,11 @@
 
 set -eu
 
-BASEDIR=$(dirname "$0")
-source "$BASEDIR"/../../../../build/build_android_library.sh
-
 BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR
 
-build_jar
-build_android_native_library "arm64-v8a"
-build_android_native_library "x86_64"
-build_aar
+BASEDIR=$(dirname "$0")
 mkdir -p "$BASEDIR"/app/libs
+bash "$BASEDIR"/../../../../build/build_android_library.sh
+
 cp "$BUILD_AAR_DIR/executorch.aar" "$BASEDIR"/app/libs/executorch.aar

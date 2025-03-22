@@ -14,17 +14,17 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
 from serializer.tosa_serializer import TosaOp
 
 
 def unary_operator_factory(unary_target: str, tosa_op):
     "Creates and registers NodeVisitors for operations that have one input and map directly into a TOSA op."
 
-    class UnaryOperator_080_MI(NodeVisitor):
-        target = unary_target
+    # Some TOSA unary operators only support float
+    fp_only_ops = ["aten.floor.default"]
 
-        tosa_specs = [TosaSpecification.create_from_string("TOSA-0.80+MI")]
+    class UnaryOperator(NodeVisitor):
+        target = unary_target
 
         def __init__(self, *args):
             super().__init__(*args)
@@ -43,15 +43,15 @@ def unary_operator_factory(unary_target: str, tosa_op):
                     f"Got {inputs[0].dtype=}, {output.dtype=}"
                 )
 
-            if not (inputs[0].dtype == ts.DType.FP32):
+            if self.target in fp_only_ops and not (inputs[0].dtype == ts.DType.FP32):
                 raise ValueError(
                     "All inputs need to be FP32." f"Got {inputs[0].dtype=}"
                 )
 
-            # MI lowering
             tosa_graph.addOperator(tosa_op, [inputs[0].name], [output.name])
 
-    register_node_visitor(UnaryOperator_080_MI)
+    register_node_visitor(UnaryOperator)
 
 
 unary_operator_factory("aten.floor.default", TosaOp.Op().FLOOR)
+unary_operator_factory("aten.logical_not.default", TosaOp.Op().LOGICAL_NOT)

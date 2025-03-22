@@ -44,6 +44,9 @@ inline bool parallel_for_no_threadpool(
   return true;
 }
 
+// Match GRAIN_SIZE from PyTorch core.
+// https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/TensorIterator.h#L78
+constexpr int64_t GRAIN_SIZE = 32768;
 } // namespace internal
 
 #ifdef ET_USE_THREADPOOL

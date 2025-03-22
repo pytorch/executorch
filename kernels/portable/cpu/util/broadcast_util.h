@@ -254,26 +254,13 @@ inline void apply_binary_elementwise_fn(
     const Tensor& a,
     const Tensor& b,
     const Tensor& out) {
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool any_is_broadcasted = (a_is_broadcasted || b_is_broadcasted);
-
   const CTYPE_A* const data_a = a.const_data_ptr<CTYPE_A>();
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  if (any_is_broadcasted) {
-    for (const auto [out_index, a_index, b_index] :
-         BroadcastIndexesRange<2>(out, a, b)) {
-      data_out[out_index] = compute_fun(data_a[a_index], data_b[b_index]);
-    }
-  } else {
-    for (const auto i : c10::irange(out.numel())) {
-      size_t a_linear_index = i;
-      size_t b_linear_index = i;
-
-      data_out[i] = compute_fun(data_a[a_linear_index], data_b[b_linear_index]);
-    }
+  for (const auto [out_index, a_index, b_index] :
+       BroadcastIndexesRange<2>(out, a, b)) {
+    data_out[out_index] = compute_fun(data_a[a_index], data_b[b_index]);
   }
 }
 
@@ -294,27 +281,15 @@ inline void apply_ternary_elementwise_fn(
     const Tensor& b,
     const Tensor& c,
     const Tensor& out) {
-  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-  const bool c_is_broadcasted = !out.sizes().equals(c.sizes());
-  const bool any_is_broadcasted =
-      (a_is_broadcasted || b_is_broadcasted || c_is_broadcasted);
-
   const CTYPE_A* const data_a = a.const_data_ptr<CTYPE_A>();
   const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
   const CTYPE_C* const data_c = c.const_data_ptr<CTYPE_C>();
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-  if (any_is_broadcasted) {
-    for (const auto [out_index, a_index, b_index, c_index] :
-         BroadcastIndexesRange<3>(out, a, b, c)) {
-      data_out[out_index] =
-          compute_fun(data_a[a_index], data_b[b_index], data_c[c_index]);
-    }
-  } else {
-    for (const auto i : c10::irange(out.numel())) {
-      data_out[i] = compute_fun(data_a[i], data_b[i], data_c[i]);
-    }
+  for (const auto [out_index, a_index, b_index, c_index] :
+       BroadcastIndexesRange<3>(out, a, b, c)) {
+    data_out[out_index] =
+        compute_fun(data_a[a_index], data_b[b_index], data_c[c_index]);
   }
 }
 

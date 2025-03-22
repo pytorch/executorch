@@ -33,8 +33,8 @@ list(APPEND _common_compile_options -DET_BUILD_WITH_BLAS)
 # probably need to figure out how to detect compiler flag that suggest we are
 # compiling for avx2 for now punting this to come back
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()

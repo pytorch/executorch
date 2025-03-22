@@ -13,10 +13,11 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
+
 #include <ctime>
 #include <fstream>
 #include <sstream>
@@ -191,19 +192,19 @@ Error Runner::load() {
 
   // llama3 tokenizer
   tokenizer_ = example::get_tiktoken_for_llama();
-  Error err = tokenizer_->load(tokenizer_path_);
-  if (err == Error::InvalidArgument) {
+  auto err = tokenizer_->load(tokenizer_path_);
+  if (err != tokenizers::Error::Ok) {
     ET_LOG(
         Info,
         "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
         tokenizer_path_.c_str());
     tokenizer_.reset();
     // llama2 tokenizer
-    tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
+    tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
     err = tokenizer_->load(tokenizer_path_);
     llama_version_ = LlamaVersion::kLlama2;
     ET_CHECK_MSG(
-        err == Error::Ok,
+        err == tokenizers::Error::Ok,
         "failed to load tokenizer %s",
         tokenizer_path_.c_str());
   } else {
@@ -335,9 +336,9 @@ Error Runner::generate(
   }
 
   seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
-  Result<std::vector<uint64_t>> encode_res =
+  tokenizers::Result<std::vector<uint64_t>> encode_res =
       tokenizer_->encode(prompt_, n_bos_, 0);
-  ET_CHECK_OK_OR_RETURN_ERROR(
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
       encode_res.error(), "failed to encode prompt %s", prompt_.c_str());
 
   std::vector<uint64_t> prompt_tokens = encode_res.get();
@@ -447,7 +448,9 @@ Error Runner::generate(
   if (stats_callback) {
     stats_callback(stats_);
   }
-  io_mgr_->reset_io();
+  io_mgr_->reset_io(
+      get_methods_meta(prefill_forward_name_),
+      get_methods_meta(kv_forward_name_));
   prompt_.clear();
   return Error::Ok;
 }

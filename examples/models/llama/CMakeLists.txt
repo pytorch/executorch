@@ -46,7 +46,7 @@ endif()
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -115,16 +115,23 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
 endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)
-  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental)
-  target_link_options_shared_lib(torchao_ops_executorch)
-  list(APPEND link_libraries torchao_ops_executorch)
+  # Currently only enable this on Arm-based Macs
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+    set(TORCHAO_BUILD_CPU_AARCH64 ON)
     add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
-      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
-    target_link_options_shared_lib(torchao_ops_mps_executorch)
-    list(APPEND link_libraries torchao_ops_mps_executorch)
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
+      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental
+    )
+    target_link_options_shared_lib(torchao_ops_executorch)
+    list(APPEND link_libraries torchao_ops_executorch)
+    if(EXECUTORCH_BUILD_MPS)
+      add_subdirectory(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
+        ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
+      target_link_options_shared_lib(torchao_ops_mps_executorch)
+      list(APPEND link_libraries torchao_ops_mps_executorch)
+    endif()
   endif()
 endif()
 
@@ -209,7 +216,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   endif()
 endif()
 
-target_include_directories(llama_main PUBLIC ${_common_include_directories})
+target_include_directories(
+  llama_main
+  PUBLIC ${_common_include_directories}
+         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 

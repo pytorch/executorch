@@ -26,8 +26,8 @@
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace executorch {
 namespace extension {
@@ -129,7 +129,7 @@ class ET_EXPERIMENTAL MultimodalRunner {
   std::unique_ptr<ImagePrefiller> image_prefiller_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
   std::string tokenizer_path_;
-  std::unique_ptr<Tokenizer> tokenizer_;
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
 
   // stats
   Stats stats_;

@@ -39,7 +39,8 @@ function help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --model_name=<MODEL>                   Model file .py/.pth/.pt, builtin model or a model from examples/models. Passed to aot_arm_compiler"
-    echo "  --model_input=<INPUT>                  Provide model input .pt file to override the input in the model file.  Passed to aot_arm_compiler"
+    echo "  --model_input=<INPUT>                  Provide model input .pt file to override the input in the model file. Passed to aot_arm_compiler"
+    echo "                                           NOTE: Inference in FVP is done with a dummy input full of ones. Use bundleio flag to run the model in FVP with the custom input or the input from the model file."  
     echo "  --aot_arm_compiler_flags=<FLAGS>       Only used if --model_name is used Default: ${aot_arm_compiler_flags}"
     echo "  --portable_kernels=<OPS>               Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
@@ -193,14 +194,17 @@ for i in "${!test_model[@]}"; do
         output_folder=${et_build_root}/${model_short_name}
     fi
 
+    mkdir -p ${output_folder}
     output_folder=$(realpath ${output_folder})
     pte_file="${output_folder}/${model_filename}"
 
-    mkdir -p ${output_folder}
-
     # Remove old pte files
     rm -f "${output_folder}/${model_filename}"
-    
+
+    if [ "$model_input_set" = true ]; then
+        model_compiler_flags="${model_compiler_flags} --model_input=${model_input}"
+    fi
+
     ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --so_library=$SO_LIB --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2

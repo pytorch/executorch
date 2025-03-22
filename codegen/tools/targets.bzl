@@ -28,6 +28,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":gen_oplist_lib",
         ],
+        preload_deps = [] if runtime.is_oss else ["//executorch/codegen/tools/fb:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
         package_style = "inplace",
         visibility = [
             "//executorch/...",
