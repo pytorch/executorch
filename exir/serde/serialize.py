@@ -22,6 +22,7 @@ import executorch.exir.serde.schema as schema
 import torch
 import torch.export.exported_program as ep
 from executorch.exir import delegate
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
 )
@@ -276,6 +277,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             processed_bytes=serialized_processed_bytes,
             compile_specs=serialized_compile_spec,
             backend_id=lowered_module.backend_id,
+            named_data_store=json.dumps(export_serialize._dataclass_to_dict(lowered_module.named_data_store_output),cls=export_serialize.EnumEncoder),
         )
 
         json_lowered_module = json.dumps(
@@ -556,11 +558,19 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             None,
         )
 
+        if serialized_lowered_module.named_data_store == "":
+            named_data_store = None
+        else:
+            named_data_store = export_serialize._dict_to_dataclass(NamedDataStoreOutput, json.loads(serialized_lowered_module.named_data_store))
+            for buffer in named_data_store.buffers:
+                buffer.buffer = base64.b64decode(buffer.buffer.encode("ascii"))
+
         lowered_module = ExirLoweredBackendModule(
             original_module,
             backend_id,
             processed_bytes,
             compile_specs,
+            named_data_store
         )
         self.module.register_module(serialized_lowered_module_arg.name, lowered_module)
         return self.graph.get_attr(serialized_lowered_module_arg.name)
