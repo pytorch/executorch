@@ -16,6 +16,7 @@ import logging
 import re
 import shlex
 from enum import Enum
+from functools import partial
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, List, Optional, Union
@@ -594,9 +595,36 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     )
 
     # At this point, the model is loaded in the default fp32.
+
+    # Checkpoint dtype should be lower or equal precision to the dtype override.
+    checkpoint_dtype = edge_manager.model.checkpoint_dtype
+    if not (
+        checkpoint_dtype == dtype_override.to_torch_dtype()
+        or (
+            checkpoint_dtype == torch.float16
+            and dtype_override.to_torch_dtype() == torch.float32
+        )
+        or (
+            checkpoint_dtype == torch.bfloat16
+            and dtype_override.to_torch_dtype() == torch.float32
+        )
+    ):
+        logging.warning(
+            f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
+        )
+
     edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
-    edge_manager.set_output_dir(output_dir_path).source_transform(
-        _get_source_transforms(args.model, dtype_override, args)
+
+    # We want to quantize (in the source transforms) the weights of the model
+    # in the checkpoint dtype.
+    logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
+    edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
+        _get_source_transforms(
+            modelname=args.model,
+            dtype_override=dtype_override,
+            checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),
+            args=args,
+        )
     )
 
     return edge_manager
@@ -783,8 +811,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
                 builder_exported_to_edge.metadata["get_n_layers"],
                 shares=args.num_sharding,
             )
-
-        from functools import partial
 
         # pyre-ignore
         from executorch.backends.qualcomm.quantizer.custom_annotation import (
@@ -1069,8 +1095,31 @@ def _load_llama_model(
 
 
 def _get_source_transforms(  # noqa
-    modelname: str, dtype_override: Optional[DType], args
+    modelname: str,
+    dtype_override: DType,
+    *,
+    checkpoint_dtype: Optional[DType] = None,
+    args,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
+    """
+    Return a list of functions that transform a graph.
+
+    Args:
+        modelname: The name of the model.
+        dtype_override: The dtype to use for the model.
+        checkpoint_dtype: The dtype of the checkpoint. At the moment, if this is specified,
+            it means that you want to run quantize transformations on the weights represented
+            in their original dtype, while the overall dtype of the model maybe something
+            different. If not specified, defaults to dtype_override.
+        args: The arguments passed to the script.
+
+    Returns:
+        A list of transformation functions.
+    """
+
+    if not checkpoint_dtype:
+        checkpoint_dtype = dtype_override
+
     transforms = []
 
     if args.use_spin_quant:
@@ -1103,7 +1152,11 @@ def _get_source_transforms(  # noqa
         """
         modelname = f"{modelname}_q"
         transforms.append(
-            get_quant_weight_transform(args, dtype_override, verbose_export())
+            get_quant_weight_transform(
+                args=args,
+                computation_dtype=dtype_override,
+                checkpoint_dtype=checkpoint_dtype,
+            )
         )
 
     if args.embedding_quantize:
@@ -1117,7 +1170,7 @@ def _get_source_transforms(  # noqa
         this wil be a no-op.
         """
         modelname = f"{modelname}_e"
-        transforms.append(get_quant_embedding_transform(args))
+        transforms.append(get_quant_embedding_transform(args, checkpoint_dtype))
 
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
