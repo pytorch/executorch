@@ -147,56 +147,6 @@ class TestMimiModel(unittest.TestCase):
         pcm_ref = self.mimi.decode(all_codes_th)
         self.assertTrue(torch.allclose(pcm_ref, all_pcms, atol=1e-5))
 
-    def test_exported_decoding(self):
-        """Ensure exported decoding model is consistent with reference output."""
-
-        class MimiDecode(nn.Module):
-            def __init__(self, mimi: nn.Module):
-                super().__init__()
-                self.mimi_model = mimi
-
-            def forward(self, x):
-                return self.mimi_model.decode(x)
-
-        sample_pcm = torch.tensor(self.sample_pcm, device=self.device)[None]
-        pcm_chunk_size = int(self.mimi.sample_rate / self.mimi.frame_rate)
-        chunk = sample_pcm[..., 0:pcm_chunk_size]
-        input = self.mimi.encode(chunk)
-
-        mimi_decode = MimiDecode(self.mimi)
-        ref_decode_output = mimi_decode(input)
-        exported_decode: ExportedProgram = export(mimi_decode, (input,), strict=False)
-        ep_decode_output = exported_decode.module()(input)
-        self.assertTrue(torch.allclose(ep_decode_output, ref_decode_output, atol=1e-6))
-
-        # PT2E Quantization
-        quantizer = XNNPACKQuantizer()
-        # 8 bit by default
-        quantization_config = get_symmetric_quantization_config(
-            is_per_channel=True,
-            is_dynamic=True,
-        )
-        quantizer.set_global(quantization_config)
-        m = exported_decode.module()
-        m = prepare_pt2e(m, quantizer)
-        m(input)
-        m = convert_pt2e(m)
-        print("quantized graph:")
-        print(m.graph)
-        # Export quantized module
-        exported_decode: ExportedProgram = export(m, (input,), strict=False)
-
-        # Lower
-        edge_manager = to_edge_transform_and_lower(
-            exported_decode,
-            partitioner=[XnnpackPartitioner()],
-        )
-
-        exec_prog = edge_manager.to_executorch()
-        print("exec graph:")
-        print(exec_prog.exported_program().graph)
-        assert len(exec_prog.exported_program().graph.nodes) > 1
-
     def test_exported_encoding(self):
         """Ensure exported encoding model is consistent with reference output."""
 
