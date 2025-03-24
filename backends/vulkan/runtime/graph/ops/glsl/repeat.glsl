@@ -21,8 +21,8 @@ layout(push_constant) uniform restrict Block {
   ivec4 range;
   // source tensor sizes in WHCB dims respectively
   ivec4 src_dims;
-  // destination tensor sizes in WHCB dims respectively
-  ivec4 dst_dims;
+  // destination tensor repeats in WHCB dims respectively
+  ivec4 dst_repeats;
 };
 
 #include "indexing_utils.h"
@@ -58,7 +58,7 @@ void main() {
   // if tensors are channel packed
   if (packed_dim == C_DIM) {
     // the output channels in a batch will be channel size * channel repetitions aligned by 4
-    const int out_channel_size = alignup4(src_dims.z * dst_dims.z);
+    const int out_channel_size = alignup4(src_dims.z * dst_repeats.z);
 
     // batch index in the output
     const int out_pos_batch_index = pos.z / out_channel_size;
@@ -76,7 +76,7 @@ void main() {
     channel_index = (pos.z - (batch_index + batch_repetition_index * src_dims.w) * out_channel_size) % src_dims.z;
   } else {
     // the output channels in a batch will be channel size * channel repetitions
-    const int out_channel_size = src_dims.z * dst_dims.z;
+    const int out_channel_size = src_dims.z * dst_repeats.z;
 
     // source batch index for based on current output pos
     batch_index = (pos.z / out_channel_size) % src_dims.w;
@@ -111,7 +111,7 @@ void main() {
       curr_in_pos.z = curr_in_pos.z + batch_index * channel_size;
       curr_in_pos[packed_dim] >>= 2;
 
-      in_value = load_texel_lpos(t_in, curr_in_pos, in_axis_map);
+      in_value = VEC4_T(load_texel_lpos(t_in, curr_in_pos, in_axis_map));
     }
 
     out_value[i] = in_value[src_lane_offset & 0x3];

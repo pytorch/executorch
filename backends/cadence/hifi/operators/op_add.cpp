@@ -138,8 +138,21 @@ Tensor& add_out(
   if ((out_type != ScalarType::Float) || (alpha_val != 1.0))
     optimized = 0;
 
-  if ((a_dim == 0) || (b_dim == 0))
-    optimized = 0;
+  bool float_types =
+      (a_type == ScalarType::Float) && (b_type == ScalarType::Float);
+
+  if ((a_dim == 0) && float_types) {
+    for (int i = 0; i < max_dim; i++)
+      out.mutable_data_ptr<float>()[i] =
+          a.const_data_ptr<float>()[0] + b.const_data_ptr<float>()[i];
+    return out;
+  }
+  if ((b_dim == 0) && float_types) {
+    for (int i = 0; i < max_dim; i++)
+      out.mutable_data_ptr<float>()[i] =
+          a.const_data_ptr<float>()[i] + b.const_data_ptr<float>()[0];
+    return out;
+  }
 
   if ((broadcast == 1) && (max_dim > kNnlibMaxDim))
     optimized = 0;

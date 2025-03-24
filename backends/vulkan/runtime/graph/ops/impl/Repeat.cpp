@@ -74,14 +74,11 @@ void add_repeat_node(
       dim_at<kHeight4D>(t_in->sizes()),
       dim_at<kChannel4D>(t_in->sizes()),
       dim_at<kBatch4D>(t_in->sizes())};
-  const utils::ivec4 dst_dims{
+  const utils::ivec4 dst_repeats{
       dim_at<kWidth4D>(repeats),
       dim_at<kHeight4D>(repeats),
       dim_at<kChannel4D>(repeats),
       dim_at<kBatch4D>(repeats)};
-  //   add_copy_packed_dim_offset_node(
-  //       graph, in, t_out->logical_limits(), src_offset, dst_offset, out,
-  //       true);
 
   std::string kernel_name = "repeat";
   kernel_name.reserve(kShaderNameReserve);
@@ -100,7 +97,6 @@ void add_repeat_node(
       // Inputs and Outputs
       {
           {out, vkapi::MemoryAccessType::WRITE},
-          {out, vkapi::MemoryAccessType::READ},
           {in, vkapi::MemoryAccessType::READ},
       },
       // Parameter buffers
@@ -114,7 +110,7 @@ void add_repeat_node(
           PushConstantDataInfo(
               &src_dims, sizeof(src_dims), sizeof(utils::ivec4)),
           PushConstantDataInfo(
-              &dst_dims, sizeof(dst_dims), sizeof(utils::ivec4)),
+              &dst_repeats, sizeof(dst_repeats), sizeof(utils::ivec4)),
       }));
 }
 

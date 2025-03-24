@@ -775,7 +775,7 @@ def get_ext_modules() -> List[Extension]:
                     is_executable=True,
                 ),
                 BuiltFile(
-                    src_dir="build/",
+                    src_dir="tools/wheel",
                     src_name="pip_data_bin_init.py.in",
                     dst="executorch/data/bin/__init__.py",
                 ),
