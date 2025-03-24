@@ -585,6 +585,13 @@ def setup_common_args_and_variables():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--ci",
+        help="This flag is for Continuous Integration(CI) purpose and is NOT recommended to turn on for typical use cases.",
+        action="store_true",
+        default=False,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
