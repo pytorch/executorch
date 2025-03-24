@@ -23,13 +23,12 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
   switch (options->backend_options()->backend_type()) {
     case QnnExecuTorchBackendType::kHtpBackend: {
       auto htp_options = options->backend_options()->htp_options();
+      const std::string skel_library_dir =
+          htp_options->skel_library_dir()->str();
+      if (!skel_library_dir.empty()) {
+        setenv("ADSP_LIBRARY_PATH", skel_library_dir.c_str(), /*overwrite=*/1);
+      }
       if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
-        const std::string skel_library_dir =
-            htp_options->skel_library_dir()->str();
-        if (!skel_library_dir.empty()) {
-          setenv(
-              "ADSP_LIBRARY_PATH", skel_library_dir.c_str(), /*overwrite=*/1);
-        }
         QNN_EXECUTORCH_LOG_INFO(
             "skel_library_dir: %s", skel_library_dir.c_str());
         QNN_EXECUTORCH_LOG_INFO(
