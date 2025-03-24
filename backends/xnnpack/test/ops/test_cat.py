@@ -23,7 +23,7 @@ class TestCat(unittest.TestCase):
             x = torch.cat(xs, dim=self.dim)
             return x + x  # Quantize by propagation.
 
-    def _test_cat(self, module, inputs, cat_num=1, quant=False, quant_ops=2):
+    def _test_cat(self, module, inputs, cat_num=1, quant=False, quant_ops=2, mixed_dtype=False):
         for legacy_mode in (True, False):
             tester = Tester(module, inputs)
 
@@ -53,12 +53,16 @@ class TestCat(unittest.TestCase):
             if quant:
                 tester.check_not(["torch.ops.quantized_decomposed"])
 
+            # Inverse check for mixed-dtype: original node remains and no delegate node
+            if mixed_dtype:
+                tester.check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
+                tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
+            else:
+                tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                tester.check_not(["executorch_exir_dialects_edge__ops_aten_cat"])
+
             (
-                tester.check_count(
-                    {"torch.ops.higher_order.executorch_call_delegate": 1}
-                )
-                .check_not(["executorch_exir_dialects_edge__ops_aten_cat"])
-                .to_executorch()
+                tester.to_executorch()
                 .serialize()
                 .run_method_and_compare_outputs()
             )
@@ -249,3 +253,19 @@ class TestCat(unittest.TestCase):
     def _test_qs8_cat_nhwc2(self):
         inputs = (torch.randn(1, 1, 3, 3), torch.randn(1, 1, 3, 3))
         self._test_cat(self.CatNhwc(), inputs, quant=True, quant_ops=4)
+
+    def test_fp32_cat_with_mixed_dtype(self):
+        test_cases = [
+            torch.bfloat16,
+            torch.float16,
+            torch.int8,
+        ]
+        for dtype in test_cases:
+            with self.subTest(dtype=str(dtype)):
+                inputs = (
+                    torch.randn(1, 2, 3).to(torch.float32),
+                    torch.randn(3, 2, 3).to(dtype),
+                )
+                # Set mixed_dtype=True to verify that
+                # no delegate node is inserted and the original node remains in the graph
+                self._test_cat(self.Cat(), inputs, mixed_dtype=True)
