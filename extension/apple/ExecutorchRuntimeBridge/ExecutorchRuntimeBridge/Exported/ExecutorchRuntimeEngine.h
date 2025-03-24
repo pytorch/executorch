@@ -21,7 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
                            modelMethodName:(NSString *)modelMethodName
                                      error:(NSError * _Nullable * _Nullable)error NS_DESIGNATED_INITIALIZER;
 
-- (nullable NSArray<ExecutorchRuntimeValue *> *)infer:(NSArray<ExecutorchRuntimeValue *> *)input
+- (nullable NSArray<ExecutorchRuntimeValue *> *)infer:(NSArray<ExecutorchRuntimeValue *> *)values
                                                 error:(NSError * _Nullable * _Nullable)error NS_SWIFT_NAME(infer(input:));
 
 @end

@@ -29,6 +29,9 @@ use TARGETS files normally. Same for xplat-only directories and BUCK files.
 load(":env_interface.bzl", "env")
 load(":selects.bzl", "selects")
 
+def is_arvr_mode():
+    return env.is_arvr_mode()
+
 def is_xplat():
     return env.is_xplat()
 

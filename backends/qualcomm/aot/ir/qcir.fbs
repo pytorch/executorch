@@ -54,6 +54,13 @@ enum QuantizeType : byte {
     AXIS_SCALE_OFFSET,
     BW_SCALE_OFFSET,
     BW_AXIS_SCALE_OFFSET,
+    BLOCKWISE_EXPANSION,
+    UNDEFINED,
+}
+
+enum BlockScaleStorageType: byte {
+    BITWIDTH_SCALE_STORAGE_8 = 0,
+    BITWIDTH_SCALE_STORAGE_16,
     UNDEFINED,
 }
 
@@ -72,6 +79,10 @@ table QuantizeParam {
     offsets: [int];
     // used by general quantization
     data: [ScaleOffset];
+    // used by block quantization
+    num_blocks_per_axis: uint;
+    block_scale_storage_type: BlockScaleStorageType;
+    block_scale: [ubyte];
 }
 
 table Tensor {

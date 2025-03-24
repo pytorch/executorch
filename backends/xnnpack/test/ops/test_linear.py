@@ -191,6 +191,21 @@ class ParallelLinear(torch.nn.Module):
         return a + b
 
 
+class SharedDQChain(torch.nn.Module):
+    def __init__(self, input_size, output_size):
+        super().__init__()
+        self.linear1_weight = torch.nn.Parameter(torch.rand(output_size, input_size))
+        self.linear1_bias = torch.nn.Parameter(torch.rand(output_size))
+
+        self.linear2_weight = torch.nn.Parameter(torch.rand(output_size, input_size))
+        self.linear2_bias = torch.nn.Parameter(torch.rand(output_size))
+
+    def forward(self, x):
+        a = torch.nn.functional.linear(x, self.linear1_weight, self.linear1_bias)
+        b = torch.nn.functional.linear(x, self.linear2_weight, self.linear2_bias)
+        return a + b
+
+
 class TestLinear(unittest.TestCase):
     """
     Test Class for XNNPACK Linear Operators.
@@ -519,6 +534,23 @@ class TestLinear(unittest.TestCase):
                 # tester.run_method_and_compare_outputs(
                 #     qtol=bool(quant_config), atol=atol
                 # )
+
+    def test_qd8_f32_per_channel_shared_dq_chain(self):
+        for use_bias in (False, True):
+            module = SharedDQChain(
+                input_size=13,
+                output_size=17,
+            )
+            inputs = (torch.randn(1, 2, 13),)
+
+            self._test_dqlinear(
+                module,
+                inputs,
+                dynamic_shapes=None,
+                is_per_channel=True,
+                linear_count=2,
+                uses_bias=use_bias,
+            )
 
     def _test_qd8_per_channel_linear(self, dtype: torch.dtype = torch.float):
         for uses_bias in (False, True):

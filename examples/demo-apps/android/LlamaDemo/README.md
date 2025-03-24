@@ -75,7 +75,7 @@ Optional Parameters:
 
 ```java
 // Upon returning to the Main Chat Activity
-mModule = new LlamaModule(
+mModule = new LlmModule(
             ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
             modelPath,
             tokenizerPath,

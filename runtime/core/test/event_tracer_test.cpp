@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
+#include <executorch/runtime/core/result.h>
 // Enable flag for test
 #define ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/event_tracer_hooks.h>
@@ -29,6 +30,7 @@ using executorch::runtime::EventTracerEntry;
 using executorch::runtime::kUnsetChainId;
 using executorch::runtime::kUnsetDebugHandle;
 using executorch::runtime::LoggedEValueType;
+using executorch::runtime::Result;
 
 class DummyEventTracer : public EventTracer {
  public:
@@ -101,49 +103,54 @@ class DummyEventTracer : public EventTracer {
     (void)metadata_len;
   }
 
-  void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const Tensor& output) override {
     (void)name;
     (void)delegate_debug_index;
     (void)output;
+    return true;
   }
 
-  void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const ArrayRef<Tensor> output) override {
     (void)name;
     (void)delegate_debug_index;
     (void)output;
+    return true;
   }
 
-  void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const int& output) override {
     (void)name;
     (void)delegate_debug_index;
     (void)output;
+    return true;
   }
 
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const bool& output) override {
     (void)name;
     (void)delegate_debug_index;
     (void)output;
+    return true;
   }
 
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       const double& output) override {
     (void)name;
     (void)delegate_debug_index;
     (void)output;
+    return true;
   }
 
   void log_evalue(const EValue& evalue, LoggedEValueType evalue_type) override {

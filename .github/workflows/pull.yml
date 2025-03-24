@@ -60,7 +60,7 @@ jobs:
           - runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-clang12
           # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
-          - runner: linux.arm64.2xlarge 
+          - runner: linux.arm64.2xlarge
             build-tool: buck2
       fail-fast: false
     with:
@@ -420,7 +420,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    needs: test-llama-runner-linux
 
   unittest:
     uses: ./.github/workflows/_unittest.yml

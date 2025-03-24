@@ -61,6 +61,17 @@ class DType(Enum):
             raise ValueError(f"Unsupported dtype {self}")
         return mapping[self]
 
+    @staticmethod
+    def from_torch_dtype(dtype: torch.dtype):
+        mapping = {
+            torch.float32: DType.fp32,
+            torch.float16: DType.fp16,
+            torch.bfloat16: DType.bf16,
+        }
+        if dtype not in mapping:
+            raise ValueError(f"Unsupported torch.dtype {dtype}")
+        return mapping[dtype]
+
 
 class LLMEdgeManager:
     """

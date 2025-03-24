@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package com.example.executorch;
+package org.pytorch.executorch;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -32,9 +32,6 @@ import org.junit.runners.JUnit4;
 import org.apache.commons.io.FileUtils;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.InstrumentationRegistry;
-import org.pytorch.executorch.Module;
-import org.pytorch.executorch.EValue;
-import org.pytorch.executorch.Tensor;
 
 /** Unit tests for {@link Module}. */
 @RunWith(AndroidJUnit4.class)

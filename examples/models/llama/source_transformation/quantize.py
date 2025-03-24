@@ -18,6 +18,7 @@ from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
 
+
 try:
     from fairseq2.nn.embedding import (
         Embedding as fsEmbedding,
@@ -36,7 +37,8 @@ except:
 def quantize(  # noqa C901
     model: torch.nn.Module,
     qmode: str,
-    activation_dtype: Optional[DType],
+    computation_dtype: Optional[DType] = None,
+    checkpoint_dtype: Optional[DType] = None,
     checkpoint_path: Optional[Path] = None,
     # following arguments only available when setting int4 or gptq quantization.
     group_size: Optional[int] = 128,
@@ -52,20 +54,33 @@ def quantize(  # noqa C901
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
+
     Args:
-        model: A model to quantize.
-        qmode: quantization mode, e.g. int8, 8da4w, 8da4w-gptq
+        model: The model to quantize.
+        qmode: The quantization mode, e.g. int8, 8da4w, 8da4w-gptq.
+        computation_dtype: The dtype that ops are performed in (the resulting dtype of dequantization).
+            Also the dtype of the rest of the non-quantized compoents of the model.
+        checkpoint_dtype: The dtype of the checkpoint, this arg exists since it is more accurate to
+            quantize the weight in its original dtype.
+
     Returns:
         A quantized model.
     """
-    if activation_dtype is not None:
-        torch_dtype = activation_dtype.to_torch_dtype()
+    if computation_dtype:
+        computation_torch_dtype = computation_dtype.to_torch_dtype()
     else:
-        torch_dtype = torch.float16
+        computation_torch_dtype = torch.float32
+
+    if not checkpoint_dtype:
+        checkpoint_torch_dtype = computation_torch_dtype
+    else:
+        checkpoint_torch_dtype = checkpoint_dtype.to_torch_dtype()
 
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
-        return WeightOnlyInt8QuantHandler(model).quantized_model()
+        return WeightOnlyInt8QuantHandler(
+            model, precision=checkpoint_torch_dtype
+        ).quantized_model()
     elif qmode.startswith("torchao:fpa"):
         pattern = r"torchao:fpa(\d+)w"
         matches = re.findall(pattern, qmode)
@@ -75,10 +90,12 @@ def quantize(  # noqa C901
         from torchao.experimental.quant_api import UIntxWeightOnlyLinearQuantizer
 
         with torch.no_grad():
+            # This quantize() is currently doing a model.to(self.precision) so cannot
+            # decouple computation and checkpoint dtypes.
             model = (
                 UIntxWeightOnlyLinearQuantizer(
                     device="mps",
-                    precision=torch.float32,
+                    precision=computation_torch_dtype,
                     groupsize=group_size,
                     bitwidth=bitwidth,
                 )
@@ -101,6 +118,8 @@ def quantize(  # noqa C901
         from torchao.utils import unwrap_tensor_subclass
 
         with torch.no_grad():
+            # Computation dtype is fixed to fp32 in the implementation of quantize_, so
+            # no way to decouple checkpoint and computation dtype.
             quantize_(
                 model,
                 Int8DynamicActivationIntxWeightConfig(
@@ -121,9 +140,12 @@ def quantize(  # noqa C901
             raise Exception("For 8da4w quantization, group size must be specified.")
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
+        # 1. Quantize in checkpoint dtype.
         model = Int8DynActInt4WeightQuantizer(
-            precision=torch_dtype, groupsize=group_size
+            precision=checkpoint_torch_dtype, groupsize=group_size
         ).quantize(model)
+        # 2. Set the computation dtype (what weights/acts dequantize to).
+        model = set_8da4w_computation_dtype(model, computation_torch_dtype)
 
         if verbose:
             print("quantized model:", model)
@@ -177,7 +199,7 @@ def quantize(  # noqa C901
             blocksize,
             percdamp,
             group_size,
-        )
+        )  # TODO: separate computation and checkpoint dtype for GPTQ.
         model = gptq_quantizer.quantize(model, inputs)
         return model
     elif qmode == "vulkan_4w":
@@ -190,9 +212,12 @@ def quantize(  # noqa C901
         # at the moment
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
+        # 1. Quantize in checkpoint dtype.
         model = Int8DynActInt4WeightQuantizer(
-            precision=torch_dtype, groupsize=q_group_size
+            precision=checkpoint_torch_dtype, groupsize=q_group_size
         ).quantize(model)
+        # 2. Set the computation dtype (what weights/acts dequantize to).
+        model = set_8da4w_computation_dtype(model, computation_torch_dtype)
 
         return model
     else:
@@ -348,6 +373,7 @@ class WeightOnlyInt8QuantHandler(QuantHandler):
         node_type: str = "*",
         bitwidth: Optional[int] = None,
         group_size: Optional[int] = None,
+        precision: torch.dtype = torch.float32,
     ):
         self.mod = mod
         self.group_size = group_size
@@ -356,6 +382,7 @@ class WeightOnlyInt8QuantHandler(QuantHandler):
             self.bitwidth = 8
         else:
             self.bitwidth = bitwidth
+        self.precision = precision
 
     @torch.no_grad()
     def create_quantized_state_dict(self) -> Dict:
@@ -391,7 +418,7 @@ class WeightOnlyInt8QuantHandler(QuantHandler):
 
                     # print(f"expanded weight shape {input_weight.shape}")
                     weight, scales, _ = dynamically_quantize_per_channel(
-                        input_weight,
+                        input_weight.to(dtype=self.precision),
                         range_min,
                         range_max,
                         torch.int8,
@@ -576,6 +603,7 @@ class EmbeddingQuantHandler(QuantHandler):
         bitwidth: int = 8,
         group_size: Optional[int] = None,
         packed=False,
+        precision: Optional[torch.dtype] = None,
     ):
         if isinstance(packed, str):
             packed = packed == "True"
@@ -584,6 +612,8 @@ class EmbeddingQuantHandler(QuantHandler):
         self.group_size = group_size
         self.bitwidth = bitwidth
         self.packed = packed
+        # Dtype of the weights right before quantization.
+        self.precision = precision
         if (bitwidth not in [2, 4]) and packed:
             raise RuntimeError("pack only works with bitsize 2, 4")
 
@@ -614,7 +644,11 @@ class EmbeddingQuantHandler(QuantHandler):
                     f"quantize {fqn, mod} with group_size {self.group_size}, bitwidth {self.bitwidth}"
                 )
                 weight, scales, _ = dynamically_quantize_per_channel(
-                    mod.weight.float(),
+                    (
+                        mod.weight.to(dtype=self.precision)
+                        if self.precision
+                        else mod.weight
+                    ),
                     range_min,
                     range_max,
                     torch.int8,
@@ -750,7 +784,7 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 ############################ Source Transform Start #######################
 
 
-def get_quant_embedding_transform(args):
+def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
     if args.embedding_quantize.startswith("torchao:"):
         bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
         group_size = int(group_size)
@@ -775,16 +809,22 @@ def get_quant_embedding_transform(args):
     else:
         group_size = int(group_size)
     bitwidth = int(bitwidth)
+    torch_dtype = dtype_override.to_torch_dtype() if dtype_override else None
     return lambda model: EmbeddingQuantHandler(
         model,
         bitwidth=bitwidth,
         group_size=group_size,
         packed=(bitwidth in [2, 4]),
+        precision=torch_dtype,
     ).quantized_model()
 
 
-def get_quant_weight_transform(args, dtype_override, verbose):
-    # If these optional args are None, don't provide them to quantize()
+def get_quant_weight_transform(
+    args,
+    computation_dtype: Optional[DType] = None,
+    checkpoint_dtype: Optional[DType] = None,
+):
+    # If these optional args are None, don't provide them to quantize().
     quant_args_str = [
         "group_size",
         "calibration_tasks",
@@ -802,7 +842,8 @@ def get_quant_weight_transform(args, dtype_override, verbose):
         quantize,
         **quant_args,
         qmode=args.quantization_mode,
-        activation_dtype=dtype_override,
+        computation_dtype=computation_dtype,
+        checkpoint_dtype=checkpoint_dtype,
         checkpoint_path=(Path(path) if (path := args.checkpoint) is not None else None),
         tokenizer_path=(
             Path(path) if (path := args.tokenizer_path) is not None else None
@@ -827,6 +868,30 @@ def _load_torchao_aten_lib(libname):
     ), f"Expected 1 library but got {len(libs)}.  If you installed the torchao ops in a non-standard location, please set CMAKE_INSTALL_PREFIX correctly."
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
+
+
+# We want to do compute the actual ops in the computation dtype, since the precision of the
+# quantized linear will initially be the dtype of the checkpoint.
+def set_8da4w_computation_dtype(
+    module: nn.Module, computation_dtype: torch.dtype
+) -> nn.Module:
+
+    from torchao.quantization.GPTQ import Int8DynActInt4WeightLinear
+
+    def _set_8da4w_computation_dtype(module: nn.Module, dtype: torch.dtype) -> None:
+        """
+        Recursively iterate through the module and set the precision attributes
+        of all Int8DynActInt4WeightLinears.
+        """
+        for _name, child in module.named_children():
+            if isinstance(child, Int8DynActInt4WeightLinear):
+                child.precision = dtype
+            else:
+                # Recursively apply to child modules
+                _set_8da4w_computation_dtype(child, dtype)
+
+    _set_8da4w_computation_dtype(module, computation_dtype)
+    return module
 
 
 ############################ Source Transform End #######################
