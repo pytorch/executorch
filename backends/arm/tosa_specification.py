@@ -112,7 +112,7 @@ class Tosa_0_80(TosaSpecification):
         if len(extras) > 0:
             raise ValueError(f"Unhandled extras found: {extras}")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         extensions = ""
         if self.level_8k:
             extensions += "+8k"

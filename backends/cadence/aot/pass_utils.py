@@ -104,6 +104,16 @@ def count_node(graph_module: torch.fx.GraphModule, target: torch.fx.node.Target)
     return total
 
 
+def op_counts_match(
+    graph_module: torch.fx.GraphModule,
+    expected_op_counts: dict[EdgeOpOverload, int],
+) -> bool:
+    for op, count in expected_op_counts.items():
+        if count_node(graph_module, op) != count:
+            return False
+    return True
+
+
 # Testing utils
 # Return the compute/function nodes in the graph
 def get_compute_nodes_in_gm(graph_module: torch.fx.GraphModule) -> List[torch.fx.Node]:

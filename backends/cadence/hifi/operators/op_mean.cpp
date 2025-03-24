@@ -175,7 +175,7 @@ Tensor& mean_dim_out(
     bool keepdim,
     optional<ScalarType> dtype,
     Tensor& out) {
-  mean_out(ctx, in, dim_list, keepdim, dtype, out);
+  return mean_out(ctx, in, dim_list, keepdim, dtype, out);
 }
 
 } // namespace native

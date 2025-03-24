@@ -7,9 +7,6 @@ def define_common_targets():
             "main.cpp",
         ],
         compiler_flags = ["-Wno-global-constructors"],
-        preprocessor_flags = [
-            "-DET_USE_THREADPOOL",
-        ],
         deps = [
             "//executorch/examples/models/llava/runner:runner",
             "//executorch/extension/evalue_util:print_evalue",

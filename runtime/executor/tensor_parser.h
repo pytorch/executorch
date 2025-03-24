@@ -7,9 +7,12 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -21,17 +24,33 @@ namespace executorch {
 namespace runtime {
 namespace deserialization {
 
+/// Data structure to hold key and data buffer for external data used
+/// in a method.
+struct NamedData {
+  const char* key;
+  FreeableBuffer buffer;
+};
+
+NamedData* get_data_by_key(const char* key, Span<NamedData> entries);
+
 ET_NODISCARD Result<executorch::aten::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor,
-    const NamedDataMap* named_data_map = nullptr);
+    const NamedDataMap* named_data_map = nullptr,
+    Span<NamedData> external_constants = {});
 
 ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
     EValue* values,
     size_t values_len,
     MemoryManager* memory_manager);
+
+// Checks that the sizes, dim_order and scalar_type match between tensors
+// stored in the PTE and externally.
+ET_NODISCARD Error validateTensorLayout(
+    const executorch_flatbuffer::Tensor* s_tensor,
+    const TensorLayout& expected_layout);
 
 // Deserializes a List of optional type. The code here is the same between all
 // list of optionals: list of optional Tensor, list of optional float etc, so we
@@ -75,7 +94,7 @@ parseListOptionalType(
       evalp_list[output_idx] = nullptr;
     } else {
       ET_CHECK_OR_RETURN_ERROR(
-          index >= 0 && index < values_len,
+          index >= 0 && static_cast<size_t>(index) < values_len,
           InvalidProgram,
           "Invalid value index %" PRId32 " for ListOptional",
           index);
@@ -105,7 +124,11 @@ parseListOptionalType(
  * @param[in] nbytes The amount of memory to get from the allocator.
  * @param[in] allocator The source of memory for non-constant tensors.
  * @param[in] named_data_map An optional map of {name, blob} used to resolve
- *     data that is external to the PTE, if any.
+ *     data that is mutable and external to the PTE, if any.
+ * @param[in] external_constants An optional span containing tensor fqn to
+ *     corresponding tensor data. Used to resolve data that is constant and
+ *     external to the PTE, if any. Referencing data from external_constants is
+ *     safe, as it has the same lifetime as the method.
  *
  * @returns On success, the data pointer to use for the tensor. On failure, a
  *     non-Ok Error.
@@ -115,7 +138,8 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     const Program* program,
     size_t nbytes,
     HierarchicalAllocator* allocator,
-    const NamedDataMap* named_data_map = nullptr);
+    const NamedDataMap* named_data_map = nullptr,
+    Span<NamedData> external_constants = {});
 
 } // namespace deserialization
 } // namespace runtime
@@ -133,4 +157,7 @@ using ::executorch::runtime::deserialization::parseTensorList;
 } // namespace deserialization
 } // namespace executor
 } // namespace torch
+
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif

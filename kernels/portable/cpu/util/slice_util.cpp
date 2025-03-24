@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/slice_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cstring>
@@ -24,7 +25,7 @@ bool check_narrow_copy_args(
   ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(lenth >= 0, "lenth must be non-negative");
+  ET_CHECK_OR_RETURN_FALSE(lenth >= 0, "lenth must be non-negative");
   ET_LOG_AND_RETURN_IF_FALSE(start >= -in.size(dim));
   ET_LOG_AND_RETURN_IF_FALSE(start <= in.size(dim));
   if (start < 0) {
@@ -42,7 +43,7 @@ void get_narrow_copy_out_target_size(
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
-  for (size_t d = 0; d < in.dim(); ++d) {
+  for (const auto d : c10::irange(in.dim())) {
     out_sizes[d] = in.size(d);
   }
   out_sizes[dim] = length;
@@ -56,8 +57,7 @@ bool check_slice_copy_args(
   ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      step > 0, "slice step must be greater than zero");
+  ET_CHECK_OR_RETURN_FALSE(step > 0, "slice step must be greater than zero");
   return true;
 }
 
@@ -89,18 +89,17 @@ bool check_slice_scatter_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(input, src));
 
   // Check step. Step must be greater than zero
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      step > 0, "slice step must be greater than zero");
+  ET_CHECK_OR_RETURN_FALSE(step > 0, "slice step must be greater than zero");
 
   // The size of src tensor should follow these rules:
   // - src.size(i) shall equal to input.size(i) if i != dim,
   // - src.size(dim) shall equal to num_values
-  for (size_t d = 0; d < input.dim() - 1; d++) {
+  for (const auto d : c10::irange(input.dim() - 1)) {
     if (d != dim) {
       ET_LOG_AND_RETURN_IF_FALSE(
           tensors_have_same_size_at_dims(input, d, src, d));
     } else {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           src.size(d) == num_values,
           "input.size(%zu) %zd != num_values %" PRId64 " | dim = %" PRId64 ")",
           d,
@@ -168,9 +167,9 @@ void compute_slice(
   const char* input_data = in.const_data_ptr<char>();
   char* dest = out.mutable_data_ptr<char>();
 
-  for (int i = 0; i < leading_dims; i++) {
+  for (const auto i : c10::irange(leading_dims)) {
     const char* src = input_data + (i * dim_length + start) * length_per_step;
-    for (int j = 0; j < length; j++) {
+    for ([[maybe_unused]] const auto j : c10::irange(length)) {
       memcpy(dest, src, length_per_step);
       src += step * length_per_step;
       dest += length_per_step;

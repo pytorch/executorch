@@ -184,6 +184,66 @@ native_layer_norm_out(
     const ::executorch::aten::Scalar& alpha,
     ::executorch::aten::Tensor& out);
 
+::executorch::aten::Tensor& sigmoid_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& sqrt_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& rsqrt_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& tanh_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& lt_scalar_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& a,
+    const ::executorch::aten::Scalar& b,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& lt_tensor_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& a,
+    const ::executorch::aten::Tensor& b,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& where_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& cond,
+    const ::executorch::aten::Tensor& a,
+    const ::executorch::aten::Tensor& b,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& clamp_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    const ::executorch::aten::optional<::executorch::aten::Scalar>& min_opt,
+    const ::executorch::aten::optional<::executorch::aten::Scalar>& max_opt,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& clamp_tensor_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    const ::executorch::aten::optional<::executorch::aten::Tensor>& min_opt,
+    const ::executorch::aten::optional<::executorch::aten::Tensor>& max_opt,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& transpose_copy_int_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    int64_t dim0,
+    int64_t dim1,
+    ::executorch::aten::Tensor& out);
+
 } // namespace native
 } // namespace G3
 } // namespace impl

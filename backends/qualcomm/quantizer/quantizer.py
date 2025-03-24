@@ -5,13 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 from enum import IntEnum, unique
 from functools import partial
-from typing import Callable, Optional, Sequence, Set
+from typing import Callable, Dict, Optional, Sequence, Set, Tuple
 
 import torch
 from executorch.backends.qualcomm._passes import (
     DecomposeEinsum,
     DecomposeLinalgVectorNorm,
     DecomposeSilu,
+    LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
     ReduceDynamicRange,
     ReplaceInfBuffer,
@@ -33,6 +34,7 @@ from .qconfig import (
     get_16a8w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
     get_8a8w_qnn_qat_config,
+    get_ptq_per_block_quant_config,
     get_ptq_per_channel_quant_config,
     get_qat_per_channel_quant_config,
     QuantizationConfig,
@@ -50,6 +52,7 @@ __all__ = [
     "get_8a8w_qnn_ptq_config",
     "get_8a8w_qnn_qat_config",
     "get_16a4w_qnn_qat_config",
+    "get_ptq_per_block_quant_config",
 ]
 
 
@@ -62,7 +65,8 @@ class QuantDtype(IntEnum):
     use_16a16w = 0
     use_16a8w = 1
     use_16a4w = 2
-    use_8a8w = 3
+    use_16a4w_block = 3
+    use_8a8w = 4
 
 
 quant_config_dict = {
@@ -74,6 +78,7 @@ quant_config_dict = {
             act_dtype=torch.uint16,
             weight_dtype=torch.int16,
         ),
+        None,
     ),
     (QuantDtype.use_16a8w, False): (
         get_16a8w_qnn_ptq_config,
@@ -82,6 +87,7 @@ quant_config_dict = {
             act_dtype=torch.uint16,
             weight_dtype=torch.int8,
         ),
+        None,
     ),
     (QuantDtype.use_16a4w, False): (
         get_16a4w_qnn_ptq_config,
@@ -90,10 +96,25 @@ quant_config_dict = {
             act_dtype=torch.uint16,
             weight_dtype="int4",
         ),
+        None,
+    ),
+    (QuantDtype.use_16a4w_block, False): (
+        get_16a4w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype="int4",
+        ),
+        partial(
+            get_ptq_per_block_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype="int4",
+        ),
     ),
     (QuantDtype.use_8a8w, False): (
         get_8a8w_qnn_ptq_config,
         partial(get_ptq_per_channel_quant_config),
+        None,
     ),
     # QAT,
     (QuantDtype.use_16a4w, True): (
@@ -103,10 +124,12 @@ quant_config_dict = {
             act_dtype=torch.uint16,
             weight_dtype="int4",
         ),
+        None,
     ),
     (QuantDtype.use_8a8w, True): (
         get_8a8w_qnn_qat_config,
         partial(get_qat_per_channel_quant_config),
+        None,
     ),
 }
 
@@ -122,7 +145,10 @@ class QnnQuantizer(Quantizer):
         self.quant_dtype = QuantDtype.use_8a8w
         self.quant_config: QuantizationConfig = get_8a8w_qnn_ptq_config()
         self.per_channel_quant_config = get_ptq_per_channel_quant_config()
+        self.per_block_quant_config = get_ptq_per_block_quant_config()
+        self.block_size_map = {}
         self.use_per_channel_weight_quant_ops: Set[OpOverload] = set()
+        self.use_per_block_weight_quant_ops: Set[OpOverload] = set()
 
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
@@ -132,7 +158,7 @@ class QnnQuantizer(Quantizer):
             if node.name in self.discard_nodes:
                 continue
 
-            quant_config = self._get_quant_config(node.target)
+            quant_config = self._get_quant_config(node)
             if quant_config:
                 OP_ANNOTATOR[node.target](node, quant_config)
 
@@ -140,22 +166,35 @@ class QnnQuantizer(Quantizer):
         for annotation_func in self.custom_quant_annotations:
             annotation_func(gm)
 
-    def _get_quant_config(self, op: str | OpOverload) -> Optional[QuantizationConfig]:
+    def _get_quant_config(self, op: torch.fx.Node) -> Optional[QuantizationConfig]:
         """
         Priority:
-            1. is one of use_per_channel_weight_quant_ops
-            2. quant config
+            1. is one of use_per_block_weight_quant_ops
+            2. is one of use_per_channel_weight_quant_ops
+            3. quant config
         """
-        if isinstance(op, str):
+        target = op.target
+        if isinstance(target, str):
             return
 
-        if op in self.use_per_channel_weight_quant_ops:
+        if target in self.use_per_block_weight_quant_ops:
+            if block_size := self.block_size_map.get(op.name):
+                self.per_block_quant_config.block_size = block_size
+                return self.per_block_quant_config
+
+        if target in self.use_per_channel_weight_quant_ops:
             return self.per_channel_quant_config
 
-        if op in self.quant_ops:
+        if target in self.quant_ops:
             return self.quant_config
 
         print(f"No quant config is implemented for op, {op}")
+
+    def _update_per_block_weight_quant_ops(self, ops: Set[OpOverload], enable: bool):
+        if enable:
+            self.use_per_block_weight_quant_ops.update(ops)
+        else:
+            self.use_per_block_weight_quant_ops.difference_update(ops)
 
     def _update_per_channel_weight_quant_ops(self, ops: Set[OpOverload], enable: bool):
         if enable:
@@ -194,9 +233,9 @@ class QnnQuantizer(Quantizer):
                 f"the quant config, (quant_dtype: {quant_dtype}, is_qat: {is_qat}) is not support"
             )
 
-        quant_config_fuc, per_channel_quant_config_fuc = quant_config_dict[
-            (quant_dtype, is_qat)
-        ]
+        quant_config_fuc, per_channel_quant_config_fuc, per_block_quant_config_fuc = (
+            quant_config_dict[(quant_dtype, is_qat)]
+        )
         self.quant_config = (
             quant_config_fuc(act_observer=act_observer)
             if act_observer
@@ -207,6 +246,19 @@ class QnnQuantizer(Quantizer):
             if act_observer
             else per_channel_quant_config_fuc()
         )
+        if per_block_quant_config_fuc is not None:
+            self.per_block_quant_config = (
+                per_block_quant_config_fuc(act_observer=act_observer)
+                if act_observer
+                else per_block_quant_config_fuc()
+            )
+
+    def set_block_size_map(self, block_size_map: Dict[str, Tuple]) -> None:
+        self.block_size_map = block_size_map
+
+    def set_per_block_conv_quant(self, enable: bool) -> None:
+        conv_ops = {torch.ops.aten.conv2d.default}
+        self._update_per_block_weight_quant_ops(conv_ops, enable)
 
     def set_per_channel_conv_quant(self, enable: bool) -> None:
         conv_ops = {torch.ops.aten.conv1d.default, torch.ops.aten.conv2d.default}
@@ -224,8 +276,9 @@ class QnnQuantizer(Quantizer):
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
         model = DecomposeEinsum()(model).graph_module
-        model = DecomposeLinalgVectorNorm(quantization_capture=True)(model).graph_module
+        model = DecomposeLinalgVectorNorm(aten_dialect_capture=True)(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
+        model = LiftConstantScalarOperands()(model).graph_module
         return model
 
     def validate(self, model: GraphModule) -> None:

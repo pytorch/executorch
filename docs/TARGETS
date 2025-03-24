@@ -9,8 +9,9 @@ python_binary(
     par_style = "xar",
     deps = [
         "//caffe2:torch",
-        "//executorch/exir:lib",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/devtools:lib",
+        "//executorch/exir:lib",
         "//executorch/exir/backend/test:backend_with_compiler_demo",
         "//executorch/exir/backend/test:op_partitioner_demo",
         "//executorch/devtools/bundled_program/serialize:lib",

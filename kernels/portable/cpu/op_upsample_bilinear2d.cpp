@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/upsample_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -29,9 +30,9 @@ void upsample_bilinear2d_kernel_impl(
   auto out_data = out.mutable_data_ptr<CTYPE>();
 
   auto in_plane = in_data;
-  for (auto n = 0; n < out.size(0); n++) {
-    for (auto c = 0; c < out.size(1); c++) {
-      for (auto h = 0; h < out.size(2); h++) {
+  for ([[maybe_unused]] const auto n : c10::irange(out.size(0))) {
+    for ([[maybe_unused]] const auto c : c10::irange(out.size(1))) {
+      for (const auto h : c10::irange(out.size(2))) {
         // Compute source index and weights.
         int64_t in_h1, in_h2;
         float weight_h, inv_weight_h;
@@ -47,7 +48,7 @@ void upsample_bilinear2d_kernel_impl(
             out.sizes()[2],
             align_corners);
 
-        for (auto w = 0; w < out.size(3); w++) {
+        for (const auto w : c10::irange(out.size(3))) {
           int64_t in_w1, in_w2;
           float weight_w, inv_weight_w;
 

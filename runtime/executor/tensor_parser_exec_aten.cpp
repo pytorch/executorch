@@ -64,7 +64,8 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
         "size_t cannot hold memory offset 0x%08" PRIx32 ".%08" PRIx32,
         memory_offset_high,
         memory_offset_low);
-    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
+    memory_offset |= static_cast<size_t>(memory_offset_high)
+        << (sizeof(size_t) - sizeof(uint32_t));
   }
   return allocator->get_offset_address(memory_id, memory_offset, nbytes);
 }
@@ -94,7 +95,7 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
   size_t output_idx = 0;
   for (int32_t tensor_index : *tensor_indices) {
     ET_CHECK_OR_RETURN_ERROR(
-        tensor_index >= 0 && tensor_index < values_len,
+        tensor_index >= 0 && static_cast<size_t>(tensor_index) < values_len,
         InvalidProgram,
         "Invalid value index %" PRId32 " for TensorList",
         tensor_index);
@@ -111,18 +112,128 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
       evalp_list, tensor_list, tensor_indices->size());
 }
 
+ET_NODISCARD Error validateTensorLayout(
+    const executorch_flatbuffer::Tensor* s_tensor,
+    const TensorLayout& expected_layout) {
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<ScalarType>(s_tensor->scalar_type()) ==
+          expected_layout.scalar_type(),
+      InvalidExternalData,
+      "Scalar type mismatch. Expected %hhd, got %hhd.",
+      static_cast<int8_t>(s_tensor->scalar_type()),
+      static_cast<int8_t>(expected_layout.scalar_type()));
+  int dim = s_tensor->sizes()->size();
+  ET_CHECK_OR_RETURN_ERROR(
+      dim >= 0, InvalidExternalData, "Dim is negative: %d", dim)
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<size_t>(dim) == expected_layout.sizes().size(),
+      InvalidExternalData,
+      "Dim mismatch. Expected %d, got %zu.",
+      dim,
+      expected_layout.sizes().size());
+  for (int i = 0; i < dim; i++) {
+    ET_CHECK_OR_RETURN_ERROR(
+        s_tensor->sizes()->Get(i) == expected_layout.sizes()[i],
+        InvalidExternalData,
+        "Sizes mismatch. Expected %d, got %d for size at index %d.",
+        s_tensor->sizes()->Get(i),
+        expected_layout.sizes()[i],
+        i);
+    ET_CHECK_OR_RETURN_ERROR(
+        s_tensor->dim_order()->Get(i) == expected_layout.dim_order()[i],
+        InvalidExternalData,
+        "Dim order mismatch. Expected %d, got %d for dim at index %d.",
+        s_tensor->dim_order()->Get(i),
+        expected_layout.dim_order()[i],
+        i);
+  }
+  return Error::Ok;
+}
+
+// Check if key exists in entries. If it does, return a pointer to the entry
+// otherwise return a nullptr.
+NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
+  for (const auto i : c10::irange(entries.size())) {
+    if (strcmp(key, entries[i].key) == 0) {
+      return &entries[i];
+    }
+  }
+  return nullptr;
+}
+
 ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
     size_t nbytes,
     HierarchicalAllocator* allocator,
-    const NamedDataMap* named_data_map) {
+    const NamedDataMap* named_data_map,
+    Span<NamedData> external_constants) {
   auto data_buffer_idx = s_tensor->data_buffer_idx();
   const executorch_flatbuffer::AllocationDetails* allocation_info =
       s_tensor->allocation_info();
 
-  // Memory Planned, with initial state
-  if (data_buffer_idx > 0 && allocation_info != nullptr) {
+  // External tensors.
+  if (s_tensor->extra_tensor_info() != nullptr &&
+      s_tensor->extra_tensor_info()->location() ==
+          executorch_flatbuffer::TensorDataLocation::EXTERNAL) {
+    // Check that fqn is not null.
+    ET_CHECK_OR_RETURN_ERROR(
+        s_tensor->extra_tensor_info()->fully_qualified_name() != nullptr,
+        InvalidExternalData,
+        "Fully qualified name of external tensor is null");
+    const char* fqn =
+        s_tensor->extra_tensor_info()->fully_qualified_name()->c_str();
+
+    // Constant value.
+    if (allocation_info == nullptr) {
+      NamedData* data = get_data_by_key(fqn, external_constants);
+      if (data != nullptr) {
+        return const_cast<void*>(data->buffer.data());
+      }
+      // Should never reach here; these tensors are resolved in
+      // Method::parse_external_constants. Any errors should be caught there.
+      return Error::Internal;
+    } else {
+      // Mutable value.
+      // Look up tensor in named data map.
+      Result<const TensorLayout> tensor_layout_res =
+          named_data_map->get_metadata(fqn);
+      if (!tensor_layout_res.ok()) {
+        return tensor_layout_res.error();
+      }
+      const TensorLayout& tensor_layout = tensor_layout_res.get();
+      Error err = validateTensorLayout(s_tensor, tensor_layout);
+      if (err != Error::Ok) {
+        return err;
+      }
+      // Call load_into.
+      auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
+      if (!planned_ptr.ok()) {
+        return planned_ptr.error();
+      }
+      auto load_error =
+          named_data_map->load_data_into(fqn, planned_ptr.get(), nbytes);
+      if (load_error != Error::Ok) {
+        return load_error;
+      }
+
+      return planned_ptr;
+    }
+
+    // Constant, stored in PTE file.
+  } else if (data_buffer_idx > 0 && allocation_info == nullptr) {
+    auto const_data =
+        program->get_constant_buffer_data(data_buffer_idx, nbytes);
+    if (!const_data.ok()) {
+      return const_data.error();
+    }
+
+    // The const_cast is 'ok' here because the program and runtime should
+    // guarantee that this data is never modified.
+    return const_cast<void*>(const_data.get());
+
+    // Memory Planned, with initial state
+  } else if (data_buffer_idx > 0 && allocation_info != nullptr) {
     auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
     if (!planned_ptr.ok()) {
       return planned_ptr.error();
@@ -134,112 +245,6 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
       return err;
     }
     return planned_ptr;
-  }
-
-  // External tensors.
-  else if (
-      s_tensor->extra_tensor_info() != nullptr &&
-      s_tensor->extra_tensor_info()->location() ==
-          executorch_flatbuffer::TensorDataLocation::EXTERNAL) {
-    // Check that fqn is not null.
-    ET_CHECK_OR_RETURN_ERROR(
-        s_tensor->extra_tensor_info()->fully_qualified_name() != nullptr,
-        InvalidExternalData,
-        "Fully qualified name of external tensor is null");
-    // Look up tensor in named data map.
-    Result<const TensorLayout> tensor_layout_res = named_data_map->get_metadata(
-        s_tensor->extra_tensor_info()->fully_qualified_name()->c_str());
-    if (!tensor_layout_res.ok()) {
-      return tensor_layout_res.error();
-    }
-    const TensorLayout& tensor_layout = tensor_layout_res.get();
-
-    // Compatibility checking.
-    ET_CHECK_OR_RETURN_ERROR(
-        static_cast<ScalarType>(s_tensor->scalar_type()) ==
-            tensor_layout.scalar_type(),
-        InvalidExternalData,
-        "Scalar type mismatch. Expected %hhd, got %hhd.",
-        static_cast<int8_t>(s_tensor->scalar_type()),
-        static_cast<int8_t>(tensor_layout.scalar_type()));
-    ET_CHECK_OR_RETURN_ERROR(
-        nbytes == tensor_layout.nbytes(),
-        InvalidExternalData,
-        "Nbytes mismatch. Expected %zu, got %zu.",
-        nbytes,
-        tensor_layout.nbytes());
-    int dim = s_tensor->sizes()->size();
-    ET_CHECK_OR_RETURN_ERROR(
-        dim == tensor_layout.sizes().size(),
-        InvalidExternalData,
-        "Dim mismatch. Expected %d, got %zu.",
-        dim,
-        tensor_layout.sizes().size());
-    for (int i = 0; i < dim; i++) {
-      ET_CHECK_OR_RETURN_ERROR(
-          s_tensor->sizes()->Get(i) == tensor_layout.sizes()[i],
-          InvalidExternalData,
-          "Sizes mismatch. Expected %d, got %d for size at index %d.",
-          s_tensor->sizes()->Get(i),
-          tensor_layout.sizes()[i],
-          i);
-      ET_CHECK_OR_RETURN_ERROR(
-          s_tensor->dim_order()->Get(i) == tensor_layout.dim_order()[i],
-          InvalidExternalData,
-          "Dim order mismatch. Expected %d, got %d for dim at index %d.",
-          s_tensor->dim_order()->Get(i),
-          tensor_layout.dim_order()[i],
-          i);
-    }
-
-    // Constant value.
-    if (allocation_info == nullptr) {
-      Result<FreeableBuffer> data_res = named_data_map->get_data(
-          s_tensor->extra_tensor_info()->fully_qualified_name()->c_str());
-      if (!data_res.ok()) {
-        return data_res.error();
-      }
-      // The const_cast is 'ok' here because program and runtime should
-      // guarantee that this data is never modified. Temporary until runtime
-      // takes ownership of FreeableBuffers in TODO(T214294528).
-      return const_cast<void*>(data_res.get().data());
-    }
-
-    // Mutable value.
-    else {
-      // Call load_into.
-      auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
-      if (!planned_ptr.ok()) {
-        return planned_ptr.error();
-      }
-      auto size = named_data_map->load_data_into(
-          s_tensor->extra_tensor_info()->fully_qualified_name()->c_str(),
-          planned_ptr.get(),
-          nbytes);
-      if (size.error() != Error::Ok) {
-        return size.error();
-      }
-      ET_CHECK_OR_RETURN_ERROR(
-          size.get() == nbytes,
-          InvalidExternalData,
-          "Expected to load %zu bytes, actually loaded %u bytes",
-          nbytes,
-          static_cast<unsigned int>(size.get()));
-      return planned_ptr;
-    }
-  }
-
-  // Constant, stored in PTE file.
-  else if (data_buffer_idx > 0 && allocation_info == nullptr) {
-    auto const_data =
-        program->get_constant_buffer_data(data_buffer_idx, nbytes);
-    if (!const_data.ok()) {
-      return const_data.error();
-    }
-
-    // The const_cast is 'ok' here because the program and runtime should
-    // guarantee that this data is never modified.
-    return const_cast<void*>(const_data.get());
 
     // Memory planned, no initial state
   } else if (data_buffer_idx == 0 && allocation_info != nullptr) {

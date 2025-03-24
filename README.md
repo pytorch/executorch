@@ -68,7 +68,6 @@ We welcome contributions. To get started review the [guidelines](CONTRIBUTING.md
 ```
 executorch
 ├── backends                        #  Backend delegate implementations.
-├── build                           #  Utilities for managing the build system.
 ├── codegen                         #  Tooling to autogenerate bindings between kernels and the runtime.
 ├── configurations
 ├── docs                            #  Static docs tooling.
@@ -82,8 +81,7 @@ executorch
 |   ├── operator                    #  Operator node manipulation utilities.
 |   ├── passes                      #  Built-in compiler passes.
 |   ├── program                     #  Export artifacts.
-|   ├── serde                       #  Graph module
-serialization/deserialization.
+|   ├── serde                       #  Graph module serialization/deserialization.
 |   ├── verification                #  IR verification.
 ├── extension                       #  Extensions built on top of the runtime.
 |   ├── android                     #  ExecuTorch wrappers for Android apps.
@@ -98,8 +96,7 @@ serialization/deserialization.
 |   ├── parallel                    #  C++ threadpool integration.
 |   ├── pybindings                  #  Python API for executorch runtime.
 |   ├── pytree                      #  C++ and Python flattening and unflattening lib for pytrees.
-|   ├── runner_util                 #  Helpers for writing C++ PTE-execution
-tools.
+|   ├── runner_util                 #  Helpers for writing C++ PTE-execution tools.
 |   ├── testing_util                #  Helpers for writing C++ tests.
 |   ├── training                    #  Experimental libraries for on-device training
 ├── kernels                         #  1st party kernel implementations.
@@ -115,9 +112,9 @@ tools.
 |   ├── executor                    #  Model loading, initialization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
 |   ├── platform                    #  Layer between architecture specific code and portable C++.
-├── schema                          #  ExecuTorch PTE file format flatbuffer
-schemas.
-├── scripts                         #  Utility scripts for size management, dependency management, etc.
+├── schema                          #  ExecuTorch PTE file format flatbuffer schemas.
+├── scripts                         #  Utility scripts for building libs, size management, dependency management, etc.
+├── tools                           #  Development tool management.
 ├── devtools                        #  Model profiling, debugging, and introspection.
 ├── shim                            #  Compatibility layer between OSS and Internal builds
 ├── test                            #  Broad scoped end-to-end tests.

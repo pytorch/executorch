@@ -31,14 +31,15 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "squeeze_int4_linear_inputs",
+    name = "squeeze_unsqueeze_inputs",
     srcs = [
-        "squeeze_int4_linear_inputs.py",
+        "squeeze_unsqueeze_inputs.py",
     ],
     visibility = [
         "//executorch/backends/...",
     ],
     deps = [
+        "//caffe2:torch",
         "//executorch/backends/vulkan:custom_ops_lib",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
@@ -114,7 +115,7 @@ runtime.python_library(
         ":remove_asserts",
         ":remove_local_scalar_dense",
         ":remove_redundant_ops",
-        ":squeeze_int4_linear_inputs",
+        ":squeeze_unsqueeze_inputs",
         ":tag_memory_meta_pass",
     ]
 )

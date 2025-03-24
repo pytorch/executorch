@@ -17,6 +17,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
@@ -138,6 +139,16 @@ struct Backend {
  * @retval Error code representing whether registration was successful.
  */
 ET_NODISCARD Error register_backend(const Backend& backend);
+
+/**
+ * Returns the number of registered backends.
+ */
+size_t get_num_registered_backends();
+
+/**
+ * Returns the backend name at the given index.
+ */
+Result<const char*> get_backend_name(size_t index);
 
 } // namespace runtime
 } // namespace executorch

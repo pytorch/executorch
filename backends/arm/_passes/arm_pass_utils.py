@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,7 +8,7 @@
 # pyre-unsafe
 
 from inspect import isclass
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 import torch.fx
@@ -26,6 +26,7 @@ from torch._export.utils import (
 )
 from torch._ops import OpOverload
 from torch._subclasses.fake_tensor import FakeTensor
+from torch.export.graph_signature import InputKind
 
 
 def is_get_attr_node(node: torch.fx.Node) -> bool:
@@ -42,6 +43,30 @@ def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
         or is_buffer(exp_prog, node)
         or is_lifted_tensor_constant(exp_prog, node)
     )
+
+
+def get_constant_placeholder_kind(
+    exp_prog: ExportedProgram, node: torch.fx.Node
+) -> InputKind:
+    if is_param(exp_prog, node):
+        return InputKind.PARAMETER
+    if is_buffer(exp_prog, node):
+        return InputKind.BUFFER
+    if is_lifted_tensor_constant(exp_prog, node):
+        return InputKind.CONSTANT_TENSOR
+
+    raise RuntimeError("Node is neither PARAMETER, BUFFER nor CONSTANT_TENSOR")
+
+
+def is_persistent_buffer(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool | None:
+    if is_buffer(exp_prog, node):
+        buffer_name = exp_prog.graph_signature.inputs_to_buffers[node.name]
+        if buffer_name in exp_prog.graph_signature.non_persistent_buffers:
+            return False
+        else:
+            return True
+
+    return None
 
 
 def get_param_tensor(
@@ -124,7 +149,7 @@ def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
     If the node contains many fake tensors, return the first one.
     """
     if isinstance(
-        node.meta["val"], (tuple, torch.fx.immutable_collections.immutable_list)
+        node.meta["val"], (Sequence, torch.fx.immutable_collections.immutable_list)
     ):
         fake_tensor = node.meta["val"][0]
     else:

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -647,7 +647,7 @@ class TestBatchNorm2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
-    def test_batchnorm2d_tosa_MI(
+    def test_native_batch_norm_legit_no_training_tosa_MI(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -665,7 +665,7 @@ class TestBatchNorm2d(unittest.TestCase):
     # Expected to fail since not inplemented
     @parameterized.expand(test_no_stats_data_suite)
     @unittest.expectedFailure
-    def test_batchnorm2d_no_stats_tosa_MI(
+    def test_native_batch_norm_legit_tosa_MI(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -686,7 +686,7 @@ class TestBatchNorm2d(unittest.TestCase):
     @unittest.skip(
         reason="Expected to fail since TOSAQuantizer (for BI) cannot quantize a BatchNorm layer"
     )
-    def test_batchnorm2d_tosa_BI(
+    def test_native_batch_norm_legit_no_training_tosa_BI(
         self,
         test_name: str,
         test_data: torch.Tensor,
@@ -708,7 +708,7 @@ class TestBatchNorm2d(unittest.TestCase):
         reason="Expected to fail since EthosUQuantizer cannot quantize a BatchNorm layer"
     )
     @unittest.expectedFailure
-    def test_batchnorm2d_u55_BI(
+    def test_native_batch_norm_legit_no_training_u55_BI(
         self,
         test_name: str,
         test_data: torch.Tensor,

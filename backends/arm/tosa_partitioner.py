@@ -14,6 +14,7 @@ from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_tosa,
 )  # usort: skip
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
@@ -24,7 +25,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
@@ -32,7 +33,7 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
 if TOSA_DBG_VERBOSE:
     logging.basicConfig(level=logging.INFO)
@@ -66,7 +67,7 @@ class TOSAPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(TOSABackend.__name__, compile_spec)
         self.additional_checks = additional_checks
 
-    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:  # noqa
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
 
@@ -77,9 +78,13 @@ class TOSAPartitioner(Partitioner):
 
         logger.info(f"Partitioning for {self.delegation_spec.backend_id}: {tosa_spec}")
 
+        reporter = WhyNoPartitionReporter()
+        operator_support = tosa_support_factory(
+            tosa_spec, exported_program, reporter, self.additional_checks
+        )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            tosa_support_factory(tosa_spec, self.additional_checks),
+            operator_support,
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
@@ -110,8 +115,25 @@ class TOSAPartitioner(Partitioner):
                             del node.meta["delegation_tag"]
                             break
 
-        tag_constant_data(exported_program)
+                if tosa_spec.support_float():
+                    continue
 
+                if is_partitioned(node):
+                    for input in node.all_input_nodes:
+                        if is_partitioned(input):
+                            continue
+                        if get_first_fake_tensor(input).dtype.is_floating_point:
+                            reporter.report_reject(
+                                node,
+                                f"Was first node in partition and input {input.name} had fp dtype.",
+                            )
+                            del node.meta["delegation_tag"]
+                            break
+
+        tag_constant_data(exported_program)
+        logger.info(f"The following nodes were rejected for {tosa_spec}:")
+        logger.info("\n" + reporter.get_table_report())
+        logger.info("(Placeholders and outputs are not included in this list)")
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )

@@ -26,7 +26,7 @@ jobs:
     with:
       job-name: Build doc
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: executorch-ubuntu-22.04-clang12-android
       submodules: 'true'
       repository: pytorch/executorch
       upload-artifact: docs
@@ -38,7 +38,7 @@ jobs:
 
         BUILD_TOOL=${{ matrix.build-tool }}
         # Setup dependencies as there is no Docker support
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
 
         if [[(${GITHUB_EVENT_NAME} = 'pull_request' && (${GITHUB_BASE_REF} = 'release'*)) || (${GITHUB_REF} = 'refs/heads/release'*) ]]; then
           export CHANNEL=test
@@ -68,6 +68,12 @@ jobs:
         make html
         cd ..
 
+        # Build javadoc:
+        cd extension/android
+        ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:javaDocReleaseGeneration
+        cp -rf executorch_android/build/intermediates/java_doc_dir/release/javaDocReleaseGeneration "${RUNNER_DOCS_DIR}/javadoc"
+        cd ../..
+
         # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
         echo "GitHub Ref: ${GITHUB_REF}"
         if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
@@ -77,6 +83,7 @@ jobs:
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
         mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
+        cp -rf "${RUNNER_DOCS_DIR}"/javadoc "${RUNNER_ARTIFACT_DIR}"/html
 
         ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
 

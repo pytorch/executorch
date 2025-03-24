@@ -12,7 +12,7 @@ python_library(
         "fbcode//caffe2:torch",
         "fbcode//executorch/examples/llm_pte_finetuning:training_lib",
         "fbcode//executorch/exir:lib",
-        "fbcode//executorch/extension/pybindings:aten_lib",  # @manual For PTE loader
+        "fbcode//executorch/extension/pybindings:portable_lib",  # @manual For PTE loader
         "fbcode//pytorch/torchtune:lib",
         "fbsource//third-party/pypi/blobfile:blobfile",  # @manual For tokenizer
         "fbsource//third-party/pypi/omegaconf:omegaconf",
@@ -27,11 +27,12 @@ python_library(
     ],
     deps = [
         "fbcode//caffe2:torch",
-        "fbcode//executorch/extension/pybindings:aten_lib",  # @manual For PTE loader
+        "fbcode//executorch/extension/pybindings:portable_lib",  # @manual For PTE loader
         "fbcode//pytorch/torchtune:lib",
         "fbsource//third-party/pypi/blobfile:blobfile",  # @manual For tokenizer
         "fbsource//third-party/pypi/tiktoken:tiktoken",  # @manual For tokenizer
         "fbsource//third-party/pypi/tqdm:tqdm",
+        "fbcode//executorch/backends/xnnpack/partition:xnnpack_partitioner",
     ],
 )
 

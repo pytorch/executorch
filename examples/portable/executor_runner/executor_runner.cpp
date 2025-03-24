@@ -30,10 +30,16 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 #ifdef ET_EVENT_TRACER_ENABLED
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #endif // ET_EVENT_TRACER_ENABLED
+
+#if defined(ET_USE_THREADPOOL)
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#endif
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
@@ -47,6 +53,10 @@ DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
 #endif // ET_EVENT_TRACER_ENABLED
+DEFINE_int32(
+    cpu_threads,
+    -1,
+    "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
 using executorch::extension::FileDataLoader;
 using executorch::runtime::Error;
@@ -124,6 +134,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+#if defined(ET_USE_THREADPOOL)
+  auto cpu_threads = FLAGS_cpu_threads;
+  uint32_t num_performant_cores = cpu_threads == -1
+      ? ::executorch::extension::cpuinfo::get_num_performant_cores()
+      : static_cast<uint32_t>(cpu_threads);
+  ET_LOG(
+      Info, "Resetting threadpool with num threads = %d", num_performant_cores);
+  if (num_performant_cores > 0) {
+    ::executorch::extension::threadpool::get_threadpool()
+        ->_unsafe_reset_threadpool(num_performant_cores);
+  }
+#endif // ET_USE_THREADPOOL
   // Create a loader to get the data of the program file. There are other
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
@@ -228,29 +250,43 @@ int main(int argc, char** argv) {
       (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
 
-  // Allocate input tensors and set all of their elements to 1. The `inputs`
-  // variable owns the allocated memory and must live past the last call to
-  // `execute()`.
-  auto inputs = executorch::extension::prepare_input_tensors(*method);
-  ET_CHECK_MSG(
-      inputs.ok(),
-      "Could not prepare inputs: 0x%" PRIx32,
-      (uint32_t)inputs.error());
-  ET_LOG(Info, "Inputs prepared.");
-
+  et_timestamp_t time_spent_executing = 0;
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
+    ET_LOG(Debug, "Preparing inputs.");
+    // Allocate input tensors and set all of their elements to 1. The `inputs`
+    // variable owns the allocated memory and must live past the last call to
+    // `execute()`.
+    //
+    // NOTE: we have to re-prepare input tensors on every execution
+    // because inputs whose space gets reused by memory planning (if
+    // any such inputs exist) will not be preserved for the next
+    // execution.
+    auto inputs = executorch::extension::prepare_input_tensors(*method);
+    ET_CHECK_MSG(
+        inputs.ok(),
+        "Could not prepare inputs: 0x%" PRIx32,
+        (uint32_t)inputs.error());
+    ET_LOG(Debug, "Inputs prepared.");
+
+    const et_timestamp_t before_execute = et_pal_current_ticks();
     Error status = method->execute();
+    const et_timestamp_t after_execute = et_pal_current_ticks();
+    time_spent_executing += after_execute - before_execute;
     ET_CHECK_MSG(
         status == Error::Ok,
         "Execution of method %s failed with status 0x%" PRIx32,
         method_name,
         (uint32_t)status);
   }
+  const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
+  constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
   ET_LOG(
       Info,
-      "Model executed successfully %" PRIu32 " time(s).",
-      FLAGS_num_executions);
+      "Model executed successfully %" PRIu32 " time(s) in %f ms.",
+      FLAGS_num_executions,
+      static_cast<double>(time_spent_executing) * tick_ratio.numerator /
+          tick_ratio.denominator / NANOSECONDS_PER_MILLISECOND);
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());

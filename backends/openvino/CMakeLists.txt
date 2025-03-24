@@ -26,7 +26,7 @@ endif()
 set(COMMON_INCLUDE_DIRS ${EXECUTORCH_ROOT}/..)
 
 # Include utility CMake scripts from ExecuteTorch
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 # Find OpenVINO libraries
 find_package(OpenVINO REQUIRED)

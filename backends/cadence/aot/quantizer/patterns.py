@@ -33,7 +33,17 @@ class PartitionAnchors:
     is used for other types of input values as well as handling default parameters.
     """
 
-    inputs: List[Tuple[fx.Node, int]] = field(default_factory=list)
+    # Inputs can share quantization parameters
+    inputs: List[
+        Union[
+            Tuple[fx.Node, Union[int, Tuple[int, int]]],
+            Tuple[
+                fx.Node,
+                Union[int, Tuple[int, int]],
+                SharedQuantizationSpec,
+            ],
+        ]
+    ] = field(default_factory=list)
     weights: List[Tuple[fx.Node, int]] = field(default_factory=list)
     biases: List[
         Union[Tuple[fx.Node, int], Tuple[fx.Node, int, DerivedQuantizationSpec]]
@@ -43,6 +53,7 @@ class PartitionAnchors:
     output: List[Union[Tuple[fx.Node], Tuple[fx.Node, SharedQuantizationSpec]]] = field(
         default_factory=list
     )
+    empty: bool = False
 
 
 class QuantizationPattern(ABC):
@@ -101,6 +112,38 @@ class AddmmPattern(QuantizationPattern):
         return torch.ops.cadence.quantized_linear
 
 
+class AddPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        add_node = fused_partition[0].nodes[-1]
+
+        # Bail if:
+        #   - the add node is not a tensor add
+        #   - the add node has kwargs (e.g. alpha)
+        is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
+            add_node.args[1], fx.Node
+        )
+        if not is_tensor_add or len(add_node.kwargs) > 0:
+            return PartitionAnchors(
+                empty=True,
+            )
+
+        return PartitionAnchors(
+            inputs=[(add_node, 0), (add_node, 1)],
+            weights=[],
+            biases=[],
+            output=[(add_node,)],
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_add.default
+
+
 class BmmPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.bmm.default]
@@ -120,6 +163,52 @@ class BmmPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_matmul.default
+
+
+class CatPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.cat.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        cat_node = fused_partition[0].nodes[-1]
+
+        # Create args. The first argument does not have quant spec and
+        # will inherit from the overall quant spec. All subsequent args
+        # will share that spec.
+        # Note that outpus also share that spec.
+        args: List[
+            Union[
+                Tuple[fx.Node, Union[int, Tuple[int, int]]],
+                Tuple[
+                    fx.Node,
+                    Union[int, Tuple[int, int]],
+                    SharedQuantizationSpec,
+                ],
+            ]
+        ] = [(cat_node, (0, 0))]
+        for i in range(1, len(cat_node.args[0])):
+            args.append(
+                (
+                    cat_node,
+                    (0, i),
+                    SharedQuantizationSpec((cat_node.args[0][0], cat_node)),
+                )
+            )
+
+        return PartitionAnchors(
+            inputs=args,
+            weights=[],
+            biases=[],
+            output=[
+                (cat_node, SharedQuantizationSpec((cat_node.args[0][0], cat_node)))
+            ],
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.aten.cat.default
 
 
 class Conv1dPattern(QuantizationPattern):

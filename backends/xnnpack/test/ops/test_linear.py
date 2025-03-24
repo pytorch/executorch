@@ -31,6 +31,8 @@ from executorch.backends.xnnpack.test.tester.tester import (
     ToEdgeTransformAndLower,
 )
 
+from torch.export.graph_signature import ExportGraphSignature, InputKind
+
 try:
     from torchao.quantization.quant_api import (
         int8_dynamic_activation_int4_weight,
@@ -186,6 +188,21 @@ class ParallelLinear(torch.nn.Module):
     def forward(self, x, y):
         a = torch.nn.functional.linear(x, self.linear1_weight, self.linear1_bias)
         b = torch.nn.functional.linear(y, self.linear2_weight, self.linear2_bias)
+        return a + b
+
+
+class SharedDQChain(torch.nn.Module):
+    def __init__(self, input_size, output_size):
+        super().__init__()
+        self.linear1_weight = torch.nn.Parameter(torch.rand(output_size, input_size))
+        self.linear1_bias = torch.nn.Parameter(torch.rand(output_size))
+
+        self.linear2_weight = torch.nn.Parameter(torch.rand(output_size, input_size))
+        self.linear2_bias = torch.nn.Parameter(torch.rand(output_size))
+
+    def forward(self, x):
+        a = torch.nn.functional.linear(x, self.linear1_weight, self.linear1_bias)
+        b = torch.nn.functional.linear(x, self.linear2_weight, self.linear2_bias)
         return a + b
 
 
@@ -518,6 +535,23 @@ class TestLinear(unittest.TestCase):
                 #     qtol=bool(quant_config), atol=atol
                 # )
 
+    def test_qd8_f32_per_channel_shared_dq_chain(self):
+        for use_bias in (False, True):
+            module = SharedDQChain(
+                input_size=13,
+                output_size=17,
+            )
+            inputs = (torch.randn(1, 2, 13),)
+
+            self._test_dqlinear(
+                module,
+                inputs,
+                dynamic_shapes=None,
+                is_per_channel=True,
+                linear_count=2,
+                uses_bias=use_bias,
+            )
+
     def _test_qd8_per_channel_linear(self, dtype: torch.dtype = torch.float):
         for uses_bias in (False, True):
             module = BaseLinear(
@@ -536,6 +570,66 @@ class TestLinear(unittest.TestCase):
                 is_per_channel=True,
                 uses_bias=uses_bias,
             )
+
+    def _test_qd8_linear_per_tensor_unsupported(self, dtype: torch.dtype = torch.float):
+        for uses_bias in (False, True):
+            module = BaseLinear(
+                in_size=8,
+                input_channels=13,
+                output_channels=17,
+                dtype=dtype,
+                use_bias=uses_bias,
+            )
+            inputs = module.get_inputs()
+            dynamic_shapes = ({1: torch.export.Dim("batch", max=100)},)
+
+            quant_config = get_symmetric_quantization_config(
+                is_per_channel=False,
+                is_dynamic=True,
+            )
+
+            for legacy_partitioner in (True, False):
+                for per_op_mode in (True, False):
+                    # Every combination should fail to partition Linear or [add]mm.
+                    DynamicallyQuantizedPartitioner = XnnpackPartitioner(
+                        config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                        per_op_mode=per_op_mode,
+                    )
+
+                    tester = Tester(module, inputs, dynamic_shapes=dynamic_shapes)
+                    tester.quantize(Quantize(quantization_config=quant_config))
+                    tester.export()
+
+                    if legacy_partitioner:
+                        tester.to_edge()
+                        tester.partition(
+                            Partition(DynamicallyQuantizedPartitioner)
+                        ).dump_artifact()
+                        # should have [add]mm node
+                        if uses_bias:
+                            tester.check(
+                                [
+                                    "executorch_exir_dialects_edge__ops_aten_addmm_default",
+                                ]
+                            )
+                        else:
+                            tester.check(
+                                [
+                                    "executorch_exir_dialects_edge__ops_aten_mm_default",
+                                ]
+                            )
+                    else:
+                        tester.to_edge_transform_and_lower(
+                            ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
+                        ).dump_artifact()
+                        # should not have a delegate node
+                        tester.check_not(
+                            [
+                                "torch.ops.higher_order.executorch_call_delegate",
+                            ]
+                        )
+                    # No need to run the model, since it should fail to partition.
+                    return
 
     def _test_qd8_per_channel_4w_linear(self, dtype: torch.dtype = torch.float):
         qconfig = self._get_4b_dqconfig()
@@ -583,31 +677,32 @@ class TestLinear(unittest.TestCase):
         bl_sizes = [32, 32, 32, 64]
         N_sizes = [2, 17, 92, 128]
 
-        for use_bias in [True, False]:
-            for M, K, bl, N in zip(M_sizes, K_sizes, bl_sizes, N_sizes):
-                lin_mod = BaseLinear(
-                    in_size=M,
-                    input_channels=K,
-                    output_channels=N,
-                    dtype=dtype,
-                    use_bias=use_bias,
-                )
+        for input_rank in range(2, 4):
+            for use_bias in [True, False]:
+                for M, K, bl, N in zip(M_sizes, K_sizes, bl_sizes, N_sizes):
+                    lin_mod = BaseLinear(
+                        in_size=M,
+                        input_channels=K,
+                        output_channels=N,
+                        dtype=dtype,
+                        use_bias=use_bias,
+                    )
 
-                inputs = lin_mod.get_inputs()
-                # Half requires slightly higher atol, but if you look at error it is not that bad:
-                # Difference: max: 0.00140380859375, abs: 0.00140380859375, mean abs error: 0.00042724609375.
-                # -- Model vs. Reference --
-                # Numel: 4, 4
-                # Median: -0.05023193359375, -0.0516357421875
-                # Mean: 0.2373046875, 0.237060546875
-                # Max: 1.0078125, 1.0078125
-                # Min: -0.08465576171875, -0.08441162109375
-                atol = (
-                    1e-2 if dtype == torch.half else 5e-3
-                )  # TODO(T212995726): Investigate right atol for rand[n] inputs
-                self._test_groupwise_dq_linear(
-                    lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=atol
-                )
+                    inputs = lin_mod.get_inputs(rank=input_rank)
+                    # Half requires slightly higher atol, but if you look at error it is not that bad:
+                    # Difference: max: 0.00140380859375, abs: 0.00140380859375, mean abs error: 0.00042724609375.
+                    # -- Model vs. Reference --
+                    # Numel: 4, 4
+                    # Median: -0.05023193359375, -0.0516357421875
+                    # Mean: 0.2373046875, 0.237060546875
+                    # Max: 1.0078125, 1.0078125
+                    # Min: -0.08465576171875, -0.08441162109375
+                    atol = (
+                        1e-2 if dtype == torch.half else 5e-3
+                    )  # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    self._test_groupwise_dq_linear(
+                        lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=atol
+                    )
 
     def test_fp16_linear(self):
         for use_bias in (True, False):
@@ -695,9 +790,23 @@ class TestLinear(unittest.TestCase):
     def test_qd8_f16_per_channel_linear(self):
         self._test_qd8_per_channel_linear(dtype=torch.half)
 
+    def test_qd8_f16_per_tensor_linear(self):
+        """
+        XNNPACK doesn't support per_tensor quantized weights for dynamic quantized linear op.
+        This test is to verify that we can't lower per_tensor quantized weights to per_channel quantized weights.
+        """
+        self._test_qd8_linear_per_tensor_unsupported(dtype=torch.half)
+
     # Tests for q[dp]8-f32-qc8w
     def test_qd8_f32_per_channel_linear(self):
         self._test_qd8_per_channel_linear(dtype=torch.float)
+
+    def test_qd8_f32_per_tensor_linear(self):
+        """
+        XNNPACK doesn't support per_tensor quantized weights for dynamic quantized linear op.
+        This test is to verify that we can't lower per_tensor quantized weights to per_channel quantized weights.
+        """
+        self._test_qd8_linear_per_tensor_unsupported(dtype=torch.half)
 
     # Tests for q[dp]8-f16-qc4w
     def test_linear_qd8_f16_per_channel_int4(self):
@@ -871,3 +980,71 @@ class TestLinear(unittest.TestCase):
                     "dequantize_per_channel.default": 1,  # 1: weight
                 },
             )
+
+    def test_linear_with_force_non_static_weights_for_f32_linear(self):
+        def check_signature(
+            signature: ExportGraphSignature,
+            force_flag: bool,
+            use_bias: bool,
+            legacy_mode: bool,
+        ):
+            num_params = 0
+            if force_flag:
+                num_params = 1  # weight_param
+                if use_bias:
+                    num_params += 1  # bias_param
+            sign_params: int = 0
+            input_specs = signature.input_specs
+            for input_spec in input_specs:
+                if input_spec.kind == InputKind.PARAMETER:
+                    sign_params += 1
+            assert (
+                sign_params == num_params
+            ), f"Expected {num_params} params, got {sign_params} with force_flag={force_flag}, use_bias={use_bias}, legacy_mode={legacy_mode}"
+
+        for force_flag in (True, False):
+            for use_bias in (True, False):
+                for legacy_mode in (True, False):
+                    module = BaseLinear(
+                        in_size=8,
+                        input_channels=13,
+                        output_channels=17,
+                        use_bias=use_bias,
+                    )
+                    inputs = module.get_inputs()
+                    tester = Tester(module, inputs).export()
+                    partitioner = XnnpackPartitioner(
+                        force_non_static_weights_for_f32_linear=force_flag
+                    )
+                    if legacy_mode:
+                        tester.to_edge()
+                        partitioner_stage = Partition(partitioner=partitioner)
+                        tester.partition(partition_stage=partitioner_stage)
+                        tester.check_not(
+                            [
+                                (
+                                    "executorch_exir_dialects_edge__ops_aten_mm_default"
+                                    if use_bias
+                                    else "executorch_exir_dialects_edge__ops_aten_addmm_default"
+                                )
+                            ]
+                        )
+                    else:
+                        to_edge_and_transform_stage = ToEdgeTransformAndLower(
+                            partitioners=[partitioner]
+                        )
+                        tester.to_edge_transform_and_lower(
+                            to_edge_and_transform_stage=to_edge_and_transform_stage
+                        )
+                        tester.check_not(
+                            ["executorch_exir_dialects_edge__ops_aten_linear_default"]
+                        )
+
+                    signature: ExportGraphSignature = (
+                        tester.get_artifact().exported_program().graph_signature
+                    )
+                    check_signature(signature, force_flag, use_bias, legacy_mode)
+
+                    tester.to_executorch()
+                    tester.serialize()
+                    tester.run_method_and_compare_outputs()

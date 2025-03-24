@@ -6,13 +6,35 @@ In this tutorial, we show how to fine-tune an LLM using executorch.
 
 You will need to have a model's checkpoint, in the Hugging Face format. For example:
 
-```
-git clone https://huggingface.co/microsoft/Phi-3-mini-4k-instruct
+```console
+git clone git clone https://huggingface.co/Qwen/Qwen2-0.5B-Instruct
 ```
 
 You will need to install [torchtune](https://github.com/pytorch/torchtune) following [its installation instructions](https://github.com/pytorch/torchtune?tab=readme-ov-file#installation).
 
+You might run into an issue with the `triton` package when installing `torchtune`. You can build `triton` locally following the [instructions in their repo](https://github.com/triton-lang/triton?tab=readme-ov-file#install-from-source).
+
 ## Config Files
+
+The directory structure of the `llm_pte_finetuning` is:
+
+```console
+examples/llm_pte_finetuning
+├── README.md
+├── TARGETS
+├── __init__.py
+│   ├── model_loading_lib.cpython-312.pyc
+│   └── training_lib.cpython-312.pyc
+├── model_exporter.py
+├── model_loading_lib.py
+├── phi3_alpaca_code_config.yaml
+├── phi3_config.yaml
+├── qwen_05b_config.yaml
+├── runner.py
+└── training_lib.py
+```
+
+We already provide configs out of the box. The following sections explain how you can setup the config for your own model or dataset.
 
 As mentioned in the previous section, we internally use `torchtune` APIs, and thus, we use config files that follow `torchtune`'s structure. Typically, in the following sections we go through a working example which can be found in the `phi3_config.yaml` config file.
 
@@ -20,7 +42,7 @@ As mentioned in the previous section, we internally use `torchtune` APIs, and th
 
 We need to define the tokenizer. Let's suppose we would like to use [PHI3 Mini Instruct](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct) model from Microsoft. We need to define the tokenizer component:
 
-```
+```yaml
 tokenizer:
   _component_: torchtune.models.phi3.phi3_mini_tokenizer
   path: /tmp/Phi-3-mini-4k-instruct/tokenizer.model
@@ -33,7 +55,7 @@ This will load the tokenizer, and set the max sequence length to 1024. The class
 
 In this example we use the [Alpaca-Cleaned dataset](https://huggingface.co/datasets/yahma/alpaca-cleaned). We need to define the following parameters:
 
-```
+```yaml
 dataset:
   _component_: torchtune.datasets.alpaca_cleaned_dataset
 seed: null
@@ -47,7 +69,7 @@ Torchtune supports datasets using huggingface dataloaders, so custom datasets co
 
 For the loss function, we use PyTorch losses. In this example we use the `CrossEntropyLoss`:
 
-```
+```yaml
 loss:
   _component_: torch.nn.CrossEntropyLoss
 ```
@@ -56,7 +78,7 @@ loss:
 
 Model parameters can be set, in this example we replicate the configuration for phi3 mini instruct benchmarks:
 
-```
+```yaml
 model:
   _component_: torchtune.models.phi3.lora_phi3_mini
   lora_attn_modules: ['q_proj', 'v_proj']
@@ -70,7 +92,7 @@ model:
 
 Depending on how your model is defined, you will need to instantiate different components. In these examples we use checkpoints from HF (hugging face format), and thus we will need to instantiate a `FullModelHFCheckpointer` object. We need to pass the checkpoint directory, the files with the tensors, the output directory for training and the model type:
 
-```
+```yaml
 checkpointer:
   _component_: torchtune.training.FullModelHFCheckpointer
   checkpoint_dir: /tmp/Phi-3-mini-4k-instruct
@@ -87,7 +109,7 @@ checkpointer:
 
 Torchtune supports `cuda` and `bf16` tensors. However, for ExecuTorch training we only support `cpu` and `fp32`:
 
-```
+```yaml
 device: cpu
 dtype: fp32
 ```
@@ -101,28 +123,34 @@ The `model_exporter.py` exports the LLM checkpoint into an ExecuTorch checkpoint
 * `cfg`: Configuration file
 * `output_file`: The `.pte` output path
 
-```
-python model_exporter.py --cfg=phi3_config.yaml --output_file=phi3_mini_lora.pte
+```console
+python model_exporter.py \
+    --cfg=qwen_05b_config.yaml \
+    --output_file=qwen2_0_5B.pte
 ```
 
 ### Step 2: Run the fine-tuning job
 
 To run the fine-tuning job:
 
-```
-python runner.py --cfg=phi3_config.yaml --model_file=phi3_mini_lora.pte
+```console
+python runner.py \
+    --cfg=qwen_05b_config.yaml \
+    --model_file=qwen2_0_5B.pte \
+    --num_training_steps=10 \
+    --num_eval_steps=5
 ```
 
 You need to use **the same** config file from the previous step. The `model_file` arg is the `.pte` model from the previous step.
 
 Example output:
 
-```
-Evaluating the model before training...
-100%|██████████████████████████████████████████████████████████████████████████████████████| 3/3 [31:23<00:00, 627.98s/it]
-Eval loss:  tensor(2.3778)
-100%|██████████████████████████████████████████████████████████████████████████████████████| 5/5 [52:29<00:00, 629.84s/it]
-Losses:  [2.7152762413024902, 0.7890686988830566, 2.249271869659424, 1.4777560234069824, 0.8378427624702454]
-100%|██████████████████████████████████████████████████████████████████████████████████████| 3/3 [30:35<00:00, 611.90s/it]
-Eval loss:  tensor(0.8464)
+```console
+Evaluating the model before training
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:47<00:00,  9.45s/it]
+Eval loss:  tensor(0.9441)
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10/10 [01:30<00:00,  9.09s/it]
+Losses:  [0.5646533966064453, 1.3464953899383545, 1.297974705696106, 1.2249481678009033, 0.6750457286834717, 0.7721152901649475, 1.0774847269058228, 0.7962403893470764, 0.8448256850242615, 0.8731598854064941]
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:45<00:00,  9.18s/it]
+Eval loss:  tensor(0.7679)
 ```

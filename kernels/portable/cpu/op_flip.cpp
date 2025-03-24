@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -25,7 +26,7 @@ size_t unflip_flat_ix(size_t ix, const Tensor& in, ArrayRef<bool> flip_dim) {
   indexToCoordinate(in, ix, ix_coord);
 
   size_t unflip_coord[kTensorDimensionLimit];
-  for (size_t d = 0; d < in.dim(); d++) {
+  for (const auto d : c10::irange(in.dim())) {
     if (flip_dim[d]) {
       unflip_coord[d] = in.size(d) - ix_coord[d] - 1;
     } else {
@@ -54,10 +55,10 @@ Tensor& flip_out(
   ET_KERNEL_CHECK(ctx, check_flip_args(in, dims, out), InvalidArgument, out);
 
   bool flip_dim_data[kTensorDimensionLimit];
-  for (size_t i = 0; i < in.dim(); i++) {
+  for (const auto i : c10::irange(in.dim())) {
     flip_dim_data[i] = false;
   }
-  for (size_t i = 0; i < dims.size(); i++) {
+  for (const auto i : c10::irange(dims.size())) {
     const auto d = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
     flip_dim_data[d] = true;
   }
@@ -70,7 +71,7 @@ Tensor& flip_out(
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
-    for (size_t ix = 0; ix < out.numel(); ++ix) {
+    for (const auto ix : c10::irange(in.numel())) {
       out_data[ix] = in_data[unflip_flat_ix(ix, in, flip_dim)];
     }
   });

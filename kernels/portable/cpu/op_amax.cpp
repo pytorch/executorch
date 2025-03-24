@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
@@ -42,17 +43,20 @@ Tensor& amax_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
+  ReduceOverDimListPlan plan(in, dim_list);
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "amax.out", CTYPE, [&]() {
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
-      out_data[out_ix] = reduce_over_dim_list<CTYPE>(
-          [](CTYPE v, CTYPE max_v) {
-            return std::isnan(v) || v > max_v ? v : max_v;
-          },
-          in,
-          dim_list,
-          out_ix);
-    }
+    const bool success = parallel_for_each_reduce_over_dim_list_output_index(
+        in, dim_list, out, [&](const auto begin, const auto end) {
+          for (const auto out_ix : c10::irange(begin, end)) {
+            out_data[out_ix] = plan.execute<CTYPE>(
+                [](CTYPE v, CTYPE max_v) {
+                  return std::isnan(v) || v > max_v ? v : max_v;
+                },
+                out_ix);
+          }
+        });
+    ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
   });
 
   return out;

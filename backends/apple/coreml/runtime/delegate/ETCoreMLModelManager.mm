@@ -734,7 +734,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
 }
 
 - (BOOL)executeModelWithHandle:(ModelHandle *)handle
-                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
+                       argsVec:(std::vector<executorchcoreml::MultiArray>&)argsVec
                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                          error:(NSError * __autoreleasing *)error {
@@ -785,6 +785,12 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
             return NO;
         }
         
+        // Resize for dynamic shapes
+        for (int i = 0; i < outputArgs.size(); i++) {
+            auto new_size = to_vector<size_t>(modelOutputs[i].shape);
+            outputArgs[i].resize(new_size);
+            argsVec[model.orderedInputNames.count + i].resize(new_size);
+        }
         ::set_outputs(outputArgs, modelOutputs);
         return YES;
     }

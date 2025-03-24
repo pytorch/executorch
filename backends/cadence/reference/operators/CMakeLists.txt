@@ -11,8 +11,8 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -71,7 +71,8 @@ target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_ROOT}/..
+${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 
 target_include_directories(
   aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
@@ -86,8 +87,10 @@ add_library(
   "quantized_relu_out.cpp"
   "quantized_layer_norm.cpp"
   "quantize_per_tensor.cpp"
+  "quantized_fully_connected_out.cpp"
   "dequantize_per_tensor.cpp"
   "quantized_matmul_out.cpp"
+  "requantize_out.cpp"
   "im2row_out.cpp"
 )
 target_include_directories(

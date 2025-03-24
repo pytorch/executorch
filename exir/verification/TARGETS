@@ -10,12 +10,10 @@ cpp_python_extension(
         "bindings.cpp",
     ],
     deps = [
+        "fbsource//third-party/pybind11:pybind11",
         "//caffe2:torch-cpp-cpu",
         "//caffe2:torch_extension",
         "//caffe2/c10:c10",
-    ],
-    external_deps = [
-        "pybind11",
     ],
 )
 
