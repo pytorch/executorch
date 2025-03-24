@@ -250,7 +250,7 @@ xcode-select --install
 2. Build the frameworks:
 
 ```bash
-./build/build_apple_frameworks.sh
+./scripts/build_apple_frameworks.sh
 ```
 
 Run the above command with `--help` flag to learn more on how to build additional backends
