@@ -6,8 +6,6 @@
 
 import unittest
 
-import torch
-
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
@@ -46,5 +44,5 @@ class ExportLlamaLibTest(unittest.TestCase):
         graph_module = builder.edge_manager.exported_program().graph_module
         delegation_info = get_delegation_info(graph_module)
 
-        for op, op_info in delegation_info.delegation_by_operator.items():
+        for op, _op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
