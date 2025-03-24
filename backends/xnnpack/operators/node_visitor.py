@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
+import hashlib
 
 from typing import cast, Dict, List, Optional, Tuple
 
@@ -34,7 +35,6 @@ from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_input_node,
     get_param_tensor,
-    get_tensor_name,
     is_param_node,
     PERM_NCHW_TO_NHWC,
 )
@@ -576,15 +576,19 @@ class NodeVisitor:
         if quant_params is not None and quant_params.is_qc4w:
             const_val = self.convert_to_qc4w(const_val)
 
-        array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
+        size = const_val.untyped_storage().nbytes()
+        array_type = ctypes.c_char * size
         array = ctypes.cast(
             const_val.untyped_storage().data_ptr(),
             ctypes.POINTER(array_type),
         ).contents
 
-        named_key = get_tensor_name(self.exported_program, get_attr_node)
-        if named_key == "":
-            raise ValueError(f"Tensor from node: {get_attr_node} has no name")
+        check_or_raise(
+            size > 0,
+            f"Serializing constant data node {tensor} but tensor value has no bytes",
+        )
+        sha256_hash = hashlib.sha256(bytes(array))
+        named_key = sha256_hash.hexdigest()
 
         size = const_val.untyped_storage().nbytes()
         xnn_graph.constant_data.append(

@@ -191,6 +191,8 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
     True  # the node is from the submodule `Sub` (same for `Block` and `Linear` as well)
     """
 
+    tp_str = tp.__module__ + "." + tp.__qualname__
+
     def module_type_filter(n: Node) -> bool:
         # node_stack example: {
         #     'L__self___sub': ("L['self'].sub", <class '....Sub'>),
@@ -198,7 +200,7 @@ def _get_module_type_filter(tp: Callable) -> NodeFilterType:
         # }
         nn_module_stack = n.meta.get("nn_module_stack", {})
         types = [t for _, t in nn_module_stack.values()]
-        return tp in types
+        return tp_str in types
 
     return module_type_filter
 
