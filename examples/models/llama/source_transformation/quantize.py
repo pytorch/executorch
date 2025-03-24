@@ -124,9 +124,7 @@ def quantize(  # noqa C901
                 model,
                 Int8DynamicActivationIntxWeightConfig(
                     weight_dtype=getattr(torch, f"int{bitwidth}"),
-                    granularity=(
-                        PerRow() if group_size in [0, -1] else PerGroup(group_size)
-                    ),
+                    granularity=(PerRow() if group_size == 0 else PerGroup(group_size)),
                     has_weight_zeros=False,
                 ),
             )
@@ -786,19 +784,43 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 
 def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
     if args.embedding_quantize.startswith("torchao:"):
-        bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
+        from torchao.experimental.quant_api import (
+            EmbeddingQuantizer,
+            SharedEmbeddingQuantizer,
+        )
+        from torchao.quantization.granularity import PerGroup, PerRow
+
+        quant_args = args.embedding_quantize.split(":")[1].split(",")
+        if len(quant_args) == 2:
+            bitwidth, group_size = quant_args
+            has_weight_zeros = True
+        else:
+            bitwidth, group_size, has_weight_zeros = quant_args
+
+        if group_size in ["none", "None", "0"]:
+            group_size = 0
+
         group_size = int(group_size)
         bitwidth = int(bitwidth)
-        from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
+        has_weight_zeros = bool(has_weight_zeros)
+        weight_dtype = getattr(torch, f"int{bitwidth}")
+        granularity = PerRow() if group_size == 0 else PerGroup(group_size)
 
         def _torchao_embedding_quantizer(model):
             with torch.no_grad():
-                model = IntxWeightEmbeddingQuantizer(
-                    device="cpu",
-                    precision=torch.float32,
-                    bitwidth=bitwidth,
-                    groupsize=group_size,
-                ).quantize(model)
+                if not args.use_shared_embedding:
+                    EmbeddingQuantizer(
+                        weight_dtype=weight_dtype,
+                        granularity=granularity,
+                        has_weight_zeros=has_weight_zeros,
+                        use_fallback=False,
+                    ).quantize(model)
+                else:
+                    SharedEmbeddingQuantizer(
+                        weight_dtype=weight_dtype,
+                        granularity=granularity,
+                        has_weight_zeros=has_weight_zeros,
+                    ).quantize(model)
             return model
 
         return _torchao_embedding_quantizer
