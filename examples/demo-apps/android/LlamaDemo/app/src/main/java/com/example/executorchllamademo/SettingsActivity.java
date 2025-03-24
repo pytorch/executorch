@@ -189,7 +189,7 @@ public class SettingsActivity extends AppCompatActivity {
           public void afterTextChanged(Editable s) {
             mSetTemperature = Double.parseDouble(s.toString());
             // This is needed because temperature is changed together with model loading
-            // Once temperature is no longer in LlamaModule constructor, we can remove this
+            // Once temperature is no longer in LlmModule constructor, we can remove this
             mSettingsFields.saveLoadModelAction(true);
             saveSettings();
           }
