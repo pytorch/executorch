@@ -209,26 +209,41 @@ class BaseTOSASupportList(OperatorSupportBase):
 class EthosU55NotSupported(OperatorSupportBase):
     """
     Certain operators are not supported on U55. These are listed in `unsupported_ops`.
+    The comment mentions the unsupported TOSA operator that the aten operator maps to where it is not obvious.
+    For unimplemented operators, this is the anticipated mapping, and it might be incorrect.
     """
 
     unsupported_ops = [
-        exir_ops.edge.aten.any.default,
-        exir_ops.edge.aten.any.dim,
-        exir_ops.edge.aten.any.dims,
+        exir_ops.edge.aten.any.default,  # REDUCE_ANY
+        exir_ops.edge.aten.any.dim,  # REDUCE_ANY
+        exir_ops.edge.aten.any.dims,  # REDUCE_ANY
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.bitwise_or.Tensor,
         exir_ops.edge.aten.bitwise_xor.Tensor,
+        exir_ops.edge.aten.bitwise_not,
         exir_ops.edge.aten.logical_and.default,
         exir_ops.edge.aten.logical_or.default,
         exir_ops.edge.aten.logical_xor.default,
         exir_ops.edge.aten.logical_not.default,
-        exir_ops.edge.aten.amax.default,
-        exir_ops.edge.aten.amin.default,
+        exir_ops.edge.aten.amax.default,  # REDUCE_MAX
+        exir_ops.edge.aten.amin.default,  # REDUCE_MIN
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.flip.default,  # REVERSE
+        exir_ops.edge.aten.grid_sampler_2d,  # GATHER
+        exir_ops.edge.aten.scatter.src,
+        exir_ops.edge.aten.scatter.value,
+        exir_ops.edge.aten.select_scatter.default,
+        exir_ops.edge.aten.scatter_reduce.two,
+        exir_ops.edge.aten.scatter_add.default,
+        exir_ops.edge.aten.upsample_nearest2d.vec,  # RESIZE
+        exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
+        exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
+        exir_ops.edge.aten.reflection_pad2d.default,  # REVERSE
+        exir_ops.edge.aten.reflection_pad3d.default,  # REVERSE
     ]
 
     def __init__(self, reporter: WhyNoPartitionReporter):

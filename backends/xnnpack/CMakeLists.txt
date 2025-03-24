@@ -146,6 +146,10 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   list(APPEND xnn_executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
+if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
+  list(APPEND xnn_executor_runner_libs quantized_ops_lib)
+endif()
+
 list(APPEND xnn_executor_runner_libs xnnpack_backend executorch)
 
 # ios can only build library but not binary
