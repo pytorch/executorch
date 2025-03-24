@@ -69,22 +69,15 @@ void no_repeat_copy(ivec3 pos) {
     // Keep input values from the end of current input pixel based on src_lane_offset
     // offset 1 means the first lane of current input texel is not a part of the output texel
     // offset 2 means first 2 lanes are not and so on
-    if (src_lane_offset == 1) {
-      in_value.xyz = in_value.yzw;
-    } else if (src_lane_offset == 2) {
-      in_value.xy = in_value.zw;
-    } else {
-      in_value.x = in_value.w;
-    }
     // Copy next texel's values towards the end of input texel, based on lane offset
     // offset 1 means the first lane from next texel is part of the input texel
     // offset 2 means first 2 lanes from next texel is part of the input texel and so on
     if (src_lane_offset == 1) {
-      in_value.w = next_value.x;
+      in_value = ivec4(in_value.yzw, next_value.x);
     } else if (src_lane_offset == 2) {
-      in_value.zw = next_value.xy;
+      in_value = ivec4(in_value.zw, next_value.xy);
     } else {
-      in_value.yzw = next_value.xyz;
+      in_value = ivec4(in_value.w, next_value.xyz);
     }
   }
 
