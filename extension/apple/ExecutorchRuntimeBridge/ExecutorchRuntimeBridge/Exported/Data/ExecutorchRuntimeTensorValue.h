@@ -6,15 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#import <Foundation/Foundation.h>
+
 #ifdef __cplusplus
  #import <executorch/extension/module/module.h>
  #import <executorch/runtime/core/evalue.h>
 #endif
-#import <ModelRunnerDataKit/ModelRunnerDataKit-Swift.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface ExecutorchRuntimeTensorValue : NSObject <ModelRuntimeTensorValueBridging>
+@interface ExecutorchRuntimeTensorValue : NSObject
+
+@property (nonatomic, readonly) NSArray<NSNumber *> *shape;
 
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
@@ -27,6 +30,9 @@ NS_ASSUME_NONNULL_BEGIN
                        shape:(std::vector<int32_t>)shape NS_DESIGNATED_INITIALIZER;
 - (torch::executor::Tensor)backedValue;
 #endif
+
+#pragma mark - 
+- (NSArray<NSNumber *> * _Nullable)floatArrayAndReturnError:(NSError * _Nullable * _Nullable)error;
 
 @end
 

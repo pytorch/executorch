@@ -76,8 +76,8 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-        FILES_NEEDS_FORMAT=$(/opt/google-java-format -n extension/android/src/main/java/org/pytorch/executorch/*.java \
-          examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/*.java \
+        FILES_NEEDS_FORMAT=$(/opt/google-java-format -n \
+          extension/android/executorch_android/src/main/java/org/pytorch/executorch/*.java \
           examples/demo-apps/android/LlamaDemo/app/src/main/java/com/example/executorchllamademo/*.java \
           extension/benchmark/android/benchmark/app/src/main/java/org/pytorch/minibench/*.java)
         if [ -n "$FILES_NEEDS_FORMAT" ]; then
