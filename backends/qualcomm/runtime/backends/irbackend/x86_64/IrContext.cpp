@@ -19,7 +19,7 @@ using executorch::runtime::Error;
 Error IrContext::GetContextBinary(
     QnnExecuTorchContextBinary& qnn_executorch_context_binary) {
   // read Dlc and write to buffer
-  auto dlc_name = GetGraphNames()[0] + ".dlc";
+  std::string dlc_name = GetGraphNames()[0] + ".dlc";
   std::ifstream dlc_file(dlc_name, std::ios::binary | std::ios::ate);
   if (dlc_file.is_open()) {
     std::streamsize size = dlc_file.tellg();
@@ -34,7 +34,7 @@ Error IrContext::GetContextBinary(
   } else {
     QNN_EXECUTORCH_LOG_ERROR(
         "Unable to open dlc file %s for building QnnExecuTorchContextBinary",
-        dlc_name);
+        dlc_name.c_str());
   }
   return Error::Internal;
 }
