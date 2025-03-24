@@ -32,7 +32,7 @@ jobs:
         # Build LLM Demo for Android
         export BUILD_AAR_DIR=aar-out
         mkdir -p $BUILD_AAR_DIR
-        bash build/build_android_library.sh
+        bash scripts/build_android_library.sh
         cp ${BUILD_AAR_DIR}/executorch.aar $ARTIFACTS_DIR_NAME
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/library_test_dir
@@ -125,7 +125,7 @@ jobs:
         with:
           api-level: ${{ env.API_LEVEL }}
           arch: x86_64
-          script: ./build/run_android_emulator.sh
+          script: ./scripts/run_android_emulator.sh
           # NB: This is to boot the emulator faster following the instructions on
           # https://github.com/ReactiveCircus/android-emulator-runner. The max number
           # of cores we can set is 6, any higher number will be reduced to 6.
