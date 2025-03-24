@@ -4,12 +4,12 @@ from typing import Dict, Optional
 
 @dataclass
 class ModelArgs:
-    dim: int = 2048
+    dim: int = 4096
     n_layers: int = 4
     n_heads: int = 32
     n_kv_heads: Optional[int] = None
     vocab_size: int = 512  # Arbitrary value, should be defined later by tokenizer.
-    hidden_dim: Optional[int] = 8192
+    hidden_dim: Optional[int] = None
     head_dim: Optional[int] = None  # Optional customized head_dim
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
