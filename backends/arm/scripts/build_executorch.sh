@@ -84,7 +84,6 @@ if [ "$build_with_etdump" = true ] ; then
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON               \
         -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=ON      \
         -DFLATCC_ALLOW_WERROR=OFF                         \
-        -DFLATC_EXECUTABLE="$(which flatc)"               \
         -B"${et_build_host_dir}"                          \
         "${et_root_dir}"
 
@@ -133,7 +132,6 @@ cmake                                                 \
     -DEXECUTORCH_ENABLE_LOGGING=ON                    \
     ${build_devtools_flags}                           \
     ${build_with_etdump_flags}                        \
-    -DFLATC_EXECUTABLE="$(which flatc)"               \
     -B"${et_build_dir}"                               \
     "${et_root_dir}"
 

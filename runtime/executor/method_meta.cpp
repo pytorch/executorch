@@ -229,14 +229,31 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
 }
 
 bool MethodMeta::uses_backend(const char* backend_name) const {
+  ET_CHECK_MSG(backend_name, "backend name is null");
   const auto delegates = s_plan_->delegates();
   for (size_t i = 0; i < delegates->size(); i++) {
     auto delegate = delegates->Get(i);
-    if (strcmp(delegate->id()->c_str(), backend_name) == 0) {
+    if (std::strcmp(delegate->id()->c_str(), backend_name) == 0) {
       return true;
     }
   }
   return false;
+}
+
+size_t MethodMeta::num_backends() const {
+  const auto delegates = s_plan_->delegates();
+  return delegates ? delegates->size() : 0;
+}
+
+Result<const char*> MethodMeta::get_backend_name(size_t index) const {
+  const auto count = num_backends();
+  ET_CHECK_OR_RETURN_ERROR(
+      index < count,
+      InvalidArgument,
+      "Index %zu out of range. num_backends: %zu",
+      index,
+      count);
+  return s_plan_->delegates()->Get(index)->id()->c_str();
 }
 
 size_t MethodMeta::num_instructions() const {
