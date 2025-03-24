@@ -28,6 +28,9 @@ from executorch.backends.vulkan._passes.remove_asserts import remove_asserts
 from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord
+from executorch.examples.models.llama.hf_download import (
+    download_and_convert_hf_checkpoint,
+)
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
@@ -523,52 +526,20 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def download_and_convert_hf_checkpoint(modelname: str) -> str:
-    """
-    Downloads and converts to Meta format a HuggingFace checkpoint.
-    """
-    # Build cache path.
-    cache_subdir = "meta_checkpoints"
-    cache_dir = Path.home() / ".cache" / cache_subdir
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    # Use repo name to name the converted file.
-    repo_id = HUGGING_FACE_REPO_IDS[modelname]
-    model_name = repo_id.replace(
-        "/", "_"
-    )
-    converted_path = cache_dir / f"{model_name}.pth"
-
-    if converted_path.exists():
-        print(f"✔ Using cached converted model: {converted_path}")
-        return converted_path
-
-    # 1. Download weights from Hugging Face.
-    print("⬇ Downloading and converting checkpoint...")
-    from huggingface_hub import snapshot_download
-
-    checkpoint_path = snapshot_download(
-        repo_id=repo_id,
-    )
-
-    # 2. Convert weights to Meta format.
-    if modelname == "qwen2_5":
-        from executorch.examples.models.qwen2_5 import convert_weights
-
-        convert_weights(checkpoint_path, converted_path)
-    elif modelname == "phi_4_mini":
-        from executorch.examples.models.phi_4_mini import convert_weights
-
-        convert_weights(checkpoint_path, converted_path)
-    elif modelname == "smollm2":
-        pass
-
-    return converted_path
-
-
 def export_llama(args) -> str:
+    # If a checkpoint isn't provided for an HF OSS model, download and convert the
+    # weights first.
     if not args.checkpoint and args.model in HUGGING_FACE_REPO_IDS:
-        args.checkpoint = download_and_convert_hf_checkpoint(args.model)
+        repo_id = HUGGING_FACE_REPO_IDS[args.model]
+        if args.model == "qwen2_5":
+            from executorch.examples.models.qwen2_5 import convert_weights
+        elif args.model == "phi_4_mini":
+            from executorch.examples.models.phi_4_mini import convert_weights
+        else:
+            raise ValueError(
+                f"Converting weights to meta format for {args.model} is not yet supported"
+            )
+        args.checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
 
     if args.profile_path is not None:
         try:
