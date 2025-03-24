@@ -16,6 +16,7 @@ import logging
 import re
 import shlex
 from enum import Enum
+from functools import partial
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, List, Optional, Union
@@ -123,26 +124,19 @@ def verbose_export():
 
 
 def build_model(
-    modelname: str = "llama3",
-    extra_opts: str = "",
-    *,
-    par_local_output: bool = False,
-    resource_pkg_name: str = __name__,
+    model: str,
+    checkpoint: str,
+    params: str,
+    output_dir: Optional[str] = ".",
+    extra_opts: Optional[str] = "",
 ) -> str:
-    if False:  # par_local_output:
-        output_dir_path = "par:."
-    else:
-        output_dir_path = "."
-
-    argString = f"--model {modelname} --checkpoint par:model_ckpt.pt --params par:model_params.json {extra_opts} --output-dir {output_dir_path}"
+    argString = f"--model {model} --checkpoint {checkpoint} --params {params} {extra_opts} --output-dir {output_dir}"
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
-    # pkg_name = resource_pkg_name
     return export_llama(args)
 
 
 def build_args_parser() -> argparse.ArgumentParser:
-    ckpt_dir = f"{Path(__file__).absolute().parent.as_posix()}"
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output-dir", default=".", help="output directory")
     # parser.add_argument(
@@ -191,8 +185,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=f"{ckpt_dir}/params/demo_rand_params.pth",
-        help="checkpoint path",
+        required=False,
+        help="Path to the checkpoint .pth file. When not provided, the model will be initialized with random weights.",
     )
 
     parser.add_argument(
@@ -273,8 +267,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-p",
         "--params",
-        default=f"{ckpt_dir}/params/demo_config.json",
-        help="config.json",
+        required=False,
+        help="Config file for model parameters. When not provided, the model will fallback on default values defined in examples/models/llama/model_args.py.",
     )
     parser.add_argument(
         "--optimized_rotation_path",
@@ -561,7 +555,7 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     checkpoint_dir = (
         canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
     )
-    params_path = canonical_path(args.params)
+    params_path = canonical_path(args.params) if args.params else None
     output_dir_path = canonical_path(args.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
@@ -594,9 +588,36 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     )
 
     # At this point, the model is loaded in the default fp32.
+
+    # Checkpoint dtype should be lower or equal precision to the dtype override.
+    checkpoint_dtype = edge_manager.model.checkpoint_dtype
+    if not (
+        checkpoint_dtype == dtype_override.to_torch_dtype()
+        or (
+            checkpoint_dtype == torch.float16
+            and dtype_override.to_torch_dtype() == torch.float32
+        )
+        or (
+            checkpoint_dtype == torch.bfloat16
+            and dtype_override.to_torch_dtype() == torch.float32
+        )
+    ):
+        logging.warning(
+            f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
+        )
+
     edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
-    edge_manager.set_output_dir(output_dir_path).source_transform(
-        _get_source_transforms(args.model, dtype_override, args)
+
+    # We want to quantize (in the source transforms) the weights of the model
+    # in the checkpoint dtype.
+    logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
+    edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
+        _get_source_transforms(
+            modelname=args.model,
+            dtype_override=dtype_override,
+            checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),
+            args=args,
+        )
     )
 
     return edge_manager
@@ -784,8 +805,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
                 shares=args.num_sharding,
             )
 
-        from functools import partial
-
         # pyre-ignore
         from executorch.backends.qualcomm.quantizer.custom_annotation import (
             get_custom_quant_ios_dtype,
@@ -959,7 +978,7 @@ def _load_llama_model(
     *,
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
-    params_path: str,
+    params_path: Optional[str] = None,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     generate_full_logits: bool = False,
@@ -985,13 +1004,6 @@ def _load_llama_model(
     Returns:
         An instance of LLMEdgeManager which contains the eager mode model.
     """
-
-    assert (
-        checkpoint or checkpoint_dir
-    ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
-    logging.info(
-        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
-    )
 
     if modelname in EXECUTORCH_DEFINED_MODELS:
         module_name = "llama"
@@ -1069,8 +1081,31 @@ def _load_llama_model(
 
 
 def _get_source_transforms(  # noqa
-    modelname: str, dtype_override: Optional[DType], args
+    modelname: str,
+    dtype_override: DType,
+    *,
+    checkpoint_dtype: Optional[DType] = None,
+    args,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
+    """
+    Return a list of functions that transform a graph.
+
+    Args:
+        modelname: The name of the model.
+        dtype_override: The dtype to use for the model.
+        checkpoint_dtype: The dtype of the checkpoint. At the moment, if this is specified,
+            it means that you want to run quantize transformations on the weights represented
+            in their original dtype, while the overall dtype of the model maybe something
+            different. If not specified, defaults to dtype_override.
+        args: The arguments passed to the script.
+
+    Returns:
+        A list of transformation functions.
+    """
+
+    if not checkpoint_dtype:
+        checkpoint_dtype = dtype_override
+
     transforms = []
 
     if args.use_spin_quant:
@@ -1103,7 +1138,11 @@ def _get_source_transforms(  # noqa
         """
         modelname = f"{modelname}_q"
         transforms.append(
-            get_quant_weight_transform(args, dtype_override, verbose_export())
+            get_quant_weight_transform(
+                args=args,
+                computation_dtype=dtype_override,
+                checkpoint_dtype=checkpoint_dtype,
+            )
         )
 
     if args.embedding_quantize:
@@ -1117,7 +1156,7 @@ def _get_source_transforms(  # noqa
         this wil be a no-op.
         """
         modelname = f"{modelname}_e"
-        transforms.append(get_quant_embedding_transform(args))
+        transforms.append(get_quant_embedding_transform(args, checkpoint_dtype))
 
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)

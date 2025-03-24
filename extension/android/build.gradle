@@ -1,24 +1,30 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
+allprojects {
+    buildscript {
+        ext {
+            minSdkVersion = 21
+            targetSdkVersion = 34
+            compileSdkVersion = 34
+            buildToolsVersion = '33.0.1'
 
-plugins {
-    id 'java-library'
-}
+            fbjniJavaOnlyVersion = "0.5.1"
+            soLoaderNativeLoaderVersion = "0.10.5"
+        }
 
-group 'org.pytorch.executorch'
+        repositories {
+            google()
+            mavenCentral()
+        }
 
-repositories {
-    mavenCentral()
-}
+        dependencies {
+            classpath 'com.android.tools.build:gradle:8.9.0'
+            classpath 'com.vanniktech:gradle-maven-publish-plugin:0.31.0'
+        }
 
-task makeJar(type: Jar) {
-    dependencies {
-        implementation 'com.facebook.fbjni:fbjni-java-only:0.5.1'
-        implementation 'com.facebook.soloader:nativeloader:0.10.5'
+    }
+
+    repositories {
+        google()
+        jcenter()
+        mavenCentral()
     }
 }

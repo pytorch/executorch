@@ -38,13 +38,12 @@ class Llama2Model(EagerModelBase):
         resource_dir = get_default_model_resource_dir(__file__)
 
         # Use single checkpoint file.
-        checkpoint_path = kwargs.get(
-            "checkpoint", resource_dir / "demo_rand_params.pth"
-        )
-        params_path = kwargs.get("params", resource_dir / "demo_config.json")
-
+        checkpoint_path = kwargs.get("checkpoint", None)
         # Check if checkpoint_dir was provided for a sharded checkpoint.
         checkpoint_dir = kwargs.get("checkpoint_dir", None)
+
+        # Params file.
+        params_path = kwargs.get("params", None)
 
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
@@ -66,6 +65,7 @@ class Llama2Model(EagerModelBase):
         # flake8: noqa: TOR102
         cps = []
         # Load sharded checkpoint.
+        checkpoint = {}
         if checkpoint_dir is not None:
             # Load multiple checkpoint; ignore the single path.
             checkpoint_path = None
@@ -93,7 +93,7 @@ class Llama2Model(EagerModelBase):
                     # Do not duplicate layers shared between each checkpoint.
                     checkpoint[key] = cps[0][key]
         # Load single checkpoint.
-        else:
+        elif checkpoint_path:
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
 
         # If given checkpoint is fairseq, convert to llama checkpoint.
@@ -122,8 +122,12 @@ the checkpoint format to avoid generating faulty models.
 """
             )
 
-        with open(params_path, "r") as f:
-            params = json.loads(f.read())
+        # Get optional params.
+        params = {}
+        if params_path:
+            with open(params_path, "r") as f:
+                params = json.loads(f.read())
+
         output_prune_map = None
         if self.output_prune_map_path is not None:
             with open(self.output_prune_map_path, "r") as f:
@@ -170,7 +174,11 @@ the checkpoint format to avoid generating faulty models.
         with torch.device("meta"):
             # Model itself is loaded in default dtype, fp32.
             self.model_ = Transformer(model_args)
-            self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
+            # Get checkpoint dtype.
+            if checkpoint:
+                self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
+            else:
+                self.model_.checkpoint_dtype = None
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
@@ -244,16 +252,19 @@ the checkpoint format to avoid generating faulty models.
             # Also, the checkpoint is loaded and dtype promoted to the transformer's dtype, which is
             # by default initialized to fp32. This is fine because every other supported type
             # losslessly converts to fp32, so we don't lose precision here.
-            missing, unexpected = self.model_.load_state_dict(
-                checkpoint,
-                strict=False,
-                assign=True,
-            )  # self.model_ = Transformer(gptconf)
+            if checkpoint:
+                missing, unexpected = self.model_.load_state_dict(
+                    checkpoint,
+                    strict=False,
+                    assign=True,
+                )  # self.model_ = Transformer(gptconf)
+            else:
+                print("Checkpoint not provided, defaulting to uninitialized weights.")
+                self.model_.to_empty(device="cpu")
         except RuntimeError as e:
             print(
-                "Could not load checkpoint into mode, defaulting to random uninitialized weights."
+                f"Could not load checkpoint into mode and will default to uninitialized weights due to error: {e}."
             )
-            print(f"Error: {e}")
             # Need to provide concrete (empty) values for meta-initialized tensors for quantization.
             self.model_.to_empty(device="cpu")
 
