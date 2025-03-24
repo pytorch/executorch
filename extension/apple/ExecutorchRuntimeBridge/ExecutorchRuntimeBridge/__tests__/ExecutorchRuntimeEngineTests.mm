@@ -50,15 +50,16 @@ NS_ASSUME_NONNULL_BEGIN
   XCTAssertEqual(output.count, 1);
   NSError *tensorValueError = nil;
   NSError *floatRepresentationError = nil;
-  const auto resultTensorValue = [[output.firstObject asTensorValueAndReturnError:&tensorValueError]
-                                  floatRepresentationAndReturnError:&floatRepresentationError];
+  const auto tensorValue = [output.firstObject asTensorValueAndReturnError:&tensorValueError];
+  const auto resultFloatArray = [tensorValue floatArrayAndReturnError:&floatRepresentationError];
+  const auto resultShape = tensorValue.shape;
 
   XCTAssertNil(tensorValueError);
   XCTAssertNil(floatRepresentationError);
-  XCTAssertEqual(resultTensorValue.floatArray.count, 1);
-  XCTAssertEqual(resultTensorValue.shape.count, 1);
-  XCTAssertEqual(resultTensorValue.floatArray.firstObject.floatValue, 4.0);
-  XCTAssertEqual(resultTensorValue.shape.firstObject.integerValue, 1);
+  XCTAssertEqual(resultFloatArray.count, 1);
+  XCTAssertEqual(resultShape.count, 1);
+  XCTAssertEqual(resultFloatArray.firstObject.floatValue, 4.0);
+  XCTAssertEqual(resultShape.firstObject.integerValue, 1);
 }
 
 @end
