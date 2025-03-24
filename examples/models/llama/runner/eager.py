@@ -11,11 +11,13 @@ from typing import Optional, Type
 import torch
 
 from executorch.examples.models.llama.export_llama_lib import (
+    _convert_args_to_config,
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
 )
 from executorch.examples.models.llama.runner.generation import LlamaRunner
 from executorch.extension.llm.export.builder import LLMEdgeManager
+from omegaconf import DictConfig, OmegaConf
 
 
 class EagerLlamaRunner(LlamaRunner):
@@ -23,19 +25,19 @@ class EagerLlamaRunner(LlamaRunner):
     Runs llama in eager mode with provided checkpoint file.
     """
 
-    def __init__(self, args):
-        with open(args.params, "r") as f:
+    def __init__(self, config):
+        with open(config.model.params, "r") as f:
             params = json.loads(f.read())
         super().__init__(
-            tokenizer_path=args.tokenizer_path,
-            tokenizer_config_path=args.tokenizer_config_path,
-            max_seq_len=args.max_seq_length,
+            tokenizer_path=config.export.tokenizer_path,
+            tokenizer_config_path=config.eager.tokenizer_config_path,
+            max_seq_len=config.sequence.max_seq_length,
             max_batch_size=1,
-            use_kv_cache=args.use_kv_cache,
+            use_kv_cache=config.kv_cache.use_kv_cache,
             vocab_size=params["vocab_size"],
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-        manager: LLMEdgeManager = _prepare_for_llama_export(args)
+        manager: LLMEdgeManager = _prepare_for_llama_export(config)
         self.model = manager.model.eval().to(device=self.device)
 
     def forward(
@@ -85,26 +87,46 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _convert_cli_to_config_format(args) -> DictConfig:
+    """Convert CLI arguments to config format."""
+    # First convert common args using the shared function
+    config = _convert_args_to_config(args)
+
+    # Add evaluation-specific settings
+    config.eager = OmegaConf.create()
+    config.eager.prompt = args.prompt
+    config.eager.temperature = args.temperature
+    config.eager.show_tokens = args.show_tokens
+    config.eager.chat = args.chat
+    config.eager.tokenizer_config_path = args.tokenizer_config_path
+
+    return config
+
+
 def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     parser = build_args_parser()
     args = parser.parse_args()
-
+    config = _convert_cli_to_config_format(args)
     with torch.no_grad():
-        runner = runner_class(args)  # pyre-ignore: Missing argument [20]
+        runner = runner_class(config)  # pyre-ignore: Missing argument [20]
         generated_tokens = (
             runner.chat_completion(
-                max_seq_len=1000000 if args.use_attention_sink else args.max_seq_length,
-                temperature=args.temperature,
-                show_progress=args.show_tokens,
+                max_seq_len=(
+                    1000000
+                    if config.misc.use_attention_sink
+                    else config.sequence.max_seq_length
+                ),
+                temperature=config.eager.temperature,
+                show_progress=config.eager.show_tokens,
             )
-            if args.chat
+            if config.eager.chat
             else runner.text_completion(
-                prompt=args.prompt,
-                temperature=args.temperature,
+                prompt=config.eager.prompt,
+                temperature=config.eager.temperature,
                 echo=True,
             )
         )
-        if args.show_tokens:
+        if config.eager.show_tokens:
             print(f"Generated {len(generated_tokens)} tokens: {generated_tokens}")
 
 

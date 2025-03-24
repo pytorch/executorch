@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from executorch.extension.llm.export.builder import DType
+from omegaconf import DictConfig, OmegaConf
 
 from sentencepiece import SentencePieceProcessor
 
@@ -784,9 +785,9 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 ############################ Source Transform Start #######################
 
 
-def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
-    if args.embedding_quantize.startswith("torchao:"):
-        bitwidth, group_size = args.embedding_quantize.split(":")[1].split(",")
+def get_quant_embedding_transform(config: DictConfig, dtype_override: Optional[DType] = None):
+    if config.quantization.embedding_quantize.startswith("torchao:"):
+        bitwidth, group_size = config.quantization.embedding_quantize.split(":")[1].split(",")
         group_size = int(group_size)
         bitwidth = int(bitwidth)
         from torchao.experimental.quant_api import IntxWeightEmbeddingQuantizer
@@ -803,7 +804,7 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
 
         return _torchao_embedding_quantizer
 
-    bitwidth, group_size = args.embedding_quantize.split(",")
+    bitwidth, group_size = config.quantization.embedding_quantize.split(",")
     if group_size == "none" or group_size == "None" or group_size == "0":
         group_size = None
     else:
@@ -820,37 +821,39 @@ def get_quant_embedding_transform(args, dtype_override: Optional[DType] = None):
 
 
 def get_quant_weight_transform(
-    args,
+    config: DictConfig,
     computation_dtype: Optional[DType] = None,
     checkpoint_dtype: Optional[DType] = None,
 ):
     # If these optional args are None, don't provide them to quantize().
-    quant_args_str = [
-        "group_size",
-        "calibration_tasks",
-        "calibration_limit",
-        "calibration_seq_length",
-    ]
-    arg_dict = vars(args)
-    quant_args = {
-        param: val
-        for param in quant_args_str
-        if (val := arg_dict.get(param)) is not None
-    }
+    quant_args = {}
+    if config.quantization.group_size is not None:
+        quant_args['group_size'] = config.quantization.group_size
+    if config.calibration.tasks is not None:
+        quant_args['calibration_tasks'] = OmegaConf.to_container(config.calibration.tasks)
+    if config.calibration.limit is not None:
+        quant_args['calibration_limit'] = config.calibration.limit
+    if config.calibration.seq_length is not None:
+        quant_args['calibration_seq_length'] = config.calibration.seq_length
+
+
+
+    group_size = config.quantization.group_size
+    calibration_tasks = config.calibration.tasks
+    calibration_limit = config.calibration.limit
+    calibration_seq_length = config.calibration.seq_length
 
     return partial(
         quantize,
         **quant_args,
-        qmode=args.quantization_mode,
+        qmode=config.quantization.mode,
         computation_dtype=computation_dtype,
         checkpoint_dtype=checkpoint_dtype,
-        checkpoint_path=(Path(path) if (path := args.checkpoint) is not None else None),
+        checkpoint_path=(Path(path) if (path := config.export.checkpoint) is not None else None),
         tokenizer_path=(
-            Path(path) if (path := args.tokenizer_path) is not None else None
+            Path(path) if (path := config.export.tokenizer_path) is not None else None
         ),
     )
-
-
 def _load_torchao_aten_lib(libname):
     import glob
     import os
