@@ -49,6 +49,7 @@ class TestCheckQuantParams(unittest.TestCase):
         return inject_invalid_scale_in_per_tensor
 
     def _test_check_quant_message(self, ep_modifier, expected_message):
+        torch._dynamo.reset()
         mod = torch.nn.Linear(10, 10)
         quantizer = XNNPACKQuantizer()
         captured = export_for_training(mod, (torch.randn(1, 10),)).module()

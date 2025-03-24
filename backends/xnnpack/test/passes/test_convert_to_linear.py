@@ -24,6 +24,7 @@ class TestConvertToLinear(unittest.TestCase):
         bias_vals = [True, True, False]
 
         for i, _ in enumerate(in_sizes):
+            torch._dynamo.reset()
             in_size = int(in_sizes[i])
             input_size = int(input_sizes[i])
             output_size = int(output_sizes[i])
