@@ -156,7 +156,6 @@ class ComputePipeline final {
     VkPipelineLayout pipeline_layout;
     VkShaderModule shader_module;
     SpecVarList specialization_constants;
-    utils::WorkgroupSize local_wg_size;
   };
 
   explicit ComputePipeline(
@@ -175,6 +174,7 @@ class ComputePipeline final {
  private:
   VkDevice device_;
   VkPipeline handle_;
+  std::vector<VkSpecializationMapEntry> map_entries_;
 
  public:
   inline VkPipeline handle() const {
@@ -273,9 +273,6 @@ class ComputePipelineCache final {
         }
         seed = utils::hash_combine(seed, new_seed);
       }
-
-      seed = utils::hash_combine(
-          seed, std::hash<uint32_t>()((uint32_t)descriptor.local_wg_size));
 
       return seed;
     }

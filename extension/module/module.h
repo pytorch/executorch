@@ -139,6 +139,14 @@ class Module {
   }
 
   /**
+   * Get the number of methods available in the loaded program.
+   *
+   * @returns A Result object containing either the number of methods available
+   *          or an error to indicate failure.
+   */
+  runtime::Result<size_t> num_methods();
+
+  /**
    * Get a list of method names available in the loaded program.
    * Loads the program and method if needed.
    *

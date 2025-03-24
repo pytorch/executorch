@@ -56,7 +56,10 @@ using torch::executor::ScalarType;
 {
   if (tensor.scalar_type() != ScalarType::Float) {
     if (error) {
-      *error = [ModelRuntimeValueErrorFactory invalidType:[NSString stringWithFormat:@"torch::executor::ScalarType::%hhd", tensor.scalar_type()] expectedType:@"torch::executor::ScalarType::Float"];
+      *error = [NSError
+        errorWithDomain:@"ExecutorchRuntimeEngine"
+        code:(NSInteger)executorch::runtime::Error::InvalidArgument
+        userInfo: @{NSDebugDescriptionErrorKey: [NSString stringWithFormat:@"Invalid type: torch::executor::ScalarType::%hhd, expected torch::executor::ScalarType::Float", tensor.scalar_type()]}];
     }
     return nil;
   }
@@ -68,31 +71,38 @@ using torch::executor::ScalarType;
   return [self initWithData:floatVector shape:shapeVector];
 }
 
-- (nullable ModelRuntimeTensorValueBridgingTuple *)floatRepresentationAndReturnError:(NSError * _Nullable * _Nullable)error
+- (NSArray<NSNumber *> *)shape
 {
+  const auto sizes = _tensor->sizes();
+  std::vector<int32_t> tensorSizes(sizes.begin(), sizes.end());
+
+  NSMutableArray<NSNumber *> *sizesArray = [[NSMutableArray alloc] initWithCapacity:tensorSizes.size()];
+  for (int &tensorSize : tensorSizes) {
+    [sizesArray addObject:@(tensorSize)];
+  }
+
+  return sizesArray;
+}
+
+- (NSArray<NSNumber *> * _Nullable)floatArrayAndReturnError:(NSError * _Nullable * _Nullable)error {
   if (_tensor->scalar_type() == torch::executor::ScalarType::Float) {
-    const auto *tensorPtr = _tensor->data<float>();
-    const auto sizes = _tensor->sizes();
-    std::vector<float> tensorVec(tensorPtr, tensorPtr + _tensor->numel());
-    std::vector<int32_t> tensorSizes(sizes.begin(), sizes.end());
+      const auto *tensorPtr = _tensor->data<float>();
+      const auto sizes = _tensor->sizes();
+      std::vector<float> tensorVec(tensorPtr, tensorPtr + _tensor->numel());
+      std::vector<int32_t> tensorSizes(sizes.begin(), sizes.end());
 
-    NSMutableArray<NSNumber *> *floatArray = [[NSMutableArray alloc] initWithCapacity:tensorVec.size()];
-    for (float &i : tensorVec) {
-      [floatArray addObject:@(i)];
-    }
-
-    NSMutableArray<NSNumber *> *sizesArray = [[NSMutableArray alloc] initWithCapacity:tensorSizes.size()];
-    for (int &tensorSize : tensorSizes) {
-      [sizesArray addObject:@(tensorSize)];
-    }
-
-    return [[ModelRuntimeTensorValueBridgingTuple alloc] initWithFloatArray:floatArray shape:sizesArray];
+      NSMutableArray<NSNumber *> *floatArray = [[NSMutableArray alloc] initWithCapacity:tensorVec.size()];
+      for (float &i : tensorVec) {
+        [floatArray addObject:@(i)];
+      }
+    return floatArray;
   }
 
   if (error) {
-    *error = [ModelRuntimeValueErrorFactory
-              invalidType:[NSString stringWithFormat:@"torch::executor::ScalarType::%hhd", _tensor->scalar_type()]
-              expectedType:@"torch::executor::ScalarType::Float"];
+    *error = [NSError
+        errorWithDomain:@"ExecutorchRuntimeEngine"
+        code:(NSInteger)executorch::runtime::Error::InvalidArgument
+        userInfo: @{NSDebugDescriptionErrorKey: [NSString stringWithFormat:@"Invalid type: torch::executor::ScalarType::%hhd, expected torch::executor::ScalarType::Float", _tensor->scalar_type()]}];
   }
 
   return nil;
