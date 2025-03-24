@@ -74,14 +74,15 @@ install_pytorch_and_domains() {
   local cached_torch_wheel="https://gha-artifacts.s3.us-east-1.amazonaws.com/${torch_wheel_path}/${torch_wheel_name}"
   # Cache PyTorch wheel is only needed on MacOS, Linux CI already has this as part
   # of the Docker image
+  local torch_wheel_not_found=0
   if [[ "${system_name}" == "Darwin" ]]; then
-    pip install "${cached_torch_wheel}" || TORCH_WHEEL_NOT_FOUND=1
+    pip install "${cached_torch_wheel}" || torch_wheel_not_found=1
   else
-    TORCH_WHEEL_NOT_FOUND=1
+    torch_wheel_not_found=1
   fi
 
   # Found no such wheel, we will build it from source then
-  if [[ "${TORCH_WHEEL_NOT_FOUND:-0}" == "1" ]]; then
+  if [[ "${torch_wheel_not_found}" == "1" ]]; then
     echo "No cached wheel found, continue with building PyTorch at ${TORCH_VERSION}"
 
     git submodule update --init --recursive
