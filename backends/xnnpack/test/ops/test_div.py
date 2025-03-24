@@ -27,15 +27,24 @@ class TestDiv(unittest.TestCase):
             z = x / x
             return z
 
-    def _test_div(self, inputs):
-        (
+    def _test_div(self, inputs, mixed_dtype=False):
+        tester = (
             Tester(self.Div(), inputs)
             .export()
             .check_count({"torch.ops.aten.div.Tensor": 1})
             .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
-            .to_executorch()
+        )
+
+        if mixed_dtype:
+            # Inverse check for mixed-dtype: original node remains and no delegate node
+            tester.check_count({"executorch_exir_dialects_edge__ops_aten_div_Tensor": 1})
+            tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
+        else:
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
+
+        (
+            tester.to_executorch()
             .serialize()
             .run_method_and_compare_outputs()
         )
@@ -67,3 +76,19 @@ class TestDiv(unittest.TestCase):
             .serialize()
             .run_method_and_compare_outputs()
         )
+
+    def test_fp32_div_with_mixed_dtype(self):
+        test_cases = [
+            torch.bfloat16,
+            torch.float16,
+            torch.int8,
+        ]
+        for dtype in test_cases:
+            with self.subTest(dtype=str(dtype)):
+                inputs = (
+                    (torch.randn(1) + 4).to(torch.float32),
+                    (torch.randn(1) + 4).to(dtype),
+                )
+                # Set mixed_dtype=True to verify that
+                # no delegate node is inserted and the original node remains in the graph
+                self._test_div(inputs, mixed_dtype=True)
