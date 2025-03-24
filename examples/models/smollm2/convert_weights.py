@@ -7,11 +7,11 @@ from torchtune.models.convert_weights import get_mapped_key
 
 from torchtune.training import FullModelHFCheckpointer
 
-
-# Standard _FROM_META weight mapping of Meta weights to TorchTune.
-_PHI_4_FROM_META = {
+# Standard _FROM_META weight mapping of Meta weights to TorchTune + additional bias weight mappings.
+_SMOLLM_FROM_META = {
     "tok_embeddings.weight": "tok_embeddings.weight",
     "norm.weight": "norm.scale",
+    "output.weight": "output.weight",
     "layers.{}.attention.wk.weight": "layers.{}.attn.k_proj.weight",
     "layers.{}.attention.wq.weight": "layers.{}.attn.q_proj.weight",
     "layers.{}.attention.wv.weight": "layers.{}.attn.v_proj.weight",
@@ -24,7 +24,7 @@ _PHI_4_FROM_META = {
 }
 
 
-def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+def smollm_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
     """
     Convert a state dict from torchtune's format to Meta's format. This function
     doesn't handle any sharding or splitting of state dicts. It follows the
@@ -37,23 +37,17 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
         Dict[str, torch.Tensor]: State dict in Meta's format.
     """
     converted_state_dict = {}
-    inverted_mapping_dict = {v: k for k, v in _PHI_4_FROM_META.items()}
-
+    inverted_mapping_dict = {v: k for k, v in _SMOLLM_FROM_META.items()}
     for key, value in state_dict.items():
         new_key = get_mapped_key(key, inverted_mapping_dict)
         converted_state_dict[new_key] = value
-
-    # Input and output embeddings are tied.
-    converted_state_dict["output.weight"] = converted_state_dict[
-        "tok_embeddings.weight"
-    ]
 
     return converted_state_dict
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert Phi-4-mini weights to Meta format."
+        description="Convert SmolLM weights to Meta format."
     )
     parser.add_argument(
         "input_dir",
@@ -64,21 +58,19 @@ def main():
 
     args = parser.parse_args()
 
+    # Don't necessarily need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
     checkpointer = FullModelHFCheckpointer(
         checkpoint_dir=args.input_dir,
-        checkpoint_files=[
-            "model-00001-of-00002.safetensors",
-            "model-00002-of-00002.safetensors",
-        ],
+        checkpoint_files=["model.safetensors"],
         output_dir=".",
-        model_type="PHI4",
+        model_type="LLAMA",
     )
 
     print("Loading checkpoint...")
     sd = checkpointer.load_checkpoint()
 
     print("Converting checkpoint...")
-    sd = phi_4_tune_to_meta(sd["model"])
+    sd = smollm_tune_to_meta(sd["model"])
 
     torch.save(sd, args.output)
     print(f"Checkpoint saved to {args.output}")
