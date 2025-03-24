@@ -53,8 +53,8 @@ class TestCat(unittest.TestCase):
             if quant:
                 tester.check_not(["torch.ops.quantized_decomposed"])
 
-            # Inverse check for mixed-dtype: original node remains and no delegate node
             if mixed_dtype:
+                # Inverse check for mixed-dtype: original node remains and no delegate node
                 tester.check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
                 tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
             else:
@@ -264,7 +264,7 @@ class TestCat(unittest.TestCase):
             with self.subTest(dtype=str(dtype)):
                 inputs = (
                     torch.randn(1, 2, 3).to(torch.float32),
-                    torch.randn(3, 2, 3).to(dtype),
+                    torch.randn(1, 2, 3).to(dtype),
                 )
                 # Set mixed_dtype=True to verify that
                 # no delegate node is inserted and the original node remains in the graph
