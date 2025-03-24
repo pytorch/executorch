@@ -82,5 +82,16 @@ let package = Package(
           (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
       ),
     ]
-  }
+  } + [
+    .testTarget(
+      name: "tests",
+      dependencies: [
+        .target(name: "executorch")
+      ],
+      path: "extension/apple/ExecuTorch/__tests__",
+      resources: [
+        .copy("extension/apple/ExecuTorch/__tests__/resources/add.pte")
+      ]
+    )
+  ]
 )
