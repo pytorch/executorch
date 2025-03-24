@@ -7,7 +7,7 @@ Phi-4-mini uses the same example code as Llama, while the checkpoint, model para
 
 All commands for exporting and running Llama on various backends should also be applicable to Phi-4-mini, by swapping the following args:
 ```
---model phi-4-mini
+--model phi_4_mini
 --params examples/models/phi-4-mini/config.json
 --checkpoint <path-to-meta-checkpoint>
 ```
@@ -33,7 +33,7 @@ Export to XNNPack, no quantization:
 PHI_CHECKPOINT=path/to/checkpoint.pth
 
 python -m examples.models.llama.export_llama \
-  --model phi-4-mini \
+  --model phi_4_mini \
   --checkpoint "${PHI_CHECKPOINT=path/to/checkpoint.pth:?}" \
   --params examples/models/phi-4-mini/config.json \
   -kv \
@@ -51,7 +51,7 @@ Run using the executor runner:
 # In the meantime, can run with an example Python runner with pybindings:
 
 python -m examples.models.llama.runner.native
-  --model phi-4-mini
+  --model phi_4_mini
   --pte <path-to-pte>
   -kv
   --tokenizer <path-to-tokenizer>/tokenizer.json
