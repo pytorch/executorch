@@ -6,13 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/aot/wrappers/QuantizeParamsWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
 std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
-    const Qnn_QuantizeParams_t& quantization) {
+    const Qnn_Tensor_t& tensor) {
   std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper;
+  auto& quantization = QNN_TENSOR_VER_PTR(tensor)->quantizeParams;
 
   if (quantization.quantizationEncoding ==
       QNN_QUANTIZATION_ENCODING_UNDEFINED) {
@@ -60,6 +63,29 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     quantize_param_wrapper = std::make_unique<ScaleOffsetQuantizeParamsWrapper>(
         quantization.scaleOffsetEncoding.scale,
         quantization.scaleOffsetEncoding.offset);
+  } else if (
+      quantization.quantizationEncoding ==
+      QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION) {
+    int ch_axis = quantization.blockwiseExpansion->axis;
+    int ele_sz = quantization.blockwiseExpansion->blockScaleStorageType ==
+            QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_16
+        ? 2
+        : 1;
+    size_t block_scales_sz = quantization.blockwiseExpansion->numBlocksPerAxis *
+        QNN_TENSOR_VER_PTR(tensor)->dimensions[ch_axis] * ele_sz;
+    std::vector<Qnn_ScaleOffset_t> scale_offsets(
+        quantization.blockwiseExpansion->scaleOffsets,
+        quantization.blockwiseExpansion->scaleOffsets +
+            QNN_TENSOR_VER_PTR(tensor)->dimensions[ch_axis]);
+    quantize_param_wrapper =
+        std::make_unique<BlockwiseExpansionQuantizeParamsWrapper>(
+            quantization.blockwiseExpansion->axis,
+            scale_offsets,
+            quantization.blockwiseExpansion->numBlocksPerAxis,
+            quantization.blockwiseExpansion->blockScaleBitwidth,
+            quantization.blockwiseExpansion->blockScaleStorageType,
+            quantization.blockwiseExpansion->blocksScale8,
+            block_scales_sz);
   } else {
     QNN_EXECUTORCH_LOG_ERROR(
         "Unknown the encoding of quantization: %d",
