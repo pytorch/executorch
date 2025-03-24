@@ -17,7 +17,9 @@ def external_constants_pass(
     gm: GraphModule,
 ) -> PassResult:
     """
-    Move all constants to external file.
+    Move all non-lifted constants to external file.
+    NOTE: Lifted constants are not moved as they are closer
+    to code than data.
     """
     mutated = False
     for module in gm.modules():
@@ -25,7 +27,7 @@ def external_constants_pass(
             continue
 
         for node in module.graph.nodes:
-            if node.op == "placeholder":
+            if (node.op == "placeholder") and ("_lifted_tensor" not in node.name):
                 spec = node.meta.get("spec")
                 if isinstance(spec, TensorSpec) and spec.const:
                     node.meta["constant_tag"] = "_default_external_constant"

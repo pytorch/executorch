@@ -43,12 +43,19 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         output_zp: int,
         accumulator_type: ts.DType,
     ) -> None:
-        input_tensor = inputs[0]
 
+        input_tensor = inputs[0]
         kernel_size_list = inputs[1].special
         stride_size_list = inputs[2].special
+
         try:
             pad_size_list = inputs[3].special
+            pad_size_list = [
+                pad_size_list[0],
+                pad_size_list[0],
+                pad_size_list[1],
+                pad_size_list[1],
+            ]
         except IndexError:
             pad_size_list = [0, 0, 0, 0]
 

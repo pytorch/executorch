@@ -11,8 +11,8 @@
 
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace executorch {
 namespace extension {
@@ -21,7 +21,7 @@ namespace llm {
 class ET_EXPERIMENTAL TextTokenGenerator {
  public:
   TextTokenGenerator(
-      Tokenizer* tokenizer,
+      ::tokenizers::Tokenizer* tokenizer,
       TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
@@ -106,7 +106,8 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
 
       // print the token as string, decode it with the Tokenizer object
-      token_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
+      token_callback(
+          ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
 
       if (should_stop_) {
         break;
@@ -130,7 +131,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   }
 
  private:
-  Tokenizer* tokenizer_;
+  ::tokenizers::Tokenizer* tokenizer_;
   TextDecoderRunner* text_decoder_runner_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
   bool use_kv_cache_;

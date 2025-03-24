@@ -843,7 +843,7 @@ template <typename Func>
 template <typename Func>
 [[nodiscard]] bool parallel_for_each_reduce_over_dim_list_output_index(
     const Tensor& in,
-    optional<ArrayRef<int64_t>> dim_list,
+    executorch::aten::optional<ArrayRef<int64_t>> dim_list,
     const Tensor& out,
     const Func& func) {
 #ifdef ET_UE_THREADPOOL

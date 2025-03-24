@@ -26,9 +26,9 @@ def define_common_targets():
             "//executorch/extension/module:module",
             "//executorch/extension/llm/sampler:sampler",
             "//executorch/examples/models/llama/tokenizer:tiktoken",
-            "//executorch/extension/llm/tokenizer:bpe_tokenizer",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/backends/qualcomm/runtime:runtime",
+            "//pytorch/tokenizers:llama2c_tokenizer",
         ],
         external_deps = [
             "gflags",
