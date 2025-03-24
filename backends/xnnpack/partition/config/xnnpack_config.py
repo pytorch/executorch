@@ -202,7 +202,7 @@ class XNNPartitionerConfig(PartitionerConfig):
             if reference_dtype is None:
                 reference_dtype = val.dtype
             elif val.dtype != reference_dtype:
-                    return False
+                return False
 
         return True
 

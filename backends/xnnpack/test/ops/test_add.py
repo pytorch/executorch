@@ -52,17 +52,15 @@ class TestAdd(unittest.TestCase):
 
         if mixed_dtype:
             # Inverse check for mixed-dtype: original node remains and no delegate node
-            tester.check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
+            tester.check_count(
+                {"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4}
+            )
             tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
         else:
             tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             tester.check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
 
-        (
-            tester.to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        (tester.to_executorch().serialize().run_method_and_compare_outputs())
 
     def test_fp16_add(self):
         inputs = (torch.randn(1).to(torch.float16), torch.randn(1).to(torch.float16))

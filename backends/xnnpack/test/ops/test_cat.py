@@ -23,7 +23,9 @@ class TestCat(unittest.TestCase):
             x = torch.cat(xs, dim=self.dim)
             return x + x  # Quantize by propagation.
 
-    def _test_cat(self, module, inputs, cat_num=1, quant=False, quant_ops=2, mixed_dtype=False):
+    def _test_cat(
+        self, module, inputs, cat_num=1, quant=False, quant_ops=2, mixed_dtype=False
+    ):
         for legacy_mode in (True, False):
             tester = Tester(module, inputs)
 
@@ -58,14 +60,12 @@ class TestCat(unittest.TestCase):
                 tester.check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
                 tester.check_not(["torch.ops.higher_order.executorch_call_delegate"])
             else:
-                tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
                 tester.check_not(["executorch_exir_dialects_edge__ops_aten_cat"])
 
-            (
-                tester.to_executorch()
-                .serialize()
-                .run_method_and_compare_outputs()
-            )
+            (tester.to_executorch().serialize().run_method_and_compare_outputs())
 
     def test_fp16_cat2(self):
         """
