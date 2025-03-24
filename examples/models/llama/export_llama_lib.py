@@ -98,6 +98,10 @@ EXECUTORCH_DEFINED_MODELS = [
     "phi_4_mini",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
+HUGGING_FACE_REPO_IDS = {
+    "qwen2_5": "Qwen/Qwen2.5-1.5B",
+    "phi_4_mini": "microsoft/Phi-4-mini-instruct",
+}
 
 
 class WeightType(Enum):
@@ -519,7 +523,53 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
+def download_and_convert_hf_checkpoint(modelname: str) -> str:
+    """
+    Downloads and converts to Meta format a HuggingFace checkpoint.
+    """
+    # Build cache path.
+    cache_subdir = "meta_checkpoints"
+    cache_dir = Path.home() / ".cache" / cache_subdir
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use repo name to name the converted file.
+    repo_id = HUGGING_FACE_REPO_IDS[modelname]
+    model_name = repo_id.replace(
+        "/", "_"
+    )
+    converted_path = cache_dir / f"{model_name}.pth"
+
+    if converted_path.exists():
+        print(f"✔ Using cached converted model: {converted_path}")
+        return converted_path
+
+    # 1. Download weights from Hugging Face.
+    print("⬇ Downloading and converting checkpoint...")
+    from huggingface_hub import snapshot_download
+
+    checkpoint_path = snapshot_download(
+        repo_id=repo_id,
+    )
+
+    # 2. Convert weights to Meta format.
+    if modelname == "qwen2_5":
+        from executorch.examples.models.qwen2_5 import convert_weights
+
+        convert_weights(checkpoint_path, converted_path)
+    elif modelname == "phi_4_mini":
+        from executorch.examples.models.phi_4_mini import convert_weights
+
+        convert_weights(checkpoint_path, converted_path)
+    elif modelname == "smollm2":
+        pass
+
+    return converted_path
+
+
 def export_llama(args) -> str:
+    if not args.checkpoint and args.model in HUGGING_FACE_REPO_IDS:
+        args.checkpoint = download_and_convert_hf_checkpoint(args.model)
+
     if args.profile_path is not None:
         try:
             from executorch.util.python_profiler import CProfilerFlameGraph
