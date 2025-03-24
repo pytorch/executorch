@@ -64,8 +64,6 @@ say "Installing Requirements"
 pip install --upgrade cmake pip setuptools wheel zstd
 
 ./install_executorch.sh --pybind coreml mps xnnpack
-export PATH="$(realpath third-party/flatbuffers/cmake-out):$PATH"
-./build/install_flatc.sh
 
 say "Installing CoreML Backend Requirements"
 
