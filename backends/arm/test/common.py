@@ -231,6 +231,7 @@ def parametrize(
     arg_name: str,
     test_data: dict[str, Any],
     xfails: dict[str, xfail_type] | None = None,
+    strict: bool = True,
 ):
     """
     Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
@@ -261,7 +262,9 @@ def parametrize(
                 pytest_param = pytest.param(
                     test_parameters,
                     id=id,
-                    marks=pytest.mark.xfail(reason=reason, raises=raises, strict=True),
+                    marks=pytest.mark.xfail(
+                        reason=reason, raises=raises, strict=strict
+                    ),
                 )
             else:
                 pytest_param = pytest.param(test_parameters, id=id)
