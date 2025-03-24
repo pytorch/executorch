@@ -283,4 +283,8 @@ done
 
 rm -rf "$HEADERS_PATH"
 
+echo "Running tests"
+
+swift test
+
 echo "Build succeeded!"
