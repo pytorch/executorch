@@ -96,6 +96,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "static_llama",
     "qwen2_5",
     "phi-4-mini",
+    "smollm2",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 
@@ -154,6 +155,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         type=str,
         help="type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+    )
+    parser.add_argument(
+        "--use_shared_embedding",
+        action="store_true",
+        help="Whether the embedding/unembedding weights should be shared.  Only available with torchao kernels.",
     )
     parser.add_argument(
         "--pt2e_quantize",
@@ -684,6 +690,15 @@ def _validate_args(args):
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
 
+    if args.use_shared_embedding:
+        if not (
+            args.embedding_quantize is not None
+            and args.embedding_quantize.startswith("torchao:")
+        ):
+            raise ValueError(
+                "Shared embedding is only supported with torchao quantization."
+            )
+
     if (
         args.quantization_mode is not None
         and args.quantization_mode.startswith("torchao:")
@@ -1122,6 +1137,21 @@ def _get_source_transforms(  # noqa
 
             transforms.append(inject_fast_hadamard_transform_native_for_spin_quant)
 
+    if args.embedding_quantize:
+        """
+        When this option is selected, it finds all embedding layers and transforms
+        into quantized embedding equivalent module.
+
+        There are cases where the checkpoint is already quantized, for example
+        on use_spin_quant is enabled. In that case, it will do the appropriate
+        transformations based on the given checkpoint first. In those cases,
+        this wil be a no-op.
+        """
+        modelname = f"{modelname}_e"
+        transforms.append(get_quant_embedding_transform(args, checkpoint_dtype))
+
+    # quantization_mode should be applied after embedding_quantize
+    # to support shared_embedding
     if args.quantization_mode:
         """
         When this option is selected, it finds all linear layers and transforms
@@ -1144,19 +1174,6 @@ def _get_source_transforms(  # noqa
                 checkpoint_dtype=checkpoint_dtype,
             )
         )
-
-    if args.embedding_quantize:
-        """
-        When this option is selected, it finds all embedding layers and transforms
-        into quantized embedding equivalent module.
-
-        There are cases where the checkpoint is already quantized, for example
-        on use_spin_quant is enabled. In that case, it will do the appropriate
-        transformations based on the given checkpoint first. In those cases,
-        this wil be a no-op.
-        """
-        modelname = f"{modelname}_e"
-        transforms.append(get_quant_embedding_transform(args, checkpoint_dtype))
 
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)

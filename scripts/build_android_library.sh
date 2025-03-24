@@ -140,8 +140,6 @@ main() {
   fi
   export ANDROID_ABIS
 
-  ARTIFACTS_DIR_NAME="$1"
-
   copy_src
   for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
     build_android_native_library ${ANDROID_ABI}
