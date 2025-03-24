@@ -130,7 +130,7 @@ python3 -m sdk.inspector.inspector_cli --etdump_path etdump.etdp --etrecord_path
 ***Step 1***. Create the ExecuTorch core and MPS delegate frameworks to link on iOS
 ```bash
 cd executorch
-./build/build_apple_frameworks.sh --mps
+./scripts/build_apple_frameworks.sh --mps
 ```
 
 `mps_delegate.xcframework` will be in `cmake-out` folder, along with `executorch.xcframework` and `portable_delegate.xcframework`:
