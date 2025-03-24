@@ -592,7 +592,7 @@ mkdir<span class="w"> </span>-p<span class="w"> </span>app/libs
 
 <span class="c1"># Build the AAR. It will include XNNPACK backend by default.</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">BUILD_AAR_DIR</span><span class="o">=</span><span class="k">$(</span>realpath<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/libs<span class="k">)</span>
-sh<span class="w"> </span>build/build_android_library.sh
+sh<span class="w"> </span>scripts/build_android_library.sh
 </pre></div>
 </div>
 </div>
@@ -613,7 +613,7 @@ mkdir<span class="w"> </span>-p<span class="w"> </span>app/libs
 
 <span class="c1"># Build the AAR. It will include XNNPACK backend by default.</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">BUILD_AAR_DIR</span><span class="o">=</span><span class="k">$(</span>realpath<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/libs<span class="k">)</span>
-sh<span class="w"> </span>build/build_android_library.sh
+sh<span class="w"> </span>scripts/build_android_library.sh
 </pre></div>
 </div>
 <p>This is very similar to XNNPACK setup, but users now needs to define <code class="docutils literal notranslate"><span class="pre">QNN_SDK_ROOT</span></code> so that

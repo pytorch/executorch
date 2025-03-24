@@ -673,7 +673,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scri
 <h2>Deploying and Running on Device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this heading">¶</a></h2>
 <p><em><strong>Step 1</strong></em>. Create the ExecuTorch core and MPS delegate frameworks to link on iOS</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./build/build_apple_frameworks.sh<span class="w"> </span>--mps
+./scripts/build_apple_frameworks.sh<span class="w"> </span>--mps
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">mps_delegate.xcframework</span></code> will be in <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> folder, along with <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> and <code class="docutils literal notranslate"><span class="pre">portable_delegate.xcframework</span></code>:</p>
