@@ -30,8 +30,6 @@ fb_android_resource(
 fb_android_library(
     name = "app_lib",
     srcs = [
-        "java/com/example/executorchdemo/ClassificationActivity.java",
-        "java/com/example/executorchdemo/ImageNetClasses.java",
         "java/com/example/executorchdemo/MainActivity.java",
         "java/com/example/executorchdemo/TensorImageUtils.java",
     ],

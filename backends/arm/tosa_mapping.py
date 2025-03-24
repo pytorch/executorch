@@ -11,7 +11,7 @@
 # the standardised TOSA representation.
 #
 
-from typing import Sequence
+from typing import Any, Sequence
 
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
@@ -44,7 +44,7 @@ DTYPE_MAP = {
 }
 
 
-def map_dtype(data_type):
+def map_dtype(data_type: torch.dtype) -> ts.DType:
     if data_type in UNSUPPORTED_DTYPES:
         raise ValueError(f"Unsupported type: {data_type}")
     if data_type not in DTYPE_MAP:
@@ -79,22 +79,16 @@ def extract_tensor_meta(meta):
 # Class to capture arguments and turn into tensor references for TOSA OPs
 class TosaArg:
     def __process_node(self, argument: torch.fx.Node):
-        self.name = argument.name
+        self.name: str = argument.name
         self.dtype, self.shape, self.dim_order = extract_tensor_meta(argument.meta)
 
     def __process_list(self, argument):
-        self.special = list(argument)
+        self.special: list = list(argument)
 
     def __process_number(self, argument: float | int):
-        self.number = argument
+        self.number: float | int = argument
 
-    def __init__(self, argument) -> None:
-        self.name = None  # type: ignore[assignment]
-        self.dtype = None
-        self.shape = None
-        self.dim_order = None
-        self.special = None
-
+    def __init__(self, argument: Any) -> None:
         if argument is None:
             return
 
@@ -107,7 +101,27 @@ class TosaArg:
         if isinstance(argument, (int, float)):
             self.__process_number(argument)
             return
+        if isinstance(argument, torch.dtype):
+            # Dtype is parsed from fake tensor
+            return
 
-        RuntimeError(
+        raise RuntimeError(
             f"Unhandled node input argument: {argument}, of type {type(argument)}"
         )
+
+    def __repr__(self):
+        attrs = []
+        if hasattr(self, "name"):
+            if self.name is not None:
+                attrs.append(f"name={self.name!r}")
+            if self.dtype is not None:
+                attrs.append(f"dtype={ts.DTypeNames[self.dtype]}")
+            if self.shape is not None:
+                attrs.append(f"shape={self.shape!r}")
+            if self.dim_order is not None:
+                attrs.append(f"dim_order={self.dim_order!r}")
+        if hasattr(self, "special") and self.special is not None:
+            attrs.append(f"special={self.special!r}")
+        if hasattr(self, "number") and self.number is not None:
+            attrs.append(f"number={self.number!r}")
+        return f"{self.__class__.__name__}({', '.join(attrs)})"

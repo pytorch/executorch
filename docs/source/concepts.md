@@ -1,4 +1,4 @@
-# ExecuTorch Concepts
+# Concepts
 This page provides an overview of key concepts and terms used throughout the ExecuTorch documentation. It is intended to help readers understand the terminology and concepts used in PyTorch Edge and ExecuTorch.
 
 ## Concepts Map

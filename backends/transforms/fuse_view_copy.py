@@ -40,7 +40,24 @@ def merge_view_copy_chains(graph: torch.fx.Graph) -> torch.fx.Graph:
     return graph
 
 
+def remove_noop_view_copy(graph: torch.fx.Graph) -> torch.fx.Graph:
+    """
+    Remove view_copy nodes that are no-ops.
+    """
+    ops = exir_ops.edge
+    view_op = ops.aten.view_copy.default
+    for node in graph.nodes:
+        if node.op == "call_function" and node.target == view_op:
+            input_shape = list(node.args[0].meta["val"].shape)
+            target_shape = node.args[1]
+            if input_shape == target_shape:
+                node.replace_all_uses_with(node.args[0])
+    graph.eliminate_dead_code()
+    return graph
+
+
 class FuseViewCopyTransform(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph_module.graph = merge_view_copy_chains(graph_module.graph)
+        graph_module.graph = remove_noop_view_copy(graph_module.graph)
         return PassResult(graph_module, True)

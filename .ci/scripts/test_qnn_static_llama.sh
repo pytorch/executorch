@@ -34,11 +34,11 @@ $PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o to
 
 set +e
 # Compile only as weight sharing is not applicable on x86
-$PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleScript.test_stories_single_llama --model SM8650 --build_folder build-android/ --executorch_root . --artifact_dir . --compile_only
+$PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_110m --model SM8650 --build_folder build-android/ --executorch_root . --artifact_dir . --llama_artifacts . --compile_only
 exit_code1=$?
 
 # Checks accuracy with weight sharing disabled since x86 does not support weight sharing.
-$PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleScript.test_stories_single_llama --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir . --enable_x86_64
+$PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_110m --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir . --llama_artifacts . --enable_x86_64
 exit_code2=$?
 
 # Check the exit codes and print messages

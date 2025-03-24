@@ -35,8 +35,9 @@ class DecomposeSelectPass(ExportPass):
             input_node, dim, index = node.args
 
             rank = len(input_node.meta["val"].size())
+            shape = input_node.meta["val"].shape
             dim = dim % rank if dim < 0 else dim
-            index = index % rank if index < 0 else index
+            index = index % shape[dim] if index < 0 else index
 
             with graph_module.graph.inserting_before(node):
                 slice_node = create_node(

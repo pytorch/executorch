@@ -206,25 +206,32 @@ MPSGraphBuilder::mpsIndexPutOp(NodePtr nodePtr) {
 
 Error
 MPSGraphBuilder::mpsScatterOp(NodePtr nodePtr) {
-  auto graphNode = nodePtr->mpsnode_union_as_MPSScatter();
-  ET_LOG(
-    Debug, "%s %d: %d",
-    __FUNCTION__, graphNode->input1_id(), graphNode->output_id()
-  );
+  if (@available(iOS 15.4, macOS 12.3, *)) {
+    auto graphNode = nodePtr->mpsnode_union_as_MPSScatter();
+    ET_LOG(
+      Debug, "%s %d: %d",
+      __FUNCTION__, graphNode->input1_id(), graphNode->output_id()
+    );
 
-  int64_t dim = graphNode->dim();
-  MPSGraphTensor* inputTensor = getMPSGraphTensor(graphNode->input1_id());
-  MPSGraphTensor* indicesTensor = getMPSGraphTensor(graphNode->idx_id());
-  MPSGraphTensor* updatesTensor = getMPSGraphTensor(graphNode->src_id());
+    int64_t dim = graphNode->dim();
+    MPSGraphTensor* inputTensor = getMPSGraphTensor(graphNode->input1_id());
+    MPSGraphTensor* indicesTensor = getMPSGraphTensor(graphNode->idx_id());
+    MPSGraphTensor* updatesTensor = getMPSGraphTensor(graphNode->src_id());
 
-  _idToMPSGraphTensor[graphNode->output_id()] =
-    [_mpsGraph scatterAlongAxis:dim
-                 withDataTensor:inputTensor
-                  updatesTensor:updatesTensor
-                  indicesTensor:indicesTensor
-                           mode:MPSGraphScatterModeSet
-                           name:nil];
-  return Error::Ok;
+    _idToMPSGraphTensor[graphNode->output_id()] =
+      [_mpsGraph scatterAlongAxis:dim
+                   withDataTensor:inputTensor
+                    updatesTensor:updatesTensor
+                    indicesTensor:indicesTensor
+                             mode:MPSGraphScatterModeSet
+                             name:nil];
+
+    return Error::Ok;
+  } else {
+    ET_LOG(Error, "MPS: scatter op is not supported on iOS < 15.4 and macOS < 12.3");
+
+    return Error::NotSupported;
+  }
 }
 
 

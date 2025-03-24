@@ -72,6 +72,59 @@ class OpLogSoftmaxOutTest : public OperatorTest {
       EXPECT_TENSOR_CLOSE(out, expected);
     }
   }
+
+  template <class CTYPE, executorch::aten::ScalarType DTYPE>
+  void test_dtype_noncontiguous_dim() {
+    TensorFactory<DTYPE> tf;
+
+    // Dim 0 must be longer than the vector width of the machine (for
+    // float, this is 4 for ARM64 and 8 for AVX2) to exhibit problems.
+    // clang-format off
+    Tensor x = tf.make(
+      {9, 3},
+      {
+        0, 9,  18,
+        1, 10, 19,
+        2, 11, 20,
+        3, 12, 21,
+        4, 13, 22,
+        5, 14, 23,
+        6, 15, 24,
+        7, 16, 25,
+        8, 17, 26,
+      });
+    // clang-format on
+
+    Tensor out = tf.zeros({9, 3});
+
+    op_log_softmax_out(x, /*dim=*/0, /*half_to_float*/ false, out);
+
+    // clang-format off
+    Tensor expected = tf.make(
+      {9, 3},
+      {
+        -8.45855, -8.45855, -8.45855,
+        -7.45855, -7.45855, -7.45855,
+        -6.45855, -6.45855, -6.45855,
+        -5.45855, -5.45855, -5.45855,
+        -4.45855, -4.45855, -4.45855,
+        -3.45855, -3.45855, -3.45855,
+        -2.45855, -2.45855, -2.45855,
+        -1.45855, -1.45855, -1.45855,
+        -0.458552, -0.458552, -0.458552
+      });
+    // clang-format on
+
+    if constexpr (DTYPE == ScalarType::BFloat16) {
+      EXPECT_TENSOR_CLOSE_WITH_TOL(
+          out,
+          expected,
+          1e-2,
+          executorch::runtime::testing::internal::kDefaultAtol);
+    } else {
+      EXPECT_TENSOR_CLOSE(out, expected);
+    }
+  }
 };
 
 TEST_F(OpLogSoftmaxOutTest, Smoke) {
@@ -99,6 +152,10 @@ TEST_F(OpLogSoftmaxOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY)
 #undef TEST_ENTRY
+}
+
+TEST_F(OpLogSoftmaxOutTest, NonContiguous) {
+  test_dtype_noncontiguous_dim<float, ScalarType::Float>();
 }
 
 TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {

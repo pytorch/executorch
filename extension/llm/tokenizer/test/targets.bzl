@@ -23,6 +23,20 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "test_string_integer_map",
+        srcs = [
+            "test_string_integer_map.cpp",
+        ],
+        deps = [
+            "//executorch/extension/llm/tokenizer:tiktoken",
+        ],
+        env = {
+            "RESOURCES_PATH": "$(location :resources)/resources",
+        },
+        platforms = [CXX, ANDROID],  # Cannot bundle resources on Apple platform.
+    )
+
+    runtime.cxx_test(
         name = "test_bpe_tokenizer",
         srcs = [
             "test_bpe_tokenizer.cpp",
@@ -58,4 +72,9 @@ def define_common_targets():
         srcs = native.glob([
             "resources/**",
         ]),
+    )
+
+    runtime.export_file(
+        name = "test_tiktoken_tokenizer_model",
+        src = "resources/test_tiktoken_tokenizer.model",
     )

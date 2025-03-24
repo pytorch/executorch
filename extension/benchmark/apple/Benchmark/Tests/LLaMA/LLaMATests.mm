@@ -82,7 +82,7 @@ using namespace ::executorch::runtime;
         return;
       }
       TokensPerSecondMetric *tokensPerSecondMetric = [TokensPerSecondMetric new];
-      [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTMemoryMetric new] ]
+      [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTClockMetric new], [XCTMemoryMetric new] ]
                             block:^{
                               tokensPerSecondMetric.tokenCount = 0;
                               const auto status = runner->generate(

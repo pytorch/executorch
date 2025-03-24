@@ -236,25 +236,6 @@ def print_error_msg(unsupported_funcs: List[str]):
             print(f)
 
 
-def is_not_dype_exception(exc: BaseException, dtype_str: str) -> bool:
-    """Check if an exception about unsupported dtype."""
-
-    # alias dtype means the alias name of dtype str, like "Boolean" is the alias name of "Bool".
-    # Set default alias_dtype as twice of str(exc) to make sure default alias dtype is not part of str(exc)
-    alias_dtype = 2 * str(exc)
-    if dtype_str == "Bool":
-        alias_dtype = "Boolean"
-
-    return not (
-        ("not supported" in str(exc) or "not implemented" in str(exc))
-        and (
-            dtype_str in str(exc)
-            or alias_dtype in str(exc)
-            or dtype_str.lower() in str(exc)
-        )
-    )
-
-
 class EdgeOpYamlInfo:
     def __init__(
         self,

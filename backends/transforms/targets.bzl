@@ -149,6 +149,9 @@ def define_common_targets():
     runtime.python_library(
         name = "utils",
         srcs = ["utils.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
         deps = [
             "//caffe2:torch",
             "//executorch/exir:lib",
@@ -191,6 +194,20 @@ def define_common_targets():
         name = "rank_0_to_rank_1",
         srcs = [
             "rank_0_to_rank_1.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_scalar_with_tensor",
+        srcs = [
+            "replace_scalar_with_tensor.py",
         ],
         visibility = [
             "//executorch/backends/...",

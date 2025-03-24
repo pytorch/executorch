@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -60,7 +61,7 @@ Tensor& full_like_out(
     ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
-      for (size_t i = 0; i < out.numel(); ++i) {
+      for (const auto i : c10::irange(out.numel())) {
         data_out[i] = val_casted;
       }
     });

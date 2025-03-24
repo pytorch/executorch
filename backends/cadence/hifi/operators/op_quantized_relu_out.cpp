@@ -100,10 +100,10 @@ void quantized_relu_per_tensor_out(
 void quantized_relu_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
-    const int64_t in_zero_point,
+    const Tensor& in_zero_point,
     const int64_t out_zero_point,
-    const int64_t out_multiplier,
-    const int64_t out_shift,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
     Tensor& output) {
   quantized_relu_per_tensor_out(
       ctx,

@@ -17,7 +17,7 @@ import torch
 from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
@@ -32,6 +32,7 @@ from executorch.devtools import generate_etrecord, Inspector
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
     make_output_dir,
+    make_quantizer,
     SimpleADB,
 )
 
@@ -188,6 +189,9 @@ class TestQNN(unittest.TestCase):
     shared_buffer: bool = False
     enable_x86_64: bool = False
     compile_only: bool = False
+    pre_gen_pte: str = ""
+    llama_artifacts: str = ""
+    dump_intermediate_outputs: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -516,21 +520,28 @@ class TestQNN(unittest.TestCase):
         self,
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
+        is_conv_per_block: Optional[bool] = False,
         is_conv_per_channel: Optional[bool] = True,
         is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
         dynamic_shapes: Dict = None,
         bypass_check: bool = False,
+        block_size_map: Dict[str, Tuple] = None,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes).module()
+        m = torch.export.export(
+            module, inputs, dynamic_shapes=dynamic_shapes, strict=True
+        ).module()
 
-        quantizer = QnnQuantizer()
-        quantizer.add_custom_quant_annotations(custom_quant_annotations)
-        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
-        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
-        quantizer.set_quant_config(quant_dtype)
-
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            custom_annotations=custom_quant_annotations,
+            per_block_conv=is_conv_per_block,
+            per_channel_conv=is_conv_per_channel,
+            per_channel_linear=is_linear_per_channel,
+        )
+        if block_size_map is not None:
+            quantizer.set_block_size_map(block_size_map)
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
         quantized_module = convert_pt2e(prepared)
@@ -540,6 +551,8 @@ class TestQNN(unittest.TestCase):
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
+            torch.ops.pt2e_quant.quantize_affine.default,
+            torch.ops.pt2e_quant.dequantize_affine.default,
         }
         if not bypass_check:
             self.assertTrue(nodes.intersection(q_and_dq))
@@ -556,10 +569,12 @@ class TestQNN(unittest.TestCase):
     ) -> torch.fx.GraphModule:
         m = torch.export.export_for_training(module, inputs).module()
 
-        quantizer = QnnQuantizer()
-        quantizer.add_custom_quant_annotations(custom_quant_annotations)
-        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
-        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            custom_annotations=custom_quant_annotations,
+            per_channel_conv=is_conv_per_channel,
+            per_channel_linear=is_linear_per_channel,
+        )
 
         if quant_dtype == QuantDtype.use_8a8w:
             quantizer.set_quant_config(quant_dtype, is_qat=True)

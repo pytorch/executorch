@@ -20,7 +20,7 @@ from executorch.backends.cadence.aot.fuse_ops import (
     FuseTransposeOpPairsPass,
 )
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
-from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch import nn
@@ -32,8 +32,7 @@ class TestFusionPassesBase(unittest.TestCase):
         graph_module: torch.fx.GraphModule,
         expected_op_counts: dict[EdgeOpOverload, int],
     ) -> None:
-        for op, count in expected_op_counts.items():
-            self.assertEqual(count_node(graph_module, op), count)
+        self.assertTrue(op_counts_match(graph_module, expected_op_counts))
 
 
 class TestFusionPasses(TestFusionPassesBase):

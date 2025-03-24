@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cstdint>
 
+#include <c10/util/irange.h>
+
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
@@ -30,11 +32,11 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
       dim == 0 || sizes != nullptr,
       "Sizes must be provided for non-scalar tensors");
   ssize_t numel = 1; // Zero-dimensional tensors (scalars) have numel == 1.
-  for (ssize_t i = 0; i < dim; ++i) {
+  for (const auto i : c10::irange(dim)) {
     ET_CHECK_MSG(
         sizes[i] >= 0,
-        "Size must be non-negative, got %d at dimension %zd",
-        sizes[i],
+        "Size must be non-negative, got %zd at dimension %zd",
+        static_cast<ssize_t>(sizes[i]),
         i);
     numel *= sizes[i];
   }
@@ -74,7 +76,7 @@ ssize_t TensorImpl::element_size() const {
 
 Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   ET_CHECK_OR_RETURN_ERROR(
-      new_sizes.size() == dim_,
+      static_cast<ssize_t>(new_sizes.size()) == dim_,
       NotSupported,
       "Attempted to change the tensor rank which is immutable: old=%zu, new=%zu",
       dim_,
@@ -118,7 +120,7 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       const auto new_numel = compute_numel(new_sizes.data(), dim_);
 
       ET_CHECK_OR_RETURN_ERROR(
-          new_numel <= numel_bound_,
+          static_cast<size_t>(new_numel) <= numel_bound_,
           NotSupported,
           "Attempted to resize a bounded tensor with a maximum capacity of %zu elements to %zu elements.",
           numel_bound_,

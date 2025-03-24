@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/extension/llm/tokenizer/string_integer_map.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <re2/re2.h>
 #include <memory>
@@ -68,10 +69,8 @@ class ET_EXPERIMENTAL Tiktoken : public Tokenizer {
   // Removed negative lookahead \s+(?!\S) since it's not supported by RE2.
   const std::string _pattern =
       R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+)";
-  Encoder _encoder;
-  Encoder _special_token_encoder;
-  Decoder _decoder;
-  Decoder _special_token_decoder;
+  std::optional<StringIntegerMap<>> _token_map;
+  std::optional<StringIntegerMap<>> _special_token_map;
 
   Re2UPtr _regex;
   Re2UPtr _special_token_regex;

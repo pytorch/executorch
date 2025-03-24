@@ -94,10 +94,13 @@ lib.define(
     "int[] dilation, SymInt[] output_padding, int groups, bool channel_last=False) -> (Tensor Y)"
 )
 lib.define("dequantize(Tensor X, Tensor X_scale, Tensor X_zero_point) -> (Tensor Y)")
-# cadence::quantized_relu is defined in OSS
 lib.define(
     "quantized_add(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_add.per_tensor(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point) -> (Tensor Z)"
 )
 lib.define(
     "quantized_mul(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
@@ -115,8 +118,6 @@ lib.define(
     "quantized_embedding_byte(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
     "Tensor indices, bool pruned_weights=False) -> (Tensor X)"
 )
-# cadence::quantized_layer_norm is defined in OSS
-# cadence::quantized_conv is defined is OSS
 lib.define(
     "quantized_transposed_conv(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
     "int[] dilation, SymInt[] output_padding, int groups, int input_zero_point, Tensor weight_zero_point, "
@@ -152,7 +153,7 @@ lib.define(
 )
 
 # ------------------------------------ #
-#   Migrated from custom_ops.ymal      #
+#   Migrated from custom_ops.yaml      #
 # ------------------------------------ #
 # Migrated from the custom_ops.yaml files containing different operator variants (e.g., .out, .tensor_out)
 lib.define(
@@ -163,7 +164,6 @@ lib.define(
     "transposed_convolution.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
     "int[] dilation, SymInt[] output_padding, int groups, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
-# cadence::quantized_relu.out is defined in OSS
 lib.define(
     "quantized_relu.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
 )
@@ -174,6 +174,10 @@ lib.define(
 lib.define(
     "quantized_add.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_add.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_mul.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
@@ -257,13 +261,11 @@ aten_lib.define(
     "_cat_nop.out(Tensor[] tensors, int dim=0, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-# Custom ops with jarvis_nn_ops namespace
+# Custom ops with cadence_nn_ops namespace
 jarvis_nn_lib = Library("jarvis_nn_ops", "DEF")
 jarvis_nn_lib.define(
     "attention_mask.out(Tensor input, Tensor start, Tensor stop, *, Tensor(a!) out) -> Tensor(a!)"
 )
-
-m = Library("cadence", "IMPL", "Meta")
 
 
 @register_fake("cadence::quantize_per_tensor")
@@ -288,6 +290,42 @@ def dequantize_per_tensor_meta(
     dtype: torch.dtype,
 ) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::quantized_add")
+def quantized_add_meta(
+    X: torch.Tensor,
+    X_scale: torch.Tensor,
+    X_zero_point: torch.Tensor,
+    Y: torch.Tensor,
+    Y_scale: torch.Tensor,
+    Y_zero_point: torch.Tensor,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    out_size = X.size()
+    if list(X.size()) == [1]:
+        out_size = Y.size()
+
+    return X.new_empty(out_size, dtype=X.dtype)
+
+
+@register_fake("cadence::quantized_add.per_tensor")
+def quantized_add_per_tensor_meta(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    out_size = X.size()
+    if list(X.size()) == [1]:
+        out_size = Y.size()
+
+    return X.new_empty(out_size, dtype=X.dtype)
 
 
 @register_fake("cadence::quantized_linear")

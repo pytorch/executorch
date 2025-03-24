@@ -183,6 +183,15 @@ Tensor& where_self_out(
   return out;
 }
 
+Tensor& where_out(
+    RuntimeContext& ctx,
+    const Tensor& cond,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
+  return where_out(ctx, cond, a, b, out);
+}
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl

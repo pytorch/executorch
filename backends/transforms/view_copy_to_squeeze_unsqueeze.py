@@ -75,7 +75,11 @@ class ViewCopyToSqueezeUnsqueezePass(ExportPass):
         j = 0
         idx = -1
         while j < len(view_shape):
-            if input_shape[i] != view_shape[j]:
+            # account for added dim being last dim in view_shape
+            if i == j and j == len(input_shape):
+                if view_shape[j] != 1:
+                    return None
+            elif input_shape[i] != view_shape[j]:
                 if view_shape[j] == 1:
                     idx = j
                     i -= 1

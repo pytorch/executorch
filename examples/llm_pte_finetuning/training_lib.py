@@ -10,7 +10,7 @@ from functools import partial
 from typing import Any
 
 import torch
-from executorch.extension.pybindings.aten_lib import ExecuTorchModule  # @manual
+from executorch.extension.pybindings.portable_lib import ExecuTorchModule  # @manual
 
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, DistributedSampler

@@ -3,9 +3,6 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 def _get_operator_lib(aten = False):
     if aten:
         return ["//executorch/kernels/aten:generated_lib"]
-    elif runtime.is_oss:
-        # TODO(T183193812): delete this path after optimized-oss.yaml is no more.
-        return ["//executorch/configurations:optimized_native_cpu_ops_oss", "//executorch/extension/llm/custom_ops:custom_ops"]
     else:
         return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/extension/llm/custom_ops:custom_ops"]
 
@@ -13,7 +10,7 @@ def get_qnn_dependency():
     # buck build -c executorch.enable_qnn=true //executorch/examples/models/llama/runner:runner
     # Check if QNN is enabled before including the dependency
     if native.read_config("executorch", "enable_qnn", "false") == "true":
-        # //executorch/backends/qualcomm:qnn_executorch_backend doesn't work, 
+        # //executorch/backends/qualcomm:qnn_executorch_backend doesn't work,
         #  likely due to it's an empty library with dependency only
         return [
             "//executorch/backends/qualcomm/runtime:runtime",
@@ -51,7 +48,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/examples/models/llama/tokenizer:tiktoken",
-                "//executorch/extension/llm/tokenizer:bpe_tokenizer",
+                "//pytorch/tokenizers:llama2c_tokenizer",
             ] + (_get_operator_lib(aten)) + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests

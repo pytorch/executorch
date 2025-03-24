@@ -21,6 +21,7 @@ namespace executorch {
 namespace runtime {
 namespace deserialization {
 
+using executorch::runtime::Span;
 using torch::executor::ScalarType;
 using torch::executor::Tensor;
 using torch::executor::TensorImpl;
@@ -29,7 +30,8 @@ Result<Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor,
-    const NamedDataMap* named_data_map) {
+    const NamedDataMap* named_data_map,
+    Span<NamedData> external_constants) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
   auto method_allocator = memory_manager->method_allocator();
 
@@ -41,11 +43,7 @@ Result<Tensor> parseTensor(
 
   ScalarType scalar_type = static_cast<ScalarType>(s_tensor->scalar_type());
   ET_CHECK_OR_RETURN_ERROR(
-      isValid(scalar_type) &&
-          // Types that do not yet have deserialization support.
-          scalar_type != executorch::aten::ScalarType::ComplexHalf &&
-          scalar_type != executorch::aten::ScalarType::ComplexFloat &&
-          scalar_type != executorch::aten::ScalarType::ComplexDouble,
+      isValid(scalar_type),
       InvalidProgram,
       "Invalid or unsupported ScalarType %" PRId8,
       static_cast<int8_t>(scalar_type));
@@ -84,11 +82,18 @@ Result<Tensor> parseTensor(
     // copy sizes and dim order out of flatbuffer
     // kimishpate: I think dim order can remain immutable and point to fb
     // memory, unless we plan to implement in-place permute
-    executorch::aten::SizesType* sizes_buf = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        method_allocator, executorch::aten::SizesType, dim);
+    executorch::aten::SizesType* sizes_buf =
+        method_allocator->allocateList<executorch::aten::SizesType>(dim);
+    if (sizes_buf == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     executorch::aten::DimOrderType* dim_order_buf =
-        ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-            method_allocator, executorch::aten::DimOrderType, dim);
+        method_allocator->allocateList<executorch::aten::DimOrderType>(dim);
+    if (dim_order_buf == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     std::memcpy(
         sizes_buf, serialized_sizes, sizeof(executorch::aten::SizesType) * dim);
     std::memcpy(
@@ -109,12 +114,12 @@ Result<Tensor> parseTensor(
   // detect bad positive values, but we can reject negative values, which would
   // otherwise panic in the TensorImpl ctor. dim_order_to_stride() will validate
   // dim_order.
-  for (int i = 0; i < dim; i++) {
+  for (flatbuffers::uoffset_t i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
         sizes[i] >= 0,
         InvalidProgram,
-        "Negative size[%d] %" PRId32,
-        i,
+        "Negative size[%zu] %" PRId32,
+        static_cast<size_t>(i),
         sizes[i]);
   }
 
@@ -122,16 +127,23 @@ Result<Tensor> parseTensor(
   // Allocating strides buffer here and populating it.
   // In subsequent diffs we can remove strides accessor, however this
   // will introduce incompatible APIs between ATen Tensor and ETensor.
-  executorch::aten::StridesType* strides = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      method_allocator, executorch::aten::StridesType, dim);
+  executorch::aten::StridesType* strides =
+      method_allocator->allocateList<executorch::aten::StridesType>(dim);
+  if (strides == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
   auto status = dim_order_to_stride(sizes, dim_order, dim, strides);
   ET_CHECK_OR_RETURN_ERROR(
       status == Error::Ok,
       Internal,
       "dim_order_to_stride returned invalid status");
 
-  auto* tensor_impl =
-      ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(method_allocator, TensorImpl);
+  auto* tensor_impl = method_allocator->allocateInstance<TensorImpl>();
+  if (tensor_impl == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
   // Placement new on the allocated memory space. Note that we create this first
   // with null data so we can find its expected size before getting its memory.
   new (tensor_impl) TensorImpl(
@@ -149,7 +161,8 @@ Result<Tensor> parseTensor(
       program,
       tensor_impl->nbytes(),
       memory_manager->planned_memory(),
-      named_data_map);
+      named_data_map,
+      external_constants);
   if (!data_ptr.ok()) {
     ET_LOG(
         Error,

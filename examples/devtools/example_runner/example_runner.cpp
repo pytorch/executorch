@@ -17,12 +17,14 @@
  * all fp32 tensors.
  */
 
+#include <array>
 #include <fstream>
 #include <memory>
 
 #include <gflags/gflags.h>
 
 #include <executorch/devtools/bundled_program/bundled_program.h>
+#include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/executor/method.h>
@@ -75,6 +77,7 @@ DEFINE_int32(
     262144, // 256 KB
     "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
 
+using executorch::etdump::BufferDataSink;
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 using executorch::extension::BufferDataLoader;
@@ -215,6 +218,29 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   ETDumpGen etdump_gen;
+
+  // Malloc debug buffer and create if and only if we need to log intermediate
+  // tensor outputs
+  void* debug_buffer = malloc(FLAGS_debug_buffer_size);
+  Result<BufferDataSink> data_sink_ret =
+      BufferDataSink::create(debug_buffer, FLAGS_debug_buffer_size);
+  ET_CHECK_MSG(
+      data_sink_ret.ok(),
+      "Creating Datasink for etdump failed with status 0x%" PRIx32,
+      static_cast<int>(data_sink_ret.error()));
+
+  BufferDataSink* data_sink = &data_sink_ret.get();
+
+  if (FLAGS_dump_intermediate_outputs) {
+    etdump_gen.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kIntermediateOutputs);
+    etdump_gen.set_data_sink(data_sink);
+  } else if (FLAGS_dump_outputs) {
+    etdump_gen.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kProgramOutputs);
+    etdump_gen.set_data_sink(data_sink);
+  }
+
   Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
@@ -224,18 +250,6 @@ int main(int argc, char** argv) {
       static_cast<int>(method.error()));
   ET_LOG(Info, "Method loaded.");
 
-  void* debug_buffer = malloc(FLAGS_debug_buffer_size);
-  if (FLAGS_dump_intermediate_outputs) {
-    Span<uint8_t> buffer((uint8_t*)debug_buffer, FLAGS_debug_buffer_size);
-    etdump_gen.set_debug_buffer(buffer);
-    etdump_gen.set_event_tracer_debug_level(
-        EventTracerDebugLogLevel::kIntermediateOutputs);
-  } else if (FLAGS_dump_outputs) {
-    Span<uint8_t> buffer((uint8_t*)debug_buffer, FLAGS_debug_buffer_size);
-    etdump_gen.set_debug_buffer(buffer);
-    etdump_gen.set_event_tracer_debug_level(
-        EventTracerDebugLogLevel::kProgramOutputs);
-  }
   // Use the inputs embedded in the bundled program.
   status = executorch::bundled_program::load_bundled_input(
       *method, file_data.data(), FLAGS_testset_idx);

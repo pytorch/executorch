@@ -37,7 +37,7 @@ def define_common_targets():
             ],
             fbcode_exported_deps = [
                 "//common/gtest:gtest",
-            ],
+            ] if not runtime.is_oss else [],
             xplat_exported_deps = [
                 "//third-party/googletest:gtest_main",
             ],
@@ -68,7 +68,7 @@ def define_common_targets():
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
-            ],
+            ] if not runtime.is_oss else [],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
@@ -261,6 +261,7 @@ def define_common_targets():
     _common_op_test("op_masked_select_test", ["aten", "portable"])
     _common_op_test("op_max_test", ["aten", "portable"])
     _common_op_test("op_max_pool2d_with_indices_test", ["aten", "portable"])
+    _common_op_test("op_max_pool2d_with_indices_backward_test", ["aten", "portable"])
     _common_op_test("op_maximum_test", ["aten", "portable"])
     _common_op_test("op_mean_test", ["aten", "portable"])
     _common_op_test("op_min_test", ["aten", "portable"])
@@ -324,6 +325,7 @@ def define_common_targets():
     _common_op_test("op_tril_test", ["aten", "portable"])
     _common_op_test("op_trunc_test", ["aten", "portable"])
     _common_op_test("op_unbind_copy_test", ["aten", "portable"])
+    _common_op_test("op_unfold_copy_test", ["aten", "portable"])
     _common_op_test("op_unsqueeze_copy_test", ["aten", "portable"])
     _common_op_test("op_upsample_bilinear2d_test", ["aten", "portable"])
     _common_op_test("op_upsample_nearest2d_test", ["aten", "portable"])

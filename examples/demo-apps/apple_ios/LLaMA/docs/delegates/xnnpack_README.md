@@ -130,7 +130,7 @@ While we recommended using the latest prebuilt package pre-configured with the X
 
 Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependencies`, and update the package dependencies to any of the available options below:
 
-- Branch --> swiftpm-0.5.0.20250130 (amend to match the latest nightly build)
+- Branch --> swiftpm-0.5.0.20250228 (amend to match the latest nightly build)
 - Branch --> swiftpm-0.5.0
 - Branch --> swiftpm-0.4.0
 
@@ -149,7 +149,7 @@ curl -LO "https://github.com/facebook/buck2/releases/download/$BUCK2_RELEASE_DAT
 zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
 rm "$BUCK2_ARCHIVE"
 
-./build/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
+./scripts/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
 ```
 
  After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory. Copy them to your project and link them against your targets.

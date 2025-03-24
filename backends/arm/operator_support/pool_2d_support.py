@@ -26,8 +26,8 @@ def stride_check(strides: tuple[int, int]) -> bool:
 
 
 def dim_check(shape=torch.Size) -> bool:
-    check = shape[0] == 1
-    for dim in shape:
+    check = True
+    for dim in shape[1:]:
         check &= 1 <= dim <= 65536
     return check
 
@@ -54,12 +54,35 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
         if len(node.args) > 3:
             # Padding case
             if not all(1 <= k <= 8 for k in kernel):
+                self.reporter.report_reject(
+                    node, f"Avgpool2d with padding needs kernel dims < 8, got {kernel}"
+                )
                 return False
         else:
             if not kernel_check(kernel):
+                self.reporter.report_reject(
+                    node,
+                    f"Avgpool2d needs kernel_y < 256, kernel_x*kernel_y<=65536, got {kernel}",
+                )
                 return False
 
-        return dim_check(shape) and stride_check(stride)
+        if not dim_check(shape):
+            self.reporter.report_reject(
+                node,
+                f"Avgpool2d needs N == 1, rest dims <= 65536, got shape {list(shape)}",
+            )
+            return False
+        if not stride_check(stride):
+            self.reporter.report_reject(
+                node, f"Avgpool2d needs stride <= 3, got {stride}"
+            )
+            return False
+        if not shape[0] == 1:
+            self.reporter.report_reject(
+                node, f"Avgpool2d needs N==1, got N=={shape[0]}"
+            )
+            return False
+        return True
 
 
 @register_tosa_support_check
@@ -82,4 +105,21 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
         kernel = cast(tuple[int, int], node.args[1])
         stride = cast(tuple[int, int], node.args[2])
 
-        return kernel_check(kernel) and dim_check(shape) and stride_check(stride)
+        if not kernel_check(kernel):
+            self.reporter.report_reject(
+                node,
+                f"Maxpool2d needs kernel_y < 256, kernel_x*kernel_y<=65536, got {kernel}",
+            )
+            return False
+        if not dim_check(shape):
+            self.reporter.report_reject(
+                node,
+                f"Maxpool2d needs N == 1, rest dims <= 65536, got shape {list(shape)}",
+            )
+            return False
+        if not stride_check(stride):
+            self.reporter.report_reject(
+                node, f"Maxpool2d needs stride <= 3, got {stride}"
+            )
+            return False
+        return True

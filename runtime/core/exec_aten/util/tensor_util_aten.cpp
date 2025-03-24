@@ -35,7 +35,7 @@ Error get_dim_order(
 
 bool tensor_has_valid_dim_order(at::Tensor t) {
   executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       get_dim_order(t, dim_order, t.dim()) == Error::Ok,
       "Failed to retrieve dim order from tensor!");
 
@@ -55,7 +55,7 @@ bool tensor_has_valid_dim_order(at::Tensor t) {
 
 inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
   executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       get_dim_order(t, dim_order, t.dim()) == Error::Ok,
       "Failed to retrieve dim order from tensor!");
 
@@ -86,7 +86,7 @@ bool tensors_have_same_dim_order(
   executorch::aten::DimOrderType first_dim_order[kTensorDimensionLimit];
   executorch::aten::DimOrderType other_dim_order[kTensorDimensionLimit];
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       get_dim_order(tensor_list[0], first_dim_order, tensor_list[0].dim()) ==
           Error::Ok,
       "Failed to retrieve dim order from 1st input tensor!");
@@ -97,7 +97,7 @@ bool tensors_have_same_dim_order(
       is_channels_last_dim_order(first_dim_order, tensor_list[0].dim());
 
   for (size_t i = 1; i < tensor_list.size(); ++i) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         get_dim_order(tensor_list[i], other_dim_order, tensor_list[i].dim()) ==
             Error::Ok,
         "Failed to retrieve dim order from %zd-th input tensor!",
@@ -109,7 +109,7 @@ bool tensors_have_same_dim_order(
         is_channels_last_dim_order(other_dim_order, tensor_list[i].dim());
   }
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_OR_RETURN_FALSE(
       all_contiguous || all_channels_last,
       "%zd input tensors have different dim orders",
       tensor_list.size());

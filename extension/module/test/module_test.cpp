@@ -22,13 +22,19 @@ using namespace ::executorch::runtime;
 class ModuleTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
-    model_path_ = std::getenv("RESOURCES_PATH") + std::string("/add.pte");
+    std::string resources_path;
+    if (const char* env = std::getenv("RESOURCES_PATH")) {
+      resources_path = env;
+    }
+    model_path_ = resources_path + "/add.pte";
+    linear_path_ = resources_path + "/linear.pte";
+    linear_data_path_ = resources_path + "/linear.ptd";
   }
 
-  static std::string model_path_;
+  static inline std::string model_path_;
+  static inline std::string linear_path_;
+  static inline std::string linear_data_path_;
 };
-
-std::string ModuleTest::model_path_;
 
 TEST_F(ModuleTest, TestLoad) {
   Module module(model_path_);
@@ -61,6 +67,14 @@ TEST_F(ModuleTest, TestMethodNames) {
   const auto method_names = module.method_names();
   EXPECT_EQ(method_names.error(), Error::Ok);
   EXPECT_EQ(method_names.get(), std::unordered_set<std::string>{"forward"});
+}
+
+TEST_F(ModuleTest, TestNumMethods) {
+  Module module(model_path_);
+
+  const auto num_methods = module.num_methods();
+  EXPECT_EQ(num_methods.error(), Error::Ok);
+  EXPECT_EQ(num_methods.get(), 1);
 }
 
 TEST_F(ModuleTest, TestNonExistentMethodNames) {
@@ -434,4 +448,15 @@ TEST_F(ModuleTest, TestSetOutputInvalidType) {
   Module module(model_path_);
 
   EXPECT_NE(module.set_output(EValue()), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestPTD) {
+  Module module(linear_path_, linear_data_path_);
+
+  ASSERT_EQ(module.load_method("forward"), Error::Ok);
+
+  auto tensor1 =
+      make_tensor_ptr({3, 3}, {2.f, 3.f, 4.f, 2.f, 3.f, 4.f, 2.f, 3.f, 4.f});
+
+  ASSERT_EQ(module.forward(tensor1).error(), Error::Ok);
 }

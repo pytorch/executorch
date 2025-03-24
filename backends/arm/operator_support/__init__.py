@@ -6,11 +6,12 @@
 # pyre-unsafe
 
 from . import (  # noqa
-    bitwise_support,
     convolution_support,
+    minmax_support,
     pool_2d_support,
     reduce_sum_support,
     right_shift_support,
+    slice_copy_support,
     to_copy_support,
     tosa_supported_operators,
 )

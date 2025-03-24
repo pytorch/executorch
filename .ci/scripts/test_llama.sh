@@ -154,7 +154,6 @@ cmake_install_executorch_libraries() {
     rm -rf cmake-out
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_PREFIX_PATH="$(python3 -c 'import torch as _; print(_.__path__[0])')" \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -174,6 +173,10 @@ cmake_install_executorch_libraries() {
 
 cmake_build_llama_runner() {
     echo "Building llama runner"
+    pushd extension/llm/tokenizers
+    echo "Updating tokenizers submodule"
+    git submodule update --init
+    popd
     dir="examples/models/llama"
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \

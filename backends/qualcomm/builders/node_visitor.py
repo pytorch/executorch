@@ -15,8 +15,14 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS,
     QCOM_AXIS_ORDER,
     QCOM_BITWIDTH,
+    QCOM_BLOCK_SCALE_BITWIDTH,
+    QCOM_BLOCK_SCALE_OFFSET,
+    QCOM_BLOCK_SCALES,
+    QCOM_BLOCK_SIZE,
+    QCOM_BLOCK_STORAGE_TYPE,
     QCOM_DTYPE,
     QCOM_ENCODING,
+    QCOM_NUM_BLOCKS_PER_AXIS,
     QCOM_OFFSET,
     QCOM_QUANT_ATTRS,
     QCOM_QUANT_MAX,
@@ -106,9 +112,55 @@ class NodeVisitor:
             return node.meta["val"]
 
         tensor = _get_tensor(input_node, idx)
-        if len(tensor.shape) != 0 and QCOM_AXIS_ORDER in op_node.meta:
+        if len(tensor.shape) > 1 and QCOM_AXIS_ORDER in op_node.meta:
             tensor = tensor.permute(dims=op_node.meta[QCOM_AXIS_ORDER]).contiguous()
         return tensor
+
+    def make_qnn_per_block_config(self, node: torch.fx.Node, quant_attrs: Dict):
+        import math
+
+        quant_config = copy.deepcopy(quant_attrs)
+        scales, scale_offset, quantized_scales = quant_attrs[QCOM_SCALE], [], []
+        # channel in observers defaults to zero
+        num_channels = node.meta["val"].shape[0]
+        # TODO: expand this when QNN starts to support more configurations
+        bitwidth_of_scale = 4
+        quant_scales_dtype = torch.uint8
+        num_steps = 2**bitwidth_of_scale
+        scale_storage_type = (
+            PyQnnWrapper.Qnn_BlockwiseExpansionBlockScaleStorageType_t.QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_8
+        )
+
+        for ch in range(num_channels):
+            max_scale = scales[ch].reshape(1, -1).amax(dim=-1) / num_steps
+            q_scales = torch.clamp(
+                input=scales[ch] / max_scale,
+                min=torch.iinfo(quant_scales_dtype).min,
+                max=torch.iinfo(quant_scales_dtype).max,
+            ).to(quant_scales_dtype)
+            quantized_scales.append(torch.where(q_scales == 0, 1, q_scales))
+            # symmetric quantization is required
+            scale_offset.append(PyQnnWrapper.Qnn_ScaleOffset_t(max_scale, 0))
+
+        if "convolution" in list(node.users)[0].target.__name__:
+            # OIHW (pytorch) -> HWIO (QNN)
+            quant_config[QCOM_AXIS] = 3
+            quant_config[QCOM_AXIS_ORDER] = (2, 3, 1, 0)
+        else:
+            raise AttributeError("undetermined axis for block quantization")
+
+        quant_config[QCOM_NUM_BLOCKS_PER_AXIS] = quantized_scales[0].shape.numel()
+        quant_config[QCOM_BLOCK_SCALE_OFFSET] = scale_offset
+        quant_config[QCOM_BLOCK_SCALES] = torch.cat(quantized_scales).detach().numpy()
+        # e.g. if use 16 bit for quantized scales, we need to expand 16 - 4 = 12 bits
+        quant_config[QCOM_BLOCK_SCALE_BITWIDTH] = (
+            int(math.log2(torch.iinfo(quant_scales_dtype).max + 1)) - bitwidth_of_scale
+        )
+        quant_config[QCOM_BLOCK_STORAGE_TYPE] = scale_storage_type
+        return (
+            PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION,
+            quant_config,
+        )
 
     def make_qnn_per_channel_config(self, node: torch.fx.Node, quant_attrs: Dict):
         quant_config = copy.deepcopy(quant_attrs)
@@ -188,6 +240,14 @@ class NodeVisitor:
             and target_node.name in node.meta[QCOM_REQUANTIZE]
             else node.meta[QCOM_QUANT_ATTRS]
         )
+        # TODO: refactor this when target could be correctly detected
+        per_block_encoding = {
+            exir_ops.edge.pt2e_quant.quantize_affine.default,
+            exir_ops.edge.pt2e_quant.dequantize_affine.default,
+        }
+        if quant_attrs[QCOM_ENCODING] in per_block_encoding:
+            return self.make_qnn_per_block_config(node, quant_attrs)
+
         if quant_attrs[QCOM_ENCODING] in PER_CHANNEL_ENCODING:
             return self.make_qnn_per_channel_config(node, quant_attrs)
 
@@ -196,16 +256,33 @@ class NodeVisitor:
     def get_quant_tensor_value(
         self, tensor: torch.Tensor, quant_attrs: Dict, quant_configs: Dict
     ) -> torch.Tensor:
+        dtype = quant_configs[QCOM_DTYPE]
         if quant_attrs[QCOM_ENCODING] in PER_TENSOR_ENCODING:
             scale = quant_attrs[QCOM_SCALE]
             zero_point = quant_attrs[QCOM_ZERO_POINT]
-        else:  # per channel case
+            tensor = tensor.div(scale).add(zero_point).round().to(dtype)
+        elif quant_attrs[QCOM_ENCODING] in PER_CHANNEL_ENCODING:
             scale = quant_attrs[QCOM_SCALES]
             zero_point = quant_attrs[QCOM_ZERO_POINTS]
+            tensor = tensor.div(scale).add(zero_point).round().to(dtype)
+        else:  # per_block
+            if axis_order := quant_configs.get(QCOM_AXIS_ORDER, None):
+                origin_order = tuple(
+                    axis_order.index(x) for x in range(len(axis_order))
+                )
+                tensor = tensor.permute(origin_order)
+            tensor = torch.ops.pt2e_quant.quantize_affine(
+                tensor,
+                block_size=quant_attrs[QCOM_BLOCK_SIZE],
+                scale=quant_attrs[QCOM_SCALE],
+                zero_point=quant_attrs[QCOM_ZERO_POINT],
+                output_dtype=dtype,
+                quant_min=quant_attrs[QCOM_QUANT_MIN],
+                quant_max=quant_attrs[QCOM_QUANT_MAX],
+            )
+            if axis_order:
+                tensor = tensor.permute(axis_order)
 
-        dtype = quant_configs[QCOM_DTYPE]
-
-        tensor = tensor.div(scale).add(zero_point).round().to(dtype)
         # Make the backends access data correctly
         if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)

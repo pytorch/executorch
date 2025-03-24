@@ -49,3 +49,6 @@ def binary_operator_factory(bw_target: str, tosa_op):
 binary_operator_factory("aten.bitwise_and.Tensor", TosaOp.Op().BITWISE_AND)
 binary_operator_factory("aten.bitwise_xor.Tensor", TosaOp.Op().BITWISE_XOR)
 binary_operator_factory("aten.bitwise_or.Tensor", TosaOp.Op().BITWISE_OR)
+binary_operator_factory("aten.logical_and.default", TosaOp.Op().LOGICAL_AND)
+binary_operator_factory("aten.logical_xor.default", TosaOp.Op().LOGICAL_XOR)
+binary_operator_factory("aten.logical_or.default", TosaOp.Op().LOGICAL_OR)

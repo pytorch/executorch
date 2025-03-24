@@ -115,10 +115,22 @@ python_library(
     ],
     deps = [
         "fbcode//caffe2:torch",
-        "fbcode//executorch/exir:scalar_type",
         "fbcode//executorch/backends/cadence/aot:utils",
     ],
 )
+
+python_library(
+    name = "ref_implementations",
+    srcs = [
+        "ref_implementations.py",
+    ],
+    typing = True,
+    deps = [
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:scalar_type",
+    ],
+)
+
 
 export_file(name = "functions.yaml")
 
@@ -180,6 +192,7 @@ python_library(
     typing = True,
     deps = [
         "//caffe2:torch",
+        ":ops_registrations",
         ":compiler_utils",
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:utils",
@@ -255,6 +268,7 @@ python_library(
         "//executorch/backends/cadence/aot:pass_utils",
         "//executorch/backends/cadence/aot:remove_ops",
         "//executorch/backends/cadence/aot:utils",
+        "//executorch/backends/transforms:replace_scalar_with_tensor",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",

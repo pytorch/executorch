@@ -32,19 +32,20 @@ bool get_view_target_size(
     executorch::aten::ArrayRef<int64_t> size,
     int64_t dim,
     executorch::aten::SizesType* out_size) {
-  ET_LOG_AND_RETURN_IF_FALSE(size.size() == dim);
+  ET_LOG_AND_RETURN_IF_FALSE(
+      dim >= 0 && size.size() == static_cast<size_t>(dim));
   int minus1_dim = -1;
   int n_zero = 0;
   int64_t numel_without_minus_1 = 1;
   for (int i = 0; i < dim; i++) {
     if (size[i] == -1) {
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           minus1_dim == -1, "At most one view dim can be -1.");
       minus1_dim = i;
     } else {
       // The size[i] must be non-negative now, but we check size[i] >= -1
       // in case code is reordered in the future.
-      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ET_CHECK_OR_RETURN_FALSE(
           size[i] >= -1, "Negative sizes are not allowed.");
 
       numel_without_minus_1 *= size[i];
@@ -56,7 +57,7 @@ bool get_view_target_size(
     }
   }
   if (minus1_dim >= 0) {
-    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+    ET_CHECK_OR_RETURN_FALSE(
         n_zero == 0, "Cannot infer dimension size if there is a zero dim.");
     out_size[minus1_dim] = self.numel() / numel_without_minus_1;
   }
@@ -71,28 +72,38 @@ void et_view(KernelRuntimeContext& context, EValue** stack) {
   auto size = (*stack[1]).toIntList();
   auto out = (*stack[2]).toTensor();
 
-  ET_CHECK(tensors_have_same_dtype(self, out));
+  ET_KERNEL_CHECK(
+      context, tensors_have_same_dtype(self, out), InvalidArgument, );
 
   // Compute output size
   SizesType expected_output_size[kTensorDimensionLimit];
-  ET_CHECK(get_view_target_size(self, size, out.dim(), expected_output_size));
+  ET_KERNEL_CHECK(
+      context,
+      get_view_target_size(self, size, out.dim(), expected_output_size),
+      InvalidArgument, );
 
   // Resize for dynamic shape
-  ET_CHECK_MSG(
+  ET_KERNEL_CHECK_MSG(
+      context,
       resize_tensor(
           out, {expected_output_size, static_cast<size_t>(out.dim())}) ==
           Error::Ok,
+      Internal,
+      ,
       "Failed to resize output tensor.");
 
   // Do some checks
-  ET_CHECK(self.numel() == out.numel());
+  ET_KERNEL_CHECK(context, self.numel() == out.numel(), InvalidArgument, );
 
   // Update data ptr
-  ET_CHECK_MSG(
+  ET_KERNEL_CHECK_MSG(
+      context,
       internal::set_tensor_data(
           out,
           /*buffer=*/self.mutable_data_ptr(),
           /*buffer_size=*/out.nbytes()) == Error::Ok,
+      Internal,
+      ,
       "Failed to set data_ptr for out to self.");
 }
 
