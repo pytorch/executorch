@@ -105,6 +105,7 @@ TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
     "qwen2_5": "Qwen/Qwen2.5-1.5B",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
+    "smollm2": "HuggingFaceTB/SmolLM-135M",
 }
 
 
@@ -541,6 +542,8 @@ def export_llama(args) -> str:
             from executorch.examples.models.qwen2_5 import convert_weights
         elif args.model == "phi_4_mini":
             from executorch.examples.models.phi_4_mini import convert_weights
+        elif args.model == "smollm2":
+            from executorch.examples.models.smollm2 import convert_weights
         else:
             raise ValueError(
                 f"Converting weights to meta format for {args.model} is not yet supported"
