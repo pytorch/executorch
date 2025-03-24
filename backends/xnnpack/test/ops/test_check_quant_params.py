@@ -14,6 +14,9 @@ from torch.export import export_for_training
 
 
 class TestCheckQuantParams(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     def create_invalid_value_injector(
         self, invalid_value, is_per_channel=False, is_zp=False
     ):
