@@ -50,6 +50,13 @@ set(runner_deps executorch extension_data_loader extension_module
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 
 target_include_directories(
+  extension_llm_runner
+  PUBLIC
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/llama.cpp-unicode/include
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/llama.cpp-unicode/src
+)
+
+target_include_directories(
   extension_llm_runner INTERFACE ${_common_include_directories}
                                  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
