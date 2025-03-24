@@ -1060,7 +1060,9 @@ def _load_llama_model(
             model.vocab_size,
             metadata_str,
         ),
-        args=args,
+        qnn = args.qnn,
+        export_only=args.export_only,
+        output_name=args.output_name,
     )
 
 
