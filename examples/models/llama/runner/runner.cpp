@@ -82,8 +82,10 @@ Error Runner::load() {
   tokenizer_ = nullptr;
   // Check if tokenizer_path_ ends with ".json".
   if (tokenizer_path_.size() >= 5 &&
+      
       tokenizer_path_.compare(tokenizer_path_.size() - 5, 5, ".json") == 0) {
     tokenizer_ = std::make_unique<tokenizers::HFTokenizer>();
+    ET_LOG(Info, "Loading json tokenizer");
     tokenizer_->load(tokenizer_path_);
     ET_LOG(
         Info, "Loaded tokenizer %s as HF tokenizer", tokenizer_path_.c_str());
