@@ -48,11 +48,6 @@ void resize_native_layer_norm_node(
   rstd->virtual_resize(mean_size);
 }
 
-void check_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
-}
-
 void add_native_layer_norm_node(
     ComputeGraph& graph,
     const ValueRef in,
@@ -84,7 +79,7 @@ void add_native_layer_norm_node(
   vTensorPtr t_input = graph.get_tensor(in);
   float epsilon = graph.extract_scalar<float>(eps);
 
-  check_args(*t_input, *t_out);
+  VK_CHECK_COND(check_same_packed_dim(*t_input, *t_out));
 
   std::vector<int64_t> in_sizes = t_input->sizes();
 

@@ -576,12 +576,25 @@ def register_ported_op_all_packed_dims(features: OpFeatures):
     [
         exir_ops.edge.aten.embedding.default,
         exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-        exir_ops.edge.aten.native_layer_norm.default,
     ]
 )
 def register_ported_ops_with_prepacking(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims={PackedDim.CHANNELS},
+    )
+    features.handles_own_prepacking = True
+    return features
+
+
+# Ported ops that support their own prepacking.
+@update_features(
+    [
+        exir_ops.edge.aten.native_layer_norm.default,
+    ]
+)
+def register_ported_ops_with_prepacking_all_dims(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims=all_packed_dims,
     )
     features.handles_own_prepacking = True
     return features
