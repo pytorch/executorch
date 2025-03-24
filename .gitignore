@@ -11,7 +11,7 @@ __pycache__/
 arm_test/
 buck-out/
 buck2-bin/
-build/
+# build/
 cmake-android-out/
 cmake-ios-out/
 cmake-out*
