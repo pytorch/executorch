@@ -51,6 +51,27 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
     return converted_state_dict
 
 
+def convert_weights(input_dir: str, output_file: str) -> None:
+    # Don't necessarily need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
+    checkpointer = FullModelHFCheckpointer(
+        checkpoint_dir=input_dir,
+        checkpoint_files=[
+            "model-00001-of-00002.safetensors",
+            "model-00002-of-00002.safetensors",
+        ],
+        output_dir=".",
+        model_type="PHI4",
+    )
+
+    print("Loading checkpoint...")
+    sd = checkpointer.load_checkpoint()
+    print("Converting checkpoint...")
+    sd = phi_4_tune_to_meta(sd["model"])
+    print("Saving checkpoint...")
+    torch.save(sd, output_file)
+    print("Done.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convert Phi-4-mini weights to Meta format."
@@ -63,25 +84,7 @@ def main():
     parser.add_argument("output", type=str, help="Path to the output checkpoint")
 
     args = parser.parse_args()
-
-    checkpointer = FullModelHFCheckpointer(
-        checkpoint_dir=args.input_dir,
-        checkpoint_files=[
-            "model-00001-of-00002.safetensors",
-            "model-00002-of-00002.safetensors",
-        ],
-        output_dir=".",
-        model_type="PHI4",
-    )
-
-    print("Loading checkpoint...")
-    sd = checkpointer.load_checkpoint()
-
-    print("Converting checkpoint...")
-    sd = phi_4_tune_to_meta(sd["model"])
-
-    torch.save(sd, args.output)
-    print(f"Checkpoint saved to {args.output}")
+    convert_weights(args.input_dir, args.output)
 
 
 if __name__ == "__main__":

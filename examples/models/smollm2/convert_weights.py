@@ -11,7 +11,6 @@ from torchtune.training import FullModelHFCheckpointer
 _SMOLLM_FROM_META = {
     "tok_embeddings.weight": "tok_embeddings.weight",
     "norm.weight": "norm.scale",
-    "output.weight": "output.weight",
     "layers.{}.attention.wk.weight": "layers.{}.attn.k_proj.weight",
     "layers.{}.attention.wq.weight": "layers.{}.attn.q_proj.weight",
     "layers.{}.attention.wv.weight": "layers.{}.attn.v_proj.weight",
@@ -41,8 +40,29 @@ def smollm_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.
     for key, value in state_dict.items():
         new_key = get_mapped_key(key, inverted_mapping_dict)
         converted_state_dict[new_key] = value
+    converted_state_dict["output.weight"] = converted_state_dict[
+        "tok_embeddings.weight"
+    ]
 
     return converted_state_dict
+
+
+def convert_weights(input_dir: str, output_file: str) -> None:
+    # Don't necessarily need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
+    checkpointer = FullModelHFCheckpointer(
+        checkpoint_dir=input_dir,
+        checkpoint_files=["model.safetensors"],
+        output_dir=".",
+        model_type="LLAMA3",
+    )
+
+    print("Loading checkpoint...")
+    sd = checkpointer.load_checkpoint()
+    print("Converting checkpoint...")
+    sd = smollm_tune_to_meta(sd["model"])
+    print("Saving checkpoint...")
+    torch.save(sd, output_file)
+    print("Done.")
 
 
 def main():
@@ -57,23 +77,7 @@ def main():
     parser.add_argument("output", type=str, help="Path to the output checkpoint")
 
     args = parser.parse_args()
-
-    # Don't necessarily need to use TorchTune checkpointer, can just aggregate checkpoint files by ourselves.
-    checkpointer = FullModelHFCheckpointer(
-        checkpoint_dir=args.input_dir,
-        checkpoint_files=["model.safetensors"],
-        output_dir=".",
-        model_type="LLAMA",
-    )
-
-    print("Loading checkpoint...")
-    sd = checkpointer.load_checkpoint()
-
-    print("Converting checkpoint...")
-    sd = smollm_tune_to_meta(sd["model"])
-
-    torch.save(sd, args.output)
-    print(f"Checkpoint saved to {args.output}")
+    convert_weights(args.input_dir, args.output)
 
 
 if __name__ == "__main__":

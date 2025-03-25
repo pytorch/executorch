@@ -70,7 +70,7 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR : "
                  "${EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_LLM : "
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_LLM         : "
                  "${EXECUTORCH_BUILD_EXTENSION_LLM}"
   )
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
