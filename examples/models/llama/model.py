@@ -178,7 +178,7 @@ the checkpoint format to avoid generating faulty models.
             if checkpoint:
                 self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
             else:
-                self.model_.checkpoint_dtype = torch.float32
+                self.model_.checkpoint_dtype = None
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
