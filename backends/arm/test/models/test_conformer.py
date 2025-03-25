@@ -30,7 +30,6 @@ class TestConformer(unittest.TestCase):
     # for that is some assert ops are removed by passes in the
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
-        "executorch_exir_dialects_edge__ops_aten_arange_start_step": 1,
         "executorch_exir_dialects_edge__ops_aten_max_default": 1,
         "executorch_exir_dialects_edge__ops_aten_eq_Scalar": 2,
         "executorch_exir_dialects_edge__ops_aten_where_self": 4,
