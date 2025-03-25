@@ -86,5 +86,5 @@ endif()
 
 # Build tools
 if(TOKENIZERS_BUILD_TOOLS)
-  add_subdirectory(tools/tokenize_tool)
+  add_subdirectory(examples/tokenize_tool)
 endif()
