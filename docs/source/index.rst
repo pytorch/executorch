@@ -3,72 +3,143 @@
 Welcome to the ExecuTorch Documentation
 =======================================
 
-.. important::
-   v0.4.0 was the beta release of ExecuTorch. Starting from v0.4.0, the API
-   follows the `API Lifecycle and Deprecation Policy <api-life-cycle.html>`__,
-   and the ``.pte`` binary format complies with the `Runtime Compatibility
-   Policy
-   <https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md>`__.
-   This helps ensure that application developers can update to the latest
-   version of ExecuTorch without breaking existing integration code, in
-   accordance with these policies. If any issues arise or compatibility breaks
-   occur, please `report them in GitHub
-   <https://github.com/pytorch/executorch/issues/new/choose>`__.
-
-   We welcome any feedback, suggestions, and bug reports from the community
-   to help us improve the technology. Please use the `PyTorch Forums
-   <https://discuss.pytorch.org/c/executorch>`__ for discussion and feedback
-   about ExecuTorch using the **ExecuTorch** category, and our `GitHub
-   repository <https://github.com/pytorch/executorch/issues>`__ for bug
-   reporting.
-
 .. raw:: html
-
-   <div class="et-page-column-row">
-     <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-     <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-     <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
+   <div>
+    <img src="_static/img/et-logo.png" alt="Logo" width="200">
+    <p><strong>ExecuTorch</strong> is PyTorch's solution to training and inference on the Edge. </p>
+    <h3>Key Value Propositions</h3>
+      <ul>
+        <li><strong>Portability:</strong> Compatibility with a wide variety of computing platforms, from high-end mobile phones to highly constrained embedded systems and microcontrollers.</li>
+        <li><strong>Productivity:</strong> Enabling developers to use the same toolchains and Developer Tools from PyTorch model authoring and conversion, to debugging and deployment to a wide variety of platforms.</li>
+        <li><strong>Performance:</strong> Providing end users with a seamless and high-performance experience due to a lightweight runtime and utilizing full hardware capabilities such as CPUs, NPUs, and DSPs.</li>
+      </ul>
    </div>
+   <div>
+   <h3>Support for:</h3>
+   <div><strong>Strong Model Support</strong> LLMs (Large Language Models), CV (Comupter Vision), ASR (Automiatic Speaech Recognition), TTS (Text To Speech)</div>
+   <div><strong>All Major Platforms</strong> Android, Mac, Linux, Windows</div>
+   <div><strong>Rich Acceration Support</strong> Apple, Arm, Cadence, MediaTek, Qualcomm, Vulkan, XNNPACK</div>
+   </div>
+   <hr style="margin: 5px;"/>
+   <div class="documentation-navigation">
+      <div>Introduction</div>
+      <ul>
+         <li><a href="intro-overview">Overview</a></li>
+         <li><a href="intro-how-it-works">How it Works</a></li>
+         <li><a href="getting-started-architecture">Getting Started with Architecture</a></li>
+         <li><a href="concepts">Concepts</a></li>
+      </ul>
+         <div>Usage</div>
+      <ul>
+         <li><a href="getting-started">Getting Started</a></li>
+         <li><a href="using-executorch-export">Using Executorch Export</a></li>
+         <li><a href="using-executorch-android">Using Executorch on Android</a></li>
+         <li><a href="using-executorch-ios">Using Executorch on iOS</a></li>
+         <li><a href="using-executorch-cpp">Using Executorch with C++</a></li>
+         <li><a href="using-executorch-runtime-integration">Runtime Integration</a></li>
+         <li><a href="using-executorch-troubleshooting">Troubleshooting</a></li>
+         <li><a href="using-executorch-building-from-source">Building from Source</a></li>
+         <li><a href="using-executorch-faqs">FAQs</a></li>
+      </ul>
+      <div>Examples</div>
+      <ul>
+         <li><a href="demo-apps-android.md">Android Demo Apps</a></li>
+         <li><a href="demo-apps-ios.md">iOS Demo Apps</a></li>
+      </ul>
+      <div>Backends</div>
+      <ul>
+         <li><a href="backends-overview">Overview</a></li>
+         <li><a href="backends-xnnpack">XNNPACK</a></li>
+         <li><a href="backends-coreml">Core ML</a></li>
+         <li><a href="backends-mps">MPS</a></li>
+         <li><a href="backends-vulkan">Vulkan</a></li>
+         <li><a href="backends-arm-ethos-u">ARM Ethos-U</a></li>
+         <li><a href="backends-qualcomm">Qualcomm</a></li>
+         <li><a href="backends-mediatek">MediaTek</a></li>
+         <li><a href="backends-cadence">Cadence</a></li>
+      </ul>
+      <div>Tutorials</div>
+      <ul>
+         <!-- No items listed -->
+      </ul>
+      <div>Developer Tools</div>
+      <ul>
+         <li><a href="devtools-overview">Overview</a></li>
+         <li><a href="bundled-io">Bundled IO</a></li>
+         <li><a href="etrecord">ETRecord</a></li>
+         <li><a href="etdump">ETDump</a></li>
+         <li><a href="runtime-profiling">Runtime Profiling</a></li>
+         <li><a href="model-debugging">Model Debugging</a></li>
+         <li><a href="model-inspector">Model Inspector</a></li>
+         <li><a href="memory-planning-inspection">Memory Planning Inspection</a></li>
+         <li><a href="delegate-debugging">Delegate Debugging</a></li>
+         <li><a href="devtools-tutorial">Tutorial</a></li>
+      </ul>
+      <div>Runtime</div>
+      <ul>
+         <li><a href="runtime-overview">Overview</a></li>
+         <li><a href="extension-module">Extension Module</a></li>
+         <li><a href="extension-tensor">Extension Tensor</a></li>
+         <li><a href="running-a-model-cpp-tutorial">Running a Model (C++ Tutorial)</a></li>
+         <li><a href="runtime-backend-delegate-implementation-and-linking">Backend Delegate Implementation and Linking</a></li>
+         <li><a href="runtime-platform-abstraction-layer">Platform Abstraction Layer</a></li>
+      </ul>
+      <div>Portable C++ Programming</div>
+      <ul>
+         <li><a href="pte-file-format">PTE File Format</a></li>
+      </ul>
+      <div>API Reference</div>
+      <ul>
+         <li><a href="export-to-executorch-api-reference">Export to Executorch API Reference</a></li>
+         <li><a href="executorch-runtime-api-reference">Executorch Runtime API Reference</a></li>
+         <li><a href="runtime-python-api-reference">Runtime Python API Reference</a></li>
+         <li><a href="api-life-cycle">API Life Cycle</a></li>
+         <li><a href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+      </ul>
+      <div>Quantization</div>
+      <ul>
+         <li><a href="quantization-overview">Overview</a></li>
+      </ul>
+      <div>Kernel Library</div>
+      <ul>
+         <li><a href="kernel-library-overview">Overview</a></li>
+         <li><a href="kernel-library-custom-aten-kernel">Custom ATen Kernel</a></li>
+         <li><a href="kernel-library-selective-build">Selective Build</a></li>
+      </ul>
+      <div>Working with LLMs</div>
+      <ul>
+         <li><a href="llm/llama">Llama</a></li>
+         <li><a href="llm/llama-demo-android">Llama on Android</a></li>
+         <li><a href="llm/llama-demo-ios">Llama on iOS</a></li>
+         <li><a href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend">Llama on Android via Qualcomm backend</a></li>
+         <li><a href="llm/getting-started">Intro to LLMs in Executorch</a></li>
+      </ul>
 
-The ExecuTorch source is hosted on GitHub at
-https://github.com/pytorch/executorch. 
+      <div>Backend Development</div>
+      <ul>
+         <li><a href="backend-delegates-integration">Delegates Integration</a></li>
+         <li><a href="backend-delegates-xnnpack-reference">XNNPACK Reference</a></li>
+         <li><a href="backend-delegates-dependencies">Dependencies</a></li>
+         <li><a href="compiler-delegate-and-partitioner">Compiler Delegate and Partitioner</a></li>
+         <li><a href="debug-backend-delegate">Debug Backend Delegate</a></li>
+      </ul>
+      <div>IR Specification</div>
+      <ul>
+         <li><a href="ir-exir">EXIR</a></li>
+         <li><a href="ir-ops-set-definition">Ops Set Definition</a></li>
+      </ul>
+      <div>Compiler Entry Points</div>
+      <ul>
+         <li><a href="compiler-backend-dialect">Backend Dialect</a></li>
+         <li><a href="compiler-custom-compiler-passes">Custom Compiler Passes</a></li>
+         <li><a href="compiler-memory-planning">Memory Planning</a></li>
+      </ul>
 
-Join us on `Discord <https://discord.com/invite/Dh43CKSAdc>`__ if you have questions
-about ExecuTorch or would like to become a contributor!
-
-Getting Started
-~~~~~~~~~~~~~~~
-
-Topics in this section will help you get started with ExecuTorch.
-
-.. grid:: 3
-
-     .. grid-item-card:: :octicon:`file-code;1em`
-        What is ExecuTorch?
-        :img-top: _static/img/card-background.svg
-        :link: intro-overview.html
-        :link-type: url
-
-        A gentle introduction to ExecuTorch. In this section,
-        you will learn about main features of ExecuTorch
-        and how you can use them in your projects.
-
-     .. grid-item-card:: :octicon:`file-code;1em`
-        Getting started with ExecuTorch
-        :img-top: _static/img/card-background.svg
-        :link: getting-started.html
-        :link-type: url
-
-        A step-by-step tutorial on how to get started with
-        ExecuTorch.
-
-     .. grid-item-card:: :octicon:`file-code;1em`
-        ExecuTorch Llama
-        :img-top: _static/img/card-background.svg
-        :link: llm/llama.html
-        :link-type: url
-
-        Learn about running Llama models via ExecuTorch
+      <div>Contributing</div>
+      <ul>
+         <li><a href="contributing">Contributing</a></li>
+      </ul>
+   </div>
 
 .. toctree::
    :glob:
@@ -240,139 +311,3 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    contributing
-
-Tutorials and Examples
-~~~~~~~~~~~~~~~~~~~~~~
-
-Ready to experiment? Check out some of the
-ExecuTorch tutorials.
-
-.. customcardstart::
-
-.. customcarditem::
-   :header: Exporting to ExecuTorch Tutorial
-   :card_description: A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/export-to-executorch-tutorial.html
-   :tags: Export,Delegation,Quantization
-
-.. customcarditem::
-   :header: Running an ExecuTorch Model C++ Tutorial
-   :card_description: A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: running-a-model-cpp-tutorial.html
-   :tags:
-
-.. customcarditem::
-   :header: Simplified Runtime APIs Tutorial
-   :card_description: A simplified tutorial for executing the model on device.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: extension-module.html
-   :tags:
-
-.. customcarditem::
-   :header: Managing Tensor Memory in C++ Tutorial
-   :card_description: A tutorial for managing the dynamic memory when working with tensors.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: extension-tensor.html
-   :tags:
-
-.. customcarditem::
-   :header: Using the ExecuTorch Developer Tools to Profile a Model
-   :card_description: A tutorial for using the ExecuTorch Developer Tools to profile and analyze a model with linkage back to source code.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/devtools-integration-tutorial.html
-   :tags: devtools
-
-.. customcarditem::
-   :header: Integrating and Running ExecuTorch on Apple Platforms
-   :card_description: A tutorial on integrating, using, and troubleshooting the ExecuTorch runtime on iOS.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: apple-runtime.html
-   :tags: iOS, macOS
-
-.. customcarditem::
-   :header: Building an ExecuTorch iOS Demo App
-   :card_description: A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.
-   :image: _static/img/demo_ios_app.jpg
-   :link: demo-apps-ios.html
-   :tags: Delegation,iOS
-
-.. customcarditem::
-   :header: Building an ExecuTorch Android Demo App
-   :card_description: A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.
-   :image: _static/img/android_app.png
-   :link: demo-apps-android.html
-   :tags: Delegation,Android
-
-.. customcarditem::
-   :header: Lowering a Model as a Delegate
-   :card_description: An end-to-end example showing how to lower a model as a delegate
-   :image: _static/img/generic-pytorch-logo.png
-   :link: examples-end-to-end-to-lower-model-to-delegate.html
-   :tags: Export,Delegation
-
-..
-   First-party backends that are good intros for readers.
-
-.. customcarditem::
-   :header: Building and Running ExecuTorch with XNNPACK Backend
-   :card_description: A demo tutorial for lowering and exporting models with the XNNPACK Backend
-   :image: _static/img/generic-pytorch-logo.png
-   :link: tutorial-xnnpack-delegate-lowering.html
-   :tags: Export,Backend,Delegation,Quantization,XNNPACK
-
-.. customcarditem::
-   :header: Building and Running ExecuTorch with Vulkan Backend
-   :card_description: A tutorial that walks you through the process of building ExecuTorch with Vulkan Backend
-   :image: _static/img/generic-pytorch-logo.png
-   :link: backends-vulkan.html
-   :tags: Export,Backend,Delegation,Vulkan
-
-..
-   Alphabetical by backend name. Be sure to keep the same order in the Tutorials
-   toctree entry above.
-
-.. customcarditem::
-   :header: Building and Running ExecuTorch with ARM Ethos-U Backend
-   :card_description: A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend
-   :image: _static/img/generic-pytorch-logo.png
-   :link: executorch-arm-delegate-tutorial.html
-   :tags: Export,Backend,Delegation,ARM,Ethos-U
-
-.. customcarditem::
-   :header: Building and Running ExecuTorch with CoreML Backend
-   :card_description: A tutorial that walks you through the process of building ExecuTorch with CoreML Backend
-   :image: _static/img/generic-pytorch-logo.png
-   :link: backends-coreml.html
-   :tags: Export,Backend,Delegation,CoreML
-
-.. customcarditem::
-   :header: Building and Running ExecuTorch with MediaTek Backend
-   :card_description: A tutorial that walks you through the process of building ExecuTorch with MediaTek Backend
-   :image: _static/img/generic-pytorch-logo.png
-   :link: backends-mediatek-backend.html
-   :tags: Export,Backend,Delegation,MediaTek
-
-.. customcarditem::
-   :header: Building and Running ExecuTorch with MPS Backend
-   :card_description: A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend
-   :image: _static/img/generic-pytorch-logo.png
-   :link: backends-mps.html
-   :tags: Export,Backend,Delegation,MPS,MPSGraph
-
-.. customcarditem::
-   :header: Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend
-   :card_description: A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend
-   :image: _static/img/generic-pytorch-logo.png
-   :link: backends-qualcomm.html
-   :tags: Export,Backend,Delegation,QNN
-
-.. customcarditem::
-   :header: Building and Running ExecuTorch on Xtensa HiFi4 DSP
-   :card_description: A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators
-   :image: _static/img/generic-pytorch-logo.png
-   :link: backends-cadence.html
-   :tags: Export,Custom-Operators,DSP,Xtensa
-
-.. customcardend::
