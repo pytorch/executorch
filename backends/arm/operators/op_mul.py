@@ -63,13 +63,13 @@ class MulVisitor_080_BI(NodeVisitor):
             tosa_graph,
             input_A,
             input_A_qargs.zp,
-            rescale_scale=1.0,
+            [1.0],
         )
         input_B_rescaled = tqutils.build_rescale_to_int32(
             tosa_graph,
             input_B,
             input_B_qargs.zp,
-            rescale_scale=1.0,
+            [1.0],
         )
 
         output_shape = tutils.tosa_shape(output.shape, output.dim_order)

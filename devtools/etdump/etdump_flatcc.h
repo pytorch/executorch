@@ -14,6 +14,7 @@
 #include <executorch/devtools/etdump/data_sinks/buffer_data_sink.h>
 #include <executorch/devtools/etdump/data_sinks/data_sink_base.h>
 #include <executorch/runtime/core/event_tracer.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/platform.h>
 
@@ -23,6 +24,8 @@ struct flatcc_builder;
 
 namespace executorch {
 namespace etdump {
+
+using ::executorch::runtime::Result;
 
 namespace internal {
 struct ETDumpStaticAllocator {
@@ -106,7 +109,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   /**
    * Log an intermediate tensor output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const executorch::aten::Tensor& output) override;
@@ -114,7 +117,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   /**
    * Log an intermediate tensor array output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const ::executorch::runtime::ArrayRef<executorch::aten::Tensor> output)
@@ -123,7 +126,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   /**
    * Log an intermediate int output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const int& output) override;
@@ -131,7 +134,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   /**
    * Log an intermediate bool output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const bool& output) override;
@@ -139,7 +142,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
   /**
    * Log an intermediate double output from a delegate.
    */
-  virtual void log_intermediate_output_delegate(
+  virtual Result<bool> log_intermediate_output_delegate(
       const char* name,
       ::executorch::runtime::DebugHandle delegate_debug_index,
       const double& output) override;
