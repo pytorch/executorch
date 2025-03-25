@@ -86,11 +86,18 @@ let package = Package(
     .testTarget(
       name: "tests",
       dependencies: [
-        .target(name: "executorch")
+        .target(name: "executorch_debug"),
+        .target(name: "kernels_portable"),
       ],
       path: "extension/apple/ExecuTorch/__tests__",
       resources: [
-        .copy("extension/apple/ExecuTorch/__tests__/resources/add.pte")
+        .copy("resources/add.pte")
+      ],
+      linkerSettings: [
+        .unsafeFlags([
+          "-Xlinker", "-force_load",
+          "-Xlinker", "cmake-out/kernels_portable.xcframework/macos-arm64/libkernels_portable_macos.a",
+        ])
       ]
     )
   ]
