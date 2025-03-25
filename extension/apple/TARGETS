@@ -1,7 +1,3 @@
-load("@buck//apple:apple_library.bzl", "apple_library")
-load("@buck//apple:apple_resource.bzl", "apple_resource")
-load("@buck//apple:apple_test.bzl", "apple_test")
-
 apple_library(
   name = "ExecuTorch",
   modular = True,
