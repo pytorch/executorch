@@ -131,6 +131,22 @@ def get_param_tensor(
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
+def get_tensor_name(exp_prog: ExportedProgram, node: torch.fx.Node) -> str:
+    if node is None:
+        return ""
+    if is_param(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_parameters[node.name]
+    elif is_buffer(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_buffers[node.name]
+    elif is_lifted_tensor_constant(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_lifted_tensor_constants[node.name]
+    else:
+        assert isinstance(node.target, str)
+        return node.target
+
+    return ""
+
+
 def get_source_fn(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     """
     Returns the source fn of the given node, return None if something goes wrong

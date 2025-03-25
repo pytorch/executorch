@@ -470,6 +470,7 @@ class XValue:
 class ConstantDataOffset:
     offset: int
     size: int
+    named_key: str = ""
 
 
 @dataclass

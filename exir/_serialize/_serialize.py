@@ -101,6 +101,7 @@ def serialize_for_executorch(
 
     for filename in all_external_files:
         fqn_to_tensor_entry: Dict[str, TensorEntry] = {}
+        # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
         fqn_to_index = emitter_output.external_constant_map.get(filename, {})
         # Create a TensorEntry for each external tensor.
         for fqn, index in fqn_to_index.items():
@@ -112,8 +113,10 @@ def serialize_for_executorch(
 
         # Extract external data.
         key_to_data: Dict[str, DataEntry] = {}
+        # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
         key_to_buffer_index = named_data.external_data.get(filename, {})
         for key, index in key_to_buffer_index.items():
+            # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
             key_to_data[key] = DataEntry(index, named_data.buffers[index].alignment)
 
         # Serialize into PTD file.
