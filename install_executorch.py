@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
+from typing import List
 
 from install_requirements import (
     install_requirements,
@@ -168,28 +169,24 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def handle_pybind(args, cmake_args, executorch_build_pybind):
+def _list_pybind_defines(args) -> List[str]:
+    cmake_args = []
     # Flatten list of lists.
     args.pybind = list(itertools.chain(*args.pybind))
-    if "off" in args.pybind:
-        if len(args.pybind) != 1:
-            raise Exception(f"Cannot combine `off` with other pybinds: {args.pybind}")
-        executorch_build_pybind = "OFF"
-    else:
-        for pybind_arg in args.pybind:
-            if pybind_arg not in VALID_PYBINDS:
-                raise Exception(
-                    f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
-                )
-            if pybind_arg == "training":
-                cmake_args += " -DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON"
-                os.environ["EXECUTORCH_BUILD_TRAINING"] = "ON"
-            elif pybind_arg == "mps":
-                cmake_args += " -DEXECUTORCH_BUILD_MPS=ON"
-            else:
-                cmake_args += f" -DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON"
-            executorch_build_pybind = "ON"
-    return executorch_build_pybind, cmake_args
+    if ("off" in args.pybind) and (len(args.pybind) != 1):
+        raise Exception(f"Cannot combine `off` with other pybinds: {args.pybind}")
+
+    for pybind_arg in args.pybind:
+        if pybind_arg not in VALID_PYBINDS:
+            raise Exception(
+                f"Unrecognized pybind argument {pybind_arg}; valid options are: {', '.join(VALID_PYBINDS)}"
+            )
+        if pybind_arg == "training":
+            cmake_args.append("-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON")
+        else:
+            cmake_args.append(f"-DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON")
+
+    return cmake_args
 
 
 def main(args):
@@ -199,14 +196,15 @@ def main(args):
     parser = build_args_parser()
     args = parser.parse_args()
 
-    EXECUTORCH_BUILD_PYBIND = ""
-    CMAKE_ARGS = os.getenv("CMAKE_ARGS", "")
+    has_pybindings = False
+    cmake_args = [os.getenv("CMAKE_ARGS", "")]
     use_pytorch_nightly = True
 
     if args.pybind:
-        EXECUTORCH_BUILD_PYBIND, CMAKE_ARGS = handle_pybind(
-            args, CMAKE_ARGS, EXECUTORCH_BUILD_PYBIND
-        )
+        pybind_defines = _list_pybind_defines(args)
+        if len(pybind_defines) > 0:
+            has_pybindings = True
+            cmake_args += pybind_defines
 
     if args.clean:
         clean()
@@ -221,15 +219,15 @@ def main(args):
     # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
     # or is not turned off explicitly (--pybind off)
     # then install XNNPACK by default.
-    if EXECUTORCH_BUILD_PYBIND == "":
-        EXECUTORCH_BUILD_PYBIND = "ON"
-        CMAKE_ARGS += " -DEXECUTORCH_BUILD_XNNPACK=ON"
+    if not has_pybindings:
+        has_pybindings = True
+        cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
 
     # Use ClangCL on Windows.
     # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
     # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
     if os.name == "nt":
-        CMAKE_ARGS += " -T ClangCL"
+        cmake_args.append("-T ClangCL")
 
     #
     # Install executorch pip package. This also makes `flatc` available on the path.
@@ -238,8 +236,10 @@ def main(args):
     #
 
     # Set environment variables
-    os.environ["EXECUTORCH_BUILD_PYBIND"] = EXECUTORCH_BUILD_PYBIND
-    os.environ["CMAKE_ARGS"] = CMAKE_ARGS
+    if has_pybindings:
+        cmake_args.append("-DEXECUTORCH_BUILD_PYBIND=ON")
+
+    os.environ["CMAKE_ARGS"] = " ".join(cmake_args)
 
     # Check if the required submodules are present and update them if not
     check_and_update_submodules()
