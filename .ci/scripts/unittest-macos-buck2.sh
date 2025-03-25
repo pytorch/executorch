@@ -6,4 +6,4 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
-buck2 test --config features.apple.swift_library_evolution_enabled=false //extension/apple:ExecuTorchTests
+buck2 test //extension/apple:ExecuTorchTests
