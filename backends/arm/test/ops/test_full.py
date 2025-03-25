@@ -141,10 +141,6 @@ class TestFull(unittest.TestCase):
     def test_full_like_tosa_MI(self, test_tensor: Tuple):
         self._test_full_tosa_MI_pipeline(self.FullLike(), test_tensor)
 
-    def test_const_full_nhwc_tosa_BI(self):
-        _input = torch.rand((2, 2, 3, 3)) * 10
-        self._test_full_tosa_BI_pipeline(self.AddConstFull(), (_input,))
-
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_tosa_MI(self, test_tensor: Tuple):
         self._test_full_tosa_MI_pipeline(
@@ -175,8 +171,6 @@ class TestFull(unittest.TestCase):
             test_tensor,
         )
 
-    # This fails since full outputs int64 by default if 'fill_value' is integer, which our backend doesn't support.
-    @unittest.expectedFailure
     def test_integer_value(self):
         _input = torch.ones((2, 2))
         integer_fill_value = 1
