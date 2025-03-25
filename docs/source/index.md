@@ -1,7 +1,5 @@
 (home)=
-
 # Welcome to the ExecuTorch Documentation
-::
 
 **ExecuTorch** is PyTorch's solution to training and inference on the
 Edge.
@@ -18,7 +16,7 @@ Edge.
   high-performance experience due to a lightweight runtime and
   utilizing full hardware capabilities such as CPUs, NPUs, and DSPs.
 
-## Support for
+ExecuTorch provides support for:
 
 * **Strong Model Support** LLMs (Large Language Models),
   CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text To Speech)
