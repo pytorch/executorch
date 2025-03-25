@@ -1217,7 +1217,7 @@ can compose this lowered module with another module.</p>
   torch._C._set_onednn_allow_tf32(_allow_tf32)
 /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py:81: UserWarning: Attempted to insert a get_attr Node with no underlying reference in the owning GraphModule! Call GraphModule.add_submodule to add the necessary submodule, GraphModule.add_parameter to add the necessary Parameter, or nn.Module.register_buffer to add the necessary buffer
   getattr_node = gm.graph.get_attr(lifted_node)
-/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph.py:1769: UserWarning: Node non_lowerable_bias target non_lowerable.bias bias of non_lowerable does not reference an nn.Module, nn.Parameter, or buffer, which is what &#39;get_attr&#39; Nodes typically target
+/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph.py:1794: UserWarning: Node non_lowerable_bias target non_lowerable.bias bias of non_lowerable does not reference an nn.Module, nn.Parameter, or buffer, which is what &#39;get_attr&#39; Nodes typically target
   warnings.warn(
 /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
   torch._C._set_onednn_allow_tf32(_allow_tf32)
@@ -1556,7 +1556,7 @@ program to a file that can be run on the ExecuTorch runtime.</p>
 <li><p><a class="reference external" href="../compiler-delegate-and-partitioner.html">Backend Delegation Documentation</a></p></li>
 <li><p><a class="reference external" href="../compiler-memory-planning.html">Memory Planning Documentation</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 3.304 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 3.369 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-export-to-executorch-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/e045b13b001260d8b012dd4630eb9054/export-to-executorch-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">export-to-executorch-tutorial.py</span></code></a></p>

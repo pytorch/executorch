@@ -922,7 +922,7 @@ can compose this lowered module with another module.
       torch._C._set_onednn_allow_tf32(_allow_tf32)
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py:81: UserWarning: Attempted to insert a get_attr Node with no underlying reference in the owning GraphModule! Call GraphModule.add_submodule to add the necessary submodule, GraphModule.add_parameter to add the necessary Parameter, or nn.Module.register_buffer to add the necessary buffer
       getattr_node = gm.graph.get_attr(lifted_node)
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph.py:1769: UserWarning: Node non_lowerable_bias target non_lowerable.bias bias of non_lowerable does not reference an nn.Module, nn.Parameter, or buffer, which is what 'get_attr' Nodes typically target
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph.py:1794: UserWarning: Node non_lowerable_bias target non_lowerable.bias bias of non_lowerable does not reference an nn.Module, nn.Parameter, or buffer, which is what 'get_attr' Nodes typically target
       warnings.warn(
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/backends/mkldnn/__init__.py:78: UserWarning: TF32 acceleration on top of oneDNN is available for Intel GPUs. The current Torch version does not have Intel GPU Support. (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:148.)
       torch._C._set_onednn_allow_tf32(_allow_tf32)
@@ -1355,7 +1355,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.304 seconds)
+   **Total running time of the script:** (0 minutes 3.369 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
