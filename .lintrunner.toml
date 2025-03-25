@@ -264,6 +264,8 @@ exclude_patterns = [
     'examples/**',
     'exir/verification/bindings.cpp',
     'extension/**',
+    # Uses properly-gated (ET_USE_PYTORCH_HEADERS) ATen include.
+    'kernels/portable/cpu/util/elementwise_util.h',
     'kernels/optimized/**',
     'runtime/core/exec_aten/**',
     # Want to be able to keep c10 in sync with PyTorch core.

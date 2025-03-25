@@ -110,6 +110,7 @@ def define_common_targets():
             ":broadcast_indexes_range",
             ":broadcast_util",
             ":dtype_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/runtime/kernel:kernel_runtime_context",
             "//executorch/runtime/kernel:thread_parallel_interface",
         ],

@@ -15,6 +15,10 @@
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 
+#ifdef ET_USE_PYTORCH_HEADERS
+#include <ATen/cpu/vec/vec.h>
+#endif // ET_USE_PYTORCH_HEADERS
+
 #include <array>
 #include <utility>
 
@@ -58,6 +62,19 @@ template <typename CTYPE_COMMON, typename Op, typename... Args>
 using op_call_result =
     std::invoke_result_t<Op, ignore_first_yield_second<Args, CTYPE_COMMON>...>;
 
+#ifdef ET_USE_PYTORCH_HEADERS
+// Can I call a function of type Op with sizeof...(Args) arguments of type
+// at::vec::Vectorized<CTYPE_COMMON>?
+//
+// See [NOTE: Generic lambdas] below for requirements on Op.
+template <typename CTYPE_COMMON, typename Op, typename... Args>
+constexpr bool can_use_vectorized() {
+  return std::is_invocable_v<
+      Op,
+      ignore_first_yield_second<Args, at::vec::Vectorized<CTYPE_COMMON>>...>;
+}
+#endif // ET_USE_PYTORCH_HEADERS
+
 template <
     typename CTYPE_COMMON,
     typename CTYPE_OUT,
@@ -68,13 +85,71 @@ inline void dtype_specialized_elementwise_fn_impl(
     KernelRuntimeContext& ctx,
     const Tensor& out,
     Args... inputs) {
+  static_assert(
+      (std::is_same_v<Args, std::pair<const Tensor*, SupportedTensorDtypes>> &&
+       ...));
   constexpr auto kNumInputs = sizeof...(inputs);
-  ET_DCHECK(((inputs.first->element_size() == sizeof(CTYPE_COMMON)) && ...));
+  // All inputs must be of type CTYPE_COMMON.
+  ET_DCHECK(
+      ((inputs.first->scalar_type() ==
+        CppTypeToScalarType<CTYPE_COMMON>::value) &&
+       ...));
 
   std::array<const CTYPE_COMMON*, kNumInputs> inputs_data_ptrs = {
       inputs.first->template const_data_ptr<CTYPE_COMMON>()...};
 
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+
+#ifdef ET_USE_PYTORCH_HEADERS
+  if constexpr (can_use_vectorized<CTYPE_COMMON, Op, Args...>()) {
+    const bool any_is_broadcasted =
+        !(torch::executor::internal::sizes_match_ignoring_leading_1s(
+              inputs.first->sizes(), out.sizes()) &&
+          ...);
+    if (!any_is_broadcasted) {
+      using Vec = at::vec::Vectorized<CTYPE_COMMON>;
+      ::executorch::extension::parallel_for(
+          0,
+          out.numel(),
+          ::executorch::extension::internal::GRAIN_SIZE,
+          [&](const auto begin, const auto end) {
+            const auto vectorized_begin =
+                begin + (Vec::size() - begin % Vec::size()) % Vec::size();
+            const auto vectorized_end = end - (end % Vec::size());
+            // Scalar prologue.
+            for (const auto idx : c10::irange(begin, vectorized_begin)) {
+              std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
+              }
+              data_out[idx] = std::apply(compute_fun, loaded_inputs);
+            }
+
+            // Main vectorized loop.
+            for (auto idx = vectorized_begin; idx < vectorized_end;
+                 idx += Vec::size()) {
+              std::array<Vec, kNumInputs> loaded_vec_inputs;
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_vec_inputs[input_idx] =
+                    Vec::loadu(&inputs_data_ptrs[input_idx][idx]);
+              }
+              auto result_vec = std::apply(compute_fun, loaded_vec_inputs);
+              result_vec.store(&data_out[idx]);
+            }
+
+            // Scalar epilogue.
+            for (const auto idx : c10::irange(vectorized_end, end)) {
+              std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
+              }
+              data_out[idx] = std::apply(compute_fun, loaded_inputs);
+            }
+          });
+      return;
+    }
+  }
+#endif
 
   ::executorch::extension::parallel_for(
       0,
@@ -255,6 +330,19 @@ inline void apply_unitensor_elementwise_fn(
       compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
 }
 
+/**
+ * Useful for unary elementwise operators. For each element of the
+ * input, call Op and write to the corresponding element of the
+ * output. Tensor broadcasting is applied wherever it is required.
+ *
+ * [NOTE: Generic lambdas]: If Op is a *generic* lambda (i.e., one with `auto`
+ * parameters; normal lambdas are fine), it must fulfill one of the
+ * following conditions. Either:
+ * 1) It must in fact compile when passed at::vec::Vectorized<CTYPE_COMMON>, or
+ * 2) It must be actively SFINAE-friendly, as per the C++17 examples in
+ * https://stackoverflow.com/questions/76525790/detecting-if-a-generic-lambda-with-certain-arguments-is-invocable
+ * .
+ */
 template <
     typename CTYPE_COMMON,
     const char* op_name,
@@ -296,6 +384,8 @@ inline void apply_bitensor_elementwise_fn(
  * Useful for bi-tensor elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
  * Tensor broadcasting is applied wherever it is required.
+ * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
+ * compute_fun.
  */
 template <
     typename CTYPE_COMMON,
@@ -362,6 +452,9 @@ inline void apply_tritensor_elementwise_fn(
  *
  * static constexpr const char op_name[] = "my_op";
  * apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>.
+ *
+ * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
+ * compute_fun.
  */
 template <
     typename CTYPE_COMMON,
