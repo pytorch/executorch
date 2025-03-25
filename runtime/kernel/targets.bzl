@@ -7,9 +7,9 @@ def _operator_registry_preprocessor_flags():
     elif not runtime.is_oss:
         return select({
             "DEFAULT": [],
-            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-256": ["-DMAX_KERNEL_NUM=256"],
-            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-128": ["-DMAX_KERNEL_NUM=128"],
-            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-64": ["-DMAX_KERNEL_NUM=64"],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-max-kernel-num-256": ["-DMAX_KERNEL_NUM=256"],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-max-kernel-num-128": ["-DMAX_KERNEL_NUM=128"],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-max-kernel-num-64": ["-DMAX_KERNEL_NUM=64"],
         })
     else:
         return []
@@ -49,6 +49,20 @@ def define_common_targets():
             "//executorch/runtime/core:evalue",
         ],
         preprocessor_flags = ["-DMAX_KERNEL_NUM=1"],
+    )
+
+    runtime.cxx_library(
+        name = "thread_parallel_interface",
+        exported_headers = ["thread_parallel_interface.h"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core/portable_type/c10/c10:c10",
+            "//executorch/runtime/platform:platform",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     for aten_mode in get_aten_mode_options():

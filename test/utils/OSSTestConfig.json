@@ -60,6 +60,16 @@
         ]
     },
     {
+        "directory": "extension/threadpool/test",
+        "sources": [
+            "thread_parallel_test.cpp",
+            "threadpool_test.cpp"
+        ],
+        "additional_libs": [
+            "extension_threadpool"
+        ]
+    },
+    {
         "directory": "kernels/portable/cpu/util/test",
         "sources": [
             "broadcast_indexes_range_test.cpp",

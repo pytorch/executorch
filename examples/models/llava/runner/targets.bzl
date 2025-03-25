@@ -14,7 +14,6 @@ def define_common_targets():
         exported_deps = [
             "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/extension/llm/runner:runner_lib",
-            "//executorch/extension/llm/tokenizer:bpe_tokenizer",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/extension/module:module",
             "//executorch/extension/tensor:tensor",
@@ -23,5 +22,6 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/configurations:optimized_native_cpu_ops", 
             "//executorch/extension/llm/custom_ops:custom_ops",
+            "//pytorch/tokenizers:llama2c_tokenizer",
         ],
     )

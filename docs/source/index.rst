@@ -170,6 +170,7 @@ Topics in this section will help you get started with ExecuTorch.
    executorch-runtime-api-reference
    runtime-python-api-reference
    api-life-cycle
+   Javadoc <https://pytorch.org/executorch/main/javadoc/>
 
 .. toctree::
    :glob:

@@ -1,7 +1,7 @@
 load("@fbsource//xplat/executorch/build/runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/third-party/glob_defs.bzl", "subdir_glob")
 load(":flatcc_defs.bzl", "define_flatcc_targets")
 load(":gflags.bzl", "define_gflags")
-load(":glob_defs.bzl", "subdir_glob")
 load(":gtest_defs.bzl", "define_gtest_targets")
 load(":prebuilt_python_defs.bzl", "add_prebuilt_python_library_targets")
 load("@prelude//rules.bzl", "prebuilt_cxx_library")

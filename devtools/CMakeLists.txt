@@ -32,14 +32,10 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
-endif()
-
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
 endif()
 
 # Paths to headers generated from the .fbs files. set(_etdump_schemas
@@ -190,6 +186,8 @@ add_library(
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/emitter.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/buffer_data_sink.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/buffer_data_sink.h
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/file_data_sink.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/data_sinks/file_data_sink.h
 )
 
 target_link_libraries(
@@ -205,7 +203,7 @@ add_custom_command(
     "${_bundled_schema__include_dir}/executorch/devtools/bundled_program/schema"
     ${_bundled_program_schema__srcs}
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/devtools
-  DEPENDS ${FLATC_EXECUTABLE} ${_bundled_program_schema__srcs}
+  DEPENDS flatc ${_bundled_program_schema__srcs}
   COMMENT "Generating bundled_program headers"
   VERBATIM
 )
