@@ -20,7 +20,7 @@ In this tutorial we will walk you through the process of setting up the prerequi
 
 [OpenVINO](https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/overview.html) is an open-source toolkit designed to enhance AI inference on Intel hardware by reducing latency and increasing throughput while preserving accuracy. It optimizes hardware utilization and simplifies AI development and deep learning integration across domains such as computer vision, large language models (LLMs), and generative AI.
 
-OpenVINO is integrated as an Executorch delegate to accelerate AI applications deployed with Executorch APIs. 
+OpenVINO is integrated as an Executorch delegate to accelerate AI applications deployed with Executorch APIs.
 
 ## Supported Hardware
 
@@ -44,6 +44,7 @@ Before you begin, ensure you have openvino installed and configured on your syst
 git clone https://github.com/openvinotoolkit/openvino.git
 cd openvino && git checkout releases/2025/1
 git submodule update --init --recursive
+sudo ./install_build_dependencies.sh
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
 make -j<N>
@@ -54,6 +55,7 @@ cd <your_preferred_install_location>
 source setupvars.sh
 ```
 Note: The OpenVINO backend is not yet supported with the current OpenVINO release packages. It is recommended to build from source. The instructions for using OpenVINO release packages will be added soon.
+For more information about OpenVINO build, refer to the [OpenVINO Build Instructions](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/build_linux.md).
 
 ### Setup
 
@@ -78,7 +80,7 @@ Follow the steps below to setup your build environment:
 ## Build Instructions for Examples
 
 ### AOT step:
-Refer to the [README.md](../../examples/openvino/README.md) in the `executorch/examples/openvino` folder for detailed instructions on exporting deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to openvino backend using Executorch. Users can dynamically specify the model, input shape, and target device. 
+Refer to the [README.md](../../examples/openvino/README.md) in the `executorch/examples/openvino` folder for detailed instructions on exporting deep learning models from various model suites (TIMM, Torchvision, Hugging Face) to openvino backend using Executorch. Users can dynamically specify the model, input shape, and target device.
 
 Below is an example to export a ResNet50 model from Torchvision model suite for CPU device with an input shape of `[1, 3, 256, 256]`
 
