@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.19)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-include(${EXECUTORCH_ROOT}/build/Test.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs buffer_data_loader_test.cpp shared_ptr_data_loader_test.cpp
                file_data_loader_test.cpp mmap_data_loader_test.cpp

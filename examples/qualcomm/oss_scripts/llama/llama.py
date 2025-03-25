@@ -539,6 +539,28 @@ def compile(args, pte_filename, tokenizer):
     if "model" in state_dict:
         state_dict = state_dict["model"]
 
+    # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
+    def permute(w, heads):
+        dim_0 = w.size(0)
+        dim_1 = w.size(1)
+        return (
+            w.view(heads, dim_0 // heads // 2, 2, dim_1)
+            .transpose(1, 2)
+            .reshape(dim_0, dim_1)
+        )
+
+    n_heads = llama_instance_list[0].n_heads
+    n_kv_heads = llama_instance_list[0].n_kv_heads
+    n_layers = llama_instance_list[0].n_layers
+
+    for layer_i in range(n_layers):
+        state_dict[f"layers.{layer_i}.attention.wq.weight"] = permute(
+            state_dict[f"layers.{layer_i}.attention.wq.weight"], n_heads
+        )
+        state_dict[f"layers.{layer_i}.attention.wk.weight"] = permute(
+            state_dict[f"layers.{layer_i}.attention.wk.weight"], n_kv_heads
+        )
+
     for llama_instance in llama_instance_list:
         llama_instance.load_state_dict(
             state_dict,

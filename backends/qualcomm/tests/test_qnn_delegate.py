@@ -16,7 +16,6 @@ import torch
 from executorch.backends.qualcomm.tests.utils import (
     generate_context_binary,
     QnnPartitioner,
-    QnnQuantizer,
     QuantDtype,
     TestQNN,
     to_backend,
@@ -29,7 +28,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANT_DTYPE,
     QCOM_SAMPLE_INPUTS,
 )
-
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     dump_context_from_pte,
@@ -41,11 +39,15 @@ from executorch.backends.qualcomm.utils.utils import (
     skip_annotation,
     update_spill_fill_size,
 )
+
 from executorch.examples.models.llama.llama_transformer import MOEFeedForward
 
 from executorch.examples.models.llama.model_args import ModelArgs
 
-from executorch.examples.qualcomm.utils import setup_common_args_and_variables
+from executorch.examples.qualcomm.utils import (
+    make_quantizer,
+    setup_common_args_and_variables,
+)
 
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 
@@ -310,6 +312,33 @@ class TestQNNFloatingPointOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
+    def test_qnn_backend_element_wise_or(self):
+        test_comb = [
+            {
+                QCOM_MODULE: OrBitWise(  # noqa: F405
+                    torch.tensor(1.7), torch.tensor(0.2)
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([1, 0, 1, 0], dtype=torch.bool),
+                    torch.tensor([1, 1, 0, 0], dtype=torch.bool),
+                ),
+            },
+            {
+                QCOM_MODULE: OrOperator(  # noqa: F405
+                    torch.tensor(1.5), torch.tensor(-1.2)
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.full((3, 3), 1).triu(),
+                    torch.full((3, 3), 1).tril(diagonal=0),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
     def test_qnn_backend_element_wise_sqrt(self):
         modules = [Sqrt(), SqrtConstant()]  # noqa: F405
         for i, module in enumerate(modules):
@@ -442,9 +471,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index(self):
-        module = Index()  # noqa: F405
+        modules = [Index(0), Index(1), Index(2)]  # noqa: F405
         sample_input = (torch.randn([8, 172, 64]),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index_put(self):
         module = IndexPut()  # noqa: F405
@@ -461,18 +492,24 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.expectedFailure
     def test_qnn_backend_interpolate_bilinear_2d(self):
-        # TODO: Fix op not supported KeyError: 'aten.randn.default'
         module = ResizeBilinear2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.expectedFailure
     def test_qnn_backend_interpolate_nearest_2d(self):
-        # TODO: Fix op not supported KeyError: 'aten.randn.default'
         module = ResizeNearest2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_scale_factor(self):
+        module = UpsampleNearest2D(scale_factor=2)  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_size(self):
+        module = UpsampleNearest2D(sizes=(144, 208))  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
@@ -992,7 +1029,6 @@ class TestQNNQuantizedOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.skip("segfault happens in QNN 2.26")
     def test_qnn_backend_16a4w_per_channel_linear(self):
         module = Linear(use_bias=False)  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
@@ -1108,6 +1144,55 @@ class TestQNNQuantizedOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_block(self):
+        import numpy as np
+
+        np.random.seed(1)
+        o_ch, i_ch, kernel, padding = 32, 512, (1, 1), 0
+        input = (
+            torch.from_numpy(np.random.uniform(-3, 3, size=(1, 1, 32, i_ch)))
+            .to(torch.float)
+            .permute(0, 3, 1, 2)
+        )
+        weight = (
+            torch.from_numpy(np.random.uniform(-3, 3, size=(1, 1, i_ch, o_ch)))
+            .to(torch.float)
+            .permute(3, 2, 0, 1)
+        )
+
+        modules = [
+            Conv2dSingle(  # noqa: F405
+                bias=False,
+                in_channel=i_ch,
+                out_channel=o_ch,
+                kernel_size=kernel,
+                padding=padding,
+            ),
+            Conv2dSingle(  # noqa: F405
+                in_channel=i_ch,
+                out_channel=o_ch,
+                kernel_size=kernel,
+                padding=padding,
+            ),
+        ]
+        for module in modules:
+            module.conv.weight = torch.nn.Parameter(weight)
+
+        sample_input = (input,)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                # update block size for convolution weight (OIHW)
+                # channel dimension(O) is defaultly sliced in QNN
+                # divide dimension(I) into 4 groups
+                module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    is_conv_per_block=True,
+                    quant_dtype=QuantDtype.use_16a4w_block,
+                    block_size_map={"conv2d": (1, 128, 1, 1)},
+                )
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_channel_last(self):
@@ -1245,6 +1330,34 @@ class TestQNNQuantizedOperator(TestQNN):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
+
+    def test_qnn_backend_element_wise_or(self):
+        test_comb = [
+            {
+                QCOM_MODULE: OrBitWise(  # noqa: F405
+                    torch.tensor(1.7), torch.tensor(0.2)
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([1, 0, 1, 0], dtype=torch.bool),
+                    torch.tensor([1, 1, 0, 0], dtype=torch.bool),
+                ),
+            },
+            {
+                QCOM_MODULE: OrOperator(  # noqa: F405
+                    torch.tensor(1.5), torch.tensor(-1.2)
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.full((3, 3), 1).triu(),
+                    torch.full((3, 3), 1).tril(diagonal=0),
+                ),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+                self.lower_module_and_test_output(module, test[QCOM_SAMPLE_INPUTS])
 
     def test_qnn_backend_element_wise_sqrt(self):
         modules = [Sqrt(), SqrtConstant()]  # noqa: F405
@@ -1392,10 +1505,12 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index(self):
-        module = Index()  # noqa: F405
+        modules = [Index(0), Index(1), Index(2)]  # noqa: F405
         sample_input = (torch.randn([8, 172, 64]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_index_put(self):
         module = IndexPut()  # noqa: F405
@@ -1414,19 +1529,27 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.expectedFailure
     def test_qnn_backend_interpolate_bilinear_2d(self):
-        # TODO: Fix op not supported KeyError: 'aten.randn.default'
         module = ResizeBilinear2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.expectedFailure
     def test_qnn_backend_interpolate_nearest_2d(self):
-        # TODO: Fix op not supported KeyError: 'aten.randn.default'
         module = ResizeNearest2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_scale_factor(self):
+        module = UpsampleNearest2D(scale_factor=2)  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_up_sampling_nearest_2d_with_size(self):
+        module = UpsampleNearest2D(sizes=(144, 208))  # noqa: F405
+        sample_input = (torch.randn(1, 16, 72, 104),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -2580,7 +2703,7 @@ class TestQNNQuantizedUtils(TestQNN):
         )
         partitioner = QnnPartitioner(compiler_specs)
         # define quantizer
-        quantizer = QnnQuantizer()
+        quantizer = make_quantizer()
 
         # define calibration method
         def calibrator(gm):
@@ -2627,7 +2750,7 @@ class TestQNNQuantizedUtils(TestQNN):
         )
         partitioner = QnnPartitioner(compiler_specs)
         # define quantizer
-        quantizer = QnnQuantizer()
+        quantizer = make_quantizer()
 
         # define calibration method
         def calibrator(gm):
@@ -2684,7 +2807,7 @@ class TestQNNQuantizedUtils(TestQNN):
         )
         partitioner = QnnPartitioner(compiler_specs)
         # define quantizer
-        quantizer = QnnQuantizer()
+        quantizer = make_quantizer()
 
         # define calibration method
         def calibrator(gm):
@@ -3331,6 +3454,7 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 80)
 
+    @unittest.skip("bicubic resize is not supported")
     def test_dino_v2(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")

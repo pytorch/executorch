@@ -9,6 +9,7 @@ def define_common_targets():
     """
 
     _THREADPOOL_SRCS = [
+        "thread_parallel.cpp",
         "threadpool.cpp",
         "threadpool_guard.cpp",
     ] + (["fb/threadpool_use_n_threads.cpp"] if not runtime.is_oss else [])
@@ -29,6 +30,8 @@ def define_common_targets():
         exported_deps = [
             third_party_dep("pthreadpool"),
             third_party_dep("cpuinfo"),
+            # Allow users to use the header without an extra deps entry.
+            "//executorch/runtime/kernel:thread_parallel_interface",
         ],
         exported_preprocessor_flags = [
             "-DET_USE_THREADPOOL",

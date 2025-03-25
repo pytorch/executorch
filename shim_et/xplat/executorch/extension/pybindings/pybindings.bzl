@@ -54,6 +54,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         ],
         deps = [
             "//executorch/runtime/core:core",
+            "//executorch/extension/threadpool:threadpool",
         ] + cppdeps,
         external_deps = [
             "pybind11",

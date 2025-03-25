@@ -248,3 +248,8 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::reference::quantized_fully_connected_per_tensor_out
+
+- func: cadence::requantize.out(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::reference::requantize_out
