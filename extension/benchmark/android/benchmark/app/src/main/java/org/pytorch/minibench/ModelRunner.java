@@ -12,12 +12,12 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
-import org.pytorch.executorch.LlamaCallback;
-import org.pytorch.executorch.LlamaModule;
+import org.pytorch.executorch.extension.llm.LlmCallback;
+import org.pytorch.executorch.extension.llm.LlmModule;
 
 /** A helper class to handle all model running logic within this class. */
-public class ModelRunner implements LlamaCallback {
-  LlamaModule mModule = null;
+public class ModelRunner implements LlmCallback {
+  LlmModule mModule = null;
 
   String mModelFilePath = "";
   String mTokenizerFilePath = "";
@@ -44,7 +44,7 @@ public class ModelRunner implements LlamaCallback {
     mTokenizerFilePath = tokenizerFilePath;
     mCallback = callback;
 
-    mModule = new LlamaModule(mModelFilePath, mTokenizerFilePath, 0.8f);
+    mModule = new LlmModule(mModelFilePath, mTokenizerFilePath, 0.8f);
     mHandlerThread = new HandlerThread("ModelRunner");
     mHandlerThread.start();
     mHandler = new ModelRunnerHandler(mHandlerThread.getLooper(), this);
