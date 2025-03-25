@@ -107,7 +107,33 @@ class ShouldBuild:
 
     @classmethod
     def pybindings(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_PYBIND",
+            # If the user hasn't specified anything, we want to turn this on if any
+            # bindings are requested explicitly.
+            #
+            # Please keep this in sync with `VALID_PYBINDS` in install_executorch.py.
+            default=any(
+                [
+                    cls.coreml(),
+                    cls.mps(),
+                    cls.xnnpack(),
+                    cls.training(),
+                ]
+            ),
+        )
+
+    @classmethod
+    def coreml(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_COREML", default=False)
+
+    @classmethod
+    def mps(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_MPS", default=False)
+
+    @classmethod
+    def xnnpack(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
 
     @classmethod
     def training(cls) -> bool:
