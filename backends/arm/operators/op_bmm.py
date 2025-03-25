@@ -80,7 +80,7 @@ class BMMVisitor(NodeVisitor):
 
             build_rescale(
                 tosa_fb=tosa_graph,
-                scale=final_output_scale,
+                scale=[final_output_scale],
                 # pyre-ignore[61]: Uninitialized local [61]: Local variable `bmm_result` is undefined, or not always defined.
                 input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,

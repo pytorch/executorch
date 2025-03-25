@@ -169,6 +169,11 @@ class OpElementWiseNotEqual:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseOr:
+    op_name: str = "ElementWiseOr"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWisePower:
     op_name: str = "ElementWisePower"
 

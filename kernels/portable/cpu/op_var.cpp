@@ -21,6 +21,7 @@ namespace {
 
 template <typename CTYPE_IN, typename CTYPE_OUT>
 void compute_variance(
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out,
     optional<ArrayRef<int64_t>> dim_list,
@@ -32,26 +33,27 @@ void compute_variance(
       out_data[out_ix] = NAN;
     }
   } else {
-    for (const auto out_ix : c10::irange(out.numel())) {
-      CTYPE_OUT sum = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
-          [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-          [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
-          in,
-          dim_list,
-          out_ix);
-      CTYPE_OUT mean = sum / static_cast<CTYPE_OUT>(num);
-      CTYPE_OUT sum2 = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
-          [mean](CTYPE_IN v) {
-            return (
-                (static_cast<CTYPE_OUT>(v) - mean) *
-                (static_cast<CTYPE_OUT>(v) - mean));
-          },
-          [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
-          in,
-          dim_list,
-          out_ix);
-      out_data[out_ix] = sum2 / denominator;
-    }
+    MapReduceOverDimListPlan plan(in, dim_list);
+    const bool success = parallel_for_each_reduce_over_dim_list_output_index(
+        in, dim_list, out, [&](const auto begin, const auto end) {
+          for (const auto out_ix : c10::irange(begin, end)) {
+            CTYPE_OUT sum = plan.execute<CTYPE_IN, CTYPE_OUT>(
+                [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
+                [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+                out_ix);
+            CTYPE_OUT mean = sum / static_cast<CTYPE_OUT>(num);
+            CTYPE_OUT sum2 = plan.execute<CTYPE_IN, CTYPE_OUT>(
+                [mean](CTYPE_IN v) {
+                  return (
+                      (static_cast<CTYPE_OUT>(v) - mean) *
+                      (static_cast<CTYPE_OUT>(v) - mean));
+                },
+                [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+                out_ix);
+            out_data[out_ix] = sum2 / denominator;
+          }
+        });
+    ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
   }
 }
 
@@ -93,7 +95,7 @@ Tensor& var_out(
 
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
-      compute_variance<CTYPE_IN, CTYPE_OUT>(in, out, dim_list, num, denom);
+      compute_variance<CTYPE_IN, CTYPE_OUT>(ctx, in, out, dim_list, num, denom);
     });
   });
 
@@ -138,7 +140,7 @@ Tensor& var_correction_out(
 
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, name, CTYPE_OUT, [&] {
-      compute_variance<CTYPE_IN, CTYPE_OUT>(in, out, dim_list, num, denom);
+      compute_variance<CTYPE_IN, CTYPE_OUT>(ctx, in, out, dim_list, num, denom);
     });
   });
 

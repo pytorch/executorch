@@ -20,8 +20,8 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -51,5 +51,5 @@ target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 
 target_include_directories(
   extension_llm_runner INTERFACE ${_common_include_directories}
-                                 ${EXECUTORCH_ROOT}
+                                 ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )

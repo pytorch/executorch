@@ -12,6 +12,7 @@
 #import <coreml_backend/delegate.h>
 #import <executorch/runtime/core/evalue.h>
 #import <executorch/runtime/platform/log.h>
+#import <executorch/runtime/kernel/kernel_includes.h>
 #import <memory>
 #import <model_event_logger.h>
 #import <model_logging_options.h>
@@ -19,6 +20,7 @@
 #import <objc_safe_cast.h>
 #import <unordered_map>
 #import <vector>
+#include <array>
 
 #ifdef ET_EVENT_TRACER_ENABLED
 #import <model_event_logger_impl.h>
@@ -40,6 +42,9 @@ using executorch::runtime::EventTracerDebugLogLevel;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::get_backend_class;
 using executorch::runtime::Result;
+using executorch::aten::SizesType;
+using executorch::aten::Tensor;
+using executorch::runtime::kTensorDimensionLimit;
 
 std::optional<MultiArray::DataType> get_data_type(ScalarType scalar_type) {
     switch (scalar_type) {
@@ -220,6 +225,21 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
                              "%s: Failed to run the model.",
                              ETCoreMLStrings.delegateIdentifier.UTF8String);
 #endif
+
+    // Resize for dynamic shape
+    std::array<SizesType, kTensorDimensionLimit> new_shape;
+    for (size_t i = nInputs; i < nInputs + nOutputs; i++) {
+        Tensor& t = args[i]->toTensor();
+        int rank = delegate_args[i].layout().rank();
+        assert (rank <= new_shape.size());
+        for (int d = 0; d < rank; d++) {
+            new_shape[d] = delegate_args[i].layout().shape()[d];
+        }
+        ET_CHECK_OR_RETURN_ERROR(
+            resize_tensor(t, ArrayRef(new_shape.data(), rank)) == Error::Ok,
+            DelegateInvalidHandle,
+            "%s: Failed to resize delegate output %zu",  ETCoreMLStrings.delegateIdentifier.UTF8String, i);
+    }
 
     return Error::Ok;
 }

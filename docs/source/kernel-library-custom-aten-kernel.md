@@ -267,7 +267,7 @@ Here's an example to do it:
 
 ```cmake
 # For target_link_options_shared_lib
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 # Add a custom op library
 add_library(custom_op_lib SHARED ${CMAKE_CURRENT_SOURCE_DIR}/custom_op.cpp)

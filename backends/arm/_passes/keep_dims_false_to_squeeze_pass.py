@@ -35,14 +35,15 @@ class KeepDimsFalseToSqueezePass(ExportPass):
     """
 
     # CURRENTLY NOT HANDLED OPS
-    # exir_ops.edge.aten.any.dim,
-    # exir_ops.edge.aten.any.dims,
     # exir_ops.edge.aten.argmax,
     # exir_ops.edge.aten.argmin,
     # exir_ops.edge.aten.prod.dim_int,
 
     # HANDLED OPS
     # exir_ops.edge.aten.sum.dim_IntList
+    # exir_ops.edge.aten.any.default (decomposed in convert_any_default_dim_dims_pass)
+    # exir_ops.edge.aten.any.dim (decomposed in convert_any_default_dim_dims_pass)
+    # exir_ops.edge.aten.any.dims (decomposed in convert_any_default_dim_dims_pass)
     # exir_ops.edge.aten.max.dim (decomposed in convert_minmax_pass)
     # exir_ops.edge.aten.min.dim (decomposed in convert_minmax_pass)
     # exir_ops.edge.aten.amin (decomposed in convert_minmax_pass)

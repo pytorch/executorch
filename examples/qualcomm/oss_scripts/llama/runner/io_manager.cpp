@@ -168,6 +168,54 @@ void ShiftPointerIoMgr::init_io() {
   }
 }
 
+void ShiftPointerIoMgr::reset_io(
+    const std::vector<executorch::runtime::Result<
+        executorch::runtime::MethodMeta>>& prefill_methods_meta,
+    const std::vector<
+        executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+        kv_methods_meta) {
+  IO* ptr = static_cast<IO*>(data_ptr_.get());
+  std::fill(ptr->prefill_input_pos.begin(), ptr->prefill_input_pos.end(), 0);
+  ptr->kv_input_pos = 0;
+  std::fill(
+      ptr->prefill_attention_mask.begin(),
+      ptr->prefill_attention_mask.end(),
+      0);
+  std::fill(ptr->kv_attention_mask.begin(), ptr->kv_attention_mask.end(), 0);
+
+  input_tensors_[kv_forward_name_].clear();
+  input_tensors_[kv_forward_name_].resize(modules_.size());
+  output_tensors_[kv_forward_name_].clear();
+  output_tensors_[kv_forward_name_].resize(modules_.size());
+
+  k_cache_in_[kv_forward_name_].clear();
+  v_cache_in_[kv_forward_name_].clear();
+  k_cache_out_[kv_forward_name_].clear();
+  v_cache_out_[kv_forward_name_].clear();
+
+  input_tensors_[prefill_forward_name_].clear();
+  input_tensors_[prefill_forward_name_].resize(modules_.size());
+  output_tensors_[prefill_forward_name_].clear();
+  output_tensors_[prefill_forward_name_].resize(modules_.size());
+
+  k_cache_in_[prefill_forward_name_].clear();
+  v_cache_in_[prefill_forward_name_].clear();
+  k_cache_out_[prefill_forward_name_].clear();
+  v_cache_out_[prefill_forward_name_].clear();
+
+  switch (eval_mode_) {
+    case EvalMode::kKVCached:
+      prepare_kv_io(kv_methods_meta);
+      break;
+    case EvalMode::kHybrid:
+      prepare_prefill_io(prefill_methods_meta);
+      prepare_kv_io(kv_methods_meta);
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported mode");
+      break;
+  }
+}
 void ShiftPointerIoMgr::prepare_kv_io(
     const std::vector<Result<MethodMeta>>& methods_meta) {
   for (int i = 0; i < modules_.size(); ++i) {
@@ -883,6 +931,22 @@ void SmartMaskIoMgr::init_io() {
   ptr->num_layers_ = num_layers_;
   ptr->head_dim_ = head_dim_;
   ptr->init_io_ptrs(shared_ptr, io_bytes_map);
+}
+
+void SmartMaskIoMgr::reset_io(
+    const std::vector<executorch::runtime::Result<
+        executorch::runtime::MethodMeta>>& prefill_methods_meta,
+    const std::vector<
+        executorch::runtime::Result<executorch::runtime::MethodMeta>>&
+        kv_methods_meta) {
+  IO* ptr = static_cast<IO*>(data_ptr_.get());
+  int32_t prefill_attn_size = prefill_ar_len_ * context_len_;
+  int32_t kv_attn_size = kv_ar_len_ * context_len_;
+  std::fill(
+      ptr->prefill_attention_mask,
+      ptr->prefill_attention_mask + prefill_attn_size,
+      0);
+  std::fill(ptr->kv_attention_mask, ptr->kv_attention_mask + kv_attn_size, 0);
 }
 
 void SmartMaskIoMgr::prepare_kv_io(
