@@ -13,7 +13,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
 
 EXTRA_BUILD_ARGS="${@:-}"
 # TODO(#8357): Remove -Wno-int-in-bool-context
-COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context"
+# TODO: Replace -ET_HAVE_PREAD=0 with a CMake option.
+#  FileDataLoader used in the size_test breaks baremetal builds with pread when missing.
+COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
