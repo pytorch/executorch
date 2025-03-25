@@ -11,8 +11,6 @@
  #import <executorch/runtime/core/evalue.h>
 #endif
 
-#import <RuntimeBridgingCore/RuntimeBridgingCore-Swift.h>
-
 #import "ExecutorchRuntimeTensorValue.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -30,7 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 #endif
 
 #pragma mark -
-- (ExecutorchRuntimeTensorValue *_Nullable)asTensorValueAndReturnError:(NSError * _Nullable * _Nullable)error SWIFT_WARN_UNUSED_RESULT;
+- (ExecutorchRuntimeTensorValue *_Nullable)asTensorValueAndReturnError:(NSError * _Nullable * _Nullable)error;
 
 @end
 
