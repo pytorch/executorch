@@ -72,7 +72,7 @@ jobs:
             backend: portable
           - model: softmax
             backend: portable
-          - model: phi-4-mini
+          - model: phi_4_mini
             backend: portable
           - model: qwen2_5
             backend: portable
