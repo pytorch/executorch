@@ -92,10 +92,26 @@ endif()
 
 add_link_options(LINKER:--nmagic,--gc-sections)
 
-# Compilation warnings
+# Compilation warnings - based on educated guesses, and whatever is working.
 add_compile_options(
-  # -Wall -Wextra -Wcast-align -Wdouble-promotion -Wformat
-  # -Wmissing-field-initializers -Wnull-dereference -Wredundant-decls -Wshadow
-  # -Wswitch -Wswitch-default -Wunused -Wno-redundant-decls
+  # -Wcast-align
+  # -Wdouble-promotion
+  # -Wextra
+  # -Wnull-dereference
+  # -Wredundant-decls
+  # -Wshadow
+  # -Wswitch-default
+  -Wall
+  -Werror
+  -Wmissing-field-initializers
+  -Wno-error=deprecated-declarations
+  -Wno-error=shift-count-overflow
+  -Wno-format
+  -Wno-maybe-uninitialized # default move constructor
+  -Wno-missing-prototype
   -Wno-psabi
+  -Wno-unused-parameter
+  -Wstrict-aliasing
+  -Wswitch
+  -Wunused
 )
