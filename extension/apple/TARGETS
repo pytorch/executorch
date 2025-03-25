@@ -56,7 +56,7 @@ apple_test(
   frameworks = [
     "$SDKROOT/System/Library/Frameworks/XCTest.framework",
   ],
-  info_plist = "ExecuTorch/__tests__/Info.plist",
+  info_plist = "Info.plist",
   deps = [
     ":ExecuTorch",
     ":ExecuTorchTestResource",
