@@ -51,19 +51,20 @@ Tensor& mul_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          return val_a * val_b;
-        },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBBF16);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+              return val_a * val_b;
+            },
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            utils::SupportedTensorDtypes::REALHBBF16);
+      });
 
   return out;
 }
@@ -93,16 +94,17 @@ Tensor& mul_scalar_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "mul.Scalar_out";
 
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [val_b](const CTYPE_COMPUTE val_a) { return val_a * val_b; },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+        utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [val_b](const CTYPE_COMPUTE val_a) { return val_a * val_b; },
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            utils::SupportedTensorDtypes::SAME_AS_COMMON);
+      });
 
   return out;
 }

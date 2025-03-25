@@ -121,34 +121,36 @@ Tensor& div_out_mode(
   const bool mode_is_trunc = mode_val == "trunc";
   bool div_by_zero_error = false;
 
-  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [mode_is_trunc, &div_by_zero_error](
-            const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
-            if (val_b == 0) {
-              div_by_zero_error = true;
-              return static_cast<CTYPE_COMPUTE>(0);
-            }
-          }
-          CTYPE_COMPUTE value = val_a / val_b;
-          if (mode_is_trunc) {
-            value = std::trunc(value);
-          } else {
-            // We established above that the mode is either trunc or floor, so
-            // it must be floor.
-            value = utils::floor_divide(val_a, val_b);
-          }
-          return value;
-        },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBF16);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [mode_is_trunc, &div_by_zero_error](
+                const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+              if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::
+                      value) {
+                if (val_b == 0) {
+                  div_by_zero_error = true;
+                  return static_cast<CTYPE_COMPUTE>(0);
+                }
+              }
+              CTYPE_COMPUTE value = val_a / val_b;
+              if (mode_is_trunc) {
+                value = std::trunc(value);
+              } else {
+                // We established above that the mode is either trunc or floor,
+                // so it must be floor.
+                value = utils::floor_divide(val_a, val_b);
+              }
+              return value;
+            },
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            utils::SupportedTensorDtypes::REALHBF16);
+      });
 
   ET_KERNEL_CHECK_MSG(
       ctx,
@@ -252,24 +254,25 @@ Tensor& div_scalar_mode_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "div.Scalar_mode_out";
 
-  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [val_b, mode_is_trunc](const CTYPE_COMPUTE val_a) {
-          CTYPE_COMPUTE value = val_a / val_b;
-          if (mode_is_trunc) {
-            value = std::trunc(value);
-          } else {
-            value = utils::floor_divide(val_a, val_b);
-          }
-          return value;
-        },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBF16);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+        utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [val_b, mode_is_trunc](const CTYPE_COMPUTE val_a) {
+              CTYPE_COMPUTE value = val_a / val_b;
+              if (mode_is_trunc) {
+                value = std::trunc(value);
+              } else {
+                value = utils::floor_divide(val_a, val_b);
+              }
+              return value;
+            },
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            utils::SupportedTensorDtypes::REALHBF16);
+      });
 
   return out;
 }

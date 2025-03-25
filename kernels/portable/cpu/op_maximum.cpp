@@ -44,19 +44,20 @@ Tensor& maximum_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "maximum.out";
 
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          return utils::max_override(val_a, val_b);
-        },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBBF16);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+              return utils::max_override(val_a, val_b);
+            },
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            utils::SupportedTensorDtypes::REALHBBF16);
+      });
 
   return out;
 }

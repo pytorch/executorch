@@ -199,11 +199,16 @@ inline void apply_tritensor_elementwise_fn(
 }
 
 inline ScalarType get_compute_type(ScalarType& common_type) {
-  ScalarType compute_type = common_type;
-  if (common_type == ScalarType::Half || common_type == ScalarType::BFloat16) {
-    compute_type = ScalarType::Float;
+  if (common_type == ScalarType::Long) {
+    return common_type;
   }
-  return compute_type;
+  if (isIntegralType(common_type, /*includeBool=*/true)) {
+    return ScalarType::Int;
+  }
+  if (common_type == ScalarType::Half || common_type == ScalarType::BFloat16) {
+    return ScalarType::Float;
+  }
+  return common_type;
 }
 } // namespace internal
 
@@ -213,6 +218,11 @@ using internal::apply_bitensor_elementwise_fn;
 using internal::apply_tritensor_elementwise_fn;
 using internal::apply_unitensor_elementwise_fn;
 using internal::get_compute_type;
+
+#define ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES( \
+    TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...)   \
+  ET_SWITCH_FLOAT_TYPES_AND2(                \
+      Int, Long, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
 } // namespace utils
 } // namespace native

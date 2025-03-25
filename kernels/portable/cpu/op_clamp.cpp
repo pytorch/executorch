@@ -133,26 +133,27 @@ Tensor& clamp_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "clamp.out";
 
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [has_min, min_opt, has_max, max_opt](const CTYPE_COMPUTE val_in) {
-          CTYPE_COMPUTE val_out = val_in;
-          if (has_min) {
-            val_out = utils::max_override(
-                val_out, utils::scalar_to<CTYPE_COMPUTE>(min_opt.value()));
-          }
-          if (has_max) {
-            val_out = utils::min_override(
-                val_out, utils::scalar_to<CTYPE_COMPUTE>(max_opt.value()));
-          }
-          return val_out;
-        },
-        ctx,
-        in,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [has_min, min_opt, has_max, max_opt](const CTYPE_COMPUTE val_in) {
+              CTYPE_COMPUTE val_out = val_in;
+              if (has_min) {
+                val_out = utils::max_override(
+                    val_out, utils::scalar_to<CTYPE_COMPUTE>(min_opt.value()));
+              }
+              if (has_max) {
+                val_out = utils::min_override(
+                    val_out, utils::scalar_to<CTYPE_COMPUTE>(max_opt.value()));
+              }
+              return val_out;
+            },
+            ctx,
+            in,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            utils::SupportedTensorDtypes::SAME_AS_COMMON);
+      });
 
   return out;
 }

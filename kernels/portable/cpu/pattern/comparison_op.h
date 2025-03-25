@@ -90,17 +90,18 @@ Tensor& comparison_tensor_out(
   // Compute Dtype
   ScalarType compute_type = utils::get_compute_type(common_type);
 
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        ComparisonFnForOp<CTYPE_COMPUTE, op_name>::value,
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBBF16);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            ComparisonFnForOp<CTYPE_COMPUTE, op_name>::value,
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            utils::SupportedTensorDtypes::REALHBBF16);
+      });
 
   return out;
 }
