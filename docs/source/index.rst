@@ -1,74 +1,179 @@
 .. _home:
 
-Welcome to the ExecuTorch Documentation
-=======================================
+ExecuTorch: Powerful On-Device AI Framework
+==========================================
 
-.. important::
-   v0.4.0 was the beta release of ExecuTorch. Starting from v0.4.0, the API
-   follows the `API Lifecycle and Deprecation Policy <api-life-cycle.html>`__,
-   and the ``.pte`` binary format complies with the `Runtime Compatibility
-   Policy
-   <https://github.com/pytorch/executorch/tree/main/runtime/COMPATIBILITY.md>`__.
-   This helps ensure that application developers can update to the latest
-   version of ExecuTorch without breaking existing integration code, in
-   accordance with these policies. If any issues arise or compatibility breaks
-   occur, please `report them in GitHub
-   <https://github.com/pytorch/executorch/issues/new/choose>`__.
-
-   We welcome any feedback, suggestions, and bug reports from the community
-   to help us improve the technology. Please use the `PyTorch Forums
-   <https://discuss.pytorch.org/c/executorch>`__ for discussion and feedback
-   about ExecuTorch using the **ExecuTorch** category, and our `GitHub
-   repository <https://github.com/pytorch/executorch/issues>`__ for bug
-   reporting.
+.. image:: /_static/img/et-logo.png
+   :width: 200px
+   :align: center
+   :alt: ExecuTorch Logo
 
 .. raw:: html
 
-   <div class="et-page-column-row">
-     <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-     <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-     <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
+   <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 20px;">
+     <a href="https://github.com/pytorch/executorch/graphs/contributors">
+       <img src="https://img.shields.io/github/contributors/pytorch/executorch?style=for-the-badge&color=blue" alt="Contributors">
+     </a>
+     <a href="https://github.com/pytorch/executorch/stargazers">
+       <img src="https://img.shields.io/github/stars/pytorch/executorch?style=for-the-badge&color=blue" alt="Stargazers">
+     </a>
+     <a href="https://discord.gg/Dh43CKSAdc">
+       <img src="https://img.shields.io/badge/Discord-Join%20Us-purple?logo=discord&logoColor=white&style=for-the-badge" alt="Join our Discord community">
+     </a>
    </div>
 
-The ExecuTorch source is hosted on GitHub at
-https://github.com/pytorch/executorch. 
-
-Join us on `Discord <https://discord.com/invite/Dh43CKSAdc>`__ if you have questions
-about ExecuTorch or would like to become a contributor!
-
-Getting Started
-~~~~~~~~~~~~~~~
-
-Topics in this section will help you get started with ExecuTorch.
+**ExecuTorch** is an end-to-end solution for on-device inference and training. It powers much of Meta's on-device AI experiences across Facebook, Instagram, Meta Quest, Ray-Ban Meta Smart Glasses, WhatsApp, and more.
 
 .. grid:: 3
+   :gutter: 3
 
-     .. grid-item-card:: :octicon:`file-code;1em`
-        What is ExecuTorch?
-        :img-top: _static/img/card-background.svg
-        :link: intro-overview.html
-        :link-type: url
+   .. grid-item-card:: Quickstart
+      :link: getting-started-setup
+      :link-type: doc
+      :img-top: /_static/img/icon-quickstart.svg
+      :class-card: sd-text-center sd-shadow-sm sd-rounded-3
 
-        A gentle introduction to ExecuTorch. In this section,
-        you will learn about main features of ExecuTorch
-        and how you can use them in your projects.
+      Get up and running quickly with ExecuTorch.
+      
+   .. grid-item-card:: Tutorials
+      :link: tutorials/index
+      :link-type: doc
+      :img-top: /_static/img/icon-tutorial.svg
+      :class-card: sd-text-center sd-shadow-sm sd-rounded-3
 
-     .. grid-item-card:: :octicon:`file-code;1em`
-        Getting started with ExecuTorch
-        :img-top: _static/img/card-background.svg
-        :link: getting-started.html
-        :link-type: url
+      Step-by-step guides for common tasks.
 
-        A step-by-step tutorial on how to get started with
-        ExecuTorch.
+   .. grid-item-card:: Concepts
+      :link: concepts
+      :link-type: doc
+      :img-top: /_static/img/icon-concepts.svg
+      :class-card: sd-text-center sd-shadow-sm sd-rounded-3
 
-     .. grid-item-card:: :octicon:`file-code;1em`
-        ExecuTorch Llama
-        :img-top: _static/img/card-background.svg
-        :link: llm/llama.html
-        :link-type: url
+      Key concepts and terminology.
+      
+   .. grid-item-card:: LLM Support
+      :link: llm/getting-started
+      :link-type: doc
+      :img-top: /_static/img/icon-llm.svg
+      :class-card: sd-text-center sd-shadow-sm sd-rounded-3
 
-        Learn about running Llama models via ExecuTorch
+      Run large language models on-device.
+      
+   .. grid-item-card:: API Reference
+      :link: api/index
+      :link-type: doc
+      :img-top: /_static/img/icon-api.svg
+      :class-card: sd-text-center sd-shadow-sm sd-rounded-3
+
+      Detailed API documentation.
+      
+   .. grid-item-card:: Architecture
+      :link: getting-started-architecture
+      :link-type: doc
+      :img-top: /_static/img/icon-architecture.svg
+      :class-card: sd-text-center sd-shadow-sm sd-rounded-3
+
+      Understand how ExecuTorch works.
+
+Key Features
+-----------
+
+.. tab-set::
+
+   .. tab-item:: Portability
+      :sync: key1
+      
+      **Cross-platform compatibility**
+      
+      ExecuTorch works across a wide variety of computing platforms, from high-end mobile phones to highly constrained embedded systems and microcontrollers.
+
+   .. tab-item:: Productivity
+      :sync: key2
+      
+      **Seamless development workflow**
+      
+      Use the same toolchains and developer tools from PyTorch model authoring and conversion, to debugging and deployment across diverse platforms.
+
+   .. tab-item:: Performance
+      :sync: key3
+      
+      **Optimized for devices**
+      
+      Provide end users with a seamless, high-performance experience through a lightweight runtime that fully utilizes hardware capabilities like CPUs, NPUs, and DSPs.
+
+Platforms & Hardware Support
+---------------------------
+
+.. grid:: 2
+
+   .. grid-item::
+      :columns: 6
+
+      **Operating Systems**
+
+      - iOS
+      - Mac
+      - Android
+      - Linux
+      - Microcontrollers
+
+   .. grid-item::
+      :columns: 6
+
+      **Hardware Acceleration**
+
+      - Apple
+      - Arm
+      - Cadence
+      - MediaTek
+      - Qualcomm
+      - Vulkan
+      - XNNPACK
+
+Supported Model Types
+--------------------
+
+ExecuTorch supports a wide range of AI models, including:
+
+- **LLMs** (Large Language Models)
+- **CV** (Computer Vision)
+- **ASR** (Automatic Speech Recognition)
+- **TTS** (Text to Speech)
+
+Quick Links
+----------
+
+.. button-ref:: getting-started-setup
+   :ref-type: doc
+   :color: primary
+   :expand:
+
+   Get Started
+
+.. button-ref:: https://github.com/pytorch/executorch
+   :color: secondary
+   :expand:
+
+   GitHub Repository
+
+.. button-ref:: https://discord.gg/Dh43CKSAdc
+   :color: secondary
+   :expand:
+
+   Join Discord
+
+How ExecuTorch Works
+-------------------
+
+.. image:: /_static/img/executorch-workflow.png
+   :width: 100%
+   :alt: ExecuTorch Workflow
+
+ExecuTorch provides an end-to-end solution for deploying PyTorch models to devices:
+
+1. **Export** - Convert your PyTorch model to the ExecuTorch format
+2. **Optimize** - Apply quantization, pruning, and other optimizations
+3. **Deploy** - Run your model on-device with the lightweight runtime
 
 .. toctree::
    :glob:
