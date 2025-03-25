@@ -723,19 +723,6 @@ def _validate_args(args):
                 "Shared embedding is only supported with torchao quantization."
             )
 
-    if (
-        args.quantization_mode is not None
-        and args.quantization_mode.startswith("torchao:")
-    ) or (
-        args.embedding_quantize is not None
-        and args.embedding_quantize.startswith("torchao:")
-    ):
-        if args.enable_dynamic_shape:
-            raise ValueError(
-                "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape."
-                "If you need this feature, please file an issue."
-            )
-
 
 def _to_edge_and_lower_llama_xnnpack(
     builder_exported,
