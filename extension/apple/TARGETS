@@ -1,3 +1,11 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# This is a custom Buck file to run the Apple extension tests.
+
 apple_library(
   name = "ExecuTorch",
   modular = True,
@@ -36,11 +44,8 @@ apple_library(
 apple_resource(
   name = "ExecuTorchTestResource",
   files = glob([
-    '*.pte',
+    "ExecuTorch/__tests__/resources/*.pte",
   ]),
-  dirs = [
-    'ExecuTorch/__tests__/resources',
-  ],
 )
 
 apple_test(
