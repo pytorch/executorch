@@ -1,1 +1,59 @@
-# This file needs to exist to avoid build system breakage, see https://fburl.com/workplace/jtdlgdmd
+load("@buck//apple:apple_library.bzl", "apple_library")
+load("@buck//apple:apple_resource.bzl", "apple_resource")
+load("@buck//apple:apple_test.bzl", "apple_test")
+
+apple_library(
+  name = "ExecuTorch",
+  modular = True,
+  srcs = glob([
+    "ExecuTorch/Exported/*.m",
+    "ExecuTorch/Exported/*.mm",
+    "ExecuTorch/Internal/*.m",
+    "ExecuTorch/Internal/*.mm",
+  ]),
+  exported_headers = glob([
+    "ExecuTorch/Exported/*.h",
+  ]),
+  headers = glob([
+    "ExecuTorch/Internal/*.h",
+  ]),
+  include_directories = [
+    "ExecuTorch/Exported",
+    "ExecuTorch/Internal",
+  ],
+  frameworks = [
+    "$SDKROOT/System/Library/Frameworks/Foundation.framework",
+  ],
+  compiler_flags = [
+    "-DET_LOG_ENABLED=1",
+    "-fobjc-arc",
+    "-fno-exceptions",
+    "-fno-rtti",
+  ],
+  deps = [
+    "//xplat/executorch/extension/module:moduleApple",
+    "//xplat/executorch/extension/tensor:tensorApple",
+    "//xplat/executorch/runtime/platform:platformApple",
+  ],
+)
+
+apple_resource(
+  name = "ExecuTorchTestResource",
+  files = [
+    "ExecuTorch/__tests__/resources/add.pte",
+  ],
+)
+
+apple_test(
+  name = "ExecuTorchTests",
+  srcs = glob([
+    "ExecuTorch/__tests__/*.swift",
+  ]),
+  frameworks = [
+    "$SDKROOT/System/Library/Frameworks/XCTest.framework",
+  ],
+  deps = [
+    ":ExecuTorch",
+    ":ExecuTorchTestResource",
+  ],
+)
