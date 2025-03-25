@@ -95,6 +95,11 @@ class ShouldBuild:
 
     @staticmethod
     def _is_cmake_arg_enabled(var: str, default: bool) -> bool:
+        if os.environ.get(var) is not None:
+            raise RuntimeError(
+                f"Python wheel building does not support setting '{var}' using environment variables. Use CMAKE_ARGS='-D{var}=ON' instead."
+            )
+
         value = _cmake_args_defines().get(var, None)
         if value is None:
             return default
