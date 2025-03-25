@@ -52,7 +52,7 @@ static inline ScalarType deduceType(NSNumber *number) {
  */
 template <typename T>
 static inline T extractValue(NSNumber *number) {
-  ET_CHECK_MSG(!(isFloatingType(deduceType(number)) &&
+  ET_CHECK_MSG(!(isFloatingType(deduceScalarType(number)) &&
     isIntegralType(CppTypeToScalarType<T>::value, true)),
     "Cannot convert floating point to integral type");
   T value;
