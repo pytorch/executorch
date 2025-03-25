@@ -111,7 +111,10 @@ class ShouldBuild:
 
     @classmethod
     def coreml(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_COREML", default=False)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_COREML",
+            default=platform.system() == "Darwin",
+        )
 
     @classmethod
     def training(cls) -> bool:

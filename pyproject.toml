@@ -67,6 +67,8 @@ dependencies=[
   "sympy",
   "tabulate",
   "typing-extensions",
+  # macOS Only
+  "coremltools==8.1; platform_system == 'Darwin'",
 ]
 
 [project.urls]
