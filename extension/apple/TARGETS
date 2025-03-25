@@ -35,8 +35,11 @@ apple_library(
 
 apple_resource(
   name = "ExecuTorchTestResource",
-  files = [
-    "ExecuTorch/__tests__/resources/add.pte",
+  files = glob([
+    '*.pte',
+  ]),
+  dirs = [
+    'ExecuTorch/__tests__/resources',
   ],
 )
 
