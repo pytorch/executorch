@@ -282,10 +282,10 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 rm -rf "$HEADERS_PATH"
-cd - || exit 1
 
 echo "Running tests"
 
+cd "$SOURCE_ROOT_DIR"
 swift test
 
 echo "Build succeeded!"
