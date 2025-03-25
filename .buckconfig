@@ -42,3 +42,6 @@ restarter=true
 
 [oss]
 folly_cxx_tests = False
+
+[swift]
+library_evolution_enabled = false
