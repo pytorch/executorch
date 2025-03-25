@@ -33,6 +33,7 @@ jobs:
         export BUILD_AAR_DIR=aar-out
         mkdir -p $BUILD_AAR_DIR
         bash scripts/build_android_library.sh
+        bash examples/models/llama/install_requirements.sh
         (cd ${BUILD_AAR_DIR}; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest :executorch_android:assembleAndroidTest)
         cp ${BUILD_AAR_DIR}/executorch.aar $ARTIFACTS_DIR_NAME
 
@@ -40,7 +41,6 @@ jobs:
         cp ${BUILD_AAR_DIR}/executorch_android/build/outputs/apk/androidTest/debug/executorch_android-debug-androidTest.apk "${ARTIFACTS_DIR_NAME}/library_test_dir"
 
         mkdir -p ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
-        bash examples/models/llama/install_requirements.sh
         bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
 
         mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
