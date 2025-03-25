@@ -111,7 +111,9 @@ class ShouldBuild:
 
     @classmethod
     def training(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_TRAINING", default=False)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_EXTENSION_TRAINING", default=False
+        )
 
     @classmethod
     def llama_custom_ops(cls) -> bool:
@@ -693,9 +695,6 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             if ShouldBuild.training():
-                cmake_args += [
-                    "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON",
-                ]
                 build_args += ["--target", "_training_lib"]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
