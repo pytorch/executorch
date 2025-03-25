@@ -14,8 +14,8 @@
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/stats.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
-#include <executorch/extension/llm/tokenizer/tiktoken.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
+#include <pytorch/tokenizers/tiktoken.h>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -28,9 +28,9 @@ using Stats = ::executorch::llm::Stats;
 using example::LlamaModelOptions;
 using example::LlamaModelPaths;
 using example::LlamaRuntime;
-using executorch::extension::llm::Tokenizer;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
+using tokenizers::Tokenizer;
 
 class MTKLlamaRunner : public executorch::extension::llm::IRunner {
  public:

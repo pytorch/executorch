@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <executorch/kernels/test/TestUtil.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -16,7 +17,6 @@
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/test/utils/DeathTest.h>
 #include <cstdint>
 #include <cstdio>
 
@@ -27,12 +27,10 @@ using torch::executor::resize_tensor;
 namespace torch {
 namespace executor {
 
-class RegisterPrimOpsTest : public ::testing::Test {
+class RegisterPrimOpsTest : public OperatorTest {
  protected:
-  KernelRuntimeContext context;
   void SetUp() override {
-    torch::executor::runtime_init();
-    context = KernelRuntimeContext();
+    context_ = KernelRuntimeContext();
   }
 };
 
@@ -57,7 +55,7 @@ TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("aten::sym_size.int")(context, stack);
+  getOpsFn("aten::sym_size.int")(context_, stack);
 
   int64_t expected = 5;
   EXPECT_EQ(stack[2]->toInt(), expected);
@@ -77,7 +75,7 @@ TEST_F(RegisterPrimOpsTest, SymNumelReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("aten::sym_numel")(context, stack);
+  getOpsFn("aten::sym_numel")(context_, stack);
 
   int64_t expected = 15;
   EXPECT_EQ(stack[1]->toInt(), expected);
@@ -97,28 +95,28 @@ TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::add.Scalar")(context, stack);
+  getOpsFn("executorch_prim::add.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toInt(), 7);
 
-  getOpsFn("executorch_prim::sub.Scalar")(context, stack);
+  getOpsFn("executorch_prim::sub.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toInt(), -1);
 
-  getOpsFn("executorch_prim::mul.Scalar")(context, stack);
+  getOpsFn("executorch_prim::mul.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toInt(), 12);
 
-  getOpsFn("executorch_prim::floordiv.Scalar")(context, stack);
+  getOpsFn("executorch_prim::floordiv.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toInt(), 0);
 
-  getOpsFn("executorch_prim::truediv.Scalar")(context, stack);
+  getOpsFn("executorch_prim::truediv.Scalar")(context_, stack);
   EXPECT_FLOAT_EQ(stack[2]->toDouble(), 0.75);
 
-  getOpsFn("executorch_prim::mod.int")(context, stack);
+  getOpsFn("executorch_prim::mod.int")(context_, stack);
   EXPECT_EQ(stack[2]->toInt(), 3);
 
-  getOpsFn("executorch_prim::mod.Scalar")(context, stack);
+  getOpsFn("executorch_prim::mod.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toInt(), 3);
 
-  getOpsFn("executorch_prim::sym_float.Scalar")(context, stack);
+  getOpsFn("executorch_prim::sym_float.Scalar")(context_, stack);
   EXPECT_FLOAT_EQ(stack[1]->toDouble(), 3.0);
 }
 
@@ -155,7 +153,7 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   stack[2] = &values[2];
 
   // Simple test to copy to index 0.
-  getOpsFn("executorch_prim::et_copy_index.tensor")(context, stack);
+  getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack);
 
   EXPECT_EQ(copy_to.sizes()[0], 1);
   EXPECT_EQ(copy_to.sizes()[1], 2);
@@ -164,7 +162,7 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   values[1] = tf.make({2}, {5, 6});
   values[2] = EValue((int64_t)1);
   // Copy to the next index, 1.
-  getOpsFn("executorch_prim::et_copy_index.tensor")(context, stack);
+  getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack);
 
   EXPECT_EQ(copy_to.sizes()[0], 2);
   EXPECT_EQ(copy_to.sizes()[1], 2);
@@ -193,7 +191,7 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndexMismatchShape) {
   // copy_to.sizes[1:] and to_copy.sizes[:] don't match each other
   // which is a pre-requisite for this operator.
   ET_EXPECT_DEATH(
-      getOpsFn("executorch_prim::et_copy_index.tensor")(context, stack), "");
+      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack), "");
 }
 
 TEST_F(RegisterPrimOpsTest, TestETCopyIndexStaticShape) {
@@ -217,7 +215,7 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndexStaticShape) {
   stack[2] = &values[2];
 
   // Copy and replace at index 1.
-  getOpsFn("executorch_prim::et_copy_index.tensor")(context, stack);
+  getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack);
   EXPECT_EQ(copy_to.sizes()[0], 2);
   EXPECT_EQ(copy_to.sizes()[1], 2);
   EXPECT_TENSOR_EQ(copy_to, tf.make({2, 2}, {1, 2, 5, 6}));
@@ -228,7 +226,7 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndexStaticShape) {
   index = 2;
   values[2] = EValue(index);
   ET_EXPECT_DEATH(
-      getOpsFn("executorch_prim::et_copy_index.tensor")(context, stack), "");
+      getOpsFn("executorch_prim::et_copy_index.tensor")(context_, stack), "");
 #endif
 }
 
@@ -246,19 +244,19 @@ TEST_F(RegisterPrimOpsTest, TestBooleanOps) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::ge.Scalar")(context, stack);
+  getOpsFn("executorch_prim::ge.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toBool(), false);
 
-  getOpsFn("executorch_prim::gt.Scalar")(context, stack);
+  getOpsFn("executorch_prim::gt.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toBool(), false);
 
-  getOpsFn("executorch_prim::le.Scalar")(context, stack);
+  getOpsFn("executorch_prim::le.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toBool(), true);
 
-  getOpsFn("executorch_prim::lt.Scalar")(context, stack);
+  getOpsFn("executorch_prim::lt.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toBool(), true);
 
-  getOpsFn("executorch_prim::eq.Scalar")(context, stack);
+  getOpsFn("executorch_prim::eq.Scalar")(context_, stack);
   EXPECT_EQ(stack[2]->toBool(), false);
 }
 
@@ -277,7 +275,7 @@ TEST_F(RegisterPrimOpsTest, LocalScalarDenseReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("aten::_local_scalar_dense")(context, stack);
+  getOpsFn("aten::_local_scalar_dense")(context_, stack);
 
   int64_t expected = 1;
   EXPECT_EQ(stack[1]->toInt(), expected);
@@ -295,7 +293,7 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::neg.Scalar")(context, stack);
+  getOpsFn("executorch_prim::neg.Scalar")(context_, stack);
 
   EXPECT_EQ(stack[1]->toDouble(), -5.0f);
 
@@ -305,7 +303,7 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
   values[0] = EValue(a);
   values[1] = EValue(b);
 
-  getOpsFn("executorch_prim::neg.Scalar")(context, stack);
+  getOpsFn("executorch_prim::neg.Scalar")(context_, stack);
 
   EXPECT_EQ(stack[1]->toInt(), -5l);
 }
@@ -327,7 +325,7 @@ TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
   }
 
   // Try to negate a tensor, which should cause a runtime error.
-  ET_EXPECT_DEATH(getOpsFn("executorch_prim::neg.Scalar")(context, stack), "");
+  ET_EXPECT_DEATH(getOpsFn("executorch_prim::neg.Scalar")(context_, stack), "");
 }
 
 TEST_F(RegisterPrimOpsTest, TestETView) {
@@ -410,9 +408,9 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
 
   // Bad stacks expect death
   for (int i = 0; i < N_BAD_STACKS; i++) {
-    ET_EXPECT_DEATH(
-        getOpsFn("executorch_prim::et_view.default")(context, bad_stacks[i]),
-        "");
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        getOpsFn("executorch_prim::et_view.default")(context_, bad_stacks[i]));
   }
 
   constexpr int N_GOOD_STACKS = N_GOOD_OUTS;
@@ -422,7 +420,7 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
 
   // Good outs expect no death and correct output
   for (int i = 0; i < N_GOOD_STACKS; i++) {
-    getOpsFn("executorch_prim::et_view.default")(context, good_out_stacks[i]);
+    getOpsFn("executorch_prim::et_view.default")(context_, good_out_stacks[i]);
     EXPECT_TENSOR_EQ(good_outs[i], tf.make({1, 3, 2}, {1, 2, 3, 4, 5, 6}));
     EXPECT_EQ(good_outs[i].const_data_ptr(), self.const_data_ptr());
   }
@@ -456,7 +454,7 @@ TEST_F(RegisterPrimOpsTest, TestETViewDynamic) {
 
   EValue* stack[3] = {&self_evalue, &size_int_list_evalue, &out_evalue};
 
-  getOpsFn("executorch_prim::et_view.default")(context, stack);
+  getOpsFn("executorch_prim::et_view.default")(context_, stack);
 
   EXPECT_TENSOR_EQ(out, tf.make({1, 3, 1}, {1, 2, 3}));
   EXPECT_EQ(out.const_data_ptr(), self.const_data_ptr());
@@ -493,14 +491,15 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
 
   // good size test
   EValue* stack[3] = {&self_evalue, &size_int_list_evalue, &out_evalue};
-  getOpsFn("executorch_prim::et_view.default")(context, stack);
+  getOpsFn("executorch_prim::et_view.default")(context_, stack);
   EXPECT_TENSOR_EQ(out, tf.make({3, 1, 0}, {}));
   EXPECT_EQ(out.const_data_ptr(), self.const_data_ptr());
 
   // bad size test
   EValue* bad_stack[3] = {&self_evalue, &bad_size_int_list_evalue, &out_evalue};
-  ET_EXPECT_DEATH(
-      getOpsFn("executorch_prim::et_view.default")(context, bad_stack), "");
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      getOpsFn("executorch_prim::et_view.default")(context_, bad_stack));
 }
 
 TEST_F(RegisterPrimOpsTest, TestCeil) {
@@ -518,7 +517,7 @@ TEST_F(RegisterPrimOpsTest, TestCeil) {
       stack[j] = &values[j];
     }
 
-    getOpsFn("executorch_prim::ceil.Scalar")(context, stack);
+    getOpsFn("executorch_prim::ceil.Scalar")(context_, stack);
     EXPECT_EQ(stack[1]->toInt(), expected[i]);
   }
 }
@@ -539,7 +538,7 @@ TEST_F(RegisterPrimOpsTest, TestRound) {
       stack[j] = &values[j];
     }
 
-    getOpsFn("executorch_prim::round.Scalar")(context, stack);
+    getOpsFn("executorch_prim::round.Scalar")(context_, stack);
     EXPECT_EQ(stack[1]->toInt(), expected[i]);
   }
 }
@@ -559,7 +558,7 @@ TEST_F(RegisterPrimOpsTest, TestTrunc) {
       stack[j] = &values[j];
     }
 
-    getOpsFn("executorch_prim::trunc.Scalar")(context, stack);
+    getOpsFn("executorch_prim::trunc.Scalar")(context_, stack);
     EXPECT_EQ(stack[1]->toInt(), expected[i]);
   }
 }

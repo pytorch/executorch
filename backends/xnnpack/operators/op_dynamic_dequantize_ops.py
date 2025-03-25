@@ -13,6 +13,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import XNNGraph
 from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dynamic_qdq,
     is_per_channel_group,
     is_per_token,
 )
@@ -92,7 +93,8 @@ class OpDequantizeAffine(NodeVisitor):
         """
         We always define dequantize affine nodes because they are always explicit
         """
-        if is_per_channel_group(node):
+        is_dynamic = is_dynamic_qdq(node)
+        if is_per_channel_group(node) and not is_dynamic:
             check_or_raise(
                 is_param_node(self._exported_program, node.all_input_nodes[0]),
                 f"Expected quantize affine node with per-token semantics to be used "
@@ -103,7 +105,7 @@ class OpDequantizeAffine(NodeVisitor):
             return
 
         check_or_raise(
-            is_per_token(node),
+            is_per_token(node) and is_dynamic,
             "Expecting Affine Dequantized Op to have per-token semantics",
         )
         # This must be a per-token affine dequantized node, so let us serialize as such

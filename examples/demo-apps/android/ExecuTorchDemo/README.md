@@ -86,7 +86,7 @@ popd
 
 # Build the AAR. It will include XNNPACK backend by default.
 export BUILD_AAR_DIR=$(realpath examples/demo-apps/android/ExecuTorchDemo/app/libs)
-sh build/build_android_library.sh
+sh scripts/build_android_library.sh
 ```
 
 #### Qualcomm Hexagon NPU
@@ -107,7 +107,7 @@ popd
 
 # Build the AAR. It will include XNNPACK backend by default.
 export BUILD_AAR_DIR=$(realpath examples/demo-apps/android/ExecuTorchDemo/app/libs)
-sh build/build_android_library.sh
+sh scripts/build_android_library.sh
 ```
 
 This is very similar to XNNPACK setup, but users now needs to define `QNN_SDK_ROOT` so that
