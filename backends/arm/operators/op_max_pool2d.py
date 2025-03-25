@@ -42,9 +42,15 @@ class MaxPool2dVisitor(NodeVisitor):
         stride = inputs[2].special
 
         try:
-            padding = [*inputs[3].special, *inputs[3].special]
+            pad_size_list = inputs[3].special
+            pad_size_list = [
+                pad_size_list[0],
+                pad_size_list[0],
+                pad_size_list[1],
+                pad_size_list[1],
+            ]
         except IndexError:
-            padding = [0, 0, 0, 0]
+            pad_size_list = [0, 0, 0, 0]
 
         accumulator_type = output.dtype
 
@@ -63,7 +69,7 @@ class MaxPool2dVisitor(NodeVisitor):
         attr.PoolAttribute(
             kernel=kernel_size,
             stride=stride,
-            pad=padding,
+            pad=pad_size_list,
             input_zp=input_zp,
             output_zp=output_zp,
             accum_dtype=accumulator_type,

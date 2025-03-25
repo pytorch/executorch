@@ -101,7 +101,7 @@ inline void dtype_specialized_elementwise_fn_impl(
   CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
 #ifdef ET_USE_PYTORCH_HEADERS
-  if constexpr (can_use_vectorized<CTYPE_COMMON, Op, Args...>::value) {
+  if constexpr (can_use_vectorized<CTYPE_COMMON, Op, Args...>()) {
     const bool any_is_broadcasted =
         !(torch::executor::internal::sizes_match_ignoring_leading_1s(
               inputs.first->sizes(), out.sizes()) &&
@@ -339,7 +339,9 @@ inline void apply_unitensor_elementwise_fn(
  * parameters; normal lambdas are fine), it must fulfill one of the
  * following conditions. Either:
  * 1) It must in fact compile when passed at::vec::Vectorized<CTYPE_COMMON>, or
- * 2) It must be actively SFINAE-friendly, as per the C++17 examples in https://stackoverflow.com/questions/76525790/detecting-if-a-generic-lambda-with-certain-arguments-is-invocable .
+ * 2) It must be actively SFINAE-friendly, as per the C++17 examples in
+ * https://stackoverflow.com/questions/76525790/detecting-if-a-generic-lambda-with-certain-arguments-is-invocable
+ * .
  */
 template <
     typename CTYPE_COMMON,
@@ -382,7 +384,8 @@ inline void apply_bitensor_elementwise_fn(
  * Useful for bi-tensor elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
  * Tensor broadcasting is applied wherever it is required.
- * See [NOTE: Generic lambdas] if you want to pass a generic lambda for compute_fun.
+ * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
+ * compute_fun.
  */
 template <
     typename CTYPE_COMMON,
@@ -450,7 +453,8 @@ inline void apply_tritensor_elementwise_fn(
  * static constexpr const char op_name[] = "my_op";
  * apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>.
  *
- * See [NOTE: Generic lambdas] if you want to pass a generic lambda for compute_fun.
+ * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
+ * compute_fun.
  */
 template <
     typename CTYPE_COMMON,

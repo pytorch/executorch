@@ -590,3 +590,14 @@ class SDPATestForSpeculativeDecode(SDPATestCommon):
         self._test_sdpa_common(
             n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
         )
+
+    def test_sdpa_to_repro_long_seq_failure(self):
+        n_heads_kv = 16
+        n_heads_q = 32
+        head_dim = 128
+        max_seq_len = 2048
+        seq_len = 508
+        next_iter_seq_len = 127
+        self._test_sdpa_common(
+            n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
+        )

@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,78 +7,135 @@
 # Tests the clone op which copies the data of the input tensor (possibly with new data format)
 #
 
-import unittest
 from typing import Tuple
 
+import pytest
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
-)
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.arm.tosa_specification import TosaSpecification
 
-from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
 
-from parameterized import parameterized
+
+aten_op = "torch.ops.aten.clone.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_clone_default"
+
+input_t = Tuple[torch.Tensor]
 
 
-class TestSimpleClone(unittest.TestCase):
-    """Tests clone."""
+class Clone(torch.nn.Module):
+    """A simple module that clones an input tensor."""
 
-    class Clone(torch.nn.Module):
-        sizes = [10, 15, 50, 100]
-        test_parameters = [(torch.ones(n),) for n in sizes]
+    def forward(self, x: torch.Tensor):
+        return x.clone()
 
-        def __init__(self):
-            super().__init__()
 
-        def forward(self, x: torch.Tensor):
-            x = x.clone()
-            return x
+test_data_suite = {
+    "ones_1D_10": (torch.ones(10),),
+    "ones_1D_50": (torch.ones(50),),
+    "rand_1D_20": (torch.rand(20),),
+    "rand_2D_10x10": (torch.rand(10, 10),),
+    "rand_3D_5x5x5": (torch.rand(5, 5, 5),),
+    "rand_4D_2x3x4x5": (torch.rand(2, 3, 4, 5),),
+    "large_tensor": (torch.rand(1000),),
+}
 
-    def _test_clone_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: torch.Tensor
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check_count({"torch.ops.aten.clone.default": 1})
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_clone_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
-        compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
-        (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.clone.default": 1})
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_clone_tosa_MI(test_data: Tuple[torch.Tensor]):
 
-    @parameterized.expand(Clone.test_parameters)
-    def test_clone_tosa_MI(self, test_tensor: torch.Tensor):
-        self._test_clone_tosa_MI_pipeline(self.Clone(), (test_tensor,))
+    pipeline = TosaPipelineMI[input_t](
+        Clone(),
+        test_data,
+        aten_op,
+        exir_op,
+    )
 
-    @parameterized.expand(Clone.test_parameters)
-    def test_clone_tosa_BI(self, test_tensor: torch.Tensor):
-        self._test_clone_tosa_BI_pipeline(self.Clone(), (test_tensor,))
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+def test_clone_tosa_BI(test_data):
+    pipeline = TosaPipelineBI[input_t](
+        Clone(),
+        test_data,
+        aten_op,
+        exir_op,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@pytest.mark.xfail(
+    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
+)
+def test_clone_u55_BI(test_data):
+    pipeline = EthosU55PipelineBI[input_t](
+        Clone(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+        symmetric_io_quantization=True,
+    )
+
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@pytest.mark.xfail(
+    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
+)
+def test_clone_u85_BI(test_data):
+    pipeline = EthosU85PipelineBI[input_t](
+        Clone(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+        symmetric_io_quantization=True,
+    )
+
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@pytest.mark.xfail(
+    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
+)
+@common.SkipIfNoCorstone300
+def test_clone_u55_BI_on_fvp(test_data):
+    pipeline = EthosU55PipelineBI[input_t](
+        Clone(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+        symmetric_io_quantization=True,
+    )
+
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@pytest.mark.xfail(
+    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
+)
+@common.SkipIfNoCorstone320
+def test_clone_u85_BI_on_fvp(test_data):
+    pipeline = EthosU85PipelineBI[input_t](
+        Clone(),
+        test_data,
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+        symmetric_io_quantization=True,
+    )
+
+    pipeline.run()

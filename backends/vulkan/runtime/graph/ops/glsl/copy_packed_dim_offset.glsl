@@ -44,15 +44,49 @@ void main() {
     return;
   }
 
-  // Starting offset to write at within a texel
-  const int out_lane_offset = dst_offset[packed_dim] & 0x3;
-  const bool has_lane_offset = out_lane_offset != 0;
-
   // Position in input tensor
-  const ivec3 in_pos = pos + src_offset.xyz;
+  ivec3 in_pos = pos + src_offset.xyz;
+  in_pos[packed_dim] = pos[packed_dim] + (src_offset[packed_dim] >> 2);
 
   // Read input value mapping to this output texel
-  const VEC4_T in_value = load_texel_lpos(t_in, in_pos, in_axis_map);
+  VEC4_T in_value = load_texel_lpos(t_in, in_pos, in_axis_map);
+
+  // Starting offset to read from a texel
+  const int src_lane_offset = src_offset[packed_dim] & 0x3;
+  const bool has_src_lane_offset = src_lane_offset != 0;
+
+  // If input lane offset is non zero i.e packed texel is composed from multiple sources
+  if (has_src_lane_offset) {
+    // Boundary values will come from next input texel in the packed dim.
+    ivec3 next_in_pos = in_pos;
+    next_in_pos[packed_dim] = in_pos[packed_dim] + 1;
+    VEC4_T next_value = load_texel_lpos(t_in, next_in_pos, in_axis_map);
+
+    // Keep input values from the end of current input pixel based on src_lane_offset
+    // offset 1 means the first lane of current input texel is not a part of the output texel
+    // offset 2 means first 2 lanes are not and so on
+    if (src_lane_offset == 1) {
+      in_value.xyz = in_value.yzw;
+    } else if (src_lane_offset == 2) {
+      in_value.xy = in_value.zw;
+    } else {
+      in_value.x = in_value.w;
+    }
+    // Copy next texel's values towards the end of input texel, based on lane offset
+    // offset 1 means the first lane from next texel is part of the input texel
+    // offset 2 means first 2 lanes from next texel is part of the input texel and so on
+    if (src_lane_offset == 1) {
+      in_value.w = next_value.x;
+    } else if (src_lane_offset == 2) {
+      in_value.zw = next_value.xy;
+    } else {
+      in_value.yzw = next_value.xyz;
+    }
+  }
+
+  // Starting offset to write at within a texel
+  const int out_lane_offset = dst_offset[packed_dim] & 0x3;
+  const bool has_dst_lane_offset = out_lane_offset != 0;
 
   ivec3 out_pos = pos + dst_offset.xyz;
   out_pos[packed_dim] = pos[packed_dim] + (dst_offset[packed_dim] >> 2);
@@ -60,7 +94,7 @@ void main() {
   VEC4_T out_value;
 
   // If lane offset is non zero i.e packed texel is composed from multiple sources
-  if (has_lane_offset) {
+  if (has_dst_lane_offset) {
     // When position in packed dim is > 0
     if (pos[packed_dim] > 0) {
       // Boundary values will come from previous input texel in the packed dim.
