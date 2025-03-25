@@ -618,25 +618,9 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     )
 
     # At this point, the model is loaded in the default fp32.
-
-    # Checkpoint dtype should be lower or equal precision to the dtype override.
+    # override dtype
     checkpoint_dtype = edge_manager.model.checkpoint_dtype
-    if not (
-        checkpoint_dtype == dtype_override.to_torch_dtype()
-        or (
-            checkpoint_dtype == torch.float16
-            and dtype_override.to_torch_dtype() == torch.float32
-        )
-        or (
-            checkpoint_dtype == torch.bfloat16
-            and dtype_override.to_torch_dtype() == torch.float32
-        )
-    ):
-        logging.warning(
-            f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
-        )
-
-    edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
+    edge_manager.to_dtype(dtype_override)
 
     # We want to quantize (in the source transforms) the weights of the model
     # in the checkpoint dtype.
