@@ -59,11 +59,10 @@ def convert_weights(input_dir: str, output_file: str) -> None:
     print("Loading checkpoint...")
     sd = checkpointer.load_checkpoint()
     print("Converting checkpoint...")
-    breakpoint()
     sd = smollm_tune_to_meta(sd["model"])
     print("Saving checkpoint...")
     torch.save(sd, output_file)
-    print(f"Done.")
+    print("Done.")
 
 
 def main():
