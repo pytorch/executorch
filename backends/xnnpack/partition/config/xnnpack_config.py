@@ -144,9 +144,10 @@ class XNNPartitionerConfig(PartitionerConfig):
         return True
 
     def _check_inputs_are_valid_dtypes(self, node, valid_dtypes):
-        # Check inputs are valid dtypes
+        # Check inputs are valid and have the same dtypes
         # Gather all args which are nodes
         args_to_check = []
+        reference_dtype = None
         for arg in node.args:
             if isinstance(arg, list) or isinstance(arg, tuple):
                 for item in arg:
@@ -174,11 +175,19 @@ class XNNPartitionerConfig(PartitionerConfig):
             if arg_val.dtype not in valid_dtypes:
                 return False
 
+            # Check for mixed dtypes
+            if reference_dtype is None:
+                reference_dtype = arg_val.dtype
+            elif arg_val.dtype != reference_dtype:
+                return False
+
         return True
 
     def _check_outputs_are_valid_dtypes(self, node, valid_dtypes):
-        # Check outputs are valid dtype
+        # Check outputs are valid and have the same dtypes
         node_val = node.meta.get("val", None)
+        reference_dtype = None
+
         if node_val is None:
             return True
 
@@ -190,6 +199,12 @@ class XNNPartitionerConfig(PartitionerConfig):
                 return False
 
             if val.dtype not in valid_dtypes:
+                return False
+
+            # Check for mixed dtypes
+            if reference_dtype is None:
+                reference_dtype = val.dtype
+            elif val.dtype != reference_dtype:
                 return False
 
         return True
