@@ -16,6 +16,7 @@ import logging
 import re
 import shlex
 from enum import Enum
+from functools import partial
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, List, Optional, Union
@@ -124,26 +125,19 @@ def verbose_export():
 
 
 def build_model(
-    modelname: str = "llama3",
-    extra_opts: str = "",
-    *,
-    par_local_output: bool = False,
-    resource_pkg_name: str = __name__,
+    model: str,
+    checkpoint: str,
+    params: str,
+    output_dir: Optional[str] = ".",
+    extra_opts: Optional[str] = "",
 ) -> str:
-    if False:  # par_local_output:
-        output_dir_path = "par:."
-    else:
-        output_dir_path = "."
-
-    argString = f"--model {modelname} --checkpoint par:model_ckpt.pt --params par:model_params.json {extra_opts} --output-dir {output_dir_path}"
+    argString = f"--model {model} --checkpoint {checkpoint} --params {params} {extra_opts} --output-dir {output_dir}"
     parser = build_args_parser()
     args = parser.parse_args(shlex.split(argString))
-    # pkg_name = resource_pkg_name
     return export_llama(args)
 
 
 def build_args_parser() -> argparse.ArgumentParser:
-    ckpt_dir = f"{Path(__file__).absolute().parent.as_posix()}"
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output-dir", default=".", help="output directory")
     # parser.add_argument(
@@ -161,6 +155,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         type=str,
         help="type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+    )
+    parser.add_argument(
+        "--use_shared_embedding",
+        action="store_true",
+        help="Whether the embedding/unembedding weights should be shared.  Only available with torchao kernels.",
     )
     parser.add_argument(
         "--pt2e_quantize",
@@ -192,8 +191,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=f"{ckpt_dir}/params/demo_rand_params.pth",
-        help="checkpoint path",
+        required=False,
+        help="Path to the checkpoint .pth file. When not provided, the model will be initialized with random weights.",
     )
 
     parser.add_argument(
@@ -274,8 +273,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-p",
         "--params",
-        default=f"{ckpt_dir}/params/demo_config.json",
-        help="config.json",
+        required=False,
+        help="Config file for model parameters. When not provided, the model will fallback on default values defined in examples/models/llama/model_args.py.",
     )
     parser.add_argument(
         "--optimized_rotation_path",
@@ -323,8 +322,8 @@ def build_args_parser() -> argparse.ArgumentParser:
         default="fp32",
         type=str,
         choices=["fp32", "fp16", "bf16"],
-        help="Override the dtype of the model (default is the checkpoint dtype)."
-        "Options: fp32, fp16, bf16. Please be aware that only some backends support fp16 and bf16.",
+        help="Provide the dtype of the model. This must match up with the supported dtypes of the backends that you are using."
+        "Please be aware that only some backends support fp16 and bf16.",
     )
 
     parser.add_argument(
@@ -562,46 +561,72 @@ def _prepare_for_llama_export(args) -> LLMEdgeManager:
     checkpoint_dir = (
         canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
     )
-    params_path = canonical_path(args.params)
+    params_path = canonical_path(args.params) if args.params else None
     output_dir_path = canonical_path(args.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
-    # dtype override
-    if args.dtype_override is not None:
-        dtype_override = DType[args.dtype_override]
-    elif args.quantization_mode in ["8da4w", "8da4w-gptq"]:
-        dtype_override = DType["fp16"]
-    else:
-        dtype_override = None
+    # Convert dtype override string arg to actual type.
+    dtype_override = DType[args.dtype_override]
 
-    return (
-        _load_llama_model(
-            args.model,
-            checkpoint=checkpoint_path,
-            checkpoint_dir=checkpoint_dir,
-            params_path=params_path,
-            use_kv_cache=args.use_kv_cache,
-            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
-            generate_full_logits=args.generate_full_logits,
-            weight_type=weight_type,
-            enable_dynamic_shape=args.enable_dynamic_shape,
-            calibration_tasks=args.calibration_tasks,
-            calibration_limit=args.calibration_limit,
-            calibration_seq_length=args.calibration_seq_length,
-            calibration_data=args.calibration_data,
-            tokenizer_path=args.tokenizer_path,
-            verbose=args.verbose,
-            max_seq_len=args.max_seq_length,
-            max_context_len=args.max_context_length,
-            input_prune_map_path=args.input_prune_map,
-            output_prune_map_path=args.output_prune_map,
-            metadata_str=args.metadata,
+    edge_manager = _load_llama_model(
+        args.model,
+        checkpoint=checkpoint_path,
+        checkpoint_dir=checkpoint_dir,
+        params_path=params_path,
+        use_kv_cache=args.use_kv_cache,
+        use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
+        generate_full_logits=args.generate_full_logits,
+        weight_type=weight_type,
+        enable_dynamic_shape=args.enable_dynamic_shape,
+        calibration_tasks=args.calibration_tasks,
+        calibration_limit=args.calibration_limit,
+        calibration_seq_length=args.calibration_seq_length,
+        calibration_data=args.calibration_data,
+        tokenizer_path=args.tokenizer_path,
+        verbose=args.verbose,
+        max_seq_len=args.max_seq_length,
+        max_context_len=args.max_context_length,
+        input_prune_map_path=args.input_prune_map,
+        output_prune_map_path=args.output_prune_map,
+        metadata_str=args.metadata,
+        dtype_override=dtype_override,
+        args=args,
+    )
+
+    # At this point, the model is loaded in the default fp32.
+
+    # Checkpoint dtype should be lower or equal precision to the dtype override.
+    checkpoint_dtype = edge_manager.model.checkpoint_dtype
+    if not (
+        checkpoint_dtype == dtype_override.to_torch_dtype()
+        or (
+            checkpoint_dtype == torch.float16
+            and dtype_override.to_torch_dtype() == torch.float32
+        )
+        or (
+            checkpoint_dtype == torch.bfloat16
+            and dtype_override.to_torch_dtype() == torch.float32
+        )
+    ):
+        logging.warning(
+            f"Checkpoint dtype {checkpoint_dtype} precision is higher than dtype override {dtype_override.to_torch_dtype()}."
+        )
+
+    edge_manager.model = edge_manager.model.to(dtype=dtype_override.to_torch_dtype())
+
+    # We want to quantize (in the source transforms) the weights of the model
+    # in the checkpoint dtype.
+    logging.info(f"Checkpoint dtype: {edge_manager.model.checkpoint_dtype}")
+    edge_manager = edge_manager.set_output_dir(output_dir_path).source_transform(
+        _get_source_transforms(
+            modelname=args.model,
             dtype_override=dtype_override,
+            checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),
             args=args,
         )
-        .set_output_dir(output_dir_path)
-        .source_transform(_get_source_transforms(args.model, dtype_override, args))
     )
+
+    return edge_manager
 
 
 def get_quantizer_and_quant_params(args):
@@ -664,6 +689,15 @@ def _validate_args(args):
 
     if args.num_sharding > 0 and not args.qnn:
         raise ValueError("Model shard is only supported with qnn backend now.")
+
+    if args.use_shared_embedding:
+        if not (
+            args.embedding_quantize is not None
+            and args.embedding_quantize.startswith("torchao:")
+        ):
+            raise ValueError(
+                "Shared embedding is only supported with torchao quantization."
+            )
 
     if (
         args.quantization_mode is not None
@@ -785,8 +819,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
                 builder_exported_to_edge.metadata["get_n_layers"],
                 shares=args.num_sharding,
             )
-
-        from functools import partial
 
         # pyre-ignore
         from executorch.backends.qualcomm.quantizer.custom_annotation import (
@@ -961,7 +993,7 @@ def _load_llama_model(
     *,
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
-    params_path: str,
+    params_path: Optional[str] = None,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     generate_full_logits: bool = False,
@@ -988,13 +1020,6 @@ def _load_llama_model(
         An instance of LLMEdgeManager which contains the eager mode model.
     """
 
-    assert (
-        checkpoint or checkpoint_dir
-    ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
-    logging.info(
-        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
-    )
-
     if modelname in EXECUTORCH_DEFINED_MODELS:
         module_name = "llama"
         model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
@@ -1006,6 +1031,8 @@ def _load_llama_model(
             raise ValueError(f"{modelname} is not a valid Llama model.")
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
+
+    torch_dtype = dtype_override.to_torch_dtype() if dtype_override else None
 
     model, example_inputs, example_kwarg_inputs, dynamic_shapes = (
         EagerModelFactory.create_model(
@@ -1023,41 +1050,16 @@ def _load_llama_model(
             enable_dynamic_shape=enable_dynamic_shape,
             input_prune_map_path=input_prune_map_path,
             output_prune_map_path=output_prune_map_path,
+            dtype=torch_dtype,
             args=args,
         )
     )
-    if dtype_override:
-        assert isinstance(
-            dtype_override, DType
-        ), "Override dtype needs to be of type <DType>"
-        torch_dtype = dtype_override.to_torch_dtype()
-        logging.info(f"model.to {torch_dtype}")
-        model = model.to(dtype=torch_dtype)
-        dtype = dtype_override
-    else:
-        state_dict = model.state_dict()
-        dtype = state_dict[next(iter(state_dict))].dtype
-        assert dtype in [
-            torch.bfloat16,
-            torch.float16,
-            torch.float32,
-        ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
-        logging.info(f"Loaded model with dtype={dtype}")
-
-        if dtype == torch.bfloat16:
-            dtype = DType.bf16
-        elif dtype == torch.float16:
-            dtype = DType.fp16
-        elif dtype == torch.float32:
-            dtype = DType.fp32
-        else:
-            raise ValueError(f"Unsupported dtype {dtype}")
 
     return LLMEdgeManager(
         model=model,
         modelname=modelname,
         max_seq_len=model.max_seq_len,
-        dtype=dtype,
+        dtype=dtype_override,
         use_kv_cache=use_kv_cache,
         generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
@@ -1094,8 +1096,31 @@ def _load_llama_model(
 
 
 def _get_source_transforms(  # noqa
-    modelname: str, dtype_override: Optional[DType], args
+    modelname: str,
+    dtype_override: DType,
+    *,
+    checkpoint_dtype: Optional[DType] = None,
+    args,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
+    """
+    Return a list of functions that transform a graph.
+
+    Args:
+        modelname: The name of the model.
+        dtype_override: The dtype to use for the model.
+        checkpoint_dtype: The dtype of the checkpoint. At the moment, if this is specified,
+            it means that you want to run quantize transformations on the weights represented
+            in their original dtype, while the overall dtype of the model maybe something
+            different. If not specified, defaults to dtype_override.
+        args: The arguments passed to the script.
+
+    Returns:
+        A list of transformation functions.
+    """
+
+    if not checkpoint_dtype:
+        checkpoint_dtype = dtype_override
+
     transforms = []
 
     if args.use_spin_quant:
@@ -1112,6 +1137,21 @@ def _get_source_transforms(  # noqa
 
             transforms.append(inject_fast_hadamard_transform_native_for_spin_quant)
 
+    if args.embedding_quantize:
+        """
+        When this option is selected, it finds all embedding layers and transforms
+        into quantized embedding equivalent module.
+
+        There are cases where the checkpoint is already quantized, for example
+        on use_spin_quant is enabled. In that case, it will do the appropriate
+        transformations based on the given checkpoint first. In those cases,
+        this wil be a no-op.
+        """
+        modelname = f"{modelname}_e"
+        transforms.append(get_quant_embedding_transform(args, checkpoint_dtype))
+
+    # quantization_mode should be applied after embedding_quantize
+    # to support shared_embedding
     if args.quantization_mode:
         """
         When this option is selected, it finds all linear layers and transforms
@@ -1128,21 +1168,12 @@ def _get_source_transforms(  # noqa
         """
         modelname = f"{modelname}_q"
         transforms.append(
-            get_quant_weight_transform(args, dtype_override, verbose_export())
+            get_quant_weight_transform(
+                args=args,
+                computation_dtype=dtype_override,
+                checkpoint_dtype=checkpoint_dtype,
+            )
         )
-
-    if args.embedding_quantize:
-        """
-        When this option is selected, it finds all embedding layers and transforms
-        into quantized embedding equivalent module.
-
-        There are cases where the checkpoint is already quantized, for example
-        on use_spin_quant is enabled. In that case, it will do the appropriate
-        transformations based on the given checkpoint first. In those cases,
-        this wil be a no-op.
-        """
-        modelname = f"{modelname}_e"
-        transforms.append(get_quant_embedding_transform(args))
 
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
@@ -1209,7 +1240,7 @@ def get_llama_model(args):
     _validate_args(args)
     e_mgr = _prepare_for_llama_export(args)
     model = (
-        e_mgr.model.eval().to(device="cuda")  # pyre-ignore
+        e_mgr.model.eval().to(device="cuda")
         if torch.cuda.is_available()
         else e_mgr.model.eval().to(device="cpu")
     )

@@ -71,7 +71,7 @@ def main():
             "model-00002-of-00002.safetensors",
         ],
         output_dir=".",
-        model_type="PHI3_MINI",
+        model_type="PHI4",
     )
 
     print("Loading checkpoint...")

@@ -922,14 +922,20 @@ def get_split_with_sizes_inputs():
     Test = namedtuple("VkSliceTest", ["self", "sizes", "dim"])
     test_cases = [
         # Split on Width
+        Test(self=(S1, 7, 10, 11), sizes=[1, 3, 2, 5], dim=3),
         Test(self=(S1, 7, 10, 10), sizes=[1, 2, 3, 4], dim=3),
+        Test(self=(7, 10, 11), sizes=[1, 3, 2, 5], dim=2),
         Test(self=(7, 10, 10), sizes=[1, 2, 3, 4], dim=2),
+        Test(self=(7, 10, 11), sizes=[3, 8], dim=2),
         Test(self=(7, 10, 10), sizes=[1, 9], dim=2),
         Test(self=(10, 10), sizes=[1, 9], dim=1),
         Test(self=(10,), sizes=[1, 9], dim=0),
         # Split on Height
+        Test(self=(S1, 7, 11, 10), sizes=[1, 3, 2, 5], dim=2),
         Test(self=(S1, 7, 10, 10), sizes=[1, 2, 3, 4], dim=2),
+        Test(self=(7, 11, 10), sizes=[1, 3, 2, 5], dim=1),
         Test(self=(7, 10, 10), sizes=[1, 2, 3, 4], dim=1),
+        Test(self=(7, 11, 11), sizes=[3, 8], dim=1),
         Test(self=(7, 10, 10), sizes=[10], dim=1),
         Test(self=(7, 6, 10), sizes=[1, 1, 1, 1, 1, 1], dim=1),
         Test(self=(10, 10), sizes=[1, 2, 3, 4], dim=0),
@@ -937,8 +943,11 @@ def get_split_with_sizes_inputs():
         Test(self=(10, 7, 10, 10), sizes=[3, 6, 1], dim=0),
         Test(self=(10, 7, 10, 10), sizes=[10], dim=0),
         # Split on Channel
+        Test(self=(7, 13, 4, 8), sizes=[3, 5, 2, 3], dim=1),
         Test(self=(7, 13, 4, 8), sizes=[3, 6, 1, 3], dim=1),
+        Test(self=(7, 13, 4, 8), sizes=[3, 2, 2, 5, 1], dim=1),
         Test(self=(7, 13, 4, 8), sizes=[3, 3, 3, 3, 1], dim=1),
+        Test(self=(13, 4, 8), sizes=[3, 5, 2, 1, 2], dim=0),
         Test(self=(13, 4, 8), sizes=[3, 3, 3, 3, 1], dim=0),
         Test(self=(13, 4, 8), sizes=[2, 9, 2], dim=0),
         Test(self=(13, 4, 8), sizes=[13], dim=0),
@@ -946,6 +955,8 @@ def get_split_with_sizes_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
@@ -997,6 +1008,8 @@ def get_split_tensor_inputs():
     )
 
     test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"

@@ -124,6 +124,7 @@ PRs are always welcome to help improve the codebase in a comprehensive manner. B
     - [shewu-quic](https://github.com/shewu-quic)
     - [chunit-quic](https://github.com/chunit-quic)
     - [winskuo-quic](https://github.com/winskuo-quic)
+    - [DannyYuyang-quic](https://github.com/DannyYuyang-quic)
     - [haowhsu-quic](https://github.com/haowhsu-quic)
 
 Thanks again for your contribution!
