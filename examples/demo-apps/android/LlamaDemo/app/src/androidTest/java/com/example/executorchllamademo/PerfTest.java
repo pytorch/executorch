@@ -20,11 +20,11 @@ import java.util.Arrays;
 import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.pytorch.executorch.LlamaCallback;
-import org.pytorch.executorch.LlamaModule;
+import org.pytorch.executorch.extension.llm.LlmCallback;
+import org.pytorch.executorch.extension.llm.LlmModule;
 
 @RunWith(AndroidJUnit4.class)
-public class PerfTest implements LlamaCallback {
+public class PerfTest implements LlmCallback {
 
   private static final String RESOURCE_PATH = "/data/local/tmp/llama/";
   private static final String TOKENIZER_BIN = "tokenizer.bin";
@@ -41,7 +41,7 @@ public class PerfTest implements LlamaCallback {
         .filter(file -> file.getName().endsWith(".pte"))
         .forEach(
             model -> {
-              LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
+              LlmModule mModule = new LlmModule(model.getPath(), tokenizerPath, 0.8f);
               // Print the model name because there might be more than one of them
               report("ModelName", model.getName());
 

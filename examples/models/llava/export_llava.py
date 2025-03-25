@@ -98,9 +98,19 @@ def export_text_model(llava, embeddings, dynamic_shapes):
     dtype_override = DType.fp32
     parser = build_args_parser()
     args = parser.parse_args(
-        ["-X", "-qmode", "8da4w", "--group_size", "128", "--embedding-quantize", "4,32"]
+        [
+            "-p",
+            "params.json",
+            "-X",
+            "-qmode",
+            "8da4w",
+            "--group_size",
+            "128",
+            "--embedding-quantize",
+            "4,32",
+        ]
     )
-    quant_transform = get_quant_weight_transform(args, dtype_override, False)
+    quant_transform = get_quant_weight_transform(args, dtype_override)
     _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:

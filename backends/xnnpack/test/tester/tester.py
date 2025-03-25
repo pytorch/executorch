@@ -15,6 +15,9 @@ from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
+)
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
@@ -177,6 +180,8 @@ class Quantize(Stage):
                 prepared(*inputs)
 
         converted = convert_pt2e(prepared)
+        DuplicateDynamicQuantChainPass()(converted)
+
         self.converted_graph = converted
 
     @property
@@ -306,9 +311,8 @@ class ToEdgeTransformAndLower(Stage):
         self.edge_dialect_program = None
 
     def run(self, artifact: ExportedProgram, inputs=None) -> None:
-        artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
-            artifact_to_run,
+            artifact,
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
         )
