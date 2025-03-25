@@ -205,6 +205,7 @@ class SimpleADB:
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
+                    "chmod +x ./qnn_executor_runner &&",
                     f"./qnn_executor_runner {qnn_executor_runner_args}",
                 ]
             )
@@ -272,6 +273,7 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
 def make_quantizer(
     quant_dtype: Optional[QuantDtype] = QuantDtype.use_8a8w,
     custom_annotations=(),
+    per_block_conv=False,
     per_channel_conv=True,
     per_channel_linear=False,
     act_observer=MovingAverageMinMaxObserver,
@@ -279,6 +281,7 @@ def make_quantizer(
 ):
     quantizer = QnnQuantizer()
     quantizer.add_custom_quant_annotations(custom_annotations)
+    quantizer.set_per_block_conv_quant(per_block_conv)
     quantizer.set_per_channel_conv_quant(per_channel_conv)
     quantizer.set_per_channel_linear_quant(per_channel_linear)
     quantizer.set_quant_config(quant_dtype, is_qat, act_observer)
