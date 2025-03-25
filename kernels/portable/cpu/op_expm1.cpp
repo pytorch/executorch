@@ -15,9 +15,8 @@ namespace executor {
 namespace native {
 
 Tensor& expm1_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  static constexpr const char op_name[] = "expm1.out";
-  return internal::unary_ufunc_realhbbf16_to_floathbf16<op_name>(
-      [](auto x) { return std::expm1(x); }, ctx, in, out);
+  return internal::unary_ufunc_realhbbf16_to_floathbf16(
+      std::expm1, ctx, in, out);
 }
 
 } // namespace native

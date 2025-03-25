@@ -194,6 +194,22 @@ class MethodMeta final {
   bool uses_backend(const char* backend_name) const;
 
   /**
+   * Get the number of backends used in this method.
+   *
+   * @returns The total number of backend names.
+   */
+  size_t num_backends() const;
+
+  /**
+   * Get the backend name at the given index.
+   *
+   * @param[in] index The index of the backend name.
+   * @returns A Result wrapping the backend name as a C-style string
+   * on success, or an error if the index is invalid.
+   */
+  Result<const char*> get_backend_name(size_t index) const;
+
+  /**
    * Get the number of instructions in this method.
    *
    * @returns The number of instructions.
