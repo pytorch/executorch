@@ -23,7 +23,7 @@ using namespace runtime;
  * @param number The NSNumber instance whose scalar type is to be deduced.
  * @return The corresponding ScalarType.
  */
-static inline ScalarType deduceScalarType(NSNumber *number) {
+static inline ScalarType deduceType(NSNumber *number) {
   auto type = [number objCType][0];
   type = (type >= 'A' && type <= 'Z') ? type + ('a' - 'A') : type;
   if (type == 'c') {
