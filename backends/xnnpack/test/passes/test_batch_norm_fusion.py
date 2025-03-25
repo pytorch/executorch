@@ -18,6 +18,9 @@ class TestBatchNormFusion(unittest.TestCase):
     PassStage = RunPasses([FuseBatchNormWithConvPass])
     bn_name = "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
 
+    def setUp(self):
+        torch._dynamo.reset()
+
     class ModelConvBN(torch.nn.Module):
         def __init__(
             self,

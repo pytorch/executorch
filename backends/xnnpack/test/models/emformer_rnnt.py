@@ -13,6 +13,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestEmformerModel(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class EmformerRnnt(torch.nn.Module):
         def __init__(self):
             super().__init__()
