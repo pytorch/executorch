@@ -13,6 +13,9 @@ from executorch.backends.xnnpack.test.tester import Quantize, Tester
 
 
 class TestResNet18(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     inputs = (torch.randn(1, 3, 224, 224),)
     dynamic_shapes = (
         {

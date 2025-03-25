@@ -170,6 +170,9 @@ class Conv2dPermute(torch.nn.Module):
 
 
 class TestConv2d(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     def _test(
         self,
         m: torch.nn.Module,
