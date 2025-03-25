@@ -9,7 +9,6 @@
 apple_library(
   name = "ExecuTorch",
   modular = True,
-  enable_library_evolution = False,
   srcs = glob([
     "ExecuTorch/Exported/*.m",
     "ExecuTorch/Exported/*.mm",
@@ -51,7 +50,6 @@ apple_resource(
 
 apple_test(
   name = "ExecuTorchTests",
-  enable_library_evolution = False,
   srcs = glob([
     "ExecuTorch/__tests__/*.swift",
   ]),
