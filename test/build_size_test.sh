@@ -40,6 +40,15 @@ test_cmake_size_test() {
 
     echo 'ExecuTorch with portable ops binary size, unstripped:'
     ls -al cmake-out/test/size_test_all_ops
+
+    strip cmake-out/test/size_test
+    strip cmake-out/test/size_test_all_ops
+
+    echo 'ExecuTorch with no ops binary size, stripped:'
+    ls -al cmake-out/test/size_test
+
+    echo 'ExecuTorch with portable ops binary size, stripped:'
+    ls -al cmake-out/test/size_test_all_ops
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]]; then
