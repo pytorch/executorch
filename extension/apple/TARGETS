@@ -9,7 +9,7 @@
 apple_library(
   name = "ExecuTorch",
   modular = True,
-  enable_library_evolution = false,
+  enable_library_evolution = False,
   srcs = glob([
     "ExecuTorch/Exported/*.m",
     "ExecuTorch/Exported/*.mm",
