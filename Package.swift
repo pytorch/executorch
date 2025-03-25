@@ -94,6 +94,7 @@ let package = Package(
         .copy("resources/add.pte")
       ],
       linkerSettings: [
+        .linkedLibrary("c++"),
         .unsafeFlags([
           "-Xlinker", "-force_load",
           "-Xlinker", "cmake-out/kernels_portable.xcframework/macos-arm64/libkernels_portable_macos.a",
