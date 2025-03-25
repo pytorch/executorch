@@ -95,7 +95,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_2",
     "static_llama",
     "qwen2_5",
-    "phi-4-mini",
+    "phi_4_mini",
     "smollm2",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
@@ -697,19 +697,6 @@ def _validate_args(args):
         ):
             raise ValueError(
                 "Shared embedding is only supported with torchao quantization."
-            )
-
-    if (
-        args.quantization_mode is not None
-        and args.quantization_mode.startswith("torchao:")
-    ) or (
-        args.embedding_quantize is not None
-        and args.embedding_quantize.startswith("torchao:")
-    ):
-        if args.enable_dynamic_shape:
-            raise ValueError(
-                "Dynamic shape is not currently supported with torchao ops. Please use --disable_dynamic_shape."
-                "If you need this feature, please file an issue."
             )
 
 
