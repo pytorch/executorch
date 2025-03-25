@@ -138,8 +138,10 @@ def quantize(  # noqa C901
             raise Exception("For 8da4w quantization, group size must be specified.")
 
         from torchao.quantization import int8_dynamic_activation_int4_weight, quantize_
+        from torchao.utils import unwrap_tensor_subclass
 
         quantize_(model, int8_dynamic_activation_int4_weight(group_size=group_size))
+        model = unwrap_tensor_subclass(model)
 
         # TODO: deal with checkpoint / computation dtype decoupling.
 
