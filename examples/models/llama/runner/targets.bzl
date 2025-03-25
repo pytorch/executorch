@@ -48,7 +48,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/examples/models/llama/tokenizer:tiktoken",
-                "//executorch/extension/llm/tokenizer:bpe_tokenizer",
+                "//pytorch/tokenizers:llama2c_tokenizer",
             ] + (_get_operator_lib(aten)) + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests

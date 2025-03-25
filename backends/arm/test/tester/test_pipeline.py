@@ -7,8 +7,16 @@ import logging
 from typing import Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 import torch
+
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    EthosUQuantizer,
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
+
+from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
@@ -263,11 +271,20 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
         tosa_version: str = "TOSA-0.80+BI",
+        symmetric_io_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
     ):
         compile_spec = common.get_tosa_compile_spec(
             tosa_version, custom_path=custom_path
+        )
+        quant_stage = (
+            Quantize(
+                TOSAQuantizer(compile_spec).set_io(get_symmetric_quantization_config()),
+                get_symmetric_quantization_config(),
+            )
+            if symmetric_io_quantization
+            else None
         )
         super().__init__(
             module,
@@ -277,7 +294,8 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
             exir_op,
             use_to_edge_transform_and_lower,
         )
-        self.add_stage(self.tester.quantize, pos=0)
+        self.add_stage(self.tester.quantize, quant_stage, pos=0)
+
         self.add_stage_after(
             "quantize",
             self.tester.check,
@@ -385,10 +403,21 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
         aten_ops: str | List[str],
         exir_ops: Optional[str | List[str]] = None,
         run_on_fvp: bool = False,
+        symmetric_io_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = False,
         custom_path: str = None,
     ):
         compile_spec = common.get_u55_compile_spec(custom_path=custom_path)
+        quant_stage = (
+            Quantize(
+                EthosUQuantizer(compile_spec).set_io(
+                    get_symmetric_quantization_config()
+                ),
+                get_symmetric_quantization_config(),
+            )
+            if symmetric_io_quantization
+            else None
+        )
         super().__init__(
             module,
             test_data,
@@ -397,7 +426,9 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
             exir_ops,
             use_to_edge_transform_and_lower,
         )
-        self.add_stage(self.tester.quantize, pos=0)
+
+        self.add_stage(self.tester.quantize, quant_stage, pos=0)
+
         self.add_stage_after(
             "quantize",
             self.tester.check,
@@ -455,10 +486,21 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
         aten_ops: str | List[str],
         exir_ops: str | List[str] = None,
         run_on_fvp: bool = False,
+        symmetric_io_quantization: bool = False,
         use_to_edge_transform_and_lower: bool = False,
         custom_path: str = None,
     ):
         compile_spec = common.get_u85_compile_spec(custom_path=custom_path)
+        quant_stage = (
+            Quantize(
+                EthosUQuantizer(compile_spec).set_io(
+                    get_symmetric_quantization_config()
+                ),
+                get_symmetric_quantization_config(),
+            )
+            if symmetric_io_quantization
+            else None
+        )
         super().__init__(
             module,
             test_data,
@@ -467,7 +509,9 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
             exir_ops,
             use_to_edge_transform_and_lower,
         )
-        self.add_stage(self.tester.quantize, pos=0)
+
+        self.add_stage(self.tester.quantize, quant_stage, pos=0)
+
         self.add_stage_after(
             "quantize",
             self.tester.check,
@@ -578,6 +622,54 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
         self.add_stage(self.tester.run_method_and_compare_outputs)
+
+
+class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
+    """
+    Runs transform_for_annotation_pipeline passes directly on an exported program and checks output.
+
+    Attributes:
+        module: The module which the pipeline is applied to.
+        test_data: Data used for testing the module.
+        tosa_version: The TOSA-version which to test for.
+
+        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        tosa_version: str,
+        custom_path: str = None,
+    ):
+        compile_spec = common.get_tosa_compile_spec(
+            tosa_version, custom_path=custom_path
+        )
+        super().__init__(
+            module,
+            test_data,
+            None,
+            compile_spec,
+            None,
+            use_to_edge_transform_and_lower=True,
+        )
+        self.add_stage_after(
+            "export", self.tester.run_transform_for_annotation_pipeline
+        )
+
+        # Delete most of the pipeline
+        self.pop_stage("check_not.exir")
+        self.pop_stage("check_count.exir")
+        self.pop_stage("to_executorch")
+        self.pop_stage("to_edge_transform_and_lower")
+        self.pop_stage("check.aten")
+        self.add_stage(
+            self.tester.run_method_and_compare_outputs,
+            inputs=test_data,
+            run_eager_mode=True,
+        )
 
 
 class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):

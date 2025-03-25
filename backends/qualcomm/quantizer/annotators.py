@@ -680,6 +680,11 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         )
 
 
+@register_annotator([torch.ops.aten.bitwise_or.Tensor, torch.ops.aten.__or__.Tensor])
+def annotate_bitwise_or(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.pow.Tensor_Tensor])
 def annotate_pow(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -895,6 +900,12 @@ def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None
     if _is_annotated([node]):
         return
 
+    # block quantization
+    if quantization_config.block_size is not None:
+        quantization_config.weight.observer_or_fake_quant_ctr.p.keywords.update(
+            {"block_size": quantization_config.block_size}
+        )
+
     input_qspec_map = {}
     input_act = node.args[0]
     assert isinstance(input_act, Node)
@@ -925,6 +936,7 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
     act_node = node.args[0]
     weight_node = node.args[1]
     bias_node = None
+
     if len(node.args) > 2:
         bias_node = node.args[2]
 

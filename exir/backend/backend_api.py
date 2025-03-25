@@ -120,6 +120,7 @@ def _(
                 backend_id=backend_id,
                 processed_bytes=preprocess_result.processed_bytes,
                 compile_specs=compile_specs,
+                named_data_store_output=preprocess_result.data_store_output,
             )
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
@@ -399,6 +400,11 @@ def _(
         partitioner_result,
         tagged_exported_program,
     )
+
+    # Partitioner added delegation tags to the graph module nodes,
+    # we make sure to remove them after we finished partition_and_lower
+    for node in tagged_graph_module.graph.nodes:
+        node.meta.pop("delegation_tag", None)
 
     return ExportedProgram(
         root=tagged_graph_module,

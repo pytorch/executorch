@@ -16,7 +16,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -24,8 +24,8 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations)
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   # Merge optimized and portable definitions, taking optimized where available.
@@ -47,12 +47,17 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   message("Generated files ${gen_command_sources}")
 
   # optimized_native_cpu_ops_lib: Register optimized op kernels into the runtime
+  if(TARGET optimized_portable_kernels)
+    set(_optimized_native_cpu_ops_lib_portable_kernels_lib optimized_portable_kernels)
+  else()
+    set(_optimized_native_cpu_ops_lib_portable_kernels_lib portable_kernels)
+  endif()
   gen_operators_lib(
     LIB_NAME
     "optimized_native_cpu_ops_lib"
     KERNEL_LIBS
-    portable_kernels
     optimized_kernels
+    ${_optimized_native_cpu_ops_lib_portable_kernels_lib}
     DEPS
     executorch
   )
