@@ -28,6 +28,9 @@ from executorch.backends.vulkan._passes.remove_asserts import remove_asserts
 from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord
+from executorch.examples.models.llama.hf_download import (
+    download_and_convert_hf_checkpoint,
+)
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
@@ -99,6 +102,11 @@ EXECUTORCH_DEFINED_MODELS = [
     "smollm2",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
+HUGGING_FACE_REPO_IDS = {
+    "qwen2_5": "Qwen/Qwen2.5-1.5B",
+    "phi_4_mini": "microsoft/Phi-4-mini-instruct",
+    "smollm2": "HuggingFaceTB/SmolLM-135M",
+}
 
 
 class WeightType(Enum):
@@ -526,6 +534,22 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
 
 def export_llama(args) -> str:
+    # If a checkpoint isn't provided for an HF OSS model, download and convert the
+    # weights first.
+    if not args.checkpoint and args.model in HUGGING_FACE_REPO_IDS:
+        repo_id = HUGGING_FACE_REPO_IDS[args.model]
+        if args.model == "qwen2_5":
+            from executorch.examples.models.qwen2_5 import convert_weights
+        elif args.model == "phi_4_mini":
+            from executorch.examples.models.phi_4_mini import convert_weights
+        elif args.model == "smollm2":
+            from executorch.examples.models.smollm2 import convert_weights
+        else:
+            raise ValueError(
+                f"Converting weights to meta format for {args.model} is not yet supported"
+            )
+        args.checkpoint = download_and_convert_hf_checkpoint(repo_id, convert_weights)
+
     if args.profile_path is not None:
         try:
             from executorch.util.python_profiler import CProfilerFlameGraph
