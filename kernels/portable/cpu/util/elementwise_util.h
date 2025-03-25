@@ -119,7 +119,6 @@ inline void apply_elementwise_fn(
         }
       });
 }
-} // namespace internal
 
 template <typename CTYPE_COMPUTE, const char* op_name, typename Op>
 inline void apply_unitensor_elementwise_fn(
@@ -206,6 +205,14 @@ inline ScalarType get_compute_type(ScalarType& common_type) {
   }
   return compute_type;
 }
+} // namespace internal
+
+// DEPRECATED: these APIs should not have been stabilized for external
+// use as they are undergoing active development.
+using internal::apply_bitensor_elementwise_fn;
+using internal::apply_tritensor_elementwise_fn;
+using internal::apply_unitensor_elementwise_fn;
+using internal::get_compute_type;
 
 } // namespace utils
 } // namespace native
