@@ -2,144 +2,101 @@
 
 Welcome to the ExecuTorch Documentation
 =======================================
-
-.. raw:: html
-   <div>
-    <img src="_static/img/et-logo.png" alt="Logo" width="200">
-    <p><strong>ExecuTorch</strong> is PyTorch's solution to training and inference on the Edge. </p>
-    <h3>Key Value Propositions</h3>
-      <ul>
-        <li><strong>Portability:</strong> Compatibility with a wide variety of computing platforms, from high-end mobile phones to highly constrained embedded systems and microcontrollers.</li>
-        <li><strong>Productivity:</strong> Enabling developers to use the same toolchains and Developer Tools from PyTorch model authoring and conversion, to debugging and deployment to a wide variety of platforms.</li>
-        <li><strong>Performance:</strong> Providing end users with a seamless and high-performance experience due to a lightweight runtime and utilizing full hardware capabilities such as CPUs, NPUs, and DSPs.</li>
-      </ul>
-   </div>
-   <div>
-   <h3>Support for:</h3>
-   <div><strong>Strong Model Support</strong> LLMs (Large Language Models), CV (Comupter Vision), ASR (Automiatic Speaech Recognition), TTS (Text To Speech)</div>
-   <div><strong>All Major Platforms</strong> Android, Mac, Linux, Windows</div>
-   <div><strong>Rich Acceration Support</strong> Apple, Arm, Cadence, MediaTek, Qualcomm, Vulkan, XNNPACK</div>
-   </div>
-   <hr style="margin: 5px;"/>
-   <div class="documentation-navigation">
-      <div>Introduction</div>
-      <ul>
-         <li><a href="intro-overview">Overview</a></li>
-         <li><a href="intro-how-it-works">How it Works</a></li>
-         <li><a href="getting-started-architecture">Getting Started with Architecture</a></li>
-         <li><a href="concepts">Concepts</a></li>
-      </ul>
-         <div>Usage</div>
-      <ul>
-         <li><a href="getting-started">Getting Started</a></li>
-         <li><a href="using-executorch-export">Using Executorch Export</a></li>
-         <li><a href="using-executorch-android">Using Executorch on Android</a></li>
-         <li><a href="using-executorch-ios">Using Executorch on iOS</a></li>
-         <li><a href="using-executorch-cpp">Using Executorch with C++</a></li>
-         <li><a href="using-executorch-runtime-integration">Runtime Integration</a></li>
-         <li><a href="using-executorch-troubleshooting">Troubleshooting</a></li>
-         <li><a href="using-executorch-building-from-source">Building from Source</a></li>
-         <li><a href="using-executorch-faqs">FAQs</a></li>
-      </ul>
-      <div>Examples</div>
-      <ul>
-         <li><a href="demo-apps-android.md">Android Demo Apps</a></li>
-         <li><a href="demo-apps-ios.md">iOS Demo Apps</a></li>
-      </ul>
-      <div>Backends</div>
-      <ul>
-         <li><a href="backends-overview">Overview</a></li>
-         <li><a href="backends-xnnpack">XNNPACK</a></li>
-         <li><a href="backends-coreml">Core ML</a></li>
-         <li><a href="backends-mps">MPS</a></li>
-         <li><a href="backends-vulkan">Vulkan</a></li>
-         <li><a href="backends-arm-ethos-u">ARM Ethos-U</a></li>
-         <li><a href="backends-qualcomm">Qualcomm</a></li>
-         <li><a href="backends-mediatek">MediaTek</a></li>
-         <li><a href="backends-cadence">Cadence</a></li>
-      </ul>
-      <div>Tutorials</div>
-      <ul>
-         <!-- No items listed -->
-      </ul>
-      <div>Developer Tools</div>
-      <ul>
-         <li><a href="devtools-overview">Overview</a></li>
-         <li><a href="bundled-io">Bundled IO</a></li>
-         <li><a href="etrecord">ETRecord</a></li>
-         <li><a href="etdump">ETDump</a></li>
-         <li><a href="runtime-profiling">Runtime Profiling</a></li>
-         <li><a href="model-debugging">Model Debugging</a></li>
-         <li><a href="model-inspector">Model Inspector</a></li>
-         <li><a href="memory-planning-inspection">Memory Planning Inspection</a></li>
-         <li><a href="delegate-debugging">Delegate Debugging</a></li>
-         <li><a href="devtools-tutorial">Tutorial</a></li>
-      </ul>
-      <div>Runtime</div>
-      <ul>
-         <li><a href="runtime-overview">Overview</a></li>
-         <li><a href="extension-module">Extension Module</a></li>
-         <li><a href="extension-tensor">Extension Tensor</a></li>
-         <li><a href="running-a-model-cpp-tutorial">Running a Model (C++ Tutorial)</a></li>
-         <li><a href="runtime-backend-delegate-implementation-and-linking">Backend Delegate Implementation and Linking</a></li>
-         <li><a href="runtime-platform-abstraction-layer">Platform Abstraction Layer</a></li>
-      </ul>
-      <div>Portable C++ Programming</div>
-      <ul>
-         <li><a href="pte-file-format">PTE File Format</a></li>
-      </ul>
-      <div>API Reference</div>
-      <ul>
-         <li><a href="export-to-executorch-api-reference">Export to Executorch API Reference</a></li>
-         <li><a href="executorch-runtime-api-reference">Executorch Runtime API Reference</a></li>
-         <li><a href="runtime-python-api-reference">Runtime Python API Reference</a></li>
-         <li><a href="api-life-cycle">API Life Cycle</a></li>
-         <li><a href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
-      </ul>
-      <div>Quantization</div>
-      <ul>
-         <li><a href="quantization-overview">Overview</a></li>
-      </ul>
-      <div>Kernel Library</div>
-      <ul>
-         <li><a href="kernel-library-overview">Overview</a></li>
-         <li><a href="kernel-library-custom-aten-kernel">Custom ATen Kernel</a></li>
-         <li><a href="kernel-library-selective-build">Selective Build</a></li>
-      </ul>
-      <div>Working with LLMs</div>
-      <ul>
-         <li><a href="llm/llama">Llama</a></li>
-         <li><a href="llm/llama-demo-android">Llama on Android</a></li>
-         <li><a href="llm/llama-demo-ios">Llama on iOS</a></li>
-         <li><a href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend">Llama on Android via Qualcomm backend</a></li>
-         <li><a href="llm/getting-started">Intro to LLMs in Executorch</a></li>
-      </ul>
-
-      <div>Backend Development</div>
-      <ul>
-         <li><a href="backend-delegates-integration">Delegates Integration</a></li>
-         <li><a href="backend-delegates-xnnpack-reference">XNNPACK Reference</a></li>
-         <li><a href="backend-delegates-dependencies">Dependencies</a></li>
-         <li><a href="compiler-delegate-and-partitioner">Compiler Delegate and Partitioner</a></li>
-         <li><a href="debug-backend-delegate">Debug Backend Delegate</a></li>
-      </ul>
-      <div>IR Specification</div>
-      <ul>
-         <li><a href="ir-exir">EXIR</a></li>
-         <li><a href="ir-ops-set-definition">Ops Set Definition</a></li>
-      </ul>
-      <div>Compiler Entry Points</div>
-      <ul>
-         <li><a href="compiler-backend-dialect">Backend Dialect</a></li>
-         <li><a href="compiler-custom-compiler-passes">Custom Compiler Passes</a></li>
-         <li><a href="compiler-memory-planning">Memory Planning</a></li>
-      </ul>
-
-      <div>Contributing</div>
-      <ul>
-         <li><a href="contributing">Contributing</a></li>
-      </ul>
-   </div>
+![Logo](_static/img/et-logo.png)
+**ExecuTorch** is PyTorch's solution to training and inference on the Edge.
+### Key Value Propositions
+- **Portability:** Compatibility with a wide variety of computing platforms, from high-end mobile phones to highly constrained embedded systems and microcontrollers.
+- **Productivity:** Enabling developers to use the same toolchains and Developer Tools from PyTorch model authoring and conversion, to debugging and deployment to a wide variety of platforms.
+- **Performance:** Providing end users with a seamless and high-performance experience due to a lightweight runtime and utilizing full hardware capabilities such as CPUs, NPUs, and DSPs.
+### Support for:
+**Strong Model Support** LLMs (Large Language Models), CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text To Speech)
+**All Major Platforms** Android, Mac, Linux, Windows
+**Rich Acceleration Support** Apple, Arm, Cadence, MediaTek, Qualcomm, Vulkan, XNNPACK
+---
+### Documentation Navigation
+#### Introduction
+- [Overview](intro-overview)
+- [How it Works](intro-how-it-works)
+- [Getting Started with Architecture](getting-started-architecture)
+- [Concepts](concepts)
+#### Usage
+- [Getting Started](getting-started)
+- [Using Executorch Export](using-executorch-export)
+- [Using Executorch on Android](using-executorch-android)
+- [Using Executorch on iOS](using-executorch-ios)
+- [Using Executorch with C++](using-executorch-cpp)
+- [Runtime Integration](using-executorch-runtime-integration)
+- [Troubleshooting](using-executorch-troubleshooting)
+- [Building from Source](using-executorch-building-from-source)
+- [FAQs](using-executorch-faqs)
+#### Examples
+- [Android Demo Apps](demo-apps-android.md)
+- [iOS Demo Apps](demo-apps-ios.md)
+#### Backends
+- [Overview](backends-overview)
+- [XNNPACK](backends-xnnpack)
+- [Core ML](backends-coreml)
+- [MPS](backends-mps)
+- [Vulkan](backends-vulkan)
+- [ARM Ethos-U](backends-arm-ethos-u)
+- [Qualcomm](backends-qualcomm)
+- [MediaTek](backends-mediatek)
+- [Cadence](backends-cadence)
+#### Tutorials
+<!-- No items listed -->
+#### Developer Tools
+- [Overview](devtools-overview)
+- [Bundled IO](bundled-io)
+- [ETRecord](etrecord)
+- [ETDump](etdump)
+- [Runtime Profiling](runtime-profiling)
+- [Model Debugging](model-debugging)
+- [Model Inspector](model-inspector)
+- [Memory Planning Inspection](memory-planning-inspection)
+- [Delegate Debugging](delegate-debugging)
+- [Tutorial](devtools-tutorial)
+#### Runtime
+- [Overview](runtime-overview)
+- [Extension Module](extension-module)
+- [Extension Tensor](extension-tensor)
+- [Running a Model (C++ Tutorial)](running-a-model-cpp-tutorial)
+- [Backend Delegate Implementation and Linking](runtime-backend-delegate-implementation-and-linking)
+- [Platform Abstraction Layer](runtime-platform-abstraction-layer)
+#### Portable C++ Programming
+- [PTE File Format](pte-file-format)
+#### API Reference
+- [Export to Executorch API Reference](export-to-executorch-api-reference)
+- [Executorch Runtime API Reference](executorch-runtime-api-reference)
+- [Runtime Python API Reference](runtime-python-api-reference)
+- [API Life Cycle](api-life-cycle)
+- [Javadoc](https://pytorch.org/executorch/main/javadoc/)
+#### Quantization
+- [Overview](quantization-overview)
+#### Kernel Library
+- [Overview](kernel-library-overview)
+- [Custom ATen Kernel](kernel-library-custom-aten-kernel)
+- [Selective Build](kernel-library-selective-build)
+#### Working with LLMs
+- [Llama](llm/llama)
+- [Llama on Android](llm/llama-demo-android)
+- [Llama on iOS](llm/llama-demo-ios)
+- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend)
+- [Intro to LLMs in Executorch](llm/getting-started)
+#### Backend Development
+- [Delegates Integration](backend-delegates-integration)
+- [XNNPACK Reference](backend-delegates-xnnpack-reference)
+- [Dependencies](backend-delegates-dependencies)
+- [Compiler Delegate and Partitioner](compiler-delegate-and-partitioner)
+- [Debug Backend Delegate](debug-backend-delegate)
+#### IR Specification
+- [EXIR](ir-exir)
+- [Ops Set Definition](ir-ops-set-definition)
+#### Compiler Entry Points
+- [Backend Dialect](compiler-backend-dialect)
+- [Custom Compiler Passes](compiler-custom-compiler-passes)
+- [Memory Planning](compiler-memory-planning)
+#### Contributing
+- [Contributing](contributing)
 
 .. toctree::
    :glob:
