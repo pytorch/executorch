@@ -794,9 +794,19 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-        from executorch.backends.qualcomm.utils.utils import _transform, tag_quant_io
+        from executorch.backends.qualcomm._passes.annotate_decomposed import (
+            AnnotateDecomposed,
+        )
+        from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
+        from executorch.backends.qualcomm.utils.utils import (
+            _transform,
+            get_capture_program_passes,
+            tag_quant_io,
+        )
 
-        _transform(builder_exported_to_edge.edge_manager.exported_program())
+        passes_job = get_capture_program_passes()
+        passes_job[AnnotateDecomposed][QCOM_PASS_ACTIVATE_KEY] = True
+        _transform(builder_exported_to_edge.edge_manager.exported_program(), passes_job)
 
         if args.num_sharding > 0:
             model_sharding.split_graph(

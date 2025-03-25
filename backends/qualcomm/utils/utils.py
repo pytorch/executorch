@@ -323,7 +323,7 @@ def canonicalize_program(obj):
     update_spill_fill_size(obj)
 
 
-def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
+def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
     source_decompositions = core_aten_decompositions()
     # The below super ops are supported by QNN
     skip_decompositions = [
@@ -337,10 +337,17 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
         torch.ops.pt2e_quant.quantize_affine.default,
         torch.ops.pt2e_quant.dequantize_affine.default,
         torch.ops.aten._safe_softmax.default,
-        torch.ops.aten.stack.default,  # TODO: Might need to remove this later due to Mimi. QNN does not support int io for stack op.
+        torch.ops.aten.stack.default,
         torch.ops.aten.unbind.int,
     ]
 
+    # If we want to annotate the decomposed ops, then we should decompose the operation.
+    if passes_job and passes_job.get(AnnotateDecomposed, False):
+        skip_decompositions = [
+            skip_decomp_op
+            for skip_decomp_op in skip_decompositions
+            if skip_decomp_op not in AnnotateDecomposed.decomp_ops
+        ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
     return source_decompositions
@@ -468,7 +475,7 @@ def capture_program(
     module = _preprocess_module(module, inputs)
     ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
     # TODO: Handle stack op. If we want to run annotate_decomposed pass for stack op, we need to make stack op decompose, which means we need to find a method to remove it from skip_decomp table
-    decomposed_ep = ep.run_decompositions(get_decomp_table())
+    decomposed_ep = ep.run_decompositions(get_decomp_table(passes_job))
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(TensorI64toI32(edge_program=core_ep))
     edge_ep = core_ep.to_edge(qnn_edge_config())
