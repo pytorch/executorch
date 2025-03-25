@@ -33,6 +33,18 @@ android {
     }
 }
 
+tasks.register("copyTestPte") {
+    doLast {
+        exec {
+          commandLine "sh", "get_instrumentation_test_pte.sh"
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.getByName("compileDebugAndroidTestJavaWithJavac").dependsOn "copyTestPte"
+}
+
 dependencies {
     implementation 'com.facebook.fbjni:fbjni:0.5.1'
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
