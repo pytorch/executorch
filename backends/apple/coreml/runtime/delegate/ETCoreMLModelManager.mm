@@ -208,7 +208,7 @@ NSURL * _Nullable write_model_files(NSURL *dst_url,
                                     const inmemoryfs::InMemoryFileSystem *inmemory_fs,
                                     NSError * __autoreleasing *error) {
     NSError *local_error = nil;
-    if (![fm createDirectoryAtURL:dst_url withIntermediateDirectories:NO attributes:@{} error:error]) {
+    if (![fm createDirectoryAtURL:dst_url withIntermediateDirectories:YES attributes:@{} error:error]) {
         ETCoreMLLogUnderlyingErrorAndSetNSError(error,
                                                 ETCoreMLErrorModelSaveFailed,
                                                 local_error,
