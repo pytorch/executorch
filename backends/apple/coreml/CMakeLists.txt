@@ -234,7 +234,9 @@ install(
 
 # We only care about building the pybinding when building for macOS wheels.
 if(EXECUTORCH_BUILD_COREML AND EXECUTORCH_BUILD_PYBIND)
-  add_subdirectory(${EXECUTORCH_ROOT}/third-party/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/pybind11)
+  if(NOT TARGET pybind11::pybind11)
+    add_subdirectory(${EXECUTORCH_ROOT}/third-party/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/pybind11)
+  endif()
 
   pybind11_add_module(executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp)
 
