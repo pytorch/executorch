@@ -55,7 +55,10 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     RetraceFoldedDtypesPass,
 )
 from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
-from executorch.backends.arm._passes.fuse_constant_ops_pass import FuseConstantOpsPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOT,
+    FuseConstantArgsPass,
+)
 from executorch.backends.arm._passes.fuse_quantized_activation_pass import (  # type: ignore[import-not-found]
     FuseQuantizedActivationPass,
 )
@@ -121,21 +124,23 @@ class ArmPassManager(PassManager):
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
+        self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
+        self.add_pass(MatchArgRanksPass(exported_program))
+        self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(RemoveClonePass())
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(CastInt64ToInt32Pass(exported_program))
-        self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(FuseViewCopyTransform())
-        self.add_pass(FuseConstantOpsPass(exported_program))
+        self.add_pass(FuseConstantArgsPass(exported_program))
+
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())
@@ -166,21 +171,22 @@ class ArmPassManager(PassManager):
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass())  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
+        self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
+        self.add_pass(MatchArgRanksPass(exported_program))
+        self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(RemoveClonePass())
         self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(CastInt64ToInt32Pass(exported_program))
-        self.add_pass(MatchArgRanksPass(exported_program))
         self.add_pass(KeepDimsFalseToSqueezePass())
         self.add_pass(Conv1dUnsqueezePass(exported_program))
         self.add_pass(DecomposeSelectPass())
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(FuseViewCopyTransform())
-        self.add_pass(FuseConstantOpsPass(exported_program))
+        self.add_pass(FuseConstantArgsPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(AnnotateChannelsLastDimOrder())
         self.add_pass(InsertRescalePass())

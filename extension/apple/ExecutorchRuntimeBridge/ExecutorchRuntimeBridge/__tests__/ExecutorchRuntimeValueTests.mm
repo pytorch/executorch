@@ -9,7 +9,6 @@
 #import <XCTest/XCTest.h>
 
 #import <ExecutorchRuntimeBridge/ExecutorchRuntimeValue.h>
-#import <ModelRunnerDataKit/ModelRunnerDataKit-Swift.h>
 #import <executorch/extension/module/module.h>
 
 using torch::executor::EValue;
@@ -20,16 +19,6 @@ using torch::executor::ScalarType;
 @end
 
 @implementation ExecutorchRuntimeValueTests
-
-- (void)testStringValueWithError
-{
-  ExecutorchRuntimeValue *value = [[ExecutorchRuntimeValue alloc] initWithEValue:EValue((int64_t)1)];
-  XCTAssertNil([value stringValueAndReturnError:nil]);
-  NSError *error = nil;
-  XCTAssertNil([value stringValueAndReturnError:&error]);
-  XCTAssertNotNil(error);
-  XCTAssertEqualObjects([error description], @"Unsupported type: ExecutorchRuntimeValue doesn't support strings");
-}
 
 - (void)testTensorValue
 {
@@ -42,9 +31,11 @@ using torch::executor::ScalarType;
 
   ExecutorchRuntimeTensorValue *tensorValue = [[ExecutorchRuntimeTensorValue alloc] initWithFloatArray:data shape:shape];
 
-  const auto tuple = [tensorValue floatRepresentationAndReturnError:nil];
-  XCTAssertEqualObjects(tuple.floatArray, data);
-  XCTAssertEqualObjects(tuple.shape, shape);
+  const auto floatArray = [tensorValue floatArrayAndReturnError:nil];
+  const auto shapeArray = [tensorValue shape];
+
+  XCTAssertEqualObjects(floatArray, data);
+  XCTAssertEqualObjects(shapeArray, shape);
 }
 
 - (void)testTensorValueWithFloatArrayWithError
@@ -57,17 +48,19 @@ using torch::executor::ScalarType;
   NSError *error = nil;
   XCTAssertNil([[ExecutorchRuntimeTensorValue alloc] initWithTensor:*new torch::executor::Tensor(&tensorImpl) error:&error]);
   XCTAssertNotNil(error);
-  XCTAssertEqualObjects([error description], @"Invalid type: torch::executor::ScalarType::3, expected torch::executor::ScalarType::Float");
+  XCTAssertEqual(error.code, static_cast<uint32_t>(executorch::runtime::Error::InvalidArgument));
+  XCTAssertEqualObjects(error.userInfo[NSDebugDescriptionErrorKey], @"Invalid type: torch::executor::ScalarType::3, expected torch::executor::ScalarType::Float");
 }
 
 - (void)testTensorValueWithError
 {
   ExecutorchRuntimeValue *value = [[ExecutorchRuntimeValue alloc] initWithEValue:EValue((int64_t)1)];
-  XCTAssertNil([value tensorValueAndReturnError:nil]);
+  XCTAssertNil([value asTensorValueAndReturnError:nil]);
   NSError *error = nil;
-  XCTAssertNil([value tensorValueAndReturnError:&error]);
+  XCTAssertNil([value asTensorValueAndReturnError:&error]);
   XCTAssertNotNil(error);
-  XCTAssertEqualObjects([error description], @"Invalid type: Tag::4, expected Tag::Tensor");
+  XCTAssertEqual(error.code, static_cast<uint32_t>(executorch::runtime::Error::InvalidArgument));
+  XCTAssertEqualObjects(error.userInfo[NSDebugDescriptionErrorKey], @"Invalid type: Tag::4, expected Tag::Tensor");
 }
 
 @end
