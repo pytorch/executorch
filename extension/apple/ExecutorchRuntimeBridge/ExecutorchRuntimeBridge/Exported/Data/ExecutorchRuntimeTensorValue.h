@@ -6,15 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#import <Foundation/Foundation.h>
+
 #ifdef __cplusplus
  #import <executorch/extension/module/module.h>
  #import <executorch/runtime/core/evalue.h>
 #endif
-#import <RuntimeBridgingCore/RuntimeBridgingCore-Swift.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
 @interface ExecutorchRuntimeTensorValue : NSObject
+
+@property (nonatomic, readonly) NSArray<NSNumber *> *shape;
 
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
@@ -29,7 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
 #endif
 
 #pragma mark - 
-- (ModelRuntimeTensorValueBridgingTuple * _Nullable)floatRepresentationAndReturnError:(NSError * _Nullable * _Nullable)error SWIFT_WARN_UNUSED_RESULT;
+- (NSArray<NSNumber *> * _Nullable)floatArrayAndReturnError:(NSError * _Nullable * _Nullable)error;
 
 @end
 

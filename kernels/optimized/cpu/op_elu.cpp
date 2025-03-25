@@ -70,8 +70,8 @@ void elu(
 } // namespace
 
 Tensor& opt_elu_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
     const Scalar& alpha,
     const Scalar& scale,
     const Scalar& input_scale,
@@ -93,8 +93,8 @@ Tensor& opt_elu_out(
       ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
 
   ET_SWITCH_FLOATHBF16_TYPES(
-      input.scalar_type(), context, "elu.out", CTYPE, [&]() {
-        elu<CTYPE>(context, input, alpha, scale, input_scale, out);
+      in.scalar_type(), ctx, "elu.out", CTYPE, [&]() {
+        elu<CTYPE>(ctx, in, alpha, scale, input_scale, out);
       });
   return out;
 }

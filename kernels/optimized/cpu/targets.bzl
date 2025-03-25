@@ -54,6 +54,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_le",
         deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
     ),
     op_target(

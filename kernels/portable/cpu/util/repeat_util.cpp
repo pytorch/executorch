@@ -68,7 +68,7 @@ bool check_repeat_args(
   }
   for (size_t i = 0; i < repeats.size(); i++) {
     ET_CHECK_OR_RETURN_FALSE(
-        reformat_self_size[i] * repeats[i] ==
+        reformat_self_size[i] * static_cast<size_t>(repeats[i]) ==
             static_cast<uint64_t>(out.size(i)),
         "Expect out size at dimension %zu is %" PRId64 ", but now is %zd",
         i,
