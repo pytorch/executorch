@@ -1,1 +1,64 @@
-# This file needs to exist to avoid build system breakage, see https://fburl.com/workplace/jtdlgdmd
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# This is a custom Buck file to run the Apple extension tests.
+
+apple_library(
+  name = "ExecuTorch",
+  modular = True,
+  srcs = glob([
+    "ExecuTorch/Exported/*.m",
+    "ExecuTorch/Exported/*.mm",
+    "ExecuTorch/Internal/*.m",
+    "ExecuTorch/Internal/*.mm",
+  ]),
+  exported_headers = glob([
+    "ExecuTorch/Exported/*.h",
+  ]),
+  headers = glob([
+    "ExecuTorch/Internal/*.h",
+  ]),
+  include_directories = [
+    "ExecuTorch/Exported",
+    "ExecuTorch/Internal",
+  ],
+  frameworks = [
+    "$SDKROOT/System/Library/Frameworks/Foundation.framework",
+  ],
+  compiler_flags = [
+    "-DET_LOG_ENABLED=1",
+    "-fobjc-arc",
+    "-fno-exceptions",
+    "-fno-rtti",
+  ],
+  deps = [
+    "//xplat/executorch/extension/module:moduleApple",
+    "//xplat/executorch/extension/tensor:tensorApple",
+    "//xplat/executorch/runtime/platform:platformApple",
+  ],
+)
+
+apple_resource(
+  name = "ExecuTorchTestResource",
+  files = glob([
+    "ExecuTorch/__tests__/resources/*.pte",
+  ]),
+)
+
+apple_test(
+  name = "ExecuTorchTests",
+  srcs = glob([
+    "ExecuTorch/__tests__/*.swift",
+  ]),
+  frameworks = [
+    "$SDKROOT/System/Library/Frameworks/XCTest.framework",
+  ],
+  info_plist = "Info.plist",
+  deps = [
+    ":ExecuTorch",
+    ":ExecuTorchTestResource",
+  ],
+)
