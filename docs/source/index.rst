@@ -2,6 +2,8 @@
 
 Welcome to the ExecuTorch Documentation
 =======================================
+::
+
 ![Logo](_static/img/et-logo.png)
 **ExecuTorch** is PyTorch's solution to training and inference on the Edge.
 ### Key Value Propositions
