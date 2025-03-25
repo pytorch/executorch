@@ -35,6 +35,8 @@ libextension_tensor.a,\
 :$HEADERS_PATH"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
+libcoreml_util.a,\
+libcoreml_inmemoryfs.a,\
 libcoremldelegate.a,\
 :"
 
@@ -217,7 +219,7 @@ echo "Exporting headers"
 
 mkdir -p "$HEADERS_PATH"
 
-"$SOURCE_ROOT_DIR"/build/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
+"$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
   //extension/tensor: \
 | rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
@@ -272,7 +274,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "$PORTABLE" "$FRAMEWORK_KERNELS_PORTABLE" "$mode"
   append_framework_flag "$QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
 
-  "$SOURCE_ROOT_DIR"/build/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
+  "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
 
 echo "Cleaning up"

@@ -2,7 +2,6 @@ import io
 import os
 import random
 import unittest
-import urllib
 
 import numpy as np
 import requests

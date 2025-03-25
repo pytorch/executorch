@@ -106,7 +106,7 @@ jobs:
           - model: emformer_join
             backend: xnnpack-quantization-delegation
             runner: linux.4xlarge.memory
-          - model: phi-4-mini
+          - model: phi_4_mini
             backend: portable
             runner: linux.4xlarge.memory
           - model: llama3_2_vision_encoder
@@ -289,6 +289,36 @@ jobs:
 
         # run e2e (export, tokenizer and runner)
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llava.sh
+
+  test-moshi-linux:
+    name: test-moshi-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # install Mimi requirements
+        bash examples/models/moshi/mimi/install_requirements.sh
+
+        # reinstall executorch
+        bash ./install_executorch.sh
+
+        # run python unittest
+        python -m unittest examples.models.moshi.mimi.test_mimi
 
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
