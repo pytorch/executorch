@@ -131,10 +131,7 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["op_add_sub_impl.h"],
         visibility = ["//executorch/kernels/optimized/cpu/..."],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
-        ],
+        exported_deps = ["//executorch/runtime/core:core"],
     )
 
     runtime.cxx_library(

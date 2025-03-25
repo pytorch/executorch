@@ -15,10 +15,6 @@
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 
-#ifdef ET_USE_PYTORCH_HEADERS
-#include <ATen/cpu/vec/vec.h>
-#endif // ET_USE_PYTORCH_HEADERS
-
 #include <array>
 #include <utility>
 
@@ -62,116 +58,10 @@ template <typename CTYPE_COMMON, typename Op, typename... Args>
 using op_call_result =
     std::invoke_result_t<Op, ignore_first_yield_second<Args, CTYPE_COMMON>...>;
 
-#ifdef ET_USE_PYTORCH_HEADERS
-// Can I call a function of type Op with sizeof...(Args) arguments of type
-// at::vec::Vectorized<CTYPE_COMMON>?
-//
-// See [NOTE: Generic lambdas] below for requirements on Op.
-template <typename CTYPE_COMMON, typename Op, typename... Args>
-constexpr bool can_use_vectorized() {
-  return std::is_invocable_v<
-      Op,
-      ignore_first_yield_second<Args, at::vec::Vectorized<CTYPE_COMMON>>...>;
-}
-#endif // ET_USE_PYTORCH_HEADERS
-
 template <
     typename CTYPE_COMMON,
-    typename CTYPE_OUT,
     typename Op,
-    typename... Args>
-inline void dtype_specialized_elementwise_fn_impl(
-    const Op& compute_fun,
-    KernelRuntimeContext& ctx,
-    const Tensor& out,
-    Args... inputs) {
-  static_assert(
-      (std::is_same_v<Args, std::pair<const Tensor*, SupportedTensorDtypes>> &&
-       ...));
-  constexpr auto kNumInputs = sizeof...(inputs);
-  // All inputs must be of type CTYPE_COMMON.
-  ET_DCHECK(
-      ((inputs.first->scalar_type() ==
-        CppTypeToScalarType<CTYPE_COMMON>::value) &&
-       ...));
-
-  std::array<const CTYPE_COMMON*, kNumInputs> inputs_data_ptrs = {
-      inputs.first->template const_data_ptr<CTYPE_COMMON>()...};
-
-  CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
-
-#ifdef ET_USE_PYTORCH_HEADERS
-  if constexpr (can_use_vectorized<CTYPE_COMMON, Op, Args...>()) {
-    const bool any_is_broadcasted =
-        !(torch::executor::internal::sizes_match_ignoring_leading_1s(
-              inputs.first->sizes(), out.sizes()) &&
-          ...);
-    if (!any_is_broadcasted) {
-      using Vec = at::vec::Vectorized<CTYPE_COMMON>;
-      ::executorch::extension::parallel_for(
-          0,
-          out.numel(),
-          ::executorch::extension::internal::GRAIN_SIZE,
-          [&](const auto begin, const auto end) {
-            const auto vectorized_begin =
-                begin + (Vec::size() - begin % Vec::size()) % Vec::size();
-            const auto vectorized_end = end - (end % Vec::size());
-            // Scalar prologue.
-            for (const auto idx : c10::irange(begin, vectorized_begin)) {
-              std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
-              for (const auto input_idx : c10::irange(kNumInputs)) {
-                loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
-              }
-              data_out[idx] = std::apply(compute_fun, loaded_inputs);
-            }
-
-            // Main vectorized loop.
-            for (auto idx = vectorized_begin; idx < vectorized_end;
-                 idx += Vec::size()) {
-              std::array<Vec, kNumInputs> loaded_vec_inputs;
-              for (const auto input_idx : c10::irange(kNumInputs)) {
-                loaded_vec_inputs[input_idx] =
-                    Vec::loadu(&inputs_data_ptrs[input_idx][idx]);
-              }
-              auto result_vec = std::apply(compute_fun, loaded_vec_inputs);
-              result_vec.store(&data_out[idx]);
-            }
-
-            // Scalar epilogue.
-            for (const auto idx : c10::irange(vectorized_end, end)) {
-              std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
-              for (const auto input_idx : c10::irange(kNumInputs)) {
-                loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
-              }
-              data_out[idx] = std::apply(compute_fun, loaded_inputs);
-            }
-          });
-      return;
-    }
-  }
-#endif
-
-  ::executorch::extension::parallel_for(
-      0,
-      out.numel(),
-      ::executorch::extension::internal::GRAIN_SIZE,
-      [&](const auto begin, const auto end) {
-        const auto range =
-            BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...);
-        auto begin_it = range.begin();
-        begin_it += begin;
-        for (; (*begin_it)[0] < end; ++begin_it) {
-          const auto& indexes = *begin_it;
-          std::array<CTYPE_COMMON, kNumInputs> loaded_inputs;
-          for (const auto idx : c10::irange(kNumInputs)) {
-            loaded_inputs[idx] = inputs_data_ptrs[idx][indexes[idx + 1]];
-          }
-          data_out[indexes[0]] = std::apply(compute_fun, loaded_inputs);
-        }
-      });
-}
-
-template <typename CTYPE_COMMON, typename Op, typename... Args>
+  typename... Args>
 inline bool validate_elementwise_fn_inputs(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
@@ -190,8 +80,7 @@ inline bool validate_elementwise_fn_inputs(
       ctx,
       (check_input_dtype(inputs, compute_type) && ...) &&
           internal::check_tensor_dtype(out, out_dtypes, compute_type),
-      InvalidArgument,
-      false);
+      InvalidArgument, false);
 
   return true;
 }
@@ -201,12 +90,22 @@ template <
     const char* op_name,
     typename Op,
     typename... Args>
-inline void apply_elementwise_fn_generic_impl(
+inline void apply_elementwise_fn(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes,
     Args... inputs) {
+  const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMMON>(
+      compute_fun,
+      ctx,
+      out,
+      out_dtypes,
+      inputs...);
+  if (!inputs_valid) {
+    return;
+  }
+
   constexpr auto kNumInputs = sizeof...(inputs);
 
   struct InputInfo {
@@ -258,63 +157,6 @@ inline void apply_elementwise_fn_generic_impl(
         }
       });
 }
-
-template <
-    typename CTYPE_COMMON,
-    const char* op_name,
-    typename Op,
-    typename... Args>
-inline void apply_elementwise_fn_runtime_out_dtypes(
-    const Op& compute_fun,
-    KernelRuntimeContext& ctx,
-    const Tensor& out,
-    SupportedTensorDtypes out_dtypes,
-    Args... inputs) {
-  const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMMON>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
-  if (!inputs_valid) {
-    return;
-  }
-
-  apply_elementwise_fn_generic_impl<CTYPE_COMMON, op_name>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
-}
-
-template <
-    typename CTYPE_COMMON,
-    const char* op_name,
-    SupportedTensorDtypes out_dtypes,
-    typename Op,
-    typename... Args>
-inline void apply_elementwise_fn(
-    const Op& compute_fun,
-    KernelRuntimeContext& ctx,
-    const Tensor& out,
-    Args... inputs) {
-  const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMMON>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
-  if (!inputs_valid) {
-    return;
-  }
-
-  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMMON>::value;
-  const bool all_inputs_compute_dtype =
-      ((inputs.first->scalar_type() == compute_type) && ...);
-
-  constexpr ScalarType out_specialized_scalar_type =
-      specialized_output_scalar_type<CTYPE_COMMON>(out_dtypes);
-  if (all_inputs_compute_dtype &&
-      out.scalar_type() == out_specialized_scalar_type) {
-    using CTYPE_OUT =
-        typename ScalarTypeToCppType<out_specialized_scalar_type>::type;
-    dtype_specialized_elementwise_fn_impl<CTYPE_COMMON, CTYPE_OUT>(
-        compute_fun, ctx, out, inputs...);
-    return;
-  }
-
-  apply_elementwise_fn_generic_impl<CTYPE_COMMON, op_name>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
-}
 } // namespace internal
 
 /// DEPRECATED: prefer the variant with out_dtypes in the template argument.
@@ -326,36 +168,19 @@ inline void apply_unitensor_elementwise_fn(
     SupportedTensorDtypes a_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
-  internal::apply_elementwise_fn_runtime_out_dtypes<CTYPE_COMMON, op_name>(
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
       compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
 }
 
-/**
- * Useful for unary elementwise operators. For each element of the
- * input, call Op and write to the corresponding element of the
- * output. Tensor broadcasting is applied wherever it is required.
- *
- * [NOTE: Generic lambdas]: If Op is a *generic* lambda (i.e., one with `auto`
- * parameters; normal lambdas are fine), it must fulfill one of the
- * following conditions. Either:
- * 1) It must in fact compile when passed at::vec::Vectorized<CTYPE_COMMON>, or
- * 2) It must be actively SFINAE-friendly, as per the C++17 examples in
- * https://stackoverflow.com/questions/76525790/detecting-if-a-generic-lambda-with-certain-arguments-is-invocable
- * .
- */
-template <
-    typename CTYPE_COMMON,
-    const char* op_name,
-    SupportedTensorDtypes out_dtypes,
-    typename Op>
+template <typename CTYPE_COMMON, const char* op_name, SupportedTensorDtypes out_dtypes, typename Op>
 inline void apply_unitensor_elementwise_fn(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
     const Tensor& a,
     SupportedTensorDtypes a_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMMON, op_name, out_dtypes>(
-      compute_fun, ctx, out, std::make_pair(&a, a_dtypes));
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
+      compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
 }
 
 /**
@@ -371,7 +196,7 @@ inline void apply_bitensor_elementwise_fn(
     SupportedTensorDtypes b_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
-  internal::apply_elementwise_fn_runtime_out_dtypes<CTYPE_COMMON, op_name>(
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
       compute_fun,
       ctx,
       out,
@@ -384,14 +209,8 @@ inline void apply_bitensor_elementwise_fn(
  * Useful for bi-tensor elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
  * Tensor broadcasting is applied wherever it is required.
- * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
- * compute_fun.
  */
-template <
-    typename CTYPE_COMMON,
-    const char* op_name,
-    SupportedTensorDtypes out_dtypes,
-    typename Op>
+template <typename CTYPE_COMMON, const char* op_name, SupportedTensorDtypes out_dtypes, typename Op>
 inline void apply_bitensor_elementwise_fn(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
@@ -400,10 +219,11 @@ inline void apply_bitensor_elementwise_fn(
     const Tensor& b,
     SupportedTensorDtypes b_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMMON, op_name, out_dtypes>(
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
       compute_fun,
       ctx,
       out,
+      out_dtypes,
       std::make_pair(&a, a_dtypes),
       std::make_pair(&b, b_dtypes));
 }
@@ -423,7 +243,7 @@ inline void apply_tritensor_elementwise_fn(
     SupportedTensorDtypes c_dtypes,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes) {
-  internal::apply_elementwise_fn_runtime_out_dtypes<CTYPE_COMMON, op_name>(
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
       compute_fun,
       ctx,
       out,
@@ -452,15 +272,8 @@ inline void apply_tritensor_elementwise_fn(
  *
  * static constexpr const char op_name[] = "my_op";
  * apply_ternary_elementwise_fn<CTYPE_COMMON, op_name>.
- *
- * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
- * compute_fun.
  */
-template <
-    typename CTYPE_COMMON,
-    const char* op_name,
-    SupportedTensorDtypes out_dtypes,
-    typename Op>
+template <typename CTYPE_COMMON, const char* op_name, SupportedTensorDtypes out_dtypes, typename Op>
 inline void apply_tritensor_elementwise_fn(
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
@@ -471,10 +284,11 @@ inline void apply_tritensor_elementwise_fn(
     const Tensor& c,
     SupportedTensorDtypes c_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMMON, op_name, out_dtypes>(
+  internal::apply_elementwise_fn<CTYPE_COMMON, op_name>(
       compute_fun,
       ctx,
       out,
+      out_dtypes,
       std::make_pair(&a, a_dtypes),
       std::make_pair(&b, b_dtypes),
       std::make_pair(&c, c_dtypes));

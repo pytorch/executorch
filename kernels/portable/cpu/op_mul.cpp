@@ -52,17 +52,17 @@ Tensor& mul_out(
       out);
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<
-        CTYPE_COMPUTE,
-        op_name,
-        utils::SupportedTensorDtypes::REALHBBF16>(
-        [](const auto val_a, const auto val_b) { return val_a * val_b; },
+    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          return val_a * val_b;
+        },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out);
+        out,
+        utils::SupportedTensorDtypes::REALHBBF16);
   });
 
   return out;
