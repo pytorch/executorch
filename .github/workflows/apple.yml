@@ -73,9 +73,6 @@ jobs:
 
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
-        # Clone iOS Demo App
-        git clone https://github.com/pytorch-labs/executorch-examples.git --depth 1
-
         # Build and test iOS Demo App
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         .ci/scripts/test_ios_ci.sh "${ARTIFACTS_DIR_NAME}"
