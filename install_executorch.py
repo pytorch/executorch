@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
-from typing import List
+from typing import List, Tuple
 
 from install_requirements import (
     install_requirements,
@@ -169,13 +169,19 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _list_pybind_defines(args) -> List[str]:
-    cmake_args = []
+# Returns (wants_off, wanted_pybindings)
+def _list_pybind_defines(args) -> Tuple[bool, List[str]]:
+    if args.pybind is None:
+        return False, []
+
     # Flatten list of lists.
     args.pybind = list(itertools.chain(*args.pybind))
-    if ("off" in args.pybind) and (len(args.pybind) != 1):
-        raise Exception(f"Cannot combine `off` with other pybinds: {args.pybind}")
+    if "off" in args.pybind:
+        if len(args.pybind) != 1:
+            raise Exception(f"Cannot combine `off` with other pybinds: {args.pybind}")
+        return True, []
 
+    cmake_args = []
     for pybind_arg in args.pybind:
         if pybind_arg not in VALID_PYBINDS:
             raise Exception(
@@ -186,7 +192,7 @@ def _list_pybind_defines(args) -> List[str]:
         else:
             cmake_args.append(f"-DEXECUTORCH_BUILD_{pybind_arg.upper()}=ON")
 
-    return cmake_args
+    return False, cmake_args
 
 
 def main(args):
@@ -196,15 +202,23 @@ def main(args):
     parser = build_args_parser()
     args = parser.parse_args()
 
-    has_pybindings = False
     cmake_args = [os.getenv("CMAKE_ARGS", "")]
     use_pytorch_nightly = True
 
-    if args.pybind:
-        pybind_defines = _list_pybind_defines(args)
+    has_pybindings = False
+    wants_pybindings_off, pybind_defines = _list_pybind_defines(args)
+    if not wants_pybindings_off:
+        has_pybindings = True
         if len(pybind_defines) > 0:
-            has_pybindings = True
+            # If the user explicitly provides a list of bindings, just use them
             cmake_args += pybind_defines
+        else:
+            # If the user has not set pybindings off but also has not provided
+            # a list, then turn on xnnpack by default
+            cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
+
+    if has_pybindings:
+        cmake_args.append("-DEXECUTORCH_BUILD_PYBIND=ON")
 
     if args.clean:
         clean()
@@ -215,13 +229,6 @@ def main(args):
         # is used instead of nightly. CI jobs wouldn't be able to catch regression from the
         # latest PT commit otherwise
         use_pytorch_nightly = False
-
-    # If --pybind is not set explicitly for backends (e.g., --pybind xnnpack)
-    # or is not turned off explicitly (--pybind off)
-    # then install XNNPACK by default.
-    if not has_pybindings:
-        has_pybindings = True
-        cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
 
     # Use ClangCL on Windows.
     # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
@@ -236,9 +243,6 @@ def main(args):
     #
 
     # Set environment variables
-    if has_pybindings:
-        cmake_args.append("-DEXECUTORCH_BUILD_PYBIND=ON")
-
     os.environ["CMAKE_ARGS"] = " ".join(cmake_args)
 
     # Check if the required submodules are present and update them if not
