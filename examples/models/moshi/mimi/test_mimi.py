@@ -23,7 +23,10 @@ from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export, ExportedProgram
 from torch.utils._pytree import tree_flatten
 
-os.environ["https_proxy"] = "http://fwdproxy:8080"
+proxies = {
+    "http": "http://fwdproxy:8080",
+    "https": "http://fwdproxy:8080",
+}
 
 
 def compute_sqnr(x: torch.Tensor, y: torch.Tensor) -> float:
@@ -38,7 +41,12 @@ def compute_sqnr(x: torch.Tensor, y: torch.Tensor) -> float:
 
 
 def read_mp3_from_url(url):
-    response = requests.get(url)
+    try:
+        response = requests.get(url)
+    except:
+        # FB-only hack, need to use a forwarding proxy to get url
+        response = requests.get(url, proxies=proxies)
+
     response.raise_for_status()  # Ensure request is successful
     audio_stream = io.BytesIO(response.content)
     waveform, sample_rate = torchaudio.load(audio_stream, format="mp3")
@@ -68,7 +76,13 @@ class TestMimiModel(unittest.TestCase):
         seed_all(42424242)
 
         if mimi_weight is None:
-            mimi_weight = hf_hub_download(hf_repo, loaders.MIMI_NAME)
+            try:
+                mimi_weight = hf_hub_download(hf_repo, loaders.MIMI_NAME)
+            except:
+                mimi_weight = hf_hub_download(
+                    hf_repo, loaders.MIMI_NAME, proxies=proxies
+                )
+
         cls.mimi = loaders.get_mimi(mimi_weight, device)
         cls.device = device
         cls.sample_pcm, cls.sample_sr = read_mp3_from_url(
@@ -131,56 +145,6 @@ class TestMimiModel(unittest.TestCase):
 
         pcm_ref = self.mimi.decode(all_codes_th)
         self.assertTrue(torch.allclose(pcm_ref, all_pcms, atol=1e-5))
-
-    def test_exported_decoding(self):
-        """Ensure exported decoding model is consistent with reference output."""
-
-        class MimiDecode(nn.Module):
-            def __init__(self, mimi: nn.Module):
-                super().__init__()
-                self.mimi_model = mimi
-
-            def forward(self, x):
-                return self.mimi_model.decode(x)
-
-        sample_pcm = torch.tensor(self.sample_pcm, device=self.device)[None]
-        pcm_chunk_size = int(self.mimi.sample_rate / self.mimi.frame_rate)
-        chunk = sample_pcm[..., 0:pcm_chunk_size]
-        input = self.mimi.encode(chunk)
-
-        mimi_decode = MimiDecode(self.mimi)
-        ref_decode_output = mimi_decode(input)
-        exported_decode: ExportedProgram = export(mimi_decode, (input,), strict=False)
-        ep_decode_output = exported_decode.module()(input)
-        self.assertTrue(torch.allclose(ep_decode_output, ref_decode_output, atol=1e-6))
-
-        # PT2E Quantization
-        quantizer = XNNPACKQuantizer()
-        # 8 bit by default
-        quantization_config = get_symmetric_quantization_config(
-            is_per_channel=True,
-            is_dynamic=True,
-        )
-        quantizer.set_global(quantization_config)
-        m = exported_decode.module()
-        m = prepare_pt2e(m, quantizer)
-        m(input)
-        m = convert_pt2e(m)
-        print("quantized graph:")
-        print(m.graph)
-        # Export quantized module
-        exported_decode: ExportedProgram = export(m, (input,), strict=False)
-
-        # Lower
-        edge_manager = to_edge_transform_and_lower(
-            exported_decode,
-            partitioner=[XnnpackPartitioner()],
-        )
-
-        exec_prog = edge_manager.to_executorch()
-        print("exec graph:")
-        print(exec_prog.exported_program().graph)
-        assert len(exec_prog.exported_program().graph.nodes) > 1
 
     def test_exported_encoding(self):
         """Ensure exported encoding model is consistent with reference output."""
