@@ -536,9 +536,8 @@ jobs:
         git clone https://github.com/huggingface/optimum-executorch
         cd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout 6a7e83f3eee2976fa809335bfb78a45b1ea1cb25
-        pip install .
-        pip install accelerate sentencepiece
+        git checkout 577a2b19670e4c643a5c6ecb09bf47b9a699e7c6
+        pip install .[tests]
         pip list
         echo "::endgroup::"
 
