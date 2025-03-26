@@ -460,12 +460,13 @@ class TestQNN(unittest.TestCase):
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
         dynamic_shapes: Dict = None,
+        passes_job: collections.OrderedDict = None,
     ):
         qnn_partitioner = QnnPartitioner(
             self.compiler_specs, skip_node_id_set, skip_node_op_set
         )
         delegated_program = capture_program(
-            module, sample_inputs, dynamic_shapes=dynamic_shapes
+            module, sample_inputs, dynamic_shapes=dynamic_shapes, passes_job=passes_job
         )
 
         # this is needed for the ETRecord as lowering modifies the graph in-place

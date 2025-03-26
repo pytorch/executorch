@@ -210,6 +210,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cumsum(self):
+        module = CumSum()  # noqa: F405
+        sample_input = (torch.randn(4),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_einsum_outer_product(self):
         module = EinsumOuterProduct()  # noqa: F405
         x = torch.randn(5)
@@ -800,9 +805,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         modules = [
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
+            WhereConstantOther(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
+            (torch.randn(3, 2),),
             (torch.randn(3, 2),),
         ]
         for i, module in enumerate(modules):
@@ -1220,6 +1227,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_cos(self):
         module = Cos()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cumsum(self):
+        module = CumSum()  # noqa: F405
+        sample_input = (torch.randn(4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1894,9 +1907,11 @@ class TestQNNQuantizedOperator(TestQNN):
         modules = [
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
+            WhereConstantOther(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
+            (torch.randn(3, 2),),
             (torch.randn(3, 2),),
         ]
         for i, module in enumerate(modules):
@@ -3489,6 +3504,46 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["top_1"], 70)
                 self.assertGreaterEqual(msg["top_5"], 85)
+
+    def test_efficientSAM(self):
+        if not self.required_envs(
+            [self.image_dataset, self.pretrained_weight, self.oss_repo]
+        ):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientSAM.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--oss_repo",
+            self.oss_repo,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["MIoU"], 0.55)
 
     def test_esrgan(self):
         if not self.required_envs():

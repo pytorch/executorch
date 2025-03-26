@@ -536,6 +536,14 @@ class Cos(torch.nn.Module):
         return torch.cos(x)
 
 
+class CumSum(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.cumsum(dim=0)
+
+
 class Div(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1493,3 +1501,11 @@ class WhereConstant(torch.nn.Module):
 
     def forward(self, x):
         return torch.where(x >= torch.zeros(x.shape), self.pos, self.neg)
+
+
+class WhereConstantOther(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.where(x >= 0, torch.ones(x.shape), 0)
