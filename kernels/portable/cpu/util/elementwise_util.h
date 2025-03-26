@@ -64,16 +64,16 @@ inline void dtype_specialized_elementwise_fn_impl(
   constexpr auto kNumInputs = sizeof...(inputs);
   ET_DCHECK(((inputs.first->element_size() == sizeof(CTYPE_COMMON)) && ...));
 
-  std::array<const CTYPE_COMMON*, kNumInputs> inputs_data_ptrs = {
-      inputs.first->template const_data_ptr<CTYPE_COMMON>()...};
-
-  CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
-
   ::executorch::extension::parallel_for(
       0,
       out.numel(),
       ::executorch::extension::internal::GRAIN_SIZE,
       [&](const auto begin, const auto end) {
+        std::array<const CTYPE_COMMON*, kNumInputs> inputs_data_ptrs = {
+            inputs.first->template const_data_ptr<CTYPE_COMMON>()...};
+
+        CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+
         const auto range =
             BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...);
         auto begin_it = range.begin();
