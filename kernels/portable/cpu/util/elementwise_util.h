@@ -199,12 +199,25 @@ inline void apply_tritensor_elementwise_fn(
 }
 
 inline ScalarType get_compute_type(ScalarType& common_type) {
-  if (common_type == ScalarType::Long) {
-    return common_type;
-  }
-  if (isIntegralType(common_type, /*includeBool=*/true)) {
+  // Code size optimization: on typical 32-bit or 64-bit CPUs, the ALU should be
+  // just as good at 32-bit arithmetic as it is at 16-bit or 8-bit
+  // arithmetic, so don't go out of our way to generate 8-bit or
+  // 16-bit code.
+
+  // Gate above optimization off if we appear to be on some kind of 8-bit or
+  // 16-bit CPU, which would invalidate our assumption about 32-bit
+  // math being just as fast.
+  constexpr bool cpu_appears_to_be_at_least_32_bit = sizeof(void*) >= 4 && sizeof(int) >= 4;
+
+  if (cpu_appears_to_be_at_least_32_bit &&
+      // Don't mess up 64-bit ints.
+      common_type != ScalarType::Long &&
+      isIntegralType(common_type, /*includeBool=*/true)) {
     return ScalarType::Int;
   }
+
+  // We compute in float for reduced-precision floating-point types as
+  // a matter of policy, not size optimization.
   if (common_type == ScalarType::Half || common_type == ScalarType::BFloat16) {
     return ScalarType::Float;
   }
