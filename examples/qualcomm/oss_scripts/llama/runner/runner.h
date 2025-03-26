@@ -67,9 +67,10 @@ class Runner {
   executorch::runtime::Error load();
   executorch::runtime::Error generate(
       int32_t seq_len,
+      int32_t num_prev_tokens,
       const std::string& prompt,
       const std::string& system_prompt,
-      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const std::string&, int32_t)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
   std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
