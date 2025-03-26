@@ -206,7 +206,7 @@ cmake_build() {
     cmake --build . \
         --config "$mode" \
         --verbose
-    cd ..
+    cd -
 }
 
 for index in ${!PLATFORMS[*]}; do
@@ -284,5 +284,10 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 rm -rf "$HEADERS_PATH"
+
+echo "Running tests"
+
+cd "$SOURCE_ROOT_DIR"
+swift test
 
 echo "Build succeeded!"
