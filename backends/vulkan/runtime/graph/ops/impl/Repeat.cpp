@@ -151,7 +151,8 @@ void add_repeat_node(
     utils::ivec4 src_offset{0, 0, 0, 0};
     utils::ivec4 dst_offset{0, 0, 0, 0};
 
-    add_copy_offset_node(graph, in, running_range, src_offset, dst_offset, out);
+    add_copy_offset_node(
+        graph, in, running_range, src_offset, dst_offset, out, false, false);
 
   } else {
     add_repeat_channel_node(graph, in, channel_repeat, out, running_range);
@@ -166,7 +167,7 @@ void add_repeat_node(
       utils::ivec4 dst_offset{i * dim_at<kWidth4D>(in_sizes), 0, 0, 0};
 
       add_copy_offset_node(
-          graph, out, running_range, src_offset, dst_offset, out);
+          graph, out, running_range, src_offset, dst_offset, out, true, false);
     }
 
     running_range[0] = running_range[0] * width_repeat;
@@ -180,7 +181,7 @@ void add_repeat_node(
       utils::ivec4 dst_offset = {0, i * dim_at<kHeight4D>(in_sizes), 0, 0};
 
       add_copy_offset_node(
-          graph, out, running_range, src_offset, dst_offset, out);
+          graph, out, running_range, src_offset, dst_offset, out, true, false);
     }
 
     running_range[1] = running_range[1] * height_repeat;
@@ -194,7 +195,7 @@ void add_repeat_node(
       utils::ivec4 dst_offset = {0, 0, i * running_range[2], 0};
 
       add_copy_offset_node(
-          graph, out, running_range, src_offset, dst_offset, out);
+          graph, out, running_range, src_offset, dst_offset, out, true, false);
     }
 
     running_range[2] = running_range[2] * batch_repeat;

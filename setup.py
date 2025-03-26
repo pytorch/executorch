@@ -60,8 +60,9 @@ import subprocess
 
 from distutils import log
 from distutils.sysconfig import get_python_lib
+from functools import cache
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from setuptools import Extension, setup
 from setuptools.command.build import build
@@ -69,33 +70,86 @@ from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 
 
+@cache
+def _cmake_args_defines() -> Dict[str, str]:
+    result = {}
+
+    args = re.split(r"\s+", os.environ.get("CMAKE_ARGS", ""))
+    for arg in args:
+        if arg.startswith("-D") and "=" in arg:
+            arg_key, value = arg.split("=")
+            key = arg_key[2:]  # Remove the leading "-D"
+            result[key] = value
+
+    return result
+
+
 class ShouldBuild:
     """Indicates whether to build various components."""
 
     @staticmethod
-    def _is_env_enabled(env_var: str, default: bool = False) -> bool:
-        val = os.environ.get(env_var, None)
-        if val is None:
-            return default
-        if val in ("OFF", "0", ""):
+    def _is_truthy(value: Optional[str]) -> bool:
+        if (value is None) or (value.lower() in ("off", "0", "")):
             return False
         return True
 
+    @staticmethod
+    def _is_cmake_arg_enabled(var: str, default: bool) -> bool:
+        if os.environ.get(var) is not None:
+            raise RuntimeError(
+                f"Python wheel building does not support setting '{var}' using environment variables. Use CMAKE_ARGS='-D{var}=ON' instead."
+            )
+
+        value = _cmake_args_defines().get(var, None)
+        if value is None:
+            return default
+        return ShouldBuild._is_truthy(value)
+
     @classmethod
     def pybindings(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_PYBIND",
+            # If the user hasn't specified anything, we want to turn this on if any
+            # bindings are requested explicitly.
+            #
+            # Please keep this in sync with `VALID_PYBINDS` in install_executorch.py.
+            default=any(
+                [
+                    cls.coreml(),
+                    cls.mps(),
+                    cls.xnnpack(),
+                    cls.training(),
+                ]
+            ),
+        )
+
+    @classmethod
+    def coreml(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_COREML", default=False)
+
+    @classmethod
+    def mps(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_MPS", default=False)
+
+    @classmethod
+    def xnnpack(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
 
     @classmethod
     def training(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_TRAINING", default=False)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_EXTENSION_TRAINING", default=False
+        )
 
     @classmethod
     def llama_custom_ops(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True
+        )
 
     @classmethod
     def flatc(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_FLATC", default=True)
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_FLATC", default=True)
 
 
 class Version:
@@ -667,9 +721,6 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             if ShouldBuild.training():
-                cmake_args += [
-                    "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=ON",
-                ]
                 build_args += ["--target", "_training_lib"]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
@@ -775,7 +826,7 @@ def get_ext_modules() -> List[Extension]:
                     is_executable=True,
                 ),
                 BuiltFile(
-                    src_dir="build/",
+                    src_dir="tools/wheel",
                     src_name="pip_data_bin_init.py.in",
                     dst="executorch/data/bin/__init__.py",
                 ),
