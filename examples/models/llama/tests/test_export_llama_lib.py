@@ -33,7 +33,7 @@ class ExportLlamaLibTest(unittest.TestCase):
         # matter what model we specify. Note that
         # we cannot test quantization args in this way
         # since quantization requires promoting meta tensors
-        # to the cpu device, which requires real weights.
+        # to device=cpu, which requires real weights.
         parser = build_args_parser()
         args = parser.parse_args([])
         args.use_sdpa_with_kv_cache = True
