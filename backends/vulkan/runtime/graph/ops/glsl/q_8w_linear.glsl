@@ -90,9 +90,10 @@ void main() {
 
 void main() {
   const u16vec2 out_pos = u16vec2(
-    gl_GlobalInvocationID.x / out_limits.y,
-    gl_GlobalInvocationID.x % out_limits.y);
-  if (out_pos.x >= out_limits.x) {
+    gl_GlobalInvocationID.x,
+    gl_GlobalInvocationID.y);
+
+  if (out_pos.x >= out_limits.x || out_pos.y >= out_limits.y) {
     return;
   }
 
