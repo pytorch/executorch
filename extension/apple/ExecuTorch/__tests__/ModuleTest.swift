@@ -11,9 +11,16 @@
 import XCTest
 
 class ModuleTest: XCTestCase {
+  var resourceBundle: Bundle {
+#if SWIFT_PACKAGE
+    return Bundle.module
+#else
+    return Bundle(for: type(of: self))
+#endif
+  }
+  
   func test() throws {
-    let bundle = Bundle(for: type(of: self))
-    guard let modelPath = bundle.path(forResource: "add", ofType: "pte") else {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
       XCTFail("Couldn't find the model file")
       return
     }
