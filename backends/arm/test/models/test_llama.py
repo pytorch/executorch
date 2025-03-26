@@ -117,6 +117,8 @@ class TestLlama(unittest.TestCase):
                 .check_count({"torch.ops.higher_order.executorch_call_delegate": 26})
                 .to_executorch()
                 .run_method_and_compare_outputs(
-                    inputs=llama_inputs, atol=4.3, rtol=1.1  # TODO: MLETORCH-825 decrease tolerance
+                    inputs=llama_inputs,
+                    atol=4.3,
+                    rtol=1.1,  # TODO: MLETORCH-825 decrease tolerance
                 )
             )
