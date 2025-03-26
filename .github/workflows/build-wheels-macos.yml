@@ -6,6 +6,9 @@ on:
     paths:
       - .ci/**/*
       - .github/workflows/build-wheels-macos.yml
+      - examples/**/*
+      - pyproject.toml
+      - setup.py
   push:
     branches:
       - nightly
@@ -19,12 +22,12 @@ on:
 
 jobs:
   generate-matrix:
-    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
+    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@jathu/fix-mac-miniconda
     with:
       package-type: wheel
       os: macos-arm64
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: main
+      test-infra-ref: jathu/fix-mac-miniconda
       with-cuda: disabled
       with-rocm: disabled
       python-versions: '["3.10", "3.11", "3.12"]'
@@ -44,12 +47,12 @@ jobs:
             smoke-test-script: .ci/scripts/wheel/test_macos.py
             package-name: executorch
     name: ${{ matrix.repository }}
-    uses: pytorch/test-infra/.github/workflows/build_wheels_macos.yml@main
+    uses: pytorch/test-infra/.github/workflows/build_wheels_macos.yml@jathu/fix-mac-miniconda
     with:
       repository: ${{ matrix.repository }}
       ref: ""
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: main
+      test-infra-ref: jathu/fix-mac-miniconda
       build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
       submodules: recursive
       delocate-wheel: false
@@ -57,6 +60,10 @@ jobs:
       pre-script: ${{ matrix.pre-script }}
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
-      runner-type: macos-m1-stable
+      # Meta's macOS runners do not have Xcode, so use GitHub's runners.
+      runner-type: macos-latest-xlarge
+      setup-miniconda: true
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
+
+# Attempt: 7
