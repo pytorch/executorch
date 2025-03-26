@@ -237,8 +237,8 @@ test_model_with_coreml() {
 
   # Run the model
   if [ "${should_test}" = true ]; then
-    echo "Installing requirements needed to build coreml_executor_runner..."
-    backends/apple/coreml/scripts/install_requirements.sh
+    # echo "Installing requirements needed to build coreml_executor_runner..."
+    # backends/apple/coreml/scripts/install_requirements.sh
 
     echo "Testing exported model with coreml_executor_runner..."
     local out_dir=$(mktemp -d)

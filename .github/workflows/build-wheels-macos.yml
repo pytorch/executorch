@@ -22,12 +22,12 @@ on:
 
 jobs:
   generate-matrix:
-    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@jathu/fix-mac-miniconda
+    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
     with:
       package-type: wheel
       os: macos-arm64
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: jathu/fix-mac-miniconda
+      test-infra-ref: main
       with-cuda: disabled
       with-rocm: disabled
       python-versions: '["3.10", "3.11", "3.12"]'
@@ -47,7 +47,7 @@ jobs:
             smoke-test-script: .ci/scripts/wheel/test_macos.py
             package-name: executorch
     name: ${{ matrix.repository }}
-    uses: pytorch/test-infra/.github/workflows/build_wheels_macos.yml@jathu/fix-mac-miniconda
+    uses: pytorch/test-infra/.github/workflows/build_wheels_macos.yml@main
     with:
       repository: ${{ matrix.repository }}
       ref: ""
@@ -61,9 +61,7 @@ jobs:
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
       # Meta's macOS runners do not have Xcode, so use GitHub's runners.
-      runner-type: macos-14-xlarge
+      runner-type: macos-latest-xlarge
       setup-miniconda: true
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
-
-# Attempt: 7
