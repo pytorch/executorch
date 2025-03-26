@@ -140,10 +140,10 @@ def quantize(  # noqa C901
         from torchao.quantization import int8_dynamic_activation_int4_weight, quantize_
         from torchao.utils import unwrap_tensor_subclass
 
+        convert_linears_to_dtype(model, checkpoint_dtype.to_torch_dtype())
         quantize_(model, int8_dynamic_activation_int4_weight(group_size=group_size))
+        convert_quantized_linear_output_dtype(model, computation_dtype)
         model = unwrap_tensor_subclass(model)
-
-        # TODO: deal with checkpoint / computation dtype decoupling.
 
         if verbose:
             print("quantized model:", model)
@@ -890,6 +890,28 @@ def _load_torchao_aten_lib(libname):
     ), f"Expected 1 library but got {len(libs)}.  If you installed the torchao ops in a non-standard location, please set CMAKE_INSTALL_PREFIX correctly."
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
+
+
+def convert_linears_to_dtype(model: nn.Module, dtype: torch.dtype):
+    for name, module in model.named_modules():
+        # Similar to https://github.com/pytorch/ao/blob/main/torchao/quantization/quant_api.py#L285.
+        if isinstance(module, nn.Linear) and hasattr(module, "weight"):
+            logging.info(f"Converted {name} to {dtype}")
+            module.to(dtype)
+    return model
+
+
+def convert_quantized_linear_output_dtype(model: nn.Module, dtype: torch.dtype):
+    from torchao.quantization.linear_activation_quantized_tensor import (
+        LinearActivationQuantizedTensor,
+    )
+
+    for name, module in model.named_modules():
+        if isinstance(module, nn.Linear) and hasattr(module, "weight"):
+            if isinstance(module.weight, LinearActivationQuantizedTensor):
+                module.weight.dtype = dtype
+            logging.info(f"Converted {name}'s output dtype to {dtype}")
+    return model
 
 
 # We want to do compute the actual ops in the computation dtype, since the precision of the
