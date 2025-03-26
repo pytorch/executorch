@@ -14,6 +14,9 @@ from torchsr.models import edsr_r16f64
 
 
 class TestEDSR(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     edsr = edsr_r16f64(2, False).eval()  # noqa
     model_inputs = (torch.randn(1, 3, 224, 224),)
 
