@@ -49,19 +49,20 @@ Tensor& rsub_scalar_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "rsub.Scalar_out";
 
-  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-    const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [val_b, val_alpha](const CTYPE_COMPUTE val_a) {
-          return val_b - val_alpha * val_a;
-        },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+        const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
+        utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [val_b, val_alpha](const CTYPE_COMPUTE val_a) {
+              return val_b - val_alpha * val_a;
+            },
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBF16,
+            out,
+            utils::SupportedTensorDtypes::SAME_AS_COMMON);
+      });
 
   return out;
 }

@@ -52,26 +52,28 @@ Tensor& floor_divide_out(
 
   bool div_by_zero_error = false;
 
-  ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [&div_by_zero_error](
-            const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
-            if (val_b == 0) {
-              div_by_zero_error = true;
-              return static_cast<CTYPE_COMPUTE>(0);
-            }
-          }
-          return utils::floor_divide(val_a, val_b);
-        },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBF16);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [&div_by_zero_error](
+                const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+              if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::
+                      value) {
+                if (val_b == 0) {
+                  div_by_zero_error = true;
+                  return static_cast<CTYPE_COMPUTE>(0);
+                }
+              }
+              return utils::floor_divide(val_a, val_b);
+            },
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            out,
+            utils::SupportedTensorDtypes::REALHBF16);
+      });
 
   ET_KERNEL_CHECK_MSG(
       ctx,

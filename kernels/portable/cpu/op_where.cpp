@@ -42,21 +42,22 @@ Tensor& where_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "where.self_out";
 
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [](const CTYPE_COMPUTE val_a,
-           const CTYPE_COMPUTE val_b,
-           const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
-        ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        cond,
-        utils::SupportedTensorDtypes::BOOL_OR_BYTE,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
-  });
+  ET_SWITCH_ELEMENTWISE_COMPUTE_TYPES(
+      compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+        utils::apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+            [](const CTYPE_COMPUTE val_a,
+               const CTYPE_COMPUTE val_b,
+               const CTYPE_COMPUTE val_c) { return val_c ? val_a : val_b; },
+            ctx,
+            a,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            b,
+            utils::SupportedTensorDtypes::REALHBBF16,
+            cond,
+            utils::SupportedTensorDtypes::BOOL_OR_BYTE,
+            out,
+            utils::SupportedTensorDtypes::SAME_AS_COMMON);
+      });
 
   return out;
 }
