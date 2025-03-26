@@ -52,6 +52,7 @@ def clean():
     print("Done cleaning build artifacts.")
 
 
+# Please keep this insync with `ShouldBuild.pybindings` in setup.py.
 VALID_PYBINDS = ["coreml", "mps", "xnnpack", "training"]
 
 
@@ -205,10 +206,8 @@ def main(args):
     cmake_args = [os.getenv("CMAKE_ARGS", "")]
     use_pytorch_nightly = True
 
-    has_pybindings = False
     wants_pybindings_off, pybind_defines = _list_pybind_defines(args)
     if not wants_pybindings_off:
-        has_pybindings = True
         if len(pybind_defines) > 0:
             # If the user explicitly provides a list of bindings, just use them
             cmake_args += pybind_defines
@@ -216,9 +215,6 @@ def main(args):
             # If the user has not set pybindings off but also has not provided
             # a list, then turn on xnnpack by default
             cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
-
-    if has_pybindings:
-        cmake_args.append("-DEXECUTORCH_BUILD_PYBIND=ON")
 
     if args.clean:
         clean()
