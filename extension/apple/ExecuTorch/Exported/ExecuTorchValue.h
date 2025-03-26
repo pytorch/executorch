@@ -10,6 +10,26 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/**
+ * Enum to define the dynamic type of a Value.
+ * Values can be a subset, but must numerically match exactly those defined in
+ * runtime/core/tag.h
+ */
+typedef NS_ENUM(uint32_t, ExecuTorchValueTag) {
+  ExecuTorchValueTagNone,
+  ExecuTorchValueTagTensor,
+  ExecuTorchValueTagString,
+  ExecuTorchValueTagDouble,
+  ExecuTorchValueTagInteger,
+  ExecuTorchValueTagBoolean,
+  ExecuTorchValueTagBooleanList,
+  ExecuTorchValueTagDoubleList,
+  ExecuTorchValueTagIntegerList,
+  ExecuTorchValueTagTensorList,
+  ExecuTorchValueTagScalarList,
+  ExecuTorchValueTagOptionalTensorList,
+} NS_SWIFT_NAME(ValueTag);
+
 NS_SWIFT_NAME(Value)
 __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchValue : NSObject
