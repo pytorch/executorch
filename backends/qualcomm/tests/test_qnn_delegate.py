@@ -63,7 +63,7 @@ from executorch.backends.qualcomm._passes import (
     InsertRequantize,
     LayoutTransform,
 )
-from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
@@ -3241,16 +3241,6 @@ class TestQNNQuantizedUtils(TestQNN):
 
 
 class TestExampleLLMScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_llama3_2_1b(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -3408,16 +3398,6 @@ class TestExampleLLMScript(TestQNN):
 
 
 class TestExampleOssScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_conv_former(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -3790,16 +3770,6 @@ class TestExampleOssScript(TestQNN):
 
 
 class TestExampleQaihubScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_utils_export(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             module = ContextBinaryExample()  # noqa: F405
@@ -4028,16 +3998,6 @@ class TestExampleQaihubScript(TestQNN):
 
 
 class TestExampleScript(TestQNN):
-    def required_envs(self, conditions=None) -> bool:
-        conditions = [] if conditions is None else conditions
-        return all(
-            [
-                self.executorch_root,
-                self.artifact_dir,
-                *conditions,
-            ]
-        )
-
     def test_mobilenet_v2(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -4449,6 +4409,40 @@ class TestExampleScript(TestQNN):
             )
 
 
+class TestUtilScript(TestQNN):
+    def test_custom_op(self):
+        if not self.required_envs([self.op_package_dir]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_1.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            self.op_package_dir,
+            "--build_op_package",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
+
 def setup_environment():
     parser = setup_common_args_and_variables()
 
@@ -4506,6 +4500,13 @@ def setup_environment():
         help="Path to open source software model repository",
         type=str,
     )
+    parser.add_argument(
+        "-d",
+        "--op_package_dir",
+        help="Path to operator package which generates from qnn-op-package-generator",
+        default="",
+        type=str,
+    )
 
     parser.add_argument(
         "--pre_gen_pte",
@@ -4539,7 +4540,7 @@ def setup_environment():
     TestQNN.compile_only = args.compile_only
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts
-
+    TestQNN.op_package_dir = args.op_package_dir
     return sys.argv[:1] + ns_args
 
 
