@@ -735,7 +735,7 @@ class SPVGenerator:
         input_text = input_text.replace("uint16_t", "int")
         return input_text
 
-    def get_md5_checksum(self, file_path: str) -> bool:
+    def get_md5_checksum(self, file_path: str) -> str:
         # Use a reasonably sized buffer for better performance with large files
         BUF_SIZE = 65536  # 64kb chunks
 
