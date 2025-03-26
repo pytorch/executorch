@@ -87,5 +87,5 @@ def define_common_targets():
             # linker failure.
             "ovr_config//cpu:arm64": get_sleef_preprocessor_flags(),
             "DEFAULT": [],
-        }) + ["-DET_USE_PYTORCH_HEADERS", "-DSTANDALONE_TORCH_HEADER"],
+        }) + ["-DSTANDALONE_TORCH_HEADER"] + ([] if runtime.is_oss else ["-DET_USE_PYTORCH_HEADERS"]),
     )
