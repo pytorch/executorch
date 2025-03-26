@@ -31,7 +31,7 @@ Welcome to the ExecuTorch Documentation
    </div>
 
 The ExecuTorch source is hosted on GitHub at
-https://github.com/pytorch/executorch. 
+https://github.com/pytorch/executorch.
 
 Join us on `Discord <https://discord.com/invite/Dh43CKSAdc>`__ if you have questions
 about ExecuTorch or would like to become a contributor!
@@ -103,7 +103,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Examples
    :hidden:
 
-   demo-apps-android.md
+   Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
    demo-apps-ios.md
 
 .. toctree::
