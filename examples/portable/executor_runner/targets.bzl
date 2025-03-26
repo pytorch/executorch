@@ -15,6 +15,7 @@ def define_common_targets():
         srcs = ["executor_runner.cpp"],
         deps = [
             "//executorch/runtime/executor:program",
+            "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/extension/runner_util:inputs",
