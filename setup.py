@@ -121,6 +121,7 @@ class ShouldBuild:
                 [
                     cls.coreml(),
                     cls.mps(),
+                    cls.openvino(),
                     cls.xnnpack(),
                     cls.training(),
                 ]
@@ -134,6 +135,10 @@ class ShouldBuild:
     @classmethod
     def mps(cls) -> bool:
         return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_MPS", default=False)
+
+    @classmethod
+    def openvino(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_OPENVINO", default=False)
 
     @classmethod
     def xnnpack(cls) -> bool:
