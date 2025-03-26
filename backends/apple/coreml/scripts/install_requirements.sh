@@ -10,6 +10,10 @@ SCRIPT_DIR_PATH="$(
     pwd -P
 )"
 
+# TODO(jathu): remove the need to fetch coremltools to build deps for coreml_executor_runner.
+# Keep this version in sync with: pyproject.toml
+COREMLTOOLS_VERSION="8.1"
+
 red=`tput setaf 1`
 green=`tput setaf 2`
 
@@ -24,7 +28,7 @@ rm -rf "$COREML_DIR_PATH/third-party"
 mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone --depth 1 --branch 8.1 "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
+git clone --depth 1 --branch "${COREMLTOOLS_VERSION}" "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
 cd $COREMLTOOLS_DIR_PATH
 
 STATUS=$?
@@ -43,7 +47,7 @@ fi
 
 mkdir "$COREMLTOOLS_DIR_PATH/build"
 cmake -S "$COREMLTOOLS_DIR_PATH" -B "$COREMLTOOLS_DIR_PATH/build"
-cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel
+cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel --target mlmodel
 
 echo "${green}ExecuTorch: Cloning nlohmann."
 git clone https://github.com/nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
