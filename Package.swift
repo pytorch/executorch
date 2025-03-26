@@ -82,5 +82,24 @@ let package = Package(
           (value["libraries"] as? [String] ?? []).map { .linkedLibrary($0) }
       ),
     ]
-  }
+  } + [
+    .testTarget(
+      name: "tests",
+      dependencies: [
+        .target(name: "executorch_debug"),
+        .target(name: "kernels_portable"),
+      ],
+      path: "extension/apple/ExecuTorch/__tests__",
+      resources: [
+        .copy("resources/add.pte")
+      ],
+      linkerSettings: [
+        .linkedLibrary("c++"),
+        .unsafeFlags([
+          "-Xlinker", "-force_load",
+          "-Xlinker", "cmake-out/kernels_portable.xcframework/macos-arm64/libkernels_portable_macos.a",
+        ])
+      ]
+    )
+  ]
 )

@@ -36,8 +36,8 @@ def download_and_convert_hf_checkpoint(
     converted_path = cache_dir / f"{model_name}.pth"
 
     if converted_path.exists():
-        print(f"✔ Using cached converted model: {converted_path}")
-        return converted_path
+        print(f"✔ Using cached converted model: {str(converted_path)}")
+        return str(converted_path)
 
     # 1. Download weights from Hugging Face.
     print("⬇ Downloading and converting checkpoint...")
@@ -46,5 +46,5 @@ def download_and_convert_hf_checkpoint(
     )
 
     # 2. Convert weights to Meta format.
-    convert_weights(checkpoint_path, converted_path)
-    return converted_path
+    convert_weights(checkpoint_path, str(converted_path))
+    return str(converted_path)
