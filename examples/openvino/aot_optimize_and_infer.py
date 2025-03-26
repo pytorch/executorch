@@ -17,9 +17,7 @@ from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.quantizer import quantize_model
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
-from executorch.extension.pybindings.portable_lib import (  # @manual
-    _load_for_executorch_from_buffer,
-)
+from executorch.runtime import Runtime
 from sklearn.metrics import accuracy_score
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
@@ -121,17 +119,19 @@ def infer_model(
     :return: The average inference timing.
     """
     # Load model from buffer
-    executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
+    runtime = Runtime.get()
+    program = runtime.load_program(exec_prog.buffer)
+    method = program.load_method("forward")
 
     # Execute warmup
     for _i in range(warmup_iter):
-        out = executorch_module.run_method("forward", inputs)
+        out = method.execute(inputs)
 
     # Execute inference and measure timing
     time_total = 0.0
     for _i in range(num_iter):
         time_start = time.time()
-        out = executorch_module.run_method("forward", inputs)
+        out = method.execute(inputs)
         time_end = time.time()
         time_total += time_end - time_start
 
@@ -154,7 +154,9 @@ def validate_model(
     :return: The accuracy score of the model.
     """
     # Load model from buffer
-    executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
+    runtime = Runtime.get()
+    program = runtime.load_program(exec_prog.buffer)
+    method = program.load_method("forward")
 
     # Iterate over the dataset and run the executor
     predictions = []
@@ -162,7 +164,7 @@ def validate_model(
     for _idx, data in enumerate(calibration_dataset):
         feature, target = data
         targets.extend(target)
-        out = executorch_module.run_method("forward", (feature,))
+        out = method.execute((feature,))
         predictions.extend(torch.stack(out).reshape(-1, 1000).argmax(-1))
 
     # Check accuracy
