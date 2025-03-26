@@ -24,6 +24,91 @@ ExecuTorch provides support for:
 * **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek,
   Qualcomm, Vulkan, XNNPACK
 
+### Documentation Navigation
+#### Introduction
+- [Overview](intro-overview)
+- [How it Works](intro-how-it-works)
+- [Getting Started with Architecture](getting-started-architecture)
+- [Concepts](concepts)
+#### Usage
+- [Getting Started](getting-started)
+- [Using Executorch Export](using-executorch-export)
+- [Using Executorch on Android](using-executorch-android)
+- [Using Executorch on iOS](using-executorch-ios)
+- [Using Executorch with C++](using-executorch-cpp)
+- [Runtime Integration](using-executorch-runtime-integration)
+- [Troubleshooting](using-executorch-troubleshooting)
+- [Building from Source](using-executorch-building-from-source)
+- [FAQs](using-executorch-faqs)
+#### Examples
+- [Android Demo Apps](demo-apps-android.md)
+- [iOS Demo Apps](demo-apps-ios.md)
+#### Backends
+- [Overview](backends-overview)
+- [XNNPACK](backends-xnnpack)
+- [Core ML](backends-coreml)
+- [MPS](backends-mps)
+- [Vulkan](backends-vulkan)
+- [ARM Ethos-U](backends-arm-ethos-u)
+- [Qualcomm](backends-qualcomm)
+- [MediaTek](backends-mediatek)
+- [Cadence](backends-cadence)
+#### Tutorials
+<!-- No items listed -->
+#### Developer Tools
+- [Overview](devtools-overview)
+- [Bundled IO](bundled-io)
+- [ETRecord](etrecord)
+- [ETDump](etdump)
+- [Runtime Profiling](runtime-profiling)
+- [Model Debugging](model-debugging)
+- [Model Inspector](model-inspector)
+- [Memory Planning Inspection](memory-planning-inspection)
+- [Delegate Debugging](delegate-debugging)
+- [Tutorial](devtools-tutorial)
+#### Runtime
+- [Overview](runtime-overview)
+- [Extension Module](extension-module)
+- [Extension Tensor](extension-tensor)
+- [Running a Model (C++ Tutorial)](running-a-model-cpp-tutorial)
+- [Backend Delegate Implementation and Linking](runtime-backend-delegate-implementation-and-linking)
+- [Platform Abstraction Layer](runtime-platform-abstraction-layer)
+#### Portable C++ Programming
+- [PTE File Format](pte-file-format)
+#### API Reference
+- [Export to Executorch API Reference](export-to-executorch-api-reference)
+- [Executorch Runtime API Reference](executorch-runtime-api-reference)
+- [Runtime Python API Reference](runtime-python-api-reference)
+- [API Life Cycle](api-life-cycle)
+- [Javadoc](https://pytorch.org/executorch/main/javadoc/)
+#### Quantization
+- [Overview](quantization-overview)
+#### Kernel Library
+- [Overview](kernel-library-overview)
+- [Custom ATen Kernel](kernel-library-custom-aten-kernel)
+- [Selective Build](kernel-library-selective-build)
+#### Working with LLMs
+- [Llama](llm/llama)
+- [Llama on Android](llm/llama-demo-android)
+- [Llama on iOS](llm/llama-demo-ios)
+- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend)
+- [Intro to LLMs in Executorch](llm/getting-started)
+#### Backend Development
+- [Delegates Integration](backend-delegates-integration)
+- [XNNPACK Reference](backend-delegates-xnnpack-reference)
+- [Dependencies](backend-delegates-dependencies)
+- [Compiler Delegate and Partitioner](compiler-delegate-and-partitioner)
+- [Debug Backend Delegate](debug-backend-delegate)
+#### IR Specification
+- [EXIR](ir-exir)
+- [Ops Set Definition](ir-ops-set-definition)
+#### Compiler Entry Points
+- [Backend Dialect](compiler-backend-dialect)
+- [Custom Compiler Passes](compiler-custom-compiler-passes)
+- [Memory Planning](compiler-memory-planning)
+#### Contributing
+- [Contributing](contributing)
+
 ```{toctree}
 :glob:
 :maxdepth: 1
