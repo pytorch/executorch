@@ -61,8 +61,6 @@ jobs:
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${DEMO_APP_DIR}"
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${DEMO_APP_DIR}"
 
-        sccache --show-stats
-
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
     needs: build-llm-demo
