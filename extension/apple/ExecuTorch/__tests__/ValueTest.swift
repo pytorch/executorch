@@ -11,6 +11,8 @@
 import XCTest
 
 class ValueTest: XCTestCase {
-  func test() {
+  func testNone() {
+    let value = Value()
+    XCTAssertTrue(value.isNone)
   }
 }
