@@ -56,7 +56,7 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
   const uint32_t memory_offset_high = allocation_info->memory_offset_high();
 
   size_t memory_offset = memory_offset_low;
-  if (memory_offset_high > 0) {
+  if ((sizeof(size_t) > sizeof(uint32_t)) && (memory_offset_high > 0)) {
     // The compiler should remove this always-true check on 64-bit systems.
     ET_CHECK_OR_RETURN_ERROR(
         sizeof(size_t) >= sizeof(uint64_t),
@@ -64,8 +64,7 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
         "size_t cannot hold memory offset 0x%08" PRIx32 ".%08" PRIx32,
         memory_offset_high,
         memory_offset_low);
-    memory_offset |= static_cast<size_t>(memory_offset_high)
-        << (sizeof(size_t) - sizeof(uint32_t));
+    memory_offset |= static_cast<size_t>(memory_offset_high) << 32;
   }
   return allocator->get_offset_address(memory_id, memory_offset, nbytes);
 }
