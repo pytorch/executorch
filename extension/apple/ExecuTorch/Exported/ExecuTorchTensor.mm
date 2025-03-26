@@ -128,6 +128,32 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return YES;
 }
 
+- (BOOL)isEqualToTensor:(nullable ExecuTorchTensor *)other {
+  if (!other) {
+    return NO;
+  }
+  const auto *data = _tensor->unsafeGetTensorImpl()->data();
+  const auto *otherData = other->_tensor->unsafeGetTensorImpl()->data();
+  const auto size = self.count * ExecuTorchSizeOfDataType(self.dataType);
+  return self.dataType == other.dataType &&
+         self.count == other.count &&
+         [self.shape isEqual:other.shape] &&
+         [self.dimensionOrder isEqual:other.dimensionOrder] &&
+         [self.strides isEqual:other.strides] &&
+         self.shapeDynamism == other.shapeDynamism &&
+         (data && otherData ? std::memcmp(data, otherData, size) == 0 : data == otherData);
+}
+
+- (BOOL)isEqual:(nullable id)other {
+  if (self == other) {
+    return YES;
+  }
+  if (![other isKindOfClass:[ExecuTorchTensor class]]) {
+    return NO;
+  }
+  return [self isEqualToTensor:(ExecuTorchTensor *)other];
+}
+
 @end
 
 @implementation ExecuTorchTensor (BytesNoCopy)
