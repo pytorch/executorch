@@ -539,11 +539,17 @@ def export_llama(args) -> str:
     if not args.checkpoint and args.model in HUGGING_FACE_REPO_IDS:
         repo_id = HUGGING_FACE_REPO_IDS[args.model]
         if args.model == "qwen2_5":
-            from executorch.examples.models.qwen2_5 import convert_weights
+            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
+                convert_weights,
+            )
         elif args.model == "phi_4_mini":
-            from executorch.examples.models.phi_4_mini import convert_weights
+            from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
+                convert_weights,
+            )
         elif args.model == "smollm2":
-            from executorch.examples.models.smollm2 import convert_weights
+            from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
+                convert_weights,
+            )
         else:
             raise ValueError(
                 f"Converting weights to meta format for {args.model} is not yet supported"
