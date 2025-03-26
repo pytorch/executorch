@@ -186,8 +186,6 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
-        sccache --show-stats
-
   test-llama-runner-linux-android:
     name: test-llama-runner-linux-android
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
