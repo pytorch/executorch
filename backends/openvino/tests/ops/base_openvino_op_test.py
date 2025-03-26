@@ -6,10 +6,8 @@ from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.preprocess import OpenvinoBackend
 from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
+from executorch.runtime import Runtime
 
-from executorch.extension.pybindings.portable_lib import (  # @manual
-    _load_for_executorch_from_buffer,
-)
 from torch.export import export, ExportedProgram
 
 
@@ -67,8 +65,10 @@ class BaseOpenvinoOpTest(unittest.TestCase):
                 ]
 
             # Load model from buffer and execute
-            executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
-            outputs = executorch_module.run_method("forward", sample_inputs)
+            runtime = Runtime.get()
+            program = runtime.load_program(exec_prog.buffer)
+            method = program.load_method("forward")
+            outputs = method.execute(sample_inputs)
 
             # Compare the outputs with the reference outputs
             self.assertTrue(len(ref_output) == len(outputs))
