@@ -44,7 +44,6 @@ def annotate(graph: Graph, quant_config: QuantizationConfig) -> None:
 
 
 def register_annotator(ops: List[OpOverload]):
-
     def decorator(annotator_fn: Callable):
         for op in ops:
             OP_TO_ANNOTATOR[op] = annotator_fn
@@ -147,7 +146,6 @@ def _annotate_fused_activation_pattern(
 
 
 def _annotate_rmsnorm_pattern(graph: Graph, quant_config: QuantizationConfig) -> None:
-
     class ExecuTorchPattern(torch.nn.Module):
         def forward(self, x):
             norm = x * torch.rsqrt((x * x).mean(-1, keepdim=True) + 1e-6)
@@ -159,7 +157,9 @@ def _annotate_rmsnorm_pattern(graph: Graph, quant_config: QuantizationConfig) ->
             return norm, {}
 
     for pattern_cls in (ExecuTorchPattern, MTKPattern):
-        pattern_gm = export_for_training(pattern_cls(), (torch.randn(3, 3),)).module()
+        pattern_gm = export_for_training(
+            pattern_cls(), (torch.randn(3, 3),), strict=True
+        ).module()
         matcher = SubgraphMatcherWithNameNodeMap(
             pattern_gm, ignore_literals=True, remove_overlapping_matches=False
         )
