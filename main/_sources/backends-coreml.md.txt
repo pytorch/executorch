@@ -28,12 +28,6 @@ Before starting, make sure you install the Xcode Command Line Tools:
 xcode-select --install
 ```
 
-Finally you must install the CoreML backend by running the following script:
-```bash
-sh ./backends/apple/coreml/scripts/install_requirements.sh
-```
-
-
 ----
 
 ## Using the CoreML Backend
