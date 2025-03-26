@@ -91,11 +91,6 @@ inline void dtype_specialized_elementwise_fn_impl(
         CppTypeToScalarType<CTYPE_COMMON>::value) &&
        ...));
 
-  std::array<const CTYPE_COMMON*, kNumInputs> inputs_data_ptrs = {
-      inputs.first->template const_data_ptr<CTYPE_COMMON>()...};
-
-  CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
-
 #ifdef ET_USE_PYTORCH_HEADERS
   if constexpr (can_use_vectorized<CTYPE_COMMON, Op, Args...>()) {
     const bool any_is_broadcasted =
@@ -109,6 +104,11 @@ inline void dtype_specialized_elementwise_fn_impl(
           out.numel(),
           ::executorch::extension::internal::GRAIN_SIZE,
           [&](const auto begin, const auto end) {
+            std::array<const CTYPE_COMMON*, kNumInputs> inputs_data_ptrs = {
+              inputs.first->template const_data_ptr<CTYPE_COMMON>()...};
+
+            CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+
             const auto vectorized_begin =
                 begin + (Vec::size() - begin % Vec::size()) % Vec::size();
             const auto vectorized_end = end - (end % Vec::size());
@@ -152,6 +152,11 @@ inline void dtype_specialized_elementwise_fn_impl(
       out.numel(),
       ::executorch::extension::internal::GRAIN_SIZE,
       [&](const auto begin, const auto end) {
+        std::array<const CTYPE_COMMON*, kNumInputs> inputs_data_ptrs = {
+            inputs.first->template const_data_ptr<CTYPE_COMMON>()...};
+
+        CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+
         const auto range =
             BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...);
         auto begin_it = range.begin();
