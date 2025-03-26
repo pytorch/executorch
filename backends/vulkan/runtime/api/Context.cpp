@@ -289,9 +289,7 @@ VkPipeline Context::get_shader_pipeline(
   spec_constants.append(additional_constants);
 
   VkPipeline pipeline = pipeline_cache().retrieve(
-      {pipeline_layout,
-       shader_cache().retrieve(shader),
-       spec_constants});
+      {pipeline_layout, shader_cache().retrieve(shader), spec_constants});
 
   return pipeline;
 }
