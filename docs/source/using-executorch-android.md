@@ -176,7 +176,7 @@ public class MainActivity extends Activity {
 ```
 This example loads an ExecuTorch module, prepares input data, runs inference, and processes the output data.
 
-Please use [ExecuTorchDemo](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/ExecuTorchDemo)
+Please use [DeepLabV3AndroidDemo](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo)
 and [LlamaDemo](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo) for the code examples
 using ExecuTorch AAR package.
 
