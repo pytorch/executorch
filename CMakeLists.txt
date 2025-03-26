@@ -57,12 +57,6 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-find_program(SCCACHE sccache)
-if(SCCACHE)
-  set(CMAKE_C_COMPILER_LAUNCHER ${SCCACHE} CACHE STRING "C compiler launcher" FORCE)
-  set(CMAKE_CXX_COMPILER_LAUNCHER ${SCCACHE} CACHE STRING "C++ compiler launcher" FORCE)
-endif()
-
 # Setup RPATH.
 # See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
 # Use separate rpaths during build and install phases
