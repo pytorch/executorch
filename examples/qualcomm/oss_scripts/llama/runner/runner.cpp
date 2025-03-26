@@ -266,12 +266,17 @@ int32_t Runner::logitsToToken(const Tensor& logits_tensor, int64_t pos) {
 void Runner::run_model_step(
     const std::string& method_name,
     std::vector<std::vector<EValue>>& inputs) {
+  ET_LOG(Info, "Running model step %s: inputs len: %zu", method_name.c_str(), inputs.size());
+  for(size_t i = 0; i < inputs.size(); i++) {
+    ET_LOG(Info, "              input[%zd] size: %zu", i, inputs[i].size());
+  }
   for (size_t i = 0, num_modules = modules_.size(); i < num_modules; ++i) {
     Result<std::vector<EValue>> outputs_res =
         modules_[i]->execute(method_name, inputs[i]);
     ET_CHECK_MSG(
         outputs_res.error() == Error::Ok, "shard %zu inference failed", i);
   }
+  ET_LOG(Info, "Finish running model step %s", method_name.c_str());
 }
 
 Error Runner::generate(
@@ -352,6 +357,7 @@ Error Runner::generate(
     token_callback(prompt_);
   }
   auto prefill_execute = [&](const std::string& method_name) {
+    ET_LOG(Info, "Executing prefill step %s", method_name.c_str());
     int num_iters = 1 + ((num_prompt_tokens - 1) / prefill_ar_len_);
     ET_LOG(
         Info,
@@ -386,6 +392,7 @@ Error Runner::generate(
   };
 
   auto kv_execute = [&](const std::string& method_name) {
+    ET_LOG(Info, "Executing kv step %s", method_name.c_str());
     io_mgr_->fill_kv_tok_mask(pos, cur_token);
     while (pos < seq_len - 1) {
       // inference
@@ -432,6 +439,7 @@ Error Runner::generate(
       io_mgr_->update_prefill_to_kv_io(
           cur_token, pos, output_tensors[kv_forward_name_]);
       kv_execute(kv_forward_name_);
+      io_mgr_->update_kv_to_prefill_io(pos, output_tensors[prefill_forward_name_]);      
       break;
     default:
       ET_CHECK_MSG(false, "Unsupported eval mode");

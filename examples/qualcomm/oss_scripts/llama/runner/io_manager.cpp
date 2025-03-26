@@ -82,7 +82,13 @@ ShiftPointerIoMgr::ShiftPointerIoMgr(
       prefill_forward_name_(prefill_forward_name),
       kv_forward_name_(kv_forward_name),
       use_int64_token_(use_int64_token),
-      is_bert_(prefill_cache_len_ == 0) {
+      is_bert_(prefill_cache_len_ == 0),
+      current_stage_(Stage::kPrefill),
+      current_pos_(0) {
+
+  ET_LOG(Info, "ShiftPointerIoMgr is created");
+  ET_LOG(Info, "     kv_ar_len: %d, kv_cache_len: %d, prefill_ar_len: %d, prefill_cache_len: %d, vocab_size: %d, num_layers: %d, head_dim: %d, num_heads: %d, eval_mode: %d, prefill_forward_name: %s, kv_forward_name: %s", kv_ar_len_, kv_cache_len_, prefill_ar_len_, prefill_cache_len_, vocab_size, num_layers, head_dim, num_heads, eval_mode, prefill_forward_name.c_str(), kv_forward_name.c_str());
+
   if (!prefill_forward_name_.empty()) {
     input_tensors_[prefill_forward_name_] =
         std::vector<std::vector<executorch::aten::TensorImpl*>>(modules.size());
@@ -498,6 +504,9 @@ void ShiftPointerIoMgr::update_prefill_to_kv_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
+
+  ET_CHECK_MSG(current_stage_ == Stage::kPrefill,
+    "Transition only allowed from prefill stage");
   ET_CHECK_MSG(kv_cache_len_ != 0, "k_cache_len_ should not equal to 0");
   IO* ptr = static_cast<IO*>(data_ptr_.get());
 
@@ -562,12 +571,88 @@ void ShiftPointerIoMgr::update_prefill_to_kv_io(
     }
     k_cache_in[i]->set_data(ptr_in + pos);
   }
+
+  current_stage_ = Stage::kDecode;
+  current_pos_ = pos;  // Track global position
+}
+
+void ShiftPointerIoMgr::update_kv_to_prefill_io(
+  int64_t pos,
+  std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) {
+  ET_LOG(Info, "update_kv_to_prefill_io, current pos is %ld", pos);
+  IO* ptr = static_cast<IO*>(data_ptr_.get());
+
+  ET_CHECK_MSG(current_stage_ == Stage::kDecode,
+              "Transition only allowed from decode stage");
+
+  // synchronize kv cache pointers with decode stage positions
+  // v cache sync
+  auto& decode_v_cache_in = v_cache_in_[kv_forward_name_];
+  auto& prefill_v_cache_in = v_cache_in_[prefill_forward_name_];
+  for (int i = 0; i < prefill_v_cache_in.size(); i++) {
+    uint8_t* decode_v_ptr = decode_v_cache_in[i]->mutable_data<uint8_t>();
+    // reuse decode's position
+    prefill_v_cache_in[i]->set_data(decode_v_ptr);  
+  }
+
+  // k cache sync
+  auto& decode_k_cache_in = k_cache_in_[kv_forward_name_];
+  auto& prefill_k_cache_in = k_cache_in_[prefill_forward_name_];
+  for (int i = 0; i < prefill_k_cache_in.size(); i++) {
+    uint8_t* decode_k_ptr = decode_k_cache_in[i]->mutable_data<uint8_t>();
+    // reuse decode's position
+    prefill_k_cache_in[i]->set_data(decode_k_ptr); 
+  }
+
+  // update prefill input positions to continue from current pos
+  for (int i = 0; i < prefill_ar_len_; i++) {
+    // continue sequence
+    ptr->prefill_input_pos[i] = pos + i;  
+    ET_LOG(Debug, "prefill_input_pos[%d] = %d", i, ptr->prefill_input_pos[i]);
+  }
+
+  // update attention mask for continued sequence
+  std::fill(ptr->prefill_attention_mask.begin(),
+            ptr->prefill_attention_mask.end(), 0);
+
+  // build mask accounting for previous tokens (pos offset)
+  for (int i = 0; i < prefill_ar_len_; ++i) {
+    const int global_step = pos + i;
+    for (int j = 0; 
+        j <= global_step && j < context_len_; 
+        ++j) {
+      const int offset = i * context_len_ + (context_len_ - global_step - 1);
+      if (offset + j < ptr->prefill_attention_mask.size()) {
+        ptr->prefill_attention_mask[offset + j] = 65535;  
+      }
+    }
+  }
+
+  if (!output_tensors.empty()) {
+    for (int shard = 0; shard < output_tensors.size(); shard++) {
+      for (int index = 0; index < output_tensors[shard].size(); index++) {
+        ET_CHECK_MSG(
+            modules_[shard]->set_output(
+                prefill_forward_name_, 
+                output_tensors[shard][index], 
+                index) == Error::Ok,
+            "Failed to set output tensor during transition");
+      }
+    }
+  }
+
+  // update system state
+  current_stage_ = Stage::kPrefill;
+  current_pos_ = pos;  // Track global position
+
+  ET_LOG(Info, "Transitioned to prefill at position %ld. Cache preserved.", pos);
 }
 
 void ShiftPointerIoMgr::update_kv_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
+  ET_CHECK_MSG(current_stage_ == Stage::kDecode, "update_kv_io only allowed from decode stage");
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   // update input_tok
   ptr->kv_input_toks =
@@ -611,12 +696,16 @@ void ShiftPointerIoMgr::update_kv_io(
     }
     k_cache_in[i]->set_data(ptr_in + 1);
   }
+  current_stage_ = Stage::kDecode;
+  current_pos_ = pos;
 }
 
 void ShiftPointerIoMgr::update_prefill_io(
     int64_t cur_token,
     int64_t pos,
     std::vector<std::vector<Tensor>>& output_tensors) {
+      ET_CHECK_MSG(current_stage_ == Stage::kPrefill,
+        "Transition only allowed from decode stage");
   (void)cur_token;
   (void)output_tensors;
 
@@ -661,12 +750,16 @@ void ShiftPointerIoMgr::update_prefill_io(
       k_cache_in[i]->set_data(ptr_in + prefill_ar_len_);
     }
   }
+  current_stage_ = Stage::kPrefill;
+  current_pos_ = pos;
 }
 
 void ShiftPointerIoMgr::fill_prefill_toks(
     int64_t start_pos,
     std::vector<uint64_t>& prompt_tokens) {
-  IO* ptr = static_cast<IO*>(get_mutable_ptr());
+  ET_CHECK_MSG(current_stage_ == Stage::kPrefill,
+    "fill_prefill_toks only allowed during prefill stage");
+      IO* ptr = static_cast<IO*>(get_mutable_ptr());
   for (int i = 0; i < prefill_ar_len_; i++) {
     if (!is_bert_) {
       ptr->prefill_input_pos[i] = start_pos + i;
@@ -698,6 +791,8 @@ void ShiftPointerIoMgr::fill_prefill_toks(
 }
 
 void ShiftPointerIoMgr::fill_kv_tok_mask(int64_t pos, int64_t cur_token) {
+  ET_CHECK_MSG(current_stage_ == Stage::kDecode,
+    "fill_kv_tok_mask only allowed during decode stage");
   IO* ptr = static_cast<IO*>(get_mutable_ptr());
   ptr->kv_input_toks =
       use_int64_token_ ? cur_token : static_cast<int32_t>(cur_token);
@@ -1358,6 +1453,12 @@ void SmartMaskIoMgr::update_prefill_to_kv_io(
       }
     }
   }
+}
+
+void SmartMaskIoMgr::update_kv_to_prefill_io(
+  int64_t pos,
+  std::vector<std::vector<executorch::aten::Tensor>>& output_tensors) {
+    ET_LOG(Info, "not implemented");
 }
 
 void SmartMaskIoMgr::update_prefill_io(
