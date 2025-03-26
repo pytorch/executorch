@@ -176,17 +176,22 @@ class XNNPartitionerConfig(PartitionerConfig):
                 return False
 
             # Check for mixed dtypes
-            if reference_dtype is None:
-                reference_dtype = arg_val.dtype
-            elif arg_val.dtype != reference_dtype:
+            reference_dtype = reference_dtype or arg_val.dtype
+            if arg_val.dtype != reference_dtype:
+                why(
+                    node,
+                    reason=(
+                        f"{node.target} does not support mixed input dtypes. "
+                        f"Got: [{reference_dtype}, {arg_val.dtype}]"
+                    ),
+                )
                 return False
 
         return True
 
     def _check_outputs_are_valid_dtypes(self, node, valid_dtypes):
-        # Check outputs are valid and have the same dtypes
+        # Check outputs are valid
         node_val = node.meta.get("val", None)
-        reference_dtype = None
 
         if node_val is None:
             return True
@@ -199,12 +204,6 @@ class XNNPartitionerConfig(PartitionerConfig):
                 return False
 
             if val.dtype not in valid_dtypes:
-                return False
-
-            # Check for mixed dtypes
-            if reference_dtype is None:
-                reference_dtype = val.dtype
-            elif val.dtype != reference_dtype:
                 return False
 
         return True
