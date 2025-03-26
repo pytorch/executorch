@@ -78,24 +78,18 @@ Tensor& opt_elu_out(
     Tensor& out) {
   ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
   ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(out, in.sizes()) == Error::Ok,
-      InvalidArgument,
-      out);
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(
-      ctx, tensor_is_floating_type(in), InvalidArgument, out);
+  ET_KERNEL_CHECK(ctx, tensor_is_floating_type(in), InvalidArgument, out);
 
-  ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
 
-  ET_SWITCH_FLOATHBF16_TYPES(
-      in.scalar_type(), ctx, "elu.out", CTYPE, [&]() {
-        elu<CTYPE>(ctx, in, alpha, scale, input_scale, out);
-      });
+  ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, "elu.out", CTYPE, [&]() {
+    elu<CTYPE>(ctx, in, alpha, scale, input_scale, out);
+  });
   return out;
 }
 
