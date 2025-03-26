@@ -424,7 +424,7 @@ SAMPLE_INPUT = {
         ],
         "returns": [Return(ArgType.Tensor)],
     },
-    "elu.default": { # (Tensor self, Scalar alpha=1, Scalar scale=1, Scalar input_scale=1, *, Tensor(a!) out) -> Tensor(a!)
+    "elu.default": {  # (Tensor self, Scalar alpha=1, Scalar scale=1, Scalar input_scale=1, *, Tensor(a!) out) -> Tensor(a!)
         "args": [
             InArg(ArgType.Tensor),
             InArg(ArgType.Scalar),
