@@ -52,7 +52,7 @@ jobs:
       repository: ${{ matrix.repository }}
       ref: ""
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: jathu/fix-mac-miniconda
+      test-infra-ref: main
       build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
       submodules: recursive
       delocate-wheel: false
