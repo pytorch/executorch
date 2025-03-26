@@ -646,7 +646,7 @@ target_link_options_shared_lib(executorch)
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   # find pytorch lib here to make it available to all
   # sub-directories. Find it before including portable so that
-  # optimized_portabale_kernels can use it.
+  # optimized_portable_kernels can use it.
   find_package_torch_headers()
 endif()
 
