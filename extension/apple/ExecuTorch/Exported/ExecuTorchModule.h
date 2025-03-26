@@ -10,6 +10,18 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/**
+ * Enum to define loading behavior.
+ * Values can be a subset, but must numerically match exactly those defined in
+ * extension/module/module.h
+ */
+typedef NS_ENUM(NSInteger, ExecuTorchModuleLoadMode) {
+  ExecuTorchModuleLoadModeFile = 0,
+  ExecuTorchModuleLoadModeMmap,
+  ExecuTorchModuleLoadModeMmapUseMlock,
+  ExecuTorchModuleLoadModeMmapUseMlockIgnoreErrors,
+} NS_SWIFT_NAME(ModuleLoadMode);
+
 NS_SWIFT_NAME(Module)
 __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchModule : NSObject
