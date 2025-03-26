@@ -1,20 +1,24 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
 from typing import List, Tuple, Union
 
-import pytest
-
 import torch
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.backend_details import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
+
+aten_op = "torch.ops.aten.conv1d.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
+
+input_t = Tuple[torch.Tensor]
 
 
 class Conv1d(torch.nn.Module):
@@ -245,107 +249,93 @@ two_conv1d = Conv1d(
     batches=1,
 )
 
-# Shenanigan to get a nicer output when test fails. With unittest it looks like:
-# FAIL: test_conv1d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
-testsuite = [
-    ("2_3x2x40_nobias", conv1d_2_3x2x40_nobias),
-    ("3_1x3x256_st1", conv1d_3_1x3x256_st1),
-    ("3_1x3x12_st2_pd1", conv1d_3_1x3x12_st2_pd1),
-    ("1_1x2x128_st1", conv1d_1_1x2x128_st1),
-    ("2_1x2x14_st2", conv1d_2_1x2x14_st2),
-    ("5_3x2x128_st1", conv1d_5_3x2x128_st1),
-    ("3_1x3x224_st2_pd1", conv1d_3_1x3x224_st2_pd1),
-    ("7_1x3x16_st2_pd1_dl2_needs_adjust_pass", conv1d_7_1x3x16_st2_pd1_dl2),
-    ("7_1x3x15_st1_pd0_dl1_needs_adjust_pass", conv1d_7_1x3x15_st1_pd0_dl1),
-    ("5_1x3x14_st5_pd0_dl1_needs_adjust_pass", conv1d_5_1x3x14_st5_pd0_dl1),
-    ("5_1x3x9_st5_pd0_dl1_needs_adjust_pass", conv1d_5_1x3x9_st5_pd0_dl1),
-    ("two_conv1d_nobias", two_conv1d_nobias),
-    ("two_conv1d", two_conv1d),
-]
+test_modules = {
+    "2_3x2x40_nobias": conv1d_2_3x2x40_nobias,
+    "3_1x3x256_st1": conv1d_3_1x3x256_st1,
+    "3_1x3x12_st2_pd1": conv1d_3_1x3x12_st2_pd1,
+    "1_1x2x128_st1": conv1d_1_1x2x128_st1,
+    "2_1x2x14_st2": conv1d_2_1x2x14_st2,
+    "5_3x2x128_st1": conv1d_5_3x2x128_st1,
+    "3_1x3x224_st2_pd1": conv1d_3_1x3x224_st2_pd1,
+    "7_1x3x16_st2_pd1_dl2_needs_adjust_pass": conv1d_7_1x3x16_st2_pd1_dl2,
+    "7_1x3x15_st1_pd0_dl1_needs_adjust_pass": conv1d_7_1x3x15_st1_pd0_dl1,
+    "5_1x3x14_st5_pd0_dl1_needs_adjust_pass": conv1d_5_1x3x14_st5_pd0_dl1,
+    "5_1x3x9_st5_pd0_dl1_needs_adjust_pass": conv1d_5_1x3x9_st5_pd0_dl1,
+    "two_conv1d_nobias": two_conv1d_nobias,
+    "two_conv1d": two_conv1d,
+}
 
 
-class TestConv1D(unittest.TestCase):
-    def _test_conv1d_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI",
-                ),
-            )
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+@common.parametrize("test_module", test_modules)
+def test_convolution_1d_tosa_MI(test_module):
+    pipeline = TosaPipelineMI[input_t](
+        test_module,
+        test_module.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
 
-    def _test_conv1d_tosa_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        test_data: Tuple[torch.Tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI",
-                ),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
 
-    def _test_conv1d_ethosu_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        compile_spec: CompileSpec,
-        test_data: Tuple[torch.Tensor],
-    ):
-        tester = (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+@common.parametrize("test_module", test_modules)
+def test_convolution_1d_tosa_BI(test_module):
+    pipeline = TosaPipelineBI[input_t](
+        test_module,
+        test_module.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
 
-    @parameterized.expand(testsuite)
-    def test_conv1d_tosa_MI(self, test_name, model):
-        self._test_conv1d_tosa_MI_pipeline(model, model.get_inputs())
 
-    @parameterized.expand(testsuite)
-    def test_conv1d_tosa_BI(self, test_name, model):
-        self._test_conv1d_tosa_BI_pipeline(model, model.get_inputs())
+@common.parametrize("test_module", test_modules)
+def test_convolution_1d_u55_BI(test_module):
+    pipeline = EthosU55PipelineBI[input_t](
+        test_module,
+        test_module.get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+    )
+    pipeline.run()
 
-    @parameterized.expand(testsuite)
-    @pytest.mark.corstone_fvp
-    def test_conv1d_u55_BI(self, test_name, model):
-        self._test_conv1d_ethosu_BI_pipeline(
-            model, common.get_u55_compile_spec(), model.get_inputs()
-        )
 
-    @parameterized.expand(testsuite)
-    @pytest.mark.corstone_fvp
-    def test_conv1d_u85_BI(self, test_name, model):
-        self._test_conv1d_ethosu_BI_pipeline(
-            model, common.get_u85_compile_spec(), model.get_inputs()
-        )
+@common.parametrize("test_module", test_modules)
+def test_convolution_1d_u85_BI(test_module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module,
+        test_module.get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoCorstone300
+def test_convolution_1d_u55_BI_on_fvp(test_module):
+    pipeline = EthosU55PipelineBI[input_t](
+        test_module,
+        test_module.get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoCorstone320
+def test_convolution_1d_u85_BI_on_fvp(test_module):
+    pipeline = EthosU85PipelineBI[input_t](
+        test_module,
+        test_module.get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
