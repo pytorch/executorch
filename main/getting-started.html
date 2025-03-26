@@ -339,6 +339,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Examples</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
@@ -610,17 +611,10 @@
 <div class="section" id="id1">
 <h4>Installation<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
 <p>ExecuTorch provides Java bindings for Android usage, which can be consumed from both Java and Kotlin.
-To add the library to your app, download the AAR, and add it to the gradle build rule.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span>
-<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="n">v0</span><span class="mf">.5.0</span><span class="o">-</span><span class="n">rc3</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
-</pre></div>
-</div>
-<p>And in gradle,</p>
+To add the library to your app, add the following dependency to gradle build rule.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># app/build.gradle.kts</span>
 <span class="n">dependencies</span> <span class="p">{</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s2">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.5.1&quot;</span><span class="p">)</span>
+  <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;org.pytorch:executorch-android:0.5.1&quot;</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -642,7 +636,7 @@ To add the library to your app, download the AAR, and add it to the gradle build
 <span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="n">scores</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">output</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span><span class="p">.</span><span class="na">toTensor</span><span class="p">().</span><span class="na">getDataAsFloatArray</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>For a full example of running a model on Android, see the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/ClassificationActivity.java">ExecuTorch Android Demo App</a>. For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see <a class="reference internal" href="using-executorch-android.html"><span class="doc std std-doc">Using ExecuTorch on Android</span></a>.</p>
+<p>For a full example of running a model on Android, see the <a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo">DeepLabV3AndroidDemo</a>. For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see <a class="reference internal" href="using-executorch-android.html"><span class="doc std std-doc">Using ExecuTorch on Android</span></a>.</p>
 </div>
 </div>
 <div class="section" id="ios">
