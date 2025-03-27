@@ -151,6 +151,28 @@ __attribute__((deprecated("This API is experimental.")))
 - (instancetype)initWithNativeInstance:(void *)nativeInstance
     NS_DESIGNATED_INITIALIZER NS_SWIFT_UNAVAILABLE("");
 
+/**
+ * Executes a block with a pointer to the tensor's immutable byte data.
+ *
+ * @param handler A block that receives:
+ *   - a pointer to the data,
+ *   - the total number of elements,
+ *   - and the data type.
+ */
+- (void)bytesWithHandler:(void (^)(const void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
+    NS_SWIFT_NAME(bytes(_:));
+
+/**
+ * Executes a block with a pointer to the tensor's mutable byte data.
+ *
+ * @param handler A block that receives:
+ *   - a mutable pointer to the data,
+ *   - the total number of elements,
+ *   - and the data type.
+ */
+- (void)mutableBytesWithHandler:(void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
+    NS_SWIFT_NAME(mutableBytes(_:));
+
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
