@@ -200,6 +200,14 @@ __attribute__((deprecated("This API is experimental.")))
                 error:(NSError **)error
     NS_SWIFT_NAME(resize(to:));
 
+/**
+ * Determines whether the current tensor is equal to another tensor.
+ *
+ * @param other Another ExecuTorchTensor instance to compare against.
+ * @return YES if the tensors have the same type, shape, strides, and data; otherwise, NO.
+ */
+- (BOOL)isEqualToTensor:(nullable ExecuTorchTensor *)other;
+
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
