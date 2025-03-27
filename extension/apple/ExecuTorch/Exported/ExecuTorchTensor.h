@@ -152,6 +152,15 @@ __attribute__((deprecated("This API is experimental.")))
     NS_DESIGNATED_INITIALIZER NS_SWIFT_UNAVAILABLE("");
 
 /**
+ * Creates a new tensor by copying an existing tensor.
+ *
+ * @param otherTensor The tensor instance to copy.
+ * @return A new ExecuTorchTensor instance that is a copy of otherTensor.
+ */
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
+    NS_SWIFT_NAME(init(_:));
+
+/**
  * Executes a block with a pointer to the tensor's immutable byte data.
  *
  * @param handler A block that receives:
