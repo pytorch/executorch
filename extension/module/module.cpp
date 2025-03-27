@@ -236,6 +236,8 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
   auto& inputs = methods_.at(method_name).inputs;
+  
+  ET_CHECK_OR_RETURN_ERROR(method != nullptr, InvalidArgument, "Method is null");
 
   for (size_t i = 0; i < input_values.size(); ++i) {
     if (!input_values[i].isNone()) {
