@@ -22,4 +22,28 @@ class ValueTest: XCTestCase {
     XCTAssertTrue(value.isTensor)
     XCTAssertEqual(value.tensor, tensor)
   }
+
+  func testString() {
+    let value = Value("hello")
+    XCTAssertTrue(value.isString)
+    XCTAssertEqual(value.string, "hello")
+  }
+
+  func testBoolean() {
+    let value = Value(true)
+    XCTAssertTrue(value.isBoolean)
+    XCTAssertEqual(value.boolean, true)
+  }
+
+  func testInteger() {
+    let value = Value(42)
+    XCTAssertTrue(value.isInteger)
+    XCTAssertEqual(value.integer, 42)
+  }
+
+  func testDouble() {
+    let value = Value(3.14)
+    XCTAssertTrue(value.isDouble)
+    XCTAssertEqual(value.double, 3.14)
+  }
 }
