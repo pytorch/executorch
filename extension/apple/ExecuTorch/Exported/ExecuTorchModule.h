@@ -174,6 +174,21 @@ __attribute__((deprecated("This API is experimental.")))
     NS_SWIFT_NAME(execute(_:_:));
 
 /**
+ * Executes a specific method with the provided single input tensor.
+ *
+ * The method is loaded on demand if not already loaded.
+ *
+ * @param methodName A string representing the method name.
+ * @param tensor An ExecuTorchTensor object representing the input.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ */
+- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
+                                            withTensor:(ExecuTorchTensor *)tensor
+                                                 error:(NSError **)error
+    NS_SWIFT_NAME(execute(_:_:));
+
+/**
  * Executes the "forward" method with the provided input values.
  *
  * This is a convenience method that calls the executeMethod with "forward" as the method name.
@@ -210,7 +225,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)forward:(NSError **)error;
 
 /**
- * Executes the "forward" method with no inputs.
+ * Executes the "forward" method with the provided input tensors.
  *
  * This is a convenience method that calls the executeMethod with "forward" as the method name.
  *
@@ -220,6 +235,19 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithTensors:(NSArray<ExecuTorchTensor *> *)tensors
                                                       error:(NSError **)error
+    NS_SWIFT_NAME(forward(_:));
+
+/**
+ * Executes the "forward" method with the provided single input tensor.
+ *
+ * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ *
+ * @param tensor An ExecuTorchTensor object representing the input.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ */
+- (nullable NSArray<ExecuTorchValue *> *)forwardWithTensor:(ExecuTorchTensor *)tensor
+                                                     error:(NSError **)error
     NS_SWIFT_NAME(forward(_:));
 
 + (instancetype)new NS_UNAVAILABLE;

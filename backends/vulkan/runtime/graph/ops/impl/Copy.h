@@ -53,13 +53,16 @@ void add_copy_offset_node(
 // dst_offset (all are in texture coordinate (x, y, z) from the input image to
 // the output image.
 //
+// repeat flag is used to indicate if copy should wrap around tensor dim.
+// only true for repeat op.
 void add_copy_packed_dim_offset_node(
     ComputeGraph& graph,
     const ValueRef in,
     const utils::ivec3& range,
     const utils::ivec4& src_offset,
     const utils::ivec4& dst_offset,
-    const ValueRef out);
+    const ValueRef out,
+    bool repeat = false);
 
 // add_copy_channel_offset_node behaves similar to add_copy_node, except that it
 // works on the channel dimensions of the tensor (up to 4 dimensions in NCHW).
