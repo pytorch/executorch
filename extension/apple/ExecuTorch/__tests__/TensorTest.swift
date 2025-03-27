@@ -67,4 +67,32 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor.shapeDynamism, .dynamicBound)
     XCTAssertEqual(tensor.count, 6)
   }
+
+  func testInitBytes() {
+    var data: [Double] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytes: $0.baseAddress!, shape: [2, 3], dataType: .double)
+    }
+    XCTAssertEqual(tensor.dataType, .double)
+    XCTAssertEqual(tensor.shape, [2, 3])
+    XCTAssertEqual(tensor.strides, [3, 1])
+    XCTAssertEqual(tensor.dimensionOrder, [0, 1])
+    XCTAssertEqual(tensor.shapeDynamism, .dynamicBound)
+    XCTAssertEqual(tensor.count, 6)
+  }
+
+  func testWithCustomStridesAndDimensionOrder() {
+    let data: [Float] = [1.0, 2.0, 3.0, 4.0]
+    let tensor = Tensor(
+      bytes: data.withUnsafeBytes { $0.baseAddress! },
+      shape: [2, 2],
+      strides: [1, 2],
+      dimensionOrder: [1, 0],
+      dataType: .float
+    )
+    XCTAssertEqual(tensor.shape, [2, 2])
+    XCTAssertEqual(tensor.strides, [1, 2])
+    XCTAssertEqual(tensor.dimensionOrder, [1, 0])
+    XCTAssertEqual(tensor.count, 4)
+  }
 }
