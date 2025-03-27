@@ -219,6 +219,9 @@ class TestLinear(unittest.TestCase):
           should produce strictly better results compared to Per-Tensor Quantization
     """
 
+    def setUp(self):
+        torch._dynamo.reset()
+
     @staticmethod
     def _get_4b_dqconfig() -> QuantizationConfig:
         # Returns a QuantizationConfig for 4b dynamic quantization for XNNPACK.
