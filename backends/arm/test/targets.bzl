@@ -4,10 +4,15 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 
 def define_arm_tests():
     # TODO Add more tests
-    test_files = native.glob(["passes/test_*.py"])
+    test_files = []
 
+    # Passes
+    test_files += native.glob(["passes/test_*.py"])
     # https://github.com/pytorch/executorch/issues/8606
     test_files.remove("passes/test_ioquantization_pass.py")
+
+    # Operators
+    test_files += native.glob(["ops/test_linear.py"])
 
     TESTS = {}
 
@@ -26,8 +31,8 @@ def define_arm_tests():
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
             ],
             deps = [
-                ":arm_tester",
-                ":conftest",
+                "//executorch/backends/arm/test:arm_tester",
+                "//executorch/backends/arm/test:conftest",
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",

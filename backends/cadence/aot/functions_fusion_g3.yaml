@@ -42,6 +42,17 @@
     - arg_meta: null
       kernel_name: cadence::impl::G3::cat_out
 
+- op: clamp.out
+  cpp_no_default_args: ['min']
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::clamp_out
+
+- op: clamp.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::clamp_Tensor_out
+
 - op: clone.out
   kernels:
     - arg_meta: null
@@ -67,6 +78,16 @@
     - arg_meta: null
       kernel_name: torch::executor::full_out
 
+- op: lt.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::lt_Scalar_out
+
+- op: lt.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::lt_Tensor_out
+
 - op: mul.out
   kernels:
     - arg_meta: null
@@ -81,10 +102,15 @@
     - arg_meta: null
       kernel_name: cadence::impl::G3::permute_copy_out
 
+- op: rsqrt.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::rsqrt_out
+
 - op: sigmoid.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::sigmoid_out
+      kernel_name: cadence::impl::G3::sigmoid_out
 
 - op: slice_copy.Tensor_out
   kernels:
@@ -96,6 +122,11 @@
     - arg_meta: null
       kernel_name: torch::executor::split_with_sizes_copy_out
 
+- op: sqrt.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::sqrt_out
+
 - op: sub.out
   kernels:
     - arg_meta: null
@@ -106,6 +137,16 @@
     - arg_meta: null
       kernel_name: cadence::impl::G3::sub_scalar_out
 
+- op: tanh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::tanh_out
+
+- op: transpose_copy.int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: cadence::impl::G3::transpose_copy_int_out
+
 - op: view_copy.out
   kernels:
     - arg_meta: null
@@ -114,7 +155,7 @@
 - op: where.self_out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::where_out
+      kernel_name: cadence::impl::G3::where_self_out
 
 - op: native_layer_norm.out
   kernels:
@@ -124,7 +165,7 @@
 - op: mean.out
   kernels:
     - arg_meta: null
-      kernel_name:  cadence::impl::G3::mean_dim_out
+      kernel_name:  cadence::impl::G3::mean_out
 
 - op: exp.out
   kernels:

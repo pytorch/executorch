@@ -33,7 +33,6 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
 -DCMAKE_TOOLCHAIN_FILE="$IOS_TOOLCHAIN_PATH" \
 -DPLATFORM=MAC_UNIVERSAL \
 -DDEPLOYMENT_TARGET=13.0 \
--DFLATC_EXECUTABLE="$(which flatc)" \
 -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
 -DEXECUTORCH_BUILD_XNNPACK=OFF \
 -DEXECUTORCH_BUILD_DEVTOOLS=ON \
@@ -41,7 +40,7 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
 -Dprotobuf_BUILD_TESTS=OFF \
 -Dprotobuf_BUILD_EXAMPLES=OFF \
 -DCOREML_BUILD_EXECUTOR_RUNNER=ON \
--DCMAKE_MACOSX_BUNDLE=OFF \
+-DCMAKE_MACOSX_BUNDLE=OFF
 
 cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t coremldelegate
 cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t etdump -t flatccrt
@@ -67,6 +66,8 @@ find "$CMAKE_BUILD_DIR_PATH/" -name 'libexecutorch_core.a' -exec cp -f "{}" "$LI
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libprotobuf-lite.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libprotobuf-lite.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libprotobuf-lited.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libprotobuf-lite.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libetdump.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libetdump.a"  \;
+find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoreml_util.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libcoreml_util.a"  \;
+find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoreml_inmemoryfs.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libcoreml_inmemoryfs.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoremldelegate.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libcoremldelegate.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libportable_ops_lib.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libportable_ops_lib.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libportable_kernels.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libportable_kernels.a"  \;
@@ -78,4 +79,11 @@ XCODE_WORKSPACE_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/executor_runner"
 XCODE_BUILD_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/xcode-build"
 
 xcodebuild build -workspace "$XCODE_WORKSPACE_DIR_PATH/coreml_executor_runner.xcworkspace" -scheme coreml_executor_runner BUILD_DIR="$XCODE_BUILD_DIR_PATH"
-cp -f "$XCODE_BUILD_DIR_PATH/DEBUG/coreml_executor_runner" "$PWD"
+
+if [[ -z "${COREML_EXECUTOR_RUNNER_OUT_DIR:-}" ]]; then
+    COREML_EXECUTOR_RUNNER_OUT_DIR=$(pwd)
+elif [[ ! -d "${COREML_EXECUTOR_RUNNER_OUT_DIR}" ]]; then
+    mkdir -p "${COREML_EXECUTOR_RUNNER_OUT_DIR}"
+fi
+cp -f "$XCODE_BUILD_DIR_PATH/DEBUG/coreml_executor_runner" "${COREML_EXECUTOR_RUNNER_OUT_DIR}"
+echo "created ${COREML_EXECUTOR_RUNNER_OUT_DIR}/coreml_executor_runner"

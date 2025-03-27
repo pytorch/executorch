@@ -48,6 +48,7 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-mediatek-sdk)
     MEDIATEK_SDK=yes
     CLANG_VERSION=12
+    ANDROID_NDK_VERSION=r27b
     ;;
   executorch-ubuntu-22.04-clang12-android)
     LINTRUNNER=""

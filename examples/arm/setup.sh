@@ -55,12 +55,8 @@ else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
 fi
 
-# ethos-u
-ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="24.08"
-
 # tosa reference model
-tosa_reference_model_url="https://review.mlplatform.org/tosa/reference_model"
+tosa_reference_model_url="https://git.gitlab.arm.com/tosa/tosa-reference-model.git"
 tosa_reference_model_rev="70ed0b40fa831387e36abdb4f7fb9670a3464f5a"
 
 # vela
@@ -84,8 +80,10 @@ function setup_fvp() {
 
     # Mandatory user arg --i-agree-to-the-contained-eula
     eula_acceptance="${1:-'.'}"
+    eula_acceptance_by_variable="${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA:-False}"
+
     if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
-        if [[ ${ARM_FVP_INSTALL_I_AGREE_TO_THE_CONTAINED_EULA} != "True" ]]; then
+        if [[ ${eula_acceptance_by_variable} != "True" ]]; then
         echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
         exit 1
         else

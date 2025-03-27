@@ -9,7 +9,6 @@ from typing import List
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
-# pyre-fixme[21]: 'Could not find a module corresponding to import `executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass`.'
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
@@ -42,28 +41,34 @@ class MaxPool2dVisitor(NodeVisitor):
         stride = inputs[2].special
 
         try:
-            padding = [*inputs[3].special, *inputs[3].special]
+            pad_size_list = inputs[3].special
+            pad_size_list = [
+                pad_size_list[0],
+                pad_size_list[0],
+                pad_size_list[1],
+                pad_size_list[1],
+            ]
         except IndexError:
-            padding = [0, 0, 0, 0]
+            pad_size_list = [0, 0, 0, 0]
 
         accumulator_type = output.dtype
 
         # Initilize zero point to zero.
         input_zp = 0
         if inputs[0].dtype == ts.DType.INT8:
-            input_qparams = get_input_qparams(node)  # pyre-ignore[16]
+            input_qparams = get_input_qparams(node)
             input_zp = input_qparams[0].zp
 
         output_zp = 0
         if output.dtype == ts.DType.INT8:
-            output_qparams = get_output_qparams(node)  # pyre-ignore[16]
+            output_qparams = get_output_qparams(node)
             output_zp = output_qparams[0].zp
 
         attr = ts.TosaSerializerAttribute()
         attr.PoolAttribute(
             kernel=kernel_size,
             stride=stride,
-            pad=padding,
+            pad=pad_size_list,
             input_zp=input_zp,
             output_zp=output_zp,
             accum_dtype=accumulator_type,
