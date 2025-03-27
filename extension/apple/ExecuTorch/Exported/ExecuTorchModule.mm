@@ -191,6 +191,14 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
                        error:error];
 }
 
+- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
+                                            withTensor:(ExecuTorchTensor *)tensor
+                                                 error:(NSError **)error {
+  return [self executeMethod:methodName
+                  withInputs:@[[ExecuTorchValue valueWithTensor:tensor]]
+                       error:error];
+}
+
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithInputs:(NSArray<ExecuTorchValue *> *)values
                                                      error:(NSError **)error {
   return [self executeMethod:@"forward"
@@ -219,6 +227,13 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   }
   return [self executeMethod:@"forward"
                   withInputs:values
+                       error:error];
+}
+
+- (nullable NSArray<ExecuTorchValue *> *)forwardWithTensor:(ExecuTorchTensor *)tensor
+                                                     error:(NSError **)error {
+  return [self executeMethod:@"forward"
+                  withInputs:@[[ExecuTorchValue valueWithTensor:tensor]]
                        error:error];
 }
 
