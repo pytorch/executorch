@@ -8,10 +8,10 @@ from typing import List, Tuple, Union
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
     EthosU85PipelineBI,
+    OpNotSupportedPipeline,
     TosaPipelineBI,
     TosaPipelineMI,
 )
@@ -34,9 +34,9 @@ class Conv2d(torch.nn.Module):
         in_channels: Union[List, int, None] = None,
         out_channels: Union[List, int, None] = None,
         kernel_size: Union[List, Tuple, None] = None,
-        stride: Union[List, Tuple, None] = None,
-        padding: Union[List, Tuple, None] = None,
-        dilation: Union[List, Tuple, None] = None,
+        stride: Union[List, Tuple, int, None] = None,
+        padding: Union[List, Tuple, int, None] = None,
+        dilation: Union[List, Tuple, int, None] = None,
         groups: Union[List, int, None] = None,
         bias: Union[List, bool, None] = None,
         padding_mode: Union[List, str, None] = None,
@@ -446,17 +446,9 @@ reject_suite = {
 def test_reject_convolution_2d_u55_BI(
     module: Conv2d,
 ):
-    (
-        ArmTester(
-            module,
-            example_inputs=module.get_inputs(),
-            compile_spec=common.get_u55_compile_spec(),
-        )
-        .quantize()
-        .export()
-        .check_count({"torch.ops.aten.conv2d.default": 1})
-        .check(["torch.ops.quantized_decomposed"])
-        .to_edge_transform_and_lower()
-        .check(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-        .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
-    )
+    OpNotSupportedPipeline(
+        module,
+        module.get_inputs(),
+        "TOSA-0.80+BI+u55",
+        {"executorch_exir_dialects_edge__ops_aten_convolution_default": 1},
+    ).run()

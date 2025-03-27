@@ -224,19 +224,22 @@ test_model_with_coreml() {
 
   "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}"
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
-  # TODO:
+
   if [ -n "$EXPORTED_MODEL" ]; then
     EXPORTED_MODEL_WITH_DTYPE="${EXPORTED_MODEL%.pte}_${DTYPE}.pte"
     mv "$EXPORTED_MODEL" "$EXPORTED_MODEL_WITH_DTYPE"
     EXPORTED_MODEL="$EXPORTED_MODEL_WITH_DTYPE"
-    echo "Renamed file path: $EXPORTED_MODEL"
+    echo "OK exported model: $EXPORTED_MODEL"
   else
-    echo "No .pte file found"
+    echo "[error] failed to export model: no .pte file found"
     exit 1
   fi
 
   # Run the model
   if [ "${should_test}" = true ]; then
+    echo "Installing requirements needed to build coreml_executor_runner..."
+    backends/apple/coreml/scripts/install_requirements.sh
+
     echo "Testing exported model with coreml_executor_runner..."
     local out_dir=$(mktemp -d)
     COREML_EXECUTOR_RUNNER_OUT_DIR="${out_dir}" examples/apple/coreml/scripts/build_executor_runner.sh

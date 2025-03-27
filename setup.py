@@ -84,6 +84,10 @@ def _cmake_args_defines() -> Dict[str, str]:
     return result
 
 
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
 class ShouldBuild:
     """Indicates whether to build various components."""
 
@@ -107,7 +111,33 @@ class ShouldBuild:
 
     @classmethod
     def pybindings(cls) -> bool:
-        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
+        return cls._is_cmake_arg_enabled(
+            "EXECUTORCH_BUILD_PYBIND",
+            # If the user hasn't specified anything, we want to turn this on if any
+            # bindings are requested explicitly.
+            #
+            # Please keep this in sync with `VALID_PYBINDS` in install_executorch.py.
+            default=any(
+                [
+                    cls.coreml(),
+                    cls.mps(),
+                    cls.xnnpack(),
+                    cls.training(),
+                ]
+            ),
+        )
+
+    @classmethod
+    def coreml(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_COREML", default=_is_macos())
+
+    @classmethod
+    def mps(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_MPS", default=False)
+
+    @classmethod
+    def xnnpack(cls) -> bool:
+        return cls._is_cmake_arg_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
 
     @classmethod
     def training(cls) -> bool:
@@ -694,8 +724,14 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
+
             if ShouldBuild.training():
                 build_args += ["--target", "_training_lib"]
+
+            if ShouldBuild.coreml():
+                cmake_args += ["-DEXECUTORCH_BUILD_COREML=ON"]
+                build_args += ["--target", "executorchcoreml"]
+
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
@@ -827,6 +863,14 @@ def get_ext_modules() -> List[Extension]:
                 BuiltExtension(
                     "_training_lib.*",
                     "executorch.extension.training.pybindings._training_lib",
+                )
+            )
+        if ShouldBuild.coreml():
+            ext_modules.append(
+                BuiltExtension(
+                    src="executorchcoreml.*",
+                    src_dir="backends/apple/coreml",
+                    modpath="executorch.backends.apple.coreml.executorchcoreml",
                 )
             )
     if ShouldBuild.llama_custom_ops():

@@ -178,7 +178,7 @@ the checkpoint format to avoid generating faulty models.
             if checkpoint:
                 self.model_.checkpoint_dtype = get_checkpoint_dtype(checkpoint)
             else:
-                self.model_.checkpoint_dtype = None
+                self.model_.checkpoint_dtype = torch.float32
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
@@ -259,15 +259,22 @@ the checkpoint format to avoid generating faulty models.
                     assign=True,
                 )  # self.model_ = Transformer(gptconf)
             else:
-                print("Checkpoint not provided, defaulting to uninitialized weights.")
+                print("Checkpoint not provided, defaulting weights to zeros.")
                 self.model_.to_empty(device="cpu")
+                for p in self.model_.parameters():
+                    p.data.fill_(0)
+                for b in self.model_.buffers():
+                    b.data.fill_(0)
         except RuntimeError as e:
             print(
-                f"Could not load checkpoint into mode and will default to uninitialized weights due to error: {e}."
+                f"Could not load checkpoint into mode and will defaulting weights to zeros due to error: {e}."
             )
             # Need to provide concrete (empty) values for meta-initialized tensors for quantization.
             self.model_.to_empty(device="cpu")
-
+            for p in self.model_.parameters():
+                p.data.fill_(0)
+            for b in self.model_.buffers():
+                b.data.fill_(0)
         if missing:
             missing_weights = [fqn for fqn in missing if fqn.endswith(".weight")]
             if missing_weights:
