@@ -4,6 +4,8 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
+# mypy: disable-error-code=import-not-found
+
 from typing import Callable, final, List, Optional, Tuple
 
 import torch
