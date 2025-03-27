@@ -190,4 +190,27 @@ class TensorTest: XCTestCase {
     }
     XCTAssertThrowsError(try tensor.resize(to: [2, 3]))
   }
+
+  func testIsEqual() {
+    var data: [Float] = [1.0, 2.0, 3.0, 4.0]
+    let tensor1 = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 2], dataType: .float)
+    }
+    let tensor2 = Tensor(tensor1)
+    XCTAssertTrue(tensor1.isEqual(tensor2))
+    XCTAssertTrue(tensor2.isEqual(tensor1))
+
+    var dataModified: [Float] = [1.0, 2.0, 3.0, 5.0]
+    let tensor3 = dataModified.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 2], dataType: .float)
+    }
+    XCTAssertFalse(tensor1.isEqual(tensor3))
+    let tensor4 = data.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape: [4, 1], dataType: .float)
+    }
+    XCTAssertFalse(tensor1.isEqual(tensor4))
+    XCTAssertTrue(tensor1.isEqual(tensor1))
+    XCTAssertFalse(tensor1.isEqual(NSString(string: "Not a tensor")))
+    XCTAssertFalse(tensor4.isEqual(tensor2.copy()))
+  }
 }
