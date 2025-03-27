@@ -30,8 +30,7 @@ class ModuleTest: XCTestCase {
   }
 
   func testLoadMethod() {
-    let bundle = Bundle(for: type(of: self))
-    guard let modelPath = bundle.path(forResource: "add", ofType: "pte") else {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
       XCTFail("Couldn't find the model file")
       return
     }
@@ -41,8 +40,7 @@ class ModuleTest: XCTestCase {
   }
 
   func testMethodNames() {
-    let bundle = Bundle(for: type(of: self))
-    guard let modelPath = bundle.path(forResource: "add", ofType: "pte") else {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
       XCTFail("Couldn't find the model file")
       return
     }
@@ -53,8 +51,7 @@ class ModuleTest: XCTestCase {
   }
 
   func testExecute() {
-    let bundle = Bundle(for: type(of: self))
-    guard let modelPath = bundle.path(forResource: "add", ofType: "pte") else {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
       XCTFail("Couldn't find the model file")
       return
     }
