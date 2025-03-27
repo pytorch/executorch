@@ -104,7 +104,7 @@ class TensorTest: XCTestCase {
   func testInitData() {
     let dataArray: [Float] = [1.0, 2.0, 3.0, 4.0]
     let data = Data(bytes: dataArray, count: dataArray.count * MemoryLayout<Float>.size)
-    let tensor = Tensor(data: data, shape: [4], strides: [1], dimensionOrder: [0], dataType: .float, shapeDynamism: .static)
+    let tensor = Tensor(data: data, shape: [4], dataType: .float)
     XCTAssertEqual(tensor.count, 4)
     tensor.bytes { pointer, count, dataType in
       XCTAssertEqual(Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)), dataArray)
