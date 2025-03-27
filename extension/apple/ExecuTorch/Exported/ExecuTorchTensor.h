@@ -79,6 +79,48 @@ __attribute__((deprecated("This API is experimental.")))
 @property(nonatomic, readonly) void *nativeInstance NS_SWIFT_UNAVAILABLE("");
 
 /**
+ * The data type of the tensor.
+ *
+ * @return An ExecuTorchDataType value representing the tensor's element type.
+ */
+@property(nonatomic, readonly) ExecuTorchDataType dataType;
+
+/**
+ * The shape of the tensor.
+ *
+ * @return An NSArray of NSNumber objects representing the size of each dimension.
+ */
+@property(nonatomic, readonly) NSArray<NSNumber *> *shape;
+
+/**
+ * The order of dimensions in the tensor.
+ *
+ * @return An NSArray of NSNumber objects representing the tensor’s dimension order.
+ */
+@property(nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder;
+
+/**
+ * The strides of the tensor.
+ *
+ * @return An NSArray of NSNumber objects representing the step sizes for each dimension.
+ */
+@property(nonatomic, readonly) NSArray<NSNumber *> *strides;
+
+/**
+ * The dynamism of the tensor's shape.
+ *
+ * @return An ExecuTorchShapeDynamism value indicating whether the tensor shape is static or dynamic.
+ */
+@property(nonatomic, readonly) ExecuTorchShapeDynamism shapeDynamism;
+
+/**
+ * The total number of elements in the tensor.
+ *
+ * @return An NSInteger representing the total element count.
+ */
+@property(nonatomic, readonly) NSInteger count;
+
+/**
  * Initializes a tensor with a native TensorPtr instance.
  *
  * @param nativeInstance A pointer to a native TensorPtr instance.
