@@ -60,12 +60,22 @@ class TensorTest: XCTestCase {
     let tensor = data.withUnsafeMutableBytes {
       Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 3], dataType: .float)
     }
+    // Modify the original data to make sure the tensor does not copy the data.
+    data.indices.forEach { data[$0] += 1 }
+
     XCTAssertEqual(tensor.dataType, .float)
     XCTAssertEqual(tensor.shape, [2, 3])
     XCTAssertEqual(tensor.strides, [3, 1])
     XCTAssertEqual(tensor.dimensionOrder, [0, 1])
     XCTAssertEqual(tensor.shapeDynamism, .dynamicBound)
     XCTAssertEqual(tensor.count, 6)
+
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(dataType, .float)
+      XCTAssertEqual(count, 6)
+      XCTAssertEqual(size(ofDataType: dataType), 4)
+      XCTAssertEqual(Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)), data)
+    }
   }
 
   func testInitBytes() {
@@ -73,12 +83,22 @@ class TensorTest: XCTestCase {
     let tensor = data.withUnsafeMutableBytes {
       Tensor(bytes: $0.baseAddress!, shape: [2, 3], dataType: .double)
     }
+    // Modify the original data to make sure the tensor copies the data.
+    data.indices.forEach { data[$0] += 1 }
+
     XCTAssertEqual(tensor.dataType, .double)
     XCTAssertEqual(tensor.shape, [2, 3])
     XCTAssertEqual(tensor.strides, [3, 1])
     XCTAssertEqual(tensor.dimensionOrder, [0, 1])
     XCTAssertEqual(tensor.shapeDynamism, .dynamicBound)
     XCTAssertEqual(tensor.count, 6)
+
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(dataType, .double)
+      XCTAssertEqual(count, 6)
+      XCTAssertEqual(size(ofDataType: dataType), 8)
+      XCTAssertEqual(Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Double.self), count: count)).map { $0 + 1 }, data)
+    }
   }
 
   func testWithCustomStridesAndDimensionOrder() {
@@ -94,5 +114,27 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor.strides, [1, 2])
     XCTAssertEqual(tensor.dimensionOrder, [1, 0])
     XCTAssertEqual(tensor.count, 4)
+
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)), data)
+    }
+  }
+
+  func testMutableBytes() {
+    var data: [Int32] = [1, 2, 3, 4]
+    let tensor = data.withUnsafeMutableBytes {
+      Tensor(bytes: $0.baseAddress!, shape: [4], dataType: .int)
+    }
+    tensor.mutableBytes { pointer, count, dataType in
+      XCTAssertEqual(dataType, .int)
+      let buffer = pointer.assumingMemoryBound(to: Int32.self)
+      for i in 0..<count {
+        buffer[i] *= 2
+      }
+    }
+    tensor.bytes { pointer, count, dataType in
+      let updatedData = Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Int32.self), count: count))
+      XCTAssertEqual(updatedData, [2, 4, 6, 8])
+    }
   }
 }
