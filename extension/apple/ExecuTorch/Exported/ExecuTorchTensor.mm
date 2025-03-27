@@ -91,4 +91,40 @@ using namespace executorch::extension;
   return [self initWithNativeInstance:&tensor];
 }
 
+- (instancetype)initWithBytesNoCopy:(void *)pointer
+                              shape:(NSArray<NSNumber *> *)shape
+                            strides:(NSArray<NSNumber *> *)strides
+                     dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                           dataType:(ExecuTorchDataType)dataType {
+  return [self initWithBytesNoCopy:pointer
+                             shape:shape
+                           strides:strides
+                    dimensionOrder:dimensionOrder
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithBytesNoCopy:(void *)pointer
+                              shape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  return [self initWithBytesNoCopy:pointer
+                             shape:shape
+                           strides:@[]
+                    dimensionOrder:@[]
+                          dataType:dataType
+                     shapeDynamism:shapeDynamism];
+}
+
+- (instancetype)initWithBytesNoCopy:(void *)pointer
+                              shape:(NSArray<NSNumber *> *)shape
+                           dataType:(ExecuTorchDataType)dataType {
+  return [self initWithBytesNoCopy:pointer
+                             shape:shape
+                           strides:@[]
+                    dimensionOrder:@[]
+                          dataType:dataType
+                     shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
 @end
