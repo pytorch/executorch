@@ -1,12 +1,12 @@
 import argparse
 import unittest
 
-import nncf.torch
+import nncf.torch  # type: ignore[import-untyped]
 
 
 class OpenvinoTestSuite(unittest.TestSuite):
 
-    test_params = {}
+    test_params: dict[str, str] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -51,7 +51,7 @@ def parse_arguments():
     )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
-    test_params = {}
+    test_params: dict[str, str] = {}
     test_params["device"] = args.device
     test_params["pattern"] = args.pattern
     test_params["test_type"] = args.test_type
