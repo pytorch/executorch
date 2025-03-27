@@ -78,7 +78,7 @@ if(TOKENIZERS_BUILD_TEST)
               ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece
               ${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2
               ${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include)
-    target_link_libraries(${test_name} gtest_main tokenizers)
+    target_link_libraries(${test_name} gtest_main GTest::gmock tokenizers)
     add_test(${test_name} "${test_name}")
     set_tests_properties(${test_name} PROPERTIES ENVIRONMENT ${test_env})
   endforeach()

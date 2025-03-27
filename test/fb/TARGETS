@@ -1,0 +1,30 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbcode_macros//build_defs:cpp_benchmark.bzl", "cpp_benchmark")
+load("@fbsource//arvr/tools/build_defs:embed_resources.bzl", "embed_resources")
+
+oncall("executorch")
+
+embed_resources(
+    name = "string_integer_map_bench_resources",
+    generated_resources = {
+        "//pytorch/tokenizers/test:test_tiktoken_tokenizer_model": "test_tiktoken_tokenizer_model",
+    },
+    header_path = "pytorch/tokenizers/test/fb",
+    namespace = "string_integer_map_bench",
+    visibility = ["PUBLIC"],
+)
+
+# @nolint
+cpp_benchmark(
+     # @autodeps-skip
+    name = "string_integer_map_bench",
+    srcs = ["string_integer_map_bench.cpp"],
+    preprocessor_flags = ["-DFBCODEBUILD=1"],
+    deps = [
+        "fbsource//third-party/benchmark:benchmark",
+        "//pytorch/tokenizers/test/fb:string_integer_map_bench_resources",
+        "//pytorch/tokenizers:headers",
+    ],
+)

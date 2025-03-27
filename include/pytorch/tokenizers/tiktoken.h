@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+// @lint-ignore-every LICENSELINT
 
 // Tiktoken header
 // Used by OpenAI, adapted from https://github.com/sewenew/tokenizer
@@ -93,7 +94,7 @@ class Tiktoken : public detail::BPETokenizerBase {
       const std::string& text,
       const T& allowed_special) const;
 
-  detail::Encoder _build_special_token_encoder(ssize_t num_base_tokens) const;
+  detail::TokenMap _build_special_token_map(ssize_t num_base_tokens) const;
 
   std::unique_ptr<std::vector<std::string>> _special_tokens;
   size_t _bos_token_index;

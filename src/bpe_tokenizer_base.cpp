@@ -11,6 +11,7 @@
 
 // Standard
 #include <inttypes.h>
+#include <functional>
 
 namespace tokenizers {
 namespace detail {
@@ -24,7 +25,7 @@ static uint64_t _max_size() {
 
 static std::vector<uint64_t> _byte_pair_merge(
     const std::string& piece,
-    const std::unordered_map<std::string, uint64_t>& ranks,
+    const TokenMap& ranks,
     std::function<uint64_t(uint64_t, uint64_t)> func) {
   // This is a vector of (start, rank).
   // The rank is of the byte pair starting at position start.
@@ -43,10 +44,7 @@ static std::vector<uint64_t> _byte_pair_merge(
       auto s = parts[start_idx].first;
       auto e = parts[start_idx + skip + 2].first;
       auto key = piece.substr(s, e - s);
-      auto iter = ranks.find(key);
-      if (iter != ranks.end()) {
-        return iter->second;
-      }
+      return ranks.tryGetInteger(key);
     }
     return std::nullopt;
   };
@@ -135,7 +133,7 @@ static std::vector<uint64_t> _byte_pair_merge(
 std::pair<std::optional<std::string>, re2::StringPiece>
 BPETokenizerBase::split_with_allowed_special_token_(
     re2::StringPiece& input,
-    const Encoder& allowed_special) const {
+    const TokenMap& allowed_special) const {
   if (!special_token_regex_) {
     return std::make_pair(std::nullopt, input);
   }
@@ -148,7 +146,7 @@ BPETokenizerBase::split_with_allowed_special_token_(
       break;
     }
 
-    if (allowed_special.count(special) == 1) {
+    if (allowed_special.tryGetInteger(special).has_value()) {
       // Found an allowed special token, split the text with it.
       return std::make_pair(
           special,
@@ -162,7 +160,7 @@ BPETokenizerBase::split_with_allowed_special_token_(
 Result<std::pair<std::vector<uint64_t>, uint64_t>>
 BPETokenizerBase::encode_with_special_token_(
     const std::string& text,
-    const Encoder& allowed_special) const {
+    const TokenMap& allowed_special) const {
   std::vector<uint64_t> tokens;
   uint64_t last_piece_token_len = 0;
   re2::StringPiece input(text);
@@ -173,17 +171,15 @@ BPETokenizerBase::encode_with_special_token_(
     _encode(sub_input, tokens, last_piece_token_len);
 
     if (special) {
-      uint64_t token = 0;
-      try {
-        token = special_token_encoder_.at(*special);
-      } catch (const std::out_of_range&) {
+      const auto result = special_token_map_->tryGetInteger(*special);
+      if (!result) {
         // Should never go here, since special pattern includes all special
         // chars.
         TK_LOG(Error, "unknown special token: %s\n", special->c_str());
         return Error::EncodeFailure;
       }
 
-      tokens.push_back(token);
+      tokens.push_back(*result);
       last_piece_token_len = 0;
     } else {
       break;
@@ -198,11 +194,11 @@ BPETokenizerBase::encode_with_special_token_(
 
 Result<std::vector<uint64_t>> BPETokenizerBase::byte_pair_encode_(
     const std::string& piece,
-    const Encoder& encoder) const {
+    const TokenMap& token_map) const {
   if (piece.size() == 1) {
-    auto iter = encoder.find(piece);
-    if (iter != encoder.end()) {
-      return std::vector<uint64_t>({iter->second});
+    const auto result = token_map.tryGetInteger(piece);
+    if (result) {
+      return std::vector<uint64_t>(*result);
     } else {
       // TODO: is it possible?
       return Error::EncodeFailure;
@@ -210,11 +206,11 @@ Result<std::vector<uint64_t>> BPETokenizerBase::byte_pair_encode_(
   }
 
   return _byte_pair_merge(
-      piece, encoder, [&piece, &encoder](uint64_t start, uint64_t stop) {
+      piece, token_map, [&piece, &token_map](uint64_t start, uint64_t stop) {
         std::string key = piece.substr(start, stop - start);
-        auto iter = encoder.find(key);
-        if (iter != encoder.end()) {
-          return iter->second;
+        const auto result = token_map.tryGetInteger(key);
+        if (result) {
+          return *result;
         } else {
           // TODO: what if key does not exist? Should we
           // return `unknown`? assert(false); // ??
@@ -234,7 +230,7 @@ Result<std::vector<uint64_t>> BPETokenizerBase::encode(
     return Error::Uninitialized;
   }
   auto res =
-      TK_UNWRAP(encode_with_special_token_(text, special_token_encoder_)).first;
+      TK_UNWRAP(encode_with_special_token_(text, *special_token_map_)).first;
   for (auto i = 0; i < bos; ++i) {
     res.insert(res.begin(), bos_tok_);
   }
@@ -252,18 +248,18 @@ Result<std::string> BPETokenizerBase::decode(uint64_t prev, uint64_t cur)
   }
   std::string ret;
 
-  std::string token_bytes;
-  auto iter = decoder_.find(cur);
-  if (iter != decoder_.end()) {
-    token_bytes = iter->second;
-  } else {
-    iter = special_token_decoder_.find(cur);
-    if (iter != special_token_decoder_.end()) {
-      token_bytes = iter->second;
-    } else {
+  std::string_view token_bytes;
+  auto result = token_map_->tryGetString(cur);
+  if (!result) {
+    result = special_token_map_->tryGetString(cur);
+    if (!result) {
       TK_LOG(Error, "unknown token: %" PRIu64 "\n", cur);
       return Error::DecodeFailure;
+    } else {
+      token_bytes = *result;
     }
+  } else {
+    token_bytes = *result;
   }
   _decode(token_bytes, ret);
 

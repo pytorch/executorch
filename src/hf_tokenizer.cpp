@@ -10,10 +10,12 @@
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
 // Standard
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 // Third Party
 #include <nlohmann/json.hpp>
@@ -61,19 +63,13 @@ Error HFTokenizer::load(const std::string& path) {
 
   // Parse the special tokens
   try {
+    std::vector<std::pair<std::string, std::uint64_t>> special_token_pairs;
     const auto& special_tokens = parsed_json.at("added_tokens");
-    for (auto it = special_tokens.begin(); it != special_tokens.end(); ++it) {
-      const std::string token = it->at("content");
-      const uint64_t token_id = it->at("id");
-      if (!special_token_encoder_.emplace(token, token_id).second) {
-        fprintf(stderr, "duplicate special token: %s\n", token.c_str());
-        return Error::LoadFailure;
-      }
-      if (!special_token_decoder_.emplace(token_id, token).second) {
-        fprintf(stderr, "duplicate special token id: %llu\n", token_id);
-        return Error::LoadFailure;
-      }
-    }
+    auto special_token_map = TK_UNWRAP(detail::buildTokenMap(
+        special_tokens,
+        [](const auto& it) -> std::string { return it.at("content"); },
+        [](const auto& it) -> std::uint64_t { return it.at("id"); }));
+    special_token_map_.emplace(std::move(special_token_map));
   } catch (const json::out_of_range& e) {
     fprintf(stderr, "Could not parse special tokens: %s\n", e.what());
     return Error::LoadFailure;
@@ -81,30 +77,26 @@ Error HFTokenizer::load(const std::string& path) {
 
   // Parse the standard tokens
   try {
+    std::vector<std::pair<std::string, std::uint64_t>> token_pairs;
     const auto& vocab = parsed_json.at("/model/vocab"_json_pointer);
     for (const auto& entry : vocab.items()) {
       const std::string token = entry.key();
       const uint64_t token_id = entry.value();
       // Skip adding special tokens to the standard encoder/decoder
-      if (special_token_decoder_.find(token_id) ==
-          special_token_decoder_.end()) {
-        if (!encoder_.emplace(token, token_id).second) {
-          fprintf(stderr, "duplicate token: %s\n", token.c_str());
-          return Error::LoadFailure;
-        }
-        if (!decoder_.emplace(token_id, token).second) {
-          fprintf(stderr, "duplicate token id: %llu\n", token_id);
-          return Error::LoadFailure;
-        }
+      if (!special_token_map_->tryGetString(token_id)) {
+        token_pairs.emplace_back(token, token_id);
       }
     }
+
+    auto token_map = TK_UNWRAP(detail::buildTokenMap(std::move(token_pairs)));
+    token_map_.emplace(std::move(token_map));
   } catch (const json::out_of_range& e) {
     fprintf(stderr, "Could not parse tokens: %s\n", e.what());
     return Error::LoadFailure;
   }
 
   // Set the vocab size to include special tokens
-  vocab_size_ = encoder_.size() + special_token_encoder_.size();
+  vocab_size_ = token_map_->size() + special_token_map_->size();
 
   // Set up the pre-tokenizer
   try {
@@ -150,20 +142,20 @@ Error HFTokenizer::load(const std::string& path) {
     try {
       const std::string bos_token = parsed_config_json.at("bos_token");
       const std::string eos_token = parsed_config_json.at("eos_token");
-      const auto& bos_it = special_token_encoder_.find(bos_token);
-      const auto& eos_it = special_token_encoder_.find(eos_token);
-      if (bos_it == special_token_encoder_.end()) {
+      const auto bos_res = special_token_map_->tryGetInteger(bos_token);
+      const auto eos_res = special_token_map_->tryGetInteger(eos_token);
+      if (!bos_res) {
         fprintf(
             stderr, "BOS token %s not in special tokens\n", bos_token.c_str());
         return Error::LoadFailure;
       }
-      if (eos_it == special_token_encoder_.end()) {
+      if (!eos_res) {
         fprintf(
             stderr, "EOS token %s not in special tokens\n", eos_token.c_str());
         return Error::LoadFailure;
       }
-      bos_tok_ = bos_it->second;
-      eos_tok_ = eos_it->second;
+      bos_tok_ = *bos_res;
+      eos_tok_ = *eos_res;
     } catch (const json::out_of_range& e) {
       fprintf(
           stderr, "Could not eos/bos from tokenizer config: %s\n", e.what());
@@ -176,20 +168,23 @@ Error HFTokenizer::load(const std::string& path) {
   // 2. Sub-qualify with the word "text" if needed
   // 3. If EOS found, but BOS is not (or vice versa), assume they are the same
   else {
-    std::vector<std::string> bos_candidates;
-    std::vector<std::string> eos_candidates;
-    for (const auto& token : special_token_encoder_) {
-      if (token.first.find("bos") != std::string::npos ||
-          token.first.find("begin") != std::string::npos) {
-        bos_candidates.push_back(token.first);
+    std::vector<std::string_view> bos_candidates;
+    std::vector<std::string_view> eos_candidates;
+    for (std::size_t token_idx = 0; token_idx < special_token_map_->size();
+         ++token_idx) {
+      const auto [token, _] = special_token_map_->getElement(token_idx);
+      if (token.find("bos") != std::string::npos ||
+          token.find("begin") != std::string::npos) {
+        bos_candidates.push_back(token);
       }
-      if (token.first.find("eos") != std::string::npos ||
-          token.first.find("end") != std::string::npos) {
-        eos_candidates.push_back(token.first);
+      if (token.find("eos") != std::string::npos ||
+          token.find("end") != std::string::npos) {
+        eos_candidates.push_back(token);
       }
     }
+
     if (bos_candidates.size() > 1) {
-      const auto orig_candidates = bos_candidates;
+      const auto orig_candidates = std::move(bos_candidates);
       bos_candidates.clear();
       for (const auto& cand : orig_candidates) {
         if (cand.find("text") != std::string::npos) {
@@ -198,7 +193,7 @@ Error HFTokenizer::load(const std::string& path) {
       }
     }
     if (eos_candidates.size() > 1) {
-      const auto orig_candidates = eos_candidates;
+      const auto orig_candidates = std::move(eos_candidates);
       eos_candidates.clear();
       for (const auto& cand : orig_candidates) {
         if (cand.find("text") != std::string::npos) {
@@ -212,11 +207,11 @@ Error HFTokenizer::load(const std::string& path) {
     bool eos_found = false;
     if (bos_candidates.size() == 1) {
       bos_found = true;
-      bos_tok_ = special_token_encoder_[bos_candidates[0]];
+      bos_tok_ = *(special_token_map_->tryGetInteger(bos_candidates[0]));
     }
     if (eos_candidates.size() == 1) {
       eos_found = true;
-      eos_tok_ = special_token_encoder_[eos_candidates[0]];
+      eos_tok_ = *(special_token_map_->tryGetInteger(eos_candidates[0]));
     }
 
     // Make them the same if only one found
@@ -240,13 +235,13 @@ Error HFTokenizer::_encode(
     std::vector<uint64_t>& ret,
     uint64_t& last_piece_token_len) const {
   for (const auto& piece : _pretokenizer->pre_tokenize(input)) {
-    auto iter = encoder_.find(piece);
-    if (iter != encoder_.end()) {
+    const auto result = token_map_->tryGetInteger(piece);
+    if (result) {
       last_piece_token_len = 1;
-      ret.push_back(iter->second);
+      ret.push_back(*result);
       continue;
     }
-    auto tokens = TK_UNWRAP(byte_pair_encode_(piece, encoder_));
+    auto tokens = TK_UNWRAP(byte_pair_encode_(piece, *token_map_));
 
     last_piece_token_len = tokens.size();
     ret.insert(ret.end(), tokens.begin(), tokens.end());

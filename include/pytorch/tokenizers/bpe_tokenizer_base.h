@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -21,15 +22,90 @@
 #include <re2/re2.h>
 
 // Local
+#include <pytorch/tokenizers/error.h>
 #include <pytorch/tokenizers/result.h>
+#include <pytorch/tokenizers/string_integer_map.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
 namespace tokenizers {
 namespace detail {
 
-using Encoder = std::unordered_map<std::string, uint64_t>;
-using Decoder = std::unordered_map<uint64_t, std::string>;
 using Re2UPtr = std::unique_ptr<re2::RE2>;
+using TokenMap = StringIntegerMap<>;
+
+template <typename TToken, typename TRank>
+static Result<TokenMap> buildTokenMap(
+    std::vector<std::pair<TToken, TRank>> container) {
+  static_assert(
+      std::is_same_v<TToken, std::string> ||
+          std::is_same_v<TToken, std::string_view>,
+      "TToken must be std::string or std::string_view");
+  static_assert(
+      std::is_integral_v<TRank> && std::is_unsigned_v<TRank>,
+      "TRank must be an unsigned integer");
+
+  std::sort(
+      container.begin(), container.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
+      });
+
+  auto duplicate_begin = std::unique(
+      container.begin(), container.end(), [](const auto& a, const auto& b) {
+        return a.first == b.first;
+      });
+
+  TK_CHECK_OR_RETURN_ERROR(
+      duplicate_begin == container.end(),
+      ParseFailure,
+      "duplicate token: %s rank: %llu",
+      duplicate_begin->first.c_str(),
+      static_cast<unsigned long long>(duplicate_begin->second));
+
+  std::sort(
+      container.begin(), container.end(), [](const auto& a, const auto& b) {
+        return a.second < b.second;
+      });
+
+  duplicate_begin = std::unique(
+      container.begin(), container.end(), [](const auto& a, const auto& b) {
+        return a.second == b.second;
+      });
+
+  TK_CHECK_OR_RETURN_ERROR(
+      duplicate_begin == container.end(),
+      ParseFailure,
+      "duplicate rank: %llu"
+      " token: %s",
+      static_cast<unsigned long long>(duplicate_begin->second),
+      duplicate_begin->first.c_str());
+
+  return TokenMap(container);
+};
+
+template <typename TContainer, typename TTokenAccessor, typename TRankAccessor>
+static Result<TokenMap> buildTokenMap(
+    const TContainer& container,
+    TTokenAccessor token_accessor,
+    TRankAccessor rank_accessor) {
+  using TokenType = std::invoke_result_t<TTokenAccessor, const TContainer&>;
+  using RankType = std::invoke_result_t<TRankAccessor, const TContainer&>;
+
+  static_assert(
+      std::is_same_v<TokenType, std::string> ||
+          std::is_same_v<TokenType, std::string_view>,
+      "TokenType must be std::string or std::string_view");
+  static_assert(
+      std::is_integral_v<RankType> && std::is_unsigned_v<RankType>,
+      "RankType must be an unsigned integer");
+
+  std::vector<std::pair<TokenType, RankType>> pairs;
+  pairs.reserve(container.size());
+  for (const auto& value : container) {
+    pairs.emplace_back(token_accessor(value), rank_accessor(value));
+  }
+
+  return buildTokenMap(std::move(pairs));
+}
 
 class BPETokenizerBase : public Tokenizer {
  public:
@@ -46,22 +122,20 @@ class BPETokenizerBase : public Tokenizer {
   std::pair<std::optional<std::string>, re2::StringPiece>
   split_with_allowed_special_token_(
       re2::StringPiece& input,
-      const Encoder& allowed_special) const;
+      const TokenMap& allowed_special) const;
 
   Result<std::pair<std::vector<uint64_t>, uint64_t>> encode_with_special_token_(
       const std::string& text,
-      const Encoder& allowed_special) const;
+      const TokenMap& allowed_special) const;
 
   Result<std::vector<uint64_t>> byte_pair_encode_(
       const std::string& piece,
-      const Encoder& encoder) const;
+      const TokenMap& encoder) const;
 
   // Protected members that can be overloaded by other BPE tokenizers
   Re2UPtr special_token_regex_;
-  Encoder encoder_;
-  Encoder special_token_encoder_;
-  Decoder decoder_;
-  Decoder special_token_decoder_;
+  std::optional<TokenMap> token_map_;
+  std::optional<TokenMap> special_token_map_;
 
  private:
   virtual Error _encode(
