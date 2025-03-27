@@ -411,4 +411,29 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - Scalars Category
+
+@interface ExecuTorchTensor (Scalars)
+
+/**
+ * Initializes a tensor with an array of scalar values and full tensor properties.
+ *
+ * @param scalars An NSArray of NSNumber objects representing the scalar values.
+ * @param shape An NSArray of NSNumber objects representing the desired tensor shape.
+ * @param strides An NSArray of NSNumber objects representing the tensor strides.
+ * @param dimensionOrder An NSArray of NSNumber objects indicating the order of dimensions.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value indicating the shape dynamism.
+ * @return An initialized ExecuTorchTensor instance containing the provided scalar values.
+ */
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                        strides:(NSArray<NSNumber *> *)strides
+                 dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                       dataType:(ExecuTorchDataType)dataType
+                  shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_NAME(init(_:shape:strides:dimensionOrder:dataType:shapeDynamism:));
+
+@end
+
 NS_ASSUME_NONNULL_END
