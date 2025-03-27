@@ -345,4 +345,28 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+#pragma mark - Data Category
+
+@interface ExecuTorchTensor (Data)
+
+/**
+ * Initializes a tensor using an NSData object as the underlying data buffer.
+ *
+ * @param data An NSData object containing the tensor data.
+ * @param shape An NSArray of NSNumber objects representing the tensor's shape.
+ * @param strides An NSArray of NSNumber objects representing the tensor's strides.
+ * @param dimensionOrder An NSArray of NSNumber objects indicating the order of dimensions.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @param shapeDynamism An ExecuTorchShapeDynamism value indicating the shape dynamism.
+ * @return An initialized ExecuTorchTensor instance using the provided data.
+ */
+- (instancetype)initWithData:(NSData *)data
+                       shape:(NSArray<NSNumber *> *)shape
+                     strides:(NSArray<NSNumber *> *)strides
+              dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                    dataType:(ExecuTorchDataType)dataType
+               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+
+@end
+
 NS_ASSUME_NONNULL_END
