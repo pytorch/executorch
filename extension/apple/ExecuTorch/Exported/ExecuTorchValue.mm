@@ -27,6 +27,23 @@
   return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagTensor value:value];
 }
 
++ (instancetype)valueWithString:(ExecuTorchStringValue)value {
+  ET_CHECK(value);
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagString value:value];
+}
+
++ (instancetype)valueWithBoolean:(ExecuTorchBooleanValue)value {
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagBoolean value:@(value)];
+}
+
++ (instancetype)valueWithInteger:(ExecuTorchIntegerValue)value {
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagInteger value:@(value)];
+}
+
++ (instancetype)valueWithDouble:(ExecuTorchDoubleValue)value {
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagDouble value:@(value)];
+}
+
 - (instancetype)init {
   return [self initWithTag:ExecuTorchValueTagNone value:nil];
 }
@@ -48,12 +65,57 @@
   return self.isTensor ? _value : nil;
 }
 
+- (nullable ExecuTorchScalarValue)scalarValue {
+  return self.isScalar ? _value : nil;
+}
+
+- (nullable ExecuTorchStringValue)stringValue {
+    return self.isString ? _value : nil;
+}
+
+- (ExecuTorchBooleanValue)boolValue {
+  ET_CHECK(self.isBoolean);
+  return [(ExecuTorchScalarValue)_value boolValue];
+}
+
+- (ExecuTorchIntegerValue)intValue {
+  ET_CHECK(self.isInteger);
+  return [(ExecuTorchScalarValue)_value integerValue];
+}
+
+- (ExecuTorchDoubleValue)doubleValue {
+  ET_CHECK(self.isDouble);
+  return [(ExecuTorchScalarValue)_value doubleValue];
+}
+
 - (BOOL)isNone {
   return _tag == ExecuTorchValueTagNone;
 }
 
 - (BOOL)isTensor {
   return _tag == ExecuTorchValueTagTensor;
+}
+
+- (BOOL)isScalar {
+  return _tag == ExecuTorchValueTagBoolean ||
+         _tag == ExecuTorchValueTagInteger ||
+         _tag == ExecuTorchValueTagDouble;
+}
+
+- (BOOL)isString {
+  return _tag == ExecuTorchValueTagString;
+}
+
+- (BOOL)isBoolean {
+  return _tag == ExecuTorchValueTagBoolean;
+}
+
+- (BOOL)isInteger {
+  return _tag == ExecuTorchValueTagInteger;
+}
+
+- (BOOL)isDouble {
+  return _tag == ExecuTorchValueTagDouble;
 }
 
 @end
