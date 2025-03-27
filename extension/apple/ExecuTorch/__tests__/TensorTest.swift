@@ -392,4 +392,16 @@ class TensorTest: XCTestCase {
       XCTAssertEqual(Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt.self), count: count)), data)
     }
   }
+
+  func testInitFloat() {
+    let tensor = Tensor(Float(42.0) as NSNumber)
+    XCTAssertEqual(tensor.dataType, .float)
+    XCTAssertEqual(tensor.shape, [])
+    XCTAssertEqual(tensor.strides, [])
+    XCTAssertEqual(tensor.dimensionOrder, [])
+    XCTAssertEqual(tensor.count, 1)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count).first, 42.0)
+    }
+  }
 }

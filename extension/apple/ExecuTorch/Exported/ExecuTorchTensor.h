@@ -544,4 +544,26 @@ __attribute__((deprecated("This API is experimental.")))
 
 @end
 
+@interface ExecuTorchTensor (Scalar)
+
+/**
+ * Initializes a tensor with a single scalar value and a specified data type.
+ *
+ * @param scalar An NSNumber representing the scalar value.
+ * @param dataType An ExecuTorchDataType value specifying the element type.
+ * @return An initialized ExecuTorchTensor instance representing the scalar.
+ */
+- (instancetype)initWithScalar:(NSNumber *)scalar
+                      dataType:(ExecuTorchDataType)dataType NS_SWIFT_NAME(init(_:dataType:));
+
+/**
+ * Initializes a tensor with a single scalar value, automatically deducing its data type.
+ *
+ * @param scalar An NSNumber representing the scalar value.
+ * @return An initialized ExecuTorchTensor instance representing the scalar.
+ */
+- (instancetype)initWithScalar:(NSNumber *)scalar NS_SWIFT_NAME(init(_:));
+
+@end
+
 NS_ASSUME_NONNULL_END
