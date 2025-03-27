@@ -115,6 +115,21 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSSet<NSString *> *)methodNames:(NSError **)error;
 
+/**
+ * Executes a specific method with the provided input values.
+ *
+ * The method is loaded on demand if not already loaded.
+ *
+ * @param methodName A string representing the method name.
+ * @param values An NSArray of ExecuTorchValue objects representing the inputs.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ */
+- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
+                                            withInputs:(NSArray<ExecuTorchValue *> *)values
+                                                 error:(NSError **)error
+    NS_SWIFT_NAME(execute(_:_:));
+
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 

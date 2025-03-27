@@ -51,4 +51,25 @@ class ModuleTest: XCTestCase {
     XCTAssertNoThrow(methodNames = try module.methodNames())
     XCTAssertEqual(methodNames, Set(["forward"]))
   }
+
+  func testExecute() {
+    let bundle = Bundle(for: type(of: self))
+    guard let modelPath = bundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    var inputData: [Float] = [1.0]
+    let inputTensor = inputData.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape:[1], dataType: .float)
+    }
+    let inputs = [Value(inputTensor), Value(inputTensor)]
+    var outputs: [Value]?
+    XCTAssertNoThrow(outputs = try module.execute("forward", inputs))
+    var outputData: [Float] = [2.0]
+    let outputTensor = outputData.withUnsafeMutableBytes {
+      Tensor(bytesNoCopy: $0.baseAddress!, shape:[1], dataType: .float, shapeDynamism: .static)
+    }
+    XCTAssertEqual(outputs?[0].tensor, outputTensor)
+  }
 }
