@@ -59,17 +59,9 @@ class ModuleTest: XCTestCase {
       return
     }
     let module = Module(filePath: modelPath)
-    var inputData: [Float] = [1.0]
-    let inputTensor = inputData.withUnsafeMutableBytes {
-      Tensor(bytesNoCopy: $0.baseAddress!, shape:[1], dataType: .float)
-    }
-    let inputs = [inputTensor, inputTensor]
+    let inputs = [Tensor([1], dataType: .float), Tensor([1], dataType: .float)]
     var outputs: [Value]?
     XCTAssertNoThrow(outputs = try module.forward(inputs))
-    var outputData: [Float] = [2.0]
-    let outputTensor = outputData.withUnsafeMutableBytes {
-      Tensor(bytesNoCopy: $0.baseAddress!, shape:[1], dataType: .float, shapeDynamism: .static)
-    }
-    XCTAssertEqual(outputs?[0].tensor, outputTensor)
+    XCTAssertEqual(outputs?[0].tensor, Tensor([2], dataType: .float, shapeDynamism: .static))
   }
 }

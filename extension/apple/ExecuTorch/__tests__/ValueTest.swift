@@ -17,10 +17,7 @@ class ValueTest: XCTestCase {
   }
 
   func testTensor() {
-    var data: [Float] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    let tensor = data.withUnsafeMutableBytes {
-      Tensor(bytesNoCopy: $0.baseAddress!, shape: [2, 3], dataType: .float)
-    }
+    let tensor = Tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     let value = Value(tensor)
     XCTAssertTrue(value.isTensor)
     XCTAssertEqual(value.tensor, tensor)
