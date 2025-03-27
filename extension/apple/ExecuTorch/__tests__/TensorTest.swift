@@ -225,12 +225,12 @@ class TensorTest: XCTestCase {
   }
 
   func testInitScalarsFloat() {
-    let data: [Float] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    let tensor = Tensor(data.map(NSNumber.init), shape: [2, 3], strides: [3, 1], dimensionOrder: [0, 1], dataType: .float, shapeDynamism: .dynamicBound)
+    let data: [Float] = [1, 2, 3, 4, 5, 6]
+    let tensor = Tensor(data.map(NSNumber.init))
     XCTAssertEqual(tensor.dataType, .float)
-    XCTAssertEqual(tensor.shape, [2, 3])
-    XCTAssertEqual(tensor.strides, [3, 1])
-    XCTAssertEqual(tensor.dimensionOrder, [0, 1])
+    XCTAssertEqual(tensor.shape, [6])
+    XCTAssertEqual(tensor.strides, [1])
+    XCTAssertEqual(tensor.dimensionOrder, [0])
     XCTAssertEqual(tensor.count, 6)
     tensor.bytes { pointer, count, dataType in
       XCTAssertEqual(Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)), data)
