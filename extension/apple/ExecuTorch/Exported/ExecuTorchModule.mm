@@ -13,8 +13,26 @@
 #import <executorch/extension/module/module.h>
 #import <executorch/extension/tensor/tensor.h>
 
+using namespace executorch::extension;
+
 @implementation ExecuTorchModule {
-  std::unique_ptr<executorch::extension::Module> _module;
+  std::unique_ptr<Module> _module;
+}
+
+- (instancetype)initWithFilePath:(NSString *)filePath
+                        loadMode:(ExecuTorchModuleLoadMode)loadMode {
+  self = [super init];
+  if (self) {
+    _module = std::make_unique<Module>(
+      filePath.UTF8String,
+      static_cast<Module::LoadMode>(loadMode)
+    );
+  }
+  return self;
+}
+
+- (instancetype)initWithFilePath:(NSString *)filePath {
+  return [self initWithFilePath:filePath loadMode:ExecuTorchModuleLoadModeFile];
 }
 
 @end
