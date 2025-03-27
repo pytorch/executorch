@@ -44,6 +44,14 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return self;
 }
 
+- (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor {
+  ET_CHECK(otherTensor);
+  auto tensor = make_tensor_ptr(
+    **reinterpret_cast<TensorPtr *>(otherTensor.nativeInstance)
+  );
+  return [self initWithNativeInstance:&tensor];
+}
+
 - (void *)nativeInstance {
   return &_tensor;
 }
