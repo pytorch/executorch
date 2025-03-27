@@ -65,22 +65,29 @@ jobs:
       matrix:
         model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
         backend: [portable, xnnpack-quantization-delegation]
+        runner: [linux.arm64.2xlarge]
         include:
           - model: lstm
             backend: portable
+            runner: linux.arm64.2xlarge
           - model: mul
             backend: portable
+            runner: linux.arm64.2xlarge
           - model: softmax
             backend: portable
+            runner: linux.arm64.2xlarge
           - model: phi_4_mini
             backend: portable
+            runner: linux.arm64.m7g.4xlarge
           - model: qwen2_5
             backend: portable
+            runner: linux.arm64.2xlarge
           - model: llama3_2_vision_encoder
             backend: portable
+            runner: linux.arm64.2xlarge
       fail-fast: false
     with:
-      runner: linux.arm64.2xlarge
+      runner: ${{ matrix.runner }}
       docker-image: executorch-ubuntu-22.04-gcc11-aarch64
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -536,9 +543,8 @@ jobs:
         git clone https://github.com/huggingface/optimum-executorch
         cd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout 6a7e83f3eee2976fa809335bfb78a45b1ea1cb25
-        pip install .
-        pip install accelerate sentencepiece
+        git checkout 577a2b19670e4c643a5c6ecb09bf47b9a699e7c6
+        pip install .[tests]
         pip list
         echo "::endgroup::"
 
