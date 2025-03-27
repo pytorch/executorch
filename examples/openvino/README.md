@@ -88,7 +88,7 @@ The python script called `aot_optimize_and_infer.py` allows users to export deep
 
 ##### Export a TIMM VGG16 model for the CPU
 ```bash
-python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape [1, 3, 224, 224] --device CPU
+python aot_optimize_and_infer.py --export --suite timm --model vgg16 --input_shape "[1, 3, 224, 224]" --device CPU
 ```
 
 ##### Export a Torchvision ResNet50 model for the GPU
