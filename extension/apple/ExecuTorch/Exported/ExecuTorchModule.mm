@@ -16,6 +16,27 @@
 using namespace executorch::extension;
 using namespace executorch::runtime;
 
+static inline EValue toEValue(ExecuTorchValue *value) {
+  if (value.isTensor) {
+    auto *nativeTensorPtr = value.tensorValue.nativeInstance;
+    ET_CHECK(nativeTensorPtr);
+    auto nativeTensor = *reinterpret_cast<TensorPtr *>(nativeTensorPtr);
+    ET_CHECK(nativeTensor);
+    return *nativeTensor;
+  }
+  ET_CHECK_MSG(false, "Unsupported ExecuTorchValue type");
+  return EValue();
+}
+
+static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
+  if (value.isTensor()) {
+    auto nativeInstance = make_tensor_ptr(value.toTensor());
+    return [ExecuTorchValue valueWithTensor:[[ExecuTorchTensor alloc] initWithNativeInstance:&nativeInstance]];
+  }
+  ET_CHECK_MSG(false, "Unsupported EValue type");
+  return [ExecuTorchValue new];
+}
+
 @implementation ExecuTorchModule {
   std::unique_ptr<Module> _module;
 }
@@ -92,6 +113,30 @@ using namespace executorch::runtime;
     [methods addObject:(NSString *)@(name.c_str())];
   }
   return methods;
+}
+
+- (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
+                                            withInputs:(NSArray<ExecuTorchValue *> *)values
+                                                 error:(NSError **)error {
+  std::vector<EValue> inputs;
+  inputs.reserve(values.count);
+  for (ExecuTorchValue *value in values) {
+    inputs.push_back(toEValue(value));
+  }
+  const auto result = _module->execute(methodName.UTF8String, inputs);
+  if (!result.ok()) {
+    if (error) {
+      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
+                                   code:(NSInteger)result.error()
+                               userInfo:nil];
+    }
+    return nil;
+  }
+  NSMutableArray<ExecuTorchValue *> *outputs = [NSMutableArray arrayWithCapacity:result->size()];
+  for (const auto &value : *result) {
+    [outputs addObject:toExecuTorchValue(value)];
+  }
+  return outputs;
 }
 
 @end
