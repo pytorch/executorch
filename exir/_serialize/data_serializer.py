@@ -45,7 +45,7 @@ class DataEntry:
 
     Attributes:
        buffer_index: The index inside `DataPayload.buffers` that this
-            DataEntryEntry refers to.
+            DataEntry refers to.
        alignment: The alignment of the data.
     """
 

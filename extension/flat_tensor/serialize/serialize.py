@@ -353,7 +353,7 @@ class FlatTensorSerializer(DataSerializer):
         named_data = _extract_named_data(data.key_to_data, data.buffers, segments)
 
         data_segments: List[DataSegment] = []
-        segment_data = Cord()
+        aggregated_segment_data = Cord()
         for segment in segments:
             prev_end = (
                 (data_segments[-1].offset + data_segments[-1].size)
@@ -367,11 +367,13 @@ class FlatTensorSerializer(DataSerializer):
                     size=len(segment.data),
                 )
             )
-            # Pad segment_data to segment alignment.
-            segment_pad_length = padding_required(len(segment_data), alignment)
+            # Pad aggregated_segment_data to segment alignment.
+            segment_pad_length = padding_required(
+                len(aggregated_segment_data), alignment
+            )
             if segment_pad_length > 0:
-                segment_data.append(b"\x00" * segment_pad_length)
-            segment_data.append(segment.data)
+                aggregated_segment_data.append(b"\x00" * segment_pad_length)
+            aggregated_segment_data.append(segment.data)
 
         # Create FlatTensor, which describes of the contents of the file and
         # points to all the data segments. It will be serialized to flatbuffer.
@@ -405,7 +407,7 @@ class FlatTensorSerializer(DataSerializer):
             flatbuffer_offset=padded_header_length,
             flatbuffer_size=len(flatbuffer_payload),
             segment_base_offset=segment_base_offset,
-            segment_data_size=len(segment_data),
+            segment_data_size=len(aggregated_segment_data),
         ).to_bytes()
 
         # Pad header and payload to segment alignment.
@@ -425,7 +427,7 @@ class FlatTensorSerializer(DataSerializer):
         assert eh.flatbuffer_size == original_flatbuffer_payload_size
         assert eh.segment_base_offset == segment_base_offset
         assert eh.flatbuffer_offset == padded_header_length
-        assert eh.segment_data_size == len(segment_data)
+        assert eh.segment_data_size == len(aggregated_segment_data)
 
         del header_data
         del flatbuffer_payload
@@ -433,7 +435,7 @@ class FlatTensorSerializer(DataSerializer):
         # Place everything into one segment.
         payload = Cord()
         payload.append(injected_flatbuffer_data)
-        payload.append(segment_data)
+        payload.append(aggregated_segment_data)
 
         return payload
 

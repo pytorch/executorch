@@ -16,6 +16,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 class TestActivationFusion(unittest.TestCase):
     PassStage = RunPasses([ConvertToLinearPass, FuseActivationPass])
 
+    def setUp(self):
+        torch._dynamo.reset()
+
     def check_node_has_tag(self, graph_module, node_target, tag):
         for n in graph_module.graph.nodes:
             if n.op == "call_function" and n.target == node_target:

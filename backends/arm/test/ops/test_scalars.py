@@ -220,7 +220,9 @@ passes_xfails = {
 }
 
 
-@common.parametrize("tensor_scalar_tests", tensor_scalar_tests, passes_xfails)
+@common.parametrize(
+    "tensor_scalar_tests", tensor_scalar_tests, passes_xfails, strict=False
+)
 def test_passes_BI(tensor_scalar_tests: list):
     op, x, y = tensor_scalar_tests
     _test_passes_tosa_BI_pipeline(op, (x, y))
