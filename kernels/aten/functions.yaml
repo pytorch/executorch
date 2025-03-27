@@ -141,6 +141,8 @@
 
 - op: div.out_mode
 
+- op: elu.out
+
 - op: embedding.out
 
 - op: empty.out

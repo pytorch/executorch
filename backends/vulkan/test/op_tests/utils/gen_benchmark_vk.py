@@ -12,7 +12,7 @@ from executorch.backends.vulkan.test.op_tests.utils.gen_computegraph import (
 from executorch.backends.vulkan.test.op_tests.utils.gen_correctness_base import (
     CorrectnessTestGen,
 )
-from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
 from torchgen.model import NativeFunction
 
@@ -72,10 +72,12 @@ BENCHMARK_REGISTER_F(GeneratedOpBenchmark_{op_name}, {case_name})->Threads(1)->A
 
 
 class VkBenchmarkGen(CorrectnessTestGen):
-    def __init__(self, op_reg_name: str, f: NativeFunction, inputs: TestSuite):
+    def __init__(self, op_reg_name: str, f: NativeFunction, inputs: VkTestSuite):
         super().__init__(f, inputs)
         self.op_reg_name = op_reg_name
-        self.generator = ComputeGraphGen(self.op_reg_name, self.f, self.suite_def)
+        self.generator = ComputeGraphGen(
+            self.op_reg_name, self.f, self.suite_def, inputs.force_io
+        )
 
     def gen_call_benchmark(self, prepack=False) -> str:
         test_str = f"benchmark_{self.op_name}("
@@ -197,7 +199,7 @@ at::Tensor make_rand_tensor(
     float high = 1.0) {{
   if (high == 1.0 && low == 0.0)
     return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
-    
+
   if (dtype == at::kChar)
     return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
 

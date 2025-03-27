@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//tools/build_defs/android:fb_android_cxx_library.bzl", "fb_android_cxx_library")
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
@@ -5,7 +6,7 @@ load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_li
 
 oncall("executorch")
 
-executorch_generated_lib(
+non_fbcode_target(_kind = executorch_generated_lib,
     name = "generated_op_lib_optimized",
     custom_ops_aten_kernel_deps = [
         "//executorch/kernels/portable:operators_aten",
@@ -24,7 +25,7 @@ executorch_generated_lib(
     ],
 )
 
-fb_android_cxx_library(
+non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni",
     srcs = ["jni_layer.cpp", "log.cpp"],
     headers = ["jni_layer_constants.h"],
@@ -49,7 +50,7 @@ fb_android_cxx_library(
     ],
 )
 
-fb_android_cxx_library(
+non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni_full",
     srcs = ["jni_layer.cpp", "log.cpp"],
     headers = ["jni_layer_constants.h"],
@@ -74,7 +75,7 @@ fb_android_cxx_library(
     ],
 )
 
-fb_android_cxx_library(
+non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_llama_jni",
     srcs = [
         "jni_layer.cpp",
@@ -106,7 +107,7 @@ fb_android_cxx_library(
     ],
 )
 
-runtime.cxx_library(
+non_fbcode_target(_kind = runtime.cxx_library,
     name = "log_provider",
     srcs = ["log.cpp"],
     exported_headers = ["log.h"],
