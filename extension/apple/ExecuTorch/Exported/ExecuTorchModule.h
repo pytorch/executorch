@@ -23,6 +23,16 @@ typedef NS_ENUM(NSInteger, ExecuTorchModuleLoadMode) {
 } NS_SWIFT_NAME(ModuleLoadMode);
 
 /**
+ * Enum to define the verification level used when loading a module.
+ * Values can be a subset, but must numerically match exactly those defined in
+ * runtime/executor/program.h
+ */
+typedef NS_ENUM(uint8_t, ExecuTorchVerification) {
+    ExecuTorchVerificationMinimal,
+    ExecuTorchVerificationInternalConsistency,
+} NS_SWIFT_NAME(ModuleVerification);
+
+/**
  * Represents a module that encapsulates an ExecuTorch program.
  * This class is a facade for loading programs and executing methods within them.
  */
@@ -48,6 +58,33 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath;
+
+/**
+ * Loads the module’s program using the specified verification level.
+ *
+ * @param verification The verification level to apply when loading the program.
+ * @param error A pointer to an NSError pointer that will be set if an error occurs.
+ * @return YES if the program was successfully loaded; otherwise, NO.
+ */
+- (BOOL)loadWithVerification:(ExecuTorchVerification)verification
+                       error:(NSError **)error;
+
+/**
+ * Loads the module’s program using minimal verification.
+ *
+ * This is a convenience overload that defaults the verification level to Minimal.
+ *
+ * @param error A pointer to an NSError pointer that will be set if an error occurs.
+ * @return YES if the program was successfully loaded; otherwise, NO.
+ */
+- (BOOL)load:(NSError **)error;
+
+/**
+ * Checks if the module is loaded.
+ *
+ * @return YES if the module's program is loaded; otherwise, NO.
+ */
+- (BOOL)isLoaded;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

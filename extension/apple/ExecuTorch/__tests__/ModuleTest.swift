@@ -18,11 +18,14 @@ class ModuleTest: XCTestCase {
     return Bundle(for: type(of: self))
 #endif
   }
-  
-  func test() throws {
+
+  func testLoad() {
     guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
       XCTFail("Couldn't find the model file")
       return
     }
+    let module = Module(filePath: modelPath)
+    XCTAssertNoThrow(try module.load())
+    XCTAssertTrue(module.isLoaded())
   }
 }

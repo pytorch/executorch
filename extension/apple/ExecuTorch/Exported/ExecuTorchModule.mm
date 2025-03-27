@@ -14,6 +14,7 @@
 #import <executorch/extension/tensor/tensor.h>
 
 using namespace executorch::extension;
+using namespace executorch::runtime;
 
 @implementation ExecuTorchModule {
   std::unique_ptr<Module> _module;
@@ -33,6 +34,29 @@ using namespace executorch::extension;
 
 - (instancetype)initWithFilePath:(NSString *)filePath {
   return [self initWithFilePath:filePath loadMode:ExecuTorchModuleLoadModeFile];
+}
+
+- (BOOL)loadWithVerification:(ExecuTorchVerification)verification
+                       error:(NSError **)error {
+  const auto errorCode = _module->load(static_cast<Program::Verification>(verification));
+  if (errorCode != Error::Ok) {
+    if (error) {
+      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
+                                   code:(NSInteger)errorCode
+                               userInfo:nil];
+    }
+    return NO;
+  }
+  return YES;
+}
+
+- (BOOL)load:(NSError **)error {
+  return [self loadWithVerification:ExecuTorchVerificationMinimal
+                              error:error];
+}
+
+- (BOOL)isLoaded {
+  return _module->is_loaded();
 }
 
 @end
