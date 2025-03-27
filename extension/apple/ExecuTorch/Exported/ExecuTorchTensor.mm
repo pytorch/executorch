@@ -335,3 +335,36 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 }
 
 @end
+
+@implementation ExecuTorchTensor (Scalars)
+
+- (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
+                          shape:(NSArray<NSNumber *> *)shape
+                        strides:(NSArray<NSNumber *> *)strides
+                 dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
+                       dataType:(ExecuTorchDataType)dataType
+                  shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
+  const NSInteger count = scalars.count;
+  ET_CHECK_MSG(count == ExecuTorchElementCountOfShape(shape),
+               "Number of scalars does not match the shape");
+  std::vector<uint8_t> data;
+  data.resize(count * ExecuTorchSizeOfDataType(dataType));
+  for (NSUInteger index = 0; index < count; ++index) {
+    ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
+      static_cast<ScalarType>(dataType), nil, "initWithScalars", CTYPE, [&] {
+        reinterpret_cast<CTYPE *>(data.data())[index] = utils::extractValue<CTYPE>(scalars[index]);
+      }
+    );
+  }
+  auto tensor = make_tensor_ptr(
+    utils::toVector<SizesType>(shape),
+    std::move(data),
+    utils::toVector<DimOrderType>(dimensionOrder),
+    utils::toVector<StridesType>(strides),
+    static_cast<ScalarType>(dataType),
+    static_cast<TensorShapeDynamism>(shapeDynamism)
+  );
+  return [self initWithNativeInstance:&tensor];
+}
+
+@end
