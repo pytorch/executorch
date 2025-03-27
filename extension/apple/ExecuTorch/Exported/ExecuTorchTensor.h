@@ -564,6 +564,110 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (instancetype)initWithScalar:(NSNumber *)scalar NS_SWIFT_NAME(init(_:));
 
+/** 
+ * Initializes a tensor with a byte scalar value.
+ *
+ * @param scalar A uint8_t value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithByte:(uint8_t)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a char scalar value.
+ *
+ * @param scalar An int8_t value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithChar:(int8_t)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a short scalar value.
+ *
+ * @param scalar An int16_t value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithShort:(int16_t)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with an int scalar value.
+ *
+ * @param scalar An int32_t value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithInt:(int32_t)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a long scalar value.
+ *
+ * @param scalar An int64_t value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithLong:(int64_t)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a float scalar value.
+ *
+ * @param scalar A float value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithFloat:(float)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a double scalar value.
+ *
+ * @param scalar A double value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithDouble:(double)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a boolean scalar value.
+ *
+ * @param scalar A BOOL value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithBool:(BOOL)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a uint16 scalar value.
+ *
+ * @param scalar A uint16_t value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithUInt16:(uint16_t)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a uint32 scalar value.
+ *
+ * @param scalar A uint32_t value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithUInt32:(uint32_t)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with a uint64 scalar value.
+ *
+ * @param scalar A uint64_t value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithUInt64:(uint64_t)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with an NSInteger scalar value.
+ *
+ * @param scalar An NSInteger value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithInteger:(NSInteger)scalar NS_SWIFT_NAME(init(_:));
+
+/** 
+ * Initializes a tensor with an NSUInteger scalar value.
+ *
+ * @param scalar An NSUInteger value.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithUnsignedInteger:(NSUInteger)scalar NS_SWIFT_NAME(init(_:));
+
 @end
 
 NS_ASSUME_NONNULL_END

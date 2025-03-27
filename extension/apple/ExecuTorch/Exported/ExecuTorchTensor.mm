@@ -477,4 +477,121 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
                  shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
 }
 
+- (instancetype)initWithByte:(uint8_t)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeByte
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithChar:(int8_t)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeChar
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithShort:(int16_t)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeShort
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithInt:(int32_t)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeInt
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithLong:(int64_t)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeLong
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithFloat:(float)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeFloat
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithDouble:(double)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeDouble
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithBool:(BOOL)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeBool
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithUInt16:(uint16_t)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeUInt16
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithUInt32:(uint32_t)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeUInt32
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithUInt64:(uint64_t)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:ExecuTorchDataTypeUInt64
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithInteger:(NSInteger)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:(sizeof(scalar) == 8 ? ExecuTorchDataTypeLong : ExecuTorchDataTypeInt)
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
+- (instancetype)initWithUnsignedInteger:(NSUInteger)scalar {
+  return [self initWithBytes:&scalar
+                       shape:@[]
+                     strides:@[]
+              dimensionOrder:@[]
+                    dataType:(sizeof(scalar) == 8 ? ExecuTorchDataTypeUInt64 : ExecuTorchDataTypeUInt32)
+               shapeDynamism:ExecuTorchShapeDynamismDynamicBound];
+}
+
 @end
