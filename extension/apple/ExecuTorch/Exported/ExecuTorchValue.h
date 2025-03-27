@@ -193,6 +193,15 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)valueWithDouble:(ExecuTorchDoubleValue)value
     NS_SWIFT_NAME(init(_:));
 
+
+/**
+ * Determines whether the current Value is equal to another Value.
+ *
+ * @param other Another ExecuTorchValue instance to compare against.
+ * @return YES if the values have the same tag and equal underlying values; otherwise, NO.
+ */
+- (BOOL)isEqualToValue:(nullable ExecuTorchValue *)other;
+
 @end
 
 NS_ASSUME_NONNULL_END
