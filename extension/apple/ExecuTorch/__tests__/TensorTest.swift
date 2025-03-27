@@ -223,4 +223,17 @@ class TensorTest: XCTestCase {
     XCTAssertFalse(tensor1.isEqual(NSString(string: "Not a tensor")))
     XCTAssertFalse(tensor4.isEqual(tensor2.copy()))
   }
+
+  func testInitScalarsFloat() {
+    let data: [Float] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    let tensor = Tensor(data.map(NSNumber.init), shape: [2, 3], strides: [3, 1], dimensionOrder: [0, 1], dataType: .float, shapeDynamism: .dynamicBound)
+    XCTAssertEqual(tensor.dataType, .float)
+    XCTAssertEqual(tensor.shape, [2, 3])
+    XCTAssertEqual(tensor.strides, [3, 1])
+    XCTAssertEqual(tensor.dimensionOrder, [0, 1])
+    XCTAssertEqual(tensor.count, 6)
+    tensor.bytes { pointer, count, dataType in
+      XCTAssertEqual(Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)), data)
+    }
+  }
 }
