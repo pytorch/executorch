@@ -52,6 +52,15 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   return [self initWithNativeInstance:&tensor];
 }
 
+- (instancetype)copy {
+  return [self copyWithZone:nil];
+}
+
+- (instancetype)copyWithZone:(nullable NSZone *)zone {
+  auto tensor = clone_tensor_ptr(_tensor);
+  return [[ExecuTorchTensor allocWithZone:zone] initWithNativeInstance:&tensor];
+}
+
 - (void *)nativeInstance {
   return &_tensor;
 }
