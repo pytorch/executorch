@@ -61,9 +61,31 @@ typedef NS_ENUM(uint8_t, ExecuTorchShapeDynamism) {
   ExecuTorchShapeDynamismDynamicUnbound,
 } NS_SWIFT_NAME(ShapeDynamism);
 
+/**
+ * A tensor class for ExecuTorch operations.
+ *
+ * This class encapsulates a native TensorPtr instance and provides a variety of
+ * initializers and utility methods to work with tensor data.
+ */
 NS_SWIFT_NAME(Tensor)
 __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchTensor : NSObject
+
+/**
+ * Pointer to the underlying native TensorPtr instance.
+ *
+ * @return A raw pointer to the native TensorPtr held by this Tensor class.
+ */
+@property(nonatomic, readonly) void *nativeInstance NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Initializes a tensor with a native TensorPtr instance.
+ *
+ * @param nativeInstance A pointer to a native TensorPtr instance.
+ * @return An initialized ExecuTorchTensor instance.
+ */
+- (instancetype)initWithNativeInstance:(void *)nativeInstance
+    NS_DESIGNATED_INITIALIZER NS_SWIFT_UNAVAILABLE("");
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
