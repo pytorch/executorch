@@ -23,25 +23,7 @@ using namespace runtime;
  * @param number The NSNumber instance whose scalar type is to be deduced.
  * @return The corresponding ScalarType.
  */
-static inline ScalarType deduceScalarType(NSNumber *number) {
-  auto type = [number objCType][0];
-  type = (type >= 'A' && type <= 'Z') ? type + ('a' - 'A') : type;
-  if (type == 'c') {
-    return ScalarType::Byte;
-  } else if (type == 's') {
-    return ScalarType::Short;
-  } else if (type == 'i') {
-    return ScalarType::Int;
-  } else if (type == 'q' || type == 'l') {
-    return ScalarType::Long;
-  } else if (type == 'f') {
-    return ScalarType::Float;
-  } else if (type == 'd') {
-    return ScalarType::Double;
-  }
-  ET_CHECK_MSG(false, "Unsupported type: %c", type);
-  return ScalarType::Undefined;
-}
+ScalarType deduceType(NSNumber *number);
 
 /**
  * Converts the value held in the NSNumber to the specified C++ type T.
@@ -51,8 +33,8 @@ static inline ScalarType deduceScalarType(NSNumber *number) {
  * @return The value converted to type T.
  */
 template <typename T>
-static inline T extractValue(NSNumber *number) {
-  ET_CHECK_MSG(!(isFloatingType(deduceScalarType(number)) &&
+T extractValue(NSNumber *number) {
+  ET_CHECK_MSG(!(isFloatingType(deduceType(number)) &&
     isIntegralType(CppTypeToScalarType<T>::value, true)),
     "Cannot convert floating point to integral type");
   T value;
@@ -91,6 +73,49 @@ static inline T extractValue(NSNumber *number) {
   ET_DCHECK_MSG(std::numeric_limits<T>::lowest() <= value && value <= std::numeric_limits<T>::max(),
     "Value out of range");
   return value;
+}
+
+/**
+ * Converts an NSArray of NSNumber objects to a std::vector of type T.
+ *
+ * @tparam T The target C++ numeric type.
+ * @param array The NSArray containing NSNumber objects.
+ * @return A std::vector with the values extracted as type T.
+ */
+template <typename T>
+std::vector<T> toVector(NSArray<NSNumber *> *array) {
+  std::vector<T> vector;
+  vector.reserve(array.count);
+  for (NSNumber *number in array) {
+    vector.push_back(extractValue<T>(number));
+  }
+  return vector;
+}
+
+// Trait for types that can be wrapped into an NSNumber.
+template <typename T>
+constexpr bool isNSNumberWrapable =
+    std::is_arithmetic_v<T> ||
+    std::is_same_v<T, BOOL> ||
+    std::is_same_v<T, BFloat16> ||
+    std::is_same_v<T, Half>;
+
+/**
+ * Converts a generic container of numeric values to an NSArray of NSNumber objects.
+ *
+ * @tparam Container The container type holding numeric values.
+ * @param container The container whose items are to be converted.
+ * @return An NSArray populated with NSNumber objects representing the container's items.
+ */
+template <typename Container>
+NSArray<NSNumber *> *toNSArray(const Container &container) {
+  static_assert(isNSNumberWrapable<typename Container::value_type>, "Invalid container value type");
+  const NSUInteger count = std::distance(std::begin(container), std::end(container));
+  NSMutableArray<NSNumber *> *array = [NSMutableArray arrayWithCapacity:count];
+  for (const auto &item : container) {
+    [array addObject:@(item)];
+  }
+  return array;
 }
 
 } // namespace executorch::extension::utils
