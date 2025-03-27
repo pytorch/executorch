@@ -59,4 +59,22 @@ using namespace executorch::runtime;
   return _module->is_loaded();
 }
 
+- (BOOL)loadMethod:(NSString *)methodName
+             error:(NSError **)error {
+  const auto errorCode = _module->load_method(methodName.UTF8String);
+  if (errorCode != Error::Ok) {
+    if (error) {
+      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
+                                   code:(NSInteger)errorCode
+                               userInfo:nil];
+    }
+    return NO;
+  }
+  return YES;
+}
+
+- (BOOL)isMethodLoaded:(NSString *)methodName {
+  return _module->is_method_loaded(methodName.UTF8String);
+}
+
 @end

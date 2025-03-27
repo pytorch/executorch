@@ -28,4 +28,15 @@ class ModuleTest: XCTestCase {
     XCTAssertNoThrow(try module.load())
     XCTAssertTrue(module.isLoaded())
   }
+
+  func testLoadMethod() {
+    let bundle = Bundle(for: type(of: self))
+    guard let modelPath = bundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    XCTAssertNoThrow(try module.load("forward"))
+    XCTAssertTrue(module.isLoaded("forward"))
+  }
 }

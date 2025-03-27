@@ -86,6 +86,24 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (BOOL)isLoaded;
 
+/**
+ * Loads a specific method from the program.
+ *
+ * @param methodName A string representing the name of the method to load.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return YES if the method was successfully loaded; otherwise, NO.
+ */
+- (BOOL)loadMethod:(NSString *)methodName
+             error:(NSError **)error NS_SWIFT_NAME(load(_:));
+
+/**
+ * Checks if a specific method is loaded.
+ *
+ * @param methodName A string representing the method name.
+ * @return YES if the method is loaded; otherwise, NO.
+ */
+- (BOOL)isMethodLoaded:(NSString *)methodName NS_SWIFT_NAME(isLoaded(_:));
+
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
