@@ -189,6 +189,17 @@ __attribute__((deprecated("This API is experimental.")))
 - (void)mutableBytesWithHandler:(void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
     NS_SWIFT_NAME(mutableBytes(_:));
 
+/**
+ * Resizes the tensor to a new shape.
+ *
+ * @param shape An NSArray of NSNumber objects representing the desired new shape.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return YES if the tensor was successfully resized; otherwise, NO.
+ */
+- (BOOL)resizeToShape:(NSArray<NSNumber *> *)shape
+                error:(NSError **)error
+    NS_SWIFT_NAME(resize(to:));
+
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 

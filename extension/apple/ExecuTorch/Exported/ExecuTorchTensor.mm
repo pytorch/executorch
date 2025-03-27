@@ -15,6 +15,7 @@
 
 using namespace executorch::aten;
 using namespace executorch::extension;
+using namespace executorch::runtime;
 
 NSInteger ExecuTorchSizeOfDataType(ExecuTorchDataType dataType) {
   return elementSize(static_cast<ScalarType>(dataType));
@@ -106,6 +107,25 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
 - (void)mutableBytesWithHandler:(void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler {
   ET_CHECK(handler);
   handler(_tensor->unsafeGetTensorImpl()->mutable_data(), self.count, self.dataType);
+}
+
+- (BOOL)resizeToShape:(NSArray<NSNumber *> *)shape
+                error:(NSError **)error {
+  const auto resizeError = resize_tensor_ptr(
+    _tensor, utils::toVector<SizesType>(shape)
+  );
+  if (resizeError != Error::Ok) {
+    if (error) {
+      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
+                                   code:(NSInteger)resizeError
+                               userInfo:nil];
+    }
+    return NO;
+  }
+  _shape = nil;
+  _strides = nil;
+  _dimensionOrder = nil;
+  return YES;
 }
 
 @end
