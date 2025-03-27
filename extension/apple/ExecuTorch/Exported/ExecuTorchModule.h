@@ -173,6 +173,55 @@ __attribute__((deprecated("This API is experimental.")))
                                                  error:(NSError **)error
     NS_SWIFT_NAME(execute(_:_:));
 
+/**
+ * Executes the "forward" method with the provided input values.
+ *
+ * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ *
+ * @param values An NSArray of ExecuTorchValue objects representing the inputs.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ */
+- (nullable NSArray<ExecuTorchValue *> *)forwardWithInputs:(NSArray<ExecuTorchValue *> *)values
+                                                     error:(NSError **)error
+    NS_SWIFT_NAME(forward(_:));
+
+/**
+ * Executes the "forward" method with the provided single input value.
+ *
+ * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ *
+ * @param value An ExecuTorchValue object representing the input.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ */
+- (nullable NSArray<ExecuTorchValue *> *)forwardWithInput:(ExecuTorchValue *)value
+                                                    error:(NSError **)error
+    NS_SWIFT_NAME(forward(_:));
+
+/**
+ * Executes the "forward" method with no inputs.
+ *
+ * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ *
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ */
+- (nullable NSArray<ExecuTorchValue *> *)forward:(NSError **)error;
+
+/**
+ * Executes the "forward" method with no inputs.
+ *
+ * This is a convenience method that calls the executeMethod with "forward" as the method name.
+ *
+ * @param tensors An NSArray of ExecuTorchTensor objects representing the inputs.
+ * @param error A pointer to an NSError pointer that is set if an error occurs.
+ * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
+ */
+- (nullable NSArray<ExecuTorchValue *> *)forwardWithTensors:(NSArray<ExecuTorchTensor *> *)tensors
+                                                      error:(NSError **)error
+    NS_SWIFT_NAME(forward(_:));
+
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
